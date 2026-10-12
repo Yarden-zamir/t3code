@@ -93,6 +93,7 @@ import {
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
+import { RecoverInterruptedTurnsSettings } from "./RecoverInterruptedTurnsSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
@@ -645,6 +646,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
         ? ["Continue threads after restarts"]
         : []),
+      ...(settings.recoverInterruptedTurns !== DEFAULT_UNIFIED_SETTINGS.recoverInterruptedTurns
+        ? ["Recover interrupted agents"]
+        : []),
       ...(isBackgroundActivityDirty ? ["Background activity"] : []),
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
         ? ["New thread mode"]
@@ -740,6 +744,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.persistComposerContextStrip,
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
+      settings.recoverInterruptedTurns,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
@@ -854,6 +859,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+      recoverInterruptedTurns: DEFAULT_UNIFIED_SETTINGS.recoverInterruptedTurns,
+      recoverInterruptedTurnsMessage: DEFAULT_UNIFIED_SETTINGS.recoverInterruptedTurnsMessage,
+      recoverInterruptedTurnsSubagentMessage:
+        DEFAULT_UNIFIED_SETTINGS.recoverInterruptedTurnsSubagentMessage,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
@@ -2992,6 +3001,8 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+
+        <RecoverInterruptedTurnsSettings />
 
         <SettingsRow
           serverScoped
