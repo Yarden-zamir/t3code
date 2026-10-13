@@ -434,6 +434,13 @@ export const ClientSettingsSchema = Schema.Struct({
    * sidebar, and split usage by owner.
    */
   repositoryOwnerFilters: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Fork: the repository owners whose projects the sidebar shows. Null stands for projects without
+   * an owner. An empty list shows every project. Applies only while `repositoryOwnerFilters` is on.
+   */
+  sidebarOwnerFilter: Schema.Array(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -1843,6 +1850,7 @@ export const ClientSettingsPatch = Schema.Struct({
   backgroundWorkDetails: Schema.optionalKey(Schema.Boolean),
   forkChangelogEnabled: Schema.optionalKey(Schema.Boolean),
   repositoryOwnerFilters: Schema.optionalKey(Schema.Boolean),
+  sidebarOwnerFilter: Schema.optionalKey(Schema.Array(Schema.NullOr(TrimmedNonEmptyString))),
   diffFilesCollapsed: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   diffLayout: Schema.optionalKey(DiffLayout),
