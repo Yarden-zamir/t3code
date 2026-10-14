@@ -23,7 +23,7 @@ import * as ProcessRunner from "../processRunner.ts";
  * server's own unit, so the server's CPUWeight and IOWeight compete with the
  * agents directly.
  */
-const AGENT_SLICE = "app-t3code-agents.slice";
+export const AGENT_SLICE = "app-t3code-agents.slice";
 
 /**
  * The child slice for one server's agents, named after its state directory.

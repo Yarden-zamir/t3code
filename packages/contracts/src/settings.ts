@@ -1308,6 +1308,14 @@ export const ServerSettings = Schema.Struct({
    */
   forkAutoUpdate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
+   * Fork, experimental: a CPU cap for all agents and terminals together, in percent of one core
+   * (200 is two cores). Linux with a systemd user manager only; elsewhere it does nothing. Null
+   * is off. See apps/server/src/fork/agentCaps.ts.
+   */
+  forkAgentCpuQuotaPercent: Schema.NullOr(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100_000 })),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  /**
    * Whether agents may drive the in-app preview browser. Turning this off
    * withholds the MCP credential, so the `t3-code` server (and with it every
    * `preview_*` tool) is never attached to a provider session, and the prompt
@@ -1756,6 +1764,9 @@ export const ServerSettingsPatch = Schema.Struct({
   recoverInterruptedTurnsMessage: Schema.optionalKey(TrimmedNonEmptyString),
   recoverInterruptedTurnsSubagentMessage: Schema.optionalKey(TrimmedNonEmptyString),
   forkAutoUpdate: Schema.optionalKey(Schema.Boolean),
+  forkAgentCpuQuotaPercent: Schema.optionalKey(
+    Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100_000 }))),
+  ),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   projectAgentBrowserAccessOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),
