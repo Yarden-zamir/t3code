@@ -166,6 +166,7 @@ import * as CursorKeychain from "@t3tools/provider-cursor/server/CursorKeychain"
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
+import * as ForkAgentCaps from "./fork/agentCaps.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
 import * as MachineHost from "./fork/machineMap/MachineHost.ts";
 import * as MachineMap from "./fork/machineMap/MachineMap.ts";
@@ -631,6 +632,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   // Fork: the machine map portal connection. Off by default (machineMap setting).
   layerMachineMap,
+  // Fork, experimental: the agent CPU cap. Off by default (forkAgentCpuQuotaPercent setting).
+  ForkAgentCaps.layer,
 ).pipe(
   // Core Services
   Layer.provideMerge(layerOrchestrationApplication),

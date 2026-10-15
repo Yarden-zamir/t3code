@@ -228,6 +228,15 @@ EOF
 systemctl --user daemon-reload && systemctl --user restart t3code.service
 ```
 
+## Agent CPU cap (experimental)
+
+The server setting `forkAgentCpuQuotaPercent` caps the CPU of all agents and terminals together, in percent of one core: `200` is two cores. It is `null` (off) by default.
+
+- It works only on Linux with a systemd user manager. There T3 already starts each agent in a scope in `app-t3code-agents.slice`. The setting sets `CPUQuota` on that slice with `systemctl --user set-property --runtime`. On macOS and Windows it does nothing.
+- Set it per machine in the portal Settings view (MM-406), or with `machines_set_setting`.
+- The cap lasts until the next reboot. A change of the setting applies at once. To check it, run `systemctl --user show app-t3code-agents.slice -p CPUQuotaPerSecUSec`.
+- Expect slower agent turns, builds and test runs. Terminals share the cap.
+
 ## Recover interrupted agents
 
 Every agent runs as a child process of the T3 server. An update, a crash or a quit stops them all. When the setting is on, the next server start sends each stopped thread a short message, so that its agent continues.
