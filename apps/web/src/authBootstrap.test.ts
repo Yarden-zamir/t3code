@@ -14,6 +14,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { installEnvironmentHttpTest } from "../test/environmentHttpTest";
 import { __setPrimaryHttpRunnerForTests, type PrimaryHttpEffectRunner } from "./lib/runtime";
 
+// Fork (MM-917): the real proof uses WebCrypto, which does not advance with fake timers. Without a
+// proof, the session request has no DPoP header, which is the path that these tests cover.
+vi.mock("./connection/browserKeyProof", () => ({
+  browserKeyProof: async () => null,
+}));
+
 type TestWindow = {
   location: URL;
   history: {
