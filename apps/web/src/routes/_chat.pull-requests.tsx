@@ -1333,6 +1333,7 @@ function PullRequestsRouteView() {
     >
       {rightPanelState.isOpen ? (
         <RightPanelMaximizeControl
+          shortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggleMaximized")}
           maximized={rightPanelMaximized}
           onToggle={toggleRightPanelMaximized}
         />

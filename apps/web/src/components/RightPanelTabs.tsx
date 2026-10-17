@@ -54,7 +54,11 @@ import { isElectron } from "~/env";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
-import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
+import {
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+  type ShortcutMatchContext,
+} from "~/keybindings";
 import { readLocalApi } from "~/localApi";
 import { Button } from "~/components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -825,6 +829,19 @@ function SortableTab({
 }
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
+  const shortcutLabelOptions = {
+    context: { ...props.getShortcutContext(), rightPanelOpen: true },
+  };
+  const closeShortcutLabel = shortcutLabelForCommand(
+    props.keybindings,
+    "rightPanel.close",
+    shortcutLabelOptions,
+  );
+  const newShortcutLabel = shortcutLabelForCommand(
+    props.keybindings,
+    "rightPanel.new",
+    shortcutLabelOptions,
+  );
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
@@ -1172,6 +1189,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   >
                     <PanelTabCloseButton
                       label={`Close ${title}`}
+                      tooltip={`Close ${title}${active && closeShortcutLabel ? ` (${closeShortcutLabel})` : ""}`}
                       onClick={() => props.onCloseSurface(surface)}
                     >
                       <SurfaceIcon
@@ -1273,19 +1291,28 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             </SortableTabList>
             {props.open !== false ? (
               <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
-                <MenuTrigger
-                  ref={addSurfaceTriggerRef}
-                  render={
-                    <Button
-                      aria-label="Add panel surface"
-                      className="shrink-0"
-                      size="icon-xs"
-                      variant="ghost-muted"
-                    />
-                  }
-                >
-                  <Plus className="size-3.5" />
-                </MenuTrigger>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <MenuTrigger
+                        ref={addSurfaceTriggerRef}
+                        render={
+                          <Button
+                            aria-label="Add panel surface"
+                            className="shrink-0"
+                            size="icon-xs"
+                            variant="ghost-muted"
+                          />
+                        }
+                      />
+                    }
+                  >
+                    <Plus className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipPopup>
+                    Add panel surface{newShortcutLabel ? ` (${newShortcutLabel})` : ""}
+                  </TooltipPopup>
+                </Tooltip>
                 <MenuPopup
                   align="start"
                   side="bottom"

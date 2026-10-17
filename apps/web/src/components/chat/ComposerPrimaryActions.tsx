@@ -1,4 +1,7 @@
 import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { primaryServerKeybindingsAtom } from "../../state/server";
+import { shortcutLabelForCommand } from "../../keybindings";
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, Minimize2Icon, PlayIcon } from "lucide-react";
 import { CornerUpRight, ListPlus } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -109,6 +112,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   keepFullHistory = false,
   onToggleKeepFullHistory,
 }: ComposerPrimaryActionsProps) {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const stopShortcutLabel = shortcutLabelForCommand(keybindings, "thread.stop", {
+    context: { composerFocus: true },
+  });
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
     : undefined;
@@ -151,7 +158,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <rect x="2" y="2" width="8" height="8" rx="1.5" />
         </svg>
       </TooltipTrigger>
-      <TooltipPopup>Interrupt</TooltipPopup>
+      <TooltipPopup>Interrupt{stopShortcutLabel ? ` (${stopShortcutLabel})` : ""}</TooltipPopup>
     </Tooltip>
   );
 

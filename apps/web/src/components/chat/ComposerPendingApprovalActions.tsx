@@ -1,5 +1,6 @@
 import {
   type ProviderApprovalDecision,
+  type ResolvedKeybindingsConfig,
   type ProviderApprovalOption,
   type RuntimeRequestId,
 } from "@t3tools/contracts";
@@ -9,8 +10,10 @@ import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { composerFloatingLayerProps } from "./composerEventScope";
+import { shortcutLabelForCommand } from "../../keybindings";
 
 interface ComposerPendingApprovalActionsProps {
+  keybindings?: ResolvedKeybindingsConfig;
   requestId: RuntimeRequestId;
   isResponding: boolean;
   canRespond: boolean;
@@ -28,8 +31,10 @@ const DEFAULT_APPROVAL_OPTIONS = [
   { decision: "acceptForSession", label: "Always allow this session" },
   { decision: "accept", label: "Approve" },
 ] satisfies ReadonlyArray<ProviderApprovalOption>;
+const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 
 export const ComposerPendingApprovalActions = memo(function ComposerPendingApprovalActions({
+  keybindings = EMPTY_KEYBINDINGS,
   requestId,
   isResponding,
   canRespond,
@@ -47,6 +52,11 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
   return (
     <>
       {primaryOptions.map((option) => {
+        const shortcutLabel = shortcutLabelForCommand(
+          keybindings,
+          option.decision === "accept" ? "approval.approve" : "approval.decline",
+          { context: { approvalPending: true } },
+        );
         const button = (
           <Button
             key={option.decision}
@@ -64,10 +74,13 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
             <span className="max-w-40 truncate">{option.label}</span>
           </Button>
         );
-        return option.warning ? (
+        return option.warning || shortcutLabel ? (
           <Tooltip key={option.decision}>
             <TooltipTrigger render={button} />
-            <TooltipPopup side="top">{option.warning}</TooltipPopup>
+            <TooltipPopup side="top">
+              {option.warning ?? option.label}
+              {shortcutLabel ? ` (${shortcutLabel})` : ""}
+            </TooltipPopup>
           </Tooltip>
         ) : (
           button
@@ -83,6 +96,11 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
           </MenuTrigger>
           <MenuPopup {...composerFloatingLayerProps} side="top" align="end">
             {moreOptions.map((option) => {
+              const shortcutLabel = shortcutLabelForCommand(
+                keybindings,
+                option.decision === "acceptForSession" ? "approval.alwaysAllow" : null,
+                { context: { approvalPending: true } },
+              );
               const item = (
                 <MenuItem
                   key={option.decision}
@@ -99,10 +117,13 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
                   <span className="min-w-0 whitespace-normal wrap-break-word">{option.label}</span>
                 </MenuItem>
               );
-              return option.warning ? (
+              return option.warning || shortcutLabel ? (
                 <Tooltip key={option.decision}>
                   <TooltipTrigger render={item} />
-                  <TooltipPopup side="top">{option.warning}</TooltipPopup>
+                  <TooltipPopup side="top">
+                    {option.warning ?? option.label}
+                    {shortcutLabel ? ` (${shortcutLabel})` : ""}
+                  </TooltipPopup>
                 </Tooltip>
               ) : (
                 item

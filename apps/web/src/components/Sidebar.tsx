@@ -1528,6 +1528,8 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
 };
 
 type SidebarThreadRowProps = {
+  pinShortcutLabel: string | null;
+  settleShortcutLabel: string | null;
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
   variantAction: SidebarSweepAction;
@@ -2054,7 +2056,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             className="hidden size-3 shrink-0 group-hover/unpin:block group-focus-visible/unpin:block"
           />
         </TooltipTrigger>
-        <TooltipPopup>Unpin thread</TooltipPopup>
+        <TooltipPopup>
+          Unpin thread{props.pinShortcutLabel ? ` (${props.pinShortcutLabel})` : ""}
+        </TooltipPopup>
       </Tooltip>
     ) : (
       <PinIcon aria-label="Pinned" role="img" className={THREAD_CARD_PIN_CLASS} />
@@ -2192,7 +2196,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     >
                       <Undo2Icon className="mb-px size-3.5" />
                     </TooltipTrigger>
-                    <TooltipPopup side="top">Un-settle thread</TooltipPopup>
+                    <TooltipPopup side="top">
+                      Un-settle thread
+                      {props.settleShortcutLabel ? ` (${props.settleShortcutLabel})` : ""}
+                    </TooltipPopup>
                   </Tooltip>
                 ) : (
                   <button
@@ -2334,7 +2341,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 <CheckIcon className="size-3.5" />
                 Settle
               </TooltipTrigger>
-              <TooltipPopup>Settle thread</TooltipPopup>
+              <TooltipPopup>
+                Settle thread{props.settleShortcutLabel ? ` (${props.settleShortcutLabel})` : ""}
+              </TooltipPopup>
             </Tooltip>
           ) : null}
         </span>
@@ -2705,6 +2714,22 @@ export default function Sidebar() {
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const pinShortcutLabel = shortcutLabelForCommand(keybindings, "thread.pin", {
+    context: {
+      sidebarFocus: true,
+      composerFocus: false,
+      timelineFocus: false,
+      rightPanelFocus: false,
+    },
+  });
+  const settleShortcutLabel = shortcutLabelForCommand(keybindings, "thread.settle", {
+    context: {
+      sidebarFocus: true,
+      composerFocus: false,
+      timelineFocus: false,
+      rightPanelFocus: false,
+    },
+  });
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
@@ -4847,6 +4872,12 @@ export default function Sidebar() {
                         const rowVariant = isCard ? "card" : "slim";
                         return (
                           <SortableThreadRow
+                            pinShortcutLabel={
+                              routeThreadKey === threadKey ? pinShortcutLabel : null
+                            }
+                            settleShortcutLabel={
+                              routeThreadKey === threadKey ? settleShortcutLabel : null
+                            }
                             key={threadKey}
                             sortableId={threadKey}
                             contextDrag={isContextDrag}

@@ -68,6 +68,10 @@ import { ComposerControl } from "./chat/ComposerControl";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { BranchPicker, BranchPickerRefItem } from "./BranchPicker";
 import { stackedThreadToast, toastManager } from "./ui/toast";
+import { useAtomValue } from "@effect/atom-react";
+import { primaryServerKeybindingsAtom } from "../state/server";
+import { shortcutLabelForCommand } from "../keybindings";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 export interface BranchToolbarBranchSelectorHandle {
   open: () => void;
@@ -112,6 +116,10 @@ export function BranchToolbarBranchSelector({
   onCheckoutPullRequestRequest,
   onComposerFocusRequest,
 }: BranchToolbarBranchSelectorProps) {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const shortcutLabel = shortcutLabelForCommand(keybindings, "composer.branch", {
+    context: { composerFocus: true },
+  });
   const composerFloatingLayerProps = useComposerMenuProps();
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
@@ -706,34 +714,44 @@ export function BranchToolbarBranchSelector({
           }}
           onContextMenu={(event) => handleBranchContextMenu(event, resolvedActiveBranch)}
         >
-          <ComboboxTrigger
-            render={
-              displayMode === "panel" ? (
-                <ThreadDetailsControl part="select" />
-              ) : (
-                <ComposerControl size="xs" />
-              )
-            }
-            className="min-w-0 max-w-full active:scale-100"
-            disabled={isInitialBranchesLoadPending || isBranchActionPending}
-          >
-            <GitBranchIcon
-              className={cn(
-                "size-3 shrink-0 opacity-70",
-                displayMode === "panel" && THREAD_DETAILS_PANEL_ICON_CLASS,
-              )}
-            />
-            <ComposerContextLabel displayMode={displayMode}>
-              <MiddleTruncate
-                value={triggerLabel}
-                variant={displayMode === "panel" ? "cap-aligned" : "default"}
-                className="w-full"
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <ComboboxTrigger
+                  render={
+                    displayMode === "panel" ? (
+                      <ThreadDetailsControl part="select" />
+                    ) : (
+                      <ComposerControl size="xs" />
+                    )
+                  }
+                  className="min-w-0 max-w-full active:scale-100"
+                  disabled={isInitialBranchesLoadPending || isBranchActionPending}
+                />
+              }
+            >
+              <GitBranchIcon
+                className={cn(
+                  "size-3 shrink-0 opacity-70",
+                  displayMode === "panel" && THREAD_DETAILS_PANEL_ICON_CLASS,
+                )}
               />
-            </ComposerContextLabel>
-            {displayMode !== "panel" ? (
-              <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
-            ) : null}
-          </ComboboxTrigger>
+              <ComposerContextLabel displayMode={displayMode}>
+                <MiddleTruncate
+                  value={triggerLabel}
+                  variant={displayMode === "panel" ? "cap-aligned" : "default"}
+                  className="w-full"
+                />
+              </ComposerContextLabel>
+              {displayMode !== "panel" ? (
+                <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
+              ) : null}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {triggerLabel}
+              {shortcutLabel ? ` (${shortcutLabel})` : ""}
+            </TooltipPopup>
+          </Tooltip>
         </span>
         {displayMode === "panel" && prNumber !== undefined && prUrl !== undefined ? (
           <ThreadDetailsPrRows

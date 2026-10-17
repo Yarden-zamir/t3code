@@ -69,6 +69,9 @@ import { measureRestingComposerControls } from "./chat/restingComposerControlsMe
 import { resolveRestingComposerControlsNaturalWidth } from "./composerFooterLayout";
 import { cn } from "~/lib/utils";
 import { observeResize } from "~/lib/observeResize";
+import { useAtomValue } from "@effect/atom-react";
+import { primaryServerKeybindingsAtom } from "../state/server";
+import { shortcutLabelForCommand } from "../keybindings";
 
 export interface BranchToolbarHandle {
   openBranchPicker: () => void;
@@ -177,6 +180,13 @@ const RunContextSelector = memo(function RunContextSelector({
   previousWorktreeBranch,
   onUsePreviousWorktree,
 }: RunContextSelectorProps) {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const workspaceShortcutLabel = shortcutLabelForCommand(keybindings, "composer.workspace", {
+    context: { composerFocus: true },
+  });
+  const hostShortcutLabel = shortcutLabelForCommand(keybindings, "composer.host", {
+    context: { composerFocus: true },
+  });
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment =
     availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null;
@@ -221,6 +231,9 @@ const RunContextSelector = memo(function RunContextSelector({
             ? "Each model starts in its own worktree."
             : (workspacePath ?? workspaceLabel)
           : workspaceLabel}
+        {!envModeLocked && !envLocked && workspaceShortcutLabel
+          ? ` (${workspaceShortcutLabel})`
+          : ""}
       </TooltipPopup>
     </Tooltip>
   );
@@ -242,7 +255,12 @@ const RunContextSelector = memo(function RunContextSelector({
             />
           )}
         </TooltipTrigger>
-        <TooltipPopup>{autoEnvironmentLabel ?? activeEnvironment?.label ?? "Run on"}</TooltipPopup>
+        <TooltipPopup>
+          {autoEnvironmentLabel ?? activeEnvironment?.label ?? "Run on"}
+          {showEnvironmentPicker && !envLocked && hostShortcutLabel
+            ? ` (${hostShortcutLabel})`
+            : ""}
+        </TooltipPopup>
       </Tooltip>
       {workspaceIcon}
     </span>

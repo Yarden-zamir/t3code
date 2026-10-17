@@ -1216,6 +1216,7 @@ const supervisedRuntimeModeOption = {
   ...runtimeModeConfig["approval-required"],
 };
 const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
+  shortcutLabel: string | null;
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
@@ -1324,7 +1325,10 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
             })}
           </SelectPopup>
         </Select>
-        <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
+        <TooltipPopup side="top">
+          {runtimeModeOption.description}
+          {props.shortcutLabel ? ` (${props.shortcutLabel})` : ""}
+        </TooltipPopup>
       </Tooltip>
 
       {interactionModeToggle}
@@ -5044,6 +5048,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       id: "mode",
       content: (
         <ComposerFooterModeControls
+          shortcutLabel={shortcutLabelForCommand(keybindings, "composer.mode", {
+            context: { composerFocus: true },
+          })}
           showInteractionModeToggle={planModeUiEnabled}
           interactionMode={interactionMode}
           runtimeMode={compatibleRuntimeMode}
@@ -6413,6 +6420,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     </ComposerBanner.Content>
                     <ComposerBanner.Actions>
                       <ComposerPendingApprovalActions
+                        keybindings={keybindings}
                         requestId={activePendingApproval.requestId}
                         disabled={!canOperateThread}
                         isResponding={respondingRequestIds.includes(
@@ -6550,6 +6558,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         </ComposerBanner.Column>
         {!isComposerApprovalState ? (
           <ComposerStashBadge
+            shortcutLabel={shortcutLabelForCommand(keybindings, "composer.stash", {
+              context: { composerFocus: true, editableFocus: true },
+            })}
             count={stashQueue.length}
             menuOpen={isStashMenuOpen}
             pulseKey={stashPulse.key}

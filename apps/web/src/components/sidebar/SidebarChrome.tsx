@@ -1,4 +1,7 @@
 import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { useAtomValue } from "@effect/atom-react";
+import { shortcutLabelForCommand } from "../../keybindings";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -135,10 +138,12 @@ function SidebarUtilityItem({
   icon,
   label,
   onClick,
+  shortcutLabel,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  shortcutLabel?: string | null;
 }) {
   return (
     <SidebarMenuItem className="shrink-0">
@@ -150,13 +155,17 @@ function SidebarUtilityItem({
             </SidebarMenuButton>
           }
         />
-        <TooltipPopup side="top">{label}</TooltipPopup>
+        <TooltipPopup side="top">
+          {label}
+          {shortcutLabel ? ` (${shortcutLabel})` : ""}
+        </TooltipPopup>
       </Tooltip>
     </SidebarMenuItem>
   );
 }
 
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -207,6 +216,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label="Settings"
+            shortcutLabel={shortcutLabelForCommand(keybindings, "settings.open")}
             onClick={handleSettingsClick}
           />
           {pullRequestsSupported ? (
@@ -219,6 +229,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"
+            shortcutLabel={shortcutLabelForCommand(keybindings, "usage.open")}
             onClick={handleUsageClick}
           />
         </>

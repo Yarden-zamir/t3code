@@ -19,6 +19,9 @@ import {
   MenuTrigger,
 } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useAtomValue } from "@effect/atom-react";
+import { primaryServerKeybindingsAtom } from "~/state/server";
+import { shortcutLabelForCommand } from "~/keybindings";
 
 const COLOR_SCHEME_OPTIONS: ReadonlyArray<{
   value: DesktopPreviewColorScheme;
@@ -79,6 +82,16 @@ export function PreviewMoreMenu({
   profileName,
   move,
 }: Props) {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const zoomOutShortcutLabel = shortcutLabelForCommand(keybindings, "preview.zoomOut", {
+    context: { previewFocus: true, previewOpen: true },
+  });
+  const zoomInShortcutLabel = shortcutLabelForCommand(keybindings, "preview.zoomIn", {
+    context: { previewFocus: true, previewOpen: true },
+  });
+  const resetZoomShortcutLabel = shortcutLabelForCommand(keybindings, "preview.resetZoom", {
+    context: { previewFocus: true, previewOpen: true },
+  });
   const zoomLabel = `${Math.round(zoomFactor * 100)}%`;
   const disabled = !enabled;
   return (
@@ -128,39 +141,66 @@ export function PreviewMoreMenu({
         >
           <span>Zoom</span>
           <span className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-xs"
-              type="button"
-              onClick={actions.zoomOut}
-              aria-label="Zoom out"
-              disabled={disabled}
-            >
-              <Minus />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon-xs"
+                    type="button"
+                    onClick={actions.zoomOut}
+                    aria-label="Zoom out"
+                    disabled={disabled}
+                  />
+                }
+              >
+                <Minus />
+              </TooltipTrigger>
+              <TooltipPopup>
+                Zoom out{zoomOutShortcutLabel ? ` (${zoomOutShortcutLabel})` : ""}
+              </TooltipPopup>
+            </Tooltip>
             <span className="min-w-12 text-center text-xs tabular-nums text-muted-foreground">
               {zoomLabel}
             </span>
-            <Button
-              variant="outline"
-              size="icon-xs"
-              type="button"
-              onClick={actions.zoomIn}
-              aria-label="Zoom in"
-              disabled={disabled}
-            >
-              <PlusIcon />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              type="button"
-              onClick={actions.resetZoom}
-              aria-label="Reset zoom"
-              disabled={disabled}
-            >
-              <RotateCcw />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon-xs"
+                    type="button"
+                    onClick={actions.zoomIn}
+                    aria-label="Zoom in"
+                    disabled={disabled}
+                  />
+                }
+              >
+                <PlusIcon />
+              </TooltipTrigger>
+              <TooltipPopup>
+                Zoom in{zoomInShortcutLabel ? ` (${zoomInShortcutLabel})` : ""}
+              </TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    type="button"
+                    onClick={actions.resetZoom}
+                    aria-label="Reset zoom"
+                    disabled={disabled}
+                  />
+                }
+              >
+                <RotateCcw />
+              </TooltipTrigger>
+              <TooltipPopup>
+                Reset zoom{resetZoomShortcutLabel ? ` (${resetZoomShortcutLabel})` : ""}
+              </TooltipPopup>
+            </Tooltip>
           </span>
         </MenuItem>
         <MenuSeparator />

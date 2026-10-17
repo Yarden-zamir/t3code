@@ -42,6 +42,10 @@ import {
 import { Popover, PopoverPopup } from "../ui/popover";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useAtomValue } from "@effect/atom-react";
+import { SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS } from "@t3tools/contracts";
+import { shortcutLabelForCommand } from "../../keybindings";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import { SidebarHeaderIconButton } from "./SidebarThreadHeader";
 import {
   DEFAULT_SIDEBAR_GROUP_ID,
@@ -151,6 +155,7 @@ function tabTooltip(tab: SidebarGroupTab) {
 
 function GroupTab(props: {
   tab: SidebarGroupTab;
+  shortcutLabel: string | null;
   selected: boolean;
   dropTarget: boolean;
   /** The bar is narrower than this tab, which then shows its name without the count. */
@@ -224,7 +229,10 @@ function GroupTab(props: {
       >
         <TabLabel tab={tab} project={props.project} squeezed={props.squeezed} />
       </TooltipTrigger>
-      <TooltipPopup side="bottom">{tooltip}</TooltipPopup>
+      <TooltipPopup side="bottom">
+        {tooltip}
+        {props.shortcutLabel ? ` (${props.shortcutLabel})` : ""}
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -357,6 +365,7 @@ export function SidebarGroupTabs(props: {
   onOpenThread: (thread: SidebarThreadSummary) => void;
 }) {
   const { groups: state } = props;
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const groups = state.settings.groups;
   const [editing, setEditing] = useState<{ groupId: string; anchor: HTMLElement } | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -379,6 +388,18 @@ export function SidebarGroupTabs(props: {
           selectedIndex: state.tabs.findIndex((tab) => tab.id === state.tabId),
         });
   const visibleTabs = visibleIndexes.map((index) => state.tabs[index]!);
+  // Group jumps index rendered tabs, not the groups tucked into the overflow menu.
+  const shortcutLabels = visibleTabs.map((_, index) =>
+    shortcutLabelForCommand(keybindings, SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS[index] ?? null, {
+      context: {
+        sidebarFocus: true,
+        composerFocus: false,
+        timelineFocus: false,
+        rightPanelFocus: false,
+        editableFocus: false,
+      },
+    }),
+  );
   const hiddenTabs = state.tabs.filter((_, index) => !visibleIndexes.includes(index));
   // At the narrowest sidebar the open tab alone can be wider than the bar. The fit keeps it anyway.
   const squeezedIndex =
@@ -460,10 +481,11 @@ export function SidebarGroupTabs(props: {
       >
         <DndContext sensors={reorderSensors} modifiers={TAB_DRAG_MODIFIERS} onDragEnd={reorderTabs}>
           <SortableContext items={sortableTabIds} strategy={horizontalListSortingStrategy}>
-            {visibleTabs.map((tab) => (
+            {visibleTabs.map((tab, index) => (
               <GroupTab
                 key={tab.id}
                 tab={tab}
+                shortcutLabel={shortcutLabels[index] ?? null}
                 selected={tab.id === state.tabId}
                 dropTarget={state.dropTargetId === tab.id}
                 squeezed={squeezedIndex !== null && state.tabs[squeezedIndex] === tab}

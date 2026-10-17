@@ -1,4 +1,7 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { useAtomValue } from "@effect/atom-react";
+import { shortcutLabelForCommand } from "~/keybindings";
+import { primaryServerKeybindingsAtom } from "~/state/server";
 import {
   ArrowLeft,
   ArrowRight,
@@ -76,6 +79,10 @@ export function PreviewChromeRow({
   trailingActions,
   leadingActions,
 }: Props) {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const refreshShortcutLabel = shortcutLabelForCommand(keybindings, "preview.refresh", {
+    context: { previewFocus: true, previewOpen: true },
+  });
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState(url);
   const [inputFocused, setInputFocused] = useState(false);
@@ -152,7 +159,10 @@ export function PreviewChromeRow({
             >
               <RefreshIcon refreshing={loading} />
             </TooltipTrigger>
-            <TooltipPopup>{loading ? "Loading…" : "Refresh"}</TooltipPopup>
+            <TooltipPopup>
+              {loading ? "Loading…" : "Refresh"}
+              {refreshShortcutLabel ? ` (${refreshShortcutLabel})` : ""}
+            </TooltipPopup>
           </Tooltip>
         </div>
 

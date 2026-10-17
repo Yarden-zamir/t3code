@@ -3,9 +3,11 @@ import { memo } from "react";
 
 import { cn } from "~/lib/utils";
 import { ComposerBanner } from "./ComposerBanner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
   count: number;
+  shortcutLabel: string | null;
   menuOpen: boolean;
   pulseKey: number;
   pulsing: boolean;
@@ -32,27 +34,36 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
       data-composer-shoulder-tab
       className="ml-auto"
     >
-      <ComposerBanner.Row
-        render={<button type="button" />}
-        data-prompt-stash-badge="true"
-        aria-label={`Stashed prompts: ${props.count}. Open stash.`}
-        aria-expanded={props.menuOpen}
-        className={cn(
-          "transition-colors duration-200",
-          props.menuOpen && "pointer-events-none",
-          props.menuOpen || props.pulsing
-            ? "text-foreground"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-        onPointerDown={(event) => event.preventDefault()}
-        onClick={props.onToggleMenu}
-      >
-        <ComposerBanner.Icon>
-          <BookmarkIcon />
-        </ComposerBanner.Icon>
-        <ComposerBanner.Content>Stash</ComposerBanner.Content>
-        <ComposerBanner.Actions>{count}</ComposerBanner.Actions>
-      </ComposerBanner.Row>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <ComposerBanner.Row
+              render={<button type="button" />}
+              data-prompt-stash-badge="true"
+              aria-label={`Stashed prompts: ${props.count}. Open stash.`}
+              aria-expanded={props.menuOpen}
+              className={cn(
+                "transition-colors duration-200",
+                props.menuOpen && "pointer-events-none",
+                props.menuOpen || props.pulsing
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={props.onToggleMenu}
+            />
+          }
+        >
+          <ComposerBanner.Icon>
+            <BookmarkIcon />
+          </ComposerBanner.Icon>
+          <ComposerBanner.Content>Stash</ComposerBanner.Content>
+          <ComposerBanner.Actions>{count}</ComposerBanner.Actions>
+        </TooltipTrigger>
+        <TooltipPopup side="top">
+          Stash{props.shortcutLabel ? ` (${props.shortcutLabel})` : ""}
+        </TooltipPopup>
+      </Tooltip>
     </ComposerBanner.Root>
   );
 });
