@@ -11,6 +11,14 @@ export type AssistantInputMode = typeof AssistantInputMode.Type;
 export const AssistantTarget = Schema.Literals(["newThread", "lastThread"]);
 export type AssistantTarget = typeof AssistantTarget.Type;
 
+/** What the panel does once the server takes the message. */
+export const AssistantAfterSend = Schema.Literals(["close", "stay", "openThread"]);
+export type AssistantAfterSend = typeof AssistantAfterSend.Type;
+
+/** How long the edge glow of the panel stays; null keeps it until the panel closes. */
+export const ASSISTANT_GLOW_SECONDS = [0, 3, 5, 10, null] as const;
+export type AssistantGlowSeconds = (typeof ASSISTANT_GLOW_SECONDS)[number];
+
 export const READ_ALOUD_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
 export type ReadAloudRate = (typeof READ_ALOUD_RATES)[number];
 
@@ -28,8 +36,9 @@ export interface VoicePreferences {
   readonly assistantSendAfterVoice?: boolean;
   readonly assistantAttachScreenshot?: boolean;
   readonly assistantAttachScreenText?: boolean;
-  /** Opens the new thread in the app after the server takes it. */
-  readonly assistantOpenThread?: boolean;
+  readonly assistantAfterSend?: AssistantAfterSend;
+  /** 0 turns the glow off. */
+  readonly assistantGlowSeconds?: AssistantGlowSeconds;
   /** Offers the newest gallery photo as a pill. Needs photo access. */
   readonly assistantRecentPhoto?: boolean;
   /** Offers the last known location as a pill. Needs location access. */
@@ -51,7 +60,8 @@ export const VOICE_PREFERENCE_DEFAULTS = {
   assistantSendAfterVoice: false,
   assistantAttachScreenshot: true,
   assistantAttachScreenText: true,
-  assistantOpenThread: false,
+  assistantAfterSend: "close",
+  assistantGlowSeconds: 5,
   assistantSpeakFirstReply: false,
   assistantRecentPhoto: false,
   assistantLocation: false,
@@ -66,7 +76,9 @@ export const VOICE_PREFERENCE_DEFAULTS = {
 export type ResolvedVoicePreferences = {
   readonly [Key in keyof VoicePreferences]-?: Key extends "assistantProject"
     ? AssistantProjectRef | null
-    : NonNullable<VoicePreferences[Key]>;
+    : Key extends "assistantGlowSeconds"
+      ? AssistantGlowSeconds
+      : NonNullable<VoicePreferences[Key]>;
 };
 
 export function resolveVoicePreferences(
@@ -81,10 +93,13 @@ export function resolveVoicePreferences(
 
 const isAssistantInputMode = Schema.is(AssistantInputMode);
 const isAssistantTarget = Schema.is(AssistantTarget);
+const isAssistantAfterSend = Schema.is(AssistantAfterSend);
 const isProjectRef = Schema.is(ProjectRef);
 const isThreadRefs = Schema.is(Schema.Array(ThreadRef));
 const isReadAloudRate = (value: unknown): value is ReadAloudRate =>
   READ_ALOUD_RATES.some((rate) => rate === value);
+const isGlowSeconds = (value: unknown): value is AssistantGlowSeconds =>
+  ASSISTANT_GLOW_SECONDS.some((seconds) => seconds === value);
 
 /** Keeps each valid field; a stored value from an older or newer build drops only its bad keys. */
 export function sanitizeVoicePreferences(value: unknown): VoicePreferences | undefined {
@@ -93,11 +108,16 @@ export function sanitizeVoicePreferences(value: unknown): VoicePreferences | und
   const result: { -readonly [Key in keyof VoicePreferences]: VoicePreferences[Key] } = {};
   if (isAssistantTarget(parsed.assistantTarget)) result.assistantTarget = parsed.assistantTarget;
   if (isAssistantInputMode(parsed.assistantInput)) result.assistantInput = parsed.assistantInput;
+  if (isAssistantAfterSend(parsed.assistantAfterSend)) {
+    result.assistantAfterSend = parsed.assistantAfterSend;
+  }
+  if (isGlowSeconds(parsed.assistantGlowSeconds)) {
+    result.assistantGlowSeconds = parsed.assistantGlowSeconds;
+  }
   for (const key of [
     "assistantSendAfterVoice",
     "assistantAttachScreenshot",
     "assistantAttachScreenText",
-    "assistantOpenThread",
     "assistantSpeakFirstReply",
     "assistantRecentPhoto",
     "assistantLocation",

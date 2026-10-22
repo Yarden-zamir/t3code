@@ -10,7 +10,10 @@ import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScroll
 import { assistantNative } from "../../native/assistant";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import {
+  ASSISTANT_GLOW_SECONDS,
   READ_ALOUD_RATES,
+  type AssistantAfterSend,
+  type AssistantGlowSeconds,
   type AssistantInputMode,
   type AssistantTarget,
   type ReadAloudRate,
@@ -44,6 +47,32 @@ const INPUT_OPTIONS: ReadonlyArray<{
   { mode: "text", label: "Keyboard", description: "The panel opens with the keyboard up." },
   { mode: "voice", label: "Voice", description: "The panel opens the speech dialog right away." },
 ];
+
+const AFTER_SEND_OPTIONS: ReadonlyArray<{
+  readonly afterSend: AssistantAfterSend;
+  readonly label: string;
+  readonly description: string;
+}> = [
+  {
+    afterSend: "close",
+    label: "Close the panel",
+    description: "The agent works in the background.",
+  },
+  {
+    afterSend: "stay",
+    label: "Show the reply in the panel",
+    description: "Reply from the panel, or tap the arrow on top to open the thread.",
+  },
+  { afterSend: "openThread", label: "Open the thread", description: "Continues in the app." },
+];
+
+const GLOW_LABELS: Record<`${AssistantGlowSeconds}`, string> = {
+  "0": "Off",
+  "3": "3 seconds",
+  "5": "5 seconds",
+  "10": "10 seconds",
+  null: "Until the panel closes",
+};
 
 // Android 13 split photo access out of storage access.
 const PHOTO_PERMISSION =
@@ -156,17 +185,37 @@ export function SettingsVoiceRouteScreen() {
                 onValueChange={(value) => updateVoice({ assistantAttachScreenText: value })}
               />
               <SettingsSwitchRow
-                label="Open the thread"
-                subtitle="Opens the new thread in the app after the server takes it."
-                value={voice.assistantOpenThread}
-                onValueChange={(value) => updateVoice({ assistantOpenThread: value })}
-              />
-              <SettingsSwitchRow
                 label="Read the first reply aloud"
-                subtitle="The panel stays open until the agent replies and reads the reply."
+                subtitle="The panel stays open until it read the agent's reply aloud."
                 value={voice.assistantSpeakFirstReply}
                 onValueChange={(value) => updateVoice({ assistantSpeakFirstReply: value })}
               />
+            </SettingsSection>
+            <SettingsSection title="After sending">
+              {AFTER_SEND_OPTIONS.map((option, index) => (
+                <SettingsChoiceRow
+                  key={option.afterSend}
+                  label={option.label}
+                  description={option.description}
+                  selected={voice.assistantAfterSend === option.afterSend}
+                  separated={index > 0}
+                  onPress={() => updateVoice({ assistantAfterSend: option.afterSend })}
+                />
+              ))}
+            </SettingsSection>
+            <SettingsSection
+              title="Edge glow"
+              footer="The panel marks the screen with a glow along its edges instead of dimming it."
+            >
+              {ASSISTANT_GLOW_SECONDS.map((seconds, index) => (
+                <SettingsChoiceRow
+                  key={`${seconds}`}
+                  label={GLOW_LABELS[`${seconds}`]}
+                  selected={voice.assistantGlowSeconds === seconds}
+                  separated={index > 0}
+                  onPress={() => updateVoice({ assistantGlowSeconds: seconds })}
+                />
+              ))}
             </SettingsSection>
             <SettingsSection
               title="Context pills"

@@ -8,14 +8,15 @@ describe("sanitizeVoicePreferences", () => {
       sanitizeVoicePreferences({
         assistantInput: "voice",
         assistantSendAfterVoice: "yes",
-        assistantOpenThread: true,
+        assistantAfterSend: "stay",
+        assistantGlowSeconds: 4,
         assistantProject: { environmentId: "env", projectId: "project" },
         readAloudRate: 3,
         readAloudThreads: [{ environmentId: "env", threadId: 4 }],
       }),
     ).toEqual({
       assistantInput: "voice",
-      assistantOpenThread: true,
+      assistantAfterSend: "stay",
       assistantProject: { environmentId: "env", projectId: "project" },
     });
   });
@@ -33,5 +34,11 @@ describe("resolveVoicePreferences", () => {
     expect(resolved.assistantInput).toBe("text");
     expect(resolved.readAloudButton).toBe(true);
     expect(resolved.assistantProject).toBeNull();
+    expect(resolved.assistantGlowSeconds).toBe(5);
+  });
+
+  it("keeps a glow that stays until the panel closes", () => {
+    const stored = sanitizeVoicePreferences({ assistantGlowSeconds: null });
+    expect(resolveVoicePreferences(stored).assistantGlowSeconds).toBeNull();
   });
 });

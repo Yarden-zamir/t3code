@@ -208,7 +208,9 @@ button in any app to start a thread about what is on the screen.
 The panel opens over the current app. Type or tap the microphone, then tap the
 send button. To add the message to an existing thread or to pick another
 project, tap the title of the panel and search or pick from the list. With more
-than one machine, tap the machine icon to pick the machine first.
+than one machine, tap the machine icon to pick the machine first. To continue in
+the app instead, tap the arrow on top of the panel or drag it up. It opens the
+thread, or the new thread screen, with what you typed and attached.
 
 To ask about something in another app, you can also share it: pick **Ask T3 Code**
 in the Android share sheet.
@@ -217,16 +219,19 @@ Context pills above the text show what goes along: what you shared, the screensh
 the screen text, text you selected on screen, the page link, and the clipboard. In
 **Settings → Voice → Context pills** you can also turn on your newest photo and your
 location. Tap a pill to attach it or leave it out. Hold a pill to read and edit its
-text, or to draw on an image. The clipboard, the photo and the location are left out
-until you tap them, and password fields are never included.
+text, or to crop or draw on an image. The clipboard, the photo and the location are
+left out until you tap them, and password fields are never included. The **+** pill
+adds photos, a new photo from the camera, files, your newest photo, or your location.
 
 If you close the panel without sending, your text comes back when you open it
 again within a minute.
 
 **Settings → Voice** sets what the panel does: send to a new thread or to the
-thread you opened last, open with the keyboard or with the speech dialog, start
-the thread right after you speak, open the new thread, or stay open and read the
-first reply aloud. It also sets the project of new threads.
+thread you opened last, open with the keyboard or with the speech dialog, and start
+the thread right after you speak. **After sending** closes the panel, opens the
+thread, or shows the reply in the panel so you can answer from there. The panel can
+also read the first reply aloud. **Edge glow** sets how long the glow around the
+screen stays. It also sets the project of new threads.
 T3 Code replaces your current assistant while it is selected. To go back, pick the
 other assistant on the same Android page.
 
