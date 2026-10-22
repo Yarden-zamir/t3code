@@ -53,6 +53,18 @@ The portal is `https://t3.yarden-zamir.com`. Each machine is one T3 server, for 
 | Join a new machine                      | Ask the owner for a join code from Add machine. Then call `machines_join`, or run `t3 machine-map join <code>` on that machine.                                                                       |
 | Install the fork on a new machine       | Run the step 0 command of the join dialog there: `install.sh --join <code>` or `install.ps1 -Join <code>` from `scripts/fork-install`. See [Install the fork](fork/operations.md#install-the-fork).   |
 
+## Terminal threads
+
+A terminal thread is a thread whose view is a live shell. See [Terminal threads](fork/features.md#terminal-threads). The server setting `terminalThreads` must be on. Change it with `machines_set_setting`.
+
+| Task                               | Do this                                                                                                                                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start a terminal thread            | `t3_thread_launch` with `modelSelection` `{"instanceId":"terminal","model":"terminal"}`. `message` is typed into the terminal. On another machine, use `machine_tool_call`.         |
+| Run a command in one and read it   | `t3_thread_send` to the thread, then `t3_thread_wait` and `t3_thread_read`. At an idle shell the answer holds the exit code and the output.                                         |
+| Run one on a schedule or a webhook | `schedule_task` with the same `modelSelection`. Sign a webhook: its values are typed into a shell.                                                                                  |
+| Attach to the tmux session of one  | With `terminalThreadsTmux` on, run `tmux -L <socket> attach -t t3-<threadId>`. The socket is the `t3code-<hash>` file in `/tmp/tmux-<uid>/`. Detach with `tmux -L <socket> detach`. |
+| Let apps survive a server restart  | `machines_set_setting` for `terminalThreadsTmux: true`. It needs tmux on that machine. Without tmux, a restart ends the programs, and auto-update waits while one runs.             |
+
 ## Updates and deploys
 
 | Task                         | Do this                                                                                                                                                                                                                                                                                                |

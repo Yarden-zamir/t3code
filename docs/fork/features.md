@@ -179,7 +179,7 @@ While agents run, the desktop update button offers "Install when idle" next to "
 
 ### Server auto-update
 
-A headless server that runs as the background service installs each newer fork release when no agent turn and no background shell runs.
+A headless server that runs as the background service installs each newer fork release when no agent turn, no background shell and no program in a terminal thread runs.
 
 - **Setting:** server setting `forkAutoUpdate` (off by default). Settings > General > "Server auto-update".
 - **Works on:** server (the background service of `t3 service install`). The desktop app updates itself.
@@ -443,6 +443,35 @@ Control tooltips show the keys of the control as chips, such as "Stash ⌘S", fo
 - A key shows only when it works in its area, and your own keys come first. A search box filters by action or key. While `keyboardFocusLevels` is off, the focus level areas show dimmed, with a button that turns the setting on.
 - The terminal keeps `mod+/`, because Ctrl+/ is undo in shells.
 - **Limits:** the 1 to 9 jump commands show as one row each.
+
+### Terminal threads
+
+A thread whose view is a live terminal, next to the other threads of a project. A schedule, a webhook or an agent can type into it.
+
+- **Setting:** server settings `terminalThreads` (off by default) and `terminalThreadsTmux` (off by default); client settings `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax` (8 and 24). Settings > Fork. Keybinding command `chat.newTerminal` (`mod+alt+t`).
+- **Works on:** web and desktop create and use them. The mobile app opens one on its native terminal screen and cannot create one. Remote environments work the same, because the terminal runs on the server of the thread.
+- A terminal thread is a normal thread with the provider `terminal` (constants in `packages/contracts/src/forkTerminalThreads.ts`). The `terminal` driver types a message and Enter into the terminal `term-1`. At an idle shell it waits for a marker that carries the exit code, then answers with the exit code and the output. With a program in front it answers at once.
+- Start one from the sidebar button next to New thread, from `chat.newTerminal`, or from the command palette ("New terminal thread in..."). The MCP tools `t3_thread_launch` and `schedule_task` start one with the model selection `{"instanceId":"terminal","model":"terminal"}`.
+- Server auto-update waits while a terminal thread without tmux runs a program.
+- With `terminalThreadsTmux`, the terminal runs inside a tmux session on its own socket in the state folder. Programs survive a server restart, and the next open attaches again. tmux search needs the tmux search keys of [Terminal key mappings](#terminal-key-mappings).
+- **Limits:** a terminal thread has no timeline, so the messages that a schedule sent show only in the terminal. Without tmux a restart ends the programs, and a program that never ends blocks auto-update. The mobile app has no create button. Find in thread works only with tmux. Revisit when these block daily use.
+
+### Terminal key mappings
+
+Keys that every terminal sends as fixed bytes.
+
+- **Setting:** client setting `terminalKeyMappings` (empty by default). Settings > Fork > Terminal key mappings, with presets for zsh editor keys on macOS and for tmux search.
+- **Works on:** web, desktop.
+- An entry has `key` (for example `cmd+z`), `send` (escapes `\e`, `\xNN`, `\uNNNN`, `\r`, `\n`, `\t`) and `passthrough`. With `passthrough`, a terminal in tmux receives the bytes unchanged through `tmux send-keys`; without tmux it is a plain write. A mapped key wins over the terminal shortcuts, except copy while text is selected.
+- **Limits:** the mobile app ignores the mappings. Revisit when a mobile keyboard needs them.
+
+### Terminal history
+
+Each terminal keeps up to 5,000 lines and 8 MiB of output on the server.
+
+- **Setting:** server settings `terminalHistoryLines` (5000) and `terminalHistoryMegabytes` (8). Settings > Fork > Terminal history.
+- **Works on:** server.
+- **Limits:** a change applies after a server restart. Revisit if live terminals must resize their history.
 
 ### Terminal settings
 

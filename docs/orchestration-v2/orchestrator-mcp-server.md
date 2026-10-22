@@ -351,6 +351,13 @@ its own under the environment's Scratch project. For stacked PRs, use the parent
 interaction modes than the caller. Launch has no retry key, so inspect existing threads after a failed or lost response before
 launching again. `create_threads` remains the batch option for a shared checkout.
 
+With the fork setting Terminal threads on, `modelSelection` of
+`{"instanceId":"terminal","model":"terminal"}` launches a terminal thread: a live
+shell with no model. `message` is typed into the terminal followed by Enter. At an
+idle shell the run answers with the exit code and the output. With a program in
+front, the message goes to that program and the run ends at once. `schedule_task`
+accepts the same `modelSelection`.
+
 ### `t3_thread_list`
 
 Lists durable thread shells in one project, newest first: `projectId` when
