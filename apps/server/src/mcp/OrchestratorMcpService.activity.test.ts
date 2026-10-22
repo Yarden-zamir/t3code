@@ -567,6 +567,7 @@ it("scheduleTask from a client without a thread uses the project model from proj
             ),
         } satisfies Partial<ScheduledTaskService.ScheduledTaskService["Service"]>),
         Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
+        Layer.mock(RemoteDelegation.RemoteDelegation)({}),
         ServerSettings.layerTest({
           projectSettingsOverrides: { [projectId]: { defaultModelSelection: selection } },
         }),

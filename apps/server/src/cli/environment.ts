@@ -14,6 +14,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as ForkCliLinks from "../fork/machineMap/cliLinks.ts";
 import * as PeerLinks from "../peer/PeerLinks.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { authLocationFlags, type CliAuthLocationFlags, resolveCliAuthConfig } from "./config.ts";
@@ -32,7 +33,8 @@ const runWithPeerLinks = Effect.fn("environment.runWithPeerLinks")(function* <A,
   return yield* PeerLinks.PeerLinks.pipe(
     Effect.flatMap(run),
     Effect.provide(
-      PeerLinks.layer.pipe(
+      // Fork: links come from the machine map arrows (MM-1921), so these commands refuse.
+      ForkCliLinks.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
             ServerSecretStore.layer,

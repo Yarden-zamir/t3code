@@ -1,7 +1,8 @@
 /**
  * Fork: machine map agent tools (`apps/machine-map/SPEC.md`, MM-801). The `machines_*` tools run
  * through the portal connection of this machine, and the portal checks the map role of this
- * machine on every call (MM-802, MM-805). `machine_tool_call` goes to the other machine directly.
+ * machine on every call (MM-802, MM-805). `machine_exec` goes to the other machine directly. Other
+ * T3 tools reach another machine with `environmentId`, through the arrow links (MM-303).
  */
 import {
   MACHINE_EXEC_MAX_OUTPUT_BYTES,
@@ -12,7 +13,6 @@ import {
   MapToolInputs,
   type MapToolName,
   OrchestratorMcpFailure,
-  TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Tool from "effect/ai/Tool";
@@ -111,27 +111,6 @@ const MachinesJoinTool = Tool.make("machines_join", {
   success: MachineMapClientState,
 }).annotate(Tool.Destructive, true);
 
-const MachineToolCallTool = Tool.make("machine_tool_call", {
-  ...shared,
-  description:
-    "Call a T3 Code MCP tool on another machine of the map, as this machine. `machine` is the id or name of that machine (names ignore case); `tool` is a tool name, for example t3_thread_list or t3_thread_launch; `input` is its JSON input. The tool runs on the other machine, with its side effects there. Needs a live full-access/default caller with orchestration, worktree and pull-requests tool capabilities. Restricted callers are refused, even for reads. To read a thread on another machine in any mode, use t3_thread_read with environmentId. It also needs an arrow from this machine to that machine with agent tools on and a level other than none; the level limits what the tool can do there (read allows only read tools). It does not need the portal: it uses the last map that this machine saved. Thread-bound tools need the threadId of a thread on the other machine. The machines_* tools and machine_tool_call do not work through it. The result is the result of the tool on the other machine.",
-  parameters: Schema.Struct({
-    machine: TrimmedNonEmptyString.annotate({
-      description: "Id or name of the other machine, as machines_read lists it. Names ignore case.",
-    }),
-    tool: TrimmedNonEmptyString.annotate({
-      description:
-        "T3 Code MCP tool name on the other machine, for example t3_thread_list. `t3 tool list` prints the names.",
-    }),
-    input: Schema.optionalKey(
-      Schema.Record(Schema.String, Schema.Unknown).annotate({
-        description: "Input of that tool as a JSON object. Omit for a tool without input.",
-      }),
-    ),
-  }),
-  success: Schema.Unknown,
-}).annotate(Tool.Destructive, true);
-
 const MachineExecTool = Tool.make("machine_exec", {
   ...shared,
   description: `Run a shell command on another machine of the map, through the T3 server of that machine, as its user. Use it for work that needs that machine: logs, builds, git, services. It needs an arrow from this machine to that machine with exec and agent tools on and the level standard or admin, and a live full-access/default caller with orchestration, worktree and pull-requests tool capabilities. Restricted callers are refused. The other machine checks the arrow again, and an emergency pause, a removed arrow or exec turned off stops a running command at once. It does not need the portal. The portal History records the machine, the calling thread, the command, the exit code and the time, never the output. The call waits for the command, at most the timeout. Start long work with nohup or a service and poll it instead. The result is {machine, cwd, shell, outcome ("exited" or "timedOut"), exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, durationMs}. stdout and stderr keep at most ${MACHINE_EXEC_MAX_OUTPUT_BYTES} bytes each and then end with a truncation marker. A timeout loses the output.`,
@@ -149,6 +128,5 @@ export const MachineMapToolkit = Toolkit.make(
   MachinesUndoTool,
   MachinesPresetTool,
   MachinesJoinTool,
-  MachineToolCallTool,
   MachineExecTool,
 );

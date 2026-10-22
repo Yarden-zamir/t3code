@@ -328,7 +328,7 @@ it.layer(NodeServices.layer)("machine map auth hooks", (it) => {
     }),
   );
 
-  it.effect("/mcp admits a machine session only while its arrow has agent tools (MM-1307)", () =>
+  it.effect("/mcp admits a machine session as a linked environment while its arrow has agent tools (MM-1307)", () =>
     Effect.gen(function* () {
       const auth = yield* EnvironmentAuth.EnvironmentAuth;
       const clients = yield* McpHttpServer.McpClientAuthenticator;
@@ -343,7 +343,13 @@ it.layer(NodeServices.layer)("machine map auth hooks", (it) => {
         desiredState({ arrowsIn: [arrow(PEER, SELF, "standard", { agentTools: true })] }),
       );
       const admitted = yield* clients.authenticate(bearerRequest(machine.token));
-      expect(admitted?.client?.access).toBe("full-access");
+      // A linked environment with fenced access, named by its machine: work it starts stays its
+      // own when a level change ends this session (MM-1306, MM-1921).
+      expect(admitted?.client).toMatchObject({
+        access: "auto",
+        linked: true,
+        sessionId: `machine:${PEER}`,
+      });
       expect(admitted?.requestNamespace.startsWith("machine-session:")).toBe(true);
 
       yield* saveDesired(
@@ -357,6 +363,7 @@ it.layer(NodeServices.layer)("machine map auth hooks", (it) => {
       const oauthClient = yield* auth.issueMcpClientSession({
         label: "client",
         access: "read-only",
+        peerLink: false,
         client: { deviceType: "bot" },
       });
       const client = yield* clients.authenticate(bearerRequest(oauthClient.token));
@@ -407,6 +414,7 @@ const sessionsOfEachKind = Effect.gen(function* () {
   const mcp = yield* auth.issueMcpClientSession({
     label: "agent",
     access: "full-access",
+    peerLink: false,
     client: { deviceType: "bot" },
   });
   return { auth, desktop, mobile, cookieRequest, mcp };

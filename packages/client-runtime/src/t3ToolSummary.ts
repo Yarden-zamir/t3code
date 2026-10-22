@@ -446,13 +446,6 @@ export function summarizeT3ToolCalls(
     case "machine-map":
       label = phrase("Used", "use", `the machine map ${times}`);
       break;
-    case "machine-tool-call":
-      label = phrase(
-        "Called",
-        "call",
-        quantity(selected.length, "tool on another machine", "tools on other machines"),
-      );
-      break;
   }
   return { label, failedCount };
 }

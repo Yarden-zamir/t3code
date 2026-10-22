@@ -648,7 +648,7 @@ export const ClientEnrollResponse = Schema.Struct({
 });
 export type ClientEnrollResponse = typeof ClientEnrollResponse.Type;
 
-/** Agent tools that run through the portal (MM-801). `machine_tool_call` goes machine to machine. */
+/** Agent tools that run through the portal (MM-801). `machine_exec` goes machine to machine. */
 export const MapToolName = Schema.Literals([
   "machines_read",
   "machines_set_access",
@@ -799,7 +799,7 @@ export const MapToolInputs = {
     agentTools: Schema.optionalKey(
       Schema.Boolean.annotate({
         description:
-          "True lets agents on `from` call T3 tools on `to` with machine_tool_call. Omit to keep the current value. False also turns exec off.",
+          "True makes `to` a linked environment of `from`: agents on `from` call T3 tools there with environmentId. Omit to keep the current value. False also turns exec off.",
       }),
     ),
     exec: Schema.optionalKey(

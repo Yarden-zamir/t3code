@@ -67,8 +67,7 @@ export type T3McpToolSummaryAction =
   | "html-preview"
   | "html-render"
   // Fork: machine map tools.
-  | "machine-map"
-  | "machine-tool-call";
+  | "machine-map";
 
 export interface T3McpToolDefinition {
   readonly displayName: string;
@@ -352,10 +351,6 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   machines_undo: tool(["Undo", "Undoing", "Undid", "a machine map change"], "machine-map"),
   machines_preset: tool(["Apply", "Applying", "Applied", "a machine map preset"], "machine-map"),
   machines_join: tool(["Join", "Joining", "Joined", "the machine map"], "machine-map"),
-  machine_tool_call: tool(
-    ["Call", "Calling", "Called", "a tool on another machine"],
-    "machine-tool-call",
-  ),
 };
 
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));
