@@ -62,6 +62,7 @@ import {
   CommandId,
   DEFAULT_MODEL,
   isProviderNativeSubagentThread,
+  isTerminalThread,
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
@@ -154,6 +155,7 @@ import { flushSync } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import { isMacPlatform } from "../lib/utils";
+import { ForkTerminalThreadView, useTerminalThreadFind } from "./ForkTerminalThreadView";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -2903,6 +2905,10 @@ export default function ChatView(props: ChatViewProps) {
     resourceKey: `git-status:${activeThreadKey ?? ""}:${gitStatusCwd ?? ""}`,
   });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const activeTerminalThread = serverThread !== null && isTerminalThread(serverThread);
+  const openTerminalThreadFind = useTerminalThreadFind(
+    activeTerminalThread ? activeThreadRef : null,
+  );
   const scriptKeybindings =
     useAtomValue(serverEnvironment.configValueAtom(environmentId))?.keybindings ??
     DEFAULT_RESOLVED_KEYBINDINGS;
@@ -5571,6 +5577,7 @@ export default function ChatView(props: ChatViewProps) {
         toggleTerminalVisibilityStable();
       },
       "chat.find": () => {
+        if (activeTerminalThread) return void openTerminalThreadFind();
         if (!isServerThread || serverConfig?.threadFind !== true) return false;
         openThreadFindStable();
       },
@@ -7895,6 +7902,15 @@ export default function ChatView(props: ChatViewProps) {
         </header>
 
         <div className="relative flex min-h-0 min-w-0 flex-1">
+          {activeTerminalThread && activeThreadRef && activeProject ? (
+            <ForkTerminalThreadView
+              key={activeThreadKey}
+              threadRef={activeThreadRef}
+              workspaceRoot={activeProject.workspaceRoot}
+              worktreePath={activeThread.worktreePath}
+              keybindings={keybindings}
+            />
+          ) : null}
           <ThreadFindCanvas
             findOptions={{
               skills: timelineSkills,

@@ -73,6 +73,7 @@ import * as PortScanner from "../preview/PortScanner.ts";
 import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClient.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import { T3_TERMINAL_THREAD_ID_ENV } from "./terminalEnv.ts";
+import { makeTerminalThreadLaunch, type TerminalLaunchInput } from "../fork/terminalThreads.ts";
 
 export {
   TerminalCwdError,
@@ -1325,6 +1326,8 @@ interface TerminalManagerOptions {
     Record<string, string>,
     TerminalProviderInstanceNotFoundError | TerminalProviderEnvironmentError
   >;
+  /** Fork: a command that runs in place of the shell, such as tmux for a terminal thread. */
+  forkLaunchCommand?: (input: TerminalLaunchInput) => Effect.Effect<ShellCandidate | null>;
 }
 
 export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
@@ -1399,6 +1402,7 @@ export const make = Effect.fn("TerminalManager.make")(function* () {
     registerTerminalProcesses: portDiscovery.registerTerminalProcesses,
     unregisterTerminal: portDiscovery.unregisterTerminal,
     resolveProviderInstanceEnvironment,
+    forkLaunchCommand: yield* makeTerminalThreadLaunch(),
   });
 });
 
@@ -2203,7 +2207,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       increment(terminalSessionsTotal, { lifecycle: eventType }).pipe(
         Effect.andThen(
           Effect.gen(function* () {
-            const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
             const terminalEnv = createTerminalSpawnEnv(
               baseEnv,
               session.runtimeEnv,
@@ -2211,6 +2214,19 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               yield* HostProcess.HomeDirectory,
             );
             terminalEnv[T3_TERMINAL_THREAD_ID_ENV] = session.threadId;
+            const forkLaunch =
+              options.forkLaunchCommand === undefined
+                ? null
+                : yield* options.forkLaunchCommand({
+                    threadId: session.threadId,
+                    terminalId: session.terminalId,
+                    runtimeEnv: session.runtimeEnv,
+                    spawnEnv: terminalEnv,
+                  });
+            const shellCandidates = [
+              ...(forkLaunch === null ? [] : [forkLaunch]),
+              ...resolveShellCandidates(shellResolver, platform, baseEnv),
+            ];
             // Append (never prepend) managed ACP agent install directories so
             // `kimi login` and friends resolve by name without shadowing any
             // system or user tool of the same name.

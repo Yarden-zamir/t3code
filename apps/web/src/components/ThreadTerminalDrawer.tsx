@@ -396,6 +396,10 @@ interface TerminalViewportProps {
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
   providerInstanceId?: ProviderInstanceId;
+  /** Fork: points added to the terminal font size, for the zoom keys of a terminal thread. */
+  fontSizeDelta?: number;
+  /** Fork: see `GhosttyTerminalSurfaceOptions.superKeyWire`. */
+  superKeyWire?: (key: string, shift: boolean) => string | null;
   onSessionExited: () => void;
   onAddTerminalContext?: (selection: TerminalContextSelection) => void;
   focusRequestId: number;
@@ -436,6 +440,8 @@ function TerminalSessionViewport({
   worktreePath,
   runtimeEnv,
   providerInstanceId,
+  fontSizeDelta = 0,
+  superKeyWire,
   onSessionExited,
   onAddTerminalContext,
   focusRequestId,
@@ -477,6 +483,7 @@ function TerminalSessionViewport({
   const selectionActionRequestIdRef = useRef(0);
   const openSelectionMenuRequestIdRef = useRef<number | null>(null);
   const readKeybindings = useEffectEvent(() => keybindings);
+  const readSuperKeyWire = useEffectEvent(() => superKeyWire);
   const handleSessionExited = useEffectEvent(() => {
     if (hasTerminalWriteAccess()) onSessionExited();
   });
@@ -497,13 +504,14 @@ function TerminalSessionViewport({
     terminalFontSetting,
     themeFonts.terminal ?? themeFonts.code,
   );
-  const terminalFontSize = useClientSettings((settings) =>
-    resolveTerminalFontSizePreference({
-      advanced: advancedTypography,
-      code: settings.fontSizeCode,
-      terminal: settings.fontSizeTerminal,
-    }),
-  );
+  const terminalFontSize =
+    useClientSettings((settings) =>
+      resolveTerminalFontSizePreference({
+        advanced: advancedTypography,
+        code: settings.fontSizeCode,
+        terminal: settings.fontSizeTerminal,
+      }),
+    ) + fontSizeDelta;
   const terminalFontRef = useRef({ family: terminalFontFamily, size: terminalFontSize });
   const terminalSession = useAttachedTerminalSession({
     environmentId,
@@ -625,6 +633,7 @@ function TerminalSessionViewport({
         onResize: (cols, rows) => void resizeTerminal(cols, rows),
         onSelectionChange: () => handleSelectionChange(),
         beforeKey: (event) => handleBeforeKey(event),
+        superKeyWire: (key, shift) => readSuperKeyWire()?.(key, shift) ?? null,
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
         canActivateLink: (text) => canActivateTerminalLink(text),
         // The surface listens from construction, so a right-click can land

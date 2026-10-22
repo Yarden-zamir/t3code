@@ -52,6 +52,7 @@ import {
   type SourceControlDiscoveryResult,
   SourceControlProviderKind,
   type SourceControlRepositoryInfo,
+  isTerminalThread,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
@@ -75,11 +76,17 @@ import {
   RotateCcwIcon,
   SettingsIcon,
   SquarePenIcon,
+  SquareTerminalIcon,
   SunIcon,
   TextSearchIcon,
   NetworkIcon,
 } from "lucide-react";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
+import { requestTerminalThreadFindOpen } from "./ForkTerminalThreadView";
+import {
+  useCreateTerminalThread,
+  useTerminalThreadsEnabled,
+} from "../hooks/useForkTerminalThreads";
 import {
   useDeferredValue,
   useEffect,
@@ -746,6 +753,20 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const createTerminalThread = useCreateTerminalThread();
+  const terminalThreadProjectRef = resolveThreadActionProjectRef({
+    activeDraftThread,
+    activeThread: activeThread ?? undefined,
+    defaultProjectRef,
+    handleNewThread,
+  });
+  const terminalThreadsEnabled = useTerminalThreadsEnabled(
+    terminalThreadProjectRef?.environmentId ?? null,
+  );
+  const requestFindOpen = () =>
+    activeThread && isTerminalThread(activeThread)
+      ? requestTerminalThreadFindOpen()
+      : requestThreadFindOpen();
   const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
   const referenceThreadRef =
@@ -1606,6 +1627,20 @@ function OpenCommandPaletteDialog(props: {
           });
         },
       });
+      if (terminalThreadsEnabled && terminalThreadProjectRef) {
+        actionItems.push({
+          kind: "action",
+          value: "action:new-terminal-thread",
+          searchTerms: ["new terminal thread", "terminal", "shell", "tmux"],
+          title: (
+            <>
+              New terminal thread in <span className="font-semibold">{activeProjectTitle}</span>
+            </>
+          ),
+          icon: <SquareTerminalIcon className={ITEM_ICON_CLASS} />,
+          run: () => createTerminalThread(terminalThreadProjectRef),
+        });
+      }
     }
 
     actionItems.push({
@@ -1640,7 +1675,7 @@ function OpenCommandPaletteDialog(props: {
       icon: <TextSearchIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "chat.find",
       run: async () => {
-        requestThreadFindOpen();
+        requestFindOpen();
       },
     });
   }
@@ -2912,7 +2947,7 @@ function OpenCommandPaletteDialog(props: {
       event.preventDefault();
       event.stopPropagation();
       setOpen(false);
-      requestThreadFindOpen();
+      requestFindOpen();
       return;
     }
 

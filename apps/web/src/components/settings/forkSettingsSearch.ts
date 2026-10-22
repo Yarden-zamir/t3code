@@ -324,6 +324,19 @@ export const MACHINE_MAP_ITEMS = [
 
 export const PREVIEW_ITEMS = [
   {
+    id: "terminal-thread-font-limits",
+    title: "Terminal thread zoom limits",
+    to: "/settings/fork",
+    searchTerms: ["terminal thread zoom font size smallest largest cmd plus minus"],
+  },
+  {
+    id: "terminal-threads",
+    title: "Terminal threads",
+    to: "/settings/fork",
+    searchTerms: ["terminal thread tmux shell interactive vim cli new terminal"],
+    environmentOnly: true,
+  },
+  {
     id: "preview-local-server-groups",
     title: "All local servers in the browser",
     to: "/settings/integrations",

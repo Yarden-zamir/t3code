@@ -68,6 +68,16 @@ export const TooltipShortcutLimit = Schema.Int.check(
   Schema.isBetween({ minimum: MIN_TOOLTIP_SHORTCUT_LIMIT, maximum: MAX_TOOLTIP_SHORTCUT_LIMIT }),
 );
 
+export const MIN_TERMINAL_THREAD_FONT_LIMIT = 6;
+export const MAX_TERMINAL_THREAD_FONT_LIMIT = 48;
+/** The smallest and largest font size that the zoom keys of a terminal thread reach, in points. */
+export const TerminalThreadFontLimit = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_TERMINAL_THREAD_FONT_LIMIT,
+    maximum: MAX_TERMINAL_THREAD_FONT_LIMIT,
+  }),
+);
+
 export const MIN_AGENT_SESSION_IMPORT_WINDOW_DAYS = 1;
 export const MAX_AGENT_SESSION_IMPORT_WINDOW_DAYS = 3650;
 /** How far back recent Claude Code and Codex sessions are offered for import. */
@@ -214,6 +224,14 @@ export const ForkClientSettingsFields = {
   tooltipShortcuts: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Fork: the most keys one tooltip shows; more show as "+N". */
   tooltipShortcutLimit: TooltipShortcutLimit.pipe(Schema.withDecodingDefault(Effect.succeed(4))),
+  /** Fork: the smallest font size that the zoom keys of a terminal thread reach. */
+  terminalThreadFontSizeMin: TerminalThreadFontLimit.pipe(
+    Schema.withDecodingDefault(Effect.succeed(8)),
+  ),
+  /** Fork: the largest font size that the zoom keys of a terminal thread reach. */
+  terminalThreadFontSizeMax: TerminalThreadFontLimit.pipe(
+    Schema.withDecodingDefault(Effect.succeed(24)),
+  ),
 };
 
 export const ForkClientSettingsPatchFields = {
@@ -235,6 +253,8 @@ export const ForkClientSettingsPatchFields = {
   focusLevelHighlight: Schema.optionalKey(Schema.Boolean),
   tooltipShortcuts: Schema.optionalKey(Schema.Boolean),
   tooltipShortcutLimit: Schema.optionalKey(TooltipShortcutLimit),
+  terminalThreadFontSizeMin: Schema.optionalKey(TerminalThreadFontLimit),
+  terminalThreadFontSizeMax: Schema.optionalKey(TerminalThreadFontLimit),
 };
 
 /**
@@ -358,6 +378,12 @@ export const ForkServerSettingsFields = {
   mobileComposerCamera: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Fork: the home thread list of the mobile app shows the `sidebarGroups` tabs. */
   mobileSidebarGroups: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Fork: terminal threads (`forkTerminalThreads.ts`). A thread whose main view is a terminal that
+   * runs inside a tmux session, so its apps outlive a server restart. A server setting, because
+   * this server starts tmux.
+   */
+  terminalThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 };
 
 export const ForkServerSettingsPatchFields = {
@@ -384,6 +410,7 @@ export const ForkServerSettingsPatchFields = {
   mobileNewThreadProject: Schema.optionalKey(MobileNewThreadProject),
   mobileComposerCamera: Schema.optionalKey(Schema.Boolean),
   mobileSidebarGroups: Schema.optionalKey(Schema.Boolean),
+  terminalThreads: Schema.optionalKey(Schema.Boolean),
   /** Replaces the saved groups whole: a merge would keep deleted groups and assignments. */
   sidebarGroups: Schema.optionalKey(SidebarGroups),
   /** Per surface: a patched layout replaces the saved one, and `null` restores the built-in card. */

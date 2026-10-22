@@ -31,6 +31,8 @@ import {
 } from "./MobileAppSettings";
 import { PreferOriginRemoteSettingsRow } from "./PreferOriginRemoteSettings";
 import { PreviewLocalServerGroupsSettingsRow } from "./PreviewLocalServerGroupsSettingsRow";
+import { TerminalThreadFontLimitsSettingsRow } from "./TerminalThreadFontLimitsSettingsRow";
+import { TerminalThreadsSettingsRow } from "./TerminalThreadsSettingsRow";
 import { PullRequestFilterChipsSettingsRow } from "./PullRequestFilterChipsSettingsRow";
 import { PullRequestWatchSettingsRows } from "./PullRequestWatchSettings";
 import { RecoverInterruptedTurnsSettings } from "./RecoverInterruptedTurnsSettings";
@@ -96,6 +98,8 @@ const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>> = {
   "thread-link-chips": ThreadLinkChipsSettingsRow,
   "thread-links-open-desktop-app": ThreadLinksOpenDesktopAppSettingsRow,
   "preview-local-server-groups": PreviewLocalServerGroupsSettingsRow,
+  "terminal-threads": TerminalThreadsSettingsRow,
+  "terminal-thread-font-limits": TerminalThreadFontLimitsSettingsRow,
   "machine-map": MachineMapSettingsRows,
   "keybinding-sync": KeybindingSyncSettingsRow,
   "mobile-published-themes": MobilePublishedThemesSettingsRow,

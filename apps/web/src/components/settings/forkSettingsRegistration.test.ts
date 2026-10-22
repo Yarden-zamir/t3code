@@ -63,6 +63,9 @@ const FORK_PAGE_ROWS: Record<
   mobileNewThreadProject: "mobile-new-thread-project",
   mobileComposerCamera: "mobile-composer-camera",
   mobileSidebarGroups: "mobile-sidebar-groups",
+  terminalThreads: "terminal-threads",
+  terminalThreadFontSizeMin: "terminal-thread-font-limits",
+  terminalThreadFontSizeMax: "terminal-thread-font-limits",
 };
 
 /** The settings that Restore defaults keeps, with the reason. */

@@ -503,6 +503,12 @@ export interface GhosttyTerminalSurfaceOptions {
   readonly onResize: (cols: number, rows: number) => void;
   readonly onSelectionChange: () => void;
   readonly beforeKey: (event: KeyboardEvent) => boolean;
+  /**
+   * Fork: on macOS, the sequence to send for Command with a letter, or null for none. Without
+   * it a legacy session types the plain letter, and a multiplexer cannot carry the Kitty
+   * keyboard protocol that the shell asks for.
+   */
+  readonly superKeyWire?: (key: string, shift: boolean) => string | null;
   readonly onLinkActivate: (text: string, event: MouseEvent) => void;
   readonly canActivateLink?: (text: string) => boolean;
   /**
@@ -1052,6 +1058,24 @@ export class GhosttyTerminalSurface {
       return;
     }
     const mac = isMacPlatform(navigator.platform);
+    if (
+      this.options.superKeyWire &&
+      mac &&
+      event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      // A copy with a selection stays the terminal's own copy.
+      !(event.key.toLowerCase() === "c" && this.hasSelection())
+    ) {
+      const sequence = this.options.superKeyWire(event.key, event.shiftKey);
+      if (sequence !== null) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.suppressedKeyCodes.add(event.code);
+        this.options.onData(sequence);
+        return;
+      }
+    }
     const primaryModifier = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
     const selectAllShortcut =
       event.key.toLowerCase() === "a" &&
