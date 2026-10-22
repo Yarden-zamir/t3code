@@ -26,6 +26,7 @@ import {
   type TerminalRestartInput,
   type TerminalSessionSnapshot,
   type TerminalSessionStatus,
+  type TerminalAttention,
   type TerminalSummary,
   type TerminalWriteInput,
   ClaudeSettings,
@@ -74,6 +75,8 @@ import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClie
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import { T3_TERMINAL_THREAD_ID_ENV } from "./terminalEnv.ts";
 import {
+  detectTerminalAttention,
+  isTerminalThreadMainTerminal,
   makeTerminalThreadLaunch,
   type TerminalLaunch,
   type TerminalLaunchInput,
@@ -260,6 +263,8 @@ interface TerminalSessionState {
   unsubscribeExit: (() => void) | null;
   hasRunningSubprocess: boolean;
   childCommandLabel: string | null;
+  /** Fork: what the user is asked for in a terminal thread (`forkTerminalThreads.ts`). */
+  attention: TerminalAttention | null;
   runtimeEnv: Record<string, string> | null;
 }
 
@@ -281,6 +286,7 @@ type DrainProcessEventAction =
       sequence: number;
       history: BoundedTerminalHistory | null;
       data: string;
+      rangBell: boolean;
     }
   | {
       type: "exit";
@@ -290,6 +296,7 @@ type DrainProcessEventAction =
       sequence: number;
       exitCode: number | null;
       exitSignal: number | null;
+      closeAfterExit: boolean;
     };
 
 interface TerminalManagerState {
@@ -360,6 +367,7 @@ function summary(session: TerminalSessionState): TerminalSummary {
     hasRunningSubprocess: session.hasRunningSubprocess,
     label: terminalWireLabel(session),
     updatedAt: session.updatedAt,
+    ...(session.attention === null ? {} : { attention: session.attention }),
   };
 }
 
@@ -1980,6 +1988,40 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     },
   );
 
+  // A bell storm raises one attention per second, so the sidebar does not repaint on each ring.
+  const ATTENTION_MIN_INTERVAL_MS = 1000;
+  const raiseAttention = Effect.fn("terminal.raiseAttention")(function* (
+    session: TerminalSessionState,
+    kind: TerminalAttention["kind"],
+  ) {
+    const at = yield* nowIso;
+    const event = yield* modifyManagerState((state) => {
+      const previous = session.attention;
+      if (
+        session.status !== "running" ||
+        (previous !== null &&
+          previous.kind === kind &&
+          Date.parse(at) - Date.parse(previous.at) < ATTENTION_MIN_INTERVAL_MS)
+      ) {
+        return [Option.none(), state] as const;
+      }
+      session.attention = { kind, at };
+      const eventStamp = advanceEventSequence(session);
+      return [
+        Option.some({
+          type: "activity" as const,
+          threadId: session.threadId,
+          terminalId: session.terminalId,
+          sequence: eventStamp.sequence,
+          hasRunningSubprocess: session.hasRunningSubprocess,
+          label: terminalWireLabel(session),
+        }),
+        state,
+      ] as const;
+    });
+    if (Option.isSome(event)) yield* publishEvent(event.value);
+  });
+
   const drainProcessEvents = Effect.fn("terminal.drainProcessEvents")(function* (
     session: TerminalSessionState,
     expectedPid: number,
@@ -2025,6 +2067,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             sequence: eventStamp.sequence,
             history: sanitized.visibleText.length > 0 ? session.history : null,
             data: nextEvent.data,
+            rangBell:
+              isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv) &&
+              detectTerminalAttention(nextEvent.data),
           } as const;
         }
 
@@ -2055,6 +2100,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           sequence: eventStamp.sequence,
           exitCode: session.exitCode,
           exitSignal: session.exitSignal,
+          closeAfterExit: isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv),
         } as const;
       });
 
@@ -2074,6 +2120,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           sequence: action.sequence,
           data: action.data,
         });
+        if (action.rangBell) yield* raiseAttention(session, "bell");
         continue;
       }
 
@@ -2090,6 +2137,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         exitCode: action.exitCode,
         exitSignal: action.exitSignal,
       });
+      if (action.closeAfterExit) {
+        yield* closeSession(action.threadId, action.terminalId, true);
+      }
       yield* evictInactiveSessionsIfNeeded();
       return;
     }
@@ -2482,6 +2532,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         processIds: next.processIds,
       });
       const nextChildLabel = next.hasRunningSubprocess ? next.childCommand : null;
+      const checkedAt = yield* nowIso;
       const event = yield* modifyManagerState((state) => {
         const liveSession: Option.Option<TerminalSessionState> = Option.fromNullishOr(
           state.sessions.get(toSessionKey(session.threadId, session.terminalId)),
@@ -2496,6 +2547,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           return [Option.none(), state] as const;
         }
 
+        if (
+          liveSession.value.hasRunningSubprocess &&
+          !next.hasRunningSubprocess &&
+          isTerminalThreadMainTerminal(liveSession.value.terminalId, liveSession.value.runtimeEnv)
+        ) {
+          liveSession.value.attention = { kind: "finished", at: checkedAt };
+        }
         liveSession.value.hasRunningSubprocess = next.hasRunningSubprocess;
         liveSession.value.childCommandLabel = nextChildLabel;
         const eventStamp = advanceEventSequence(liveSession.value);
@@ -2621,6 +2679,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         unsubscribeExit: null,
         hasRunningSubprocess: false,
         childCommandLabel: null,
+        attention: null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
       };
 
@@ -3063,6 +3122,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           unsubscribeExit: null,
           hasRunningSubprocess: false,
           childCommandLabel: null,
+          attention: null,
           runtimeEnv: normalizedRuntimeEnv(input.env),
         };
         const createdSession = session;

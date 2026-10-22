@@ -79,6 +79,7 @@ import {
 } from "../types";
 import { readLocalApi } from "~/localApi";
 import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
+import { terminalZoomShortcut, useTerminalZoom } from "../hooks/useForkTerminalZoom";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useAttachedTerminalSession } from "../state/terminalSessions";
@@ -400,8 +401,6 @@ interface TerminalViewportProps {
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
   providerInstanceId?: ProviderInstanceId;
-  /** Fork: points added to the terminal font size, for the zoom keys of a terminal thread. */
-  fontSizeDelta?: number;
   onSessionExited: () => void;
   onAddTerminalContext?: (selection: TerminalContextSelection) => void;
   focusRequestId: number;
@@ -442,7 +441,6 @@ function TerminalSessionViewport({
   worktreePath,
   runtimeEnv,
   providerInstanceId,
-  fontSizeDelta = 0,
   onSessionExited,
   onAddTerminalContext,
   focusRequestId,
@@ -513,14 +511,15 @@ function TerminalSessionViewport({
     terminalFontSetting,
     themeFonts.terminal ?? themeFonts.code,
   );
-  const terminalFontSize =
-    useClientSettings((settings) =>
-      resolveTerminalFontSizePreference({
-        advanced: advancedTypography,
-        code: settings.fontSizeCode,
-        terminal: settings.fontSizeTerminal,
-      }),
-    ) + fontSizeDelta;
+  const baseTerminalFontSize = useClientSettings((settings) =>
+    resolveTerminalFontSizePreference({
+      advanced: advancedTypography,
+      code: settings.fontSizeCode,
+      terminal: settings.fontSizeTerminal,
+    }),
+  );
+  const { fontSize: terminalFontSize, zoom } = useTerminalZoom(baseTerminalFontSize);
+  const zoomTerminal = useEffectEvent(zoom);
   const terminalFontRef = useRef({ family: terminalFontFamily, size: terminalFontSize });
   const terminalSession = useAttachedTerminalSession({
     environmentId,
@@ -895,6 +894,13 @@ function TerminalSessionViewport({
       };
 
       function handleBeforeKey(event: KeyboardEvent): boolean {
+        const zoom = terminalZoomShortcut(event);
+        if (zoom !== null) {
+          event.preventDefault();
+          event.stopPropagation();
+          zoomTerminal(zoom);
+          return false;
+        }
         const currentKeybindings = readKeybindings();
         const options = { context: { terminalFocus: true, terminalOpen: true } };
         if (preventTerminalCloseShortcut(event, currentKeybindings)) {

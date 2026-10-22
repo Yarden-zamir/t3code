@@ -1,47 +1,20 @@
 import {
-  type ClientSettings,
   DEFAULT_TERMINAL_ID,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import * as Schema from "effect/Schema";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import {
-  resolveTerminalFontSizePreference,
-  TYPOGRAPHY_ADVANCED_STORAGE_KEY,
-} from "../appearanceFonts";
-import { useClientSettings } from "../hooks/useSettings";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../appearanceFonts";
 import { useLocalStorage } from "../hooks/useLocalStorage";
+import { useKnownTerminalSessions } from "../state/terminalSessions";
+import { useUiStateStore } from "../uiStateStore";
 import { observeResize } from "../lib/observeResize";
-import { isMacPlatform } from "../lib/utils";
 import { TerminalViewport } from "./ThreadTerminalDrawer";
-
-const TERMINAL_THREAD_ZOOM_STORAGE_KEY = "t3code:terminal-thread-font-delta";
-const selectZoomLimits = (settings: ClientSettings) => ({
-  min: settings.terminalThreadFontSizeMin,
-  max: settings.terminalThreadFontSizeMax,
-});
-
-type TerminalThreadZoom = "in" | "out" | "reset";
-
-/** Fork: `cmd+=`, `cmd+-` and `cmd+0` on macOS, `ctrl+shift+=`, `ctrl+shift+-` and `ctrl+0` elsewhere. */
-export function terminalThreadZoomShortcut(event: {
-  readonly key: string;
-  readonly metaKey: boolean;
-  readonly ctrlKey: boolean;
-  readonly shiftKey: boolean;
-  readonly altKey: boolean;
-}): TerminalThreadZoom | null {
-  if (event.altKey) return null;
-  const mac = isMacPlatform(navigator.platform);
-  if (mac ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return null;
-  if (event.key === "0") return "reset";
-  if (event.key === "-" || event.key === "_") return "out";
-  if (event.key === "=" || event.key === "+") return "in";
-  return null;
-}
+import { Button } from "./ui/button";
 
 /**
  * Fork: the main view of a terminal thread (`forkTerminalThreads.ts`).
@@ -63,19 +36,21 @@ export function ForkTerminalThreadView(props: {
     Schema.Boolean,
   );
   const launch = terminalThreadLaunch({ workspaceRoot, worktreePath });
-  const limits = useClientSettings(selectZoomLimits);
-  const baseFontSize = useClientSettings((settings) =>
-    resolveTerminalFontSizePreference({
-      advanced: advancedTypography,
-      code: settings.fontSizeCode,
-      terminal: settings.fontSizeTerminal,
-    }),
-  );
-  const [zoomDelta, setZoomDelta] = useLocalStorage(
-    TERMINAL_THREAD_ZOOM_STORAGE_KEY,
-    0,
-    Schema.Int,
-  );
+  // Attention that arrives while the user looks at the thread is already seen.
+  const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
+  const attentionAt = useKnownTerminalSessions({
+    environmentId: threadRef.environmentId,
+    threadId: threadRef.threadId,
+  })?.find((known) => known.target.terminalId === DEFAULT_TERMINAL_ID)?.state.summary?.attention
+    ?.at;
+  useEffect(() => {
+    if (attentionAt !== undefined && document.hasFocus()) {
+      markThreadVisited(scopedThreadKey(threadRef), new Date().toISOString());
+    }
+  }, [attentionAt, markThreadVisited, threadRef]);
+
+  // The server closes the session when the shell exits. The next viewport opens a fresh one.
+  const [session, setSession] = useState({ id: 0, ended: false });
 
   // The viewport refits on a change of these numbers, so a sidebar or window resize refits it.
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,26 +68,14 @@ export function ForkTerminalThreadView(props: {
     });
   }, []);
 
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
-    const zoom = terminalThreadZoomShortcut(event);
-    if (zoom !== null) {
-      event.preventDefault();
-      event.stopPropagation();
-      const next = baseFontSize + zoomDelta + (zoom === "in" ? 1 : -1);
-      setZoomDelta(
-        zoom === "reset" ? 0 : Math.min(limits.max, Math.max(limits.min, next)) - baseFontSize,
-      );
-    }
-  };
-
   return (
     <div
       ref={containerRef}
       data-terminal-thread-view
       className="absolute inset-0 z-30 flex min-h-0 min-w-0 bg-(--terminal-background) p-2"
-      onKeyDownCapture={handleKeyDownCapture}
     >
       <TerminalViewport
+        key={session.id}
         advancedTypography={advancedTypography}
         threadRef={threadRef}
         threadId={threadRef.threadId}
@@ -121,10 +84,7 @@ export function ForkTerminalThreadView(props: {
         cwd={launch.cwd}
         worktreePath={launch.worktreePath}
         runtimeEnv={launch.env}
-        fontSizeDelta={
-          Math.min(limits.max, Math.max(limits.min, baseFontSize + zoomDelta)) - baseFontSize
-        }
-        onSessionExited={() => undefined}
+        onSessionExited={() => setSession((current) => ({ ...current, ended: true }))}
         focusRequestId={1}
         autoFocus
         visible
@@ -132,6 +92,17 @@ export function ForkTerminalThreadView(props: {
         drawerHeight={layout.height}
         keybindings={props.keybindings}
       />
+      {session.ended ? (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-(--terminal-background)/80">
+          <p className="text-sm text-muted-foreground">The shell exited. The session is closed.</p>
+          <Button
+            autoFocus
+            onClick={() => setSession((current) => ({ id: current.id + 1, ended: false }))}
+          >
+            Start a new session
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -71,6 +71,52 @@ export const TERMINAL_THREAD_TMUX_CONFIG = [
   "",
 ].join("\n");
 
+/** The main terminal of a terminal thread is the thread's view. */
+export function isTerminalThreadMainTerminal(
+  terminalId: string,
+  runtimeEnv: Readonly<Record<string, string>> | null,
+): boolean {
+  return terminalId === DEFAULT_TERMINAL_ID && runtimeEnv?.[TERMINAL_THREAD_ENV] === "1";
+}
+
+const BELL = "\u0007";
+const OSC_START = "\u001b]";
+const STRING_TERMINATOR = "\u001b\\";
+
+// OSC 9;4 is a progress report, not a notification.
+function isNotificationOsc(body: string): boolean {
+  return (
+    (body.startsWith("9;") && !body.startsWith("9;4;")) ||
+    body.startsWith("777;notify;") ||
+    body.startsWith("99;")
+  );
+}
+
+/**
+ * True when a chunk of terminal output rings the bell or sends an app notification. A bell that
+ * ends an OSC sequence (a window title) does not count.
+ *
+ * Limit: a notification split across two chunks is missed. Revisit if a program is seen to lose
+ * its notification; the fix is to carry the unfinished sequence in the session.
+ */
+export function detectTerminalAttention(data: string): boolean {
+  let index = 0;
+  while (index < data.length) {
+    const bell = data.indexOf(BELL, index);
+    const osc = data.indexOf(OSC_START, index);
+    if (bell !== -1 && (osc === -1 || bell < osc)) return true;
+    if (osc === -1) return false;
+    const bodyStart = osc + OSC_START.length;
+    const bellEnd = data.indexOf(BELL, bodyStart);
+    const stEnd = data.indexOf(STRING_TERMINATOR, bodyStart);
+    const end = bellEnd === -1 ? stEnd : stEnd === -1 ? bellEnd : Math.min(bellEnd, stEnd);
+    if (end === -1) return false;
+    if (isNotificationOsc(data.slice(bodyStart, end))) return true;
+    index = end + (end === bellEnd ? BELL.length : STRING_TERMINATOR.length);
+  }
+  return false;
+}
+
 export function terminalThreadTmuxSocket(stateDir: string): string {
   const hash = NodeCrypto.createHash("sha256").update(stateDir).digest("hex").slice(0, 12);
   return `t3code-${hash}`;

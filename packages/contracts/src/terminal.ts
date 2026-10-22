@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { TerminalAttention } from "./forkTerminalThreads.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const DEFAULT_TERMINAL_ID = "term-1";
@@ -129,6 +130,8 @@ export const TerminalSummary = Schema.Struct({
   hasRunningSubprocess: Schema.Boolean,
   label: Schema.String.check(Schema.isMaxLength(128)),
   updatedAt: Schema.String,
+  /** Fork: set on the main terminal of a terminal thread. */
+  attention: Schema.optionalKey(TerminalAttention),
 });
 export type TerminalSummary = typeof TerminalSummary.Type;
 

@@ -5,6 +5,8 @@
  * (the `terminal` provider driver). With the server setting `terminalThreadsTmux`, the terminal
  * runs inside a tmux session, so its apps outlive a server restart.
  */
+import * as Schema from "effect/Schema";
+
 import type { ModelSelection } from "./modelSelection.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
@@ -27,3 +29,14 @@ export const TERMINAL_THREAD_FIND_SEQUENCE = "\u001b[1999~";
 export function isTerminalThread(thread: { readonly providerInstanceId: string }): boolean {
   return thread.providerInstanceId === TERMINAL_THREAD_INSTANCE_ID;
 }
+
+/**
+ * What a terminal thread asks of the user. `bell` is a terminal bell or an app notification
+ * (OSC 9 or OSC 777). `finished` is a program that ended in the shell. The sidebar shows the
+ * attention as unread until the user visits the thread after `at`.
+ */
+export const TerminalAttention = Schema.Struct({
+  kind: Schema.Literals(["bell", "finished"]),
+  at: Schema.String,
+});
+export type TerminalAttention = typeof TerminalAttention.Type;

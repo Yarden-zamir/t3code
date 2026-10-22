@@ -284,6 +284,11 @@ import {
   shouldShowInstanceBadge,
   type ProviderInstanceEntry,
 } from "../providerInstances";
+import { useTerminalThreadState } from "../hooks/useForkTerminalThreadState";
+import {
+  terminalThreadRowStatus,
+  terminalThreadStatusLabel,
+} from "../lib/forkTerminalThreadStatus";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -1717,8 +1722,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ? resolveThreadCurrentPullRequestLink(thread.pullRequests)
     : null;
 
-  const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
-  const status = resolveSidebarThreadStatus(thread);
+  const terminalThreadState = useTerminalThreadState(thread);
+  const terminalLabel = terminalThreadStatusLabel(terminalThreadState, lastVisitedAt);
+  const isUnread =
+    hasUnseenCompletion({ ...thread, lastVisitedAt }) || terminalLabel === "Completed";
+  const status = terminalThreadRowStatus(resolveSidebarThreadStatus(thread), terminalLabel);
   const lastVisitedDate = lastVisitedAt === undefined ? null : parseTimestampDate(lastVisitedAt);
   const wokeAtDate = props.wokeAt === null ? null : parseTimestampDate(props.wokeAt);
   const isWoke =

@@ -448,13 +448,15 @@ Control tooltips show the keys of the control as chips, such as "Stash ⌘S", fo
 
 A thread whose view is a live terminal, next to the other threads of a project. A schedule, a webhook or an agent can type into it.
 
-- **Setting:** server settings `terminalThreads` (off by default) and `terminalThreadsTmux` (off by default); client settings `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax` (8 and 24). Settings > Fork. Keybinding command `chat.newTerminal` (`mod+alt+t`).
+- **Setting:** server settings `terminalThreads` (off by default) and `terminalThreadsTmux` (off by default); client settings `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax` (8 and 24), the zoom limits of every terminal (`mod+=`, `mod+-`, `mod+0` work in a terminal thread and in the drawer). Settings > Fork. Keybinding command `chat.newTerminal` (`mod+alt+t`).
 - **Works on:** web and desktop create and use them. The mobile app opens one on its native terminal screen and cannot create one. Remote environments work the same, because the terminal runs on the server of the thread.
 - A terminal thread is a normal thread with the provider `terminal` (constants in `packages/contracts/src/forkTerminalThreads.ts`). The `terminal` driver types a message and Enter into the terminal `term-1`. At an idle shell it waits for a marker that carries the exit code, then answers with the exit code and the output. With a program in front it answers at once.
 - Start one from the sidebar button next to New thread, from `chat.newTerminal`, or from the command palette ("New terminal thread in..."). The MCP tools `t3_thread_launch` and `schedule_task` start one with the model selection `{"instanceId":"terminal","model":"terminal"}`.
 - Server auto-update waits while a terminal thread without tmux runs a program.
+- A shell that exits or is killed closes the session of the main terminal (the server closes it and deletes its history). The view shows "Start a new session", and the next message opens a fresh shell.
+- Sidebar state: the terminal summary carries `attention` (`bell` for a bell or OSC 9, OSC 99 and OSC 777 notifications, `finished` for a program that ended). Unseen `bell` shows Awaiting Input, unseen `finished` shows Completed, a session in `starting` shows Connecting and `error` shows Error. Message runs keep their own Working and Completed. A running program shows only the terminal icon.
 - With `terminalThreadsTmux`, the terminal runs inside a tmux session on its own socket in the state folder. Programs survive a server restart, and the next open attaches again. tmux search needs the tmux search keys of [Terminal key mappings](#terminal-key-mappings).
-- **Limits:** a terminal thread has no timeline, so the messages that a schedule sent show only in the terminal. Without tmux a restart ends the programs, and a program that never ends blocks auto-update. The mobile app has no create button. Find in thread works only with tmux. Revisit when these block daily use.
+- **Limits:** a bell that arrives split across two output chunks is missed, and `finished` comes from the subprocess poll, so a command shorter than one poll shows no pill. A terminal thread has no timeline, so the messages that a schedule sent show only in the terminal. Without tmux a restart ends the programs, and a program that never ends blocks auto-update. The mobile app has no create button. Find in thread works only with tmux. Revisit when these block daily use.
 
 ### Terminal key mappings
 

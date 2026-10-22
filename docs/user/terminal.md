@@ -37,5 +37,13 @@ terminal unless the server runs terminal threads in tmux (Settings > Fork > Term
 threads in tmux). Terminal key mappings (Settings > Fork) send fixed bytes for a key,
 for example Cmd+Z as the Kitty sequence that a shell binds.
 
-`mod+=`, `mod+-` and `mod+0` change the font size in a terminal thread, within the
-limits in Settings > Fork.
+`mod+=`, `mod+-` and `mod+0` change the font size of every terminal, in a terminal
+thread and in the terminal drawer, within the limits in Settings > Fork.
+
+When the shell of a terminal thread exits or is killed, the session closes. The
+view offers Start a new session. A message to the thread also starts a new session.
+
+The sidebar shows the state of a terminal thread. A bell or an app notification from
+a program shows Awaiting Input. A program that ends in the shell shows Completed.
+Both stay until you visit the thread. A session that fails shows Error. A program
+that runs shows the terminal icon of the row and no pill.

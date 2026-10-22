@@ -17,7 +17,7 @@ const selectLimits = (settings: ClientSettings) => ({
 
 /**
  * Fork: `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax`, the font sizes that the zoom
- * keys of a terminal thread reach.
+ * keys of every terminal reach.
  */
 export function TerminalThreadFontLimitsSettingsRow() {
   const limits = useClientSettings(selectLimits);
@@ -25,7 +25,7 @@ export function TerminalThreadFontLimitsSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("terminal-thread-font-limits")}
-      description="The smallest and largest terminal font size in points that zoom reaches in a terminal thread. Zoom keys: Cmd + = , Cmd + - and Cmd + 0 (Ctrl + Shift on Windows and Linux)."
+      description="The smallest and largest terminal font size in points that zoom reaches in any terminal, in a terminal thread or in the drawer. Zoom keys: Cmd + = , Cmd + - and Cmd + 0 (Ctrl + Shift on Windows and Linux)."
       resetAction={
         limits.min !== DEFAULT_CLIENT_SETTINGS.terminalThreadFontSizeMin ||
         limits.max !== DEFAULT_CLIENT_SETTINGS.terminalThreadFontSizeMax ? (
