@@ -7,11 +7,11 @@ import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import * as Schema from "effect/Schema";
 import { useEffect, useRef, useState } from "react";
 
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../appearanceFonts";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
-import { useUiStateStore } from "../uiStateStore";
+import { threadEnvironment } from "../state/threads";
+import { useAtomCommand } from "../state/use-atom-command";
 import { observeResize } from "../lib/observeResize";
 import { TerminalViewport } from "./ThreadTerminalDrawer";
 import { Button } from "./ui/button";
@@ -36,18 +36,27 @@ export function ForkTerminalThreadView(props: {
     Schema.Boolean,
   );
   const launch = terminalThreadLaunch({ workspaceRoot, worktreePath });
-  // Attention that arrives while the user looks at the thread is already seen.
-  const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
+  // Attention that the user sees counts as a visit on the server, so every client clears it. A
+  // window without focus marks it when it gets focus.
+  const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const attentionAt = useKnownTerminalSessions({
     environmentId: threadRef.environmentId,
     threadId: threadRef.threadId,
   })?.find((known) => known.target.terminalId === DEFAULT_TERMINAL_ID)?.state.summary?.attention
     ?.at;
   useEffect(() => {
-    if (attentionAt !== undefined && document.hasFocus()) {
-      markThreadVisited(scopedThreadKey(threadRef), new Date().toISOString());
-    }
-  }, [attentionAt, markThreadVisited, threadRef]);
+    if (attentionAt === undefined) return;
+    const markSeen = () => {
+      if (!document.hasFocus()) return;
+      void visitThread({
+        environmentId: threadRef.environmentId,
+        input: { threadId: threadRef.threadId, visitedAt: new Date().toISOString() },
+      });
+    };
+    markSeen();
+    window.addEventListener("focus", markSeen);
+    return () => window.removeEventListener("focus", markSeen);
+  }, [attentionAt, threadRef, visitThread]);
 
   // The server closes the session when the shell exits. The next viewport opens a fresh one.
   const [session, setSession] = useState({ id: 0, ended: false });

@@ -1,6 +1,8 @@
 import {
   AuthTerminalOperateScope,
+  DEFAULT_TERMINAL_ID,
   type EnvironmentId,
+  isTerminalThread,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
@@ -127,9 +129,15 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   const panelTerminalIds = new Set(
     panelSurfaces.flatMap((surface) => (surface.kind === "terminal" ? surface.terminalIds : [])),
   );
+  // Fork: the main terminal of a terminal thread is the thread view, not a drawer tab.
+  const mainTerminalOfTerminalThread =
+    serverThread !== null && isTerminalThread(serverThread) ? DEFAULT_TERMINAL_ID : null;
   const drawerTerminalSessions =
-    knownTerminalSessions?.filter((session) => !panelTerminalIds.has(session.target.terminalId)) ??
-    [];
+    knownTerminalSessions?.filter(
+      (session) =>
+        !panelTerminalIds.has(session.target.terminalId) &&
+        session.target.terminalId !== mainTerminalOfTerminalThread,
+    ) ?? [];
   const terminalLabelsById = new Map<string, string>();
   for (const session of drawerTerminalSessions) {
     terminalLabelsById.set(

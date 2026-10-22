@@ -61,6 +61,7 @@ import {
   type ChatFileAttachment,
   CommandId,
   DEFAULT_MODEL,
+  DEFAULT_TERMINAL_ID,
   isProviderNativeSubagentThread,
   isTerminalThread,
   type EnvironmentId,
@@ -3367,9 +3368,11 @@ export default function ChatView(props: ChatViewProps) {
     if (nextOpen && hasTerminalWriteAccess() && terminalUiState.terminalIds.length === 0) {
       // Server-created setup terminals exist before this client's drawer mounts.
       // Reuse them before allocating a shell from the still-empty UI state.
+      const isDrawerTerminal = (id: string) =>
+        !panelTerminalIds.has(id) && !(activeTerminalThread && id === DEFAULT_TERMINAL_ID);
       const existingTerminalId =
-        runningTerminalIds.find((id) => !panelTerminalIds.has(id)) ??
-        activeServerOrderedTerminalIds.find((id) => !panelTerminalIds.has(id));
+        runningTerminalIds.find(isDrawerTerminal) ??
+        activeServerOrderedTerminalIds.find(isDrawerTerminal);
       if (existingTerminalId !== undefined) {
         storeEnsureTerminal(activeThreadRef, existingTerminalId, { open: true, active: true });
         return;

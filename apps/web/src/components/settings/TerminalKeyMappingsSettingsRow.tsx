@@ -78,7 +78,7 @@ export function TerminalKeyMappingsSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("terminal-key-mappings")}
-      description='Keys that every terminal sends as fixed bytes, in place of its own encoding. Each entry has "key" (such as cmd+z), "send" (the bytes, with escapes such as \e) and "passthrough" (true skips tmux, so the app gets the bytes unchanged). A mapped key wins over the terminal shortcuts, except copy while text is selected.'
+      description='Keys that every terminal sends as fixed bytes, in place of its own encoding. Each entry has "key" (such as cmd+z), "send" (the bytes, with escapes such as \e) and "passthrough" (true skips tmux, so the app gets the bytes unchanged). A mapped key replaces the encoding of the key, except copy while text is selected. App shortcuts, zoom and the built-in Cmd+arrow, Cmd+Backspace, Cmd+K and Ctrl+L keys act first.'
       status={error === null ? null : <span className="text-destructive-foreground">{error}</span>}
       resetAction={
         mappings.length > 0 ? (

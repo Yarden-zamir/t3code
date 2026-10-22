@@ -464,7 +464,7 @@ Keys that every terminal sends as fixed bytes.
 
 - **Setting:** client setting `terminalKeyMappings` (empty by default). Settings > Fork > Terminal key mappings, with presets for zsh editor keys on macOS and for tmux search.
 - **Works on:** web, desktop.
-- An entry has `key` (for example `cmd+z`), `send` (escapes `\e`, `\xNN`, `\uNNNN`, `\r`, `\n`, `\t`) and `passthrough`. With `passthrough`, a terminal in tmux receives the bytes unchanged through `tmux send-keys`; without tmux it is a plain write. A mapped key wins over the terminal shortcuts, except copy while text is selected.
+- An entry has `key` (for example `cmd+z`), `send` (escapes `\e`, `\xNN`, `\uNNNN`, `\r`, `\n`, `\t`) and `passthrough`. With `passthrough`, a terminal in tmux receives the bytes unchanged through `tmux send-keys`; without tmux it is a plain write. A mapped key replaces the encoding of the key, except copy while text is selected. App shortcuts, zoom and the built-in Cmd+arrow, Cmd+Backspace, Cmd+K and Ctrl+L keys act first, so a mapping on one of them never fires.
 - **Limits:** the mobile app ignores the mappings. Revisit when a mobile keyboard needs them.
 
 ### Terminal history
