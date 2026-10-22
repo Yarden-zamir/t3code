@@ -156,6 +156,7 @@ import {
   type MediaVideoPreviewSource,
 } from "../../lib/videoPreviewSource";
 import { ForkMessageCopyButton } from "./ForkMessageCopyButton";
+import { CopyTextButton } from "./CopyTextButton";
 import { getReviewSectionIdForCheckpoint } from "../review/reviewModel";
 import { setReviewSelectedSectionId } from "../review/reviewState";
 // Fork: read aloud, next to copy and fork.
@@ -1086,10 +1087,13 @@ function ThreadAutomationMessageRow(props: {
           <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
             {props.timestampLabel}
           </Text>
-          <UserMessageCopyButton
+          {/* Fork: the fork's copy button needs a message id, which this row does not carry. */}
+          <CopyTextButton
+            accessibilityLabel="Copy message"
             text={props.text}
-            onCopy={undefined}
             tintColor={props.iconSubtleColor}
+            buttonSize={28}
+            iconSize={13}
           />
         </View>
       ) : null}
