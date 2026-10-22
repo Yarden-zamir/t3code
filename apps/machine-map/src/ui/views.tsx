@@ -859,7 +859,10 @@ export function HistoryView() {
     }
     if (entry._tag === "exec") {
       const { exec } = entry;
-      const title = `${machineName(map, exec.from)} ran a command on ${machineName(map, exec.to)}`;
+      const title =
+        exec.outcome === "refused"
+          ? `${machineName(map, exec.from)} was refused a command on ${machineName(map, exec.to)}`
+          : `${machineName(map, exec.from)} ran a command on ${machineName(map, exec.to)}`;
       return (
         <Item
           key={entryKey(entry)}
@@ -874,6 +877,7 @@ export function HistoryView() {
               <p className="small">
                 In <span className="mono">{exec.cwd}</span> · {exec.durationMs} ms
               </p>
+              {exec.reason === undefined ? null : <p className="small">Refused: {exec.reason}</p>}
             </details>
           }
         >

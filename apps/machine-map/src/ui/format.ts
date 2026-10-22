@@ -129,6 +129,7 @@ export const EXEC_STICKER: Record<MachineExecOutcome, string> = {
   timedOut: "warn",
   stopped: "none",
   failed: "",
+  refused: "warn",
 };
 
 /** MM-205, MM-601: presence as plain text, with the time since the last connection. */

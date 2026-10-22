@@ -25,6 +25,7 @@ import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
+import { historyCaller } from "./machineCallerAccess.ts";
 import { expandHomePath } from "../../os-jank.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { execArrowInto, machineOfRequestNamespace } from "./machineAccess.ts";
@@ -98,6 +99,30 @@ const make = Effect.gen(function* () {
     return Effect.raceFirst(changed, expired);
   };
 
+  /** MM-1908: a refused call in the History. No command ran, so it has no output or exit code. */
+  const reportRefused = Effect.fn("MachineExec.reportRefused")(function* (refusal: {
+    readonly from: MachineId;
+    /** The machine that the command was for, when the calling machine reports its refusal. */
+    readonly target?: MachineId;
+    readonly input: MachineExecInput;
+    readonly reason: string;
+  }) {
+    yield* machineMap.reportExec({
+      id: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
+      at: DateTime.formatIso(DateTime.makeUnsafe(yield* Clock.currentTimeMillis)),
+      from: refusal.from,
+      threadId: refusal.input.caller?.threadId ?? null,
+      threadTitle: refusal.input.caller?.threadTitle ?? null,
+      command: refusal.input.command.slice(0, REPORTED_COMMAND_CHARS),
+      cwd: refusal.input.cwd ?? "~",
+      outcome: "refused",
+      exitCode: null,
+      durationMs: 0,
+      reason: refusal.reason,
+      ...(refusal.target === undefined ? {} : { target: refusal.target }),
+    });
+  });
+
   const runHere = Effect.fn("MachineExec.runHere")(function* (
     from: MachineId,
     input: MachineExecInput,
@@ -107,13 +132,15 @@ const make = Effect.gen(function* () {
     const wanted = input.machine.trim().toLowerCase();
     if (self === undefined || (input.machine !== self.id && self.name.toLowerCase() !== wanted)) {
       // MM-1904: a machine never lends its own arrows onward.
-      return yield* denied("machine_exec from another machine runs only on the machine it calls.");
+      const reason = "machine_exec from another machine runs only on the machine it calls.";
+      if (self !== undefined) yield* reportRefused({ from, input, reason });
+      return yield* denied(reason);
     }
     const arrow = yield* allowedNow(from);
     if (arrow === undefined) {
-      return yield* denied(
-        `The arrow into ${self.name} does not allow exec now. It needs exec, agent tools and the level standard or admin, and no emergency pause.`,
-      );
+      const reason = `The arrow into ${self.name} does not allow exec now. It needs exec, agent tools and the level standard or admin, and no emergency pause.`;
+      yield* reportRefused({ from, input, reason });
+      return yield* denied(reason);
     }
     const cwd = path.resolve(
       yield* expandHomePath(input.cwd ?? "~").pipe(Effect.provideService(Path.Path, path)),
@@ -209,7 +236,29 @@ const make = Effect.gen(function* () {
     const scope = yield* McpInvocationContext.McpInvocationContext;
     const from = machineOfRequestNamespace(scope.requestNamespace);
     // A local agent goes out through the arrow of this machine; a machine session runs here.
-    return from === undefined ? yield* peers.exec(input) : yield* runHere(from, input);
+    if (from !== undefined) return yield* runHere(from, input);
+    return yield* peers.exec(input).pipe(
+      // A refusal here never reaches the other machine, so this machine reports it.
+      Effect.tapError((error) => {
+        const target =
+          error._tag === "MachinePeerError" &&
+          (error.reason === "caller-refused" || error.reason === "no-exec")
+            ? error.target
+            : undefined;
+        return target === undefined
+          ? Effect.void
+          : Effect.gen(function* () {
+              const self = (yield* state.activeDesired)?.self;
+              if (self === undefined) return;
+              yield* reportRefused({
+                from: self.id,
+                target,
+                input: { ...input, caller: yield* historyCaller() },
+                reason: error.message,
+              });
+            });
+      }),
+    );
   });
 
   return MachineExec.of({ exec });
