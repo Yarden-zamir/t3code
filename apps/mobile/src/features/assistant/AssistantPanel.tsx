@@ -10,9 +10,10 @@ import {
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import * as Clipboard from "expo-clipboard";
+import * as ImagePicker from "expo-image-picker";
 import * as Linking from "expo-linking";
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
-import { BackHandler, Pressable, View } from "react-native";
+import { BackHandler, PermissionsAndroid, Platform, Pressable, View } from "react-native";
 import {
   KeyboardAvoidingView,
   KeyboardProvider,
@@ -27,20 +28,30 @@ import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import {
   convertPastedImagesToAttachments,
   createPastedTextComposerAttachment,
+  pickComposerFiles,
   type DraftComposerAttachment,
+  type DraftComposerFileAttachment,
 } from "../../lib/composerImages";
+import { withCameraLauncher } from "../../lib/forkComposerCamera";
+import { beginForegroundHandoff } from "../../lib/foreground-handoff";
+import { scopedThreadKey } from "../../lib/scopedEntities";
+import { uuidv4 } from "../../lib/uuid";
 import {
   assistantNative,
   type AnnotationStroke,
   type AssistantCapture,
+  type ImageCrop,
   type RecentPhoto,
 } from "../../native/assistant";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useNavigationThreadShells, useProjects, useServerConfigs } from "../../state/entities";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import {
+  appendComposerDraftAttachments,
+  appendComposerDraftText,
   clearComposerDraft,
   clearComposerDraftContent,
+  getComposerDraftSnapshot,
   waitForComposerDraftsLoaded,
 } from "../../state/use-composer-drafts";
 import {
@@ -65,15 +76,21 @@ import {
 } from "../read-aloud/ReadAloudWorker";
 import { resolveAssistantProject } from "./assistantProject";
 import { lastOpenedThread } from "./assistantTargets";
+import { AssistantConversation } from "./AssistantConversation";
 import { AssistantTargetPicker, type AssistantTarget } from "./AssistantTargetPicker";
 import {
   ContextPills,
+  EdgeGlow,
+  FileContextView,
+  ImageContextEditor,
   MachineButton,
   MachineList,
-  ImageContextEditor,
+  OpenInAppHandle,
+  PanelMenu,
   TextContextEditor,
   type ContextPillView,
   type PanelMachine,
+  type PanelMenuItem,
 } from "./AssistantPanelParts";
 import {
   CONTEXT_PILL_ORDER,
@@ -83,12 +100,12 @@ import {
   locationText,
   joinMessageText,
   screenTextDocument,
-  type ContextPillKind,
+  type FoundContextPillKind,
   type ImageContextPillKind,
   type TextContextPillKind,
 } from "./contextPills";
 
-const CONTEXT_PILL_TITLES: Record<ContextPillKind, string> = {
+const CONTEXT_PILL_TITLES: Record<FoundContextPillKind, string> = {
   sharedText: "Shared text",
   sharedImage: "Shared image",
   selection: "Selected text",
@@ -100,19 +117,28 @@ const CONTEXT_PILL_TITLES: Record<ContextPillKind, string> = {
   clipboard: "Clipboard",
 };
 
-const IMAGE_CONTEXT_PILLS: ReadonlyArray<ImageContextPillKind> = [
+const FOUND_IMAGE_PILLS: ReadonlyArray<Exclude<ImageContextPillKind, "photo">> = [
   "sharedImage",
   "screenshot",
   "recentPhoto",
 ];
 
+const isFoundPill = (id: string): id is FoundContextPillKind =>
+  CONTEXT_PILL_ORDER.some((kind) => kind === id);
+
 /** A photo older than this is not "recent": the panel offers only what was likely just taken. */
 const RECENT_PHOTO_MAX_AGE_SECONDS = 15 * 60;
 
+// Android 13 split photo access out of storage access.
+const PHOTO_PERMISSION =
+  Platform.OS === "android" && Platform.Version >= 33
+    ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+    : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+
 /**
  * Fork: the Android assistant panel. `AssistantActivity` renders this root over the app that
- * was on screen, with that screen's text and screenshot. It starts a new thread in the default
- * project; it never shows thread history.
+ * was on screen, with that screen's text and screenshot. It sends to a new or an existing
+ * thread and shows only the replies to what it sent, never the thread history.
  */
 export function AssistantPanelRoot() {
   return (
@@ -148,8 +174,26 @@ function AppServicesWhenAlone() {
 type Phase =
   | { readonly type: "editing" }
   | { readonly type: "preparing" }
-  | { readonly type: "sending"; readonly messageId: string; readonly threadRef: ScopedThreadRef }
+  | {
+      readonly type: "sending";
+      readonly messageId: MessageId;
+      readonly threadRef: ScopedThreadRef;
+    }
   | { readonly type: "failed"; readonly message: string };
+
+/** The panel body shows one thing at a time, so it never grows past the composer. */
+type PanelView =
+  | { readonly type: "compose" }
+  | { readonly type: "target" }
+  | { readonly type: "machine" }
+  | { readonly type: "add" }
+  | { readonly type: "pill"; readonly id: string };
+
+interface SentMessage {
+  readonly messageId: MessageId;
+  readonly text: string;
+  readonly threadRef: ScopedThreadRef;
+}
 
 let latestCapture: AssistantCapture | null = null;
 
@@ -197,6 +241,7 @@ function keepUnsentDraft(draft: Omit<UnsentDraft, "savedAt"> | null): void {
 async function prepareAssistantMessage(input: {
   readonly text: string;
   readonly imageUris: ReadonlyArray<string>;
+  readonly files: ReadonlyArray<DraftComposerFileAttachment>;
   readonly screenText: string | null;
   /** Undefined when the server takes no file uploads. */
   readonly maxUploadBytes: number | undefined;
@@ -207,15 +252,16 @@ async function prepareAssistantMessage(input: {
   await waitForComposerDraftsLoaded();
   // A gallery photo is a content URI; attachments read plain files.
   const native = assistantNative;
-  const files = await Promise.all(
+  const imageFiles = await Promise.all(
     input.imageUris.map((uri) =>
       uri.startsWith("content:") && native ? native.copyToCache(uri) : Promise.resolve(uri),
     ),
   );
   const attachments: DraftComposerAttachment[] =
-    files.length > 0
-      ? [...(await convertPastedImagesToAttachments({ uris: files, existingCount: 0 }))]
+    imageFiles.length > 0
+      ? [...(await convertPastedImagesToAttachments({ uris: imageFiles, existingCount: 0 }))]
       : [];
+  attachments.push(...input.files);
   const text = input.text.trim();
   if (!input.screenText) return { text, attachments };
   if (input.maxUploadBytes === undefined) {
@@ -229,6 +275,12 @@ async function prepareAssistantMessage(input: {
     }),
   );
   return { text, attachments };
+}
+
+function threadUrl(threadRef: ScopedThreadRef): string {
+  return Linking.createURL(
+    `threads/${encodeURIComponent(threadRef.environmentId)}/${encodeURIComponent(threadRef.threadId)}`,
+  );
 }
 
 function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
@@ -249,17 +301,18 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     restored?.target ?? null,
   );
   const [pickedEnvironmentId, setPickedEnvironmentId] = useState<EnvironmentId | null>(null);
-  // The panel body shows one thing at a time, so it never grows past the composer.
-  const [view, setView] = useState<"compose" | "target" | "machine" | ContextPillKind>("compose");
+  const [view, setView] = useState<PanelView>({ type: "compose" });
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   // A pill without an entry follows its default; a tap overrides it for this press.
-  const [attachedChoice, setAttachedChoice] = useState<Partial<Record<ContextPillKind, boolean>>>(
-    {},
-  );
+  const [attachedChoice, setAttachedChoice] = useState<Partial<Record<string, boolean>>>({});
   const [editedText, setEditedText] = useState<Partial<Record<TextContextPillKind, string>>>({});
-  const [annotatedImages, setAnnotatedImages] = useState<
-    Partial<Record<ImageContextPillKind, string>>
-  >({});
+  const [editedImages, setEditedImages] = useState<Partial<Record<string, string>>>({});
+  const [addedPhotos, setAddedPhotos] = useState<
+    ReadonlyArray<{ readonly id: string; readonly uri: string }>
+  >([]);
+  const [addedFiles, setAddedFiles] = useState<ReadonlyArray<DraftComposerFileAttachment>>([]);
+  // Pills the settings leave off can still be asked for once from "+".
+  const [askedFor, setAskedFor] = useState({ recentPhoto: false, location: false });
   const [recentPhoto, setRecentPhoto] = useState<RecentPhoto | null>(null);
   const [location, setLocation] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<{
@@ -267,13 +320,12 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     readonly text: string | null;
   }>({ available: false, text: null });
   const [phase, setPhase] = useState<Phase>({ type: "editing" });
-  const sentRef = useRef(false);
-  // Kept as it changes, so the Home button or a new press keeps it too, not only Close.
-  useEffect(() => {
-    if (!sentRef.current) keepUnsentDraft({ text, target: pickedTarget });
-  }, [text, pickedTarget]);
+  const [sent, setSent] = useState<ReadonlyArray<SentMessage>>([]);
+  // True once the new thread draft belongs to a sent message or to the app, so closing keeps it.
+  const flowDraftHandedOffRef = useRef(false);
   const startedWithVoiceRef = useRef(false);
   const preferencesLoaded = AsyncResult.isSuccess(preferences);
+  const afterSend = voice.assistantAfterSend;
 
   // A picked machine limits the defaults and the picker to its threads and projects.
   const machineProjects =
@@ -293,20 +345,36 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
           serverConfigs.get(environmentId)?.scratchWorkspaceRoot,
       })
     : null;
-  // The picked target wins. A picked thread is looked up again on each render, so a rename shows
-  // and an archived or deleted thread falls back to a new thread.
+
+  // The first message starts the conversation. Its thread exists once the outbox delivered it.
+  const outboxMessageIds = new Set(
+    flattenQueuedThreadMessages(queuedMessages).map((message) => message.messageId),
+  );
+  const firstSent = sent[0];
+  const conversationRef =
+    firstSent && !outboxMessageIds.has(firstSent.messageId) ? firstSent.threadRef : null;
+  const findThread = (ref: { readonly environmentId: EnvironmentId; readonly threadId: string }) =>
+    threads.find(
+      (thread) =>
+        thread.environmentId === ref.environmentId &&
+        thread.id === ref.threadId &&
+        thread.archivedAt === null,
+    ) ?? null;
+
+  // A follow-up goes to the conversation thread. Otherwise the picked target wins. A picked
+  // thread is looked up again on each render, so a rename shows and an archived or deleted
+  // thread falls back to a new thread.
   const defaultThread =
     voice.assistantTarget === "lastThread" ? lastOpenedThread(machineThreads) : null;
-  const targetThread =
-    pickedTarget === null
+  const targetThread = conversationRef
+    ? findThread(conversationRef)
+    : pickedTarget === null
       ? defaultThread
       : pickedTarget.type === "thread"
-        ? (threads.find(
-            (thread) =>
-              thread.environmentId === pickedTarget.thread.environmentId &&
-              thread.id === pickedTarget.thread.id &&
-              thread.archivedAt === null,
-          ) ?? null)
+        ? findThread({
+            environmentId: pickedTarget.thread.environmentId,
+            threadId: pickedTarget.thread.id,
+          })
         : null;
   const project = pickedTarget?.type === "project" ? pickedTarget.project : defaultProject;
   const target: AssistantTarget | null = targetThread
@@ -314,6 +382,13 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     : project
       ? { type: "project", project }
       : null;
+  const draftTarget: AssistantTarget | null = targetThread
+    ? { type: "thread", thread: targetThread }
+    : pickedTarget;
+  // Kept as it changes, so the Home button or a new press keeps it too, not only Close.
+  useEffect(() => {
+    keepUnsentDraft({ text, target: draftTarget });
+  }, [text, draftTarget]);
   const selectedProject = flow.selectedProject;
   const selectProject = useEffectEvent(() => {
     if (
@@ -330,39 +405,35 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
   }, [projectKey]);
 
   const draftKey = flow.draftKey;
-  // The outbox hands the message to the server, then the panel opens the thread, reads the
-  // first reply aloud, or closes. These states follow the outbox and the player.
+  // The outbox hands the message to the server. Then the panel opens the thread, reads the
+  // reply aloud, shows the reply, or closes. These states follow the outbox and the player.
   const sendingThread = phase.type === "sending" ? phase.threadRef : null;
-  const delivered =
-    phase.type === "sending" &&
-    !flattenQueuedThreadMessages(queuedMessages).some(
-      (message) => message.messageId === phase.messageId,
-    );
-  const readsReply = voice.assistantSpeakFirstReply && !voice.assistantOpenThread;
+  const delivered = phase.type === "sending" && !outboxMessageIds.has(phase.messageId);
+  const readsReply = voice.assistantSpeakFirstReply && afterSend !== "openThread";
   const waitsForReply = useWaitsForNextReply(readsReply ? sendingThread : null);
-  const afterDelivery: "open" | "wait" | "read" | "close" | null = !delivered
+  const afterDelivery: "open" | "wait" | "read" | "stay" | "close" | null = !delivered
     ? null
-    : voice.assistantOpenThread
+    : afterSend === "openThread"
       ? "open"
-      : !readsReply
-        ? "close"
-        : waitsForReply
-          ? "wait"
-          : readingId !== null
-            ? "read"
+      : readsReply && waitsForReply
+        ? "wait"
+        : readsReply && readingId !== null
+          ? "read"
+          : afterSend === "stay"
+            ? "stay"
             : "close";
   const waitingThread = afterDelivery === "wait" ? sendingThread : null;
   const close = () => {
-    if (!sentRef.current && draftKey) clearComposerDraft(draftKey);
+    if (!flowDraftHandedOffRef.current && draftKey) clearComposerDraft(draftKey);
     // The minute to get the text back starts at close.
-    if (!sentRef.current) keepUnsentDraft({ text, target: pickedTarget });
+    keepUnsentDraft({ text, target: draftTarget });
     // Closing while the reply is pending drops the request, so it is not read later.
     if (waitingThread) cancelNextReply(waitingThread);
     assistantNative?.close();
   };
   // Inside a picker or an editor, Back, the close button and a tap outside return to the message.
   const back = () => {
-    if (view !== "compose") setView("compose");
+    if (view.type !== "compose") setView({ type: "compose" });
     else close();
   };
   const onBackPress = useEffectEvent(() => {
@@ -375,13 +446,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
   }, []);
 
   const finishDelivery = useEffectEvent((action: "open" | "close", threadRef: ScopedThreadRef) => {
-    if (action === "open") {
-      void Linking.openURL(
-        Linking.createURL(
-          `threads/${encodeURIComponent(threadRef.environmentId)}/${encodeURIComponent(threadRef.threadId)}`,
-        ),
-      );
-    }
+    if (action === "open") void Linking.openURL(threadUrl(threadRef));
     assistantNative?.close();
   });
   useEffect(() => {
@@ -411,9 +476,9 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     const value = AsyncResult.isSuccess(read) ? read.value : "";
     setClipboard({ available: value.length > 0, text: value });
   };
-  // Opt-in pills from Settings > Voice. Each asks the phone only when it is turned on.
-  const wantsRecentPhoto = voice.assistantRecentPhoto;
-  const wantsLocation = voice.assistantLocation;
+  // Opt-in pills from Settings > Voice, or asked for from "+". Each asks the phone only then.
+  const wantsRecentPhoto = voice.assistantRecentPhoto || askedFor.recentPhoto;
+  const wantsLocation = voice.assistantLocation || askedFor.location;
   // A photo reaches the gallery a few seconds after it is taken, so the pill appears when it does.
   useEffect(() => {
     const native = assistantNative;
@@ -457,7 +522,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
       cancelled = true;
     };
   }, [wantsLocation]);
-  const originalContext: Record<ContextPillKind, string | null> = {
+  const originalContext: Record<FoundContextPillKind, string | null> = {
     sharedText: capture?.sharedText ?? null,
     sharedImage: capture?.sharedImageUri ?? null,
     selection: capture?.selectedText ?? null,
@@ -468,7 +533,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     location: wantsLocation ? location : null,
     clipboard: clipboard.available ? (clipboard.text ?? "") : null,
   };
-  const defaultAttached: Record<ContextPillKind, boolean> = {
+  const defaultAttached: Record<FoundContextPillKind, boolean> = {
     // The user handed these over on purpose, so they go along unless left out.
     sharedText: true,
     sharedImage: true,
@@ -476,41 +541,68 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     link: true,
     screenshot: voice.assistantAttachScreenshot,
     screenText: voice.assistantAttachScreenText,
-    // Private, so they wait for a tap.
-    recentPhoto: false,
-    location: false,
+    // Private, so they wait for a tap, unless they were asked for from "+".
+    recentPhoto: askedFor.recentPhoto,
+    location: askedFor.location,
     clipboard: false,
   };
-  const isAttached = (kind: ContextPillKind) => attachedChoice[kind] ?? defaultAttached[kind];
+  // A photo or a file from "+" was picked on purpose, so it starts attached.
+  const isAttached = (id: string) =>
+    attachedChoice[id] ?? (isFoundPill(id) ? defaultAttached[id] : true);
   const contextValue = (kind: TextContextPillKind) =>
     editedText[kind] ?? originalContext[kind] ?? "";
   const attachedText = (kind: TextContextPillKind) =>
     isAttached(kind) && originalContext[kind] !== null ? contextValue(kind) : null;
-  const imageUri = (kind: ImageContextPillKind) => annotatedImages[kind] ?? originalContext[kind];
-  const togglePill = async (kind: ContextPillKind) => {
-    const next = !isAttached(kind);
-    if (kind === "clipboard" && next && clipboard.text === null) await readClipboard();
-    setAttachedChoice((current) => ({ ...current, [kind]: next }));
+  const foundImageUri = (kind: Exclude<ImageContextPillKind, "photo">) =>
+    editedImages[kind] ?? originalContext[kind];
+  const togglePill = async (id: string) => {
+    const next = !isAttached(id);
+    if (id === "clipboard" && next && clipboard.text === null) await readClipboard();
+    setAttachedChoice((current) => ({ ...current, [id]: next }));
   };
-  const openPill = async (kind: ContextPillKind) => {
-    if (kind === "clipboard" && clipboard.text === null) await readClipboard();
-    setView(kind);
+  const openPill = async (id: string) => {
+    if (id === "clipboard" && clipboard.text === null) await readClipboard();
+    setView({ type: "pill", id });
   };
-  const pills: ReadonlyArray<ContextPillView> = CONTEXT_PILL_ORDER.filter(
+  const foundPills: ReadonlyArray<ContextPillView> = CONTEXT_PILL_ORDER.filter(
     (kind) => originalContext[kind] !== null,
   ).map((kind) => ({
+    id: kind,
     kind,
-    label: isImageContextPill(kind)
-      ? contextPillLabel(kind, "")
-      : kind === "clipboard"
+    label:
+      isImageContextPill(kind) || kind === "clipboard"
         ? contextPillLabel(kind, "")
         : contextPillLabel(kind, contextValue(kind)),
     attached: isAttached(kind),
-    thumbnailUri: isImageContextPill(kind) ? imageUri(kind) : null,
+    thumbnailUri:
+      kind === "sharedImage" || kind === "screenshot" || kind === "recentPhoto"
+        ? foundImageUri(kind)
+        : null,
   }));
-  const attachedImageUris = IMAGE_CONTEXT_PILLS.filter((kind) => isAttached(kind))
-    .map(imageUri)
-    .filter((uri) => uri !== null && uri !== undefined);
+  const pills: ReadonlyArray<ContextPillView> = [
+    ...foundPills,
+    ...addedPhotos.map((photo) => ({
+      id: photo.id,
+      kind: "photo" as const,
+      label: contextPillLabel("photo", ""),
+      attached: isAttached(photo.id),
+      thumbnailUri: editedImages[photo.id] ?? photo.uri,
+    })),
+    ...addedFiles.map((file) => ({
+      id: file.id,
+      kind: "file" as const,
+      label: contextPillLabel("file", file.name),
+      attached: isAttached(file.id),
+      thumbnailUri: null,
+    })),
+  ];
+  const attachedImageUris = [
+    ...FOUND_IMAGE_PILLS.filter((kind) => isAttached(kind)).map(foundImageUri),
+    ...addedPhotos
+      .filter((photo) => isAttached(photo.id))
+      .map((photo) => editedImages[photo.id] ?? photo.uri),
+  ].filter((uri) => uri !== null && uri !== undefined);
+  const attachedFiles = addedFiles.filter((file) => isAttached(file.id));
   const attachedScreenText = attachedText("screenText");
   const screenText = attachedScreenText?.trim()
     ? screenTextDocument(capture?.sourcePackage ?? null, attachedScreenText)
@@ -522,16 +614,26 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     location: attachedText("location"),
     clipboard: attachedText("clipboard"),
   });
-  const annotate = async (kind: ImageContextPillKind, strokes: ReadonlyArray<AnnotationStroke>) => {
-    const base = imageUri(kind);
+  const editImage = async (
+    id: string,
+    base: string,
+    strokes: ReadonlyArray<AnnotationStroke>,
+    crop: ImageCrop | null,
+  ) => {
     const native = assistantNative;
-    if (!base || !native) return;
-    const result = await settlePromise(() => native.annotateImage(base, strokes));
-    if (AsyncResult.isFailure(result)) return fail(result, "The image could not be marked up.");
-    setAnnotatedImages((current) => ({ ...current, [kind]: result.value }));
-    setAttachedChoice((current) => ({ ...current, [kind]: true }));
-    setView("compose");
+    if (!native) return;
+    const result = await settlePromise(() => native.editImage(base, strokes, crop));
+    if (AsyncResult.isFailure(result)) return fail(result, "The image could not be edited.");
+    setEditedImages((current) => ({ ...current, [id]: result.value }));
+    setAttachedChoice((current) => ({ ...current, [id]: true }));
+    setView({ type: "compose" });
   };
+  const resetImage = (id: string) =>
+    setEditedImages((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
   const targetEnvironmentId = targetThread?.environmentId ?? selectedProject?.environmentId;
   const environmentLabel = (environmentId: string) =>
     connectedEnvironments.find((candidate) => candidate.environmentId === environmentId)
@@ -539,7 +641,18 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
   const connected =
     connectedEnvironments.find((candidate) => candidate.environmentId === targetEnvironmentId)
       ?.connectionState === "connected";
-  const busy = phase.type !== "editing" && phase.type !== "failed";
+  const capabilities =
+    targetEnvironmentId === undefined
+      ? undefined
+      : serverConfigs.get(targetEnvironmentId)?.environment.capabilities;
+  const maxUploadBytes =
+    capabilities?.attachmentUploads === true
+      ? capabilities.fileAttachments?.maxUploadBytes
+      : undefined;
+  // While the panel stays, the next message can follow once the server took the last one.
+  const busy =
+    phase.type === "preparing" ||
+    (phase.type === "sending" && (afterSend !== "stay" || !delivered));
   const machines: ReadonlyArray<PanelMachine> = connectedEnvironments
     .filter((environment) => environment.isEnabled)
     .map((environment) => ({
@@ -553,6 +666,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
   const hasContent = (messageText: string) =>
     joinMessageText(messageText, inlineContext).length > 0 ||
     attachedImageUris.length > 0 ||
+    attachedFiles.length > 0 ||
     screenText !== null;
 
   const fail = (result: Parameters<typeof squashAtomCommandFailure>[0], fallback: string) => {
@@ -560,27 +674,30 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     setPhase({ type: "failed", message: error instanceof Error ? error.message : fallback });
   };
 
+  const prepare = (messageText: string) => {
+    if (attachedFiles.length > 0 && maxUploadBytes === undefined) {
+      return Promise.reject(new Error("This server takes no files. Leave the files out."));
+    }
+    return prepareAssistantMessage({
+      text: joinMessageText(messageText, inlineContext),
+      imageUris: attachedImageUris,
+      files: attachedFiles,
+      screenText,
+      maxUploadBytes,
+    });
+  };
+
   const send = async (messageText: string) => {
     if (!ready || targetEnvironmentId === undefined || !hasContent(messageText)) return;
     setPhase({ type: "preparing" });
-    const capabilities = serverConfigs.get(targetEnvironmentId)?.environment.capabilities;
-    const prepared = await settlePromise(() =>
-      prepareAssistantMessage({
-        text: joinMessageText(messageText, inlineContext),
-        imageUris: attachedImageUris,
-        screenText,
-        maxUploadBytes:
-          capabilities?.attachmentUploads === true
-            ? capabilities.fileAttachments?.maxUploadBytes
-            : undefined,
-      }),
-    );
-    if (AsyncResult.isFailure(prepared)) return fail(prepared, "The screen could not be attached.");
+    const prepared = await settlePromise(() => prepare(messageText));
+    if (AsyncResult.isFailure(prepared))
+      return fail(prepared, "The context could not be attached.");
     const metadata = makeTurnCommandMetadata();
     let message: QueuedThreadMessage | null;
     if (targetThread) {
       // Queued, so the message becomes its own run after any running one: the panel can then
-      // read the reply of exactly this message.
+      // show and read the reply of exactly this message.
       message = {
         environmentId: targetThread.environmentId,
         threadId: targetThread.id,
@@ -612,8 +729,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
       cancelNextReply(threadRef);
       return fail(queued, "The message could not be queued.");
     }
-    sentRef.current = true;
-    keepUnsentDraft(null);
+    flowDraftHandedOffRef.current = true;
     if (draftKey && targetThread) {
       // The new thread draft held nothing for a message to an existing thread.
       clearComposerDraft(draftKey);
@@ -624,7 +740,56 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
         deferAttachmentCleanup: true,
       });
     }
+    // The context went with this message; a follow-up carries only what is picked again.
+    setText("");
+    setAttachedChoice(Object.fromEntries(pills.map((pill) => [pill.id, false])));
+    setAddedPhotos([]);
+    setAddedFiles([]);
+    setSent((current) => [
+      ...current,
+      { messageId: queuedMessage.messageId, text: messageText.trim(), threadRef },
+    ]);
     setPhase({ type: "sending", messageId: message.messageId, threadRef });
+  };
+
+  /**
+   * Continues in the app with what the panel holds: a thread gets it in its composer, a new
+   * thread opens its draft screen with it.
+   */
+  const openInApp = async () => {
+    if (busy) return;
+    const content = hasContent(text) ? await settlePromise(() => prepare(text)) : null;
+    if (content && AsyncResult.isFailure(content)) {
+      return fail(content, "The context could not be attached.");
+    }
+    const prepared = content?.value ?? null;
+    let url: string | null = null;
+    if (targetThread) {
+      const threadDraftKey = scopedThreadKey(targetThread.environmentId, targetThread.id);
+      if (prepared?.text) {
+        const existing = getComposerDraftSnapshot(threadDraftKey).text;
+        appendComposerDraftText(
+          threadDraftKey,
+          existing.trim() ? `\n\n${prepared.text}` : prepared.text,
+        );
+      }
+      if (prepared) appendComposerDraftAttachments(threadDraftKey, prepared.attachments);
+      url = threadUrl({ environmentId: targetThread.environmentId, threadId: targetThread.id });
+      // The new thread draft stays unused, as when the panel closes.
+      if (draftKey && !flowDraftHandedOffRef.current) clearComposerDraft(draftKey);
+    } else if (draftKey) {
+      if (prepared) {
+        flow.setPrompt(prepared.text);
+        flow.replaceAttachments(prepared.attachments);
+      }
+      flowDraftHandedOffRef.current = true;
+      url = Linking.createURL("new/draft", { queryParams: { draftId: draftKey } });
+    }
+    if (url === null) return;
+    keepUnsentDraft(null);
+    setText("");
+    void Linking.openURL(url);
+    assistantNative?.close();
   };
 
   const speak = async () => {
@@ -655,67 +820,193 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     startWithVoice();
   }, [preferencesLoaded]);
 
+  /** Asks for the access a pill needs. A refusal shows why the pill did not appear. */
+  const askForPill = async (kind: "recentPhoto" | "location") => {
+    setView({ type: "compose" });
+    const native = assistantNative;
+    if (!native) return;
+    const permission =
+      kind === "recentPhoto"
+        ? PHOTO_PERMISSION
+        : PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION;
+    const granted = await settlePromise(() => PermissionsAndroid.request(permission));
+    if (!AsyncResult.isSuccess(granted) || granted.value !== PermissionsAndroid.RESULTS.GRANTED) {
+      setPhase({
+        type: "failed",
+        message: `Allow ${kind === "recentPhoto" ? "photo" : "location"} access for T3 Code in Android settings.`,
+      });
+      return;
+    }
+    const found =
+      kind === "recentPhoto"
+        ? await settlePromise(
+            async () => (await native.recentPhoto(RECENT_PHOTO_MAX_AGE_SECONDS)) !== null,
+          )
+        : await settlePromise(async () => (await native.lastLocation()) !== null);
+    if (!AsyncResult.isSuccess(found) || !found.value) {
+      setPhase({
+        type: "failed",
+        message:
+          kind === "recentPhoto"
+            ? "No photo from the last 15 minutes."
+            : "The phone knows no location yet.",
+      });
+      return;
+    }
+    setAskedFor((current) => ({ ...current, [kind]: true }));
+  };
+  const pickPhotos = async (camera: boolean) => {
+    setView({ type: "compose" });
+    const endHandoff = beginForegroundHandoff();
+    const picked = await settlePromise(async () => {
+      const picker = camera ? withCameraLauncher(ImagePicker) : ImagePicker;
+      return picker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        base64: false,
+        quality: 1,
+      });
+    });
+    endHandoff();
+    if (AsyncResult.isFailure(picked)) return fail(picked, "The photos could not be opened.");
+    if (picked.value.canceled) return;
+    setAddedPhotos((current) => [
+      ...current,
+      ...(picked.value.assets ?? []).map((asset) => ({ id: `photo:${uuidv4()}`, uri: asset.uri })),
+    ]);
+  };
+  const pickFiles = async () => {
+    setView({ type: "compose" });
+    const picked = await settlePromise(() =>
+      pickComposerFiles({ existingCount: addedFiles.length, maxBytes: maxUploadBytes }),
+    );
+    if (AsyncResult.isFailure(picked)) return fail(picked, "The files could not be opened.");
+    setAddedFiles((current) => [...current, ...picked.value.files]);
+    if (picked.value.error) setPhase({ type: "failed", message: picked.value.error });
+  };
+  const addItems: ReadonlyArray<PanelMenuItem> = [
+    { key: "photos", icon: "photo", label: "Photos", onPress: () => void pickPhotos(false) },
+    { key: "camera", icon: "camera", label: "Take a photo", onPress: () => void pickPhotos(true) },
+    ...(maxUploadBytes === undefined
+      ? []
+      : [
+          {
+            key: "file",
+            icon: "paperclip",
+            label: "File",
+            onPress: () => void pickFiles(),
+          } as const,
+        ]),
+    ...(originalContext.recentPhoto === null
+      ? [
+          {
+            key: "recentPhoto",
+            icon: "photo",
+            label: "Most recent photo",
+            onPress: () => void askForPill("recentPhoto"),
+          } as const,
+        ]
+      : []),
+    ...(originalContext.location === null
+      ? [
+          {
+            key: "location",
+            icon: "mappin",
+            label: "Location",
+            onPress: () => void askForPill("location"),
+          } as const,
+        ]
+      : []),
+  ];
+
   // Above the keyboard the system inset is gone, so the row sits right on its edge.
   const bottomPadding = keyboardVisible ? 8 : insets.bottom + 12;
   const typed = text.trim().length > 0;
   const targetLabel = targetThread
     ? targetThread.title.trim() || "Untitled thread"
-    : project
-      ? `New thread · ${project.title}`
-      : pickedEnvironmentId !== null && machineProjects.length === 0
-        ? "No projects on this machine"
-        : "Loading projects…";
+    : conversationRef
+      ? "Starting the thread…"
+      : project
+        ? `New thread · ${project.title}`
+        : pickedEnvironmentId !== null && machineProjects.length === 0
+          ? "No projects on this machine"
+          : "Loading projects…";
   const status = (() => {
     if (afterDelivery === "wait") return "Waiting for the reply…";
     if (afterDelivery === "read") return "Reading the reply aloud";
-    switch (phase.type) {
-      case "sending":
-        return connected ? "Sending…" : "Queued. It sends when the server connects.";
-      default:
-        return connected ? "Connected" : "Not connected. The message waits in the outbox.";
+    if (phase.type === "sending" && !delivered) {
+      return connected ? "Sending…" : "Queued. It sends when the server connects.";
     }
+    return connected ? "Connected" : "Not connected. The message waits in the outbox.";
   })();
+  const pillView = view.type === "pill" ? view.id : null;
+  const openedPhoto = addedPhotos.find((photo) => photo.id === pillView);
+  const openedFile = addedFiles.find((file) => file.id === pillView);
+  const removeAdded = (id: string) => {
+    setAddedPhotos((current) => current.filter((photo) => photo.id !== id));
+    setAddedFiles((current) => current.filter((file) => file.id !== id));
+    resetImage(id);
+    setView({ type: "compose" });
+  };
 
   return (
     <View className="flex-1 justify-end">
+      {/* No dim layer: the edge glow marks the panel, and the app under it stays readable. */}
       <Pressable
-        accessibilityLabel={view === "compose" ? "Close" : "Back to the message"}
-        className="absolute inset-0 bg-black/40"
+        accessibilityLabel={view.type === "compose" ? "Close" : "Back to the message"}
+        className="absolute inset-0"
         onPress={back}
       />
       <KeyboardAvoidingView behavior="padding">
         <View
-          className="gap-3 rounded-t-3xl bg-sheet px-4 pt-4"
+          className="gap-3 rounded-t-3xl bg-sheet px-4 pt-1"
           style={{ paddingBottom: bottomPadding }}
         >
+          <OpenInAppHandle
+            label={targetThread ? "Open the thread in the app" : "Continue in the app"}
+            disabled={busy || (targetThread === null && draftKey === null)}
+            onOpen={() => void openInApp()}
+          />
           <View className="flex-row items-center justify-between gap-2">
-            {machines.length > 1 && targetMachine ? (
+            {machines.length > 1 && targetMachine && conversationRef === null ? (
               <MachineButton
                 machine={targetMachine}
-                expanded={view === "machine"}
+                expanded={view.type === "machine"}
                 disabled={busy}
                 onPress={() =>
-                  setView((current) => (current === "machine" ? "compose" : "machine"))
+                  setView((current) =>
+                    current.type === "machine" ? { type: "compose" } : { type: "machine" },
+                  )
                 }
               />
             ) : null}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`${targetLabel}. Change where to send`}
-              accessibilityState={{ expanded: view === "target", disabled: busy }}
+              accessibilityState={{
+                expanded: view.type === "target",
+                disabled: busy || conversationRef !== null,
+              }}
               className="flex-1"
-              disabled={busy}
-              onPress={() => setView((current) => (current === "target" ? "compose" : "target"))}
+              // The conversation stays in its thread; the arrow above opens it in the app.
+              disabled={busy || conversationRef !== null}
+              onPress={() =>
+                setView((current) =>
+                  current.type === "target" ? { type: "compose" } : { type: "target" },
+                )
+              }
             >
               <View className="flex-row items-center gap-1">
                 <Text textRole="body" className="shrink font-medium" numberOfLines={1}>
                   {targetLabel}
                 </Text>
-                <SymbolView
-                  name={view === "target" ? "chevron.up" : "chevron.down"}
-                  size={14}
-                  tintColorClassName="accent-foreground-muted"
-                />
+                {conversationRef === null ? (
+                  <SymbolView
+                    name={view.type === "target" ? "chevron.up" : "chevron.down"}
+                    size={14}
+                    tintColorClassName="accent-foreground-muted"
+                  />
+                ) : null}
               </View>
               <Text className="text-sm text-foreground-muted" numberOfLines={1}>
                 {status}
@@ -729,13 +1020,13 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
               />
             ) : null}
             <IconButton
-              accessibilityLabel={view === "compose" ? "Close" : "Back to the message"}
+              accessibilityLabel={view.type === "compose" ? "Close" : "Back to the message"}
               icon="xmark"
               onPress={back}
             />
           </View>
 
-          {view === "machine" ? (
+          {view.type === "machine" ? (
             <MachineList
               machines={machines}
               selected={targetEnvironmentId}
@@ -743,10 +1034,10 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
                 setPickedEnvironmentId(environmentId);
                 // A target on another machine no longer fits; the machine's default takes over.
                 if (environmentId !== targetEnvironmentId) setPickedTarget(null);
-                setView("compose");
+                setView({ type: "compose" });
               }}
             />
-          ) : view === "target" ? (
+          ) : view.type === "target" ? (
             <AssistantTargetPicker
               target={target}
               threads={machineThreads}
@@ -754,48 +1045,93 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
               environmentLabel={environmentLabel}
               onPick={(picked) => {
                 setPickedTarget(picked);
-                setView("compose");
+                setView({ type: "compose" });
               }}
             />
-          ) : view !== "compose" && isImageContextPill(view) ? (
+          ) : view.type === "add" ? (
+            <PanelMenu items={addItems} />
+          ) : openedPhoto ? (
             <ImageContextEditor
-              title={CONTEXT_PILL_TITLES[view]}
-              uri={imageUri(view) ?? ""}
-              imageWidth={view === "screenshot" ? (capture?.screenshotWidth ?? 0) : 0}
-              imageHeight={view === "screenshot" ? (capture?.screenshotHeight ?? 0) : 0}
-              annotated={annotatedImages[view] !== undefined}
-              onSave={(strokes) => void annotate(view, strokes)}
-              onReset={() =>
-                setAnnotatedImages((current) => {
-                  const next = { ...current };
-                  delete next[view];
-                  return next;
-                })
+              key={openedPhoto.id}
+              title="Photo"
+              uri={editedImages[openedPhoto.id] ?? openedPhoto.uri}
+              imageWidth={0}
+              imageHeight={0}
+              edited={editedImages[openedPhoto.id] !== undefined}
+              onSave={(strokes, crop) =>
+                void editImage(
+                  openedPhoto.id,
+                  editedImages[openedPhoto.id] ?? openedPhoto.uri,
+                  strokes,
+                  crop,
+                )
               }
-              onDone={() => setView("compose")}
+              onReset={() => resetImage(openedPhoto.id)}
+              onRemove={() => removeAdded(openedPhoto.id)}
+              onDone={() => setView({ type: "compose" })}
             />
-          ) : view !== "compose" ? (
+          ) : openedFile ? (
+            <FileContextView
+              name={openedFile.name}
+              sizeBytes={openedFile.sizeBytes}
+              onRemove={() => removeAdded(openedFile.id)}
+              onDone={() => setView({ type: "compose" })}
+            />
+          ) : pillView !== null &&
+            isFoundPill(pillView) &&
+            (pillView === "sharedImage" ||
+              pillView === "screenshot" ||
+              pillView === "recentPhoto") ? (
+            <ImageContextEditor
+              key={pillView}
+              title={CONTEXT_PILL_TITLES[pillView]}
+              uri={foundImageUri(pillView) ?? ""}
+              // Only the screenshot arrives with its size, and an edit can change the size.
+              imageWidth={
+                pillView === "screenshot" && editedImages[pillView] === undefined
+                  ? (capture?.screenshotWidth ?? 0)
+                  : 0
+              }
+              imageHeight={
+                pillView === "screenshot" && editedImages[pillView] === undefined
+                  ? (capture?.screenshotHeight ?? 0)
+                  : 0
+              }
+              edited={editedImages[pillView] !== undefined}
+              onSave={(strokes, crop) => {
+                const base = foundImageUri(pillView);
+                if (base) void editImage(pillView, base, strokes, crop);
+              }}
+              onReset={() => resetImage(pillView)}
+              onDone={() => setView({ type: "compose" })}
+            />
+          ) : pillView !== null && isFoundPill(pillView) && !isImageContextPill(pillView) ? (
             <TextContextEditor
-              title={CONTEXT_PILL_TITLES[view]}
-              subtitle={view === "screenText" ? (capture?.sourcePackage ?? null) : null}
-              value={contextValue(view)}
-              edited={editedText[view] !== undefined}
-              onChange={(value) => setEditedText((current) => ({ ...current, [view]: value }))}
+              title={CONTEXT_PILL_TITLES[pillView]}
+              subtitle={pillView === "screenText" ? (capture?.sourcePackage ?? null) : null}
+              value={contextValue(pillView)}
+              edited={editedText[pillView] !== undefined}
+              onChange={(value) => setEditedText((current) => ({ ...current, [pillView]: value }))}
               onReset={() =>
                 setEditedText((current) => {
                   const next = { ...current };
-                  delete next[view];
+                  delete next[pillView];
                   return next;
                 })
               }
-              onDone={() => setView("compose")}
+              onDone={() => setView({ type: "compose" })}
             />
           ) : (
             <>
+              {conversationRef ? (
+                <AssistantConversation threadRef={conversationRef} sent={sent} />
+              ) : null}
               <ContextPills
                 pills={pills}
-                onToggle={(kind) => void togglePill(kind)}
-                onOpen={(kind) => void openPill(kind)}
+                disabled={busy}
+                onAdd={() => setView({ type: "add" })}
+                onToggle={(id) => void togglePill(id)}
+                onOpen={(id) => void openPill(id)}
               />
               {phase.type === "failed" ? (
                 <Text className="text-sm text-danger-foreground">{phase.message}</Text>
@@ -811,7 +1147,13 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
                     editable={!busy}
                     multiline
                     className={typed ? "max-h-40 pr-11" : "max-h-40"}
-                    placeholder={targetThread ? "Message" : "What should the agent do?"}
+                    placeholder={
+                      conversationRef
+                        ? "Reply"
+                        : targetThread
+                          ? "Message"
+                          : "What should the agent do?"
+                    }
                     value={text}
                     onChangeText={setText}
                   />
@@ -854,6 +1196,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
           )}
         </View>
       </KeyboardAvoidingView>
+      {voice.assistantGlowSeconds === 0 ? null : <EdgeGlow seconds={voice.assistantGlowSeconds} />}
     </View>
   );
 }

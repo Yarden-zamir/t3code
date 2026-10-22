@@ -89,6 +89,8 @@ import IconLetterSpacing from "@tabler/icons-react-native/IconLetterSpacing";
 import IconMicrophone from "@tabler/icons-react-native/IconMicrophone";
 import IconLink from "@tabler/icons-react-native/IconLink";
 import IconMapPin from "@tabler/icons-react-native/IconMapPin";
+import IconCrop from "@tabler/icons-react-native/IconCrop";
+import IconPaperclip from "@tabler/icons-react-native/IconPaperclip";
 import IconListCheck from "@tabler/icons-react-native/IconListCheck";
 import IconListNumbers from "@tabler/icons-react-native/IconListNumbers";
 import IconMenu2 from "@tabler/icons-react-native/IconMenu2";
@@ -226,6 +228,8 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   laptopcomputer: IconDeviceLaptop,
   link: IconLink,
   mappin: IconMapPin,
+  crop: IconCrop,
+  paperclip: IconPaperclip,
   lock: IconLock,
   "lock.open": IconLockOpen,
   "list.number": IconListNumbers,

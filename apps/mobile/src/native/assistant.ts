@@ -39,6 +39,14 @@ export interface AnnotationStroke {
   readonly color: string;
 }
 
+/** A crop in fractions of the image size. */
+export interface ImageCrop {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 type AssistantEvents = {
   readonly onCapture: (capture: AssistantCapture) => void;
   /** The gallery changed while `watchPhotos(true)` is on. */
@@ -50,7 +58,12 @@ declare class T3AssistantModule extends NativeModule<AssistantEvents> {
   close(): void;
   openAssistantSettings(): void;
   recognizeSpeech(): Promise<string | null>;
-  annotateImage(uri: string, strokes: ReadonlyArray<AnnotationStroke>): Promise<string>;
+  /** Draws the strokes, then crops. Resolves with a new file URI. */
+  editImage(
+    uri: string,
+    strokes: ReadonlyArray<AnnotationStroke>,
+    crop: ImageCrop | null,
+  ): Promise<string>;
   recentPhoto(maxAgeSeconds: number): Promise<RecentPhoto | null>;
   copyToCache(uri: string): Promise<string>;
   lastLocation(): Promise<LastLocation | null>;
