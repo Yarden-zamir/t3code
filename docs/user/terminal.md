@@ -30,7 +30,9 @@ terminal thread in the command palette. All three ask for a project.
 A message to a terminal thread is typed into its terminal, followed by Enter. This
 covers messages from a scheduled task, a webhook or an agent. When the shell is idle,
 the run ends with the exit code and the output of the command. When a program runs
-in the terminal, the message goes to that program and the run ends at once.
+in the terminal, the message goes to that program and the run ends at once. The
+message runs in the shell itself, so `cd` and `export` stay for the next message. A
+scheduled task with a webhook cannot use a terminal thread.
 
 The thread has no timeline and no composer. A server restart ends the programs in its
 terminal unless the server runs terminal threads in tmux (Settings > Fork > Terminal

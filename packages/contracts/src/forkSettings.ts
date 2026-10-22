@@ -72,7 +72,8 @@ export const MAX_TERMINAL_KEY_MAPPINGS = 64;
 /**
  * Fork: a key that a terminal sends as the bytes in `send`, in place of its own encoding. `key`
  * uses the keybinding syntax, such as `cmd+z`. `send` uses escape notation: `\e`, `\xNN`,
- * `\uNNNN`, `\r`, `\n`, `\t` and `\\`. `passthrough` skips the multiplexer, so the application
+ * `\uNNNN`, `\r`, `\n`, `\t` and `\\`. `\xNN` is the character U+00NN, which the terminal sends
+ * as UTF-8, so a value from 0x80 up becomes two bytes. A mapping applies in every terminal. `passthrough` skips the multiplexer, so the application
  * gets the bytes unchanged.
  */
 export const TerminalKeyMapping = Schema.Struct({

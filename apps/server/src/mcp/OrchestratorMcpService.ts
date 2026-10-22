@@ -59,6 +59,7 @@ import {
   type ScheduledTaskUpsertInput,
   type ServerProvider,
   ThreadId,
+  TERMINAL_THREAD_INSTANCE_ID,
 } from "@t3tools/contracts";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -198,6 +199,32 @@ export class OrchestratorMcpService extends Context.Service<
 >()("t3/mcp/OrchestratorMcpService") {}
 
 const isThreadManagementError = Schema.is(ThreadManagementService.ThreadManagementError);
+
+/**
+ * Fork: a run with an explicit model switches the thread that it is bound to. A terminal task
+ * bound to an agent thread would turn that thread into a terminal thread.
+ *
+ * Limit: an update that only changes the model of an already bound task is not checked, because
+ * the check needs the bound thread. Revisit if an agent thread is seen to turn into a terminal.
+ */
+function assertTerminalTaskBinding(
+  modelSelection: ModelSelection,
+  boundParent: { readonly thread: { readonly modelSelection: ModelSelection } } | undefined,
+): Effect.Effect<void, OrchestratorMcpFailure> {
+  if (
+    modelSelection.instanceId !== TERMINAL_THREAD_INSTANCE_ID ||
+    boundParent === undefined ||
+    boundParent.thread.modelSelection.instanceId === TERMINAL_THREAD_INSTANCE_ID
+  ) {
+    return Effect.void;
+  }
+  return Effect.fail(
+    failure(
+      "invalid_request",
+      "A terminal task bound to this thread would turn it into a terminal thread. Pass bindToCurrentThread:false.",
+    ),
+  );
+}
 
 function failure(code: OrchestratorMcpFailure["code"], message: string): OrchestratorMcpFailure {
   return new OrchestratorMcpFailure({ code, message });
@@ -1680,6 +1707,10 @@ const make = Effect.gen(function* () {
             : isScheduledTaskProjectDefaultModel(input.modelSelection)
               ? { modelSelection: yield* inherited(), useProjectDefaultModel: true }
               : { modelSelection: yield* checkScheduledTaskModelSelection(input.modelSelection) };
+        yield* assertTerminalTaskBinding(
+          modelFields.modelSelection,
+          bindToCurrentThread ? parent : undefined,
+        );
         const derivedTitle = input.prompt.split("\n")[0]?.trim() ?? "";
         const title =
           input.title ?? (derivedTitle.length > 0 ? derivedTitle.slice(0, 80) : "Scheduled task");
@@ -1749,6 +1780,15 @@ const make = Effect.gen(function* () {
             parent === undefined
               ? "bindToCurrentThread needs an agent running inside a T3 thread."
               : "bindToCurrentThread binds to this thread, which belongs to a different project.",
+          );
+        }
+        if (input.bindToCurrentThread === true) {
+          yield* assertTerminalTaskBinding(
+            input.modelSelection === undefined ||
+              isScheduledTaskProjectDefaultModel(input.modelSelection)
+              ? existing.modelSelection
+              : input.modelSelection,
+            parent,
           );
         }
         const threadId =

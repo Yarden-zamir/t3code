@@ -66,7 +66,14 @@ export const layer = Layer.effect(
             return Effect.void;
           }
           if (event.type === "output") return listener({ type: "output", data: event.data });
-          if (event.type === "exited" || event.type === "closed")
+          // A restart or a new start replaces the shell that the run waits on.
+          if (
+            event.type === "exited" ||
+            event.type === "closed" ||
+            event.type === "started" ||
+            event.type === "restarted" ||
+            event.type === "error"
+          )
             return listener({ type: "ended" });
           return Effect.void;
         }),

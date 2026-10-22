@@ -455,7 +455,7 @@ A thread whose view is a live terminal, next to the other threads of a project. 
 - Server auto-update waits while a terminal thread without tmux runs a program.
 - A shell that exits or is killed closes the session of the main terminal (the server closes it and deletes its history). The view shows "Start a new session", and the next message opens a fresh shell.
 - Sidebar state: the terminal summary carries `attention` (`bell` for a bell or OSC 9, OSC 99 and OSC 777 notifications, `finished` for a program that ended). Unseen `bell` shows Awaiting Input, unseen `finished` shows Completed, a session in `starting` shows Connecting and `error` shows Error. Message runs keep their own Working and Completed. A running program shows only the terminal icon.
-- With `terminalThreadsTmux`, the terminal runs inside a tmux session on its own socket in the state folder. Programs survive a server restart, and the next open attaches again. tmux search needs the tmux search keys of [Terminal key mappings](#terminal-key-mappings).
+- With `terminalThreadsTmux`, the terminal runs inside a tmux session on its own socket, named from a hash of the state folder (the socket file is in `/tmp/tmux-<uid>/`). Programs survive a server restart, and the next open attaches again. tmux search needs the tmux search keys of [Terminal key mappings](#terminal-key-mappings).
 - **Limits:** a bell that arrives split across two output chunks is missed, and `finished` comes from the subprocess poll, so a command shorter than one poll shows no pill. A terminal thread has no timeline, so the messages that a schedule sent show only in the terminal. Without tmux a restart ends the programs, and a program that never ends blocks auto-update. The mobile app has no create button. Find in thread works only with tmux. Revisit when these block daily use.
 
 ### Terminal key mappings
@@ -473,7 +473,7 @@ Each terminal keeps up to 5,000 lines and 8 MiB of output on the server.
 
 - **Setting:** server settings `terminalHistoryLines` (5000) and `terminalHistoryMegabytes` (8). Settings > Fork > Terminal history.
 - **Works on:** server.
-- **Limits:** a change applies after a server restart. Revisit if live terminals must resize their history.
+- **Limits:** a change applies after a server restart. In tmux the line limit sets the tmux scrollback, and a tmux session keeps the value of the moment it started. Revisit if live terminals must resize their history.
 
 ### Terminal settings
 

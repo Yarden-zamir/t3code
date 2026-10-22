@@ -167,6 +167,8 @@ export function wrapCommandForCompletion(
   command: string,
   shell: CompletionShell,
   sentinel: string,
+  /** `current` runs a posix command in the shell itself, so `cd` and `export` persist. */
+  scope: "subshell" | "current" = "subshell",
 ): string {
   const body = command.replace(/\r?\n/g, "\r");
   switch (shell) {
@@ -175,7 +177,9 @@ export function wrapCommandForCompletion(
     case "fish":
       return `begin\r${body}\rend; printf '\\n${sentinel}%s\\n' $status`;
     case "posix":
-      return `( ${body}\r); printf '\\n${sentinel}%s\\n' "$?"`;
+      return scope === "current"
+        ? `{ ${body}\r}; printf '\\n${sentinel}%s\\n' "$?"`
+        : `( ${body}\r); printf '\\n${sentinel}%s\\n' "$?"`;
   }
 }
 

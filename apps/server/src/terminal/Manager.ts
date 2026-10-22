@@ -1527,6 +1527,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     TerminalSessionState,
     TerminalLaunch["passthroughWrite"]
   >();
+  const shellPidBySession = new WeakMap<TerminalSessionState, TerminalLaunch["shellPid"]>();
   const registerTerminalProcesses = options.registerTerminalProcesses ?? (() => Effect.void);
   const unregisterTerminal = options.unregisterTerminal ?? (() => Effect.void);
 
@@ -2138,7 +2139,16 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         exitSignal: action.exitSignal,
       });
       if (action.closeAfterExit) {
-        yield* closeSession(action.threadId, action.terminalId, true);
+        // An open or restart that won the lock already replaced the process; leave that session.
+        yield* withThreadLock(
+          action.threadId,
+          Effect.gen(function* () {
+            const current = yield* getSession(action.threadId, action.terminalId);
+            if (Option.isSome(current) && current.value === session && session.process === null) {
+              yield* closeSession(action.threadId, action.terminalId, true);
+            }
+          }),
+        );
       }
       yield* evictInactiveSessionsIfNeeded();
       return;
@@ -2336,8 +2346,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               spawnResult.shellLabel === formatShellCandidate(forkLaunch.shell)
             ) {
               passthroughWriteBySession.set(session, forkLaunch.passthroughWrite);
+              shellPidBySession.set(session, forkLaunch.shellPid);
             } else {
               passthroughWriteBySession.delete(session);
+              shellPidBySession.delete(session);
             }
             ptyProcess = spawnResult.process;
             startedShell = spawnResult.shellLabel;
@@ -2509,7 +2521,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session: TerminalSessionState & { pid: number },
     ) {
       const terminalPid = session.pid;
-      const inspectResult = yield* subprocessInspector(terminalPid).pipe(
+      // Fork: under tmux the programs are children of the pane shell, not of the terminal process.
+      const shellPid = yield* shellPidBySession.get(session) ?? Effect.succeed(null);
+      const inspectResult = yield* subprocessInspector(shellPid ?? terminalPid).pipe(
         Effect.asSome,
         Effect.catch((reason) =>
           Effect.logWarning("failed to check terminal subprocess activity", {

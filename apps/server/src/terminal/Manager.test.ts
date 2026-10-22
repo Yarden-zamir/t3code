@@ -501,6 +501,26 @@ it.layer(
     }),
   );
 
+  it.effect("closes the session of a terminal thread when its shell exits", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, getEvents } = yield* createManager();
+
+      yield* manager.open(openInput({ env: { T3CODE_TERMINAL_THREAD: "1" } }));
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      process.emitExit({ exitCode: 0, signal: 0 });
+
+      yield* waitFor(
+        Effect.map(getEvents, (events) => events.some((event) => event.type === "closed")),
+        "1200 millis",
+      );
+      const types = (yield* getEvents).map((event) => event.type);
+      expect(types.indexOf("exited")).toBeLessThan(types.indexOf("closed"));
+    }),
+  );
+
   it.effect("attaches to exited sessions without restarting them", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter, getEvents } = yield* createManager();

@@ -13,7 +13,7 @@ const selectZoomLimits = (settings: ClientSettings) => ({
 
 export type TerminalZoom = "in" | "out" | "reset";
 
-/** Fork: `cmd+=`, `cmd+-` and `cmd+0` on macOS, `ctrl+shift+=`, `ctrl+shift+-` and `ctrl+0` elsewhere. */
+/** Fork: `cmd+=`, `cmd+-` and `cmd+0` on macOS, `ctrl+=`, `ctrl+-` and `ctrl+0` elsewhere. */
 export function terminalZoomShortcut(event: {
   readonly key: string;
   readonly metaKey: boolean;

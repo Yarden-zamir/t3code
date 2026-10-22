@@ -120,3 +120,6 @@ export function formatTimedOutRun(result: CompletionResult): string {
 
 export const TYPED_INTO_PROGRAM_MESSAGE =
   "Typed into the program that runs in the terminal. Its output is not captured.";
+
+export const SHELL_ENDED_MESSAGE =
+  "The shell exited, so the terminal session is closed. The next message starts a new one.";

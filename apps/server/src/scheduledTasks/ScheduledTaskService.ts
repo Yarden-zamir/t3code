@@ -25,6 +25,7 @@ import {
   type ScheduledTaskSetEnabledInput,
   type ScheduledTaskUpsertInput,
   type ModelSelection,
+  TERMINAL_THREAD_INSTANCE_ID,
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Cause from "effect/Cause";
@@ -996,6 +997,13 @@ export const layer = Layer.effect(
 
     const upsert: ScheduledTaskService["Service"]["upsert"] = (input) =>
       Effect.gen(function* () {
+        // Fork: a webhook value is typed into a shell, and its sender controls the text.
+        if (
+          input.schedule.type === "webhook" &&
+          input.modelSelection?.instanceId === TERMINAL_THREAD_INSTANCE_ID
+        ) {
+          return yield* Effect.fail(taskError("A webhook task cannot run in a terminal thread."));
+        }
         const now = yield* localNow;
         const uuid =
           input.commandId === undefined

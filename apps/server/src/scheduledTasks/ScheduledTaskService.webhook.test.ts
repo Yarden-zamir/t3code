@@ -173,6 +173,21 @@ it.effect("gives webhook tasks a relay URL when the environment has a managed tu
   ),
 );
 
+it.effect("refuses a webhook task that runs in a terminal thread", () =>
+  withService(({ service }) =>
+    Effect.gen(function* () {
+      const error = yield* service
+        .upsert(
+          yield* webhookTaskInput({
+            modelSelection: { instanceId: "terminal", model: "terminal" },
+          }),
+        )
+        .pipe(Effect.flip);
+      assert.include(error.message, "terminal thread");
+    }),
+  ),
+);
+
 it.effect("answers not found for a wrong token or unknown hook without logging", () =>
   withService(({ service }) =>
     Effect.gen(function* () {

@@ -12,6 +12,7 @@ describe("detectTerminalAttention", () => {
   it("ignores the bell that ends a title sequence and progress reports", () => {
     expect(detectTerminalAttention("\u001b]0;~/project\u0007prompt $ ")).toBe(false);
     expect(detectTerminalAttention("\u001b]9;4;1;50\u001b\\")).toBe(false);
+    expect(detectTerminalAttention("\u001b]9;9;/home/user\u001b\\")).toBe(false);
     expect(detectTerminalAttention("plain output")).toBe(false);
   });
 

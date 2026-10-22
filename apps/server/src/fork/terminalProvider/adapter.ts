@@ -36,6 +36,7 @@ import {
   formatTimedOutRun,
   makeCompletionCollector,
   TERMINAL_RUN_TIMEOUT_MS,
+  SHELL_ENDED_MESSAGE,
   TYPED_INTO_PROGRAM_MESSAGE,
 } from "./protocol.ts";
 import { TerminalPort } from "./port.ts";
@@ -243,6 +244,11 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
         // and the message says what went wrong.
         const runMessage = (turn: ProviderAdapter.ProviderAdapterV2TurnInput) =>
           Effect.gen(function* () {
+            // The message runs as a command of the user, so it needs the mode that asks for
+            // nothing. A caller in a narrower mode falls back to approval-required here.
+            if (turn.runtimePolicy.runtimeMode !== "full-access") {
+              return "A terminal thread runs commands without approval. Use full access mode.";
+            }
             const threadId = String(turn.threadId);
             const workspaceRoot = yield* options.workspaceRootOf(turn.appThread.projectId);
             const launch = terminalThreadLaunch({
@@ -274,23 +280,31 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
               return TYPED_INTO_PROGRAM_MESSAGE;
             }
             const sentinel = completionSentinel(yield* options.newToken);
-            const wrapped = wrapCommandForCompletion(text, options.shell, sentinel);
+            const wrapped = wrapCommandForCompletion(text, options.shell, sentinel, "current");
             const collector = makeCompletionCollector({
               sentinel,
               echoedWrapperLines: wrapped.split("\r").filter((line) => line.length > 0),
             });
             const finished = yield* Deferred.make<void>();
+            const shellEnded = yield* Ref.make(false);
             // Subscribe before writing, so the marker cannot pass the listener.
             const unsubscribe = yield* port.subscribe({ threadId, terminalId }, (event) =>
-              event.type === "ended" || collector.push(event.data)
-                ? Deferred.succeed(finished, undefined).pipe(Effect.asVoid)
-                : Effect.void,
+              event.type === "ended"
+                ? Ref.set(shellEnded, true).pipe(
+                    Effect.andThen(Deferred.succeed(finished, undefined)),
+                    Effect.asVoid,
+                  )
+                : collector.push(event.data)
+                  ? Deferred.succeed(finished, undefined).pipe(Effect.asVoid)
+                  : Effect.void,
             );
             return yield* Effect.gen(function* () {
-              yield* port.write({ threadId, terminalId, data: `${wrapped}\r` });
+              // Ctrl+E, Ctrl+U clear what the user left half-typed at the prompt.
+              yield* port.write({ threadId, terminalId, data: `\u0005\u0015${wrapped}\r` });
               const outcome = yield* Deferred.await(finished).pipe(
                 Effect.timeoutOption(TERMINAL_RUN_TIMEOUT_MS),
               );
+              if (yield* Ref.get(shellEnded)) return SHELL_ENDED_MESSAGE;
               const result = collector.result();
               if (result.exitCode !== null) {
                 yield* Ref.set(lastMarkerAtMs, yield* Clock.currentTimeMillis);

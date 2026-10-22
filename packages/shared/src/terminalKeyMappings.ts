@@ -96,7 +96,11 @@ export const ZLE_EDITOR_KEY_PRESET: ReadonlyArray<TerminalKeyMapping> = [
   { key: "cmd+shift+arrowdown", send: "\\e[1;10B", passthrough: true },
 ];
 
-/** `cmd+f` on macOS and `ctrl+shift+f` elsewhere open tmux search (no passthrough: tmux reads it). */
+/**
+ * `cmd+f` on macOS and `ctrl+shift+f` elsewhere open tmux search (no passthrough: tmux reads it).
+ * Limit: a mapping applies in every terminal, so these keys send junk to a terminal without tmux.
+ * Revisit when a mapping needs a scope.
+ */
 export const TMUX_KEY_PRESET: ReadonlyArray<TerminalKeyMapping> = [
   { key: "cmd+f", send: encodeForMapping(TERMINAL_THREAD_FIND_SEQUENCE), passthrough: false },
   {

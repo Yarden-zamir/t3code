@@ -657,8 +657,8 @@ function ThreadRouteContent(
   );
 
   // Fork: a terminal thread opens on its native terminal screen. The replace keeps the thread
-  // list as the screen behind it. Limit: messages that a schedule or an agent sent show only in
-  // the web and desktop timeline of the thread. Revisit when the terminal screen needs them.
+  // list as the screen behind it. Limit: the thread has no timeline, so the messages that a
+  // schedule or an agent sent show only in the terminal. Revisit when the terminal screen needs them.
   const terminalThreadRedirected = useRef<string | null>(null);
   useEffect(() => {
     if (
