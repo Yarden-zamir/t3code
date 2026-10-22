@@ -61,6 +61,12 @@ export type TerminalObserveInput = Schema.Codec.Encoded<typeof TerminalObserveIn
 export const TerminalWriteInput = Schema.Struct({
   ...TerminalSessionInput.fields,
   data: Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(65_536)),
+  /**
+   * Fork: deliver `data` to the application unchanged. A terminal that runs inside a multiplexer
+   * would otherwise read the bytes as keys and change them. Without a multiplexer it is a plain
+   * write.
+   */
+  passthrough: Schema.optionalKey(Schema.Boolean),
 });
 export type TerminalWriteInput = Schema.Codec.Encoded<typeof TerminalWriteInput>;
 

@@ -504,11 +504,12 @@ export interface GhosttyTerminalSurfaceOptions {
   readonly onSelectionChange: () => void;
   readonly beforeKey: (event: KeyboardEvent) => boolean;
   /**
-   * Fork: on macOS, the sequence to send for Command with a letter, or null for none. Without
-   * it a legacy session types the plain letter, and a multiplexer cannot carry the Kitty
-   * keyboard protocol that the shell asks for.
+   * Fork: the bytes to send for a key in place of its own encoding, or null. A mapped key wins
+   * over the terminal's own shortcuts, except copy while text is selected.
    */
-  readonly superKeyWire?: (key: string, shift: boolean) => string | null;
+  readonly mapKey?: (event: KeyboardEvent) => GhosttyMappedKey | null;
+  /** Fork: receives the bytes of a mapped key with `passthrough`. */
+  readonly onPassthroughData?: (data: string) => void;
   readonly onLinkActivate: (text: string, event: MouseEvent) => void;
   readonly canActivateLink?: (text: string) => boolean;
   /**
@@ -516,6 +517,11 @@ export interface GhosttyTerminalSurfaceOptions {
    * whose Paste entry can never reach a canvas terminal.
    */
   readonly onContextMenu?: (event: MouseEvent) => void;
+}
+
+export interface GhosttyMappedKey {
+  readonly data: string;
+  readonly passthrough: boolean;
 }
 
 export class GhosttyTerminalSurface {
@@ -1057,25 +1063,22 @@ export class GhosttyTerminalSurface {
       this.suppressedKeyCodes.add(event.code);
       return;
     }
-    const mac = isMacPlatform(navigator.platform);
-    if (
-      this.options.superKeyWire &&
-      mac &&
-      event.metaKey &&
-      !event.ctrlKey &&
-      !event.altKey &&
-      // A copy with a selection stays the terminal's own copy.
-      !(event.key.toLowerCase() === "c" && this.hasSelection())
-    ) {
-      const sequence = this.options.superKeyWire(event.key, event.shiftKey);
-      if (sequence !== null) {
-        event.preventDefault();
-        event.stopPropagation();
-        this.suppressedKeyCodes.add(event.code);
-        this.options.onData(sequence);
-        return;
+    const mapped =
+      isTerminalCopyShortcut(event) && this.hasSelection()
+        ? null
+        : (this.options.mapKey?.(event) ?? null);
+    if (mapped !== null) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.suppressedKeyCodes.add(event.code);
+      if (mapped.passthrough && this.options.onPassthroughData) {
+        this.options.onPassthroughData(mapped.data);
+      } else {
+        this.options.onData(mapped.data);
       }
+      return;
     }
+    const mac = isMacPlatform(navigator.platform);
     const primaryModifier = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
     const selectAllShortcut =
       event.key.toLowerCase() === "a" &&

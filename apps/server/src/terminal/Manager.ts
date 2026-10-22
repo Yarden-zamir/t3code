@@ -73,7 +73,11 @@ import * as PortScanner from "../preview/PortScanner.ts";
 import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClient.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import { T3_TERMINAL_THREAD_ID_ENV } from "./terminalEnv.ts";
-import { makeTerminalThreadLaunch, type TerminalLaunchInput } from "../fork/terminalThreads.ts";
+import {
+  makeTerminalThreadLaunch,
+  type TerminalLaunch,
+  type TerminalLaunchInput,
+} from "../fork/terminalThreads.ts";
 
 export {
   TerminalCwdError,
@@ -1327,7 +1331,7 @@ interface TerminalManagerOptions {
     TerminalProviderInstanceNotFoundError | TerminalProviderEnvironmentError
   >;
   /** Fork: a command that runs in place of the shell, such as tmux for a terminal thread. */
-  forkLaunchCommand?: (input: TerminalLaunchInput) => Effect.Effect<ShellCandidate | null>;
+  forkLaunchCommand?: (input: TerminalLaunchInput) => Effect.Effect<TerminalLaunch | null>;
 }
 
 export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
@@ -1389,7 +1393,16 @@ export const make = Effect.fn("TerminalManager.make")(function* () {
       env,
     }),
   );
+  // Limit: the history limits are read once at startup. A change in Settings applies after a
+  // server restart. Revisit if live sessions must resize their history.
+  const configured = yield* serverSettings.getSettings.pipe(Effect.option);
   return yield* makeWithOptions({
+    ...(Option.isSome(configured)
+      ? {
+          historyLineLimit: configured.value.terminalHistoryLines,
+          historyByteLimit: configured.value.terminalHistoryMegabytes * 1024 * 1024,
+        }
+      : {}),
     logsDir: terminalLogsDir,
     ptyAdapter,
     processTable: nativeTelemetry.processTable.pipe(
@@ -1502,6 +1515,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const processKillGraceMs = options.processKillGraceMs ?? DEFAULT_PROCESS_KILL_GRACE_MS;
   const maxRetainedInactiveSessions =
     options.maxRetainedInactiveSessions ?? DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS;
+  const passthroughWriteBySession = new WeakMap<
+    TerminalSessionState,
+    TerminalLaunch["passthroughWrite"]
+  >();
   const registerTerminalProcesses = options.registerTerminalProcesses ?? (() => Effect.void);
   const unregisterTerminal = options.unregisterTerminal ?? (() => Effect.void);
 
@@ -2224,7 +2241,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
                     spawnEnv: terminalEnv,
                   });
             const shellCandidates = [
-              ...(forkLaunch === null ? [] : [forkLaunch]),
+              ...(forkLaunch === null ? [] : [forkLaunch.shell]),
               ...resolveShellCandidates(shellResolver, platform, baseEnv),
             ];
             // Append (never prepend) managed ACP agent install directories so
@@ -2262,6 +2279,16 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               }
             }
             const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
+            // The launch only keeps its passthrough when its own command started, not a fallback
+            // shell.
+            if (
+              forkLaunch !== null &&
+              spawnResult.shellLabel === formatShellCandidate(forkLaunch.shell)
+            ) {
+              passthroughWriteBySession.set(session, forkLaunch.passthroughWrite);
+            } else {
+              passthroughWriteBySession.delete(session);
+            }
             ptyProcess = spawnResult.process;
             startedShell = spawnResult.shellLabel;
 
@@ -2945,6 +2972,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       });
     }
     session.inputCount += 1;
+    const passthroughWrite =
+      input.passthrough === true ? passthroughWriteBySession.get(session) : undefined;
+    if (passthroughWrite !== undefined) return yield* passthroughWrite(input.data);
     yield* Effect.try({
       try: () => process.write(input.data),
       catch: (cause) =>

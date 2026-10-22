@@ -64,6 +64,10 @@ const FORK_PAGE_ROWS: Record<
   mobileComposerCamera: "mobile-composer-camera",
   mobileSidebarGroups: "mobile-sidebar-groups",
   terminalThreads: "terminal-threads",
+  terminalThreadsTmux: "terminal-threads-tmux",
+  terminalHistoryLines: "terminal-history",
+  terminalHistoryMegabytes: "terminal-history",
+  terminalKeyMappings: "terminal-key-mappings",
   terminalThreadFontSizeMin: "terminal-thread-font-limits",
   terminalThreadFontSizeMax: "terminal-thread-font-limits",
 };

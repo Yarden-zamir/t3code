@@ -1,7 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off -- the tmux socket name comes from the state folder.
 /**
- * Fork: the tmux launch of terminal threads (`forkTerminalThreads.ts` in contracts). The main
- * terminal of a terminal thread runs `tmux new-session -A` instead of a shell. The tmux server is
+ * Fork: the tmux launch of terminal threads (`forkTerminalThreads.ts` in contracts), behind the
+ * server setting `terminalThreadsTmux`. The main terminal of a terminal thread runs
+ * `tmux new-session -A` instead of a shell. The tmux server is
  * not a child of T3, so the session and its apps outlive a T3 restart, and the next open attaches
  * to the same session.
  *
@@ -17,7 +18,6 @@ import {
   DEFAULT_TERMINAL_ID,
   TERMINAL_THREAD_ENV,
   TERMINAL_THREAD_FIND_SEQUENCE,
-  TERMINAL_THREAD_SUPER_KEYS,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveCommandPath } from "@t3tools/shared/shell";
@@ -26,9 +26,16 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
+import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import type { ShellCandidate } from "../terminal/Manager.ts";
 import { T3_TERMINAL_THREAD_ID_ENV } from "../terminal/terminalEnv.ts";
+
+export interface TerminalLaunch {
+  readonly shell: ShellCandidate;
+  /** Delivers bytes to the app in the terminal unchanged, past the multiplexer's key parser. */
+  readonly passthroughWrite: (data: string) => Effect.Effect<void>;
+}
 
 export interface TerminalLaunchInput {
   readonly threadId: string;
@@ -38,39 +45,11 @@ export interface TerminalLaunchInput {
 }
 
 /**
- * What the web terminal sends for the Command key (Super), and what the app must receive. tmux
- * reads the Super bit as Meta, so each one is a tmux user key that sends the shell sequence
- * unchanged. The Command arrows travel as themselves: tmux matches a user key before it reads
- * them as extended keys. The editor letters travel as private sequences, because tmux reads the
- * CSI-u form before it matches user keys.
- */
-const SUPER_PASSTHROUGHS: ReadonlyArray<{ readonly wire: string; readonly shell: string }> = [
-  ...TERMINAL_THREAD_SUPER_KEYS,
-  ...["A", "B", "C", "D"].flatMap((arrow) =>
-    [`\u001b[1;9${arrow}`, `\u001b[1;10${arrow}`].map((sequence) => ({
-      wire: sequence,
-      shell: sequence,
-    })),
-  ),
-];
-
-const FIRST_PASSTHROUGH_USER_KEY = 1;
-
-function superPassthroughLines(): ReadonlyArray<string> {
-  return SUPER_PASSTHROUGHS.flatMap(({ wire, shell }, index) => {
-    const userKey = FIRST_PASSTHROUGH_USER_KEY + index;
-    const hex = [...shell].map((character) => character.charCodeAt(0).toString(16)).join(" ");
-    return [
-      `set -s user-keys[${userKey}] "${wire.replace("\u001b", "\\e")}"`,
-      `bind -n User${userKey} send-keys -H ${hex}`,
-    ];
-  });
-}
-
-/**
  * No status line and no prefix key, so every key reaches the app. Mouse mode lets the wheel
  * scroll the tmux history. The user key opens an incremental search of that history. Extended
- * keys let Ctrl and Shift arrows through.
+ * keys let Ctrl and Shift arrows through. A key that must reach the app unchanged uses
+ * `passthroughWrite` below: tmux reads the Command key as Meta and cannot carry the Kitty
+ * keyboard protocol.
  */
 export const TERMINAL_THREAD_TMUX_CONFIG = [
   "set -g extended-keys on",
@@ -89,7 +68,6 @@ export const TERMINAL_THREAD_TMUX_CONFIG = [
   "set -s escape-time 0",
   `set -s user-keys[0] "${TERMINAL_THREAD_FIND_SEQUENCE.replace("\u001b", "\\e")}"`,
   'bind -n User0 copy-mode \\; command-prompt -i -I "#{pane_search_string}" -T search -p "(find)" { send -X search-backward-incremental "%%" }',
-  ...superPassthroughLines(),
   "",
 ].join("\n");
 
@@ -108,6 +86,7 @@ export const makeTerminalThreadLaunch = Effect.fn("makeTerminalThreadLaunch")(fu
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
+  const processRunner = yield* ProcessRunner.ProcessRunner;
   const configPath = path.join(stateDir, "tmux", "terminal-threads.conf");
   const socket = terminalThreadTmuxSocket(stateDir);
 
@@ -117,7 +96,7 @@ export const makeTerminalThreadLaunch = Effect.fn("makeTerminalThreadLaunch")(fu
     if (input.terminalId !== DEFAULT_TERMINAL_ID) return null;
     if (input.runtimeEnv?.[TERMINAL_THREAD_ENV] !== "1") return null;
     const enabled = yield* settings.getSettings.pipe(
-      Effect.map((current) => current.terminalThreads),
+      Effect.map((current) => current.terminalThreads && current.terminalThreadsTmux),
       Effect.orElseSucceed(() => false),
     );
     if (!enabled) return null;
@@ -137,7 +116,8 @@ export const makeTerminalThreadLaunch = Effect.fn("makeTerminalThreadLaunch")(fu
       [T3_TERMINAL_THREAD_ID_ENV]: input.threadId,
     };
     delete sessionEnv[TERMINAL_THREAD_ENV];
-    return {
+    const session = terminalThreadTmuxSession(input.threadId);
+    const shell = {
       shell: tmux,
       args: [
         "-u",
@@ -156,12 +136,38 @@ export const makeTerminalThreadLaunch = Effect.fn("makeTerminalThreadLaunch")(fu
         "-A",
         ...Object.entries(sessionEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`]),
         "-s",
-        terminalThreadTmuxSession(input.threadId),
+        session,
       ],
     } satisfies ShellCandidate;
+    // `send-keys -H` writes bytes to the pane, so tmux never reads them as keys.
+    const passthroughWrite = (data: string) =>
+      processRunner
+        .run({
+          command: tmux,
+          args: [
+            "-L",
+            socket,
+            "send-keys",
+            "-t",
+            session,
+            "-H",
+            ...[...new TextEncoder().encode(data)].map((byte) => byte.toString(16)),
+          ],
+          timeout: "5 seconds",
+        })
+        .pipe(
+          Effect.asVoid,
+          Effect.catch((cause) =>
+            Effect.logWarning("tmux passthrough write failed.", {
+              threadId: input.threadId,
+              cause,
+            }),
+          ),
+        );
+    return { shell, passthroughWrite } satisfies TerminalLaunch;
   });
 
-  return (input: TerminalLaunchInput): Effect.Effect<ShellCandidate | null> =>
+  return (input: TerminalLaunchInput): Effect.Effect<TerminalLaunch | null> =>
     resolve(input).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),

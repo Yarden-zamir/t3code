@@ -324,6 +324,28 @@ export const MACHINE_MAP_ITEMS = [
 
 export const PREVIEW_ITEMS = [
   {
+    id: "terminal-threads-tmux",
+    title: "Terminal threads in tmux",
+    to: "/settings/fork",
+    searchTerms: ["terminal thread tmux restart survive search multiplexer session"],
+    environmentOnly: true,
+  },
+  {
+    id: "terminal-history",
+    title: "Terminal history",
+    to: "/settings/fork",
+    searchTerms: ["terminal history scrollback lines megabytes output kept log size limit"],
+    environmentOnly: true,
+  },
+  {
+    id: "terminal-key-mappings",
+    title: "Terminal key mappings",
+    to: "/settings/fork",
+    searchTerms: [
+      "terminal key mapping passthrough zle editor shortcut command cmd bytes escape send",
+    ],
+  },
+  {
     id: "terminal-thread-font-limits",
     title: "Terminal thread zoom limits",
     to: "/settings/fork",

@@ -82,7 +82,6 @@ import {
   NetworkIcon,
 } from "lucide-react";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
-import { requestTerminalThreadFindOpen } from "./ForkTerminalThreadView";
 import {
   useCreateTerminalThread,
   useTerminalThreadsEnabled,
@@ -763,10 +762,6 @@ function OpenCommandPaletteDialog(props: {
   const terminalThreadsEnabled = useTerminalThreadsEnabled(
     terminalThreadProjectRef?.environmentId ?? null,
   );
-  const requestFindOpen = () =>
-    activeThread && isTerminalThread(activeThread)
-      ? requestTerminalThreadFindOpen()
-      : requestThreadFindOpen();
   const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
   const referenceThreadRef =
@@ -1666,7 +1661,8 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (activeThreadId && supportsThreadFind) {
+  // A terminal thread has no messages to search. Its search belongs to the terminal.
+  if (activeThreadId && supportsThreadFind && !(activeThread && isTerminalThread(activeThread))) {
     actionItems.push({
       kind: "action",
       value: "find-current-thread",
@@ -1675,7 +1671,7 @@ function OpenCommandPaletteDialog(props: {
       icon: <TextSearchIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "chat.find",
       run: async () => {
-        requestFindOpen();
+        requestThreadFindOpen();
       },
     });
   }
@@ -2947,7 +2943,7 @@ function OpenCommandPaletteDialog(props: {
       event.preventDefault();
       event.stopPropagation();
       setOpen(false);
-      requestFindOpen();
+      requestThreadFindOpen();
       return;
     }
 

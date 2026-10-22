@@ -32,7 +32,12 @@ import {
 import { PreferOriginRemoteSettingsRow } from "./PreferOriginRemoteSettings";
 import { PreviewLocalServerGroupsSettingsRow } from "./PreviewLocalServerGroupsSettingsRow";
 import { TerminalThreadFontLimitsSettingsRow } from "./TerminalThreadFontLimitsSettingsRow";
-import { TerminalThreadsSettingsRow } from "./TerminalThreadsSettingsRow";
+import { TerminalHistorySettingsRows } from "./TerminalHistorySettingsRows";
+import { TerminalKeyMappingsSettingsRow } from "./TerminalKeyMappingsSettingsRow";
+import {
+  TerminalThreadsSettingsRow,
+  TerminalThreadsTmuxSettingsRow,
+} from "./TerminalThreadsSettingsRow";
 import { PullRequestFilterChipsSettingsRow } from "./PullRequestFilterChipsSettingsRow";
 import { PullRequestWatchSettingsRows } from "./PullRequestWatchSettings";
 import { RecoverInterruptedTurnsSettings } from "./RecoverInterruptedTurnsSettings";
@@ -100,6 +105,9 @@ const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>> = {
   "preview-local-server-groups": PreviewLocalServerGroupsSettingsRow,
   "terminal-threads": TerminalThreadsSettingsRow,
   "terminal-thread-font-limits": TerminalThreadFontLimitsSettingsRow,
+  "terminal-threads-tmux": TerminalThreadsTmuxSettingsRow,
+  "terminal-history": TerminalHistorySettingsRows,
+  "terminal-key-mappings": TerminalKeyMappingsSettingsRow,
   "machine-map": MachineMapSettingsRows,
   "keybinding-sync": KeybindingSyncSettingsRow,
   "mobile-published-themes": MobilePublishedThemesSettingsRow,

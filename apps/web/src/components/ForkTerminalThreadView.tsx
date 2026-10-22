@@ -4,8 +4,6 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   TERMINAL_THREAD_ENV,
-  TERMINAL_THREAD_FIND_SEQUENCE,
-  terminalThreadSuperKeyWire,
 } from "@t3tools/contracts";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import * as Schema from "effect/Schema";
@@ -17,29 +15,9 @@ import {
 } from "../appearanceFonts";
 import { useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import { useStableCallback } from "../hooks/useStableCallback";
 import { observeResize } from "../lib/observeResize";
 import { isMacPlatform } from "../lib/utils";
-import { terminalEnvironment } from "../state/terminal";
-import { useAtomCommand } from "../state/use-atom-command";
 import { TerminalViewport } from "./ThreadTerminalDrawer";
-
-/**
- * Fork: the find shortcut of a terminal thread. `cmd+f` on macOS. Elsewhere `ctrl+shift+f`,
- * because `ctrl+f` is page-down in vim and forward-char in the shell.
- */
-export function isTerminalThreadFindShortcut(event: {
-  readonly key: string;
-  readonly metaKey: boolean;
-  readonly ctrlKey: boolean;
-  readonly shiftKey: boolean;
-  readonly altKey: boolean;
-}): boolean {
-  if (event.key.toLowerCase() !== "f" || event.altKey) return false;
-  return isMacPlatform(navigator.platform)
-    ? event.metaKey && !event.ctrlKey && !event.shiftKey
-    : event.ctrlKey && event.shiftKey && !event.metaKey;
-}
 
 const TERMINAL_THREAD_ZOOM_STORAGE_KEY = "t3code:terminal-thread-font-delta";
 const selectZoomLimits = (settings: ClientSettings) => ({
@@ -66,32 +44,8 @@ export function terminalThreadZoomShortcut(event: {
   return null;
 }
 
-const TERMINAL_THREAD_FIND_EVENT = "t3:terminal-thread-find-open";
-
-/** Fork: asks the open terminal thread view to open its search, as `requestThreadFindOpen` does. */
-export function requestTerminalThreadFindOpen(): void {
-  window.dispatchEvent(new Event(TERMINAL_THREAD_FIND_EVENT));
-}
-
-/** Fork: opens the tmux search prompt of a terminal thread. */
-export function useTerminalThreadFind(threadRef: ScopedThreadRef | null) {
-  const runTerminalWrite = useAtomCommand(terminalEnvironment.write, { reportFailure: false });
-  return useStableCallback(() => {
-    if (threadRef === null) return;
-    void runTerminalWrite({
-      environmentId: threadRef.environmentId,
-      input: {
-        threadId: threadRef.threadId,
-        terminalId: DEFAULT_TERMINAL_ID,
-        data: TERMINAL_THREAD_FIND_SEQUENCE,
-      },
-    });
-  });
-}
-
 /**
- * Fork: the main view of a terminal thread (`forkTerminalThreads.ts`). The server runs this
- * terminal inside the thread's tmux session.
+ * Fork: the main view of a terminal thread (`forkTerminalThreads.ts`).
  *
  * Limit: the view covers the timeline and the composer, which stay mounted, so ChatView keeps
  * one small change. They hold nothing, because a terminal thread has no turns. Revisit if the
@@ -127,11 +81,6 @@ export function ForkTerminalThreadView(props: {
     0,
     Schema.Int,
   );
-  const openFind = useTerminalThreadFind(threadRef);
-  useEffect(() => {
-    window.addEventListener(TERMINAL_THREAD_FIND_EVENT, openFind);
-    return () => window.removeEventListener(TERMINAL_THREAD_FIND_EVENT, openFind);
-  }, [openFind]);
 
   // The viewport refits on a change of these numbers, so a sidebar or window resize refits it.
   const containerRef = useRef<HTMLDivElement>(null);
@@ -158,12 +107,7 @@ export function ForkTerminalThreadView(props: {
       setZoomDelta(
         zoom === "reset" ? 0 : Math.min(limits.max, Math.max(limits.min, next)) - baseFontSize,
       );
-      return;
     }
-    if (!isTerminalThreadFindShortcut(event)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    openFind();
   };
 
   return (
@@ -182,7 +126,6 @@ export function ForkTerminalThreadView(props: {
         cwd={cwd}
         worktreePath={worktreePath}
         runtimeEnv={runtimeEnv}
-        superKeyWire={terminalThreadSuperKeyWire}
         fontSizeDelta={
           Math.min(limits.max, Math.max(limits.min, baseFontSize + zoomDelta)) - baseFontSize
         }

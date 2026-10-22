@@ -155,7 +155,7 @@ import { flushSync } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import { isMacPlatform } from "../lib/utils";
-import { ForkTerminalThreadView, useTerminalThreadFind } from "./ForkTerminalThreadView";
+import { ForkTerminalThreadView } from "./ForkTerminalThreadView";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -2906,9 +2906,6 @@ export default function ChatView(props: ChatViewProps) {
   });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const activeTerminalThread = serverThread !== null && isTerminalThread(serverThread);
-  const openTerminalThreadFind = useTerminalThreadFind(
-    activeTerminalThread ? activeThreadRef : null,
-  );
   const scriptKeybindings =
     useAtomValue(serverEnvironment.configValueAtom(environmentId))?.keybindings ??
     DEFAULT_RESOLVED_KEYBINDINGS;
@@ -5577,8 +5574,8 @@ export default function ChatView(props: ChatViewProps) {
         toggleTerminalVisibilityStable();
       },
       "chat.find": () => {
-        if (activeTerminalThread) return void openTerminalThreadFind();
-        if (!isServerThread || serverConfig?.threadFind !== true) return false;
+        if (activeTerminalThread || !isServerThread || serverConfig?.threadFind !== true)
+          return false;
         openThreadFindStable();
       },
       "rightPanel.toggle": () => toggleRightPanelStable(),

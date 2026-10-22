@@ -92,6 +92,10 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import { useActiveThemeFonts } from "../hooks/useEnvironmentTheme";
 import {
+  compileTerminalKeyMappings,
+  findTerminalKeyMapping,
+} from "@t3tools/shared/terminalKeyMappings";
+import {
   fontSettingOrThemeFont,
   resolveTerminalFontPreference,
   resolveTerminalFontSizePreference,
@@ -398,8 +402,6 @@ interface TerminalViewportProps {
   providerInstanceId?: ProviderInstanceId;
   /** Fork: points added to the terminal font size, for the zoom keys of a terminal thread. */
   fontSizeDelta?: number;
-  /** Fork: see `GhosttyTerminalSurfaceOptions.superKeyWire`. */
-  superKeyWire?: (key: string, shift: boolean) => string | null;
   onSessionExited: () => void;
   onAddTerminalContext?: (selection: TerminalContextSelection) => void;
   focusRequestId: number;
@@ -441,7 +443,6 @@ function TerminalSessionViewport({
   runtimeEnv,
   providerInstanceId,
   fontSizeDelta = 0,
-  superKeyWire,
   onSessionExited,
   onAddTerminalContext,
   focusRequestId,
@@ -483,7 +484,15 @@ function TerminalSessionViewport({
   const selectionActionRequestIdRef = useRef(0);
   const openSelectionMenuRequestIdRef = useRef<number | null>(null);
   const readKeybindings = useEffectEvent(() => keybindings);
-  const readSuperKeyWire = useEffectEvent(() => superKeyWire);
+  const keyMappings = useClientSettings((settings) => settings.terminalKeyMappings);
+  const readMappedKey = useEffectEvent((event: KeyboardEvent) => {
+    const mapping = findTerminalKeyMapping(
+      compileTerminalKeyMappings(keyMappings),
+      event,
+      navigator.platform,
+    );
+    return mapping === null ? null : { data: mapping.data, passthrough: mapping.passthrough };
+  });
   const handleSessionExited = useEffectEvent(() => {
     if (hasTerminalWriteAccess()) onSessionExited();
   });
@@ -527,10 +536,10 @@ function TerminalSessionViewport({
   const canResizeTerminal =
     canOperateTerminal && terminalSession.version > 0 && terminalSession.status === "running";
   const resizeSessionGeneration = canResizeTerminal ? terminalSession.output.generation : null;
-  const writeTerminal = useEffectEvent((data: string) =>
+  const writeTerminal = useEffectEvent((data: string, passthrough = false) =>
     runTerminalWrite({
       environmentId,
-      input: { threadId, terminalId, data },
+      input: { threadId, terminalId, data, ...(passthrough ? { passthrough } : {}) },
     }),
   );
   const resizeTerminal = useEffectEvent((cols: number, rows: number) => {
@@ -633,7 +642,8 @@ function TerminalSessionViewport({
         onResize: (cols, rows) => void resizeTerminal(cols, rows),
         onSelectionChange: () => handleSelectionChange(),
         beforeKey: (event) => handleBeforeKey(event),
-        superKeyWire: (key, shift) => readSuperKeyWire()?.(key, shift) ?? null,
+        mapKey: (event) => readMappedKey(event),
+        onPassthroughData: (data) => handleData(data, true),
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
         canActivateLink: (text) => canActivateTerminalLink(text),
         // The surface listens from construction, so a right-click can land
@@ -975,10 +985,10 @@ function TerminalSessionViewport({
         })();
       }
 
-      function handleData(data: string): void {
+      function handleData(data: string, passthrough = false): void {
         if (!hasTerminalWriteAccess()) return;
         void (async () => {
-          const result = await writeTerminal(data);
+          const result = await writeTerminal(data, passthrough);
           if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
           const error = squashAtomCommandFailure(result);
           writeSystemMessage(

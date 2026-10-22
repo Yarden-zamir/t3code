@@ -68,6 +68,20 @@ export const TooltipShortcutLimit = Schema.Int.check(
   Schema.isBetween({ minimum: MIN_TOOLTIP_SHORTCUT_LIMIT, maximum: MAX_TOOLTIP_SHORTCUT_LIMIT }),
 );
 
+export const MAX_TERMINAL_KEY_MAPPINGS = 64;
+/**
+ * Fork: a key that a terminal sends as the bytes in `send`, in place of its own encoding. `key`
+ * uses the keybinding syntax, such as `cmd+z`. `send` uses escape notation: `\e`, `\xNN`,
+ * `\uNNNN`, `\r`, `\n`, `\t` and `\\`. `passthrough` skips the multiplexer, so the application
+ * gets the bytes unchanged.
+ */
+export const TerminalKeyMapping = Schema.Struct({
+  key: TrimmedNonEmptyString.check(Schema.isMaxLength(32)),
+  send: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(64)),
+  passthrough: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+});
+export type TerminalKeyMapping = typeof TerminalKeyMapping.Type;
+
 export const MIN_TERMINAL_THREAD_FONT_LIMIT = 6;
 export const MAX_TERMINAL_THREAD_FONT_LIMIT = 48;
 /** The smallest and largest font size that the zoom keys of a terminal thread reach, in points. */
@@ -75,6 +89,20 @@ export const TerminalThreadFontLimit = Schema.Int.check(
   Schema.isBetween({
     minimum: MIN_TERMINAL_THREAD_FONT_LIMIT,
     maximum: MAX_TERMINAL_THREAD_FONT_LIMIT,
+  }),
+);
+
+export const MIN_TERMINAL_HISTORY_LINES = 500;
+export const MAX_TERMINAL_HISTORY_LINES = 200_000;
+export const TerminalHistoryLines = Schema.Int.check(
+  Schema.isBetween({ minimum: MIN_TERMINAL_HISTORY_LINES, maximum: MAX_TERMINAL_HISTORY_LINES }),
+);
+export const MIN_TERMINAL_HISTORY_MEGABYTES = 1;
+export const MAX_TERMINAL_HISTORY_MEGABYTES = 256;
+export const TerminalHistoryMegabytes = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_TERMINAL_HISTORY_MEGABYTES,
+    maximum: MAX_TERMINAL_HISTORY_MEGABYTES,
   }),
 );
 
@@ -232,6 +260,10 @@ export const ForkClientSettingsFields = {
   terminalThreadFontSizeMax: TerminalThreadFontLimit.pipe(
     Schema.withDecodingDefault(Effect.succeed(24)),
   ),
+  /** Fork: keys that every terminal sends as fixed bytes. See `TerminalKeyMapping`. */
+  terminalKeyMappings: Schema.Array(TerminalKeyMapping)
+    .check(Schema.isMaxLength(MAX_TERMINAL_KEY_MAPPINGS))
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 };
 
 export const ForkClientSettingsPatchFields = {
@@ -255,6 +287,9 @@ export const ForkClientSettingsPatchFields = {
   tooltipShortcutLimit: Schema.optionalKey(TooltipShortcutLimit),
   terminalThreadFontSizeMin: Schema.optionalKey(TerminalThreadFontLimit),
   terminalThreadFontSizeMax: Schema.optionalKey(TerminalThreadFontLimit),
+  terminalKeyMappings: Schema.optionalKey(
+    Schema.Array(TerminalKeyMapping).check(Schema.isMaxLength(MAX_TERMINAL_KEY_MAPPINGS)),
+  ),
 };
 
 /**
@@ -384,6 +419,18 @@ export const ForkServerSettingsFields = {
    * this server starts tmux.
    */
   terminalThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Fork: a terminal thread runs inside a tmux session, so its apps outlive a server restart and
+   * tmux search works. Needs tmux on the server machine; without it the thread runs a plain
+   * shell. Applies to terminals that open after the change.
+   */
+  terminalThreadsTmux: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Fork: how many lines of output the server keeps for each terminal. */
+  terminalHistoryLines: TerminalHistoryLines.pipe(Schema.withDecodingDefault(Effect.succeed(5000))),
+  /** Fork: how many megabytes of output the server keeps for each terminal. */
+  terminalHistoryMegabytes: TerminalHistoryMegabytes.pipe(
+    Schema.withDecodingDefault(Effect.succeed(8)),
+  ),
 };
 
 export const ForkServerSettingsPatchFields = {
@@ -411,6 +458,9 @@ export const ForkServerSettingsPatchFields = {
   mobileComposerCamera: Schema.optionalKey(Schema.Boolean),
   mobileSidebarGroups: Schema.optionalKey(Schema.Boolean),
   terminalThreads: Schema.optionalKey(Schema.Boolean),
+  terminalThreadsTmux: Schema.optionalKey(Schema.Boolean),
+  terminalHistoryLines: Schema.optionalKey(TerminalHistoryLines),
+  terminalHistoryMegabytes: Schema.optionalKey(TerminalHistoryMegabytes),
   /** Replaces the saved groups whole: a merge would keep deleted groups and assignments. */
   sidebarGroups: Schema.optionalKey(SidebarGroups),
   /** Per surface: a patched layout replaces the saved one, and `null` restores the built-in card. */
