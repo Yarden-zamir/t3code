@@ -20,7 +20,6 @@ import {
   DEFAULT_SERVER_SETTINGS,
   DEFAULT_TERMINAL_ID,
   isTerminalThread,
-  TERMINAL_THREAD_ENV,
   EnvironmentId,
   ThreadId,
   type ProjectScript,
@@ -66,6 +65,7 @@ import {
   stagePendingTerminalLaunch,
 } from "../terminal/terminalLaunchContext";
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
+import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -672,9 +672,12 @@ function ThreadRouteContent(
     const redirectKey = `${selectedThread.environmentId}:${selectedThread.id}`;
     if (terminalThreadRedirected.current === redirectKey) return;
     terminalThreadRedirected.current = redirectKey;
-    const worktreePath = resolvePreferredThreadWorktreePath({
-      threadShellWorktreePath: selectedThread.worktreePath ?? null,
-      threadDetailWorktreePath: selectedThreadDetailWorktreePath,
+    const launch = terminalThreadLaunch({
+      workspaceRoot: selectedThreadProject.workspaceRoot,
+      worktreePath: resolvePreferredThreadWorktreePath({
+        threadShellWorktreePath: selectedThread.worktreePath ?? null,
+        threadDetailWorktreePath: selectedThreadDetailWorktreePath,
+      }),
     });
     stagePendingTerminalLaunch({
       target: {
@@ -682,20 +685,7 @@ function ThreadRouteContent(
         threadId: selectedThread.id,
         terminalId: DEFAULT_TERMINAL_ID,
       },
-      launch: {
-        cwd: projectScriptCwd({
-          project: { cwd: selectedThreadProject.workspaceRoot },
-          worktreePath,
-        }),
-        worktreePath,
-        env: {
-          ...projectScriptRuntimeEnv({
-            project: { cwd: selectedThreadProject.workspaceRoot },
-            worktreePath,
-          }),
-          [TERMINAL_THREAD_ENV]: "1",
-        },
-      },
+      launch: { cwd: launch.cwd, worktreePath: launch.worktreePath, env: { ...launch.env } },
     });
     navigation.dispatch(
       StackActions.replace("ThreadTerminal", {

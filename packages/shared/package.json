@@ -307,6 +307,10 @@
       "types": "./src/terminalLabels.ts",
       "import": "./src/terminalLabels.ts"
     },
+    "./terminalThreadLaunch": {
+      "types": "./src/terminalThreadLaunch.ts",
+      "import": "./src/terminalThreadLaunch.ts"
+    },
     "./terminalKeyMappings": {
       "types": "./src/terminalKeyMappings.ts",
       "import": "./src/terminalKeyMappings.ts"

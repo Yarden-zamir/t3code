@@ -130,7 +130,7 @@ function completionSentinelPattern(token: string): RegExp {
   return new RegExp(`${COMPLETION_SENTINEL_PREFIX}_${token}:(-?\\d+)`);
 }
 
-function stripTerminalControl(text: string): string {
+export function stripTerminalControl(text: string): string {
   return (
     text
       .replace(
@@ -143,9 +143,9 @@ function stripTerminalControl(text: string): string {
   );
 }
 
-type CompletionShell = "posix" | "fish" | "powershell";
+export type CompletionShell = "posix" | "fish" | "powershell";
 
-function resolveCompletionShell(
+export function resolveCompletionShell(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
 ): CompletionShell {
@@ -163,7 +163,7 @@ function resolveCompletionShell(
  * block before running any of it, so a script that reads stdin cannot consume the sentinel line
  * either.
  */
-function wrapCommandForCompletion(
+export function wrapCommandForCompletion(
   command: string,
   shell: CompletionShell,
   sentinel: string,

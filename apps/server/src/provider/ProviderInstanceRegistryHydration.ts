@@ -2,6 +2,7 @@ import {
   defaultInstanceIdForDriver,
   providerInstanceConfigEnabledFlag,
   resolveProviderInstanceEnabled,
+  TERMINAL_THREAD_INSTANCE_ID,
   type ProviderInstanceConfig,
   type ProviderInstanceConfigMap,
   type ProviderInstanceId,
@@ -41,6 +42,8 @@ export const deriveProviderInstanceConfigMap = (
   for (const driver of BUILT_IN_DRIVERS) {
     if (driver.metadata.hasDefaultInstance === false) continue;
     const instanceId = defaultInstanceIdForDriver(driver.driverKind);
+    // Fork: the terminal provider exists only while the server setting `terminalThreads` is on.
+    if (instanceId === TERMINAL_THREAD_INSTANCE_ID && !settings.terminalThreads) continue;
     if (instanceId in merged) continue;
     merged[instanceId] = { driver: driver.driverKind };
   }

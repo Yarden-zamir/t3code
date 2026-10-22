@@ -3,9 +3,8 @@ import {
   DEFAULT_TERMINAL_ID,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
-  TERMINAL_THREAD_ENV,
 } from "@t3tools/contracts";
-import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
+import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import * as Schema from "effect/Schema";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
@@ -63,11 +62,7 @@ export function ForkTerminalThreadView(props: {
     false,
     Schema.Boolean,
   );
-  const cwd = projectScriptCwd({ project: { cwd: workspaceRoot }, worktreePath });
-  const runtimeEnv = {
-    ...projectScriptRuntimeEnv({ project: { cwd: workspaceRoot }, worktreePath }),
-    [TERMINAL_THREAD_ENV]: "1",
-  };
+  const launch = terminalThreadLaunch({ workspaceRoot, worktreePath });
   const limits = useClientSettings(selectZoomLimits);
   const baseFontSize = useClientSettings((settings) =>
     resolveTerminalFontSizePreference({
@@ -123,9 +118,9 @@ export function ForkTerminalThreadView(props: {
         threadId={threadRef.threadId}
         terminalId={DEFAULT_TERMINAL_ID}
         terminalLabel="Terminal"
-        cwd={cwd}
-        worktreePath={worktreePath}
-        runtimeEnv={runtimeEnv}
+        cwd={launch.cwd}
+        worktreePath={launch.worktreePath}
+        runtimeEnv={launch.env}
         fontSizeDelta={
           Math.min(limits.max, Math.max(limits.min, baseFontSize + zoomDelta)) - baseFontSize
         }

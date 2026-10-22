@@ -55,7 +55,8 @@ const V2_RELEASE = "0.0.46";
 describe("provider compatibility", () => {
   it("bundles a compatibility policy for every built-in harness", () => {
     for (const builtIn of BUILT_IN_DRIVERS) {
-      if (builtIn.driverKind === "acpRegistry") continue;
+      // The terminal provider has no model and no harness version to gate.
+      if (builtIn.driverKind === "acpRegistry" || builtIn.driverKind === "terminal") continue;
       assert.isDefined(
         resolveProviderCompatibility(
           ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
