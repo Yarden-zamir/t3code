@@ -52,5 +52,6 @@ export const FORK_KEYBINDING_COMMANDS = [
   "rightPanel.nextTab",
   "settings.open",
   "keyboard.cheatSheet",
+  "chat.newTerminal",
 ] as const;
 export type ForkKeybindingCommand = (typeof FORK_KEYBINDING_COMMANDS)[number];

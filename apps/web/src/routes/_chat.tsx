@@ -110,6 +110,13 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
+      if (command === "chat.newTerminal") {
+        event.preventDefault();
+        event.stopPropagation();
+        openCommandPalette({ open: "new-terminal-thread-in" });
+        return;
+      }
+
       if (command === "chat.newWithoutProject") {
         const environmentId = scratchEnvironmentId(
           activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,

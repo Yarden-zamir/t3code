@@ -25,6 +25,7 @@ export const FORK_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "enter", command: "sidebar.openItem", when: SIDEBAR_KEYS },
   { key: "arrowleft", command: "sidebar.previousGroup", when: SIDEBAR_KEYS },
   { key: "arrowright", command: "sidebar.nextGroup", when: SIDEBAR_KEYS },
+  { key: "mod+alt+t", command: "chat.newTerminal", when: "!terminalFocus" },
   { key: "mod+alt+[", command: "sidebar.previousGroup", when: "!terminalFocus" },
   { key: "mod+alt+]", command: "sidebar.nextGroup", when: "!terminalFocus" },
   { key: "mod+f", command: "sidebar.search", when: "sidebarFocus" },

@@ -11,6 +11,7 @@ import { Atom } from "effect/reactivity";
 
 import { waitForStartedServerThread } from "../components/ChatView.logic";
 import { newThreadId } from "../lib/utils";
+import { useEnvironments } from "../state/environments";
 import { serverEnvironment } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
@@ -26,6 +27,16 @@ const OFF_ATOM = Atom.make(false);
 
 export function useTerminalThreadsEnabled(environmentId: EnvironmentId | null): boolean {
   return useAtomValue(environmentId ? terminalThreadsAtom(environmentId) : OFF_ATOM);
+}
+
+/** Fork: the connected environments whose server has `terminalThreads` on. */
+export function useTerminalThreadEnvironmentIds(): ReadonlySet<EnvironmentId> {
+  const { environments } = useEnvironments();
+  return new Set(
+    environments
+      .filter((environment) => environment.serverConfig?.settings.terminalThreads === true)
+      .map((environment) => environment.environmentId),
+  );
 }
 
 /** Fork: creates a terminal thread (`forkTerminalThreads.ts`) in a project and opens it. */

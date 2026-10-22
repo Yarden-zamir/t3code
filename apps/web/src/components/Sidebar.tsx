@@ -167,6 +167,7 @@ import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useSidebarProjectGroupSnapshots } from "../hooks/useSidebarProjectGroups";
 import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
+import { ForkNewTerminalThreadButton } from "./sidebar/ForkNewTerminalThreadButton";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
@@ -4675,6 +4676,7 @@ export default function Sidebar() {
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}
               ownerFilter={<ForkSidebar.OwnerFilterMenu owner={owner} />}
+              terminalThreadButton={<ForkNewTerminalThreadButton />}
               projectScope={
                 <Combobox
                   items={projectScopeItems}

@@ -217,6 +217,7 @@ const LABELS: Partial<Record<KeybindingCommand, string>> = {
   "appearance.cycle": "Light, dark or system",
   "themeEditor.toggle": "Theme editor",
   "chat.new": "New thread",
+  "chat.newTerminal": "New terminal thread",
   "chat.find": "Find in thread",
   "settings.open": "Open settings",
   "usage.cost": "Usage page: show cost",

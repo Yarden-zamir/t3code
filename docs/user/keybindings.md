@@ -204,6 +204,8 @@ through the pages you have visited, like a browser's back and forward buttons.
 `chat.newLocal` skips that chooser. Both use your
 [new-thread defaults](./thread-sidebar.md#start-a-thread). `chat.newWithoutProject`
 (`mod+alt+n`) starts a thread [without a project](./thread-sidebar.md#start-without-a-project).
+`chat.newTerminal` (`mod+alt+t`) opens the project picker for a [terminal thread](./terminal.md#terminal-threads).
+It does nothing until a server turns on Terminal threads.
 
 ## Reserved shortcuts
 
