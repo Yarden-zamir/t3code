@@ -23,7 +23,12 @@ const NOT_COVERED = [
   "the .github/scripts tests and Fork Android, Fork Release and Fork Sync",
 ];
 const SCRIPT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
-const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.test.ts", ".browser.test.tsx"];
+const BASE_TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.test.ts", ".browser.test.tsx"];
+/** Fork tests of an upstream file live next to it as `foo.fork.test.ts`, see docs/fork/operations.md. */
+const TEST_SUFFIXES = [
+  ...BASE_TEST_SUFFIXES,
+  ...BASE_TEST_SUFFIXES.map((suffix) => `.fork${suffix}`),
+];
 /** Tests that run on every check. */
 const ALWAYS_TESTS = ["apps/web/src/components/settings/forkSettingsRegistration.test.ts"];
 /**
@@ -121,7 +126,7 @@ function stripExtension(file: string): string {
   return file.slice(0, file.length - NodePath.extname(file).length);
 }
 
-/** Tests next to a changed source file: `foo.ts` has `foo.test.ts` and the other suffixes. */
+/** Tests next to a changed source file: `foo.ts` has `foo.test.ts`, `foo.fork.test.ts` and the other suffixes. */
 function testsFor(file: string): ReadonlyArray<string> {
   if (TEST_SUFFIXES.some((suffix) => file.endsWith(suffix))) return [file];
   if (!SCRIPT_EXTENSIONS.has(NodePath.extname(file))) return [];

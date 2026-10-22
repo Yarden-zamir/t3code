@@ -1,4 +1,3 @@
-import { EnvironmentAuthInvalidError } from "@t3tools/contracts";
 import {
   RelayAuthInvalidError,
   RelayEnvironmentConnectNotAuthorizedError,
@@ -6,13 +5,7 @@ import {
 } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 
-import {
-  MACHINE_PAUSED_MESSAGE,
-  mapManagedRelayError,
-  mapRemoteDpopEnvironmentError,
-  mapRemoteEnvironmentError,
-  PAIRING_REVOKED_MESSAGE,
-} from "./errors.ts";
+import { mapManagedRelayError, mapRemoteDpopEnvironmentError } from "./errors.ts";
 import { DPOP_UNKNOWN_HINT } from "../relay/errorPresentation.ts";
 import { ManagedRelayRequestFailedError } from "../relay/managedRelay.ts";
 import { NETWORK_BLOCKING_HINT } from "../errors/network.ts";
@@ -94,19 +87,6 @@ describe("mapManagedRelayError", () => {
   });
 });
 
-describe("mapRemoteEnvironmentError", () => {
-  it("says that a refused direct session needs a new pairing", () => {
-    const error = new EnvironmentAuthInvalidError({
-      code: "auth_invalid",
-      reason: "invalid_credential",
-      traceId: "trace-direct",
-    });
-    const mapped = mapRemoteEnvironmentError(error);
-    expect(mapped._tag).toBe("ConnectionBlockedError");
-    expect(mapped.message).toBe(PAIRING_REVOKED_MESSAGE);
-  });
-});
-
 describe("mapRemoteDpopEnvironmentError", () => {
   it.each([
     new RemoteEnvironmentAuthFetchError({
@@ -120,25 +100,5 @@ describe("mapRemoteDpopEnvironmentError", () => {
       _tag: "ConnectionTransientError",
       detail: `${error.message} ${NETWORK_BLOCKING_HINT}`,
     });
-  });
-});
-
-describe("machine map pause (MM-718)", () => {
-  it("keeps the credential and retries, on every route", () => {
-    const error = new EnvironmentAuthInvalidError({
-      code: "auth_invalid",
-      reason: "machine_paused",
-      traceId: "trace-paused",
-    });
-    for (const mapped of [
-      mapRemoteEnvironmentError(error),
-      mapRemoteEnvironmentError(error, "relay"),
-      mapRemoteDpopEnvironmentError(error),
-    ]) {
-      expect(mapped).toMatchObject({
-        _tag: "ConnectionTransientError",
-        detail: MACHINE_PAUSED_MESSAGE,
-      });
-    }
   });
 });

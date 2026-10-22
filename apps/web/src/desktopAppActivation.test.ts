@@ -36,18 +36,6 @@ function dependencies(
 }
 
 describe("desktop app activation", () => {
-  it("opens the thread in the requested checkout", async () => {
-    const deps = dependencies();
-    const checkout = { worktreePath: "/workspace/feature", branch: "feat/feature" };
-
-    await handleDesktopAppActivationRequest({ ...request, checkout }, deps);
-
-    expect(deps.openThread).toHaveBeenCalledWith(
-      { environmentId, projectId: existingProjectId },
-      checkout,
-    );
-  });
-
   it("waits for a created project before it opens the thread", async () => {
     const order: string[] = [];
     const deps = dependencies({

@@ -98,6 +98,7 @@ Name the fork PRs that the plan builds on. Check fork merges first, then upstrea
 - If a Fork Sync merge conflicts only in `README.md`, the sync keeps the fork section up to the first `---` line and takes the upstream README below it. A conflict in another file stops the sync.
 - If a sync conflicts on a tooltip line with a `ShortcutHint` (the key chips in upstream tooltips), take the upstream line, then add one `ShortcutHint` back. If the same file conflicts again, keep the upstream tooltip text in that file.
 - A merge without conflicts can still break a fork feature. Each fork feature that changes upstream behavior needs a test of that behavior, so that the fork tests catch the break.
+- Put fork tests in a fork test file next to the upstream test file: `foo.fork.test.ts` next to `foo.test.ts`, `Foo.fork.browser.test.tsx` next to `Foo.browser.test.tsx`. Do not add tests to an upstream test file. Change an upstream test only when a fork change breaks it, and keep that change small. Upstream changes its test files often, so fork tests in them cause sync conflicts.
 - Prefer automated setup over manual instructions when the permission cost is acceptable. Keep documentation for steps that code cannot do.
 - If setup lacks permission or an API refuses it, show the manual step, dashboard links and documentation links. Name the missing permission; never show the raw API error. Apply the portal's MM-1209 fallback rule to all fork automation.
 

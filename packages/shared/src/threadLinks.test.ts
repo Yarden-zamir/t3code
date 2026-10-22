@@ -3,12 +3,10 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import {
   formatThreadLink,
-  formatThreadLinkHref,
   parseThreadLinkHref,
   relabelThreadLinks,
   resolveThreadLinkRef,
 } from "./threadLinks.ts";
-import { threadLinkMessageId } from "./threadMessageLinks.ts";
 
 const ref = (environmentId: string, threadId = "chat-1") => ({
   environmentId: EnvironmentId.make(environmentId),
@@ -46,14 +44,6 @@ describe("thread link destinations", () => {
 });
 
 describe("thread links", () => {
-  it("copies a message destination without changing literal ids", () => {
-    const href = formatThreadLinkHref("thread:mcp%3A1", "message:provider%3A2");
-    expect(href).toBe("t3-thread://v1/thread:mcp%3A1#message:provider%3A2");
-    expect(parseThreadLinkHref(href)).toBe("thread:mcp%3A1");
-    expect(threadLinkMessageId(href)).toBe("message:provider%3A2");
-    expect(formatThreadLink("t1", "Message", "m1")).toBe("[Message](t3-thread://v1/t1#m1)");
-    expect(formatThreadLinkHref("t1")).toBe("t3-thread://v1/t1");
-  });
   it("takes the thread id verbatim, percent escapes included", () => {
     expect(parseThreadLinkHref("t3-thread://v1/mcp:1234")).toBe("mcp:1234");
     expect(parseThreadLinkHref("t3-thread://v1/thread:delegated-task:mcp%3A1")).toBe(

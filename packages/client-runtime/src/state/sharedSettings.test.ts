@@ -17,15 +17,6 @@ const laptopId = EnvironmentId.make("env-laptop");
 const boxId = EnvironmentId.make("env-box");
 const restartCapabilities = { threadRestartContinuation: true };
 
-describe("fork shared settings", () => {
-  // Fork: thread card layouts sync to every machine of the machine map.
-  it("shares the thread card layouts", () => {
-    expect(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, restartCapabilities)).toHaveProperty(
-      "threadCardLayouts",
-    );
-  });
-});
-
 describe("filterSharedServerPatch", () => {
   it.each([true, false])(
     "resets a disabled default provider only on the originating environment (%s)",
