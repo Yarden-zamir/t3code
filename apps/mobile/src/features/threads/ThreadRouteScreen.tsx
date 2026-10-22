@@ -18,6 +18,9 @@ import {
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_TERMINAL_ID,
+  isTerminalThread,
+  TERMINAL_THREAD_ENV,
   EnvironmentId,
   ThreadId,
   type ProjectScript,
@@ -652,6 +655,56 @@ function ThreadRouteContent(
     },
     [navigation, selectedThread, selectedThreadProject?.workspaceRoot],
   );
+
+  // Fork: a terminal thread opens on its native terminal screen. The replace keeps the thread
+  // list as the screen behind it. Limit: messages that a schedule or an agent sent show only in
+  // the web and desktop timeline of the thread. Revisit when the terminal screen needs them.
+  const terminalThreadRedirected = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !selectedThread ||
+      !isTerminalThread(selectedThread) ||
+      !selectedThreadProject?.workspaceRoot ||
+      !readEnvironmentScope(selectedThread.environmentId, AuthTerminalOperateScope)
+    ) {
+      return;
+    }
+    const redirectKey = `${selectedThread.environmentId}:${selectedThread.id}`;
+    if (terminalThreadRedirected.current === redirectKey) return;
+    terminalThreadRedirected.current = redirectKey;
+    const worktreePath = resolvePreferredThreadWorktreePath({
+      threadShellWorktreePath: selectedThread.worktreePath ?? null,
+      threadDetailWorktreePath: selectedThreadDetailWorktreePath,
+    });
+    stagePendingTerminalLaunch({
+      target: {
+        environmentId: selectedThread.environmentId,
+        threadId: selectedThread.id,
+        terminalId: DEFAULT_TERMINAL_ID,
+      },
+      launch: {
+        cwd: projectScriptCwd({
+          project: { cwd: selectedThreadProject.workspaceRoot },
+          worktreePath,
+        }),
+        worktreePath,
+        env: {
+          ...projectScriptRuntimeEnv({
+            project: { cwd: selectedThreadProject.workspaceRoot },
+            worktreePath,
+          }),
+          [TERMINAL_THREAD_ENV]: "1",
+        },
+      },
+    });
+    navigation.dispatch(
+      StackActions.replace("ThreadTerminal", {
+        environmentId: String(selectedThread.environmentId),
+        threadId: String(selectedThread.id),
+        terminalId: DEFAULT_TERMINAL_ID,
+      }),
+    );
+  }, [navigation, selectedThread, selectedThreadDetailWorktreePath, selectedThreadProject]);
 
   const handleOpenNewTerminal = useCallback(() => {
     terminalDebugLog("terminal-menu:open-new", {
