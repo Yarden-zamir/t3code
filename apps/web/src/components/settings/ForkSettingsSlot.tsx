@@ -53,7 +53,7 @@ import { TunnelPairingSettingsRow } from "./TunnelPairingSettingsRow";
 import { WebPushSettingsRow } from "./WebPushSettingsRow";
 import { WorktreePathTemplateRow } from "./WorktreePathTemplateRow";
 import {
-  FORK_SETTING_PLACES,
+  forkSettingPlace,
   forkSettingRowsAt,
   type ForkSettingPlace,
   type ForkSettingRowId,
@@ -154,11 +154,7 @@ export function isForkEntryShown(
  * The upstream page keeps one line per place.
  */
 export function ForkSettingsSlot({ place }: { readonly place: ForkSettingPlace }) {
-  const definition: {
-    readonly section: string | null;
-    readonly forkSection?: true;
-    readonly hideAtProjectScope?: true;
-  } = FORK_SETTING_PLACES[place];
+  const definition = forkSettingPlace(place);
   const selectedScopeKind = useOptionalSettingsScope()?.scope.kind ?? "all";
   const scopeKind = definition.hideAtProjectScope === true ? selectedScopeKind : null;
   const rows = forkSettingRowsAt(place)

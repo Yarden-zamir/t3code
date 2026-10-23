@@ -1,5 +1,12 @@
 import type { SettingsPath, SettingsSearchItem, SettingsSearchItemId } from "./settingsSearch";
 
+type ForkSettingPlaceDefinition = {
+  readonly to: SettingsPath;
+  readonly section: string | null;
+  readonly forkSection?: true;
+  readonly hideAtProjectScope?: true;
+};
+
 /**
  * The places in other settings pages where fork rows render. Each place is one
  * `<ForkSettingsSlot place=... />` hook. `section` names the section of the page, or is null
@@ -57,17 +64,13 @@ export const FORK_SETTING_PLACES = {
     forkSection: true,
   },
   "machines-machine-map": { to: "/settings/machines", section: "Machine map" },
-} as const satisfies Record<
-  string,
-  {
-    readonly to: SettingsPath;
-    readonly section: string | null;
-    readonly forkSection?: true;
-    readonly hideAtProjectScope?: true;
-  }
->;
+} as const satisfies Record<string, ForkSettingPlaceDefinition>;
 
 export type ForkSettingPlace = keyof typeof FORK_SETTING_PLACES;
+
+export function forkSettingPlace(place: ForkSettingPlace): ForkSettingPlaceDefinition {
+  return FORK_SETTING_PLACES[place];
+}
 
 /**
  * One setting on the Fork page. `ids` are the search ids of the rows of one row component; the
