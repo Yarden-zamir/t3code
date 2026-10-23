@@ -52,7 +52,19 @@ export interface PullRequestImage {
   readonly alt: string;
 }
 
-export interface ForkChange {
+/**
+ * A change that breaks existing setups: a `!` in its conventional title, a `BREAKING CHANGE:`
+ * footer in a commit, a "Breaking changes" section in its pull request body, or a `breaking`
+ * label. The note is that section, or else that footer.
+ */
+export interface Breaking {
+  readonly breaking: boolean;
+  readonly breakingNote: string | null;
+}
+
+const NOT_BREAKING: Breaking = { breaking: false, breakingNote: null };
+
+export interface ForkChange extends Breaking {
   readonly source: ChangeSource;
   /** From the pull request body. Empty for a commit. */
   readonly images: ReadonlyArray<PullRequestImage>;
@@ -62,7 +74,7 @@ export interface ForkChange {
   readonly at: string;
 }
 
-export interface UpstreamChange {
+export interface UpstreamChange extends Breaking {
   readonly sha: string;
   readonly url: string;
   readonly title: string;
@@ -101,8 +113,92 @@ function upstreamPullRequest(subject: string): UpstreamChange["pullRequest"] {
   return { number, url: `https://github.com/${UPSTREAM_REPOSITORY}/pull/${number}` };
 }
 
+/** `feat(scope)!: …` or `feat!: …`. */
+export function hasBreakingMark(title: string): boolean {
+  const colon = title.indexOf(":");
+  const type = title.slice(0, colon);
+  return colon > 1 && type.endsWith("!") && !type.includes(" ");
+}
+
+/** The text of a `BREAKING CHANGE:` footer, up to the next empty line. */
+export function breakingFooter(body: string): string | null {
+  const lines = body.split("\n");
+  const start = lines.findIndex(
+    (line) => line.startsWith("BREAKING CHANGE:") || line.startsWith("BREAKING-CHANGE:"),
+  );
+  if (start === -1) return null;
+  const first = lines[start]!.slice(lines[start]!.indexOf(":") + 1);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => line.trim() === "");
+  const note = [first, ...(end === -1 ? rest : rest.slice(0, end))].join("\n").trim();
+  return note === "" ? "(no details in the footer)" : note;
+}
+
+function headingLevel(line: string): number {
+  let level = 0;
+  while (line[level] === "#") level += 1;
+  return level > 0 && level <= 6 && line[level] === " " ? level : 0;
+}
+
+/** Leading emoji and marks, such as in "## 🤖 Breaking changes", do not count. */
+function headingWords(line: string): string {
+  const text = line.slice(headingLevel(line)).trim();
+  let start = 0;
+  while (start < text.length && text[start]!.toLowerCase() === text[start]!.toUpperCase())
+    start += 1;
+  return text.slice(start).toLowerCase();
+}
+
+/** Every "Breaking changes" section of a pull request body, joined, or null when it has none. */
+export function breakingSection(body: string): string | null {
+  const lines = visibleMarkdown(body).split("\n");
+  const parts: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const level = headingLevel(lines[index]!);
+    if (level === 0 || !headingWords(lines[index]!).startsWith("breaking")) continue;
+    let end = index + 1;
+    while (end < lines.length) {
+      const next = headingLevel(lines[end]!);
+      if (next > 0 && next <= level) break;
+      end += 1;
+    }
+    parts.push(
+      lines
+        .slice(index + 1, end)
+        .join("\n")
+        .trim(),
+    );
+    index = end - 1;
+  }
+  const note = parts.filter((part) => part !== "").join("\n");
+  return note === "" ? null : note;
+}
+
+function breakingFromGit(title: string, bodies: ReadonlyArray<string>): Breaking {
+  const note = bodies.map(breakingFooter).find((footer) => footer !== null) ?? null;
+  return hasBreakingMark(title) || note !== null
+    ? { breaking: true, breakingNote: note }
+    : NOT_BREAKING;
+}
+
+/** Adds what the pull request says: its current title, body section and labels. */
+export function withPullRequestBreaking<Change extends Breaking>(
+  change: Change,
+  pullRequest: PullRequestData | undefined,
+): Change {
+  if (pullRequest === undefined) return change;
+  const section = breakingSection(pullRequest.body);
+  const breaking =
+    change.breaking ||
+    hasBreakingMark(pullRequest.title) ||
+    section !== null ||
+    pullRequest.labels.includes("breaking");
+  return breaking ? { ...change, breaking, breakingNote: section ?? change.breakingNote } : change;
+}
+
 function toUpstreamChange(commit: GitCommit): UpstreamChange {
   return {
+    ...breakingFromGit(commit.subject, [commit.body]),
     sha: commit.sha,
     url: commitUrl(UPSTREAM_REPOSITORY, commit.sha),
     title: commit.subject,
@@ -114,6 +210,7 @@ function toUpstreamChange(commit: GitCommit): UpstreamChange {
 
 function toForkCommit(commit: GitCommit): ForkChange {
   return {
+    ...breakingFromGit(commit.subject, [commit.body]),
     source: { _tag: "Commit", sha: commit.sha, url: commitUrl(FORK_REPOSITORY, commit.sha) },
     images: [],
     title: commit.subject,
@@ -156,6 +253,10 @@ export function groupDailyChanges(
               url: `https://github.com/${FORK_REPOSITORY}/pull/${kind.number}`,
             },
             images: [],
+            ...breakingFromGit(
+              kind.title,
+              forkSide.map((candidate) => candidate.body),
+            ),
             title: kind.title,
             author: branchAuthor ?? commit.author,
             at: commit.committedAt,
@@ -352,9 +453,20 @@ export interface SectionPlan {
   readonly clusters: ReadonlyArray<ClusterPlan>;
 }
 
+export type PlanSection = "fork" | "upstream" | "integration";
+
+/** One line per breaking change: what changed, who is affected and what to do. */
+export interface BreakingPlan {
+  readonly section: PlanSection;
+  readonly change: string;
+  readonly line: string;
+}
+
 /** Written by the agent: which changes belong together, and their order by cool factor. */
 export interface NotesPlan {
   readonly intro: string;
+  /** Required when the release has a breaking change: each one needs exactly one line. */
+  readonly breaking?: ReadonlyArray<BreakingPlan>;
   readonly fork: SectionPlan;
   readonly upstream: SectionPlan;
   readonly integration: SectionPlan;
@@ -403,8 +515,32 @@ export function decodeNotesPlan(value: unknown): NotesPlan {
   if (typeof plan !== "object" || plan === null || typeof plan.intro !== "string") {
     throw new Error('The notes plan needs an "intro" text.');
   }
+  if (plan.breaking !== undefined && !Array.isArray(plan.breaking)) {
+    throw new Error('"breaking" must be a list of {section, change, line}.');
+  }
+  const breaking = (plan.breaking ?? []).map((item: unknown, index): BreakingPlan => {
+    const candidate = item as Partial<Record<keyof BreakingPlan, unknown>> | null;
+    if (
+      typeof candidate !== "object" ||
+      candidate === null ||
+      !(
+        candidate.section === "fork" ||
+        candidate.section === "upstream" ||
+        candidate.section === "integration"
+      ) ||
+      typeof candidate.change !== "string" ||
+      typeof candidate.line !== "string" ||
+      candidate.line.trim() === ""
+    ) {
+      throw new Error(
+        `"breaking[${index}]" needs a "section" (fork, upstream or integration), a "change" ref and a "line".`,
+      );
+    }
+    return { section: candidate.section, change: candidate.change, line: candidate.line };
+  });
   return {
     intro: plan.intro,
+    breaking,
     fork: decodeSectionPlan(plan.fork, "fork"),
     upstream: decodeSectionPlan(plan.upstream, "upstream"),
     integration: decodeSectionPlan(plan.integration, "integration"),
@@ -414,7 +550,11 @@ export function decodeNotesPlan(value: unknown): NotesPlan {
 interface NoteEntry {
   readonly ref: string;
   readonly link: string;
+  /** The title with its author. */
   readonly title: string;
+  /** The title alone. */
+  readonly heading: string;
+  readonly breaking: boolean;
   readonly images: ReadonlyArray<PullRequestImage>;
   readonly url: string;
   /** Nested lines under the entry, without indent. */
@@ -426,6 +566,8 @@ function forkEntry(change: ForkChange): NoteEntry {
     ref: forkChangeRef(change),
     link: sourceLink(change.source),
     title: `${escapeText(change.title)} (${change.author})`,
+    heading: escapeText(change.title),
+    breaking: change.breaking,
     images: change.images,
     url: change.source.url,
     children: [],
@@ -440,6 +582,8 @@ function upstreamEntry(change: UpstreamChange): NoteEntry {
         ? `[${change.sha.slice(0, 7)}](${change.url})`
         : `[upstream #${change.pullRequest.number}](${change.pullRequest.url})`,
     title: `${escapeText(upstreamTitle(change))} (${change.author})`,
+    heading: escapeText(upstreamTitle(change)),
+    breaking: change.breaking,
     images: change.images,
     url: change.pullRequest?.url ?? change.url,
     children: [],
@@ -576,6 +720,46 @@ function renderCluster(cluster: Cluster, withoutImages: ReadonlySet<NoteEntry>):
   ];
 }
 
+interface BreakingLine {
+  readonly entry: NoteEntry;
+  readonly line: string;
+}
+
+/** Fails for a breaking change without a line, and for a line that names no breaking change. */
+function resolveBreaking(
+  plan: ReadonlyArray<BreakingPlan>,
+  entries: Readonly<Record<PlanSection, ReadonlyArray<NoteEntry>>>,
+): BreakingLine[] {
+  const problems: string[] = [];
+  const named = new Set<NoteEntry>();
+  const lines = plan.flatMap((item) => {
+    const matches = entries[item.section].filter((entry) => refMatches(item.change, entry));
+    const [entry] = matches;
+    if (entry === undefined || matches.length > 1 || !entry.breaking) {
+      problems.push(`breaking: "${item.change}" names no breaking change in ${item.section}.`);
+      return [];
+    }
+    if (named.has(entry)) {
+      problems.push(`breaking: "${item.change}" has more than one line.`);
+      return [];
+    }
+    named.add(entry);
+    return [{ entry, line: item.line }];
+  });
+  for (const [section, sectionEntries] of Object.entries(entries)) {
+    for (const entry of sectionEntries) {
+      if (entry.breaking && !named.has(entry)) {
+        problems.push(
+          `breaking: ${section} "${entry.ref}" (${entry.heading}) is breaking and has no line.`,
+        );
+      }
+    }
+  }
+  if (problems.length > 0)
+    throw new Error(`The notes plan does not cover the breaking changes:\n${problems.join("\n")}`);
+  return lines;
+}
+
 const SECTIONS = [
   ["fork", "Fork changes and additions"],
   ["upstream", "Upstream changes and additions"],
@@ -587,22 +771,42 @@ const SECTIONS = [
  * first. "## Full changelog" then lists every cluster with its changes folded. The desktop update
  * popover reads only the lines above "Full changelog" and drops `<details>` blocks, so it shows
  * the highlight lines. Over the size budget, the changes of the last clusters without picked
- * images lose their screenshots first.
+ * images lose their screenshots first. The breaking changes always stay.
  */
 export function renderNotes(
   changes: DailyChanges,
   plan: NotesPlan,
   budget: number = NOTES_BUDGET,
 ): string {
-  const clusters = {
-    fork: resolveClusters("fork", plan.fork, [...changes.fork].map(forkEntry)),
-    upstream: resolveClusters("upstream", plan.upstream, changes.upstream.map(upstreamEntry)),
-    integration: resolveClusters(
-      "integration",
-      plan.integration,
-      changes.integration.map(integrationEntry),
-    ),
+  const entries = {
+    fork: changes.fork.map(forkEntry),
+    upstream: changes.upstream.map(upstreamEntry),
+    integration: changes.integration.map(integrationEntry),
   };
+  const clusters = {
+    fork: resolveClusters("fork", plan.fork, entries.fork),
+    upstream: resolveClusters("upstream", plan.upstream, entries.upstream),
+    integration: resolveClusters("integration", plan.integration, entries.integration),
+  };
+  const breaking = resolveBreaking(plan.breaking ?? [], entries);
+  // At the top for readers. The desktop update popover shows only the last lines above "Full
+  // changelog", newest first, so a short warning also sits right above that heading.
+  const breakingTop =
+    breaking.length === 0
+      ? []
+      : [
+          [
+            "## ⚠️ Breaking changes",
+            "",
+            ...breaking.map(({ entry, line }) => `- ${entry.link} **${entry.heading}**: ${line}`),
+          ].join("\n"),
+        ];
+  const breakingWarning =
+    breaking.length === 0
+      ? []
+      : [
+          `⚠️ Breaking changes: ${breaking.map(({ entry }) => entry.link).join(", ")}. Read "Breaking changes" at the top before you update.`,
+        ];
 
   const render = (withoutImages: ReadonlySet<NoteEntry>) => {
     const highlights = SECTIONS.map(([key, title]) => {
@@ -626,8 +830,10 @@ export function renderNotes(
       ].join("\n");
     });
     return `${[
+      ...breakingTop,
       plan.intro,
       ...highlights,
+      ...breakingWarning,
       "## Full changelog",
       ...(withoutImages.size > 0
         ? ["The last groups leave out their screenshots, because a release has a size limit."]
@@ -748,20 +954,26 @@ function readReleases(): GitHubRelease[] {
 
 const PULL_REQUESTS_PER_QUERY = 100;
 
-/** The bodies of pull requests, one GraphQL call per 100. A number that is an issue has none. */
-function readPullRequestBodies(
+export interface PullRequestData {
+  readonly title: string;
+  readonly body: string;
+  readonly labels: ReadonlyArray<string>;
+}
+
+/** Title, body and labels of pull requests, one GraphQL call per 100. An issue number has none. */
+function readPullRequests(
   repository: string,
   numbers: ReadonlyArray<number>,
-): Map<number, string> {
+): Map<number, PullRequestData> {
   const [owner, name] = repository.split("/");
-  const bodies = new Map<number, string>();
+  const pullRequests = new Map<number, PullRequestData>();
   const unique = [...new Set(numbers)];
   for (let start = 0; start < unique.length; start += PULL_REQUESTS_PER_QUERY) {
     const chunk = unique.slice(start, start + PULL_REQUESTS_PER_QUERY);
     const fields = chunk
       .map(
         (number) =>
-          `n${number}: issueOrPullRequest(number: ${number}) { ... on PullRequest { body } }`,
+          `n${number}: issueOrPullRequest(number: ${number}) { ... on PullRequest { title body labels(first: 20) { nodes { name } } } }`,
       )
       .join(" ");
     const response: unknown = JSON.parse(
@@ -776,14 +988,23 @@ function readPullRequestBodies(
       ?.repository;
     if (found === undefined) throw new Error(`No pull requests of ${repository} in the response.`);
     for (const number of chunk) {
-      const body = (found[`n${number}`] as { body?: unknown } | null | undefined)?.body;
-      if (typeof body === "string") bodies.set(number, body);
+      const node = found[`n${number}`] as
+        | { title?: unknown; body?: unknown; labels?: { nodes?: Array<{ name?: unknown }> } }
+        | null
+        | undefined;
+      if (typeof node?.title !== "string" || typeof node.body !== "string") continue;
+      pullRequests.set(number, {
+        title: node.title,
+        body: node.body,
+        labels: (node.labels?.nodes ?? []).flatMap((label) =>
+          typeof label.name === "string" ? [label.name] : [],
+        ),
+      });
     }
   }
-  return bodies;
+  return pullRequests;
 }
 
-/** Adds the images of each pull request body. Two GraphQL calls per 100 pull requests at most. */
 /**
  * Images for fork changes without a pull request body, such as direct commits. The keys are refs:
  * `#123` or a full commit. A change in docs/fork/release-images.json goes through review, so a plan
@@ -830,31 +1051,44 @@ function readReleaseImages(): ReleaseImages {
   return decodeReleaseImages(JSON.parse(NodeFS.readFileSync(file, "utf8")));
 }
 
-function withImages(changes: DailyChanges): DailyChanges {
+/**
+ * Adds what each pull request says: its images, its breaking mark and, for a fork pull request,
+ * its current title. Two GraphQL calls per 100 pull requests at most.
+ */
+function withPullRequestData(changes: DailyChanges): DailyChanges {
   const forkNumbers = [...changes.fork, ...changes.integration].flatMap((change) =>
     change.source._tag === "PullRequest" ? [change.source.number] : [],
   );
   const upstreamNumbers = changes.upstream.flatMap((change) =>
     change.pullRequest === null ? [] : [change.pullRequest.number],
   );
-  const forkBodies = readPullRequestBodies(FORK_REPOSITORY, forkNumbers);
-  const upstreamBodies = readPullRequestBodies(UPSTREAM_REPOSITORY, upstreamNumbers);
+  const forkPullRequests = readPullRequests(FORK_REPOSITORY, forkNumbers);
+  const upstreamPullRequests = readPullRequests(UPSTREAM_REPOSITORY, upstreamNumbers);
   const releaseImages = readReleaseImages();
-  const forkImages = <Change extends ForkChange>(change: Change): Change =>
-    withReleaseImages(
-      change.source._tag === "PullRequest"
-        ? { ...change, images: extractImages(forkBodies.get(change.source.number) ?? "") }
-        : change,
-      releaseImages,
-    );
-  return {
-    fork: changes.fork.map(forkImages),
-    integration: changes.integration.map(forkImages),
-    upstream: changes.upstream.map((change) =>
-      change.pullRequest === null
+  const forkData = <Change extends ForkChange>(change: Change): Change => {
+    const pullRequest =
+      change.source._tag === "PullRequest" ? forkPullRequests.get(change.source.number) : undefined;
+    const withBody =
+      pullRequest === undefined
         ? change
-        : { ...change, images: extractImages(upstreamBodies.get(change.pullRequest.number) ?? "") },
-    ),
+        : { ...change, title: pullRequest.title, images: extractImages(pullRequest.body) };
+    return withReleaseImages(withPullRequestBreaking(withBody, pullRequest), releaseImages);
+  };
+  return {
+    fork: changes.fork.map(forkData),
+    integration: changes.integration.map(forkData),
+    upstream: changes.upstream.map((change) => {
+      const pullRequest =
+        change.pullRequest === null
+          ? undefined
+          : upstreamPullRequests.get(change.pullRequest.number);
+      return pullRequest === undefined
+        ? change
+        : withPullRequestBreaking(
+            { ...change, images: extractImages(pullRequest.body) },
+            pullRequest,
+          );
+    }),
   };
 }
 
@@ -944,7 +1178,7 @@ function main(args: ReadonlyArray<string>): void {
     },
   );
 
-  const grouped = withImages(
+  const grouped = withPullRequestData(
     groupDailyChanges(
       changes,
       (sha) => upstreamShas.has(sha),
