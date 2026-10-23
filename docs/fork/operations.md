@@ -15,7 +15,7 @@ The fork disables every upstream workflow, because they need upstream's runners 
 
 - It runs the migration check, typechecks the merge, runs the fork tests and pushes the merge as a fast-forward. If main moved during the run, it merges the new main and pushes again.
 - The fork tests are the test files that the fork changed since `git merge-base upstream/main HEAD`. A diff against a newer upstream main also lists files that only upstream changed.
-- For a local sync repair, run `vp run typecheck` and those fork tests with `vp test run <files>`. Run apps/web tests from `apps/web` with `vp test run --project unit --project browser <files>`; install Playwright Chromium first if needed. Do not run the changed-file checks over all upstream changes; wait for Fork CI on the repair pull request.
+- For a local sync repair, run `vp run typecheck` and those fork tests. The [fork-repair skill](../../.agents/skills/fork-repair/SKILL.md) runs both: `checks.py` and `fork_tests.py`. To run the tests by hand, use `vp test run <files>`, and run apps/web tests from `apps/web` with `vp test run --project unit --project browser <files>`; install Playwright Chromium first if needed. Do not run the changed-file checks over all upstream changes; wait for Fork CI on the repair pull request.
 - The apps/web fork tests run from `apps/web`, in its unit and browser projects. A browser test needs Playwright Chromium, so the job installs it first.
 - Before the other fork tests, the job installs the Electron binary for the desktop tests. When a fork test is in `apps/server`, it also installs Playwright Chromium for the server preview tests.
 - A conflict only in `README.md` resolves by itself. See [Change the fork](#change-the-fork).
@@ -113,7 +113,7 @@ A failed Fork Sync, Fork Release or Fork CI run on main runs its `notify_agent` 
 - The script retries once a minute for 15 minutes, so a server restart of the VPS does not lose the call. Each auto-update of the VPS restarts its server for about 20 seconds.
 - A manual run with `notify_agent=false` does not post. A failure right after a failure of the same workflow does not post either, when the first notify job succeeded and the first failure started less than 90 minutes before. This window is shorter than the 2-hour sync interval, so the next scheduled failure can call again.
 - The repair agent ignores a cancelled run.
-- How the agent works, and how to stop it: [Repair agent](../fork-agents.md#repair-agent).
+- How the agent works, and how to stop it: [Repair agent](../fork-agents.md#repair-agent). Its repair steps use the scripts of the [fork-repair skill](../../.agents/skills/fork-repair/SKILL.md).
 
 ## Change the fork
 
@@ -189,7 +189,7 @@ vp run fork:check
 
 - It runs the quick Fork CI checks on the files that changed since the merge base with `origin/main`. Uncommitted and untracked files count.
 - On a branch with a merge whose second parent is not in `origin/main`, it prints one line and exits 0 without checks. This keeps sync repairs from checking every upstream change locally. Run `vp run typecheck` and the fork tests described in [Fork Sync](#fork-sync), then wait for Fork CI on the pull request.
-- The steps are format and lint of the changed files, knip, typecheck of the changed packages, the tests of the changed files, the doc link check, the migration check and the check of the adopted upstream pull requests. The migration check reads the local `upstream/main`, so run `git fetch upstream main` first. The tests are the changed test files, the tests next to changed source files, `forkSettingsRegistration.test.ts`, the React Compiler coverage test of a changed web or mobile app, and the import cycle test (`dependency-graph.test.ts`) of a changed mobile app.
+- The steps are format and lint of the changed files, knip, typecheck of the changed packages, the tests of the changed files, the doc link check, the migration check, the check of the adopted upstream pull requests, and the Python tests of the fork-repair skill when its scripts changed. The migration check reads the local `upstream/main`, so run `git fetch upstream main` first. The tests are the changed test files, the tests next to changed source files, `forkSettingsRegistration.test.ts`, the React Compiler coverage test of a changed web or mobile app, and the import cycle test (`dependency-graph.test.ts`) of a changed mobile app.
 - It prints one line per step: pass, fail or skipped with the reason. It exits with an error when a step fails.
 - Without Playwright Chromium, it skips the browser tests and prints the install command.
 - Fork CI still runs the full test suites, the typecheck of dependent packages, the desktop build and the Rust crates.

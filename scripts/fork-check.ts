@@ -23,6 +23,7 @@ const NOT_COVERED = [
   "the .github/scripts tests and Fork Android, Fork Release and Fork Sync",
 ];
 const SCRIPT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
+const REPAIR_SKILL_SCRIPTS = ".agents/skills/fork-repair/scripts/";
 const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.test.ts", ".browser.test.tsx"];
 /** Tests that run on every check. */
 const ALWAYS_TESTS = ["apps/web/src/components/settings/forkSettingsRegistration.test.ts"];
@@ -191,6 +192,33 @@ function testSteps(): ReadonlyArray<Step> {
   return steps;
 }
 
+/** The Python tests of the fork repair skill. Fork CI does not run them: its runners have no uv. */
+function repairSkillStep(): Step {
+  const name = "fork-repair skill tests";
+  if (!changed.some((file) => file.startsWith(REPAIR_SKILL_SCRIPTS))) {
+    return { name, skipped: "no changed fork-repair script" };
+  }
+  if (NodeChildProcess.spawnSync("uv", ["--version"]).status !== 0) {
+    return { name, skipped: "no uv. Install it: https://docs.astral.sh/uv/" };
+  }
+  return {
+    name,
+    detail: REPAIR_SKILL_SCRIPTS,
+    command: [
+      "uv",
+      "run",
+      "--no-project",
+      "--with",
+      "pytest==9.1.1",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      REPAIR_SKILL_SCRIPTS,
+    ],
+  };
+}
+
 function steps(): ReadonlyArray<Step> {
   const scripts = changed.filter((file) => SCRIPT_EXTENSIONS.has(NodePath.extname(file)));
   const codeChanged = changed.some((file) => !isDocFile(file));
@@ -228,6 +256,7 @@ function steps(): ReadonlyArray<Step> {
           ],
         },
     ...testSteps(),
+    repairSkillStep(),
     {
       name: "doc links",
       detail: "fork docs",
