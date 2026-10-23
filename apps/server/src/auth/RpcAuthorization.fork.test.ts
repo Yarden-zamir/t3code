@@ -16,7 +16,8 @@ import * as RpcAuthorization from "./RpcAuthorization.ts";
 const method = WS_METHODS.terminalMoveToThread;
 const group = WsRpcGroup.omit(
   ...[...WsRpcGroup.requests.keys()].filter(
-    (tag): tag is Exclude<typeof tag, typeof method> => tag !== method,
+    (tag): tag is Exclude<keyof typeof RpcAuthorization.RPC_REQUIRED_SCOPES, typeof method> =>
+      tag !== method,
   ),
 );
 

@@ -33,7 +33,7 @@ A new terminal starts as a new thread in Terminal mode: the composer box holds a
 shell, and the Terminal button in the composer is on. The footer shows the folder of the shell. Pick the shell (zsh, bash and
 so on, or a custom shell) in place of the model. The first command that ends, or that runs for a second (an
 editor, a dev server), makes it a terminal thread with the same shell, named after the
-command. The enlarge button next to the hint makes it a terminal thread at once. Until then:
+command, or after the shell when the shell does not report its commands. The enlarge button next to the hint makes it a terminal thread at once. Until then:
 
 - The Terminal button switches back to an agent, and closes the shell.
 - A prompt that you typed before switching to Terminal stays in the draft. When the terminal
@@ -44,7 +44,8 @@ command. The enlarge button next to the hint makes it a terminal thread at once.
 - With New worktree, click Create worktree first. The worktree is set up as for a new
   thread: it fetches origin first when that option is on, and runs the project's setup
   script. The shell starts in the worktree when the setup script starts. A setup script
-  that is not async must end first. If the setup fails, the worktree is removed.
+  that is not async must end first. If that setup script fails, the worktree is removed.
+  An async setup script that fails keeps the worktree, and the setup progress shows the failure.
 - While the worktree is set up, Cancel stops it, and Work locally runs the shell in the
   project folder instead.
 
@@ -55,8 +56,8 @@ running there with its output. That shell has no shell integration, so the threa
 Done or Failed only when the shell exits, and a message to it is only typed. On Linux and Windows, Ctrl+W, Ctrl+D, Ctrl+N and Ctrl+J
 in the main terminal go to the shell, so open the drawer from the header there.
 
-The right panel (`mod+alt+b`) and the thread details (`mod+shift+b`, with the focus outside
-the terminal) work like in a chat thread: changes and diff, files, pull requests, browser,
+The right panel (`mod+alt+b`) and the thread details (`mod+shift+b`; on Linux and Windows
+with the focus outside the terminal) work like in a chat thread: changes and diff, files, pull requests, browser,
 devices, machines, and the git actions of the branch. A link that you click in a terminal
 opens in the browser of the panel when it is available, like in a chat thread. A terminal
 thread has no prompt, so the panel has no "send to chat", and the thread details have no
@@ -93,7 +94,8 @@ into its terminal. The terminal shows exactly what the message said.
 
 The sidebar shows the state of a terminal thread until you visit it:
 
-- A bell or an app notification from a program shows Input.
+- A bell or an app notification from a program shows Input, also while a program runs and
+  after it ends.
 - A program that ends shows Done, or Failed when its exit code is not zero.
 - A program that runs in the shell shows Working. A background job does not.
 
@@ -104,8 +106,9 @@ that ends (Program done or Program failed).
 
 When the shell of a terminal thread exits or is killed, the thread keeps its output and
 shows that the shell exited, also after a reload. Start a new shell, or press Enter, to
-continue; a message to the thread also starts one. The new shell starts below the output of
-the one that ended, under a "new shell" line. Archiving the thread deletes that
+continue; a message to the thread also starts one. To use another shell, choose it next to
+Start a new shell first. The new shell starts below the output of the one that ended, under a
+"new shell" line. Archiving the thread deletes that
 output. Settling the thread keeps its shell open. A server restart ends the programs in the
 terminal, and the output stays.
 
@@ -117,8 +120,11 @@ follows the monospace font of Appearance until you choose a separate font.
 
 Shells lists the shells that the server found, and your custom shells. A custom shell is any
 program with arguments, for example `uv` with `run python`. A program name without a folder
-runs from the PATH of the terminal. A shell that cannot start shows its error in the terminal;
-T3 Code never starts another shell in its place.
+runs from the PATH of the terminal. Settings shows an error under a custom shell whose program the
+server cannot find. A shell that cannot start shows its error in the terminal;
+T3 Code never starts another shell in its place. When you remove or rename a custom shell,
+Settings names the threads that use it. Such a thread keeps its output: choose another shell
+next to Start a new shell.
 
 ## Zoom and keys
 
