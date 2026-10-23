@@ -40,6 +40,8 @@ const FORK_PAGE_ROWS: Record<
   focusLevelHighlight: "focus-level-highlight",
   tooltipShortcuts: "tooltip-shortcuts",
   tooltipShortcutLimit: "tooltip-shortcut-limit",
+  backForwardButtons: "back-forward-buttons",
+  rememberBackForwardHistory: "remember-back-forward-history",
   worktreePathTemplate: "storage-worktree-path-template",
   recoverInterruptedTurns: "recover-interrupted-turns",
   recoverInterruptedTurnsMessage: "recover-interrupted-turns",

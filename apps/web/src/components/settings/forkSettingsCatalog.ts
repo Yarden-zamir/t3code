@@ -117,6 +117,8 @@ const FORK_SETTING_GROUPS = [
       { ids: ["message-links"] },
       { ids: ["preview-local-server-groups"] },
       { ids: ["mobile-published-themes"] },
+      { ids: ["back-forward-buttons"] },
+      { ids: ["remember-back-forward-history"] },
     ],
   },
 ] as const satisfies ReadonlyArray<{

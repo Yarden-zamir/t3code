@@ -214,6 +214,15 @@ export const ForkClientSettingsFields = {
   tooltipShortcuts: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Fork: the most keys one tooltip shows; more show as "+N". */
   tooltipShortcutLimit: TooltipShortcutLimit.pipe(Schema.withDecodingDefault(Effect.succeed(4))),
+  /** Fork: back and forward buttons next to the sidebar toggle in the title bar. Off, because it changes the title bar. */
+  backForwardButtons: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Fork: the desktop app keeps the back history after a restart, and back and forward skip
+   * threads and drafts that no longer exist. Off, because it changes what back does.
+   */
+  rememberBackForwardHistory: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
 };
 
 export const ForkClientSettingsPatchFields = {
@@ -235,6 +244,8 @@ export const ForkClientSettingsPatchFields = {
   focusLevelHighlight: Schema.optionalKey(Schema.Boolean),
   tooltipShortcuts: Schema.optionalKey(Schema.Boolean),
   tooltipShortcutLimit: Schema.optionalKey(TooltipShortcutLimit),
+  backForwardButtons: Schema.optionalKey(Schema.Boolean),
+  rememberBackForwardHistory: Schema.optionalKey(Schema.Boolean),
 };
 
 /**

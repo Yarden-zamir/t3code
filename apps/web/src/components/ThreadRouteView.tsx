@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import ChatView from "./ChatView";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
 import { waitForDraftHeroTransition } from "./chat/draftHeroTransition";
+import { leaveMissingRoute } from "../forkNavigationHistory";
 import { SidebarInset } from "./ui/sidebar";
 import {
   finalizePromotedDraftThreadByRef,
@@ -140,7 +141,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     if (target.kind !== "draft" || draftSession || canonicalThreadRef) {
       return;
     }
-    void navigate({ to: "/", replace: true });
+    leaveMissingRoute(() => void navigate({ to: "/", replace: true }));
   }, [canonicalThreadRef, draftSession, navigate, target.kind]);
 
   useEffect(() => {
@@ -151,7 +152,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
       if (environmentHasAnyThreads) {
-        void navigate({ to: "/", replace: true });
+        leaveMissingRoute(() => void navigate({ to: "/", replace: true }));
       }
     }
   }, [bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target]);

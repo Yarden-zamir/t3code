@@ -687,6 +687,20 @@ The fork desktop app, its notifications and the bundled web page use the Tick3d 
 - **Works on:** desktop, web, Android APK. The APK uses the layers `assets/fork/tick3d-android-{foreground,background,monochrome}.svg`, as PNG files in `apps/mobile/assets/fork/`.
 - **Limits:** iOS builds keep the nightly icon.
 
+### Back and forward
+
+Back and forward buttons sit right of the sidebar toggle, like in VS Code. A button is dimmed when it has nothing to go to.
+
+- **Setting:** client settings `backForwardButtons` and `rememberBackForwardHistory` (both off by default). Settings > General > "Back and forward buttons" and "Remember back and forward history".
+- **Works on:** web, desktop. The mobile app uses its own native navigation.
+- The buttons, `mod+[` and `mod+]`, the command palette ("Go back", "Go forward") and the browser buttons all move in one history, the browser history of the window. The keys and the palette work also with the buttons hidden.
+- With `rememberBackForwardHistory`, back and forward skip threads and drafts that no longer exist. The desktop app also stores the back history of its window. After a restart, back goes to the views of the last run. A browser tab keeps its own history over a reload or a browser restart.
+- The desktop preview browser has its own back and forward buttons for the page that it shows.
+- **Limits:**
+  - The desktop app keeps at most 50 entries, and no forward entries: the start of the app is a new navigation.
+  - In a browser without the Navigation API, such as an older Safari or Firefox, both buttons stay enabled, and a missing thread goes to a new thread instead of a skip.
+  - Mouse buttons 4 and 5 and trackpad swipes do not go back or forward in the desktop app.
+
 ## Command line and MCP
 
 ### `t3 tool`

@@ -100,6 +100,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Themes on mobile](docs/fork/features.md#themes-on-mobile):** the mobile app uses the published themes of its servers, with their fonts, shape and canvas pattern.
 - **[Fork settings on mobile](docs/fork/features.md#fork-settings-on-mobile):** a Fork page in the mobile Settings.
 - **[Lightning icon](docs/fork/features.md#lightning-icon):** the fork app and the Android APK use their own icon.
+- **[Back and forward](docs/fork/features.md#back-and-forward):** back and forward buttons in the title bar, and a desktop back history that stays after a restart.
 
 **Command line and MCP**
 
