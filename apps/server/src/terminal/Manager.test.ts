@@ -619,8 +619,9 @@ it.layer(
         "/bin/default-shell",
       ]);
 
-      const error = yield* Effect.flip(manager.open(openInput({ shell: "nu" })));
-      expect(error).toMatchObject({ _tag: "TerminalShellNotFoundError", shell: "nu" });
+      const unknown = yield* manager.open(openInput({ shell: "nu" }));
+      expect(unknown.status).toBe("error");
+      expect(unknown.history).toContain('The shell "nu" is not defined');
       expect(ptyAdapter.spawnInputs).toHaveLength(2);
     }),
   );

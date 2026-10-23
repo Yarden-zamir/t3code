@@ -1530,18 +1530,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       shell: shellName,
       available: [...forkShells, ...customShells].map((shell) => shell.name),
     });
-  const assertKnownShell = Effect.fn("terminal.assertKnownShell")(function* (
-    shellName: string | undefined,
-  ) {
-    if (shellName === undefined || forkShells.some((shell) => shell.name === shellName)) return;
-    const customShells = yield* forkCustomShells;
-    if (customShells.some((shell) => shell.name === shellName)) return;
-    return yield* shellNotFound(shellName, customShells);
-  });
   // Fork: only the default shell falls back to the next candidate. A shell that the user chose
   // runs alone, so a thread never runs another shell than its own, and a failed start shows its
-  // error. Only detected shells get the shell integration; a custom shell (`bash --norc`) keeps
-  // its own arguments.
+  // error. An unknown shell (a custom shell that was removed) fails here, in the start, and not
+  // the open, so the session keeps its output and shows why. Only detected shells get the shell
+  // integration; a custom shell (`bash --norc`) keeps its own arguments.
   const shellLaunchFor = Effect.fn("terminal.shellLaunchFor")(function* (
     shellName: string | null,
     env: NodeJS.ProcessEnv,
@@ -2502,9 +2495,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         session.pendingProcessEvents = [];
         session.pendingProcessEventIndex = 0;
         session.processEventDrainRunning = false;
+        // Fork: an attach drops this error event, because its snapshot is newer, so the reason
+        // goes into the history as well. Clients write the live event in the same form.
+        session.history.append(`\r\n[terminal] ${error.message}\r\n`);
         advanceEventSequence(session);
         return [undefined, state] as const;
       });
+      yield* persistHistory(session.threadId, session.terminalId, session.history);
       yield* unregisterTerminal({
         threadId: session.threadId,
         terminalId: session.terminalId,
@@ -2808,7 +2805,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   ) {
     const terminalId = input.terminalId;
     yield* assertValidCwd(input.cwd);
-    yield* assertKnownShell(input.shell);
 
     const sessionKey = toSessionKey(input.threadId, terminalId);
     const existing = yield* getSession(input.threadId, terminalId);

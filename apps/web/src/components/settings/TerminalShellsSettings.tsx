@@ -16,6 +16,7 @@ import { useState } from "react";
 import { usePersistEnvironmentProviderInstanceMutation } from "../../hooks/useSettings";
 import { providersIgnoringCheckedAtAtom } from "../../state/server";
 import { useEnvironmentScope } from "../../state/session";
+import { environmentThreadShells } from "../../state/threads";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -90,6 +91,15 @@ function EnvironmentTerminalShells({
   const detected = (terminalProvider?.models ?? []).filter(
     (model) => !model.isCustom && model.isLegacy !== true,
   );
+  const threads = useAtomValue(environmentThreadShells.environmentThreadsAtom(environmentId));
+  // The server checks the executable of each saved custom shell, on its own PATH.
+  const problemOf = (row: ShellDraft) =>
+    savedShells?.some(
+      (shell) => shell.name === row.name.trim() && shell.executable === row.executable.trim(),
+    )
+      ? terminalProvider?.models.find((model) => model.isCustom && model.slug === row.name.trim())
+          ?.unavailableReason
+      : undefined;
 
   // The rows keep what the user typed until it saves, so a rejected entry stays visible.
   const [drafts, setDrafts] = useState<ReadonlyArray<ShellDraft> | null>(null);
@@ -132,6 +142,17 @@ function EnvironmentTerminalShells({
   };
 
   const changed = drafts !== null;
+  // A saved shell that the rows no longer name, removed or renamed, leaves its threads without a
+  // shell. They can pick another one when their shell ends.
+  const removedNames = (savedShells ?? [])
+    .map((shell) => shell.name)
+    .filter((name) => !rows.some((row) => row.name.trim() === name));
+  const orphanedThreads = threads.filter(
+    (thread) =>
+      thread.archivedAt === null &&
+      thread.modelSelection.instanceId === TERMINAL_THREAD_INSTANCE_ID &&
+      removedNames.includes(thread.modelSelection.model),
+  );
 
   return (
     <SettingsRow
@@ -144,6 +165,10 @@ function EnvironmentTerminalShells({
         ) : savedShells === null ? (
           <span className="text-destructive-foreground">
             The saved custom shells are not valid. Save the list again to replace them.
+          </span>
+        ) : orphanedThreads.length > 0 ? (
+          <span className="text-warning-foreground">
+            {`Used by ${orphanedThreads.map((thread) => `"${thread.title}"`).join(", ")}. A running shell goes on. After you save, choose another shell on the thread screen to start a new one.`}
           </span>
         ) : null
       }
@@ -209,6 +234,9 @@ function EnvironmentTerminalShells({
             >
               <Trash2Icon />
             </Button>
+            {problemOf(row) === undefined ? null : (
+              <p className="basis-full text-destructive-foreground text-xs">{problemOf(row)}</p>
+            )}
           </div>
         ))}
         <div className="flex flex-wrap gap-2">

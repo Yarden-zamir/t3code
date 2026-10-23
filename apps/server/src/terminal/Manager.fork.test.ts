@@ -170,14 +170,42 @@ it.layer(
       expect(pty.spawnInputs).toHaveLength(1);
       expect(pty.spawnInputs[0]).toMatchObject({ shell: "/usr/bin/uv", args: ["run", "python"] });
       expect(pty.spawnInputs[0]?.env.T3_TEST_INTEGRATED).toBeUndefined();
-
-      // A removed custom shell is unknown again.
-      yield* Ref.set(customShells, []);
-      const error = yield* Effect.flip(
-        manager.open({ ...threadScreen("python"), threadId: "thread-2" }),
-      );
-      expect(error).toMatchObject({ _tag: "TerminalShellNotFoundError", shell: "python" });
     }).pipe(Effect.provideService(SpawnExecutableResolution, uvOnPath)),
+  );
+
+  it.effect(
+    "keeps the output of a thread whose custom shell was removed, and names the shell",
+    () =>
+      Effect.gen(function* () {
+        const customShells = yield* Ref.make<ReadonlyArray<TerminalCustomShell>>([
+          { name: "python", executable: "uv", args: ["run", "python"] },
+        ]);
+        const { manager, pty } = yield* createManager({ customShells });
+        yield* manager.open(threadScreen("python"));
+        const printed = yield* Deferred.make<void>();
+        const stop = yield* manager.subscribe((event) =>
+          event.type === "output"
+            ? Deferred.succeed(printed, undefined).pipe(Effect.asVoid)
+            : Effect.void,
+        );
+        pty.processes[0]?.emit(">>> print(1)\r\n1\r\n");
+        yield* Deferred.await(printed);
+        stop();
+        pty.processes[0]?.kill();
+        // The open waits for the debounced history write of that output.
+        yield* TestClock.adjust("1 second");
+
+        yield* Ref.set(customShells, []);
+        // Start a new shell, and an attach after a reload, open the thread screen again.
+        const snapshot = yield* manager.open(threadScreen("python"));
+
+        expect(snapshot.status).toBe("error");
+        expect(pty.spawnInputs).toHaveLength(1);
+        expect(snapshot.history.indexOf('"python" is not defined')).toBeGreaterThan(
+          snapshot.history.indexOf("print(1)"),
+        );
+        expect(snapshot.history).toContain("print(1)");
+      }).pipe(Effect.provideService(SpawnExecutableResolution, uvOnPath)),
   );
 
   it.effect("fails a custom shell whose executable is missing, with its name", () =>
@@ -191,6 +219,8 @@ it.layer(
 
       expect(snapshot.status).toBe("error");
       expect(pty.spawnInputs).toHaveLength(0);
+      // In the history too, because an attach gets the snapshot and drops the error event.
+      expect(snapshot.history).toContain('"missing-repl" is not an executable file');
       expect(yield* errorMessages).toEqual([
         'The shell "repl" cannot start: "missing-repl" is not an executable file, and not on the PATH of the terminal.',
       ]);

@@ -1,8 +1,11 @@
+import { useAtomValue } from "@effect/atom-react";
 import {
+  AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
   DEFAULT_TERMINAL_ID,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
+  TERMINAL_THREAD_INSTANCE_ID,
 } from "@t3tools/contracts";
 import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import * as Schema from "effect/Schema";
@@ -12,13 +15,17 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../appearanceFonts";
 import { terminalThreadOpenInput } from "../forkTerminalThreadOpen";
 import { useGrabTerminalFocus } from "../hooks/useForkTerminalFocus";
 import { useLocalStorage } from "../hooks/useLocalStorage";
+import { terminalShellOptions } from "../lib/forkTerminalProviders";
 import { observeResize } from "../lib/observeResize";
 import { cn } from "../lib/utils";
+import { providersIgnoringCheckedAtAtom } from "../state/server";
 import { useEnvironmentScope } from "../state/session";
 import { terminalEnvironment } from "../state/terminal";
+import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { TerminalViewport } from "./ThreadTerminalDrawer";
 import { Button } from "./ui/button";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 
 /** The title of a terminal thread that no command named yet. */
 export const TERMINAL_THREAD_DEFAULT_TITLE = "Terminal";
@@ -30,9 +37,11 @@ type SessionStatus = Parameters<
 
 /**
  * Fork: the shell of a terminal thread, or of a draft in Terminal mode: the main terminal
- * `term-1` with focus on mount and the ended state. When the shell exits, the server closes the
- * session and keeps its output; Start a new shell (or Enter) opens a fresh shell below it, and
- * every client that shows the terminal follows, because the state comes from the server.
+ * `term-1` with focus on mount and the ended state. When the shell exits, or cannot start, the
+ * server keeps the output and writes the reason into it; Start a new shell (or Enter) opens a
+ * fresh shell below it, and every client that shows the terminal follows, because the state comes
+ * from the server. A thread can pick another shell there, for example when its custom shell was
+ * removed; a draft picks its shell in the composer.
  */
 export function ForkShellTerminal(props: {
   readonly threadRef: ScopedThreadRef;
@@ -67,7 +76,7 @@ export function ForkShellTerminal(props: {
 
   const [status, setStatus] = useState<SessionStatus | null>(null);
   const [restarting, setRestarting] = useState(false);
-  const ended = status === "exited" || status === "closed";
+  const ended = status === "exited" || status === "closed" || status === "error";
   const { onEndedChange } = props;
   useEffect(() => onEndedChange?.(ended), [ended, onEndedChange]);
   const restart = () => {
@@ -115,7 +124,11 @@ export function ForkShellTerminal(props: {
       // A draft terminal grows into this one when it becomes a thread (`ForkDraftTerminalComposer`).
       style={{ viewTransitionName: "t3-fork-terminal" }}
       onKeyDownCapture={(event) => {
-        if (!ended || event.key !== "Enter") return;
+        // Only in the terminal: Enter in the shell picker, which the React tree also passes
+        // through here from its portal, chooses a shell.
+        if (!ended || event.key !== "Enter" || !(event.target instanceof HTMLTextAreaElement)) {
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         restart();
@@ -144,7 +157,14 @@ export function ForkShellTerminal(props: {
       />
       {ended ? (
         <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-3 border-t border-border/60 bg-background/90 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">{props.endedMessage ?? "The shell exited."}</span>
+          <span className="text-muted-foreground">
+            {status === "error"
+              ? "The shell did not start. The terminal shows why."
+              : (props.endedMessage ?? "The shell exited.")}
+          </span>
+          {props.draft || !canOperate ? null : (
+            <ThreadShellPicker threadRef={threadRef} shell={props.shell} />
+          )}
           {canOperate ? (
             <Button size="sm" disabled={restarting} onClick={restart}>
               Start a new shell
@@ -154,5 +174,52 @@ export function ForkShellTerminal(props: {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The shell of a terminal thread, which is its model. A change takes effect with the next new
+ * shell, because the server starts the thread's shell then.
+ */
+function ThreadShellPicker(props: {
+  readonly threadRef: ScopedThreadRef;
+  readonly shell: string | undefined;
+}) {
+  const { threadRef } = props;
+  const shells = terminalShellOptions(
+    useAtomValue(providersIgnoringCheckedAtAtom(threadRef.environmentId)),
+  );
+  const canChange = useEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope);
+  const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata);
+  // No `shell` means the default shell, which the server lists first.
+  const current = props.shell ?? shells.find((shell) => shell.isDefault === true)?.slug;
+  if (!canChange || shells.length === 0 || current === undefined) return null;
+  const known = shells.some((shell) => shell.slug === current);
+  return (
+    <Select
+      value={current}
+      onValueChange={(value: string | null) => {
+        if (value === null || value === current) return;
+        void updateMetadata({
+          environmentId: threadRef.environmentId,
+          input: {
+            threadId: threadRef.threadId,
+            modelSelection: { instanceId: TERMINAL_THREAD_INSTANCE_ID, model: value },
+          },
+        });
+      }}
+      items={shells.map((shell) => ({ value: shell.slug, label: shell.name }))}
+    >
+      <SelectTrigger aria-label="Shell of the new shell" className="w-auto min-w-32" size="xs">
+        <SelectValue>{known ? current : `${current} (not defined)`}</SelectValue>
+      </SelectTrigger>
+      <SelectPopup>
+        {shells.map((shell) => (
+          <SelectItem key={shell.slug} value={shell.slug}>
+            {shell.name}
+          </SelectItem>
+        ))}
+      </SelectPopup>
+    </Select>
   );
 }

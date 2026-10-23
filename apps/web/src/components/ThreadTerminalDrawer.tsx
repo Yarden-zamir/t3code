@@ -1966,7 +1966,8 @@ export default function ThreadTerminalDrawer({
         <div
           className={cn(
             "flex h-full min-h-0 bg-(--terminal-background)",
-            hasTerminalSidebar && "gap-1.5",
+            // Fork: the floating toolbar gets its own strip, so it covers no line of the terminal.
+            hasTerminalSidebar ? "gap-1.5" : "pt-8",
           )}
         >
           <div className="min-w-0 flex-1">

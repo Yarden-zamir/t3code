@@ -7,6 +7,7 @@ import { expect } from "vite-plus/test";
 
 import {
   customShellCandidate,
+  customShellProblem,
   detectTerminalShells,
   terminalCustomShellsOf,
 } from "./terminalShells.ts";
@@ -150,6 +151,21 @@ describe("customShellCandidate", () => {
         _tag: "Failure",
         failure: { _tag: "TerminalCustomShellNotFoundError", shell: "python", executable: "uv" },
       });
+    }),
+  );
+});
+
+describe("customShellProblem", () => {
+  it.effect("names a missing executable, and skips a relative path that no folder resolves", () =>
+    Effect.gen(function* () {
+      const check = (executable: string) =>
+        customShellProblem(
+          { name: "ghost", executable, args: [] },
+          { platform: "linux", env: {} },
+        ).pipe(Effect.provideService(SpawnExecutableResolution, () => undefined));
+
+      expect(yield* check("no-such-shell")).toContain('"no-such-shell" is not an executable file');
+      expect(yield* check("./bin/repl")).toBeUndefined();
     }),
   );
 });

@@ -1,3 +1,4 @@
+import { SECTION_LABELS } from "./forkSettingsSearch";
 import type { SettingsSearchItem, SettingsSearchItemId } from "./settingsSearch";
 
 /**
@@ -144,7 +145,8 @@ export const forkSettingGroups: ReadonlyArray<{
 
 /**
  * Search results for the rows of the Fork page. Each one copies the result of the usual place,
- * so it has the same scope and availability, and sorts after it.
+ * so it has the same scope and availability, and sorts after it. A row whose usual place is a
+ * fork page (Terminal, Machines, Fork) gets no copy: that result already leads to a fork page.
  */
 export function forkSettingsSearchItems(
   available: ReadonlyArray<SettingsSearchItem>,
@@ -154,7 +156,7 @@ export function forkSettingsSearchItems(
     group.entries.flatMap((entry) =>
       entry.ids.flatMap((id) => {
         const item = availableById.get(id);
-        if (item === undefined) return [];
+        if (item === undefined || Object.hasOwn(SECTION_LABELS, item.to)) return [];
         return [
           {
             ...item,

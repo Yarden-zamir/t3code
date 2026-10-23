@@ -199,3 +199,22 @@ export const customShellCandidate = Effect.fn("terminalShells.customShellCandida
   }
   return { shell: resolved, args: [...shell.args] } satisfies ShellCandidate;
 });
+
+/**
+ * Why a custom shell cannot start on this server, or undefined when its executable is found. The
+ * provider lists it with the shell, so Settings can show it for a remote server too. Limit: it
+ * checks the PATH of the server, which the terminal extends with the managed agent folders, and it
+ * cannot check a relative path, which starts at the folder of each terminal. Revisit when a custom
+ * shell runs from either.
+ */
+export function customShellProblem(
+  shell: TerminalCustomShell,
+  input: { readonly platform: NodeJS.Platform; readonly env: NodeJS.ProcessEnv },
+): Effect.Effect<string | undefined> {
+  const path = input.platform === "win32" ? NodePath.win32 : NodePath.posix;
+  const isPath = shell.executable.includes("/") || shell.executable.includes("\\");
+  if (isPath && !path.isAbsolute(shell.executable)) return Effect.succeed(undefined);
+  return customShellCandidate(shell, { ...input, cwd: path.sep }).pipe(
+    Effect.match({ onFailure: (error) => error.message, onSuccess: () => undefined }),
+  );
+}

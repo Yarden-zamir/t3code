@@ -30,8 +30,14 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapshot";
 import { buildServerProvider } from "@t3tools/provider-core/server/snapshotProbe";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
-import { type TerminalShell, TerminalShellSettings, terminalShells } from "../terminalShells.ts";
+import {
+  customShellProblem,
+  type TerminalShell,
+  TerminalShellSettings,
+  terminalShells,
+} from "../terminalShells.ts";
 import { makeTerminalAdapter, TERMINAL_DRIVER } from "./adapter.ts";
 import { TerminalPort, unavailableTerminalPort } from "./port.ts";
 
@@ -62,12 +68,16 @@ const textGeneration: ProviderTextGeneration = {
 
 /**
  * One model for each shell, the default shell first and the custom shells after the detected
- * ones. The path or the command line shows next to the name. The legacy model `terminal` stays
- * listed for the threads, schedules and agents that name it.
+ * ones. The path or the command line shows next to the name, and a custom shell that cannot start
+ * says why. The legacy model `terminal` stays listed for the threads, schedules and agents that
+ * name it.
  */
 function terminalShellModels(
   shells: ReadonlyArray<TerminalShell>,
-  customShells: ReadonlyArray<TerminalCustomShell>,
+  customShells: ReadonlyArray<{
+    readonly shell: TerminalCustomShell;
+    readonly problem: string | undefined;
+  }>,
 ): ReadonlyArray<ServerProviderModel> {
   return [
     ...shells.map((shell, index) => ({
@@ -78,11 +88,12 @@ function terminalShellModels(
       isDefault: index === 0,
       capabilities: null,
     })),
-    ...customShells.map((shell) => ({
+    ...customShells.map(({ shell, problem }) => ({
       slug: shell.name,
       name: shell.name,
       subProvider: [shell.executable, ...shell.args].join(" "),
       isCustom: true,
+      ...(problem === undefined ? {} : { unavailableReason: problem }),
       capabilities: null,
     })),
     {
@@ -120,11 +131,20 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
         continuationGroupKey: continuationIdentity.continuationKey,
       });
 
+      const shells = yield* terminalShells;
+      const platform = yield* HostProcess.Platform;
+      const env = yield* HostProcess.Environment;
+      // Each snapshot checks the custom shells again, so an executable that the user installs
+      // shows as found at the next refresh.
+      const readModels = Effect.forEach(config.customShells, (shell) =>
+        customShellProblem(shell, { platform, env }).pipe(
+          Effect.map((problem) => ({ shell, problem })),
+        ),
+      ).pipe(Effect.map((customShells) => terminalShellModels(shells, customShells)));
       // The instance shows as ready only while `terminalThreads` is on.
-      const models = terminalShellModels(yield* terminalShells, config.customShells);
       const buildSnapshot = (settings: ServerSettings | null) =>
-        DateTime.now.pipe(
-          Effect.map((checkedAt) =>
+        Effect.all([DateTime.now, readModels]).pipe(
+          Effect.map(([checkedAt, models]) =>
             stampIdentity({
               ...buildServerProvider({
                 presentation: {

@@ -380,7 +380,7 @@ export class TerminalResizeError extends Schema.TaggedError<TerminalResizeError>
   }
 }
 
-/** Fork: `shell` names no shell that this server found. */
+/** Fork: `shell` names no shell that this server found, such as a custom shell that was removed. */
 export class TerminalShellNotFoundError extends Schema.TaggedError<TerminalShellNotFoundError>()(
   "TerminalShellNotFoundError",
   {
@@ -389,7 +389,7 @@ export class TerminalShellNotFoundError extends Schema.TaggedError<TerminalShell
   },
 ) {
   override get message() {
-    return `Unknown terminal shell: ${this.shell}. This server has: ${this.available.join(", ") || "none"}.`;
+    return `The shell "${this.shell}" is not defined on this server any more. Choose another shell. This server has: ${this.available.join(", ") || "none"}.`;
   }
 }
 

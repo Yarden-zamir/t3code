@@ -18,7 +18,15 @@ export class TerminalPortError extends Schema.TaggedError<TerminalPortError>()(
   { operation: Schema.Literals(["open", "write"]), cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return `Terminal ${this.operation} failed.`;
+    const reason =
+      typeof this.cause === "string"
+        ? this.cause
+        : this.cause instanceof Error
+          ? this.cause.message
+          : null;
+    return reason === null
+      ? `Terminal ${this.operation} failed.`
+      : `Terminal ${this.operation} failed: ${reason}`;
   }
 }
 
