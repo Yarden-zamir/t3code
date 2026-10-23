@@ -126,6 +126,15 @@ it("moves the fork rules of a pull request merged into a listed branch to that e
   });
 });
 
+it("drops a stack that merged into the branch below and then into main", () => {
+  const logs: Array<string> = [];
+  const list = [stack[0], { ...stack[1], forkRules: "Rule two." }];
+  const { io } = fakeIo({ states: { 1: { state: "MERGED" }, 2: { state: "MERGED" } } });
+  const result = syncAdoptedPullRequests(list, { ...io, log: (line) => logs.push(line) });
+  assert.deepStrictEqual(result, { _tag: "Done", list: [] });
+  assert.isTrue(logs.some((line) => line.startsWith("::warning") && line.includes("Rule two.")));
+});
+
 it("stops at a pull request merged into a branch that the list does not follow", () => {
   const { io } = fakeIo({ states: { 2: { state: "MERGED", baseRef: "other" } } });
   const result = syncAdoptedPullRequests(stack, io);

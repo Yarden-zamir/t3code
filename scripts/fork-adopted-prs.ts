@@ -131,6 +131,9 @@ export function syncAdoptedPullRequests(
 ): SyncResult {
   let current = list;
   let committedText = serializeAdoptedList(list);
+  // The branch of each pull request dropped in this run, and the branch its code went to. A stack
+  // often collapses into the branch below and then into main, both before one run.
+  const droppedInto = new Map<string, string>();
   for (const entry of list) {
     const name = `${UPSTREAM_REPOSITORY}#${entry.number} "${entry.title}"`;
     const upstream = io.upstreamPullRequest(entry.number);
@@ -144,15 +147,15 @@ export function syncAdoptedPullRequests(
       case "MERGED": {
         // A merged pull request gets no new heads. Upstream main brings it, or the listed pull
         // request whose branch it merged into, which then also carries its fork rules.
+        const base = droppedInto.get(upstream.baseRef) ?? upstream.baseRef;
         const below = current.find(
-          (candidate) =>
-            candidate.number !== entry.number && candidate.headRef === upstream.baseRef,
+          (candidate) => candidate.number !== entry.number && candidate.headRef === base,
         );
-        if (upstream.baseRef !== UPSTREAM_MAIN && below === undefined) {
+        if (base !== UPSTREAM_MAIN && below === undefined) {
           return {
             _tag: "Stopped",
-            reason: `adopted pull request #${entry.number} merged into ${upstream.baseRef}, which the list does not follow`,
-            details: `${name} merged into ${upstream.baseRef}. No listed pull request has that branch. Decide whether the fork follows it. Fork rules: ${entry.forkRules ?? "none"}`,
+            reason: `adopted pull request #${entry.number} merged into ${base}, which the list does not follow`,
+            details: `${name} merged into ${base}. No listed pull request has that branch. Decide whether the fork follows it. Fork rules: ${entry.forkRules ?? "none"}`,
           };
         }
         current = current.flatMap((candidate) => {
@@ -161,6 +164,7 @@ export function syncAdoptedPullRequests(
           const forkRules = [candidate.forkRules, entry.forkRules].filter(Boolean).join(" ");
           return [{ ...candidate, forkRules }];
         });
+        droppedInto.set(entry.headRef, below?.headRef ?? UPSTREAM_MAIN);
         io.log(
           below === undefined
             ? // A GitHub Actions annotation, so that the run summary shows the follow-up.
