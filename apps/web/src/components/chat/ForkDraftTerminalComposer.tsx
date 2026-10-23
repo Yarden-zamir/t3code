@@ -634,7 +634,7 @@ export function ForkDraftTerminalComposer(props: {
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <span className="inline-flex min-w-0 items-center gap-1 truncate text-muted-foreground/70 text-xs" />
+                  <span className="inline-flex min-w-14 max-w-2/5 items-center gap-1 text-muted-foreground/70 text-xs @max-[16rem]/composer-surface:hidden" />
                 }
               >
                 {worktreePath ? (
@@ -646,12 +646,15 @@ export function ForkDraftTerminalComposer(props: {
               </TooltipTrigger>
               <TooltipPopup>The shell runs in {launch.cwd}</TooltipPopup>
             </Tooltip>
-            <span className="ms-auto truncate text-muted-foreground/70 text-xs">
+            {/* A narrow footer hides the hint first, so the folder keeps a readable width. Below
+            16rem only the controls fit, and the folder hides too. */}
+            <span className="grow basis-0 truncate text-end text-muted-foreground/70 text-xs @max-[28rem]/composer-surface:hidden">
               {shellEnded
                 ? "Start a new shell, or pick another one"
                 : "Run a command to start the thread"}
             </span>
             <ComposerControl
+              className="ms-auto"
               aria-label="Open as a thread"
               title={
                 shellEnded ? "A thread needs a running shell" : "Open as a terminal thread now"
