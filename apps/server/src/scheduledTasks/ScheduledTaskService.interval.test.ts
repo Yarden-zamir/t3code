@@ -14,6 +14,7 @@ import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import { ServerActivation } from "../serverActivation.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as ScheduledTaskService from "./ScheduledTaskService.ts";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -30,6 +31,8 @@ const dependencies = Layer.mergeAll(
   }),
   Layer.mock(ThreadManagementService.ThreadManagementService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
+  // Fork: scheduled tasks read fork server settings.
+  ServerSettings.layerTest(),
 );
 const serviceLayer = ScheduledTaskService.layer.pipe(Layer.provide(dependencies));
 const decodeInput = Schema.decodeUnknownEffect(ScheduledTaskUpsertInput);
