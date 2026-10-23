@@ -323,7 +323,8 @@ const nodeProcessHost: ProcessHost = {
         ["-A", "-ww", "-o", "pid=,ppid=,pgid=,lstart=,command="],
         {
           encoding: "utf8",
-          env: { ...process.env, LC_ALL: "C" },
+          // Fixed locale and time zone, so the `lstart` of the leader compares equal across shells.
+          env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
           maxBuffer: 64 * 1024 * 1024,
         },
       ),
@@ -485,7 +486,7 @@ function printOrphans(host: ProcessHost): void {
       const command =
         member.command.length > 100 ? `${member.command.slice(0, 97)}...` : member.command;
       console.log(
-        `  ${member.pid}  ${member.startedAt}  ${member.cwd ?? "(folder unknown)"}  ${command}`,
+        `  ${member.pid}  ${member.startedAt} UTC  ${member.cwd ?? "(folder unknown)"}  ${command}`,
       );
     }
     console.log(`  Owner only: kill ${group.members.map((member) => member.pid).join(" ")}`);
