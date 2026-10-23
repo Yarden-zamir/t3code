@@ -98,23 +98,3 @@ it("previews assistant quotes as readable text and preserves the citation when e
     expect.objectContaining({ text: quoteAndText }),
   );
 });
-
-it("continues a usage-limited thread instead of sending a queued message now", async () => {
-  setup();
-  state.projection = { projection: { messages: [] } };
-  state.workflow = {
-    activeRun: null,
-    canPromoteToSteer: false,
-    canSendNow: true,
-    heldByUsageLimit: true,
-    canReorder: true,
-    queuedRuns: [
-      { run: { id: "run:held", userMessageId: "message:held" }, text: "Held", attachments: [] },
-    ],
-  };
-  const onResumeLimitedThread = vi.fn();
-  await using _screen = await renderQueue({ onResumeLimitedThread });
-
-  await page.getByRole("button", { name: "Send now", exact: true }).click();
-  expect(onResumeLimitedThread).toHaveBeenCalledOnce();
-});

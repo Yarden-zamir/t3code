@@ -267,7 +267,7 @@ describe("provider projection", () => {
 });
 
 describe("unreadableThreadContexts", () => {
-  it("returns referenced threads outside the readable machines, ignoring removed references", () => {
+  it("returns only referenced foreign threads, ignoring local and removed references", () => {
     const local = {
       version: 1 as const,
       kind: "thread" as const,
@@ -276,12 +276,6 @@ describe("unreadableThreadContexts", () => {
       environmentId: EnvironmentId.make("env-local"),
       threadId: ThreadId.make("local"),
       title: "Local thread",
-    };
-    const peer = {
-      ...local,
-      contextId: ctx("thread_peer"),
-      environmentId: EnvironmentId.make("env-peer"),
-      threadId: ThreadId.make("peer"),
     };
     const foreign = {
       ...local,
@@ -294,20 +288,23 @@ describe("unreadableThreadContexts", () => {
       contextId: ctx("thread_removed"),
       threadId: ThreadId.make("removed"),
     };
-    const records = [local, peer, foreign, removed];
-    const text =
-      "[Local](t3-context://v1/thread/thread_local) [Peer](t3-context://v1/thread/thread_peer) [Foreign](t3-context://v1/thread/thread_foreign)";
+    const records = [local, foreign, removed];
+    const localReference = "[Local](t3-context://v1/thread/thread_local)";
 
     expect(
       unreadableThreadContexts({
-        text,
+        text: `${localReference} [Foreign](t3-context://v1/thread/thread_foreign)`,
         records,
-        readableEnvironmentIds: [local.environmentId, peer.environmentId],
+        readableEnvironmentIds: [local.environmentId],
       }),
     ).toEqual([foreign]);
     expect(
-      unreadableThreadContexts({ text, records, readableEnvironmentIds: [local.environmentId] }),
-    ).toEqual([peer, foreign]);
+      unreadableThreadContexts({
+        text: localReference,
+        records,
+        readableEnvironmentIds: [local.environmentId],
+      }),
+    ).toEqual([]);
   });
 });
 

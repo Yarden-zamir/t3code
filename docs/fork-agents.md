@@ -13,6 +13,7 @@ This guide maps owner tasks to the fork tools. It is for agents that operate the
 - Never write to `~/.t3/userdata` on a machine. It is the live install. Read it or copy from it only.
 - Stage files by path only. Never use `git add -A` or `git add .`. Worktrees hold links to private files from `_shared/`.
 - Before you open a pull request, review the change with the `review-loop` skill (`.agents/skills/review-loop`). Fill the "Review" section of the pull request template.
+- If a change breaks an existing setup, mark it: put `!` after the type in the pull request title, for example `feat(machine-map)!: …`. Add a "## Breaking changes" section to the body, with one line per break: what changed, who is affected and what to do. The daily release puts these lines at the top of its notes.
 - Before every push, run `vp run fork:check` and fix each failed step. On a branch with an upstream merge not yet in `origin/main`, it exits without checks; run typecheck and the fork tests instead, then wait for Fork CI. See [Check a change before you push](fork/operations.md#check-a-change-before-you-push).
 - Put every fork behaviour behind a setting. A setting that only adds something without noticeable cost starts on. A setting that changes existing behavior or layout, installs or restarts anything, changes access or needs setup starts off.
 - Set the values of the owner's machines through the machine map, not through the code default.

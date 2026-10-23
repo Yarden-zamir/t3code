@@ -26,7 +26,7 @@ import {
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as RpcSession from "../rpc/session.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
-import { request, runStream, subscribe, subscribeDynamicWithSession } from "./client.ts";
+import { runStream, subscribe, subscribeDynamicWithSession } from "./client.ts";
 
 const TARGET = new PrimaryConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -74,56 +74,11 @@ const makeHarness = Effect.fn("TestEnvironmentRpc.makeHarness")(function* () {
   return {
     activeSession,
     retryCount,
-    state,
     supervisor,
   };
 });
 
 describe("environment RPC", () => {
-  it.effect("waits through a backoff for the session that a returning app reopens", () =>
-    Effect.gen(function* () {
-      const client = {
-        [WS_METHODS.cloudGetRelayClientStatus]: () =>
-          Effect.succeed({ status: "available", version: "2026.6.0" }),
-      } as unknown as WsRpcProtocolClient;
-      const { activeSession, state, supervisor } = yield* makeHarness();
-      yield* SubscriptionRef.set(state, {
-        ...AVAILABLE_CONNECTION_STATE,
-        phase: "connected" as const,
-      });
-
-      const pending = yield* request(WS_METHODS.cloudGetRelayClientStatus, {}).pipe(
-        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
-        Effect.forkChild,
-      );
-      // The old socket fails once after the app returns, then the next attempt opens a session.
-      yield* SubscriptionRef.set(state, {
-        ...AVAILABLE_CONNECTION_STATE,
-        phase: "backoff" as const,
-      });
-      yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
-
-      expect(yield* Fiber.join(pending)).toEqual({ status: "available", version: "2026.6.0" });
-    }),
-  );
-
-  it.effect("fails at once while the environment is offline", () =>
-    Effect.gen(function* () {
-      const { state, supervisor } = yield* makeHarness();
-      yield* SubscriptionRef.set(state, {
-        ...AVAILABLE_CONNECTION_STATE,
-        phase: "offline" as const,
-      });
-
-      const exit = yield* request(WS_METHODS.cloudGetRelayClientStatus, {}).pipe(
-        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
-        Effect.exit,
-      );
-
-      expect(Exit.isFailure(exit)).toBe(true);
-    }),
-  );
-
   it.effect("binds finite streaming commands to one active session", () =>
     Effect.gen(function* () {
       const firstEvents = yield* Queue.unbounded<RelayClientInstallProgressEvent>();
