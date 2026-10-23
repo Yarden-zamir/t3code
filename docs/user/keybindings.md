@@ -46,7 +46,7 @@ in Settings.
 
 ## Focus levels
 
-Turn on **Settings → General → Keyboard focus levels** to move focus between the composer,
+Turn on **Settings → Keybindings → Keyboard focus levels** to move focus between the composer,
 the timeline, the right panel and the sidebar with the keyboard. It is off by default.
 
 - Escape moves one level up: from the composer to the timeline, then to the sidebar.
