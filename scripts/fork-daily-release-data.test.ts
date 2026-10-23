@@ -3,7 +3,9 @@ import { assert, it } from "@effect/vitest";
 import {
   type FirstParentChange,
   type GitCommit,
+  decodeReleaseImages,
   extractImages,
+  withReleaseImages,
   type ForkChange,
   renderNotes,
   groupDailyChanges,
@@ -245,4 +247,19 @@ it("shows only the images that the plan picks, and fails for an image of another
     () => renderNotes(changes, plan(["https://github.com/user-attachments/assets/3-0"])),
     /"Picked" names an image that none of its changes has/,
   );
+});
+
+it("adds the images of release-images.json to the change that its ref names", () => {
+  const shot = { url: "https://github.com/user-attachments/assets/extra", alt: "Extra" };
+  const releaseImages = decodeReleaseImages({ "#1": [shot], abcdef1234567: [shot] });
+  const commit: ForkChange = {
+    ...pullRequest(9),
+    source: { _tag: "Commit", sha: "abcdef1234567", url: "https://example.com/c" },
+  };
+  assert.deepStrictEqual(withReleaseImages(commit, releaseImages).images, [shot]);
+  // A pull request keeps its body images first, and an image in both places shows once.
+  const withBody = { ...pullRequest(1, 1), images: [pullRequest(1, 1).images[0]!, shot] };
+  assert.deepStrictEqual(withReleaseImages(withBody, releaseImages).images, withBody.images);
+  assert.deepStrictEqual(withReleaseImages(pullRequest(2), releaseImages).images, []);
+  assert.throws(() => decodeReleaseImages({ "#1": [{ url: "http://x" }] }), /needs a list/);
 });
