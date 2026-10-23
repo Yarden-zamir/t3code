@@ -251,6 +251,13 @@ export const ForkServerSettingsFields = {
     Schema.isBetween({ minimum: 1, maximum: 3650 }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed(14))),
   restoreWorktreesOnResume: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Fork: auto-settle skips a thread while a background command of its agent runs. Settling
+   * stops the provider session, which kills the command and the wake-up it would send.
+   */
+  autoSettleWaitsForBackgroundCommands: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   /** Fork: use the joined machine map name as the environment label. */
   environmentLabelFromMachineMap: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
@@ -376,6 +383,7 @@ export const ForkServerSettingsPatchFields = {
     Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })),
   ),
   restoreWorktreesOnResume: Schema.optionalKey(Schema.Boolean),
+  autoSettleWaitsForBackgroundCommands: Schema.optionalKey(Schema.Boolean),
   environmentLabelFromMachineMap: Schema.optionalKey(Schema.Boolean),
   worktreePathTemplate: Schema.optionalKey(TrimmedString),
   recoverInterruptedTurns: Schema.optionalKey(Schema.Boolean),
