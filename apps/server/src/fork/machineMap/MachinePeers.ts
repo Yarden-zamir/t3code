@@ -189,6 +189,7 @@ const make = Effect.gen(function* () {
   // The links of the last look outside a pause. A pause sets every arrow to `none` and keeps the
   // levels only in the portal, so these say which links the pause holds (MM-1914).
   let lastLinks: ReadonlyArray<ArrowLink> = [];
+  let lastLookPaused = false;
   const firstSeen = new Map<EnvironmentId, DateTime.Utc>();
   const outcomes = new Map<
     EnvironmentId,
@@ -278,7 +279,10 @@ const make = Effect.gen(function* () {
     refresh: boolean,
   ) {
     if (local === undefined) return { links: [], unknown: 0, paused: false };
-    if (local.desired.paused === true) return { links: lastLinks, unknown: 0, paused: true };
+    if (local.desired.paused === true) {
+      lastLookPaused = true;
+      return { links: lastLinks, unknown: 0, paused: true };
+    }
     const nowMs = yield* Clock.currentTimeMillis;
     const looked = yield* Effect.forEach(
       arrowLinkTargets(local.desired, nowMs),
@@ -300,7 +304,18 @@ const make = Effect.gen(function* () {
       { concurrency: "unbounded" },
     );
     const links = looked.filter((link) => link !== undefined);
+    // A link that the last look did not have came back, with its restored arrow or after a resume:
+    // the error of its absence is stale. Errors of a link that stayed clear on its next success.
+    for (const link of links) {
+      const outcome = outcomes.get(link.environmentId);
+      const isBack =
+        lastLookPaused || !lastLinks.some((last) => last.environmentId === link.environmentId);
+      if (isBack && outcome !== undefined && outcome.lastError !== null) {
+        outcomes.set(link.environmentId, { ...outcome, lastError: null });
+      }
+    }
     lastLinks = links;
+    lastLookPaused = false;
     return { links, unknown: looked.length - links.length, paused: false };
   });
 

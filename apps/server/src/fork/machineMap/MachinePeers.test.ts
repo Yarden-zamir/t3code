@@ -724,6 +724,11 @@ it.effect("the pause holds a link without dropping it, and resume lets work go o
       expect(Option.isSome(yield* env.links.get(vps.environmentId))).toBe(true);
 
       yield* Ref.update(env.mapNow, (map) => ({ ...map, paused: false }));
+      // The error of the pause is stale once the map runs again.
+      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
+      expect(listed.structuredContent).toMatchObject({
+        links: [{ environmentId: vps.environmentId, status: "reachable", lastError: null }],
+      });
       const resumed = yield* env.call("thread:mac-full", "t3_project_list", {
         environmentId: vps.environmentId,
       });
@@ -745,6 +750,46 @@ it.effect("a removed arrow makes the link unknown, with the reason", () =>
       expect(failureOf(read)).toMatchObject({ code: "invalid_request" });
       expect(failureOf(read)?.message).toContain("Set the arrow in the portal");
       expect(Option.isNone(yield* env.links.get(vps.environmentId))).toBe(true);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("a restored arrow clears the error of its removal", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
+      yield* env.call("thread:mac-full", "t3_environment_links", {});
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, agentTools: false }));
+      const removed = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: vps.environmentId,
+      });
+      expect(failureOf(removed)?.message).toContain("Set the arrow in the portal");
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, agentTools: true }));
+      const restored = yield* env.call("thread:mac-full", "t3_environment_links", {});
+      expect(restored.structuredContent).toMatchObject({
+        links: [{ environmentId: vps.environmentId, status: "reachable", lastError: null }],
+      });
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("a successful call clears the error of an earlier failure", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
+      yield* env.call("thread:mac-full", "t3_project_list", { environmentId: vps.environmentId });
+      // The link stays, but B does not answer at the new hostname yet.
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-moved.example.com" }));
+      yield* env.call("thread:mac-full", "t3_project_list", { environmentId: vps.environmentId });
+      const failed = yield* env.links.get(vps.environmentId);
+      expect(Option.getOrUndefined(failed)?.lastError).not.toBeNull();
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-vps.example.com" }));
+      const again = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: vps.environmentId,
+      });
+      expect(again.isError, JSON.stringify(again.content)).toBe(false);
+      const cleared = yield* env.links.get(vps.environmentId);
+      expect(Option.getOrUndefined(cleared)?.lastError).toBeNull();
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
