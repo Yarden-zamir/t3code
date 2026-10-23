@@ -223,6 +223,13 @@ export const ForkClientSettingsFields = {
   rememberBackForwardHistory: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  /**
+   * Fork: right after the app starts, the composer waits longer before it warns that a server
+   * is reconnecting. Off by default, because it delays an existing warning.
+   */
+  restartReconnectWarningGrace: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
 };
 
 export const ForkClientSettingsPatchFields = {
@@ -246,6 +253,7 @@ export const ForkClientSettingsPatchFields = {
   tooltipShortcutLimit: Schema.optionalKey(TooltipShortcutLimit),
   backForwardButtons: Schema.optionalKey(Schema.Boolean),
   rememberBackForwardHistory: Schema.optionalKey(Schema.Boolean),
+  restartReconnectWarningGrace: Schema.optionalKey(Schema.Boolean),
 };
 
 /**

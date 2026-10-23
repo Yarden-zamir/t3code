@@ -265,6 +265,12 @@ export const BEHAVIOR_ITEMS = [
     to: "/settings/general",
     searchTerms: ["monitor background command agent task output file popover markdown links"],
   },
+  {
+    id: "restart-reconnect-warning-grace",
+    title: "Quiet reconnect after restart",
+    to: "/settings/general",
+    searchTerms: ["reconnecting warning banner composer server offline startup update grace delay"],
+  },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
 export const ABOUT_ITEMS = [

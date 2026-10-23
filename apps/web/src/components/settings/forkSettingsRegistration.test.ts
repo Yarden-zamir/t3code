@@ -42,6 +42,7 @@ const FORK_PAGE_ROWS: Record<
   tooltipShortcutLimit: "tooltip-shortcut-limit",
   backForwardButtons: "back-forward-buttons",
   rememberBackForwardHistory: "remember-back-forward-history",
+  restartReconnectWarningGrace: "restart-reconnect-warning-grace",
   worktreePathTemplate: "storage-worktree-path-template",
   recoverInterruptedTurns: "recover-interrupted-turns",
   recoverInterruptedTurnsMessage: "recover-interrupted-turns",

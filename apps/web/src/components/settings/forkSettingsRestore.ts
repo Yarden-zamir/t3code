@@ -55,6 +55,7 @@ const FORK_RESTORED_SETTINGS = [
   ["backForwardButtons", "Back and forward buttons"],
   ["rememberBackForwardHistory", "Remember back and forward history"],
   ["confirmTerminalClose", "Terminal close confirmation"],
+  ["restartReconnectWarningGrace", "Quiet reconnect after restart"],
 ] as const satisfies ReadonlyArray<
   readonly [keyof UnifiedSettings & keyof ScopedSettingsPatch, string]
 >;

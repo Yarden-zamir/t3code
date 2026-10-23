@@ -78,6 +78,14 @@ Trusted browser origins get credentialed CORS and session cookies. One browser p
 - **Setting:** `trustedBrowserOrigins` (empty by default). Settings > Connections > "Allow pairing through a tunnel", in the desktop app. On a headless server, set `T3CODE_TRUSTED_BROWSER_ORIGINS`. A server on the machine map trusts the origins of the other machines without this setting (MM-1311).
 - **Works on:** web, desktop. Mobile does not need it.
 
+### Quiet reconnect after restart
+
+After an update, the app and the remote servers restart at about the same time. A remote server can need about 40 seconds before it accepts the connection again. With this setting on, the composer does not show "<server> is reconnecting" in the first 45 seconds after the app starts.
+
+- **Setting:** client setting `restartReconnectWarningGrace` (off by default). Settings > General > "Quiet reconnect after restart".
+- **Works on:** web, desktop. The sidebar, the environment chips and Settings > Connections still show the state at once. A send in that time still shows "Not connected: message not sent".
+- **Limits:** a refused sign-in or an offline device shows at once. Later reconnects keep the upstream wait of 2 seconds. The mobile app shows only a small "Reconnecting" status, so it has no wait. Revisit the 45 seconds when a normal restart takes longer.
+
 ## Machine map
 
 One portal at `https://t3.yarden-zamir.com` (a Cloudflare Worker) maps every T3 machine and sets what each machine can do on the others.

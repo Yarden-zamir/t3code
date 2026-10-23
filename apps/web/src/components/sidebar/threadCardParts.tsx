@@ -60,7 +60,12 @@ export interface ThreadCardStatus {
 }
 
 /** The status label inside the `data-sidebar-status` element, for every status but Woke. */
-export function ThreadCardStatusBadge(props: { status: ThreadCardStatus; trailing?: ReactNode }) {
+export function ThreadCardStatusBadge(props: {
+  status: ThreadCardStatus;
+  trailing?: ReactNode;
+  /** Off for the open thread, which announces its own status. */
+  announce?: boolean;
+}) {
   const { status } = props;
   return (
     <span className={cn("inline-flex items-center gap-1 font-medium", status.className)}>
@@ -69,7 +74,7 @@ export function ThreadCardStatusBadge(props: { status: ThreadCardStatus; trailin
       )}
       {/* The label alone is the live region: a role="status" wrapper around a
           ticking duration would make screen readers announce every second. */}
-      <span role="status">{status.label}</span>
+      <span role={props.announce === false ? undefined : "status"}>{status.label}</span>
       {props.trailing}
     </span>
   );

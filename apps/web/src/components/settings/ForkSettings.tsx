@@ -22,6 +22,7 @@ import {
   BackgroundWorkDetailsSettingsRow,
   CheckNewerBeforeUpdateInstallSettingsRow,
   ForkAutoUpdateSettingsRow,
+  RestartReconnectWarningGraceSettingsRow,
   TerminalAppShortcutsFirstSettingsRow,
   TerminalCloseConfirmationSettingsRow,
 } from "./ForkSettingsRows";
@@ -77,6 +78,7 @@ const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>> = {
   "worktree-artifact-eviction": WorktreeArtifactSettingsRows,
   "environment-label-from-machine-map": EnvironmentLabelSettingsRow,
   "tunnel-pairing": TunnelPairingSettingsRow,
+  "restart-reconnect-warning-grace": RestartReconnectWarningGraceSettingsRow,
   "installed-app": InstalledAppSettingsRow,
   "web-push": WebPushSettingsRow,
   "update-track": AboutVersionSection,

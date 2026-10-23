@@ -2,9 +2,10 @@ import type { AuthSessionState, EnvironmentId, ServerConfig } from "@t3tools/con
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { HttpClient } from "effect/http";
+import { HttpClient, HttpClientError } from "effect/http";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
@@ -13,6 +14,7 @@ import type { PreparedConnection } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
+import type { RemoteEnvironmentRequestError } from "../rpc/http.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
 import { followStreamInEnvironment } from "./environmentStreams.ts";
 
@@ -37,6 +39,26 @@ function initialConfigOption<E>(
 
 const DEFAULT_SESSION_STATE_TIMEOUT_MS = 6_000;
 
+/**
+ * A host that just restarted can drop or time out this request while it starts. The session atom
+ * fetches again only when the prepared connection changes, so a failure that is not retried here
+ * stays while the connection is up and reads as "no permission".
+ */
+function isTemporarySessionFailure(error: RemoteEnvironmentRequestError): boolean {
+  switch (error._tag) {
+    case "RemoteEnvironmentAuthFetchError":
+      // The same error also reports a refused authorization; only a transport failure is temporary.
+      return HttpClientError.isHttpClientError(error.cause);
+    case "RemoteEnvironmentAuthTimeoutError":
+    case "EnvironmentInternalError":
+      return true;
+    case "RemoteEnvironmentAuthUndeclaredStatusError":
+      return error.status >= 500;
+    default:
+      return false;
+  }
+}
+
 export const fetchEnvironmentSessionState = Effect.fn(
   "clientRuntime.state.fetchEnvironmentSessionState",
 )(function* (input: {
@@ -56,7 +78,14 @@ export const fetchEnvironmentSessionState = Effect.fn(
     request: ({ client, headers }) => client.session({ headers }),
     // This endpoint returns 200 with authenticated:false for expired credentials.
     isUnauthorizedResponse: (response) => !response.authenticated,
-  });
+  }).pipe(
+    // 5 retries wait 1 + 2 + 4 + 8 + 16 seconds, longer than a host restart takes.
+    Effect.retry({
+      while: isTemporarySessionFailure,
+      times: 5,
+      schedule: Schedule.exponential("1 second"),
+    }),
+  );
 });
 
 function makeEnvironmentSessionAtoms<R, E>(
