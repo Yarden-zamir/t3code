@@ -475,15 +475,6 @@ export const layer: Layer.Layer<
           return;
         }
       }
-      // Fork: runs only when a fork worktree setting asks for it. A checkout it restores
-      // already exists, so upstream's recovery below does nothing.
-      yield* prepareWorktree({
-        thread: projection.thread,
-        run,
-        attemptId: attempt.id,
-        providerThreadId: providerThread.id,
-        turnItems: projection.turnItems,
-      });
       const { worktreePath, branch } = projection.thread;
       if (worktreePath !== null && branch !== null) {
         const exists = yield* fileSystem
@@ -1364,6 +1355,9 @@ export const layer: Layer.Layer<
           // Storage cleanup removes worktrees under the same lease. Only startup
           // holds it; the provider turn runs after it is released.
           const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
+          // Fork: worktree restore and setup run before the lease, because setup opens a terminal
+          // and a terminal takes the same lease. A restored checkout makes upstream recovery a no-op.
+          yield* prepareWorktree(input);
           const providerTurn = yield* thread.worktreePath === null
             ? start(input)
             : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));

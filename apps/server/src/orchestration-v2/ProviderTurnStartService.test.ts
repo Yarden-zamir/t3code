@@ -74,7 +74,7 @@ function startWithMissingWorktree(
     [managedWorktreesDir]: managedWorktreesDir,
     [`${managedWorktreesDir}/project`]: `${managedWorktreesDir}/project`,
   },
-  setupFailure?: ForkWorktreeResume.WorktreeResumeError,
+  prepareWorktree?: ForkWorktreeResume.ForkWorktreeResume["Service"]["prepare"],
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -127,11 +127,9 @@ function startWithMissingWorktree(
   const createWorktree = vi.fn(() => Effect.succeed({} as never));
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
-      setupFailure === undefined
+      prepareWorktree === undefined
         ? Layer.empty
-        : Layer.succeed(ForkWorktreeResume.ForkWorktreeResume, {
-            prepare: () => Effect.fail(setupFailure),
-          }),
+        : Layer.succeed(ForkWorktreeResume.ForkWorktreeResume, { prepare: prepareWorktree }),
     ),
     Layer.provide(
       Layer.mergeAll(
@@ -274,7 +272,7 @@ it("does not open a provider or start a turn when setup fails, and preserves its
     cwd,
     reason: "Project setup exited with code 7.",
   });
-  const harness = startWithMissingWorktree(cwd, undefined, failure);
+  const harness = startWithMissingWorktree(cwd, undefined, () => Effect.fail(failure));
   const error = await harness.start;
   expect(error.cause).toBe(failure);
   expect(failure.message).toContain("setup exited with code 7");
@@ -282,6 +280,22 @@ it("does not open a provider or start a turn when setup fails, and preserves its
   expect(harness.startRootRun).not.toHaveBeenCalled();
   expect(harness.pruneWorktrees).not.toHaveBeenCalled();
   expect(harness.createWorktree).not.toHaveBeenCalled();
+});
+
+it("runs fork worktree setup before startup takes the workspace lease", async () => {
+  const cwd = `${managedWorktreesDir}/project/feature-restore`;
+  // Setup opens a terminal, and a terminal takes this lease. Inside startup's lease it would wait forever.
+  let setupGotLease = false;
+  const harness = startWithMissingWorktree(cwd, undefined, () =>
+    withWorkspaceLease(cwd, Effect.void).pipe(
+      Effect.timeoutOption("1 second"),
+      Effect.map((result) => {
+        setupGotLease = result._tag === "Some";
+      }),
+    ),
+  );
+  await harness.start;
+  expect(setupGotLease).toBe(true);
 });
 
 function makeLocalCommandHarness(input: {
