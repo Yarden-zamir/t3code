@@ -18,7 +18,7 @@ import {
 } from "./useScopedSettings";
 
 /**
- * Fork: setting rows that the General page and the Fork page both render.
+ * Fork: setting rows that their place and the Fork page both render.
  * Each row edits the same value in both places.
  */
 
@@ -227,7 +227,7 @@ export function CheckNewerBeforeUpdateInstallSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("check-newer-before-update-install")}
-      description="Desktop app: before it installs a downloaded update, check for a newer release and offer to download that one instead. Install when idle and the machine map take the newer release."
+      description="Desktop app: before it installs a downloaded update, look for a newer release and offer it. Install when idle and the machine map take the newer release."
       resetAction={
         settings.checkNewerBeforeUpdateInstall !==
         DEFAULT_UNIFIED_SETTINGS.checkNewerBeforeUpdateInstall ? (
@@ -292,12 +292,28 @@ export function ForkAutoUpdateSettingsRow() {
 export function AutoSettleWaitsForBackgroundCommandsSettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["autoSettleWaitsForBackgroundCommands"]);
   return (
     <SettingsRow
       {...searchableSetting("auto-settle-waits-for-background-commands")}
       serverScoped
       settingKeys={["autoSettleWaitsForBackgroundCommands"]}
-      description="Auto-settle skips a thread while a background command of its agent runs, so the command can finish and wake the agent. Settling stops the agent session and kills the command. A command left running, such as a dev server, holds the thread until the session releases idle background work."
+      resetAction={
+        mixed ||
+        settings.autoSettleWaitsForBackgroundCommands !==
+          DEFAULT_UNIFIED_SETTINGS.autoSettleWaitsForBackgroundCommands ? (
+          <SettingResetButton
+            label="auto-settle waits for background commands"
+            onClick={() =>
+              updateSettings({
+                autoSettleWaitsForBackgroundCommands:
+                  DEFAULT_UNIFIED_SETTINGS.autoSettleWaitsForBackgroundCommands,
+              })
+            }
+          />
+        ) : null
+      }
+      description="Auto-settle skips a thread while its agent runs a background command, so the command can finish and wake the agent. A command that keeps running, such as a dev server, holds the thread until the session releases idle work."
       control={
         <ScopedSwitch
           settingKeys={["autoSettleWaitsForBackgroundCommands"]}

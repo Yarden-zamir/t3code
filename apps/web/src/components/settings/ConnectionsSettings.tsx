@@ -1130,7 +1130,7 @@ export function ConnectionsSettings() {
             {canManageLocalBackend && desktopBridge ? (
               <>
                 {renderNetworkAccessRow()}
-                <ForkConnections.TunnelPairingSettingsRow />
+                <ForkConnections.ForkSettingsSlot place="connections-local" />
                 {renderEndpointRows("endpoint-rail")}
                 {renderTailscaleRow()}
                 {renderWslRow()}
@@ -1529,6 +1529,7 @@ export function ConnectionsSettings() {
           savedEnvironments={savedEnvironments}
         />
       </SettingsSection>
+      <ForkConnections.ForkSettingsSlot place="connections-warnings" />
       {hasCloudPublicConfig() ? (
         <RemoveT3ConnectEnvironmentDialog
           environmentLabel={pendingT3ConnectRemoval?.label ?? null}

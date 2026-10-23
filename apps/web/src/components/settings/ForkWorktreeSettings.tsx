@@ -1,18 +1,36 @@
+import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+
 import { ScopedSwitch } from "./ScopedSwitch";
 import { Input } from "../ui/input";
-import { SettingsRow } from "./settingsLayout";
+import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import {
+  useScopedSettings,
+  useScopedSettingsMixed,
+  useUpdateScopedSettings,
+} from "./useScopedSettings";
 
 export function RestoreWorktreesSettingsRow() {
   const settings = useScopedSettings();
   const update = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["restoreWorktreesOnResume"]);
   return (
     <SettingsRow
       {...searchableSetting("restore-worktrees-on-resume")}
       serverScoped
       settingKeys={["restoreWorktreesOnResume"]}
-      description="Restore a missing checkout from its saved local branch, then run project setup before the next turn. Also runs setup when a Node project's dependencies are missing. Never creates or resets a branch."
+      resetAction={
+        mixed ||
+        settings.restoreWorktreesOnResume !== DEFAULT_SERVER_SETTINGS.restoreWorktreesOnResume ? (
+          <SettingResetButton
+            label="restore worktrees on resume"
+            onClick={() =>
+              update({ restoreWorktreesOnResume: DEFAULT_SERVER_SETTINGS.restoreWorktreesOnResume })
+            }
+          />
+        ) : null
+      }
+      description="Before the next turn, recreate a missing worktree at its saved path and run project setup. If its branch was deleted, the branch is created again from the origin default branch, without the old uncommitted work. An existing branch is never reset."
       control={
         <ScopedSwitch
           settingKeys={["restoreWorktreesOnResume"]}
@@ -28,13 +46,28 @@ export function RestoreWorktreesSettingsRow() {
 export function WorktreeArtifactSettingsRows() {
   const settings = useScopedSettings();
   const update = useUpdateScopedSettings();
+  const evictionMixed = useScopedSettingsMixed(["worktreeArtifactEviction"]);
+  const daysMixed = useScopedSettingsMixed(["worktreeArtifactEvictionDays"]);
   return (
     <>
       <SettingsRow
         {...searchableSetting("worktree-artifact-eviction")}
         serverScoped
         settingKeys={["worktreeArtifactEviction"]}
-        description="Remove only reviewed generated directories from settled or inactive worktrees. Keeps the checkout, branch and protected contents. Skips shared or busy worktrees. Missing dependencies run project setup before the next turn; removed builds return on the next build, not on resume. This does not disable upstream whole-worktree cleanup rules."
+        resetAction={
+          evictionMixed ||
+          settings.worktreeArtifactEviction !== DEFAULT_SERVER_SETTINGS.worktreeArtifactEviction ? (
+            <SettingResetButton
+              label="evict worktree artifacts"
+              onClick={() =>
+                update({
+                  worktreeArtifactEviction: DEFAULT_SERVER_SETTINGS.worktreeArtifactEviction,
+                })
+              }
+            />
+          ) : null
+        }
+        description="Delete ignored build outputs and dependencies from settled or inactive worktrees. The checkout and branch stay. Shared or busy worktrees and projects without a setup script are skipped. Removed dependencies come back through project setup before the next turn."
         control={
           <ScopedSwitch
             settingKeys={["worktreeArtifactEviction"]}
@@ -48,7 +81,22 @@ export function WorktreeArtifactSettingsRows() {
         {...searchableSetting("worktree-artifact-eviction-days")}
         serverScoped
         settingKeys={["worktreeArtifactEvictionDays"]}
-        description="Unsettled threads must be inactive for this many days. Settled threads are eligible after their settle script grace period."
+        resetAction={
+          daysMixed ||
+          settings.worktreeArtifactEvictionDays !==
+            DEFAULT_SERVER_SETTINGS.worktreeArtifactEvictionDays ? (
+            <SettingResetButton
+              label="artifact eviction inactivity days"
+              onClick={() =>
+                update({
+                  worktreeArtifactEvictionDays:
+                    DEFAULT_SERVER_SETTINGS.worktreeArtifactEvictionDays,
+                })
+              }
+            />
+          ) : null
+        }
+        description="Unsettled threads must be inactive for this many days. Settled threads qualify one minute after they settle."
         control={
           <Input
             key={settings.worktreeArtifactEvictionDays}

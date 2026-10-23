@@ -2,125 +2,27 @@ import { Link } from "@tanstack/react-router";
 import type { ComponentType } from "react";
 
 import { Button } from "../ui/button";
-import { RestoreWorktreesSettingsRow, WorktreeArtifactSettingsRows } from "./ForkWorktreeSettings";
-import { EnvironmentLabelSettingsRow } from "./EnvironmentLabelSettingsRow";
-import { AppToggleShortcutsSettingsRow } from "./AppToggleShortcutsSettingsRow";
-import {
-  BackForwardButtonsSettingsRow,
-  RememberBackForwardHistorySettingsRow,
-} from "./BackForwardSettingsRows";
-import {
-  FocusLevelHighlightSettingsRow,
-  TooltipShortcutLimitSettingsRow,
-  TooltipShortcutsSettingsRow,
-  KeyboardFocusLevelsSettingsRow,
-} from "./FocusLevelsSettingsRows";
-import { ForkChangelogSettingsRow } from "./ForkChangelogSettingsRow";
-import {
-  AgentSessionImportSettingsRows,
-  AutoSettleWaitsForBackgroundCommandsSettingsRow,
-  BackgroundWorkDetailsSettingsRow,
-  CheckNewerBeforeUpdateInstallSettingsRow,
-  ForkAutoUpdateSettingsRow,
-  RestartReconnectWarningGraceSettingsRow,
-  TerminalAppShortcutsFirstSettingsRow,
-  TerminalCloseConfirmationSettingsRow,
-} from "./ForkSettingsRows";
-import { GlobalScriptsSettingsRows } from "./GlobalScriptsSettings";
-import { InstalledAppSettingsRow } from "./InstalledAppSettingsRow";
-import { KeybindingSyncSettingsRow } from "./KeybindingSyncSettingsRow";
-import { MachineMapSettingsRows } from "./MachinesSettings";
-import {
-  MobileComposerCameraSettingsRow,
-  MobileSidebarTabsSettingsRow,
-  MobileNewThreadProjectSettingsRow,
-  MobilePublishedThemesSettingsRow,
-} from "./MobileAppSettings";
-import { PreferOriginRemoteSettingsRow } from "./PreferOriginRemoteSettings";
-import { PreviewLocalServerGroupsSettingsRow } from "./PreviewLocalServerGroupsSettingsRow";
-import { PullRequestFilterChipsSettingsRow } from "./PullRequestFilterChipsSettingsRow";
-import { PullRequestWatchSettingsRows } from "./PullRequestWatchSettings";
-import { RecoverInterruptedTurnsSettings } from "./RecoverInterruptedTurnsSettings";
-import { RepositoryOwnerFiltersSettingsRow } from "./RepositoryOwnerFiltersSettingsRow";
+import { FORK_SETTING_ROWS, HIDE_WITHOUT_ROWS, isForkEntryShown } from "./ForkSettingsSlot";
 import { AboutVersionSection } from "./SettingsPanels";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { SidebarTabsSettingsRow } from "./SidebarTabsSettingsRow";
-import { SnoozeQuickOptionsSettingsRow } from "./SnoozeQuickOptionsSettingsRow";
 import { WorktreesDirectoryRow } from "./StorageSettings";
-import { ThreadCardLayoutSettingsRows } from "./ThreadCardLayoutSettings";
-import {
-  MessageLinksSettingsRow,
-  ThreadLinkChipsSettingsRow,
-  ThreadLinksOpenDesktopAppSettingsRow,
-} from "./ThreadLinkChipsSettings";
-import { TunnelPairingSettingsRow } from "./TunnelPairingSettingsRow";
-import { WebPushSettingsRow } from "./WebPushSettingsRow";
-import { WorktreePathTemplateRow } from "./WorktreePathTemplateRow";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
-import { forkSettingGroups, type ForkSettingRowId } from "./forkSettingsCatalog";
 import {
-  getSettingsSearchTargetScope,
-  isSettingsSearchItemOnPlatform,
-  isSettingsSearchScopeAvailable,
-  SETTINGS_SECTION_LABELS,
-  type SettingsSearchItem,
-} from "./settingsSearch";
+  FORK_SETTING_PLACES,
+  forkSettingGroups,
+  type UpstreamSettingRowId,
+} from "./forkSettingsCatalog";
+import { SETTINGS_SECTION_LABELS, type SettingsSearchItem } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 
-/**
- * The row component of each Fork page entry: the same component as on its usual page, so both
- * places edit the same value. The type requires one for every catalog entry that is not
- * link-only.
- */
-const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>> = {
-  "restore-worktrees-on-resume": RestoreWorktreesSettingsRow,
-  "auto-settle-waits-for-background-commands": AutoSettleWaitsForBackgroundCommandsSettingsRow,
-  "worktree-artifact-eviction": WorktreeArtifactSettingsRows,
-  "environment-label-from-machine-map": EnvironmentLabelSettingsRow,
-  "tunnel-pairing": TunnelPairingSettingsRow,
-  "restart-reconnect-warning-grace": RestartReconnectWarningGraceSettingsRow,
-  "installed-app": InstalledAppSettingsRow,
-  "web-push": WebPushSettingsRow,
+/** The upstream rows that the fork changed and the Fork page renders, as on their own page. */
+const UPSTREAM_SETTING_ROWS: Readonly<Record<UpstreamSettingRowId, ComponentType>> = {
   "update-track": AboutVersionSection,
-  "fork-auto-update": ForkAutoUpdateSettingsRow,
-  "fork-changelog": ForkChangelogSettingsRow,
-  "check-newer-before-update-install": CheckNewerBeforeUpdateInstallSettingsRow,
-  "recover-interrupted-turns": RecoverInterruptedTurnsSettings,
-  "background-work-details": BackgroundWorkDetailsSettingsRow,
-  "prefer-origin-remote": PreferOriginRemoteSettingsRow,
-  "pull-request-watch-roles": PullRequestWatchSettingsRows,
-  "agent-session-import-window": AgentSessionImportSettingsRows,
-  "sidebar-tabs": SidebarTabsSettingsRow,
-  "snooze-quick-options": SnoozeQuickOptionsSettingsRow,
-  "storage-worktree-path-template": WorktreePathTemplateRow,
   "storage-worktrees-location": WorktreesDirectoryRow,
-  "repository-owner-filters": RepositoryOwnerFiltersSettingsRow,
-  "pull-request-filter-chips": PullRequestFilterChipsSettingsRow,
-  "global-scripts": GlobalScriptsSettingsRows,
-  "app-toggle-shortcuts": AppToggleShortcutsSettingsRow,
-  "terminal-app-shortcuts-first": TerminalAppShortcutsFirstSettingsRow,
-  "keyboard-focus-levels": KeyboardFocusLevelsSettingsRow,
-  "focus-level-highlight": FocusLevelHighlightSettingsRow,
-  "tooltip-shortcuts": TooltipShortcutsSettingsRow,
-  "tooltip-shortcut-limit": TooltipShortcutLimitSettingsRow,
-  "terminal-close-confirmation": TerminalCloseConfirmationSettingsRow,
-  "thread-card-layout": ThreadCardLayoutSettingsRows,
-  "thread-link-chips": ThreadLinkChipsSettingsRow,
-  "thread-links-open-desktop-app": ThreadLinksOpenDesktopAppSettingsRow,
-  "message-links": MessageLinksSettingsRow,
-  "preview-local-server-groups": PreviewLocalServerGroupsSettingsRow,
-  "machine-map": MachineMapSettingsRows,
-  "keybinding-sync": KeybindingSyncSettingsRow,
-  "mobile-published-themes": MobilePublishedThemesSettingsRow,
-  "mobile-new-thread-project": MobileNewThreadProjectSettingsRow,
-  "mobile-composer-camera": MobileComposerCameraSettingsRow,
-  "mobile-sidebar-tabs": MobileSidebarTabsSettingsRow,
-  "back-forward-buttons": BackForwardButtonsSettingsRow,
-  "remember-back-forward-history": RememberBackForwardHistorySettingsRow,
 };
 
-/** Opens the row of `item` in its usual place, the way a search result does. */
-function usualPlaceLinkProps(item: SettingsSearchItem) {
+/** Opens the row of `item` in its place, the way a search result does. */
+function placeLinkProps(item: SettingsSearchItem) {
   return {
     to: item.to,
     hash: item.id,
@@ -133,28 +35,15 @@ export function ForkSettingsPanel() {
   const { search, scope } = useSettingsScope();
   const available = useAvailableSettingsSearchItems(search);
   const availableById = new Map(available.map((item) => [item.id, item] as const));
-  const platform = typeof navigator === "undefined" ? "" : navigator.platform;
 
   return (
     <SettingsPageContainer>
       {forkSettingGroups.map((group) => {
-        // An entry shows where search reaches its first row, and each other row that search
-        // lists: on this platform and at the selected scope. Storage, for example, hides its
-        // worktree rows at a project scope. A row that its own setting hides, such as
-        // "Single-thread tabs" while sidebar tabs are off, is not listed and does not count.
+        // A row that its own setting hides, such as "Single-thread tabs" while sidebar tabs are
+        // off, is not in `available` and does not count.
         const entries = group.entries.flatMap((entry) => {
-          const items = entry.ids.map((id) => availableById.get(id));
-          const [item] = items;
-          return item !== undefined &&
-            items.every(
-              (candidate) =>
-                candidate === undefined ||
-                (isSettingsSearchItemOnPlatform(candidate, platform) &&
-                  isSettingsSearchScopeAvailable(
-                    getSettingsSearchTargetScope(candidate.id)?.scope ?? null,
-                    scope.kind,
-                  )),
-            )
+          const item = availableById.get(entry.ids[0]);
+          return item !== undefined && isForkEntryShown(entry.ids, availableById, scope.kind)
             ? [{ entry, item }]
             : [];
         });
@@ -162,11 +51,7 @@ export function ForkSettingsPanel() {
         return (
           // A row can render nothing, for example the machine map without an environment. An
           // entry or a group without a rendered row hides.
-          <SettingsSection
-            key={group.title}
-            title={group.title}
-            className="[&:not(:has([data-slot=settings-row]))]:hidden"
-          >
+          <SettingsSection key={group.title} title={group.title} className={HIDE_WITHOUT_ROWS}>
             {entries.map(({ entry, item }) => {
               if ("linkOnly" in entry) {
                 return (
@@ -179,7 +64,7 @@ export function ForkSettingsPanel() {
                       <Button
                         size="sm"
                         variant="outline"
-                        render={<Link {...usualPlaceLinkProps(item)} />}
+                        render={<Link {...placeLinkProps(item)} />}
                       >
                         Open in {SETTINGS_SECTION_LABELS[item.to]}
                       </Button>
@@ -187,16 +72,23 @@ export function ForkSettingsPanel() {
                   />
                 );
               }
-              const Row = FORK_SETTING_ROWS[entry.ids[0]];
+              const Row =
+                "place" in entry
+                  ? FORK_SETTING_ROWS[entry.ids[0]]
+                  : UPSTREAM_SETTING_ROWS[entry.ids[0]];
+              const placeLabel =
+                "place" in entry
+                  ? `${SETTINGS_SECTION_LABELS[item.to]} › ${FORK_SETTING_PLACES[entry.place].section}`
+                  : SETTINGS_SECTION_LABELS[item.to];
               return (
-                <div key={item.id} className="[&:not(:has([data-slot=settings-row]))]:hidden">
+                <div key={item.id} className={HIDE_WITHOUT_ROWS}>
                   <Row />
                   <p className="-mt-1 px-3 pb-3 text-xs text-muted-foreground sm:px-4">
                     {item.desktopOnly ? "Desktop app only. " : ""}
                     {"change" in entry ? `${entry.change} ` : ""}
                     Also in{" "}
-                    <Link {...usualPlaceLinkProps(item)} className="underline underline-offset-2">
-                      {SETTINGS_SECTION_LABELS[item.to]}
+                    <Link {...placeLinkProps(item)} className="underline underline-offset-2">
+                      {placeLabel}
                     </Link>
                     .
                   </p>

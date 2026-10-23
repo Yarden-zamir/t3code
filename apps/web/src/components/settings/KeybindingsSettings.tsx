@@ -40,7 +40,7 @@ import { formatShortcutLabel } from "../../keybindings";
 import { cn } from "../../lib/utils";
 import { serverEnvironment } from "../../state/server";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { KeybindingSyncSettingsRow } from "./KeybindingSyncSettingsRow";
+import { ForkSettingsSlot } from "./ForkSettingsSlot";
 import { useShareKeybindingsToMachineMap } from "../../machineMap/shareSettings";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -1520,9 +1520,8 @@ export function KeybindingsSettingsPanel() {
           </SettingsGroup>
         )}
       </div>
-      <SettingsSection title="Machine map">
-        <KeybindingSyncSettingsRow />
-      </SettingsSection>
+      <ForkSettingsSlot place="keybindings-keyboard" />
+      <ForkSettingsSlot place="keybindings-machine-map" />
     </SettingsPageContainer>
   );
 }

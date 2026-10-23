@@ -16,7 +16,7 @@ export function InstalledAppSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("installed-app")}
-      description="For T3 Code installed from the browser (Install app, or Add to Home Screen on iPhone). Shows an offline page when this server does not answer, shows notifications on Android and iPhone, and counts them on the app icon. Applies to this browser."
+      description="For T3 Code installed from the browser (Install app, or Add to Home Screen on iPhone). Shows an offline page, notifications on Android and iPhone, and a count on the app icon. Applies to this browser."
       resetAction={
         enabled !== DEFAULT_CLIENT_SETTINGS.installedAppEnabled ? (
           <SettingResetButton

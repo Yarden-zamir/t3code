@@ -6,7 +6,7 @@ import {
 
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { ScopedSwitch } from "./ScopedSwitch";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
   useScopedSettings,
@@ -19,18 +19,6 @@ const NEW_THREAD_LABELS = {
   last: "Last project",
   none: "No project",
 } satisfies Record<MobileNewThreadProjectValue, string>;
-
-/** Fork: server settings that only the mobile app reads. */
-export function MobileAppSettingsSection() {
-  return (
-    <SettingsSection id="mobile-app" title="Mobile app">
-      <MobilePublishedThemesSettingsRow />
-      <MobileNewThreadProjectSettingsRow />
-      <MobileComposerCameraSettingsRow />
-      <MobileSidebarTabsSettingsRow />
-    </SettingsSection>
-  );
-}
 
 export function MobilePublishedThemesSettingsRow() {
   const settings = useScopedSettings();

@@ -1,90 +1,28 @@
-import {
-  AuthSettingsWriteScope,
-  type MobileNewThreadProject,
-  type ServerSettingsPatch,
-} from "@t3tools/contracts";
-import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { serverEnvironment } from "../../state/server";
-import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
-import { useAtomCommand } from "../../state/use-atom-command";
 import {
   AndroidSettingsEnvironmentFilter,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
-import { SettingsChoiceRow } from "./components/SettingsChoiceRow";
 import { AppTokenSettingsSection } from "./forkAppTokenSettings";
+import {
+  ForkMobileNewThreadSection,
+  ForkMobileSwitchRows,
+  useForkMobileSettings,
+} from "./forkMobileSettings";
 import { SidebarTabSettingsSection } from "./forkSidebarTabEditor";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
-import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
-import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
-import {
-  planMobileScopedSettingsPatch,
-  resolveMobileSettingsTargets,
-  uniformMobileSetting,
-} from "./settings-scoped-server";
-
-const NEW_THREAD_CHOICES: ReadonlyArray<{
-  readonly mode: MobileNewThreadProject;
-  readonly label: string;
-  readonly description: string;
-}> = [
-  { mode: "picker", label: "Choose a project", description: "Show the project list first." },
-  {
-    mode: "last",
-    label: "Last project",
-    description: "Open a draft in the project of the last new thread on this phone.",
-  },
-  { mode: "none", label: "No project", description: "Open a draft without a project." },
-];
 
 /**
- * Fork: the fork settings that apply to the mobile app, like the Fork page of web settings. Each
- * one is a server setting, so the machine map can sync it. A change here writes it to each
- * selected environment.
+ * Fork: every fork setting that applies to the mobile app, like the Fork page of web settings.
+ * Thread behavior and Server settings > New threads also show the ones of their topic.
  */
 export function SettingsForkRouteScreen() {
   const insets = useSafeAreaInsets();
-  const { selectedTargets } = useSettingsEnvironmentFilter();
-  const writableEnvironments = useEnvironmentsWithScope(selectedTargets, AuthSettingsWriteScope);
-  const targets = resolveMobileSettingsTargets(selectedTargets, null);
-  const [pendingWrites, setPendingWrites] = useState(0);
-  const writeInFlight = useRef(false);
-  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
-    label: "fork settings update",
-    reportFailure: true,
-  });
-  const disabled =
-    targets.length === 0 ||
-    pendingWrites > 0 ||
-    !targets.every((target) => writableEnvironments.has(target.environment.environmentId));
-
-  const write = (patch: ServerSettingsPatch) => {
-    if (
-      writeInFlight.current ||
-      !targets.every((target) =>
-        readEnvironmentScope(target.environment.environmentId, AuthSettingsWriteScope),
-      )
-    )
-      return;
-    const writes = planMobileScopedSettingsPatch(targets, false, patch);
-    if (writes.length === 0) return;
-    writeInFlight.current = true;
-    setPendingWrites((count) => count + 1);
-    void Promise.allSettled(
-      writes.map((entry) =>
-        updateSettings({ environmentId: entry.environmentId, input: { patch: entry.patch } }),
-      ),
-    ).finally(() => {
-      writeInFlight.current = false;
-      setPendingWrites((count) => count - 1);
-    });
-  };
-  const newThreadProject = uniformMobileSetting(targets, "mobileNewThreadProject");
+  const { targets } = useForkMobileSettings();
 
   return (
     <>
@@ -104,62 +42,11 @@ export function SettingsForkRouteScreen() {
           ) : (
             <>
               <SettingsSection title="Web app and look">
-                <SettingsSwitchRow
-                  icon="paintbrush"
-                  label="Published themes"
-                  subtitle="Offer the themes of your servers in Appearance, with their fonts, shape and canvas pattern, and take the default theme of the server."
-                  value={uniformMobileSetting(targets, "mobilePublishedThemes")}
-                  disabled={disabled}
-                  onValueChange={(value) => write({ mobilePublishedThemes: value })}
-                />
-                <SettingsSwitchRow
-                  icon="camera"
-                  label="Camera in the composer"
-                  subtitle="The plus button of the composer offers Take Photo."
-                  value={uniformMobileSetting(targets, "mobileComposerCamera")}
-                  disabled={disabled}
-                  onValueChange={(value) => write({ mobileComposerCamera: value })}
-                />
-                <SettingsSwitchRow
-                  icon="square.grid.2x2"
-                  label="Sidebar tabs"
-                  subtitle="The thread list shows the tabs of the web sidebar. Tap a tab to show its threads."
-                  value={uniformMobileSetting(targets, "mobileSidebarTabs")}
-                  disabled={disabled}
-                  onValueChange={(value) => write({ mobileSidebarTabs: value })}
-                />
-                <SettingsSwitchRow
-                  icon="link"
-                  label="Thread link chips"
-                  subtitle="Thread links in chat look like an attached thread and open the thread here."
-                  value={uniformMobileSetting(targets, "threadLinkChips")}
-                  disabled={disabled}
-                  onValueChange={(value) => write({ threadLinkChips: value })}
-                />
-                <SettingsSwitchRow
-                  icon="text.bubble"
-                  label="Message links"
-                  subtitle="A thread link that names a message opens the thread at that message and highlights it."
-                  value={uniformMobileSetting(targets, "messageLinks")}
-                  disabled={disabled}
-                  onValueChange={(value) => write({ messageLinks: value })}
-                />
+                <ForkMobileSwitchRows />
               </SettingsSection>
               <SidebarTabSettingsSection />
               <AppTokenSettingsSection />
-              <SettingsSection title="New thread opens">
-                {NEW_THREAD_CHOICES.map((choice, index) => (
-                  <SettingsChoiceRow
-                    key={choice.mode}
-                    label={choice.label}
-                    description={choice.description}
-                    selected={newThreadProject === choice.mode}
-                    separated={index > 0}
-                    disabled={disabled}
-                    onPress={() => write({ mobileNewThreadProject: choice.mode })}
-                  />
-                ))}
-              </SettingsSection>
+              <ForkMobileNewThreadSection />
             </>
           )}
         </ScrollView>

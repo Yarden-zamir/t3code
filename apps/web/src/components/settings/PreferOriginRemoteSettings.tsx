@@ -1,22 +1,13 @@
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 
 import { ScopedSwitch } from "./ScopedSwitch";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
   useUpdateScopedSettings,
 } from "./useScopedSettings";
-
-/** Fork: `preferOriginRemote`, which repository a fork checkout's pull requests come from. */
-export function PreferOriginRemoteSettingsSection() {
-  return (
-    <SettingsSection id="fork-checkouts" title="Fork checkouts">
-      <PreferOriginRemoteSettingsRow />
-    </SettingsSection>
-  );
-}
 
 export function PreferOriginRemoteSettingsRow() {
   const settings = useScopedSettings();

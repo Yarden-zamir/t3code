@@ -377,6 +377,7 @@ export function AppearanceSettingsPanel() {
             />
           }
         />
+        <Fork.ForkSettingsSlot place="appearance-interface" />
       </SettingsSection>
 
       <Fork.AppearanceSections />
