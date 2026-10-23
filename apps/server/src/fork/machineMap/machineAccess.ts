@@ -5,6 +5,7 @@
 import {
   type ArrowRecord,
   AuthAccessWriteScope,
+  AuthOrchestrationOperateScope,
   AuthRelayWriteScope,
   type AuthEnvironmentScope,
   clientSessionSubject,
@@ -192,11 +193,12 @@ const LEVEL_LINK_ACCESS = {
 /**
  * MM-1307: the MCP access of a machine session, or undefined when its arrow has no agent tools.
  * The source sends the limits of its calling thread in `T3-Mode-Limit`, and this machine narrows
- * the access to them (MM-1902).
+ * the access to them (MM-1902). A session without `orchestration:operate`, as an older source
+ * pairs for reads, stays read-only whatever the level.
  */
 export const machineMcpAccessFor = (
   desired: MachineDesiredState,
-  session: { readonly subject: string },
+  session: { readonly subject: string; readonly scopes: ReadonlyArray<AuthEnvironmentScope> },
   nowMs: number,
 ): { readonly peer: PeerMachine; readonly access: AuthMcpClientAccess } | undefined => {
   const peer = peerOfSubject(desired, session.subject);
@@ -204,7 +206,13 @@ export const machineMcpAccessFor = (
   const arrow = arrowFrom(desired, peer.id);
   if (arrow === undefined || !arrow.agentTools) return undefined;
   const level = effectiveLevel(arrow, nowMs);
-  return level === "none" ? undefined : { peer, access: LEVEL_LINK_ACCESS[level] };
+  if (level === "none") return undefined;
+  return {
+    peer,
+    access: session.scopes.includes(AuthOrchestrationOperateScope)
+      ? LEVEL_LINK_ACCESS[level]
+      : "read-only",
+  };
 };
 
 /**
@@ -216,7 +224,11 @@ export const machineMcpAccessFor = (
  */
 export const machineMcpClientFor = (
   desired: MachineDesiredState,
-  session: { readonly subject: string; readonly method: string },
+  session: {
+    readonly subject: string;
+    readonly method: string;
+    readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  },
   nowMs: number,
 ) => {
   if (session.method !== "bearer-access-token") return undefined;

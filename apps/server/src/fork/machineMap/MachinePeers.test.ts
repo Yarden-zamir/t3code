@@ -15,6 +15,7 @@ import {
   ProviderThreadId,
   type MachineDesiredState,
   MACHINE_LEVEL_SCOPES,
+  MachineId,
   type MachineLevel,
   MessageId,
   type OrchestrationV2Run,
@@ -38,6 +39,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { McpSchema, McpServer } from "effect/ai";
@@ -88,10 +90,17 @@ interface MapNow {
   readonly level: MachineLevel;
   readonly agentTools: boolean;
   readonly paused: boolean;
+  /** The tunnel hostname that the portal gives B. */
+  readonly vpsHostname?: string;
+  /** A third machine with an arrow from A, which never answers. */
+  readonly offlinePeer?: boolean;
 }
+
+const offline = MachineId.make("offline");
 
 const arrowNow = (map: MapNow): ReadonlyArray<ArrowRecord> => [
   arrow(SELF, PEER, map.level, { agentTools: map.agentTools }),
+  ...(map.offlinePeer === true ? [arrow(SELF, offline, "admin", { agentTools: true })] : []),
 ];
 
 /** B's desired state: A is its peer, with the same arrow into B. */
@@ -299,7 +308,7 @@ const serveVps = (seen: Ref.Ref<Seen>, mapNow: Ref.Ref<MapNow>, vpsRun: VpsRun) 
     Effect.provideService(
       MachineMapState.MachineMapState,
       MachineMapState.MachineMapState.of({
-        mcpClient: (session: { readonly subject: string; readonly method: string }) =>
+        mcpClient: (session: Parameters<typeof machineMcpClientFor>[1]) =>
           Ref.get(mapNow).pipe(
             Effect.map((map) => machineMcpClientFor(desiredOnVps(map), session, 0)),
           ),
@@ -327,7 +336,12 @@ const layerNetwork = (vpsPeer: ServedPeer, mapNow: Ref.Ref<MapNow>, wire: Ref.Re
       const fetchClient = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer));
       return HttpClient.make((request, url) =>
         Effect.gen(function* () {
-          if (url.origin !== vpsOrigin) return yield* Effect.die(`Unexpected request to ${url}`);
+          // B answers at each hostname the portal gives it; any other machine is offline.
+          if (!url.hostname.startsWith("t3-vps")) {
+            return yield* new HttpClientError.HttpClientError({
+              reason: new HttpClientError.TransportError({ request, description: "offline" }),
+            });
+          }
           yield* Ref.update(wire, (current) => ({
             ...current,
             requests: [
@@ -399,10 +413,28 @@ const layerMacState = (mapNow: Ref.Ref<MapNow>, pausedLook: Deferred.Deferred<vo
             token: { clientId: "mac-token.access", secret: "mac-secret" },
             saved: {
               // The pause sets every arrow to `none` and says `paused` (MM-710, MM-718).
-              desired: desiredState({
-                arrowsOut: arrowNow(map.paused ? { ...map, level: "none" } : map),
-                paused: map.paused,
-              }),
+              desired: {
+                ...desiredState({
+                  arrowsOut: arrowNow(map.paused ? { ...map, level: "none" } : map),
+                  paused: map.paused,
+                }),
+                peers: [
+                  {
+                    id: PEER,
+                    name: "VPS",
+                    kind: "server" as const,
+                    hostname: map.vpsHostname ?? "t3-vps.example.com",
+                    tokenClientId: "vps-token.access",
+                  },
+                  {
+                    id: offline,
+                    name: "Offline",
+                    kind: "server" as const,
+                    hostname: "t3-offline.example.com",
+                    tokenClientId: "offline-token.access",
+                  },
+                ],
+              },
               desiredAtMs: 0,
               handledCommandIds: [],
               pausedTaskIds: [],
@@ -661,6 +693,44 @@ it.effect("a removed arrow makes the link unknown, with the reason", () =>
       expect(failureOf(read)).toMatchObject({ code: "invalid_request" });
       expect(failureOf(read)?.message).toContain("Set the arrow in the portal");
       expect(Option.isNone(yield* env.links.get(vps.environmentId))).toBe(true);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("a removed arrow is unknown, also while another machine with an arrow is offline", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({
+        level: "admin",
+        agentTools: true,
+        paused: false,
+        offlinePeer: true,
+      });
+      const first = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: vps.environmentId,
+      });
+      expect(first.isError, JSON.stringify(first.content)).toBe(false);
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, level: "none" as const }));
+      const removed = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: vps.environmentId,
+      });
+      expect(failureOf(removed)).toMatchObject({ code: "invalid_request" });
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("a new hostname of B gets its own pairing, never the old session", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
+      yield* env.call("thread:mac-full", "t3_project_list", { environmentId: vps.environmentId });
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-vps-new.example.com" }));
+      const moved = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: vps.environmentId,
+      });
+      expect(moved.isError, JSON.stringify(moved.content)).toBe(false);
+      const wire = yield* Ref.get(env.wire);
+      expect(wire.pairings).toBe(2);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

@@ -8,7 +8,8 @@ import { isMachineRequestNamespace, MACHINE_MCP_CAPABILITIES } from "./machineAc
 
 /**
  * MM-1908: `machine_exec` runs a shell as the user of the other machine, past every T3 mode, so
- * only a live full-access/default caller with every tool capability may send it.
+ * only a live full-access/default caller with every tool capability may send it. Returns that
+ * caller, so its limits go out with the call.
  */
 export const requireMachineExecCaller = Effect.fn("MachinePeers.requireMachineExecCaller")(
   function* () {
@@ -28,6 +29,7 @@ export const requireMachineExecCaller = Effect.fn("MachinePeers.requireMachineEx
           "machine_exec cannot grant missing tool capabilities or use another machine's arrows.",
       });
     }
+    return caller;
   },
 );
 

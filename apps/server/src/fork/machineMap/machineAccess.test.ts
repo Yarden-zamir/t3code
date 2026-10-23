@@ -138,7 +138,7 @@ describe("browserGrantFor (MM-917, MM-918)", () => {
 });
 
 describe("machineMcpAccessFor (MM-1307, MM-302)", () => {
-  const session = { subject: `machine:${PEER}` };
+  const session = { subject: `machine:${PEER}`, scopes: MACHINE_LEVEL_SCOPES.admin };
   const accessAt = (level: "read" | "standard" | "admin", agentTools = true) =>
     machineMcpAccessFor(
       desiredState({ arrowsIn: [arrow(PEER, SELF, level, { agentTools })] }),
@@ -151,7 +151,7 @@ describe("machineMcpAccessFor (MM-1307, MM-302)", () => {
     expect(
       machineMcpAccessFor(
         desiredState({ arrowsIn: [arrow(PEER, SELF, "admin", { agentTools: true })] }),
-        { subject: "one-time-token" },
+        { ...session, subject: "one-time-token" },
         NOW,
       ),
     ).toBeUndefined();
@@ -163,6 +163,16 @@ describe("machineMcpAccessFor (MM-1307, MM-302)", () => {
       "auto",
       "full-access",
     ]);
+  });
+
+  it("keeps a session paired without operate read-only on an admin arrow", () => {
+    expect(
+      machineMcpAccessFor(
+        desiredState({ arrowsIn: [arrow(PEER, SELF, "admin", { agentTools: true })] }),
+        { ...session, scopes: ["orchestration:read"] },
+        NOW,
+      )?.access,
+    ).toBe("read-only");
   });
 });
 

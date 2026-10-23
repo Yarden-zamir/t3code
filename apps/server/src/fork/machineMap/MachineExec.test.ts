@@ -233,6 +233,32 @@ it.effect(
     }),
 );
 
+it.effect("refuses a call that its machine narrowed below full-access/default (MM-1902)", () =>
+  Effect.gen(function* () {
+    const runs: Array<string> = [];
+    const { exec, reports } = yield* harness({
+      desired: desiredState({ arrowsIn: [execArrowIn] }),
+      processRunner: Layer.mock(ProcessRunner.ProcessRunner)({
+        run: (input) =>
+          Effect.sync(() => void runs.push(input.command)).pipe(Effect.andThen(Effect.never)),
+      }),
+    });
+    for (const narrowedTo of [
+      { runtimeMode: "auto", interactionMode: "default" },
+      { runtimeMode: "full-access", interactionMode: "plan" },
+    ] as const) {
+      const narrowed: McpInvocationContext.McpInvocationScope = {
+        ...peerSession,
+        client: { sessionId: "session-1", label: "machine VPS", access: "auto", narrowedTo },
+      };
+      const error = yield* exec(narrowed, { machine: SELF, command: "true" }).pipe(Effect.flip);
+      expect(error.message).toContain("full-access/default");
+    }
+    expect(runs).toEqual([]);
+    expect(reports).toMatchObject([{ outcome: "refused" }, { outcome: "refused" }]);
+  }),
+);
+
 it.effect("refuses restricted callers and missing exec before sending anything", () =>
   Effect.gen(function* () {
     const allowed = yield* harness({ desired: desiredState({ arrowsOut: [execArrowOut] }) });

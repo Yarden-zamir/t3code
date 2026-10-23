@@ -236,7 +236,22 @@ const make = Effect.gen(function* () {
     const scope = yield* McpInvocationContext.McpInvocationContext;
     const from = machineOfRequestNamespace(scope.requestNamespace);
     // A local agent goes out through the arrow of this machine; a machine session runs here.
-    if (from !== undefined) return yield* runHere(from, input);
+    if (from !== undefined) {
+      // MM-1902: the source sends its thread's limits in `T3-Mode-Limit`. Exec runs past every T3
+      // mode, so a narrower thread there gets no shell here, whatever the arrow allows. A source
+      // from before `T3-Mode-Limit` checks the thread itself and sends no header.
+      const narrowed = scope.client?.narrowedTo;
+      if (
+        narrowed !== undefined &&
+        (narrowed.runtimeMode !== "full-access" || narrowed.interactionMode !== "default")
+      ) {
+        const reason =
+          "machine_exec needs a full-access/default calling thread on the machine that sends it.";
+        yield* reportRefused({ from, input, reason });
+        return yield* denied(reason);
+      }
+      return yield* runHere(from, input);
+    }
     return yield* peers.exec(input).pipe(
       // A refusal here never reaches the other machine, so this machine reports it.
       Effect.tapError((error) => {

@@ -41,7 +41,6 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
-import { readCaller } from "../../mcp/threadAccess.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as PeerLinks from "../../peer/PeerLinks.ts";
 import * as PeerMcpClient from "../../peer/PeerMcpClient.ts";
@@ -154,12 +153,12 @@ const describeFailure = (cause: unknown): string => {
 const make = Effect.gen(function* () {
   const state = yield* MachineMapState.MachineMapState;
   const httpClient = yield* HttpClient.HttpClient;
-  // One session per peer, so repeated calls do not pile up sessions there. A level change on the
-  // peer revokes it (MM-1306); the link client then pairs again once.
-  const sessions = new Map<MachineId, PeerSession>();
-  // A peer keeps its environment id across restarts. Known limit: a peer reinstalled with a new
-  // environment id keeps its old entry until a lookup of the new id misses and probes again.
-  const identities = new Map<MachineId, PeerIdentity>();
+  // One session per peer address, so repeated calls do not pile up sessions there, and a new
+  // hostname never gets the session of the old one. A level change on the peer revokes it
+  // (MM-1306); the link client then pairs again once.
+  const sessions = new Map<string, PeerSession>();
+  // What each peer address answered as. A peer keeps its environment id across restarts.
+  const identities = new Map<string, PeerIdentity>();
   // The links of the last look outside a pause. A pause sets every arrow to `none` and keeps the
   // levels only in the portal, so these say which links the pause holds (MM-1914).
   let lastLinks: ReadonlyArray<ArrowLink> = [];
@@ -215,7 +214,7 @@ const make = Effect.gen(function* () {
       accessToken: exchanged.access_token,
       scopes: exchanged.scope.split(" ").filter((scope) => scope.length > 0),
     };
-    sessions.set(machine.id, session);
+    sessions.set(origin, session);
     return session;
   });
 
@@ -238,7 +237,7 @@ const make = Effect.gen(function* () {
         descriptor.capabilities.mcpModeLimitHeader === true &&
         descriptor.capabilities.linkFence === true,
     };
-    identities.set(target.machine.id, identity);
+    identities.set(target.origin, identity);
     return identity;
   });
 
@@ -256,7 +255,7 @@ const make = Effect.gen(function* () {
     const looked = yield* Effect.forEach(
       arrowLinkTargets(local.desired, nowMs),
       (target) => {
-        const cached = identities.get(target.machine.id);
+        const cached = identities.get(target.origin);
         const probe =
           cached !== undefined && !refresh
             ? Effect.succeed(Option.some(cached))
@@ -363,10 +362,14 @@ const make = Effect.gen(function* () {
         );
       }
       if (looked.found === undefined) {
-        // Known limit: while any machine with an arrow is offline and was never reached, an id
-        // that no arrow reaches reads as unreachable, so its work retries instead of failing.
-        // Revisit if the portal gives each machine its environment id.
-        return yield* looked.unknown > 0
+        // A machine that answered as this id before has lost its arrow. Known limit: an id that
+        // never answered, while a machine with an arrow is offline and was never reached, reads
+        // as unreachable, so its work retries instead of failing. Revisit if the portal gives each
+        // machine its environment id.
+        const answeredBefore = [...identities.values()].some(
+          (identity) => identity.environmentId === environmentId,
+        );
+        return yield* looked.unknown > 0 && !answeredBefore
           ? linkError(
               "unreachable",
               `No machine with an arrow from this one answers as ${environmentId} now. A machine may be offline.`,
@@ -377,14 +380,24 @@ const make = Effect.gen(function* () {
             );
       }
       const { target } = looked.found;
-      if (!looked.found.holdsLimits) {
+      // The session goes only to an address that answers as this peer now, with the limits held
+      // (upstream `PeerLinks.resolve` probes the same way), so a moved hostname or a peer that went
+      // back to an older version never gets it.
+      const now = yield* identityOf(target, local.token).pipe(Effect.option);
+      if (Option.isNone(now) || now.value.environmentId !== environmentId) {
+        return yield* linkError(
+          "unreachable",
+          `${target.machine.name} does not answer as ${environmentId} at ${target.origin} now.`,
+        );
+      }
+      if (!now.value.holdsLimits) {
         return yield* linkError(
           "incompatible",
           `${target.machine.name} runs a T3 Code version that cannot keep the limits of an agent from another machine. Update it.`,
         );
       }
       const session =
-        sessions.get(target.machine.id) ??
+        sessions.get(target.origin) ??
         (yield* pair(target.machine, target.origin, local.token, local.desired.self.name).pipe(
           Effect.mapError((cause) => {
             const detail = describeFailure(cause);
@@ -441,9 +454,9 @@ const make = Effect.gen(function* () {
             ...(session === undefined ? {} : { authorization: `Bearer ${session.accessToken}` }),
           }),
         );
-      const response = yield* send(sessions.get(machine.id));
+      const response = yield* send(sessions.get(origin));
       if (response.status !== 401) return response;
-      sessions.delete(machine.id);
+      sessions.delete(origin);
       const refused = (description: string) =>
         new HttpClientError.HttpClientError({
           reason: new HttpClientError.TransportError({ request, description }),
@@ -562,7 +575,9 @@ const make = Effect.gen(function* () {
     const resolved = yield* resolvePeer(input.machine);
     const refused = (reason: MachinePeerError["reason"], detail: string) =>
       new MachinePeerError({ reason, detail, target: resolved.peer.id });
-    yield* requireMachineExecCaller().pipe(
+    // One read of the caller: its limits go out with the call (`T3-Mode-Limit`), and the target
+    // refuses exec for limits below full-access/default.
+    const { limits } = yield* requireMachineExecCaller().pipe(
       Effect.mapError((failure) => refused("caller-refused", failure.message)),
     );
     const nowMs = yield* Clock.currentTimeMillis;
@@ -580,7 +595,6 @@ const make = Effect.gen(function* () {
     }
     // MM-806: the portal names the calling thread. An agent cannot set it through this path.
     const caller = yield* historyCaller();
-    const { limits } = yield* readCaller();
     const { caller: _ignored, ...command } = input;
     return yield* peerMcp.call({
       environmentId: link.environmentId,

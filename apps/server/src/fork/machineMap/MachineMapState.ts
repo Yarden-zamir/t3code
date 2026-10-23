@@ -176,10 +176,9 @@ export class MachineMapState extends Context.Service<
     /** MM-906: browser keys that wait to reach the portal. `MachineMap` sends them. */
     readonly clientSeen: Queue.Dequeue<Extract<MachineToPortal, { _tag: "clientSeen" }>>;
     /** MM-1307, MM-1921: `machineMcpClientFor` with the desired state of now. */
-    readonly mcpClient: (session: {
-      readonly subject: string;
-      readonly method: string;
-    }) => Effect.Effect<ReturnType<typeof machineMcpClientFor>>;
+    readonly mcpClient: (
+      session: Parameters<typeof machineMcpClientFor>[1],
+    ) => Effect.Effect<ReturnType<typeof machineMcpClientFor>>;
   }
 >()("t3/fork/machineMap/MachineMapState") {}
 
