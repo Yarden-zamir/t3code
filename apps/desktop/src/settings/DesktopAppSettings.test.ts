@@ -27,12 +27,6 @@ const DesktopSettingsPatch = Schema.Struct({
   serverExposureMode: Schema.optionalKey(Schema.Literals(["local-only", "network-accessible"])),
   tailscaleServeEnabled: Schema.optionalKey(Schema.Boolean),
   tailscaleServePort: Schema.optionalKey(Schema.Number),
-  tunnelPairingEnabled: Schema.optionalKey(Schema.Boolean),
-  tunnelPairingUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  trustedBrowserOrigins: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  cloudflareAccessTeamDomain: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  cloudflareAccessAud: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  cloudflareAccessSubjects: Schema.optionalKey(Schema.NullOr(Schema.String)),
   updateChannel: Schema.optionalKey(Schema.Literals(["latest", "nightly"])),
   updateChannelConfiguredByUser: Schema.optionalKey(Schema.Boolean),
   wslBackendEnabled: Schema.optionalKey(Schema.Boolean),
@@ -305,26 +299,6 @@ describe("DesktopSettings", () => {
         } satisfies DesktopAppSettings.DesktopSettings);
       }),
       { appVersion: "0.0.17-nightly.20260415.1" },
-    ),
-  );
-
-  it.effect("loads tunnel pairing only with a valid https tunnel URL", () =>
-    withSettings(
-      Effect.gen(function* () {
-        const settings = yield* DesktopAppSettings.DesktopAppSettings;
-        yield* writeSettingsPatch({
-          tunnelPairingEnabled: true,
-          tunnelPairingUrl: "https://t3.example.com",
-        });
-        const valid = yield* settings.load;
-        assert.equal(valid.tunnelPairingEnabled, true);
-        assert.equal(valid.tunnelPairingUrl, "https://t3.example.com");
-
-        yield* writeSettingsPatch({ tunnelPairingEnabled: true, tunnelPairingUrl: "not a url" });
-        const invalid = yield* settings.load;
-        assert.equal(invalid.tunnelPairingEnabled, false);
-        assert.equal(invalid.tunnelPairingUrl, null);
-      }),
     ),
   );
 

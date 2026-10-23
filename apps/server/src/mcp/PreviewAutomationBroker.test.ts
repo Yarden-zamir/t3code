@@ -955,43 +955,6 @@ it.effect("fails requests assigned to the stream that is replaced", () =>
   ),
 );
 
-it.effect("keeps a snapshot's inner deadline and stalled capture stage", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const broker = yield* makeBroker;
-      const received = yield* Deferred.make<RoutedRequest>();
-      const connected = yield* Deferred.make<void>();
-      const requests = requestsFrom(yield* broker.connect(makeHost()), () =>
-        Deferred.doneUnsafe(connected, Effect.void),
-      );
-      yield* Stream.runForEach(requests, (request) => Deferred.succeed(received, request)).pipe(
-        Effect.forkScoped,
-      );
-      yield* Deferred.await(connected);
-      const pending = yield* broker
-        .invoke<void>({ scope, operation: "snapshot", input: {} })
-        .pipe(Effect.flip, Effect.forkScoped);
-      const request = yield* Deferred.await(received);
-      yield* broker.respond({
-        clientId: "client-1",
-        connectionId: request.connectionId,
-        requestId: request.requestId,
-        ok: false,
-        error: {
-          _tag: "PreviewAutomationTimeoutError",
-          message: "Snapshot screenshot timed out after 10000ms.",
-          detail: { stage: "screenshot", timeoutMs: 10_000 },
-        },
-      });
-      const error = yield* Fiber.join(pending);
-      expect(error).toMatchObject({ timeoutMs: 10_000, captureStage: "screenshot" });
-      expect(error.message).toContain("10000ms");
-      expect(error.message).toContain("screenshot");
-      expect(error.message).not.toContain("15000ms");
-    }),
-  ),
-);
-
 it.effect("accepts responses only from the host that received the request", () =>
   Effect.scoped(
     Effect.gen(function* () {

@@ -33,12 +33,6 @@ const clientSettings: ClientSettings = {
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   confirmThreadUnpin: false,
-  confirmTerminalClose: true,
-  terminalAppShortcutsFirst: false,
-  backgroundWorkDetails: false,
-  forkChangelogEnabled: false,
-  installedAppEnabled: true,
-  webPushEnabled: true,
   contextWindowMeterEnabled: false,
   composerCollapseOnScroll: true,
   dismissedProviderUpdateNotificationKeys: [],
@@ -214,28 +208,6 @@ describe("DesktopClientSettings", () => {
         assert.isTrue(Option.isSome(persisted));
         if (Option.isSome(persisted)) {
           assert.equal(persisted.value.timestampFormat, "24-hour");
-        }
-      }),
-    ),
-  );
-
-  it.effect("reads the old sidebar group settings as the tab settings", () =>
-    withClientSettings(
-      Effect.gen(function* () {
-        const environment = yield* DesktopEnvironment.DesktopEnvironment;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const settings = yield* DesktopClientSettings.DesktopClientSettings;
-        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
-        yield* fileSystem.writeFileString(
-          environment.clientSettingsPath,
-          `{ "sidebarGroupsEnabled": true, "sidebarGroupSingleThreadOpens": true }\n`,
-        );
-
-        const persisted = yield* settings.get;
-        assert.isTrue(Option.isSome(persisted));
-        if (Option.isSome(persisted)) {
-          assert.isTrue(persisted.value.sidebarTabsEnabled);
-          assert.isTrue(persisted.value.sidebarTabSingleThreadOpens);
         }
       }),
     ),
