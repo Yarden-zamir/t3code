@@ -26,6 +26,8 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ServerUpdateAction, serverUpdateStageLabel } from "../ServerUpdateAction";
 import { useAutoBalanceUpdateBanner } from "./useAutoBalanceUpdateBanner";
+import { restartReconnectWarningDelayMs } from "./forkReconnectWarningGrace";
+import { useClientSettings } from "../../hooks/useSettings";
 import { ComposerServerUpdateIcon } from "./ComposerServerUpdateStatus";
 import {
   buildVersionMismatchDismissalKey,
@@ -98,12 +100,14 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
     activeReconnectingEnvironmentId,
     reconnectWarningGraceElapsedEnvironmentId,
   );
+  const restartGrace = useClientSettings((settings) => settings.restartReconnectWarningGrace);
   useEffect(() => {
     if (activeReconnectingEnvironmentId === null) return;
-    return scheduleEnvironmentReconnectWarning(() =>
-      setReconnectWarningGraceElapsedEnvironmentId(activeReconnectingEnvironmentId),
+    return scheduleEnvironmentReconnectWarning(
+      () => setReconnectWarningGraceElapsedEnvironmentId(activeReconnectingEnvironmentId),
+      restartReconnectWarningDelayMs(restartGrace),
     );
-  }, [activeReconnectingEnvironmentId]);
+  }, [activeReconnectingEnvironmentId, restartGrace]);
   const handleReconnectActiveEnvironment = async (environmentId: EnvironmentId) => {
     const result = await retryEnvironment(environmentId);
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {

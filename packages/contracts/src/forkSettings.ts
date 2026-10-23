@@ -214,6 +214,13 @@ export const ForkClientSettingsFields = {
   tooltipShortcuts: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Fork: the most keys one tooltip shows; more show as "+N". */
   tooltipShortcutLimit: TooltipShortcutLimit.pipe(Schema.withDecodingDefault(Effect.succeed(4))),
+  /**
+   * Fork: right after the app starts, the composer waits longer before it warns that a server
+   * is reconnecting. Off by default, because it delays an existing warning.
+   */
+  restartReconnectWarningGrace: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
 };
 
 export const ForkClientSettingsPatchFields = {
@@ -235,6 +242,7 @@ export const ForkClientSettingsPatchFields = {
   focusLevelHighlight: Schema.optionalKey(Schema.Boolean),
   tooltipShortcuts: Schema.optionalKey(Schema.Boolean),
   tooltipShortcutLimit: Schema.optionalKey(TooltipShortcutLimit),
+  restartReconnectWarningGrace: Schema.optionalKey(Schema.Boolean),
 };
 
 /**

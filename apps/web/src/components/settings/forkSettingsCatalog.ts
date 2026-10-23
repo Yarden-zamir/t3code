@@ -26,7 +26,7 @@ type ForkSettingEntry =
 const FORK_SETTING_GROUPS = [
   {
     title: "Remote access",
-    entries: [{ ids: ["tunnel-pairing"] }],
+    entries: [{ ids: ["tunnel-pairing"] }, { ids: ["restart-reconnect-warning-grace"] }],
   },
   {
     title: "Machine map",
