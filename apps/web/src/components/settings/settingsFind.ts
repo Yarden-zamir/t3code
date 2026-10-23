@@ -36,8 +36,21 @@ export function settingsFindMatch(
   const pageItems = items.filter((item) => item.to === pathname);
   return {
     pageAnchors: new Set(pageItems.map(anchorOf)),
-    matched: new Set(searchSettings(query, pageItems).map(anchorOf)),
+    matched: new Set(searchSettings(query, pageItems, { matchPageLabel: false }).map(anchorOf)),
   };
+}
+
+// Pages that list records, not setting rows. There `mod+f` stays with the settings search.
+const LIST_PAGES: ReadonlySet<string> = new Set([
+  "/settings/archived",
+  "/settings/scheduled-tasks",
+  "/settings/open-source-licenses",
+  "/settings/projects",
+]);
+
+/** Whether the find box can filter the page at `pathname`: a page of setting rows. */
+export function isSettingsFindPage(pathname: string): boolean {
+  return !LIST_PAGES.has(pathname) && settingsFindMatch("", pathname).pageAnchors.size > 0;
 }
 
 /** The matched elements on the page, in page order. */

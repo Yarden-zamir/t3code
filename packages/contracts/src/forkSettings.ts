@@ -232,7 +232,7 @@ export const ForkClientSettingsFields = {
   ),
   /**
    * Fork: `settings.find` (`mod+f` by default) opens a find box that filters the rows of the open
-   * Settings page. Off by default, because it takes the key from the browser's own find.
+   * Settings page. Off by default, because it takes `mod+f` from the search of all settings.
    */
   settingsFind: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 };

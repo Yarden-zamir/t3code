@@ -123,6 +123,7 @@ const EXTRA_CONTEXT: Partial<Record<KeybindingCommand, Record<string, boolean>>>
   "approval.decline": { approvalPending: true },
   "modelPicker.previousProvider": { modelPickerOpen: true },
   "modelPicker.nextProvider": { modelPickerOpen: true },
+  "settings.find": { settingsPageOpen: true },
   "usage.cost": { usagePageOpen: true },
   "usage.tokens": { usagePageOpen: true },
   "usage.limits": { usagePageOpen: true },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { settingsFindMatch } from "./settingsFind";
+import { isSettingsFindPage, settingsFindMatch } from "./settingsFind";
 
 describe("settingsFindMatch", () => {
   it("matches only the rows of the open page", () => {
@@ -22,5 +22,19 @@ describe("settingsFindMatch", () => {
 
   it("matches nothing for text that no row of the page has", () => {
     expect(settingsFindMatch("zzz-no-such-setting", "/settings/general").matched.size).toBe(0);
+  });
+
+  it("does not match every row through the page label", () => {
+    const match = settingsFindMatch("gener", "/settings/general");
+    expect(match.matched.size).toBeLessThan(match.pageAnchors.size);
+  });
+});
+
+describe("isSettingsFindPage", () => {
+  it("filters pages of setting rows and leaves list pages to the settings search", () => {
+    expect(isSettingsFindPage("/settings/general")).toBe(true);
+    expect(isSettingsFindPage("/settings/fork")).toBe(true);
+    expect(isSettingsFindPage("/settings/archived")).toBe(false);
+    expect(isSettingsFindPage("/settings/open-source-licenses")).toBe(false);
   });
 });

@@ -1187,6 +1187,8 @@ export function isSettingsSearchItemOnPlatform(item: SettingsSearchItem, platfor
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
+  // Fork: the find box of one page skips the page label, which every item there shares.
+  { matchPageLabel = true }: { readonly matchPageLabel?: boolean } = {},
 ): ReadonlyArray<SettingsSearchItem> {
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
@@ -1200,7 +1202,7 @@ export function searchSettings(
       const title = normalizeSearchText(item.title);
       const fields = [
         title,
-        normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
+        ...(matchPageLabel ? [normalizeSearchText(SETTINGS_SECTION_LABELS[item.to])] : []),
         ...(item.searchTerms ?? []).map(normalizeSearchText),
       ];
       if (!queryTokens.every((token) => fields.some((field) => field.includes(token)))) return [];

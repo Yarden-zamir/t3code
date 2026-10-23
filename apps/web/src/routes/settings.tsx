@@ -127,7 +127,7 @@ function SettingsContentLayout() {
         <WorkspacePageHeader electron={isElectron}>
           <div className="flex w-full items-center gap-3">
             <SettingsBreadcrumb pathname={location.pathname} />
-            <ForkSettingsFind />
+            <ForkSettingsFind key={location.pathname} />
             {location.pathname === "/settings/general" ? (
               <div className="ms-auto flex shrink-0 items-center">
                 <RestoreDeviceDefaultsButton

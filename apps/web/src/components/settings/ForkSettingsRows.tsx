@@ -98,7 +98,7 @@ export function SettingsFindSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("settings-find")}
-      description="On a Settings page, Find in settings (⌘F or Ctrl+F by default) opens a box that hides the rows of that page that do not match. Off: the browser keeps the key for its own find."
+      description="On a Settings page, Find in settings (⌘F or Ctrl+F by default) opens a box that hides the rows of that page that do not match. The search of all settings keeps /. Off: ⌘F goes to the search of all settings."
       resetAction={
         settings.settingsFind !== DEFAULT_UNIFIED_SETTINGS.settingsFind ? (
           <SettingResetButton
