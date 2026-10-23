@@ -1,7 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ClientId, MACHINE_LEVEL_SCOPES } from "@t3tools/contracts";
+import {
+  arrowCapabilities,
+  ClientId,
+  MACHINE_LEVEL_SCOPES,
+  MachineLevel,
+} from "@t3tools/contracts";
 
 import {
+  arrowAllowsExec,
   browserGrantFor,
   clientGrantFor,
   clientsWithChangedLevel,
@@ -173,6 +179,41 @@ describe("machineMcpAccessFor (MM-1307, MM-302)", () => {
         NOW,
       )?.access,
     ).toBe("read-only");
+  });
+});
+
+describe("arrowCapabilities (MM-1915)", () => {
+  it("lists exactly what this machine enforces for each level, agent tools and exec", () => {
+    for (const level of MachineLevel.literals) {
+      for (const agentTools of [false, true]) {
+        for (const exec of [false, true]) {
+          const into = arrow(PEER, SELF, level, { agentTools, exec });
+          const access = machineMcpAccessFor(
+            desiredState({ arrowsIn: [into] }),
+            { subject: `machine:${PEER}`, scopes: MACHINE_LEVEL_SCOPES[level] },
+            NOW,
+          )?.access;
+          const can = arrowCapabilities(into);
+          const shown = { level, agentTools, exec, can };
+          expect({ ...shown, readThreads: can.includes("readThreads") }).toEqual({
+            ...shown,
+            readThreads: access !== undefined,
+          });
+          expect({ ...shown, launch: can.includes("launch") }).toEqual({
+            ...shown,
+            launch: access === "auto" || access === "full-access",
+          });
+          expect({ ...shown, settings: can.includes("settings") }).toEqual({
+            ...shown,
+            settings: access === "full-access",
+          });
+          expect({ ...shown, execRuns: can.includes("exec") }).toEqual({
+            ...shown,
+            execRuns: arrowAllowsExec(into, NOW),
+          });
+        }
+      }
+    }
   });
 });
 

@@ -17,6 +17,8 @@ import {
   clientSessionSubject,
   machineSessionSubject,
   MachineCommand,
+  MachineCallRecord,
+  type MachineCallReport,
   MachineExecRecord,
   MachineId,
   MachineMapDocument,
@@ -62,6 +64,7 @@ import type {
   DevicesResponse,
   EnrolledEvent,
   EnrollResponse,
+  CallsEvent,
   ExecsEvent,
   JoinCodeRequest,
   JoinCodeResponse,
@@ -111,6 +114,7 @@ import type { Env } from "./env.ts";
 import {
   arrowChange,
   clientArrowChange,
+  arrowCapabilityList,
   decideAgentWrite,
   gateTool,
   raisesAnyAccess,
@@ -236,6 +240,7 @@ const decodeProposal = decodeJson(MapProposal);
 const decodePresence = decodeJson(MachinePresence);
 const decodeSettings = decodeJson(ScopedSettingValues);
 const decodeExecRecord = decodeJson(MachineExecRecord);
+const decodeCallRecord = decodeJson(MachineCallRecord);
 /** MM-1502: resource samples ride next to the base protocol. */
 const MachineMessage = Schema.Union([MachineToPortal, MachineResourcesMessage]);
 type MachineMessage = typeof MachineMessage.Type;
@@ -305,6 +310,8 @@ const SAMPLE_REQUEST_GAP_MS = 10_000;
 /** MM-1908: pages get this many exec runs, and the portal keeps this many. */
 const PAGE_EXECS = 100;
 const KEPT_EXECS = 500;
+const PAGE_CALLS = 100;
+const KEPT_CALLS = 500;
 /** MM-1506: pages get the active alerts and this many ended ones. */
 const PAGE_ENDED_ALERTS = 50;
 /** MM-1503: the alarm prunes old resource points and alerts this often. */
@@ -434,6 +441,7 @@ export class MachineMapObject extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS pending_clients (thumbprint TEXT PRIMARY KEY, described_as TEXT NOT NULL, email TEXT, seen_on TEXT NOT NULL, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, state TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, sign_in_id TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS exec_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS call_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
     `);
     this.ctx.storage.sql.exec(HEALTH_TABLES);
     this.#dropManageSetting();
@@ -774,6 +782,36 @@ export class MachineMapObject extends DurableObject<Env> {
     this.#broadcast(this.#execsEvent());
   }
 
+  // Forwarded calls
+
+  /** MM-1922: the newest T3 tool calls that machines forwarded over arrow links, newest first. */
+  #calls(limit: number): Array<MachineCallRecord> {
+    return this.#sql<{ data: string }>(
+      "SELECT data FROM call_log ORDER BY at DESC LIMIT ?",
+      limit,
+    ).map((row) => decodeCallRecord(row.data));
+  }
+
+  #callsEvent(): CallsEvent {
+    return { _tag: "calls", calls: this.#calls(PAGE_CALLS) };
+  }
+
+  /** MM-1922: the machine that forwarded the call reports it, so `from` is that machine. */
+  #recordCall(machine: MachineRecord, report: MachineCallReport): void {
+    const record: MachineCallRecord = { ...report, from: machine.id };
+    this.#sql(
+      "INSERT OR IGNORE INTO call_log (id, at, data) VALUES (?, ?, ?)",
+      record.id,
+      record.at,
+      JSON.stringify(record),
+    );
+    this.#sql(
+      "DELETE FROM call_log WHERE id NOT IN (SELECT id FROM call_log ORDER BY at DESC LIMIT ?)",
+      KEPT_CALLS,
+    );
+    this.#broadcast(this.#callsEvent());
+  }
+
   #pendingEvent(): PendingClientsEvent {
     return { _tag: "pendingClients", pending: this.#pendingClients() };
   }
@@ -903,7 +941,8 @@ export class MachineMapObject extends DurableObject<Env> {
       | EnrolledEvent
       | PendingClientsEvent
       | ClientInvitesEvent
-      | ExecsEvent,
+      | ExecsEvent
+      | CallsEvent,
   ): void {
     const text = JSON.stringify(event);
     for (const ws of this.ctx.getWebSockets(PAGE_TAG)) {
@@ -975,6 +1014,7 @@ export class MachineMapObject extends DurableObject<Env> {
       server.send(JSON.stringify(this.#pendingEvent()));
       server.send(JSON.stringify(this.#invitesEvent()));
       server.send(JSON.stringify(this.#execsEvent()));
+      server.send(JSON.stringify(this.#callsEvent()));
       return new Response(null, { status: 101, webSocket: client });
     }
     if (pathname === "/connect") {
@@ -1163,6 +1203,10 @@ export class MachineMapObject extends DurableObject<Env> {
       }
       case "execRan": {
         this.#recordExec(machine, message.report);
+        return;
+      }
+      case "callForwarded": {
+        this.#recordCall(machine, message.report);
         return;
       }
       case "rotated": {
@@ -1652,6 +1696,8 @@ export class MachineMapObject extends DurableObject<Env> {
           proposals: snapshot.proposals,
           resources: this.#overview("active"),
           execs: this.#execs(50),
+          calls: this.#calls(50),
+          capabilities: arrowCapabilityList(snapshot.map),
         };
       }
       case "machines_resources": {

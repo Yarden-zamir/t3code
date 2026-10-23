@@ -5,6 +5,11 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { peerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
+import {
+  ARROW_LINKS_EMPTY,
+  arrowLinkStatus,
+  MANUAL_PEER_LINKS,
+} from "@t3tools/client-runtime/fork/arrowLinks";
 import * as DateTime from "effect/DateTime";
 import { PlusIcon } from "lucide-react";
 import { useId, useState } from "react";
@@ -15,6 +20,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { AccessOption, accessConfig } from "../auth/ConnectAgentSurface";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
+import { ArrowLinksPortalLink } from "./ForkArrowLinks";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -47,23 +53,27 @@ export function LinkedEnvironmentsSettings({
   readonly isSearchTarget: boolean;
 }) {
   const links = useEnvironmentQuery(peerLinkEnvironment.list({ environmentId, input: {} }));
-  const canLink = useAtomValue(peerLinkEnvironment.link.permissionAtom(environmentId));
+  const canLink =
+    useAtomValue(peerLinkEnvironment.link.permissionAtom(environmentId)) && MANUAL_PEER_LINKS;
   const search = searchableSetting("linked-environments");
   return (
     <SettingsSection
       {...(isSearchTarget ? { id: search.id } : {})}
       title={environmentLabel === null ? search.title : `${search.title} · ${environmentLabel}`}
-      headerAction={canLink ? <LinkEnvironmentAction environmentId={environmentId} /> : null}
+      headerAction={
+        canLink ? (
+          <LinkEnvironmentAction environmentId={environmentId} />
+        ) : (
+          <ArrowLinksPortalLink environmentId={environmentId} />
+        )
+      }
     >
       {links.error ? (
         <SettingsRow title="Could not load linked environments" description={links.error} />
       ) : !links.data ? (
         <SettingsRow title="Loading linked environments…" role="status" />
       ) : links.data.links.length === 0 ? (
-        <SettingsRow
-          title="No linked environments"
-          description="Link another machine running T3 Code, such as a VPS, so agents here can launch and drive threads there."
-        />
+        <SettingsRow title="No linked environments" description={ARROW_LINKS_EMPTY} />
       ) : (
         links.data.links.map((link) => (
           <LinkedEnvironmentRow
@@ -87,7 +97,8 @@ function LinkedEnvironmentRow({
   const nowMs = useRelativeTimeTick(60_000);
   const health = peerLinkHealth(link, DateTime.makeUnsafe(nowMs));
   const unlink = useAtomCommand(peerLinkEnvironment.unlink, { label: "unlink environment" });
-  const canUnlink = useAtomValue(peerLinkEnvironment.unlink.permissionAtom(environmentId));
+  const canUnlink =
+    useAtomValue(peerLinkEnvironment.unlink.permissionAtom(environmentId)) && MANUAL_PEER_LINKS;
   const [busy, setBusy] = useState(false);
   const forget = async () => {
     const confirmed = await (requestConfirmDialog(
@@ -102,16 +113,7 @@ function LinkedEnvironmentRow({
       failureToast("Could not forget the link", String(squashAtomCommandFailure(result)));
     }
   };
-  const status =
-    health.kind === "expired"
-      ? "Expired. Link it again with a new pairing code."
-      : health.kind === "unreachable"
-        ? (health.detail ?? "Not answering right now.")
-        : health.kind === "failing"
-          ? health.detail
-          : health.expiresInDays !== null
-            ? `Expires in ${health.expiresInDays} ${health.expiresInDays === 1 ? "day" : "days"}. Link it again to renew.`
-            : "Reachable";
+  const status = arrowLinkStatus(link, health);
   return (
     <div className={ITEM_ROW_CLASSNAME}>
       <div className={ITEM_ROW_INNER_CLASSNAME}>

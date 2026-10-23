@@ -5,6 +5,7 @@
 import type {
   ArrowRecord,
   ClientArrowRecord,
+  MachineCallRecord,
   MachineCommand,
   MachineExecRecord,
   MachineId,
@@ -49,7 +50,8 @@ export type HistoryKind =
   | "other"
   | "command"
   | "alert"
-  | "exec";
+  | "exec"
+  | "call";
 
 /** Each kind: the filter label, the sticker (one or two words) and whether it is important. */
 export const HISTORY_KIND: Record<
@@ -73,6 +75,7 @@ export const HISTORY_KIND: Record<
   command: { label: "Commands", sticker: "command", important: false },
   alert: { label: "Health alerts", sticker: "alert", important: false },
   exec: { label: "Commands run by agents", sticker: "exec", important: false },
+  call: { label: "Tools called on other machines", sticker: "call", important: false },
 };
 
 export const HISTORY_KINDS = Object.keys(HISTORY_KIND).filter(
@@ -223,14 +226,22 @@ export type HistoryEntry =
       readonly at: string;
       readonly kind: "exec";
       readonly exec: MachineExecRecord;
+    }
+  | {
+      /** MM-1922: one T3 tool call over an arrow link, a portal event and not a revision. */
+      readonly _tag: "call";
+      readonly at: string;
+      readonly kind: "call";
+      readonly call: MachineCallRecord;
     };
 
-/** Revisions, commands, alert starts and ends, and exec runs, newest first. */
+/** Revisions, commands, alert starts and ends, exec runs and forwarded calls, newest first. */
 export function historyEntries(
   revisions: ReadonlyArray<MapRevision>,
   commands: ReadonlyArray<MachineCommand>,
   alerts: ReadonlyArray<HealthAlert>,
   execs: ReadonlyArray<MachineExecRecord>,
+  calls: ReadonlyArray<MachineCallRecord>,
 ): Array<HistoryEntry> {
   return [
     ...revisions.map((revision): HistoryEntry => ({
@@ -252,6 +263,7 @@ export function historyEntries(
         : [{ _tag: "alert", at: alert.endedAt, kind: "alert", alert, ended: true } as const]),
     ]),
     ...execs.map((exec): HistoryEntry => ({ _tag: "exec", at: exec.at, kind: "exec", exec })),
+    ...calls.map((call): HistoryEntry => ({ _tag: "call", at: call.at, kind: "call", call })),
   ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
 
@@ -266,6 +278,8 @@ export function entryKey(entry: HistoryEntry): string {
       return `${entry.alert.id}:${entry.ended ? "end" : "start"}`;
     case "exec":
       return `exec:${entry.exec.id}`;
+    case "call":
+      return `call:${entry.call.id}`;
   }
 }
 
@@ -285,6 +299,13 @@ export function entryActor(entry: HistoryEntry): MapActor {
         machineId: entry.exec.from,
         threadId: entry.exec.threadId,
         threadTitle: entry.exec.threadTitle,
+      };
+    case "call":
+      return {
+        _tag: "agent",
+        machineId: entry.call.from,
+        threadId: entry.call.threadId,
+        threadTitle: entry.call.threadTitle,
       };
   }
 }
@@ -316,6 +337,7 @@ export function actorLabel(actor: MapActor, map: MachineMapDocument): string {
 function entryMachines(entry: HistoryEntry): ReadonlySet<string> {
   if (entry._tag === "alert") return new Set([entry.alert.machineId]);
   if (entry._tag === "exec") return new Set([entry.exec.from, entry.exec.to]);
+  if (entry._tag === "call") return new Set([entry.call.from, entry.call.to]);
   if (entry._tag === "command") {
     const { input, machineId } = entry.command;
     return new Set(input._tag === "testArrow" ? [machineId, input.to] : [machineId]);

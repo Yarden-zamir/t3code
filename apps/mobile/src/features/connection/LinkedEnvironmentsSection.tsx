@@ -1,4 +1,5 @@
 import { peerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
+import { arrowLinkStatus } from "@t3tools/client-runtime/fork/arrowLinks";
 import { useFocusEffect } from "@react-navigation/native";
 import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -11,6 +12,7 @@ import { peerLinkEnvironment } from "../../state/peerLinks";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { SettingsSection } from "../settings/components/SettingsSection";
+import { ArrowLinksPortalLink } from "./ForkArrowLinksPortalLink";
 
 export function LinkedEnvironmentsSection(props: {
   readonly environmentId: EnvironmentId;
@@ -43,19 +45,13 @@ export function LinkedEnvironmentsSection(props: {
   const now = DateTime.makeUnsafe(nowMs);
   return (
     <View className="mt-5 gap-3">
-      <SettingsSection title={`Linked from ${props.environmentLabel}`}>
+      <SettingsSection
+        title={`Linked from ${props.environmentLabel}`}
+        trailing={<ArrowLinksPortalLink portalUrl={config?.settings.machineMap.portalUrl} />}
+      >
         {links.data.links.map((link) => {
           const health = peerLinkHealth(link, now);
-          const status =
-            health.kind === "expired"
-              ? "Expired. Link it again with a new pairing code."
-              : health.kind === "unreachable"
-                ? (health.detail ?? "Not answering right now.")
-                : health.kind === "failing"
-                  ? health.detail
-                  : health.expiresInDays !== null
-                    ? `Expires in ${health.expiresInDays} ${health.expiresInDays === 1 ? "day" : "days"}`
-                    : "Reachable";
+          const status = arrowLinkStatus(link, health);
           return (
             <View key={link.environmentId} className="gap-0.5 p-4">
               <Text className="text-base font-t3-bold text-foreground">{link.label}</Text>

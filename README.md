@@ -16,7 +16,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Portal](docs/fork/features.md#machine-map):** one portal at `t3.yarden-zamir.com` maps every T3 machine, adds phones with an app invite, and sets access between them.
 - **[Environment name from machine map](docs/fork/features.md#environment-name-from-machine-map):** an optional setting keeps environment names equal to machine map names, also after a name change.
 - **[Portal views](docs/fork/features.md#portal-views):** Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients.
-- **[Work on other machines](docs/fork/features.md#work-on-other-machines):** an arrow with agent tools makes the other machine a linked environment, where agents delegate tasks within their own limits.
+- **[Work on other machines](docs/fork/features.md#work-on-other-machines):** an arrow with agent tools makes the other machine a linked environment, where agents delegate tasks within their own limits. Each arrow lists what it allows, only the owner raises it, and History lists each forwarded call.
 - **[Join and install](docs/fork/features.md#join-and-install):** "Add machine" shows one command per system that installs the fork and joins.
 - **[Join feedback](docs/fork/features.md#join-and-install):** the open join dialog shows when a machine uses the code, and whether it connected.
 - **[Emergency pause](docs/fork/features.md#emergency-pause):** a big red button stops all agents and sets all access to none.
@@ -29,7 +29,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Zoom and pan](docs/fork/features.md#zoom-and-pan):** the map zooms, pans and fits all cards, with "Auto layout".
 - **[Approved clients](docs/fork/features.md#approved-clients):** a new browser waits until the owner approves it.
 - **[Client access](docs/fork/features.md#client-access):** each machine decides which browsers get in through Cloudflare Access; an open browser waits for approval when its access changes.
-- **[Owner-only access changes](docs/fork/features.md#owner-only-access-changes):** only the owner changes `clientAccess` and `machineMap`.
+- **[Owner-only access changes](docs/fork/features.md#owner-only-access-changes):** only the owner changes `clientAccess` and `machineMap`, and only the owner raises access between machines.
 - **[Sibling client sessions](docs/fork/features.md#sibling-client-sessions):** a browser client session lasts 1 day, also on sibling machines.
 - **[App invites and app tokens](docs/fork/features.md#app-invites-and-app-tokens):** "Invite an app" shows a QR code that a native app uses once.
 - **[Machines panel](docs/fork/features.md#machines-panel):** a read-only map in the right panel of a thread.

@@ -1,8 +1,9 @@
 /**
- * Pure rules for arrows and for agent writes: build an arrow change (MM-304), the map role that a
- * tool needs (MM-802) and the self-escalation check (MM-803).
+ * Pure rules for arrows and for agent writes: build an arrow change (MM-304), the capabilities of
+ * an arrow (MM-1915), the map role that a tool needs (MM-802) and the owner-only check (MM-803).
  */
 import {
+  arrowCapabilities,
   type ArrowRecord,
   type ClientArrowRecord,
   type ClientId,
@@ -11,6 +12,7 @@ import {
   type MachineLevel,
   type MachineMapDocument,
   type MapChange,
+  type MapProposal,
   type MapToolName,
 } from "@t3tools/contracts/machineMap";
 
@@ -23,9 +25,17 @@ import {
   levelRank,
   roleRank,
 } from "./map.ts";
+import type { ArrowCapabilities } from "../api.ts";
 
 /** MM-1103: the one wording of an arrow everywhere: the source first, then the target. */
 export const usesText = (from: string, to: string): string => `${from} uses ${to}`;
+
+/** MM-1915: "what can A do on B" for each arrow that gives anything, for `machines_read`. */
+export const arrowCapabilityList = (map: MachineMapDocument): ReadonlyArray<ArrowCapabilities> =>
+  map.arrows.flatMap((arrow) => {
+    const can = arrowCapabilities(arrow);
+    return can.length === 0 ? [] : [{ from: arrow.from, to: arrow.to, can }];
+  });
 
 export interface ArrowInput {
   readonly from: MachineId;
@@ -241,9 +251,13 @@ export function gateTool(
 
 export type WriteDecision =
   | { readonly _tag: "apply" }
-  | { readonly _tag: "propose"; readonly reason: "map-role" | "self-escalation" };
+  | { readonly _tag: "propose"; readonly reason: MapProposal["reason"] };
 
-/** MM-802, MM-803: decides whether agent changes apply at once or wait for the owner. */
+/**
+ * MM-802, MM-803: decides whether agent changes apply at once or wait for the owner. Only the
+ * owner raises a level, turns on agent tools or exec, or raises a map role, for any machine. With
+ * `edit`, an agent applies only changes that raise nothing, such as a lower level.
+ */
 export function decideAgentWrite(
   map: MachineMapDocument,
   machineId: MachineId,
@@ -251,6 +265,7 @@ export function decideAgentWrite(
 ): WriteDecision {
   if (raisesOwnAccess(map, machineId, changes))
     return { _tag: "propose", reason: "self-escalation" };
+  if (raises(map, changes, () => true)) return { _tag: "propose", reason: "owner-only" };
   const role = findMachine(map, machineId)?.mapRole ?? "none";
   return role === "edit" ? { _tag: "apply" } : { _tag: "propose", reason: "map-role" };
 }

@@ -21,6 +21,7 @@ import type {
 
 import { usesText } from "../rules/access.ts";
 import { findArrow, findClientArrow, findNote, MAP_FRAME, pairOffset } from "../rules/map.ts";
+import { CapabilityStickers } from "./ArrowCapabilities.tsx";
 import { NO_SELECTION, type Route } from "./route.ts";
 import { usePortalContext } from "./context.ts";
 import { buildStandings } from "./build.ts";
@@ -1262,8 +1263,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
         <span className="actions">
           {wait && <ClockIcon label={wait} />}
           {arrow.expiresAt && <span className="sticker warn flat">temp</span>}
-          {arrow.agentTools && <span className="sticker accent flat">tools</span>}
-          {arrow.exec && <span className="sticker accent flat">exec</span>}
+          <CapabilityStickers arrow={arrow} />
           {was ? (
             <>
               <span className={`sticker lvl-${was} was`}>{LEVEL_LABEL[was]}</span>

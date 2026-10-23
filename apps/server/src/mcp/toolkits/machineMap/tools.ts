@@ -42,7 +42,7 @@ const PORTAL_NOTE =
 
 /** Appended to every map change. */
 const MAP_WRITE_NOTE =
-  'With the map role `edit`, the change applies at once and the result is {"_tag":"applied","revision":n}. With the role `propose`, or when the change raises access of this machine, the change waits in the portal Inbox and the result is {"_tag":"proposed","proposalId":"...","reason":"map-role"|"self-escalation"}. The owner approves or rejects a proposal; it expires after 24 hours. Each applied change is a revision that machines_undo can reverse. An offline machine applies the change when it connects.';
+  'With the map role `edit`, a change that raises no access applies at once and the result is {"_tag":"applied","revision":n}. Only the owner raises access: a change that raises a level, turns on agent tools or exec, or raises a map role, for any machine, waits in the portal Inbox, and so does every change with the role `propose`. Then the result is {"_tag":"proposed","proposalId":"...","reason":"map-role"|"self-escalation"|"owner-only"}. The owner approves or rejects a proposal; it expires after 24 hours. Each applied change is a revision that machines_undo can reverse. An offline machine applies the change when it connects.';
 
 const mapTool = <const Name extends Exclude<MapToolName, "machines_read" | "machines_resources">>(
   name: Name,
@@ -58,7 +58,7 @@ const mapTool = <const Name extends Exclude<MapToolName, "machines_read" | "mach
 // MCP needs an object root for parameters, so the tool without inputs declares none.
 const MachinesReadTool = Tool.make("machines_read", {
   ...shared,
-  description: `Read the machine map. Call it first to find machine ids, map roles, revision numbers and command ids. Needs the map role \`read\`. Changes nothing. The result is {"_tag":"read", map, presence, commands, history, proposals, resources}: map holds the machines, arrows, shared settings with the overrides of each machine, and presets, and the owner's display data: notes (sticky notes with text and a place) and pairPlacements (where the owner put pair cards), which no machine applies; presence.<machineId> holds online, lastSeenAt and status (build, running turns, supported commands, clients); resources holds latest.<machineId> (the newest resource sample), thresholds.<machineId> (health thresholds) and alerts (the active health alerts); history holds the newest 50 revisions and makes most of the size, often more than 50,000 characters. ${PORTAL_NOTE}`,
+  description: `Read the machine map. Call it first to find machine ids, map roles, revision numbers and command ids. Needs the map role \`read\`. Changes nothing. The result is {"_tag":"read", map, presence, commands, history, proposals, resources, capabilities, execs, calls}: map holds the machines, arrows, shared settings with the overrides of each machine, and presets, and the owner's display data: notes (sticky notes with text and a place) and pairPlacements (where the owner put pair cards), which no machine applies; presence.<machineId> holds online, lastSeenAt and status (build, running turns, supported commands, clients); resources holds latest.<machineId> (the newest resource sample), thresholds.<machineId> (health thresholds) and alerts (the active health alerts); capabilities lists for each arrow with any what agents on \`from\` can do on \`to\` (readThreads, launch, exec, settings); execs and calls list the newest machine_exec runs and T3 tool calls forwarded to other machines, without their output; history holds the newest 50 revisions and makes most of the size, often more than 50,000 characters. ${PORTAL_NOTE}`,
   success: Schema.Unknown,
 })
   .annotate(Tool.Readonly, true)
@@ -75,7 +75,7 @@ const MachinesResourcesTool = Tool.make("machines_resources", {
 
 const MachinesSetAccessTool = mapTool(
   "machines_set_access",
-  `Set the arrow from machine \`from\` to machine \`to\`: its access level, whether agents on \`from\` can call tools on \`to\`, and an optional expiry. \`from\` and \`to\` are machine ids from machines_read. Use it to give or remove access between two machines. A lower level ends the sessions of \`from\` on \`to\` at once. The owner keeps full access to every machine whatever the arrows say. Needs the map role \`propose\` or \`edit\`. ${MAP_WRITE_NOTE}`,
+  `Set the arrow from machine \`from\` to machine \`to\`: its access level, whether agents on \`from\` can call tools on \`to\`, and an optional expiry. \`from\` and \`to\` are machine ids from machines_read. Use it to remove or lower access between two machines, or to propose more access to the owner. A lower level ends the sessions of \`from\` on \`to\` at once. The owner keeps full access to every machine whatever the arrows say. Needs the map role \`propose\` or \`edit\`. ${MAP_WRITE_NOTE}`,
 ).annotate(Tool.Destructive, true);
 
 const MachinesSetSettingTool = mapTool(
