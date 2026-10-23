@@ -41,8 +41,10 @@ After the upstream main merge, Fork Sync runs `node scripts/fork-adopted-prs.ts 
 
 - Open with the listed head: nothing changes.
 - Open with a new head: it fetches `refs/pull/<number>/head` and merges it with a merge commit that also updates `mergedHead`. It never cherry-picks or rebases.
-- Open, but the head is not on the `pingdotgg` branch `headRef`: the sync stops, because main deploys what the sync pushes. Check the new branch, then update `headRef`.
-- Merged: it drops the entry. Upstream main brings the final version, or the listed pull request below it when it merged into that branch. The run summary shows its fork rules as a warning, so that you undo the rules that upstream main now covers.
+- Open, but the head is not on the `pingdotgg` branch `headRef`: the sync stops, because main deploys what the sync pushes. Correct `headRef` if the list has it wrong. A pull request from another repository cannot be adopted: remove the entry.
+- Merged into main: it drops the entry, because upstream main brings the final version. The run summary shows its fork rules as a warning, so that you undo the rules that upstream main now covers.
+- Merged into the branch of another listed pull request: it drops the entry and appends its fork rules to that entry, which now carries its code.
+- Merged into another branch: the sync stops. The owner decides whether the fork follows that branch.
 - Closed without a merge: the sync stops. Fork main keeps the code. The owner decides whether the fork keeps it. To resume Fork Sync, remove the entry, and revert its code if the fork does not keep it.
 
 A conflict stops the sync like an upstream conflict. The migration check then runs, because a new head can bring back a migration that the fork removed at adoption.

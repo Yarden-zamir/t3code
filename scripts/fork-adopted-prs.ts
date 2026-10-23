@@ -15,6 +15,7 @@ import * as NodeFS from "node:fs";
 export const LIST_PATH = "scripts/fork-adopted-upstream-prs.json";
 const UPSTREAM_OWNER = "pingdotgg";
 const UPSTREAM_REPOSITORY = `${UPSTREAM_OWNER}/t3code`;
+const UPSTREAM_MAIN = "main";
 const HEX_DIGITS = "0123456789abcdef";
 
 export interface AdoptedPullRequest {
@@ -96,6 +97,8 @@ export interface UpstreamPullRequest {
   /** The owner of the repository that holds the head branch. */
   readonly headOwner: string;
   readonly headRef: string;
+  /** The branch that the pull request merges into. */
+  readonly baseRef: string;
 }
 
 /** The git and GitHub calls of `syncAdoptedPullRequests`. The tests replace them. */
@@ -120,7 +123,7 @@ export type SyncResult =
 /**
  * Runs after the upstream main merge. In list order, which is the stack order, it drops each merged
  * pull request, merges the new head of each open one, and stops at a pull request that upstream
- * closed without a merge, whose head left the upstream branch, or whose head conflicts.
+ * closed without a merge, that is not on its upstream branch, or whose head conflicts.
  */
 export function syncAdoptedPullRequests(
   list: ReadonlyArray<AdoptedPullRequest>,
@@ -138,22 +141,42 @@ export function syncAdoptedPullRequests(
           reason: `upstream closed adopted pull request #${entry.number} without a merge`,
           details: `${name} is closed and not merged. Fork main still holds its head ${entry.mergedHead}. Decide whether the fork keeps that code. Fork rules: ${entry.forkRules ?? "none"}`,
         };
-      case "MERGED":
-        // A merged pull request gets no new heads. Upstream main brings it, or, when it merged into
-        // the branch below it in the stack, the listed pull request of that branch does.
-        current = current.filter((candidate) => candidate.number !== entry.number);
+      case "MERGED": {
+        // A merged pull request gets no new heads. Upstream main brings it, or the listed pull
+        // request whose branch it merged into, which then also carries its fork rules.
+        const below = current.find(
+          (candidate) =>
+            candidate.number !== entry.number && candidate.headRef === upstream.baseRef,
+        );
+        if (upstream.baseRef !== UPSTREAM_MAIN && below === undefined) {
+          return {
+            _tag: "Stopped",
+            reason: `adopted pull request #${entry.number} merged into ${upstream.baseRef}, which the list does not follow`,
+            details: `${name} merged into ${upstream.baseRef}. No listed pull request has that branch. Decide whether the fork follows it. Fork rules: ${entry.forkRules ?? "none"}`,
+          };
+        }
+        current = current.flatMap((candidate) => {
+          if (candidate.number === entry.number) return [];
+          if (candidate !== below || entry.forkRules === undefined) return [candidate];
+          const forkRules = [candidate.forkRules, entry.forkRules].filter(Boolean).join(" ");
+          return [{ ...candidate, forkRules }];
+        });
         io.log(
-          `${name}: merged upstream, dropped from the list. Undo its fork rules where upstream main covers them: ${entry.forkRules ?? "none"}`,
+          below === undefined
+            ? // A GitHub Actions annotation, so that the run summary shows the follow-up.
+              `::warning title=Upstream merged #${entry.number}::Dropped from the list. Undo its fork rules where upstream main covers them: ${entry.forkRules ?? "none"}`
+            : `${name}: merged into the branch of #${below.number}, dropped from the list. #${below.number} carries its fork rules.`,
         );
         continue;
+      }
       case "OPEN": {
         // Fork Sync pushes the head to main, which deploys itself. A head from another repository
         // would let its owner ship code to the fork.
         if (upstream.headOwner !== UPSTREAM_OWNER || upstream.headRef !== entry.headRef) {
           return {
             _tag: "Stopped",
-            reason: `adopted pull request #${entry.number} moved to another branch`,
-            details: `${name} now has its head on ${upstream.headOwner}:${upstream.headRef}, not ${UPSTREAM_OWNER}:${entry.headRef}. Check the new branch, then update "headRef".`,
+            reason: `adopted pull request #${entry.number} is not on ${UPSTREAM_OWNER}:${entry.headRef}`,
+            details: `${name} has its head on ${upstream.headOwner}:${upstream.headRef}. Correct "headRef" if the list has it wrong. A pull request from another repository cannot be adopted: remove the entry.`,
           };
         }
         const head = io.fetchHead(entry.number);
@@ -240,7 +263,7 @@ const realIo: SyncIo = {
           "--repo",
           UPSTREAM_REPOSITORY,
           "--json",
-          "state,headRepositoryOwner,headRefName",
+          "state,headRepositoryOwner,headRefName,baseRefName",
         ],
         { encoding: "utf8" },
       ),
@@ -248,14 +271,21 @@ const realIo: SyncIo = {
       readonly state?: unknown;
       readonly headRepositoryOwner?: { readonly login?: unknown } | null;
       readonly headRefName?: unknown;
+      readonly baseRefName?: unknown;
     };
     const headOwner = json.headRepositoryOwner?.login;
     if (
       (json.state === "OPEN" || json.state === "MERGED" || json.state === "CLOSED") &&
       typeof headOwner === "string" &&
-      typeof json.headRefName === "string"
+      typeof json.headRefName === "string" &&
+      typeof json.baseRefName === "string"
     ) {
-      return { state: json.state, headOwner, headRef: json.headRefName };
+      return {
+        state: json.state,
+        headOwner,
+        headRef: json.headRefName,
+        baseRef: json.baseRefName,
+      };
     }
     throw new Error(
       `Unexpected state of ${UPSTREAM_REPOSITORY}#${number}: ${JSON.stringify(json)}`,
@@ -298,18 +328,11 @@ const realIo: SyncIo = {
 };
 
 function sync(): void {
-  const list = parseAdoptedList(NodeFS.readFileSync(LIST_PATH, "utf8"));
-  const result = syncAdoptedPullRequests(list, realIo);
+  const result = syncAdoptedPullRequests(
+    parseAdoptedList(NodeFS.readFileSync(LIST_PATH, "utf8")),
+    realIo,
+  );
   if (result._tag === "Done") {
-    // A GitHub Actions annotation, so that the run summary shows the follow-up of each drop.
-    const kept = new Set(result.list.map((entry) => entry.number));
-    for (const entry of list) {
-      if (!kept.has(entry.number) && entry.forkRules !== undefined) {
-        console.log(
-          `::warning title=Upstream merged #${entry.number}::Undo its fork rules where upstream main now covers them: ${entry.forkRules}`,
-        );
-      }
-    }
     console.log(`${result.list.length} adopted upstream pull requests.`);
     return;
   }

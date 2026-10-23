@@ -41,6 +41,7 @@ function fakeIo(upstream: FakeUpstream) {
       state: "OPEN",
       headOwner: "pingdotgg",
       headRef: `stack/${number}`,
+      baseRef: number === 1 ? "main" : `stack/${number - 1}`,
       ...upstream.states?.[number],
     }),
     fetchHead: (number) =>
@@ -102,14 +103,34 @@ it("only updates the listed head when HEAD already has the new head", () => {
   );
 });
 
-it("drops merged pull requests in one list commit", () => {
+it("drops pull requests merged into main in one list commit", () => {
   const { io, merges, listCommits } = fakeIo({
-    states: { 1: { state: "MERGED" }, 2: { state: "MERGED" } },
+    states: { 1: { state: "MERGED" }, 2: { state: "MERGED", baseRef: "main" } },
   });
   const result = syncAdoptedPullRequests(stack, io);
   assert.deepStrictEqual(merges, []);
   assert.deepStrictEqual(listCommits, [[stack[2]]]);
   assert.deepStrictEqual(result, { _tag: "Done", list: [stack[2]] });
+});
+
+it("moves the fork rules of a pull request merged into a listed branch to that entry", () => {
+  const list = [
+    { ...stack[0], forkRules: "Rule one." },
+    { ...stack[1], forkRules: "Rule two." },
+  ];
+  const { io } = fakeIo({ states: { 2: { state: "MERGED" } } });
+  const result = syncAdoptedPullRequests(list, io);
+  assert.deepStrictEqual(result, {
+    _tag: "Done",
+    list: [{ ...stack[0], forkRules: "Rule one. Rule two." }],
+  });
+});
+
+it("stops at a pull request merged into a branch that the list does not follow", () => {
+  const { io } = fakeIo({ states: { 2: { state: "MERGED", baseRef: "other" } } });
+  const result = syncAdoptedPullRequests(stack, io);
+  assert.strictEqual(result._tag, "Stopped");
+  if (result._tag === "Stopped") assert.include(result.reason, "#2");
 });
 
 it("writes a drop into the next merge commit instead of a separate commit", () => {
@@ -133,7 +154,7 @@ it("stops at a pull request that upstream closed without a merge", () => {
   assert.deepStrictEqual(merges, []);
 });
 
-it("stops at an open pull request whose head left the upstream branch", () => {
+it("stops at an open pull request that is not on its upstream branch", () => {
   for (const moved of [{ headOwner: "someone" }, { headRef: "stack/other" }]) {
     const { io, merges } = fakeIo({ states: { 2: moved }, heads: { 2: commit("d") } });
     const result = syncAdoptedPullRequests(stack, io);
