@@ -27,8 +27,20 @@ Turn on Settings > Fork > Terminal threads on the server. Then start one like a 
 thread: the terminal button next to New thread in the sidebar (not in the legacy sidebar), `mod+alt+t`
 (`chat.newTerminal`), or New terminal thread in the command palette. These follow the
 same rules as the New thread button, including the project chooser and Shift. The command
-`chat.newTerminalLocal` (`mod+alt+shift+n`) starts in the focused project at once. The new
-terminal takes focus and its shell starts while the thread opens.
+`chat.newTerminalLocal` (`mod+alt+shift+n`) starts in the focused project at once.
+
+A new terminal starts as a new thread in Terminal mode: the composer box holds a live
+shell, and the Terminal button in the composer is on. The footer shows the folder of the shell. Pick the shell (zsh, bash and
+so on) in place of the model. The first command that ends, or that runs for a second (an
+editor, a dev server), makes it a terminal thread with the same shell, named after the
+command. The enlarge button next to the hint makes it a terminal thread at once. Until then:
+
+- The Terminal button switches back to an agent, and closes the shell.
+- The Terminal button is off while the prompt holds text or files, which a terminal thread
+  would not keep.
+- Leaving the new thread discards the shell, like an empty new thread.
+- The shell runs in the project folder, or in the worktree that the new thread already uses.
+  A new worktree is not available in Terminal mode.
 
 The screen is the header of a normal thread above the terminal. `mod+j` opens the drawer
 for more terminals of the thread. On Linux and Windows, Ctrl+W, Ctrl+D, Ctrl+N and Ctrl+J
@@ -61,7 +73,7 @@ The sidebar shows the state of a terminal thread until you visit it:
 
 - A bell or an app notification from a program shows Input.
 - A program that ends shows Done, or Failed when its exit code is not zero.
-- A program that runs shows the terminal icon of the row.
+- A program that runs in the shell shows Working. A background job does not.
 
 ## Shell exit
 
