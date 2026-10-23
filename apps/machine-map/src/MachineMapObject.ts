@@ -491,13 +491,11 @@ export class MachineMapObject extends DurableObject<Env> {
    */
   #sidebarTabKeys(): void {
     if (this.#sql("SELECT key FROM meta WHERE key = 'sidebar_tab_keys'").length > 0) return;
-    type Scoped = ScopedValues;
-    const scoped = currentSidebarTabValues;
     this.ctx.storage.transactionSync(() => {
       const current = this.#sql<{ value: string }>("SELECT value FROM meta WHERE key = 'map'")[0];
       if (current) {
         const map = JSON.parse(current.value) as {
-          settings?: { shared?: Scoped; overrides?: Record<string, Scoped> };
+          settings?: { shared?: ScopedValues; overrides?: Record<string, ScopedValues> };
         };
         const settings = map.settings;
         if (settings !== undefined) {
@@ -505,14 +503,16 @@ export class MachineMapObject extends DurableObject<Env> {
             ...map,
             settings: {
               ...settings,
-              ...(settings.shared === undefined ? {} : { shared: scoped(settings.shared) }),
+              ...(settings.shared === undefined
+                ? {}
+                : { shared: currentSidebarTabValues(settings.shared) }),
               ...(settings.overrides === undefined
                 ? {}
                 : {
                     overrides: Object.fromEntries(
                       Object.entries(settings.overrides).map(([id, values]) => [
                         id,
-                        scoped(values),
+                        currentSidebarTabValues(values),
                       ]),
                     ),
                   }),

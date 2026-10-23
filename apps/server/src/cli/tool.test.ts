@@ -151,9 +151,43 @@ it.effect("a thread credential with a --base-dir of another server fails loudly"
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
 );
 
+it.effect("a thread credential with a T3CODE_HOME of another server fails loudly", () =>
+  Effect.gen(function* () {
+    const devHome = yield* homeServedAt("http://127.0.0.1:5735");
+    const toDev = yield* Effect.flip(
+      callWith({ ...liveShell, T3CODE_HOME: devHome }, Option.none()),
+    );
+    expect(toDev.message).toContain(`T3CODE_HOME ${devHome} targets http://127.0.0.1:5735`);
+    // A home of the credential's own server is fine, as in an agent shell of a dev server.
+    const ownHome = yield* homeServedAt("http://127.0.0.1:43123");
+    expect(yield* callWith({ ...liveShell, T3CODE_HOME: ownHome }, Option.none())).toEqual([
+      asThread,
+    ]);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+);
+
+it.effect("an empty credential is unset, and an endpoint that is no URL fails", () =>
+  Effect.gen(function* () {
+    const empty = yield* Effect.flip(
+      callWith(
+        { T3_ACP_MCP_ENDPOINT: "", T3_ACP_MCP_AUTHORIZATION: "" },
+        Option.some(yield* homeServedAt(undefined)),
+      ),
+    );
+    expect(empty.message).toContain("server is not running");
+    const malformed = yield* Effect.flip(
+      callWith(
+        { T3_ACP_MCP_ENDPOINT: "not a url", T3_ACP_MCP_AUTHORIZATION: "Bearer thread-a" },
+        Option.none(),
+      ),
+    );
+    expect(malformed.message).toContain("T3_ACP_MCP_ENDPOINT is not a URL");
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+);
+
 it.effect("a thread credential with a --base-dir of its own server calls as the thread", () =>
   Effect.gen(function* () {
-    // `localhost` and `127.0.0.1` name the same server.
+    // The runtime state names the configured host, the credential the bound address.
     const ownHome = yield* homeServedAt("http://localhost:43123");
     expect(yield* callWith(liveShell, Option.some(ownHome))).toEqual([asThread]);
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),

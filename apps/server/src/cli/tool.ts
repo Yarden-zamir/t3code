@@ -38,7 +38,12 @@ const toolEnvironment = Config.all({
   endpoint: Config.String(THREAD_CREDENTIAL_ENDPOINT_ENV).pipe(Config.option),
   authorization: Config.String(THREAD_CREDENTIAL_AUTHORIZATION_ENV).pipe(Config.option),
   terminalThread: Config.String(T3_TERMINAL_THREAD_ID_ENV).pipe(Config.option),
+  home: Config.String("T3CODE_HOME").pipe(Config.option),
 });
+
+/** An environment variable that is set to an empty value counts as unset. */
+const valueOf = (value: Option.Option<string>) =>
+  Option.getOrUndefined(Option.filter(value, (text) => text.length > 0));
 
 export const findMcpTool = (name: string) => {
   const tool = listMcpTools().find((entry) => entry.name === name);
@@ -103,24 +108,20 @@ const readArguments = Effect.fn("readToolArguments")(function* (flags: {
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const printJson = (value: unknown) => Console.log(encodeJson(value));
 
-/** Host names that reach the same server on this machine. */
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
-
-/** Whether two URLs reach the same server: the same port, and the same host or both loopback. */
-const sameServer = (left: string, right: string) => {
-  const host = (url: URL) => (LOOPBACK_HOSTS.has(url.hostname) ? "loopback" : url.hostname);
-  const [a, b] = [new URL(left), new URL(right)];
-  return a.port === b.port && host(a) === host(b);
-};
+/**
+ * The port of a server URL on this machine. The runtime state names the configured host and the
+ * credential names the bound address, so only the port tells two local servers apart.
+ */
+const portOf = (url: string) => (URL.canParse(url) ? new URL(url).port : undefined);
 
 /**
  * Calls one tool on the running server. An agent shell reuses its thread
  * credential (MM-1920); otherwise the CLI issues a short-lived MCP client
  * session from the local auth store and revokes it after the call.
  *
- * An explicit `--base-dir` is never ignored: with a thread credential, it must
- * name the server of that credential, so a call meant for a dev server never
- * reaches the live server as the agent's thread.
+ * An explicit home, `--base-dir` or `T3CODE_HOME`, is never ignored: with a
+ * thread credential, it must name the server of that credential, so a call
+ * meant for a dev server never reaches the live server as the agent's thread.
  */
 export const callOnServer = Effect.fn("callToolOnServer")(function* <A, R>(
   flags: { readonly baseDir: Option.Option<string> },
@@ -131,8 +132,8 @@ export const callOnServer = Effect.fn("callToolOnServer")(function* <A, R>(
   }) => Effect.Effect<A, ToolCliError, R>,
 ) {
   const environment = yield* toolEnvironment;
-  const endpoint = Option.getOrUndefined(environment.endpoint);
-  const authorization = Option.getOrUndefined(environment.authorization);
+  const endpoint = valueOf(environment.endpoint);
+  const authorization = valueOf(environment.authorization);
   if ((endpoint === undefined) !== (authorization === undefined)) {
     return yield* fail(
       `Only one of ${THREAD_CREDENTIAL_ENDPOINT_ENV} and ${THREAD_CREDENTIAL_AUTHORIZATION_ENV} is set. Set both, or unset both.`,
@@ -142,14 +143,23 @@ export const callOnServer = Effect.fn("callToolOnServer")(function* <A, R>(
     endpoint !== undefined && authorization !== undefined
       ? { endpoint, authorization, hasThreadCredential: true }
       : undefined;
-  if (credential !== undefined && Option.isNone(flags.baseDir)) return yield* run(credential);
+  if (credential !== undefined && portOf(credential.endpoint) === undefined) {
+    return yield* fail(`${THREAD_CREDENTIAL_ENDPOINT_ENV} is not a URL: ${credential.endpoint}`);
+  }
+  const home = valueOf(environment.home);
+  const explicitHome = Option.isSome(flags.baseDir)
+    ? `--base-dir ${flags.baseDir.value}`
+    : home === undefined
+      ? undefined
+      : `T3CODE_HOME ${home}`;
+  if (credential !== undefined && explicitHome === undefined) return yield* run(credential);
   const config = yield* resolveCliAuthConfig(flags, yield* GlobalFlag.LogLevel);
   const runtimeState = yield* readPersistedServerRuntimeState(config.serverRuntimeStatePath);
-  if (credential !== undefined && Option.isSome(flags.baseDir)) {
+  if (credential !== undefined) {
     const target = Option.getOrUndefined(runtimeState)?.origin;
-    if (target === undefined || !sameServer(target, credential.endpoint)) {
+    if (target === undefined || portOf(target) !== portOf(credential.endpoint)) {
       return yield* fail(
-        `--base-dir ${flags.baseDir.value} targets ${target ?? "no running T3 server"}, but this shell's thread credential targets ${new URL(credential.endpoint).origin}. Unset ${THREAD_CREDENTIAL_ENDPOINT_ENV} and ${THREAD_CREDENTIAL_AUTHORIZATION_ENV} to call a dev server.`,
+        `${explicitHome} targets ${target ?? "no running T3 server"}, but this shell's thread credential targets ${new URL(credential.endpoint).origin}. Unset ${THREAD_CREDENTIAL_ENDPOINT_ENV} and ${THREAD_CREDENTIAL_AUTHORIZATION_ENV} to call a dev server.`,
       );
     }
     return yield* run(credential);
@@ -231,7 +241,7 @@ const toolCallCommand = Command.make("call", {
   ),
 }).pipe(
   Command.withDescription(
-    "Call a tool on the running T3 Code server and print its result as JSON. The tool has its normal side effects. In an agent's shell the call acts as the agent's thread, with the limits of that thread. Elsewhere, also in a T3 Code terminal, it uses a short full-access session that ends after the call and reaches no other machine. With a thread credential, --base-dir must name the server of that credential.",
+    "Call a tool on the running T3 Code server and print its result as JSON. The tool has its normal side effects. In an agent's shell the call acts as the agent's thread, with the limits of that thread. Elsewhere, also in a T3 Code terminal, it uses a short full-access session that ends after the call and forwards no tool to another machine. With a thread credential, --base-dir and T3CODE_HOME must name the server of that credential.",
   ),
   Command.withExamples([
     { command: "t3 tool call t3_thread_list", description: "Call a tool without input." },

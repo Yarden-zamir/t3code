@@ -104,7 +104,7 @@ An arrow with agent tools makes the target machine a linked environment of the s
 - **Pause and removal:** while the owner's emergency pause is on, work on other machines waits and tries again after Resume. Removing the arrow or its agent tools fails that work with the reason (MM-1914).
 - **Manual links:** `t3 environment link` and `t3 environment unlink` refuse. Settings > Connections on web, desktop and mobile shows the arrow links read-only, with "Set arrows in the portal". A permanent arrow shows no expiry. A temporary arrow shows its end; renew it in the portal.
 - **History:** each tool call that an agent forwards to another machine shows in the portal History, with the machines, the calling thread, the tool, the outcome and the time. The arguments and the output stay out of the portal (MM-1922).
-- **Unanswered machines:** a machine that has not answered since this server started shows as an unreachable link with the reason, under the id `machine:<machine id>`. Work that names that id goes to the real link when the machine answers. An offline machine or an old T3 Code version is the usual cause; the portal shows its presence and version.
+- **Unanswered machines:** a machine that has not answered since this server started shows as an unreachable link with the reason, under the id `machine:<machine id>`. A call with that id fails with the reason, and names the real id once the machine answers. An offline machine or an old T3 Code version is the usual cause; the portal shows its presence and version.
 - **Limits:** a link reaches the other machine through its tunnel hostname.
 
 ### Commands on other machines
@@ -688,8 +688,8 @@ The fork desktop app, its notifications and the bundled web page use the Tick3d 
 - **Works on:** server.
 - In an agent's shell, the command uses the credential of the agent's thread, so the limits of that thread apply. See [MM-1920](../../apps/machine-map/SPEC.md#19-cross-machine-work). `t3 machine exec` uses the same credential; see [Commands on other machines](#commands-on-other-machines).
 - Elsewhere, also in a T3 terminal, it calls the running server of its T3 home with a short full-access session. Machine map History names that caller "CLI (local user)".
-- To call a dev server from an agent shell, unset `T3_ACP_MCP_ENDPOINT` and `T3_ACP_MCP_AUTHORIZATION`. The CLI refuses a `--base-dir` that does not match the shell's thread credential.
-- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session. That session works on this machine only: `machine_exec`, `t3 machine exec`, and tools or delegation with the `environmentId` of another machine refuse it. Use a thread, or the portal.
+- To call a dev server from an agent shell, unset `T3_ACP_MCP_ENDPOINT` and `T3_ACP_MCP_AUTHORIZATION`. The CLI refuses a `--base-dir` or `T3CODE_HOME` that does not match the shell's thread credential.
+- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session. That session runs nothing on another machine and forwards no tool there: `machine_exec`, `t3 machine exec`, and tools or delegation with the `environmentId` of another machine refuse it. Use a thread, or the portal. The `machines_*` portal tools follow the map role of the machine.
 
 ### Open workspace with a checkout
 

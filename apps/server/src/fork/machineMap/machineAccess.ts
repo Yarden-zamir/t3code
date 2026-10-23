@@ -425,7 +425,6 @@ export const arrowLinkTargets = (
     ];
   });
 
-/** MM-1921: the answer to a manual link or unlink, from the CLI, Connections or an agent. */
 /**
  * MM-1920: the label of the thread-less session that the `t3` CLI issues for the local user when
  * its shell has no thread credential. An OAuth client that names itself so is refused the same way.
@@ -439,5 +438,6 @@ export const CLI_LOCAL_USER_REFUSAL =
 export const isCliLocalUser = (scope: McpInvocationScope) =>
   scope.thread === undefined && scope.client?.label === CLI_LOCAL_USER_LABEL;
 
+/** MM-1921: the answer to a manual link or unlink, from the CLI, Connections or an agent. */
 export const MANUAL_LINK_REFUSAL =
   "Links to other machines come from the machine map. Set the arrow with agent tools in the portal.";

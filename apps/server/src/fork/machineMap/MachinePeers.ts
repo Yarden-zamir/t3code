@@ -170,8 +170,8 @@ const refusedUpgrade = (cause: unknown) =>
 
 /**
  * MM-1921: the environment id of an arrow link whose machine has not answered since this server
- * started, so its real id is not known yet. `resolve` turns it into the real link once the machine
- * answers.
+ * started, so its real id is not known yet. It only names the link in the list: `resolve` never
+ * sends work with it, so no task or outcome stores it.
  */
 const UNANSWERED_ID_PREFIX = "machine:";
 const unansweredEnvironmentId = (machine: MachineId) =>
@@ -455,8 +455,12 @@ const make = Effect.gen(function* () {
               )
             : linkError("unreachable", notAnswered(waiting));
         }
-        // The machine answers now: work that named it before it answered goes to its real link.
-        if (answered !== undefined) return yield* peerLinks.resolve(answered.environmentId);
+        if (answered !== undefined) {
+          return yield* linkError(
+            "unknown_link",
+            `${answered.target.machine.name} answers now as ${answered.environmentId}. Use that environmentId.`,
+          );
+        }
       }
       const looked = yield* findLink(local, environmentId);
       // MM-1914: the pause holds the work. Resume lets it go on.

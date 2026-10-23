@@ -846,7 +846,7 @@ it.effect("an arrow to a machine that never answered is an unreachable link with
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
-it.effect("work that named a machine before it answered goes to its real link", () =>
+it.effect("the id of a machine that did not answer yet names its real id once it answers", () =>
   Effect.scoped(
     Effect.gen(function* () {
       // B is on the map but answers at no hostname yet.
@@ -864,7 +864,11 @@ it.effect("work that named a machine before it answered goes to its real link", 
       const read = yield* env.call("thread:mac-full", "t3_project_list", {
         environmentId: `machine:${PEER}`,
       });
-      expect(read.isError, JSON.stringify(read.content)).toBe(false);
+      expect(failureOf(read)?.message).toContain(`answers now as ${vps.environmentId}`);
+      const again = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: vps.environmentId,
+      });
+      expect(again.isError, JSON.stringify(again.content)).toBe(false);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
