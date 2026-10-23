@@ -282,6 +282,12 @@ export default defineConfig({
         rules: { "t3code/no-polling-loop-in-tests": "warn" },
       },
       {
+        // Fork: adopted pingdotgg/t3code#16719 has polling loops in this test. The fork keeps
+        // adopted heads as they are, so remove this entry when its head or upstream main converts them.
+        files: ["apps/server/src/peer/RemoteDelegation.test.ts"],
+        rules: { "t3code/no-polling-loop-in-tests": "warn" },
+      },
+      {
         files: ["apps/**/src/**", "packages/**/src/**"],
         excludeFiles: DOM_TEST_ENVIRONMENT_ALLOWLIST,
         rules: { "t3code/no-dom-test-environment": "error" },
