@@ -15,6 +15,7 @@ import {
   BackgroundWorkDetailsSettingsRow,
   CheckNewerBeforeUpdateInstallSettingsRow,
   ForkAutoUpdateSettingsRow,
+  RestartReconnectWarningGraceSettingsRow,
   TerminalAppShortcutsFirstSettingsRow,
   TerminalCloseConfirmationSettingsRow,
 } from "./ForkSettingsRows";
@@ -86,6 +87,8 @@ export function BehaviorRows() {
       <SnoozeQuickOptionsSettingsRow />
 
       <BackgroundWorkDetailsSettingsRow />
+
+      <RestartReconnectWarningGraceSettingsRow />
     </>
   );
 }

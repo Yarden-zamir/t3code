@@ -475,8 +475,15 @@ export function resolveDraftPromotionNavigationTarget(input: {
   return runStarted || startupStopped || messagePersisted ? input.serverThreadRef : null;
 }
 
-export function scheduleEnvironmentReconnectWarning(showWarning: () => void): () => void {
-  const timeoutId = globalThis.setTimeout(showWarning, ENVIRONMENT_RECONNECT_WARNING_GRACE_MS);
+export function scheduleEnvironmentReconnectWarning(
+  showWarning: () => void,
+  // Fork: a longer wait right after a restart (forkReconnectWarningGrace.ts).
+  minimumDelayMs = 0,
+): () => void {
+  const timeoutId = globalThis.setTimeout(
+    showWarning,
+    Math.max(ENVIRONMENT_RECONNECT_WARNING_GRACE_MS, minimumDelayMs),
+  );
   return () => globalThis.clearTimeout(timeoutId);
 }
 
