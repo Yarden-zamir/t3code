@@ -816,6 +816,59 @@ it.effect("a removed arrow is unknown, also while another machine with an arrow 
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
+it.effect("an arrow to a machine that never answered is an unreachable link with the reason", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({
+        level: "admin",
+        agentTools: true,
+        paused: false,
+        offlinePeer: true,
+      });
+      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
+      expect(listed.structuredContent).toMatchObject({
+        links: [
+          { environmentId: vps.environmentId, status: "reachable" },
+          { environmentId: "machine:offline", label: "Offline", status: "unreachable" },
+        ],
+      });
+      const offlineLink = (
+        listed.structuredContent as { links: ReadonlyArray<{ lastError: string | null }> }
+      ).links[1];
+      expect(offlineLink?.lastError).toContain("has not answered since this server started");
+      // Work that names it waits, instead of failing as unknown.
+      const read = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: "machine:offline",
+      });
+      expect(failureOf(read)).toMatchObject({ code: "orchestration_error" });
+      expect(failureOf(read)?.message).toContain("has not answered");
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("work that named a machine before it answered goes to its real link", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      // B is on the map but answers at no hostname yet.
+      const env = yield* setup({
+        level: "admin",
+        agentTools: true,
+        paused: false,
+        vpsHostname: "t3-moved.example.com",
+      });
+      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
+      expect(listed.structuredContent).toMatchObject({
+        links: [{ environmentId: `machine:${PEER}`, status: "unreachable" }],
+      });
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-vps.example.com" }));
+      const read = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: `machine:${PEER}`,
+      });
+      expect(read.isError, JSON.stringify(read.content)).toBe(false);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
 it.effect("a new hostname of B gets its own pairing, never the old session", () =>
   Effect.scoped(
     Effect.gen(function* () {

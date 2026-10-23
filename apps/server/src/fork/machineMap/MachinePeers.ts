@@ -16,7 +16,7 @@ import {
   AuthEnvironmentBootstrapTokenType,
   AuthPairingCredentialResult,
   AuthTokenExchangeGrantType,
-  type EnvironmentId,
+  EnvironmentId,
   ExecutionEnvironmentDescriptor,
   MACHINE_EXEC_STREAM_PATH,
   type MachineExecInput,
@@ -168,6 +168,21 @@ const refusedUpgrade = (cause: unknown) =>
   Predicate.hasProperty(cause.reason.cause, "message") &&
   cause.reason.cause.message === "Unexpected server response: 401";
 
+/**
+ * MM-1921: the environment id of an arrow link whose machine has not answered since this server
+ * started, so its real id is not known yet. `resolve` turns it into the real link once the machine
+ * answers.
+ */
+const UNANSWERED_ID_PREFIX = "machine:";
+const unansweredEnvironmentId = (machine: MachineId) =>
+  EnvironmentId.make(`${UNANSWERED_ID_PREFIX}${machine}`);
+const machineOfUnanswered = (environmentId: EnvironmentId) =>
+  environmentId.startsWith(UNANSWERED_ID_PREFIX)
+    ? MachineId.make(environmentId.slice(UNANSWERED_ID_PREFIX.length))
+    : undefined;
+const notAnswered = (target: ArrowLinkTarget) =>
+  `${target.machine.name} has not answered since this server started. It may be offline, or run a T3 Code version without links; the portal shows its presence and version.`;
+
 const describeFailure = (cause: unknown): string => {
   if (HttpClientError.isHttpClientError(cause)) {
     return cause.response === undefined ? cause.reason._tag : `HTTP ${cause.response.status}`;
@@ -189,6 +204,7 @@ const make = Effect.gen(function* () {
   // The links of the last look outside a pause. A pause sets every arrow to `none` and keeps the
   // levels only in the portal, so these say which links the pause holds (MM-1914).
   let lastLinks: ReadonlyArray<ArrowLink> = [];
+  let lastUnanswered: ReadonlyArray<ArrowLinkTarget> = [];
   let lastLookPaused = false;
   const firstSeen = new Map<EnvironmentId, DateTime.Utc>();
   const outcomes = new Map<
@@ -271,17 +287,17 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * The arrow links now. `refresh` asks each machine for its environment id again. `unknown`
-   * counts the machines that did not answer and have no known environment id.
+   * The arrow links now. `refresh` asks each machine for its environment id again. `unanswered`
+   * holds the arrows to machines that did not answer and have no known environment id.
    */
   const arrowLinks = Effect.fn("MachinePeers.arrowLinks")(function* (
     local: Effect.Success<typeof onMap>,
     refresh: boolean,
   ) {
-    if (local === undefined) return { links: [], unknown: 0, paused: false };
+    if (local === undefined) return { links: [], unanswered: [], paused: false };
     if (local.desired.paused === true) {
       lastLookPaused = true;
-      return { links: lastLinks, unknown: 0, paused: true };
+      return { links: lastLinks, unanswered: lastUnanswered, paused: true };
     }
     const nowMs = yield* Clock.currentTimeMillis;
     const looked = yield* Effect.forEach(
@@ -295,15 +311,20 @@ const make = Effect.gen(function* () {
         return probe.pipe(
           Effect.map((found) => {
             const identity = Option.getOrUndefined(found) ?? cached;
-            return identity === undefined
-              ? undefined
-              : ({ ...identity, target, answered: Option.isSome(found) } satisfies ArrowLink);
+            return {
+              target,
+              link:
+                identity === undefined
+                  ? undefined
+                  : ({ ...identity, target, answered: Option.isSome(found) } satisfies ArrowLink),
+            };
           }),
         );
       },
       { concurrency: "unbounded" },
     );
-    const links = looked.filter((link) => link !== undefined);
+    const links = looked.flatMap(({ link }) => (link === undefined ? [] : [link]));
+    const unanswered = looked.flatMap(({ target, link }) => (link === undefined ? [target] : []));
     // A link that the last look did not have came back, with its restored arrow or after a resume:
     // the error of its absence is stale. Errors of a link that stayed clear on its next success.
     for (const link of links) {
@@ -315,8 +336,9 @@ const make = Effect.gen(function* () {
       }
     }
     lastLinks = links;
+    lastUnanswered = unanswered;
     lastLookPaused = false;
-    return { links, unknown: looked.length - links.length, paused: false };
+    return { links, unanswered, paused: false };
   });
 
   const toPeerLink = Effect.fn("MachinePeers.toPeerLink")(function* (link: ArrowLink) {
@@ -363,15 +385,35 @@ const make = Effect.gen(function* () {
     unlink: () => manualRefused,
     list: Effect.gen(function* () {
       const looked = yield* arrowLinks(yield* onMap, true);
-      return yield* Effect.forEach(looked.links, (link) =>
+      const paused = "The machine map is paused.";
+      const linked = yield* Effect.forEach(looked.links, (link) =>
         toPeerLink(link).pipe(
           Effect.map((peerLink): PeerLinkSummary => ({
             ...peerLink,
             status: !looked.paused && link.answered ? "reachable" : "unreachable",
-            lastError: looked.paused ? "The machine map is paused." : peerLink.lastError,
+            lastError: looked.paused ? paused : peerLink.lastError,
           })),
         ),
       );
+      // Every arrow with agent tools is a link, also to a machine that never answered.
+      const now = yield* DateTime.now;
+      const unanswered = looked.unanswered.map((target): PeerLinkSummary => {
+        const environmentId = unansweredEnvironmentId(target.machine.id);
+        const linkedAt = firstSeen.get(environmentId) ?? now;
+        firstSeen.set(environmentId, linkedAt);
+        return {
+          environmentId,
+          label: target.machine.name,
+          urls: [target.origin],
+          access: target.access,
+          linkedAt,
+          expiresAt: target.endsAtMs === null ? NO_EXPIRY : DateTime.makeUnsafe(target.endsAtMs),
+          lastReachedAt: null,
+          lastError: looked.paused ? paused : notAnswered(target),
+          status: "unreachable",
+        };
+      });
+      return [...linked, ...unanswered];
     }).pipe(Effect.withSpan("MachinePeers.listLinks")),
     get: (environmentId) =>
       onMap.pipe(
@@ -400,6 +442,22 @@ const make = Effect.gen(function* () {
           "This machine is not on the machine map, so it reaches no other machine.",
         );
       }
+      const unansweredMachine = machineOfUnanswered(environmentId);
+      if (unansweredMachine !== undefined) {
+        const fresh = yield* arrowLinks(local, true);
+        const answered = fresh.links.find((link) => link.target.machine.id === unansweredMachine);
+        const waiting = fresh.unanswered.find((target) => target.machine.id === unansweredMachine);
+        if (!fresh.paused && answered === undefined) {
+          return yield* waiting === undefined
+            ? linkError(
+                "unknown_link",
+                `No arrow with agent tools from this machine reaches ${environmentId}. Set the arrow in the portal.`,
+              )
+            : linkError("unreachable", notAnswered(waiting));
+        }
+        // The machine answers now: work that named it before it answered goes to its real link.
+        if (answered !== undefined) return yield* peerLinks.resolve(answered.environmentId);
+      }
       const looked = yield* findLink(local, environmentId);
       // MM-1914: the pause holds the work. Resume lets it go on.
       if (looked.paused) {
@@ -420,7 +478,7 @@ const make = Effect.gen(function* () {
           arrowLinkTargets(local.desired, yield* Clock.currentTimeMillis).some(
             (target) => target.machine.id === machine,
           );
-        return yield* arrowed || (machine === undefined && looked.unknown > 0)
+        return yield* arrowed || (machine === undefined && looked.unanswered.length > 0)
           ? linkError(
               "unreachable",
               `No machine with an arrow from this one answers as ${environmentId} now. A machine may be offline.`,

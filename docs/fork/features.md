@@ -104,7 +104,8 @@ An arrow with agent tools makes the target machine a linked environment of the s
 - **Pause and removal:** while the owner's emergency pause is on, work on other machines waits and tries again after Resume. Removing the arrow or its agent tools fails that work with the reason (MM-1914).
 - **Manual links:** `t3 environment link` and `t3 environment unlink` refuse. Settings > Connections on web, desktop and mobile shows the arrow links read-only, with "Set arrows in the portal". A permanent arrow shows no expiry. A temporary arrow shows its end; renew it in the portal.
 - **History:** each tool call that an agent forwards to another machine shows in the portal History, with the machines, the calling thread, the tool, the outcome and the time. The arguments and the output stay out of the portal (MM-1922).
-- **Limits:** a link reaches the other machine through its tunnel hostname. A machine that never answered since this server started is not listed.
+- **Unanswered machines:** a machine that has not answered since this server started shows as an unreachable link with the reason, under the id `machine:<machine id>`. Work that names that id goes to the real link when the machine answers. An offline machine or an old T3 Code version is the usual cause; the portal shows its presence and version.
+- **Limits:** a link reaches the other machine through its tunnel hostname.
 
 ### Commands on other machines
 
