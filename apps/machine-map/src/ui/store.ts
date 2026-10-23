@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import { MachineId, PortalEvent, type PortalSnapshot } from "@t3tools/contracts/machineMap";
 import type { ResourcesOverview } from "@t3tools/contracts/machineMapResources";
 
+import { FIXTURE_MODE } from "./devMode.ts";
 import {
   CallsEvent,
   ClientInvitesEvent,
@@ -231,6 +232,21 @@ export function usePortal(): { state: PortalState; connection: Connection } {
   const [connection, setConnection] = useState<Connection>("connecting");
 
   useEffect(() => {
+    // Fixture mode (devMode.ts): the in-memory portal of `fixture.ts` replaces the socket. A build
+    // has `FIXTURE_MODE` false, so this import never ships.
+    if (FIXTURE_MODE) {
+      let unsubscribe: (() => void) | null = null;
+      let stopped = false;
+      void import("./fixture.ts").then((fixture) => {
+        if (stopped) return;
+        unsubscribe = fixture.subscribeFixture(setState);
+        setConnection("live");
+      });
+      return () => {
+        stopped = true;
+        unsubscribe?.();
+      };
+    }
     let socket: WebSocket | null = null;
     let stopped = false;
     let retry: ReturnType<typeof setTimeout> | undefined;

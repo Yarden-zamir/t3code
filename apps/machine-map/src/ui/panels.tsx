@@ -136,18 +136,20 @@ const Missing = ({ what }: { what: string }) => (
   </div>
 );
 
-const Section = ({ children }: { children: ReactNode }) => <h3 className="section">{children}</h3>;
+export const Section = ({ children }: { children: ReactNode }) => (
+  <h3 className="section">{children}</h3>
+);
 
 /** MM-711: while paused, access only goes down, so raising controls are off. */
-const PausedNote = () => (
+export const PausedNote = () => (
   <div className="paused-note">
     <span className="sticker">paused</span> Access only goes down until you resume.
   </div>
 );
 
-type Duration = "permanent" | "hour" | "day" | "until";
+export type Duration = "permanent" | "hour" | "day" | "until";
 
-const DURATION_LABEL: Record<Duration, string> = {
+export const DURATION_LABEL: Record<Duration, string> = {
   permanent: "Always",
   hour: "1 hour",
   day: "1 day",
@@ -155,7 +157,11 @@ const DURATION_LABEL: Record<Duration, string> = {
 };
 
 /** MM-304: null for a permanent level, undefined for a time that is not in the future. */
-function durationExpiry(duration: Duration, until: string, now: number): string | null | undefined {
+export function durationExpiry(
+  duration: Duration,
+  until: string,
+  now: number,
+): string | null | undefined {
   if (duration === "permanent") return null;
   if (duration === "hour") return new Date(now + 3_600_000).toISOString();
   if (duration === "day") return new Date(now + 86_400_000).toISOString();

@@ -134,6 +134,10 @@ Merge to main. The workflow "Machine map deploy" (`.github/workflows/fork-machin
 2. Run `vp run dev` in this folder. Open `http://localhost:8787`.
 3. To test push, also put `VAPID_JWK=<JSON Web Key>` in `.dev.vars`. `localhost` counts as a secure origin, so the service worker and push work there.
 
+Fixture mode shows the page without a Worker: run `vp dev` in this folder and open `http://localhost:5173/?fixture=1`. The page loads `dev/fixture.json` and keeps every change in memory. `&demo=1` adds one proposal and one temporary arrow. The flag is behind `import.meta.env.DEV`, and the file is outside `public/`, so a build has neither.
+
+`?design=current|ribbon|board|hub` switches the Map view between the map and its redesigns (`src/ui/designs/`). The page shows a design switcher while the parameter is present.
+
 Local development skips the Access JWT: `DEV_FAKE_ACCESS=1` on a loopback hostname makes every page request the first owner email. A fake machine sends the header `X-Dev-Machine-Client-Id` with its token client id. Production never sets the variable.
 
 ## Machine protocol notes

@@ -1,0 +1,675 @@
+/* The map redesigns (src/ui/designs/design.ts): ribbon lanes, the access board and the machine hub.
+   Tokens come from style.css. */
+
+:root {
+  /* Lines need a darker green than the sticker green on the light canvas. */
+  --lane-standard: #15a53c;
+  --lane-read: #0090d0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --lane-standard: #7cff8a;
+    --lane-read: #7fd9ff;
+  }
+}
+
+/* ---------- Shared marks and editors ---------- */
+
+/* A mark says one thing that changes what the level alone says: tools, exec, temp, proposed. */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: inherit;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+.mark svg {
+  width: 12px;
+  height: 12px;
+}
+.mark.temp {
+  color: #000;
+  background: var(--warning);
+}
+.mark.wait {
+  color: #000;
+  background: var(--yellow);
+}
+.mark.proposed {
+  color: #000;
+  background: repeating-linear-gradient(-45deg, var(--yellow) 0 6px, #fff8c2 6px 12px);
+}
+/* Chips carry the level colour, so their text and marks keep the colours of the light stickers in
+   both modes: black on read and standard, white on admin. */
+.chip.lvl-read,
+.chip.lvl-standard,
+.lane-chip.lvl-read,
+.lane-chip.lvl-standard {
+  color: #000;
+}
+.chip.lvl-admin,
+.lane-chip.lvl-admin {
+  color: #fff;
+}
+:is(.chip, .lane-chip):is(.lvl-read, .lvl-standard) .mark {
+  background: rgba(255, 255, 255, 0.55);
+}
+:is(.chip, .lane-chip).lvl-admin .mark {
+  background: rgba(0, 0, 0, 0.3);
+}
+.mark.cut {
+  color: #fff;
+  background: var(--panic);
+}
+.mark .link {
+  margin-left: 4px;
+  font-size: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* A mark that is a switch: on is the accent, off is a dashed outline. */
+button.mark.toggle {
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--muted);
+  background: transparent;
+  border-style: dashed;
+}
+button.mark.toggle.on {
+  color: #fff;
+  background: var(--accent);
+  border-style: solid;
+  border-color: var(--shadow-ink);
+}
+button.mark.toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.proposal-line {
+  padding: 8px 10px;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--warning-surface) 0 10px,
+    var(--surface) 10px 20px
+  );
+  border: var(--bw) dashed var(--warning-fg);
+  border-radius: var(--radius);
+}
+.proposal-line .v {
+  display: block;
+}
+.arrow-editor {
+  gap: 12px;
+}
+.editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 18px;
+  align-items: start;
+}
+.editor-grid .toggle-row {
+  margin: 0;
+}
+.legend .swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+  vertical-align: -2px;
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+}
+
+/* The design switcher and the fixture sticker in the toolbar. */
+.design-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- Design "board" ---------- */
+
+.board-wrap {
+  display: grid;
+  gap: 16px;
+}
+.board-proposals {
+  display: grid;
+  gap: 10px;
+  padding: 14px 18px;
+  background: var(--warning-surface);
+}
+.board-card {
+  display: grid;
+  gap: 16px;
+}
+.board {
+  display: grid;
+  grid-template-columns: var(--cols);
+  gap: 6px;
+  align-items: stretch;
+}
+.board-head,
+.board-row {
+  display: contents;
+}
+.board-col,
+.board-corner {
+  padding: 6px 8px;
+  font-weight: 800;
+  text-align: center;
+  background: var(--raised);
+  border-radius: var(--radius);
+}
+.board-corner {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: left;
+}
+.board-col a {
+  color: inherit;
+}
+.board-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 6px 8px;
+}
+.board-source .link,
+.board-source a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.05rem;
+  color: inherit;
+  text-decoration: none;
+}
+.board-source .icon svg {
+  width: 20px;
+  height: 20px;
+}
+.board-cell {
+  display: flex;
+}
+.board-self {
+  border-radius: var(--radius);
+  background: repeating-linear-gradient(135deg, transparent 0 7px, var(--dots) 7px 9px);
+}
+.board-role {
+  align-items: center;
+  justify-content: center;
+}
+.board-role select {
+  width: 100%;
+}
+.board-editor {
+  grid-column: 1 / -1;
+  margin: 2px 0 10px;
+  padding: 14px 18px 18px;
+  background: var(--raised);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.board-editor h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.board-editor > .row {
+  margin-bottom: 10px;
+}
+.chip {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border: var(--bw) solid var(--border);
+  border-radius: 4px;
+  box-shadow: 2px 2px 0 0 var(--shadow-ink);
+}
+.chip.lvl-none {
+  color: var(--muted);
+  background: var(--surface);
+  border-style: dashed;
+  box-shadow: none;
+}
+.chip.cut {
+  border-color: var(--panic);
+  border-style: dashed;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--surface) 0 10px,
+    var(--error-surface) 10px 20px
+  );
+  color: var(--ink);
+}
+.chip.open {
+  outline: 3px solid var(--select);
+  outline-offset: 2px;
+}
+.chip:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 0 var(--shadow-ink);
+}
+.chip-target {
+  display: none;
+}
+.chip-level {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.chip-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip-marks:empty {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .board {
+    display: block;
+  }
+  .board-head {
+    display: none;
+  }
+  .board-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 0 12px;
+    border-top: var(--bw) solid var(--raised);
+  }
+  .board-source {
+    width: 100%;
+    padding: 0 0 4px;
+  }
+  .board-cell {
+    flex: 1 1 calc(50% - 6px);
+  }
+  .board-self {
+    display: none;
+  }
+  .board-role {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+  .board-role select {
+    width: auto;
+  }
+  .board-editor {
+    width: 100%;
+    margin: 6px 0 0;
+  }
+  .chip-target {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Design "hub" ---------- */
+
+.hub {
+  display: grid;
+  gap: 16px;
+}
+.hub-strip {
+  flex-wrap: wrap;
+}
+.hub-strip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  background: var(--none);
+}
+.dot.online {
+  background: var(--green);
+}
+.dot.offline {
+  background: var(--error);
+}
+.dot.waiting {
+  background: var(--yellow);
+}
+.dot.client {
+  background: var(--info);
+}
+.hub-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 24px;
+  align-items: center;
+  padding: 18px 22px;
+}
+.hub-head .name {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.hub-head .name .icon svg {
+  width: 30px;
+  height: 30px;
+}
+.hub-head .sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+.hub-head .tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.hub-head .tags:empty {
+  display: none;
+}
+.hub-role {
+  display: grid;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+.hub-head .actions {
+  grid-column: 1 / -1;
+}
+.hub-duration {
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 12px 18px;
+}
+.hub-duration .seg {
+  flex: 0 0 auto;
+}
+.hub-duration input {
+  flex: 0 0 auto;
+}
+.hub-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.hub-col {
+  display: grid;
+  gap: 4px;
+  padding: 14px 18px 16px;
+}
+.hub-col .section {
+  margin: 0 0 6px;
+}
+.hub-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 14px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: var(--bw) solid var(--raised);
+}
+.hub-row.cut {
+  background: repeating-linear-gradient(-45deg, transparent 0 10px, var(--error-surface) 10px 20px);
+}
+.hub-who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.hub-who .link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.05rem;
+}
+.hub-who .icon svg {
+  width: 18px;
+  height: 18px;
+}
+.hub-marks {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hub-marks:empty {
+  display: none;
+}
+.hub-row .proposal-line {
+  grid-column: 1 / -1;
+}
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stepper .sticker {
+  min-width: 92px;
+  text-align: center;
+  transform: none;
+}
+.stepper .btn {
+  min-width: 40px;
+  font-size: 1.1rem;
+}
+
+@media (max-width: 900px) {
+  .hub-cols {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .hub-head {
+    grid-template-columns: 1fr;
+  }
+  .hub-head .tags {
+    justify-content: flex-start;
+  }
+  .hub-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Design "ribbon" ---------- */
+
+.map path.lane {
+  stroke-width: 2.5;
+  stroke-linecap: butt;
+  stroke: var(--ink);
+}
+.map path.lane.lvl-read {
+  stroke: var(--lane-read);
+}
+.map path.lane.lvl-standard {
+  stroke: var(--lane-standard);
+}
+.map path.lane.lvl-admin {
+  stroke: var(--accent);
+}
+.map path.lane.lvl-none {
+  stroke: var(--muted);
+  stroke-dasharray: 2 6;
+}
+.map path.lane.tools {
+  stroke-width: 5;
+}
+.map path.lane.temp {
+  stroke-dasharray: 10 6;
+}
+.map path.lane.ghost {
+  stroke: var(--warning-fg);
+  stroke-width: 2.5;
+  stroke-dasharray: 2 6;
+  stroke-linecap: round;
+}
+.map path.lane.cut,
+.map path.lane.hot.cut {
+  stroke: var(--panic);
+  stroke-dasharray: 2 10;
+  stroke-linecap: round;
+}
+.map path.lane.client-lane {
+  stroke-width: 1.5;
+}
+.map path.lane.dim {
+  opacity: 0.15;
+}
+.map path.lane.hot {
+  stroke-width: 4;
+}
+.map path.lane.hot.tools {
+  stroke-width: 6.5;
+}
+.lane-chip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: 4px 9px 5px;
+  font: inherit;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  border: var(--bw) solid var(--border);
+  border-radius: 4px;
+  box-shadow: 2px 2px 0 0 var(--shadow-ink);
+  transition: opacity 120ms;
+}
+.lane-chip .chip-from {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.lane-chip .chip-level {
+  font-size: 0.8rem;
+}
+.lane-chip .mark {
+  font-size: 0.62rem;
+  padding: 0 5px;
+}
+.lane-chip.dim {
+  opacity: 0.2;
+}
+.lane-chip.on {
+  outline: 3px solid var(--select);
+  outline-offset: 2px;
+}
+.lane-chip.ghost {
+  color: #000;
+  background: repeating-linear-gradient(-45deg, var(--yellow) 0 6px, #fff8c2 6px 12px);
+  border-style: dashed;
+}
+.lane-chip.ghost .mark {
+  background: rgba(255, 255, 255, 0.7);
+}
+.lane-chip.cut {
+  border-color: var(--panic);
+  border-style: dashed;
+}
+.lane-chip.client {
+  border-style: dashed;
+}
+.lane-chip:hover {
+  z-index: 4;
+}
+/* Ribbon lanes draw their own heads, so the head never hides under a card. */
+.map.focused .lane-chip.dim {
+  pointer-events: none;
+}
+.lane-legend {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  z-index: 8;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  max-width: calc(100% - 24px);
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: auto;
+}
+.lane-sample::before {
+  content: "";
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 3px solid var(--ink);
+}
+.lane-sample.lvl-read::before {
+  border-color: var(--lane-read);
+}
+.lane-sample.lvl-standard::before {
+  border-color: var(--lane-standard);
+}
+.lane-sample.lvl-admin::before {
+  border-color: var(--accent);
+}
+.lane-sample.tools::before {
+  border-top-width: 6px;
+}
+.lane-sample.temp::before {
+  border-top-style: dashed;
+}
+.lane-sample.ghost::before {
+  border-top-style: dotted;
+  border-color: var(--warning-fg);
+}
+.lane-sample.client::before {
+  border-top-width: 1.5px;
+}
+/* The legend samples borrow the level class names for their colour only, not the sticker look. */
+.lane-sample.lvl-read,
+.lane-sample.lvl-standard,
+.lane-sample.lvl-admin {
+  color: inherit;
+  background: none;
+}
+@media (max-width: 760px) {
+  .lane-legend {
+    display: none;
+  }
+}

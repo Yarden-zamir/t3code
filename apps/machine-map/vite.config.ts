@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off - the dev server reads the fixture file; no Effect runtime here.
+import * as NodeFS from "node:fs";
+import * as NodeURL from "node:url";
+
 import { defineConfig, type Plugin } from "vite-plus";
 import { viteCacheDir as forkViteCacheDir } from "../../scripts/lib/fork-build-cache.cjs";
 
@@ -27,10 +31,28 @@ function serviceWorkerFiles(): Plugin {
   };
 }
 
+/**
+ * Fixture mode (`src/ui/devMode.ts`): the dev server serves `dev/fixture.json` at
+ * `/dev-fixture.json`. The file lives outside `public/`, so no build ships it.
+ */
+function devFixture(): Plugin {
+  const file = NodeURL.fileURLToPath(new URL("./dev/fixture.json", import.meta.url));
+  return {
+    name: "machine-map-dev-fixture",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use("/dev-fixture.json", (_request, response) => {
+        response.setHeader("Content-Type", "application/json");
+        response.end(NodeFS.readFileSync(file));
+      });
+    },
+  };
+}
+
 // The page bundle and the service worker. Wrangler serves `dist` with Workers Static Assets.
 export default defineConfig({
   cacheDir: forkViteCacheDir(import.meta.url)!,
-  plugins: [serviceWorkerFiles()],
+  plugins: [serviceWorkerFiles(), devFixture()],
   build: {
     outDir: "dist",
     emptyOutDir: true,

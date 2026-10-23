@@ -8,6 +8,7 @@ import {
   type PointerEvent,
 } from "react";
 import type {
+  ArrowRecord,
   ClientArrowRecord,
   ClientRecord,
   MachineId,
@@ -34,6 +35,7 @@ import {
   cutLevel,
   pairCut,
   pairShows,
+  arrowProposals,
 } from "./derive.ts";
 import {
   LEVEL_LABEL,
@@ -41,10 +43,11 @@ import {
   presenceState,
   shortTime,
   timeAgo,
+  timeUntil,
   TOWARD_TEXT,
   towardGlyph,
 } from "./format.ts";
-import { ClientIcon, ClockIcon, KindIcon } from "./icons.tsx";
+import { ClientIcon, ClockIcon, KindIcon, RobotIcon } from "./icons.tsx";
 import {
   anyInView,
   autoLayout,
@@ -68,6 +71,7 @@ import { NoteCard } from "./NoteCard.tsx";
 import { settleHeld, type Held } from "./store.ts";
 import { MachineStickers } from "./MachineStickers.tsx";
 import { CardMeters } from "./resources.tsx";
+import { lane as ribbonLane } from "./designs/ribbon.ts";
 import { RouteLink } from "./StickerLink.tsx";
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
@@ -209,7 +213,30 @@ interface EditingNote {
   readonly saved: boolean;
 }
 
-export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: boolean }) {
+/** Design "ribbon" (designs/design.ts): one-way lanes with chips instead of pair cards. */
+export type MapArrows = "pairs" | "ribbons";
+
+/** One lane of the ribbon design: a stored arrow, a cut arrow while paused, or a proposal. */
+interface MachineLane {
+  readonly key: string;
+  readonly from: MachineRecord;
+  readonly to: MachineRecord;
+  readonly arrow: ArrowRecord;
+  readonly cut: boolean;
+  /** A ghost lane: no arrow yet, only a proposal that would make one. */
+  readonly ghost: boolean;
+  readonly proposals: ReturnType<typeof arrowProposals>;
+}
+
+export function MapView({
+  map,
+  readOnly,
+  arrows = "pairs",
+}: {
+  map: MachineMapDocument;
+  readOnly: boolean;
+  arrows?: MapArrows;
+}) {
   const portal = usePortalContext();
   const { snapshot, route, now } = portal;
   const ref = useRef<HTMLDivElement>(null);
@@ -448,6 +475,61 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
   const shown = layout(null);
   const centerOf = (m: MachineRecord): Point => shown.at.get(m.id) ?? toPixels(position(m));
 
+  // Ribbon design: every arrow is its own lane. The pair cards and pair lines stay off.
+  const ribbons = arrows === "ribbons";
+  const boxOf = (m: MachineRecord): Box => shown.at.get(m.id) ?? nodeBox(m, centerOf(m));
+  const lanes: ReadonlyArray<MachineLane> = ribbons
+    ? machines.flatMap((from) =>
+        machines.flatMap((to): Array<MachineLane> => {
+          if (from.id === to.id) return [];
+          const arrow = findArrow(map, from.id, to.id);
+          const was = arrow.level === "none" ? cutLevel(portal.pause, from.id, to.id) : null;
+          const proposals = arrowProposals(snapshot, from.id, to.id);
+          const key = pairKey(from, to);
+          if (arrow.level !== "none" || arrow.agentTools || arrow.expiresAt)
+            return [{ key, from, to, arrow, cut: false, ghost: false, proposals }];
+          if (was)
+            return [
+              {
+                key,
+                from,
+                to,
+                arrow: { ...arrow, level: was },
+                cut: true,
+                ghost: false,
+                proposals,
+              },
+            ];
+          const first = proposals[0];
+          if (first)
+            return [{ key, from, to, arrow: first.arrow, cut: false, ghost: true, proposals }];
+          return [];
+        }),
+      )
+    : [];
+  const laneKeyOfClient = (line: (typeof clientLines)[number]) =>
+    `client:${line.client.id}>${line.machine.id}`;
+  /** Redraws the lanes that touch a moved card. `boxes` gives the box of each card as it is now. */
+  const paintLanes = (root: HTMLElement, boxes: (id: string) => Box | undefined) => {
+    const set = (key: string, geometry: ReturnType<typeof ribbonLane>) => {
+      root
+        .querySelector<SVGPathElement>(`path[data-lane="${CSS.escape(key)}"]`)
+        ?.setAttribute("d", geometry.d);
+      const chip = root.querySelector<HTMLElement>(`[data-lane-chip="${CSS.escape(key)}"]`);
+      if (chip) moveElement(chip, geometry.chip);
+    };
+    for (const l of lanes) {
+      const a = boxes(l.from.id) ?? boxOf(l.from);
+      const b = boxes(l.to.id) ?? boxOf(l.to);
+      set(l.key, ribbonLane(a, b));
+    }
+    for (const line of clientLines) {
+      const a = boxes(line.client.id) ?? clientBox(line.client, clientCenter(line.client));
+      const b = boxes(line.machine.id) ?? boxOf(line.machine);
+      set(laneKeyOfClient(line), ribbonLane(a, b, 0));
+    }
+  };
+
   const moveElement = (element: HTMLElement, p: Point) => {
     element.style.left = `${p.x}px`;
     element.style.top = `${p.y}px`;
@@ -475,6 +557,10 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
         if (line.client.id === subject.client.id)
           drawClientLine(root, clientLineKey(line.arrow), p, centerOf(line.machine));
       }
+      if (ribbons)
+        paintLanes(root, (id) =>
+          id === subject.client.id ? clientBox(subject.client, p) : undefined,
+        );
       return;
     }
     if (subject._tag === "connect") {
@@ -516,6 +602,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
       if (line.machine.id === id && to)
         drawClientLine(root, clientLineKey(line.arrow), clientCenter(line.client), to);
     }
+    if (ribbons) paintLanes(root, (key) => at.get(key as MachineId));
   };
 
   /** A point on the screen in pixels of the map element, inside its border. */
@@ -1341,40 +1428,107 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
       >
         <div className="map-world" ref={worldRef}>
           <svg aria-hidden>
-            {pairs.map(([a, b], i) => {
-              const pa = centerOf(a);
-              const pb = centerOf(b);
-              const spot = shown.spots[i];
-              const touches = focus === a.id || focus === b.id;
-              const empty =
-                findArrow(map, a.id, b.id).level === "none" &&
-                findArrow(map, b.id, a.id).level === "none";
-              const cut = empty && pairCut(portal.pause, a.id, b.id);
-              return (
+            {ribbons && (
+              <defs>
+                {/* The head takes the colour of its lane. */}
+                <marker
+                  id="lane-head"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="5"
+                  markerHeight="5"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
+                </marker>
+              </defs>
+            )}
+            {ribbons &&
+              lanes.map((l) => {
+                const geometry = ribbonLane(boxOf(l.from), boxOf(l.to));
+                const touches = focus === l.from.id || focus === l.to.id;
+                return (
+                  <path
+                    key={l.key}
+                    data-lane={l.key}
+                    d={geometry.d}
+                    markerEnd="url(#lane-head)"
+                    className={[
+                      "lane",
+                      `lvl-${l.arrow.level}`,
+                      l.arrow.agentTools && "tools",
+                      l.arrow.expiresAt && "temp",
+                      l.cut && "cut",
+                      l.ghost && "ghost",
+                      focus && (touches ? "hot" : "dim"),
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  />
+                );
+              })}
+            {ribbons &&
+              clientLines.map((line) => {
+                const geometry = ribbonLane(
+                  clientBox(line.client, clientCenter(line.client)),
+                  boxOf(line.machine),
+                  0,
+                );
+                return (
+                  <path
+                    key={laneKeyOfClient(line)}
+                    data-lane={laneKeyOfClient(line)}
+                    d={geometry.d}
+                    markerEnd="url(#lane-head)"
+                    className={[
+                      "lane client-lane",
+                      `lvl-${line.arrow.level}`,
+                      line.arrow.expiresAt && "temp",
+                      line.cut && "cut",
+                      focus && (focus === line.machine.id ? "hot" : "dim"),
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  />
+                );
+              })}
+            {!ribbons &&
+              pairs.map(([a, b], i) => {
+                const pa = centerOf(a);
+                const pb = centerOf(b);
+                const spot = shown.spots[i];
+                const touches = focus === a.id || focus === b.id;
+                const empty =
+                  findArrow(map, a.id, b.id).level === "none" &&
+                  findArrow(map, b.id, a.id).level === "none";
+                const cut = empty && pairCut(portal.pause, a.id, b.id);
+                return (
+                  <path
+                    key={pairKey(a, b)}
+                    data-pair={pairKey(a, b)}
+                    d={pairPath(pa, pb, offsetOf(a, b) && spot ? spot : null)}
+                    className={[empty && "empty", cut && "cut", focus && (touches ? "hot" : "dim")]
+                      .filter(Boolean)
+                      .join(" ")}
+                  />
+                );
+              })}
+            {!ribbons &&
+              clientLines.map(({ arrow, cut, machine, client }) => (
                 <path
-                  key={pairKey(a, b)}
-                  data-pair={pairKey(a, b)}
-                  d={pairPath(pa, pb, offsetOf(a, b) && spot ? spot : null)}
-                  className={[empty && "empty", cut && "cut", focus && (touches ? "hot" : "dim")]
+                  key={clientLineKey(arrow)}
+                  data-client-line={clientLineKey(arrow)}
+                  d={pairPath(clientCenter(client), centerOf(machine), null)}
+                  className={[
+                    "client-line",
+                    cut && "cut",
+                    focus && (focus === machine.id ? "hot" : "dim"),
+                  ]
                     .filter(Boolean)
                     .join(" ")}
                 />
-              );
-            })}
-            {clientLines.map(({ arrow, cut, machine, client }) => (
-              <path
-                key={clientLineKey(arrow)}
-                data-client-line={clientLineKey(arrow)}
-                d={pairPath(clientCenter(client), centerOf(machine), null)}
-                className={[
-                  "client-line",
-                  cut && "cut",
-                  focus && (focus === machine.id ? "hot" : "dim"),
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              />
-            ))}
+              ))}
             {linking !== null && <line className="live" />}
           </svg>
           {size.width > 0 &&
@@ -1397,6 +1551,98 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
               />
             ))}
           {size.width > 0 &&
+            ribbons &&
+            lanes.map((l) => {
+              const geometry = ribbonLane(boxOf(l.from), boxOf(l.to));
+              const dim = focus !== null && focus !== l.from.id && focus !== l.to.id;
+              const on =
+                selection._tag === "arrow" &&
+                selection.from === l.from.id &&
+                selection.to === l.to.id;
+              const waits = [...waitOf(l.from, l.to)].map((w) => sentence(w.text));
+              const level = l.arrow.level;
+              const first = l.proposals[0];
+              return (
+                <button
+                  key={`chip:${l.key}`}
+                  type="button"
+                  data-lane-chip={l.key}
+                  className={`lane-chip lvl-${level}${dim ? " dim" : ""}${on ? " on" : ""}${l.cut ? " cut" : ""}${l.ghost ? " ghost" : ""}`}
+                  style={{ left: geometry.chip.x, top: geometry.chip.y }}
+                  aria-label={`${usesText(l.from.name, l.to.name)}: ${l.ghost ? "proposed " : ""}${LEVEL_LABEL[level]}${l.cut ? ", cut by the pause" : ""}`}
+                  data-tip={`${usesText(l.from.name, l.to.name)}${waits.length ? `. ${waits.join(". ")}` : ""}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (l.ghost && first)
+                      portal.select({ _tag: "proposal", id: first.proposal.id });
+                    else portal.select({ _tag: "arrow", from: l.from.id, to: l.to.id });
+                  }}
+                >
+                  <span className="chip-from">{l.from.name}</span>
+                  <span className="chip-level">
+                    {l.ghost ? "proposed: " : ""}
+                    {LEVEL_LABEL[level]}
+                  </span>
+                  <span className="chip-marks">
+                    {l.cut && <span className="mark cut">cut</span>}
+                    {l.arrow.agentTools && (
+                      <span className="mark">
+                        <RobotIcon /> tools
+                      </span>
+                    )}
+                    {l.arrow.exec && <span className="mark">exec</span>}
+                    {l.arrow.expiresAt && l.arrow.revertLevel && (
+                      <span className="mark temp">
+                        <ClockIcon label="temporary" /> {timeUntil(l.arrow.expiresAt, now)}
+                      </span>
+                    )}
+                    {waits.length > 0 && <span className="mark wait">queued</span>}
+                    {!l.ghost && first && (
+                      <span className="mark proposed">
+                        proposed: {LEVEL_LABEL[first.arrow.level]}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          {size.width > 0 &&
+            ribbons &&
+            clientLines.map((line) => {
+              const geometry = ribbonLane(
+                clientBox(line.client, clientCenter(line.client)),
+                boxOf(line.machine),
+                0,
+              );
+              const dim = focus !== null && focus !== line.machine.id;
+              return (
+                <button
+                  key={`chip:${laneKeyOfClient(line)}`}
+                  type="button"
+                  data-lane-chip={laneKeyOfClient(line)}
+                  className={`lane-chip client lvl-${line.arrow.level}${dim ? " dim" : ""}${line.cut ? " cut" : ""}`}
+                  style={{ left: geometry.chip.x, top: geometry.chip.y }}
+                  aria-label={`${usesText(line.client.name, line.machine.name)}: ${LEVEL_LABEL[line.arrow.level]}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    portal.select({ _tag: "client", id: line.client.id });
+                  }}
+                >
+                  <span className="chip-from">{line.client.name}</span>
+                  <span className="chip-level">{LEVEL_LABEL[line.arrow.level]}</span>
+                  <span className="chip-marks">
+                    {line.cut && <span className="mark cut">cut</span>}
+                    {line.arrow.expiresAt && (
+                      <span className="mark temp">
+                        <ClockIcon label="temporary" /> {timeUntil(line.arrow.expiresAt, now)}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          {size.width > 0 &&
+            !ribbons &&
             pairs.map(([a, b], i) => {
               const spot = shown.spots[i] ?? { x: 0, y: 0 };
               const dim = focus !== null && focus !== a.id && focus !== b.id;
@@ -1462,21 +1708,23 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
                       </span>
                     </span>
                   </div>
-                  {/* MM-309: the level on each machine sits on the card, so no card covers it. */}
-                  <div className="tags">
-                    {clientLines
-                      .filter((line) => line.client.id === client.id)
-                      .map(({ arrow, cut, machine }) => (
-                        <span
-                          key={machine.id}
-                          className={`sticker lvl-${arrow.level}${cut ? " was" : ""}`}
-                          data-tip={`${usesText(client.name, machine.name)}: ${cut ? `cut by the pause, was ${LEVEL_LABEL[arrow.level]}` : LEVEL_LABEL[arrow.level]}${arrow.expiresAt ? `, until ${shortTime(arrow.expiresAt)}` : ""}`}
-                        >
-                          {machine.name} · {LEVEL_LABEL[arrow.level]}
-                          {arrow.expiresAt && " · temp"}
-                        </span>
-                      ))}
-                  </div>
+                  {/* MM-309: the level on each machine sits on the card, so no card covers it. Ribbon lanes carry it instead. */}
+                  {!ribbons && (
+                    <div className="tags">
+                      {clientLines
+                        .filter((line) => line.client.id === client.id)
+                        .map(({ arrow, cut, machine }) => (
+                          <span
+                            key={machine.id}
+                            className={`sticker lvl-${arrow.level}${cut ? " was" : ""}`}
+                            data-tip={`${usesText(client.name, machine.name)}: ${cut ? `cut by the pause, was ${LEVEL_LABEL[arrow.level]}` : LEVEL_LABEL[arrow.level]}${arrow.expiresAt ? `, until ${shortTime(arrow.expiresAt)}` : ""}`}
+                          >
+                            {machine.name} · {LEVEL_LABEL[arrow.level]}
+                            {arrow.expiresAt && " · temp"}
+                          </span>
+                        ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1557,6 +1805,17 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
               );
             })}
         </div>
+        {ribbons && (
+          <div className="card lane-legend" aria-label="Legend">
+            <span className="lane-sample lvl-read">Read only</span>
+            <span className="lane-sample lvl-standard">Standard</span>
+            <span className="lane-sample lvl-admin">Admin</span>
+            <span className="lane-sample tools">thick: agent tools</span>
+            <span className="lane-sample temp">dashed: temporary</span>
+            <span className="lane-sample ghost">dotted: proposed</span>
+            <span className="lane-sample client">thin: client</span>
+          </div>
+        )}
         {menu && (
           <div
             className="card map-menu"

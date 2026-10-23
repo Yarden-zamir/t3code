@@ -1,0 +1,825 @@
+{
+  "placeUnits": "pixels",
+  "map": {
+    "revision": 606,
+    "machines": [
+      {
+        "id": "mac-85c4",
+        "name": "Mac",
+        "kind": "laptop",
+        "hostname": "t3-mac.yarden-zamir.com",
+        "position": {
+          "x": -559,
+          "y": 204
+        },
+        "mapRole": "edit",
+        "createdAt": "2026-10-13T08:57:08.711Z",
+        "tokenClientId": "fixture-token-mac-85c4"
+      },
+      {
+        "id": "vps-2504",
+        "name": "VPS",
+        "kind": "server",
+        "hostname": "t3-vps.yarden-zamir.com",
+        "position": {
+          "x": 297,
+          "y": 764
+        },
+        "mapRole": "edit",
+        "createdAt": "2026-10-13T08:57:13.842Z",
+        "tokenClientId": "fixture-token-vps-2504"
+      },
+      {
+        "id": "windows-8ab1",
+        "name": "Windows",
+        "kind": "desktop",
+        "hostname": "t3-win.yarden-zamir.com",
+        "position": {
+          "x": -619,
+          "y": 899
+        },
+        "mapRole": "read",
+        "createdAt": "2026-10-13T08:57:19.100Z",
+        "tokenClientId": "fixture-token-windows-8ab1"
+      },
+      {
+        "id": "oracle-vps-7430",
+        "name": "Oracle-VPS",
+        "kind": "server",
+        "hostname": "t3-oracle-vps.yarden-zamir.com",
+        "position": {
+          "x": 416,
+          "y": 121
+        },
+        "mapRole": "read",
+        "createdAt": "2026-10-14T12:44:07.178Z",
+        "tokenClientId": "fixture-token-oracle-vps-7430"
+      }
+    ],
+    "arrows": [
+      {
+        "from": "mac-85c4",
+        "to": "windows-8ab1",
+        "level": "admin",
+        "agentTools": true,
+        "exec": false,
+        "expiresAt": null,
+        "revertLevel": null
+      },
+      {
+        "from": "vps-2504",
+        "to": "windows-8ab1",
+        "level": "read",
+        "agentTools": false,
+        "exec": false,
+        "expiresAt": null,
+        "revertLevel": null
+      },
+      {
+        "from": "windows-8ab1",
+        "to": "mac-85c4",
+        "level": "standard",
+        "agentTools": false,
+        "exec": false,
+        "expiresAt": null,
+        "revertLevel": null
+      },
+      {
+        "from": "windows-8ab1",
+        "to": "vps-2504",
+        "level": "standard",
+        "agentTools": false,
+        "exec": false,
+        "expiresAt": null,
+        "revertLevel": null
+      },
+      {
+        "from": "mac-85c4",
+        "to": "vps-2504",
+        "level": "admin",
+        "agentTools": true,
+        "exec": true,
+        "expiresAt": null,
+        "revertLevel": null
+      },
+      {
+        "from": "mac-85c4",
+        "to": "oracle-vps-7430",
+        "level": "standard",
+        "agentTools": true,
+        "exec": true,
+        "expiresAt": null,
+        "revertLevel": null
+      },
+      {
+        "from": "oracle-vps-7430",
+        "to": "mac-85c4",
+        "level": "standard",
+        "agentTools": true,
+        "exec": true,
+        "expiresAt": null,
+        "revertLevel": null
+      },
+      {
+        "from": "vps-2504",
+        "to": "mac-85c4",
+        "level": "standard",
+        "agentTools": true,
+        "exec": false,
+        "expiresAt": null,
+        "revertLevel": null
+      }
+    ],
+    "settings": {
+      "shared": {
+        "server": {
+          "agentSessionImportMaxMessages": null,
+          "agentSessionImportWindowDays": null,
+          "autoResumeLimitedThreads": null,
+          "autoSettleWaitsForBackgroundCommands": null,
+          "branchNamePrefix": null,
+          "defaultAutoPull": null,
+          "defaultTheme": null,
+          "defaultThemeSetAt": null,
+          "environmentLabelFromMachineMap": null,
+          "forkAutoUpdate": null,
+          "keybindingSync": null,
+          "mobileComposerCamera": null,
+          "mobileNewThreadProject": null,
+          "mobilePublishedThemes": null,
+          "mobileSidebarTabs": null,
+          "preferOriginRemote": null,
+          "previewLocalServerGroups": null,
+          "recoverInterruptedTurns": null,
+          "removeAgentCreditsOnMerge": null,
+          "reviewGuidesEnabled": null,
+          "sharedThemes": null,
+          "sidebarAutoSettleAfterDays": null,
+          "sidebarAutoSettleKeepPullRequests": null,
+          "sidebarTabs": null,
+          "snoozeLimitedThreads": null,
+          "threadCardLayouts": null,
+          "threadLinkChips": null,
+          "threadLinksOpenDesktopApp": null,
+          "worktreePathTemplate": null
+        },
+        "client": {
+          "appearanceContrast": null,
+          "backForwardButtons": null,
+          "backgroundWorkDetails": null,
+          "browserAutoShowFloatingPreview": null,
+          "browserDefaultAppearance": null,
+          "browserDefaultViewport": null,
+          "browserDefaultZoomFactor": null,
+          "browserLinkTarget": null,
+          "browserRecordingFrameRate": null,
+          "browserRecordingShowKeyPresses": null,
+          "browserRecordingShowMousePresses": null,
+          "chatWidth": null,
+          "checkNewerBeforeUpdateInstall": null,
+          "composerCollapseOnScroll": null,
+          "composerRichTextEnabled": null,
+          "confirmQuit": null,
+          "confirmTerminalClose": null,
+          "confirmThreadArchive": null,
+          "confirmThreadDelete": null,
+          "confirmThreadUnpin": null,
+          "contextWindowMeterEnabled": null,
+          "diffColorScheme": null,
+          "diffFilesCollapsed": null,
+          "diffIgnoreWhitespace": null,
+          "diffLayout": null,
+          "environmentIdentificationMode": null,
+          "followUpBehavior": null,
+          "fontFamilyCode": null,
+          "fontFamilyComposer": null,
+          "fontFamilySans": null,
+          "fontFamilyTerminal": null,
+          "fontSizeCode": null,
+          "fontSizeInterface": null,
+          "fontSizePrompt": null,
+          "fontSizeTerminal": null,
+          "fontSmoothing": null,
+          "forkChangelogEnabled": null,
+          "glassOpacity": null,
+          "inAppNotificationsEnabled": null,
+          "keyboardFocusLevels": null,
+          "legacySidebarEnabled": null,
+          "notificationMode": null,
+          "panelAnimationDurationMs": null,
+          "persistComposerContextStrip": null,
+          "planModeEnabled": null,
+          "proactivePanelsEnabled": null,
+          "pullRequestFilterChips": null,
+          "rememberBackForwardHistory": null,
+          "repositoryOwnerFilters": null,
+          "restartReconnectWarningGrace": null,
+          "sendShortcut": null,
+          "showSkillsInSlashMenu": null,
+          "sidebarProjectGroupingMode": null,
+          "sidebarProjectSortOrder": null,
+          "sidebarTabsEnabled": null,
+          "sidebarThreadPreviewCount": null,
+          "sidebarThreadSortOrder": null,
+          "sidebarWorkingShelfEnabled": null,
+          "terminalAppShortcutsFirst": null,
+          "timestampFormat": null,
+          "wordWrap": null
+        }
+      },
+      "overrides": {}
+    },
+    "presets": [
+      {
+        "name": "g",
+        "arrows": [
+          {
+            "from": "mac-85c4",
+            "to": "vps-2504",
+            "level": "admin",
+            "agentTools": false,
+            "exec": false,
+            "expiresAt": null,
+            "revertLevel": null
+          },
+          {
+            "from": "windows-8ab1",
+            "to": "mac-85c4",
+            "level": "standard",
+            "agentTools": false,
+            "exec": false,
+            "expiresAt": null,
+            "revertLevel": null
+          },
+          {
+            "from": "windows-8ab1",
+            "to": "vps-2504",
+            "level": "standard",
+            "agentTools": false,
+            "exec": false,
+            "expiresAt": null,
+            "revertLevel": null
+          },
+          {
+            "from": "vps-2504",
+            "to": "mac-85c4",
+            "level": "read",
+            "agentTools": false,
+            "exec": false,
+            "expiresAt": null,
+            "revertLevel": null
+          },
+          {
+            "from": "mac-85c4",
+            "to": "oracle-vps-7430",
+            "level": "admin",
+            "agentTools": false,
+            "exec": false,
+            "expiresAt": null,
+            "revertLevel": null
+          },
+          {
+            "from": "vps-2504",
+            "to": "windows-8ab1",
+            "level": "read",
+            "agentTools": false,
+            "exec": false,
+            "expiresAt": null,
+            "revertLevel": null
+          },
+          {
+            "from": "vps-2504",
+            "to": "oracle-vps-7430",
+            "level": "read",
+            "agentTools": false,
+            "exec": false,
+            "expiresAt": null,
+            "revertLevel": null
+          },
+          {
+            "from": "windows-8ab1",
+            "to": "oracle-vps-7430",
+            "level": "admin",
+            "agentTools": false,
+            "exec": false,
+            "expiresAt": null,
+            "revertLevel": null
+          },
+          {
+            "from": "mac-85c4",
+            "to": "windows-8ab1",
+            "level": "admin",
+            "agentTools": true,
+            "exec": false,
+            "expiresAt": null,
+            "revertLevel": null
+          }
+        ],
+        "createdAt": "2026-10-16T18:29:52.450Z"
+      }
+    ],
+    "pairPlacements": [
+      {
+        "a": "oracle-vps-7430",
+        "b": "vps-2504",
+        "along": 0.5224,
+        "aside": -9.4755
+      },
+      {
+        "a": "mac-85c4",
+        "b": "windows-8ab1",
+        "along": 0.5255,
+        "aside": 20.0362
+      },
+      {
+        "a": "mac-85c4",
+        "b": "oracle-vps-7430",
+        "along": 0.5161,
+        "aside": 67.0707
+      },
+      {
+        "a": "mac-85c4",
+        "b": "vps-2504",
+        "along": 0.6087,
+        "aside": -92.5598
+      }
+    ],
+    "notes": [
+      {
+        "id": "ae4e5bc6-1628-491f-9603-cf63edb252ff",
+        "text": "helllo",
+        "color": "yellow",
+        "position": {
+          "x": 1658,
+          "y": 88
+        }
+      }
+    ],
+    "clients": [
+      {
+        "id": "client-phone-9596",
+        "name": "Phone",
+        "email": null,
+        "keys": [],
+        "position": {
+          "x": -864,
+          "y": 589
+        },
+        "createdAt": "2026-10-22T09:47:15.617Z",
+        "serviceToken": {
+          "clientId": "fixture-app-token-client-phone-9596"
+        }
+      }
+    ],
+    "clientArrows": [
+      {
+        "client": "client-phone-9596",
+        "to": "mac-85c4",
+        "level": "admin",
+        "expiresAt": null,
+        "revertLevel": null
+      },
+      {
+        "client": "client-phone-9596",
+        "to": "vps-2504",
+        "level": "standard",
+        "expiresAt": null,
+        "revertLevel": null
+      },
+      {
+        "client": "client-phone-9596",
+        "to": "windows-8ab1",
+        "level": "standard",
+        "expiresAt": null,
+        "revertLevel": null
+      },
+      {
+        "client": "client-phone-9596",
+        "to": "oracle-vps-7430",
+        "level": "standard",
+        "expiresAt": null,
+        "revertLevel": null
+      }
+    ]
+  },
+  "presence": {
+    "mac-85c4": {
+      "online": true,
+      "lastSeenAt": "2026-10-23T17:14:40.243Z",
+      "appliedRevision": 606,
+      "status": {
+        "t3Version": "0.1.3-nightly.20261023.2420000",
+        "build": "release",
+        "hostname": "t3-mac.yarden-zamir.com",
+        "uptimeSeconds": 2303,
+        "runningTurns": 4,
+        "waitingThreads": 4,
+        "scheduledTasks": 0,
+        "updateWaiting": null,
+        "cpuPercent": 100,
+        "memoryPercent": 68.1,
+        "commands": [
+          "restartServer",
+          "installUpdate",
+          "stopAllAgents",
+          "pauseScheduledTasks",
+          "resumeScheduledTasks",
+          "reloadWindows",
+          "startThread",
+          "revokeClient",
+          "collectDiagnostics",
+          "testArrow"
+        ],
+        "clients": [
+          {
+            "sessionId": "mac-85c4-session-0",
+            "label": "T3 Code Desktop",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": null,
+            "browser": null,
+            "connected": true,
+            "lastSeenAt": "2026-10-23T16:36:28.369Z"
+          },
+          {
+            "sessionId": "mac-85c4-session-1",
+            "label": "client Phone",
+            "subject": "client:fixture",
+            "deviceType": "mobile",
+            "os": "Android",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-23T17:00:03.073Z"
+          },
+          {
+            "sessionId": "mac-85c4-session-2",
+            "label": null,
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-12T08:50:39.815Z"
+          },
+          {
+            "sessionId": "mac-85c4-session-3",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-19T07:36:19.042Z"
+          },
+          {
+            "sessionId": "mac-85c4-session-4",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-17T11:10:59.965Z"
+          },
+          {
+            "sessionId": "mac-85c4-session-5",
+            "label": "Windows PC",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "Windows",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-21T18:23:53.656Z"
+          },
+          {
+            "sessionId": "mac-85c4-session-6",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "mobile",
+            "os": "Android",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-20T15:03:54.230Z"
+          },
+          {
+            "sessionId": "mac-85c4-session-7",
+            "label": "phone",
+            "subject": "owner",
+            "deviceType": "mobile",
+            "os": "Android",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-11T06:29:42.738Z"
+          },
+          {
+            "sessionId": "mac-85c4-session-8",
+            "label": "Claude Code (t3)",
+            "subject": "agent",
+            "deviceType": "bot",
+            "os": null,
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": null
+          }
+        ]
+      }
+    },
+    "vps-2504": {
+      "online": true,
+      "lastSeenAt": "2026-10-23T17:14:00.234Z",
+      "appliedRevision": 606,
+      "status": {
+        "t3Version": "0.1.3-nightly.20261023.2420000",
+        "build": "release",
+        "hostname": "t3-vps.yarden-zamir.com",
+        "uptimeSeconds": 2259,
+        "runningTurns": 0,
+        "waitingThreads": 0,
+        "scheduledTasks": 0,
+        "updateWaiting": null,
+        "cpuPercent": 2.5,
+        "memoryPercent": 22.7,
+        "commands": [
+          "restartServer",
+          "installUpdate",
+          "stopAllAgents",
+          "pauseScheduledTasks",
+          "resumeScheduledTasks",
+          "reloadWindows",
+          "startThread",
+          "revokeClient",
+          "collectDiagnostics",
+          "testArrow"
+        ],
+        "clients": [
+          {
+            "sessionId": "vps-2504-session-0",
+            "label": "machine Mac",
+            "subject": "agent",
+            "deviceType": "bot",
+            "os": null,
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": null
+          },
+          {
+            "sessionId": "vps-2504-session-1",
+            "label": "mac-desktop",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": true,
+            "lastSeenAt": "2026-10-23T16:36:43.382Z"
+          },
+          {
+            "sessionId": "vps-2504-session-2",
+            "label": "client Phone",
+            "subject": "client:fixture",
+            "deviceType": "mobile",
+            "os": "Android",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-23T17:00:00.378Z"
+          },
+          {
+            "sessionId": "vps-2504-session-3",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-19T07:46:31.716Z"
+          },
+          {
+            "sessionId": "vps-2504-session-4",
+            "label": "Windows PC",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "Windows",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-21T17:16:47.635Z"
+          },
+          {
+            "sessionId": "vps-2504-session-5",
+            "label": "Claude Code (t3-vps)",
+            "subject": "agent",
+            "deviceType": "bot",
+            "os": null,
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": null
+          },
+          {
+            "sessionId": "vps-2504-session-6",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-17T11:11:48.573Z"
+          },
+          {
+            "sessionId": "vps-2504-session-7",
+            "label": "phone",
+            "subject": "owner",
+            "deviceType": "mobile",
+            "os": "Android",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-23T05:53:36.944Z"
+          },
+          {
+            "sessionId": "vps-2504-session-8",
+            "label": "phone-from-mac",
+            "subject": "owner",
+            "deviceType": "mobile",
+            "os": "Android",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-11T06:32:58.441Z"
+          }
+        ]
+      }
+    },
+    "windows-8ab1": {
+      "online": false,
+      "lastSeenAt": "2026-10-21T20:26:38.904Z",
+      "appliedRevision": 606,
+      "status": {
+        "t3Version": "0.1.2-nightly.20261021.1940000",
+        "build": "release",
+        "hostname": "t3-win.yarden-zamir.com",
+        "uptimeSeconds": 14606,
+        "runningTurns": 0,
+        "waitingThreads": 0,
+        "scheduledTasks": 0,
+        "updateWaiting": null,
+        "cpuPercent": 3.9,
+        "memoryPercent": 50.4,
+        "commands": [
+          "restartServer",
+          "installUpdate",
+          "stopAllAgents",
+          "pauseScheduledTasks",
+          "resumeScheduledTasks",
+          "reloadWindows",
+          "startThread",
+          "revokeClient",
+          "collectDiagnostics",
+          "testArrow"
+        ],
+        "clients": [
+          {
+            "sessionId": "windows-8ab1-session-0",
+            "label": "T3 Code Desktop",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": null,
+            "browser": null,
+            "connected": true,
+            "lastSeenAt": "2026-10-21T16:05:02.817Z"
+          },
+          {
+            "sessionId": "windows-8ab1-session-1",
+            "label": "client oneplus12",
+            "subject": "client:fixture",
+            "deviceType": "mobile",
+            "os": "Android",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-21T16:38:03.391Z"
+          },
+          {
+            "sessionId": "windows-8ab1-session-2",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-17T09:44:59.822Z"
+          },
+          {
+            "sessionId": "windows-8ab1-session-3",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-16T08:06:57.437Z"
+          },
+          {
+            "sessionId": "windows-8ab1-session-4",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "mobile",
+            "os": "Android",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-18T06:31:32.119Z"
+          },
+          {
+            "sessionId": "windows-8ab1-session-5",
+            "label": "cloudflare-access 1fb912c69d2381a4400703cea071dfcd.access",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-21T17:08:45.297Z"
+          }
+        ]
+      }
+    },
+    "oracle-vps-7430": {
+      "online": true,
+      "lastSeenAt": "2026-10-23T17:14:33.040Z",
+      "appliedRevision": 606,
+      "status": {
+        "t3Version": "0.1.3-nightly.20261023.2420000",
+        "build": "release",
+        "hostname": "t3-oracle-vps.yarden-zamir.com",
+        "uptimeSeconds": 2341,
+        "runningTurns": 0,
+        "waitingThreads": 0,
+        "scheduledTasks": 0,
+        "updateWaiting": null,
+        "cpuPercent": 0,
+        "memoryPercent": 5.1,
+        "commands": [
+          "restartServer",
+          "installUpdate",
+          "stopAllAgents",
+          "pauseScheduledTasks",
+          "resumeScheduledTasks",
+          "reloadWindows",
+          "startThread",
+          "revokeClient",
+          "collectDiagnostics",
+          "testArrow"
+        ],
+        "clients": [
+          {
+            "sessionId": "oracle-vps-7430-session-0",
+            "label": "machine Mac",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": true,
+            "lastSeenAt": "2026-10-23T16:36:29.682Z"
+          },
+          {
+            "sessionId": "oracle-vps-7430-session-1",
+            "label": "client Phone",
+            "subject": "client:fixture",
+            "deviceType": "mobile",
+            "os": "Android",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-23T17:00:00.187Z"
+          },
+          {
+            "sessionId": "oracle-vps-7430-session-2",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-19T07:29:14.411Z"
+          },
+          {
+            "sessionId": "oracle-vps-7430-session-3",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "mobile",
+            "os": "Android",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-23T05:53:39.676Z"
+          },
+          {
+            "sessionId": "oracle-vps-7430-session-4",
+            "label": "cloudflare-access dev@yarden-zamir.com",
+            "subject": "owner",
+            "deviceType": "desktop",
+            "os": "macOS",
+            "browser": null,
+            "connected": false,
+            "lastSeenAt": "2026-10-17T10:09:25.467Z"
+          }
+        ]
+      }
+    }
+  },
+  "reportedSettings": {},
+  "commands": [],
+  "history": [],
+  "proposals": []
+}

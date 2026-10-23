@@ -1,4 +1,5 @@
 import type { ApiError } from "../api.ts";
+import { FIXTURE_MODE } from "./devMode.ts";
 
 const isApiError = (value: unknown): value is ApiError =>
   typeof value === "object" &&
@@ -28,6 +29,9 @@ export async function callApi<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
+  // Fixture mode (devMode.ts) answers in memory and never reaches a portal.
+  if (FIXTURE_MODE)
+    return (await import("./fixture.ts")).fixtureApi(method, path, body) as Promise<T>;
   let response: Response;
   try {
     response = await fetch(path, {

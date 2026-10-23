@@ -21,6 +21,17 @@ import {
   type SubmitOutcome,
 } from "./context.ts";
 import { machineQueue } from "./derive.ts";
+import { FIXTURE_MODE } from "./devMode.ts";
+import { AccessBoard } from "./designs/AccessBoard.tsx";
+import {
+  DESIGN_LABEL,
+  DESIGNS,
+  designHref,
+  hasDesignParam,
+  readDesign,
+  type Design,
+} from "./designs/design.ts";
+import { FocusHub } from "./designs/FocusHub.tsx";
 import { DialogHost, Palette } from "./dialogs.tsx";
 import { EmergencyButton, PausedBanner } from "./emergency.tsx";
 import { COMMAND_LABEL, DANGEROUS_COMMANDS, machineName } from "./format.ts";
@@ -94,6 +105,10 @@ const isTextField = (target: EventTarget | null) =>
 
 const SHORTCUT = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘K" : "Ctrl K";
 
+/** The redesign of the Map view (designs/design.ts). The search string only changes with a load. */
+const DESIGN: Design = readDesign(location.search);
+const SHOW_DESIGN_SWITCH = hasDesignParam(location.search) || FIXTURE_MODE;
+
 const CONNECTION_STICKER: Record<Connection, string> = {
   live: "ok",
   connecting: "wait",
@@ -150,6 +165,11 @@ function Brand({ connection, revision }: { connection: Connection; revision: num
       <span className="live">
         <span className={`sticker ${CONNECTION_STICKER[connection]}`}>{connection}</span>
         {revision !== null && <span className="mono muted">rev {revision}</span>}
+        {FIXTURE_MODE && (
+          <span className="sticker wait" data-tip="Dev fixture: changes stay in this page">
+            fixture mode
+          </span>
+        )}
       </span>
     </div>
   );
@@ -446,7 +466,11 @@ export function App() {
   const view = (() => {
     switch (route.view) {
       case "map":
-        return <MapView map={map} readOnly={false} />;
+        if (DESIGN === "board") return <AccessBoard />;
+        if (DESIGN === "hub") return <FocusHub />;
+        return (
+          <MapView map={map} readOnly={false} arrows={DESIGN === "ribbon" ? "ribbons" : "pairs"} />
+        );
       case "table":
         return <TableView />;
       case "health":
@@ -561,6 +585,25 @@ export function App() {
             </button>
           </span>
           <span className="spacer" />
+          {SHOW_DESIGN_SWITCH && (
+            <label className="design-switch small">
+              Design
+              <select
+                aria-label="Map design"
+                value={DESIGN}
+                onChange={(e) => {
+                  const design = DESIGNS.find((d) => d === e.target.value);
+                  if (design) location.href = designHref(design);
+                }}
+              >
+                {DESIGNS.map((d) => (
+                  <option key={d} value={d}>
+                    {DESIGN_LABEL[d]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button type="button" className="btn" onClick={() => setPalette(true)}>
             Search <kbd>{SHORTCUT}</kbd>
           </button>

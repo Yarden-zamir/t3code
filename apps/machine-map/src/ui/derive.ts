@@ -4,6 +4,7 @@
  */
 import {
   isMachineLocalSetting,
+  type ArrowRecord,
   type MachineClientSession,
   type MachineCommand,
   type MachineId,
@@ -11,6 +12,7 @@ import {
   type MachineMapDocument,
   type MachineRecord,
   type MapChange,
+  type MapProposal,
   type MapRevision,
   type PortalSnapshot,
   type SettingScope,
@@ -26,6 +28,8 @@ import {
   findMachine,
   findNote,
   hasJoined,
+  LEVELS,
+  levelRank,
   settingKeys,
 } from "../rules/map.ts";
 import { pauseChanges } from "../rules/presets.ts";
@@ -341,4 +345,24 @@ export function groupClientSessions(
     shown: ordered.filter((group) => !isOld(group)),
     folded: ordered.filter(isOld),
   };
+}
+
+/** MM-804: the proposals that wait with a change of the arrow from `from` to `to`. */
+export function arrowProposals(
+  snapshot: PortalSnapshot,
+  from: MachineId,
+  to: MachineId,
+): ReadonlyArray<{ readonly proposal: MapProposal; readonly arrow: ArrowRecord }> {
+  return snapshot.proposals.flatMap((proposal) =>
+    proposal.changes.flatMap((change) =>
+      change._tag === "setArrow" && change.arrow.from === from && change.arrow.to === to
+        ? [{ proposal, arrow: change.arrow }]
+        : [],
+    ),
+  );
+}
+
+/** The level one step up or down, or null at the end of the scale (MM-302). */
+export function stepLevel(level: MachineLevel, step: 1 | -1): MachineLevel | null {
+  return LEVELS[levelRank(level) + step] ?? null;
 }
