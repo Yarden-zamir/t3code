@@ -12,6 +12,7 @@ import {
   type ServerProvider,
   TERMINAL_THREAD_INSTANCE_ID,
   TERMINAL_THREAD_MODEL_SELECTION,
+  terminalThreadTitle,
 } from "@t3tools/contracts";
 import { resolveProjectScripts, setupProjectScript } from "@t3tools/shared/projectScripts";
 import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
@@ -75,7 +76,6 @@ const LONG_RUNNING_COMMAND_MS = 1_000;
 const THREAD_SHELL_WAIT_MS = 5_000;
 // A draft that unmounts and mounts again at once (a remount, a StrictMode probe) stays as it is.
 const LEAVE_CHECK_DELAY_MS = 500;
-const TITLE_MAX_CHARS = 80;
 
 // The new screen paints its terminal within a few frames. Limit: a slower surface shows the end of
 // the animation without text; revisit if that is visible in practice.
@@ -129,7 +129,13 @@ export function ForkTerminalModeToggle(props: {
   readonly onToggle: () => void;
 }) {
   return (
-    <div role="group" aria-label="Agent or terminal" className="flex shrink-0 items-center">
+    <div
+      role="group"
+      aria-label="Agent or terminal"
+      // The footer counts it in its width (`restingComposerControlsMeasurement.ts`).
+      data-fork-leading-control="true"
+      className="flex shrink-0 items-center"
+    >
       <ComposerControl
         size="xs"
         aria-pressed={!props.active}
@@ -421,25 +427,32 @@ export function ForkDraftTerminalComposer(props: {
   const navigate = useNavigate();
   const createThread = useOrchestrationCommand(threadEnvironment.create);
   const openTerminal = useAtomCommand(terminalEnvironment.open);
+  // A draft that has no shell yet has nothing to clear.
+  const clearTerminal = useAtomCommand(terminalEnvironment.clear, { reportFailure: false });
   const launch = terminalThreadLaunch({ workspaceRoot: props.workspaceRoot, worktreePath });
 
   // Attaching to a running shell never restarts it, so a new shell or folder restarts it here.
-  // A draft that waits for its new worktree opens no shell.
+  // A draft that waits for its new worktree opens no shell. The output of the earlier shell is
+  // only its prompt, because a command makes the thread. So the draft clears it, and the thread
+  // does not get it with a "new shell" line.
   const launchKey =
     workspace.kind === "folder" ? JSON.stringify([launch.cwd, launch.worktreePath, shell]) : null;
   const mountedLaunchKey = useRef(launchKey);
   useEffect(() => {
     if (launchKey === null || mountedLaunchKey.current === launchKey) return;
     mountedLaunchKey.current = launchKey;
-    void openTerminal({
-      environmentId,
-      input: terminalThreadOpenInput({
-        threadId: draft.threadId,
-        workspaceRoot: props.workspaceRoot,
-        worktreePath,
-        shell,
+    const target = { threadId: draft.threadId, terminalId: DEFAULT_TERMINAL_ID };
+    void clearTerminal({ environmentId, input: target }).then(() =>
+      openTerminal({
+        environmentId,
+        input: terminalThreadOpenInput({
+          threadId: draft.threadId,
+          workspaceRoot: props.workspaceRoot,
+          worktreePath,
+          shell,
+        }),
       }),
-    });
+    );
   });
 
   const summary = useKnownTerminalSessions({ environmentId, threadId: draft.threadId })?.find(
@@ -464,13 +477,12 @@ export function ForkDraftTerminalComposer(props: {
     // A program of an earlier shell can still report after a switch to New worktree.
     if (promotion.current !== "idle" || workspace.kind !== "folder") return;
     promotion.current = "promoting";
-    const command = summary?.command?.trim();
     const created = await createThread({
       environmentId,
       input: {
         threadId: draft.threadId,
         projectId: draft.projectId,
-        title: command ? command.slice(0, TITLE_MAX_CHARS) : "Terminal",
+        title: terminalThreadTitle({ command: summary?.command, shell }),
         modelSelection: {
           instanceId: TERMINAL_THREAD_INSTANCE_ID,
           model: shell ?? TERMINAL_THREAD_MODEL_SELECTION.model,
@@ -635,7 +647,9 @@ export function ForkDraftTerminalComposer(props: {
               <TooltipPopup>The shell runs in {launch.cwd}</TooltipPopup>
             </Tooltip>
             <span className="ms-auto truncate text-muted-foreground/70 text-xs">
-              {shellEnded ? "Start a new shell to continue" : "Run a command to start the thread"}
+              {shellEnded
+                ? "Start a new shell, or pick another one"
+                : "Run a command to start the thread"}
             </span>
             <ComposerControl
               aria-label="Open as a thread"

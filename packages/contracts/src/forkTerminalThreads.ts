@@ -83,6 +83,26 @@ export const TerminalCustomShells = Schema.Array(TerminalCustomShell).check(
 /** `TerminalSummary.command` keeps at most this many characters of a command line. */
 export const TERMINAL_COMMAND_MAX_LENGTH = 200;
 
+const TERMINAL_THREAD_TITLE_MAX_LENGTH = 80;
+
+/**
+ * The title of a new terminal thread: its command line, else the program that runs, else its
+ * shell. A shell without the hook (a custom shell, a drawer terminal) reports no command line.
+ * Typed keys are no command line either, because of line editing, completion and history.
+ */
+export function terminalThreadTitle(source: {
+  readonly command: string | undefined;
+  /** The program that runs in the shell, when the server saw one. */
+  readonly program?: string | undefined;
+  /** The shell slug, undefined for the default shell. */
+  readonly shell: string | undefined;
+}): string {
+  const title = [source.command, source.program, source.shell]
+    .map((value) => value?.trim())
+    .find((value) => value !== undefined && value.length > 0);
+  return (title ?? "Terminal").slice(0, TERMINAL_THREAD_TITLE_MAX_LENGTH);
+}
+
 /** The client opens the main terminal of a terminal thread with this variable set to "1". */
 export const TERMINAL_THREAD_ENV = "T3CODE_TERMINAL_THREAD";
 
@@ -114,6 +134,11 @@ export const TerminalAttention = Schema.Struct({
   at: Schema.String,
   /** The exit code of the program that ended. Only `finished` carries it. */
   exitCode: Schema.optionalKey(Schema.NullOr(Schema.Int)),
+  /**
+   * The last bell before this program end. Only `finished` carries it, so a bell that the user
+   * did not see yet still shows after the program that rang it ends.
+   */
+  bellAt: Schema.optionalKey(Schema.String),
 });
 export type TerminalAttention = typeof TerminalAttention.Type;
 

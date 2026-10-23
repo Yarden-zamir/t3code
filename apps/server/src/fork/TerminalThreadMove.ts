@@ -16,7 +16,7 @@ import {
   isTerminalThread,
   TERMINAL_THREAD_INSTANCE_ID,
   TERMINAL_THREAD_MODEL_SELECTION,
-  type TerminalSummary,
+  terminalThreadTitle,
 } from "@t3tools/contracts";
 import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import * as Context from "effect/Context";
@@ -28,15 +28,6 @@ import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
-
-// The title limit of a draft that becomes a thread (`ForkDraftTerminalComposer`).
-const TITLE_MAX_CHARS = 80;
-
-/** The last command line, else the program that runs, else a plain name. */
-function movedTerminalTitle(summary: TerminalSummary): string {
-  const command = summary.command?.trim() || (summary.hasRunningSubprocess ? summary.label : "");
-  return command.length > 0 ? command.slice(0, TITLE_MAX_CHARS) : "Terminal";
-}
 
 export class TerminalThreadMove extends Context.Service<
   TerminalThreadMove,
@@ -92,7 +83,14 @@ export const layer = Layer.effect(
                 commandId: CommandId.make(`fork-terminal-move:${input.newThreadId}`),
                 threadId: input.newThreadId,
                 projectId: source.projectId,
-                title: movedTerminalTitle(summary),
+                // Limit: a drawer shell reports no command line, and the process poll names its
+                // program about once per second. A move in that second gets the shell's name.
+                // Revisit if users move terminals right after they start a program.
+                title: terminalThreadTitle({
+                  command: summary.command,
+                  program: summary.hasRunningSubprocess ? summary.label : undefined,
+                  shell: shell ?? undefined,
+                }),
                 modelSelection: {
                   instanceId: TERMINAL_THREAD_INSTANCE_ID,
                   model: shell ?? TERMINAL_THREAD_MODEL_SELECTION.model,
