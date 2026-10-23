@@ -24,28 +24,36 @@ A terminal thread is a thread whose screen is a terminal. Use it for an editor, 
 CLI agent or a dev server that you want next to your other threads.
 
 Turn on Settings > Fork > Terminal threads on the server. Then start one like a normal
-thread: the terminal button next to New thread in the sidebar, `mod+alt+t`
+thread: the terminal button next to New thread in the sidebar (not in the legacy sidebar), `mod+alt+t`
 (`chat.newTerminal`), or New terminal thread in the command palette. These follow the
 same rules as the New thread button, including the project chooser and Shift. The command
 `chat.newTerminalLocal` (`mod+alt+shift+n`) starts in the focused project at once. The new
 terminal takes focus and its shell starts while the thread opens.
 
 The screen is the header of a normal thread above the terminal. `mod+j` opens the drawer
-for more terminals of the thread.
+for more terminals of the thread. On Linux and Windows, Ctrl+W, Ctrl+D, Ctrl+N and Ctrl+J
+in the main terminal go to the shell, so open the drawer from the header there.
 
 ## Messages
 
 A message to a terminal thread, from a scheduled task, an agent or the MCP tools, is typed
-into its terminal, followed by Enter. The terminal shows exactly what the message said.
+into its terminal. The terminal shows exactly what the message said.
 
-- At a prompt, the run ends with the exit code and the output of the command. The message
-  runs in the shell itself, so `cd` and `export` stay for the next message.
+- At a prompt, the message is pasted as one command line, then Enter. The run ends with the
+  exit code of its last command and the output of all its commands. The message runs in the
+  shell itself, so `cd` and `export` stay for the next message.
+- A message that is not a complete command, for example one with an open quote, fails, and
+  Ctrl+C cancels it in the shell.
+- A run ends after 10 minutes. If the command still runs, the reply says so, and the command
+  continues in the terminal.
 - While a command runs, a new message is typed into that command, for example to answer a
   prompt.
 - The reply needs the shell integration of the thread. It works with bash 4.4 or newer and
-  zsh. With another shell the message is only typed, and the reply says that no result is
-  captured.
-- A scheduled task with a webhook cannot use a terminal thread.
+  zsh. With another shell, or after `exec` replaced the shell, the message is only typed,
+  and the reply says that no result is captured.
+- A message outside full access mode fails.
+- A scheduled task with a webhook never types into a terminal thread. Its run fails, also
+  when the task or the project default model points to a terminal thread.
 
 ## Sidebar
 
@@ -58,11 +66,12 @@ The sidebar shows the state of a terminal thread until you visit it:
 ## Shell exit
 
 When the shell of a terminal thread exits or is killed, the session closes. The screen
-offers Start a new session, and a message to the thread also starts one. A server restart
-ends the programs in the terminal.
+offers Start a new session, and a message to the thread also starts one. The new session
+shows the output of the shell that ended above its prompt. Archiving the thread deletes that
+output. A server restart ends the programs in the terminal.
 
 ## Zoom and keys
 
-`mod+=`, `mod+-` and `mod+0` change the font size of every terminal, within the limits in
-Settings > Fork. Terminal key mappings (Settings > Fork) send fixed bytes for a key, for
+On macOS, Cmd+=, Cmd+- and Cmd+0 change the font size of every terminal, within the limits
+in Settings > Fork. Linux and Windows have no zoom keys, because Ctrl+- is undo in shells. Terminal key mappings (Settings > Fork) send fixed bytes for a key, for
 example Cmd+Z as the Kitty sequence that a shell binds.
