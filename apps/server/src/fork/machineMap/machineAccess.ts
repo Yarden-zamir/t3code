@@ -31,7 +31,7 @@ export interface MachineGrant {
  * The level of an arrow at `nowMs`. An arrow past its expiry has its revert level, so a machine
  * that missed the expiry revision of the portal (MM-304) still enforces it.
  */
-export const effectiveLevel = (
+const effectiveLevel = (
   arrow: Pick<ArrowRecord, "level" | "expiresAt" | "revertLevel">,
   nowMs: number,
 ): MachineLevel =>
@@ -183,7 +183,7 @@ export const isMapSubject = (subject: string) =>
  * MM-302: the linked-environment access of each level above `none`. `standard` work is fenced to
  * the threads its link started (upstream `linkOrigin.ts`); only `admin` is not fenced.
  */
-export const LEVEL_LINK_ACCESS = {
+const LEVEL_LINK_ACCESS = {
   read: "read-only",
   standard: "auto",
   admin: "full-access",

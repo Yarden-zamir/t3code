@@ -753,7 +753,10 @@ export class MachineMapObject extends DurableObject<Env> {
   /** MM-1908: the machine that ran the command reports it, so `to` is that machine. */
   #recordExec(machine: MachineRecord, report: MachineExecReport): void {
     // A caller reports only its own refusals; any other run is reported by the machine that ran it.
-    if (report.target !== undefined && (report.from !== machine.id || report.outcome !== "refused")) {
+    if (
+      report.target !== undefined &&
+      (report.from !== machine.id || report.outcome !== "refused")
+    ) {
       console.error("dropped an exec report with a foreign target", machine.id);
       return;
     }
