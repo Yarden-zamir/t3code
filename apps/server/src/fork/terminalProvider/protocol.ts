@@ -104,8 +104,8 @@ export function formatTimedOutRun(result: CommandResult): string {
   return `The command still runs after ${minutes} minutes. Open the terminal to follow it.\n\n${outputBlock(result)}`;
 }
 
-export const TYPED_INTO_PROGRAM_MESSAGE =
-  "Typed into the program that runs in the terminal. Its output is not captured.";
+export const BUSY_SHELL_MESSAGE =
+  "A program kept the shell busy for the whole run, so the message was not typed. To type into that program, send the message as a steer while a run waits.";
 
 export const TYPED_WITHOUT_RESULT_MESSAGE =
   "Typed into the terminal. This shell does not report results, so the exit code and output are not captured. Use bash or zsh for results.";

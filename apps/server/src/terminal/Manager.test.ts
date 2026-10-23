@@ -510,11 +510,12 @@ it.layer(
     }),
   );
 
-  it.effect("closes the session of a terminal thread when its shell exits", () =>
+  it.effect("keeps the exited shell of a terminal thread until a client starts a new one", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter, getEvents } = yield* createManager();
+      const input = openInput({ env: { T3CODE_TERMINAL_THREAD: "1" } });
 
-      yield* manager.open(openInput({ env: { T3CODE_TERMINAL_THREAD: "1" } }));
+      yield* manager.open(input);
       const process = ptyAdapter.processes[0];
       expect(process).toBeDefined();
       if (!process) return;
@@ -523,13 +524,17 @@ it.layer(
       process.emitExit({ exitCode: 0, signal: 0 });
 
       yield* waitFor(
-        Effect.map(getEvents, (events) => events.some((event) => event.type === "closed")),
+        Effect.map(getEvents, (events) => events.some((event) => event.type === "exited")),
         "1200 millis",
       );
-      const types = (yield* getEvents).map((event) => event.type);
-      expect(types.indexOf("exited")).toBeLessThan(types.indexOf("closed"));
-      // The next session shows the screen of the shell that ended.
-      const reopened = yield* manager.open(openInput({ env: { T3CODE_TERMINAL_THREAD: "1" } }));
+      expect((yield* getEvents).some((event) => event.type === "closed")).toBe(false);
+      // A client that comes back sees the dead shell, not a new one.
+      const listed = yield* manager.forkUnattachedThreadScreens;
+      expect(listed).toEqual(["thread-1"]);
+      expect(ptyAdapter.processes).toHaveLength(1);
+      // Starting a new shell keeps the screen of the shell that ended above it.
+      const reopened = yield* manager.open(input);
+      expect(ptyAdapter.processes).toHaveLength(2);
       expect(reopened.history).toContain("why the shell ended");
     }),
   );
@@ -1450,6 +1455,21 @@ it.layer(
         false,
         false,
       ]);
+    }),
+  );
+
+  it.effect("closeIdle keeps the terminal that the caller names", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        subprocessInspector: () =>
+          Effect.succeed({ hasRunningSubprocess: false, childCommand: null, processIds: [] }),
+      });
+      yield* manager.open(openInput({ terminalId: "term-1" }));
+      yield* manager.open(openInput({ terminalId: "drawer" }));
+
+      yield* manager.closeIdle({ threadId: "thread-1", keepTerminalId: "term-1" });
+
+      expect(ptyAdapter.processes.map((process) => process.killed)).toEqual([false, true]);
     }),
   );
 

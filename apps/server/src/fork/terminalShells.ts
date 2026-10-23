@@ -14,11 +14,15 @@ import * as NodePath from "node:path";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 
-export const TERMINAL_SHELL_NAMES = [
+const TERMINAL_SHELL_NAMES = [
   "zsh",
   "bash",
   "fish",
   "sh",
+  "dash",
+  "ksh",
+  "tcsh",
+  "csh",
   "nu",
   "pwsh",
   "powershell",

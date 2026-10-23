@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind, TERMINAL_THREAD_MODEL_SELECTION } from "@t3tools/contracts";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import {
@@ -560,7 +560,10 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const summaryRecovery = yield* Ref.make<ReadonlyArray<boolean | undefined>>([]);
   const invalidatedCwds = yield* Ref.make<ReadonlyArray<string>>([]);
   const domainEvents = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
-  const closedIdle = yield* Queue.unbounded<{ readonly threadId: string }>();
+  const closedIdle =
+    yield* Queue.unbounded<
+      Parameters<TerminalManager.TerminalManager["Service"]["closeIdle"]>[0]
+    >();
   const scriptRuns =
     yield* Queue.unbounded<ProjectSetupScriptRunner.ProjectSetupScriptRunnerInput>();
 
@@ -1114,6 +1117,32 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           yield* startHarness(service, fixture.activation, fixture.snapshotReads);
           yield* fixture.publishEvent(settledEvent(thread));
           assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: thread.id });
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("keeps the shell of a terminal thread open when it settles", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const thread: OrchestrationV2AppThread = {
+          ...appThread("settled-terminal", "settled"),
+          providerInstanceId: TERMINAL_THREAD_MODEL_SELECTION.instanceId,
+          modelSelection: TERMINAL_THREAD_MODEL_SELECTION,
+        };
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads: [thread],
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(thread));
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), {
+            threadId: thread.id,
+            keepTerminalId: "term-1",
+          });
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

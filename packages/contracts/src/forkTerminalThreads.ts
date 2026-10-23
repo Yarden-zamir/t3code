@@ -6,6 +6,7 @@
  */
 import * as Schema from "effect/Schema";
 
+import { ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import type { ModelSelection } from "./modelSelection.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
@@ -36,6 +37,20 @@ export function isTerminalThread(thread: { readonly providerInstanceId: string }
 }
 
 /**
+ * A thread keeps its kind. An agent with the history of a shell, or a shell that receives the
+ * markdown of an agent, is never what the sender meant.
+ */
+export function changesThreadKind(
+  thread: { readonly providerInstanceId: string },
+  selection: Pick<ModelSelection, "instanceId">,
+): boolean {
+  return isTerminalThread(thread) !== (selection.instanceId === TERMINAL_THREAD_INSTANCE_ID);
+}
+
+export const THREAD_KIND_CHANGE_MESSAGE =
+  "A terminal thread cannot switch to an agent, and an agent thread cannot switch to a terminal. Start a new thread instead.";
+
+/**
  * What a terminal thread asks of the user. `bell` is a terminal bell or an app notification
  * (OSC 9 or OSC 777). `finished` is a program that ended in the shell. The sidebar shows the
  * attention as unread until the user visits the thread after `at`.
@@ -56,3 +71,22 @@ export type TerminalAttention = typeof TerminalAttention.Type;
  */
 export const TerminalShellState = Schema.Literals(["starting", "prompt", "running"]);
 export type TerminalShellState = typeof TerminalShellState.Type;
+
+/**
+ * A new worktree for a draft in Terminal mode, prepared as the launch of a chat thread prepares
+ * one. The setup script runs in a terminal of `threadId`, the thread id that the draft reserves.
+ */
+export const ForkPrepareDraftWorktreeInput = Schema.Struct({
+  projectId: ProjectId,
+  threadId: ThreadId,
+  baseRef: TrimmedNonEmptyString,
+  startFromOrigin: Schema.Boolean,
+});
+export type ForkPrepareDraftWorktreeInput = typeof ForkPrepareDraftWorktreeInput.Type;
+
+export const ForkPrepareDraftWorktreeResult = Schema.Struct({
+  worktreePath: TrimmedNonEmptyString,
+  /** Null for the own folder of a draft in a scratch project. */
+  branch: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ForkPrepareDraftWorktreeResult = typeof ForkPrepareDraftWorktreeResult.Type;

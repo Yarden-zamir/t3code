@@ -7,6 +7,7 @@
  */
 import {
   DEFAULT_TERMINAL_ID,
+  type TerminalShellState,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2ProviderSession,
@@ -38,14 +39,14 @@ import {
   SHELL_ENDED_MESSAGE,
   SHELL_READY_TIMEOUT_MS,
   TERMINAL_RUN_TIMEOUT_MS,
-  TYPED_INTO_PROGRAM_MESSAGE,
+  BUSY_SHELL_MESSAGE,
   TYPED_WITHOUT_RESULT_MESSAGE,
 } from "./protocol.ts";
 import { TerminalPort } from "./port.ts";
 
 export const TERMINAL_DRIVER = ProviderDriverKind.make("terminal");
 
-export const TerminalProviderCapabilities = {
+const TerminalProviderCapabilities = {
   sessions: {
     supportsMultipleProviderThreadsPerSession: false,
     supportsModelSwitchInSession: false,
@@ -188,6 +189,11 @@ type RunAnswer =
 const answered = (text: string): RunAnswer => ({ type: "answered", text });
 const failed = (message: string): RunAnswer => ({ type: "failed", message });
 
+const BRACKETED_PASTE_ON = "\u001b[?2004h";
+// A shell without bracketed paste (turned off in its config) never sends it; the paste then goes
+// after this long.
+const PASTE_READY_TIMEOUT_MS = 1_000;
+
 const unsupported = (detail: string) =>
   Effect.fail(
     new ProviderAdapter.ProviderAdapterProtocolError({ driver: TERMINAL_DRIVER, detail }),
@@ -274,13 +280,21 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
                 ...(shell === undefined ? {} : { shell }),
               });
             }
-            const state = yield* waitForShellState(ids);
-            if (state === undefined || state === "running") {
+            const ready = yield* waitWhileShell(ids, "starting", SHELL_READY_TIMEOUT_MS);
+            let state: TerminalShellState | undefined = ready === "starting" ? undefined : ready;
+            if (state === "running") {
+              // A program that the user started holds the shell. The message waits for the
+              // prompt, so it never lands in an editor or a test by surprise; a steer meanwhile
+              // types into that program on purpose.
+              yield* Deferred.succeed(typed, true);
+              state = yield* waitWhileShell(ids, "running", TERMINAL_RUN_TIMEOUT_MS);
+              if (!(yield* port.isRunning(ids))) return answered(SHELL_ENDED_MESSAGE);
+              if (state === "running") return failed(BUSY_SHELL_MESSAGE);
+            }
+            if (state !== "prompt") {
               yield* port.write({ ...ids, data: `${turn.message.text}\r` });
               yield* Deferred.succeed(typed, true);
-              return answered(
-                state === undefined ? TYPED_WITHOUT_RESULT_MESSAGE : TYPED_INTO_PROGRAM_MESSAGE,
-              );
+              return answered(TYPED_WITHOUT_RESULT_MESSAGE);
             }
 
             const capture = makeCommandCapture();
@@ -334,24 +348,50 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
             Effect.ensuring(Deferred.succeed(typed, false)),
           );
 
-        // A shell with integration reports `starting` until its first prompt, after its startup
-        // files ran. A shell without integration has no state, so the message goes at once.
-        const waitForShellState = (ids: { threadId: string; terminalId: string }) =>
+        // Waits while the shell is `busy` (starting, or running a program) until it shows its
+        // prompt, ends, or the time is up, and returns the state then.
+        const waitWhileShell = (
+          ids: { threadId: string; terminalId: string },
+          busy: "starting" | "running",
+          timeoutMs: number,
+        ) =>
           Effect.gen(function* () {
-            const ready = yield* Deferred.make<void>();
+            const settled = yield* Deferred.make<void>();
+            // A fresh shell shows its prompt before its line editor reads input. A paste that
+            // arrives in between is echoed as raw text, so it waits until the editor turns on
+            // bracketed paste.
+            const pasteReady = yield* Deferred.make<void>();
+            let promptSeen = false;
             const parser = makeShellMarkParser();
-            const unsubscribe = yield* port.subscribe(ids, (event) =>
-              event.type === "output" &&
-              parser.push(event.data).some((item) => item.type === "prompt")
-                ? Deferred.succeed(ready, undefined).pipe(Effect.asVoid)
-                : Effect.void,
-            );
+            const unsubscribe = yield* port.subscribe(ids, (event) => {
+              if (event.type === "ended") {
+                return Deferred.succeed(settled, undefined).pipe(
+                  Effect.andThen(Deferred.succeed(pasteReady, undefined)),
+                  Effect.asVoid,
+                );
+              }
+              promptSeen ||= parser.push(event.data).some((item) => item.type === "prompt");
+              if (!promptSeen) return Effect.void;
+              return Deferred.succeed(settled, undefined).pipe(
+                Effect.andThen(
+                  event.data.includes(BRACKETED_PASTE_ON)
+                    ? Deferred.succeed(pasteReady, undefined)
+                    : Effect.void,
+                ),
+                Effect.asVoid,
+              );
+            });
             return yield* Effect.gen(function* () {
               const known = yield* port.shellState(ids);
-              if (known !== "starting") return known;
-              yield* Deferred.await(ready).pipe(Effect.timeoutOption(SHELL_READY_TIMEOUT_MS));
+              if (known !== busy) return known;
+              yield* Deferred.await(settled).pipe(Effect.timeoutOption(timeoutMs));
               const after = yield* port.shellState(ids);
-              return after === "starting" ? undefined : after;
+              if (busy === "starting" && after === "prompt") {
+                yield* Deferred.await(pasteReady).pipe(
+                  Effect.timeoutOption(PASTE_READY_TIMEOUT_MS),
+                );
+              }
+              return after;
             }).pipe(Effect.ensuring(Effect.sync(unsubscribe)));
           });
 

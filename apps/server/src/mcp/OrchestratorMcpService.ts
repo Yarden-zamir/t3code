@@ -204,8 +204,8 @@ const isThreadManagementError = Schema.is(ThreadManagementService.ThreadManageme
  * Fork: a run with an explicit model switches the thread that it is bound to. A terminal task
  * bound to an agent thread would turn that thread into a terminal thread.
  *
- * Limit: an update that only changes the model of an already bound task is not checked, because
- * the check needs the bound thread. Revisit if an agent thread is seen to turn into a terminal.
+ * An update that only changes the model of an already bound task is not checked here, because
+ * the check needs the bound thread. Its runs fail in the orchestrator (`refuseThreadKindChange`).
  */
 function assertTerminalTaskBinding(
   modelSelection: ModelSelection,
@@ -2066,6 +2066,14 @@ const make = Effect.gen(function* () {
           providers,
           skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
         });
+        // Fork: a brief is markdown, and a terminal thread types it into a shell, where its
+        // backticks run as commands.
+        if (target.modelSelection.instanceId === TERMINAL_THREAD_INSTANCE_ID) {
+          return yield* failure(
+            "invalid_request",
+            "A delegated task cannot run in a terminal thread, because its brief would be typed into a shell. Use t3_thread_launch to start a terminal thread.",
+          );
+        }
         const runtimeMode = yield* resolveRuntimeMode(
           parent.thread.runtimeMode,
           input.runtimeMode,

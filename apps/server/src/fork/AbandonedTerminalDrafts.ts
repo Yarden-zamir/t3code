@@ -19,10 +19,11 @@ import * as Schedule from "effect/Schedule";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 
-export const CHECK_INTERVAL = Duration.seconds(30);
-// Long enough for a laptop that sleeps or a connection that drops, short enough that a closed
-// tab does not keep a shell for good.
-export const ABANDONED_AFTER = Duration.minutes(10);
+export const CHECK_INTERVAL = Duration.seconds(10);
+// The server is the only one that discards a draft terminal: another tab or client can show
+// the same draft, so a client that leaves cannot know whether the shell is still in use. A draft
+// has run no command yet, so losing it after a connection drop of this length costs little.
+export const ABANDONED_AFTER = Duration.seconds(30);
 
 export interface AbandonedTerminalDraftDeps {
   /** The thread ids of running terminal thread screens without an attach stream. */

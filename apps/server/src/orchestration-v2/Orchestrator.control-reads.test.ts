@@ -15,11 +15,15 @@ import {
   RunAttemptId,
   RunId,
   RuntimeRequestId,
+  TERMINAL_THREAD_MODEL_SELECTION,
+  THREAD_KIND_CHANGE_MESSAGE,
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -334,6 +338,65 @@ it.effect("implements a proposed plan that the command projection leaves out", (
     });
 
     assert.equal((yield* projections.getPlan(threadId, planId))?.status, "completed");
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps a thread on its side of the terminal line", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const create = (threadId: ThreadId, selection: typeof modelSelection) =>
+      orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make(`create:${threadId}`),
+        threadId,
+        projectId: ProjectId.make("project:thread-kind"),
+        title: "Kind",
+        modelSelection: selection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+    const refusal = (exit: Exit.Exit<unknown, unknown>) =>
+      Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+    const agentThread = ThreadId.make("thread:agent-kind");
+    const terminalThread = ThreadId.make("thread:terminal-kind");
+    yield* create(agentThread, modelSelection);
+    yield* create(terminalThread, TERMINAL_THREAD_MODEL_SELECTION);
+
+    const attempts = [
+      orchestrator.dispatch({
+        type: "thread.model-selection.set",
+        commandId: CommandId.make("agent-to-terminal"),
+        threadId: agentThread,
+        modelSelection: TERMINAL_THREAD_MODEL_SELECTION,
+      }),
+      orchestrator.dispatch({
+        type: "provider.switch",
+        commandId: CommandId.make("terminal-to-agent"),
+        threadId: terminalThread,
+        modelSelection,
+      }),
+      orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("message-to-terminal"),
+        threadId: agentThread,
+        messageId: MessageId.make("message-to-terminal"),
+        text: "ls",
+        attachments: [],
+        modelSelection: TERMINAL_THREAD_MODEL_SELECTION,
+        dispatchMode: { type: "defer_start" },
+        createdBy: "agent",
+        creationSource: "mcp",
+      }),
+    ];
+    for (const attempt of attempts) {
+      const error = refusal(yield* Effect.exit(attempt));
+      assert.instanceOf(error, Orchestrator.OrchestratorDispatchError);
+      assert.equal(error.cause, THREAD_KIND_CHANGE_MESSAGE);
+    }
   }).pipe(Effect.provide(layerTest)),
 );
 

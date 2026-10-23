@@ -3,6 +3,8 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import {
   CommandId,
+  DEFAULT_TERMINAL_ID,
+  isTerminalThread,
   type ThreadId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
@@ -540,7 +542,11 @@ export const make = Effect.gen(function* () {
     function* (threadId: ThreadId) {
       const settled = yield* projections.getThread(threadId);
       if (settled.settledOverride !== "settled") return;
-      yield* terminals.closeIdle({ threadId });
+      // Fork: the shell of a terminal thread is its content, so settling keeps it open.
+      yield* terminals.closeIdle({
+        threadId,
+        ...(isTerminalThread(settled) ? { keepTerminalId: DEFAULT_TERMINAL_ID } : {}),
+      });
       const worktreePath = settled.worktreePath;
       if (worktreePath === null || !(yield* fileSystem.exists(worktreePath))) return;
       // Closing and the worktree check wait on I/O. A thread re-engaged

@@ -11,6 +11,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   RunId,
+  TERMINAL_THREAD_MODEL_SELECTION,
   ThreadId,
   type OrchestrationV2ThreadProjection,
   type ServerProvider,
@@ -1355,6 +1356,46 @@ describe("OrchestratorMcpService provider resolution", () => {
           })
           .pipe(Effect.flip);
         assert.equal(error.code, "invalid_request");
+      }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
+    }),
+  );
+
+  it.effect("refuses delegation to a terminal thread", () =>
+    Effect.gen(function* () {
+      const terminalInstanceId = TERMINAL_THREAD_MODEL_SELECTION.instanceId;
+      const layerDependencies = Layer.mergeAll(
+        NodeServices.layer,
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          hasReceipt: () => Effect.succeed(false),
+          getThreadRecords: () => Effect.succeed(parentProjection([])),
+          dispatch: () => Effect.die("A brief is never typed into a shell."),
+        }),
+        providerRegistryLayer([
+          providerSnapshot({
+            instanceId: terminalInstanceId,
+            driver: ProviderDriverKind.make("terminal"),
+            model: TERMINAL_THREAD_MODEL_SELECTION.model,
+          }),
+        ]),
+        adapterRegistryLayer([terminalInstanceId]),
+        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+        ServerSettings.layerTest(),
+      );
+
+      yield* Effect.gen(function* () {
+        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        const error = yield* service
+          .delegateTask(scope, {
+            task: "Run `rm -rf build`.",
+            target: { providerInstanceId: terminalInstanceId },
+            mode: "async",
+            clientRequestId: "delegate-terminal-1",
+          })
+          .pipe(Effect.flip);
+        assert.equal(error.code, "invalid_request");
+        assert.include(error.message, "t3_thread_launch");
       }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
     }),
   );

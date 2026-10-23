@@ -18,6 +18,7 @@ describe("detectTerminalShells", () => {
     ).toEqual([
       { name: "zsh", path: "/opt/homebrew/bin/zsh" },
       { name: "bash", path: "/bin/bash" },
+      { name: "csh", path: "/bin/csh" },
     ]);
   });
 

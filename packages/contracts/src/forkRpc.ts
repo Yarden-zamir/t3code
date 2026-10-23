@@ -22,6 +22,10 @@ import {
 } from "./forkChangelog.ts";
 import { ForkLocalListenerList } from "./forkPreview.ts";
 import {
+  ForkPrepareDraftWorktreeInput,
+  ForkPrepareDraftWorktreeResult,
+} from "./forkTerminalThreads.ts";
+import {
   MachineMapClientState,
   MachineMapDesktopReport,
   MachineMapShareSettingsInput,
@@ -30,6 +34,7 @@ import {
   MachineMapPanelState,
   MachineMapRequestError,
 } from "./machineMapClient.ts";
+import { OrchestrationV2ThreadLaunchError } from "./orchestrationV2.ts";
 import {
   WebPushEndpointInput,
   WebPushError,
@@ -61,6 +66,9 @@ export const FORK_WS_METHODS = {
 
   // Fork: preview local server groups (forkPreview.ts)
   forkPreviewSubscribeLocalListeners: "forkPreview.subscribeLocalListeners",
+
+  // Fork: the new worktree of a draft in Terminal mode (forkTerminalThreads.ts)
+  vcsPrepareDraftWorktree: "vcs.prepareDraftWorktree",
 } as const;
 
 const forkChangelogError = Schema.Union([ForkChangelogError, EnvironmentAuthorizationError]);
@@ -159,6 +167,12 @@ const WsForkPreviewSubscribeLocalListenersRpc = Rpc.make(
   },
 );
 
+const WsVcsPrepareDraftWorktreeRpc = Rpc.make(FORK_WS_METHODS.vcsPrepareDraftWorktree, {
+  payload: ForkPrepareDraftWorktreeInput,
+  success: ForkPrepareDraftWorktreeResult,
+  error: Schema.Union([OrchestrationV2ThreadLaunchError, EnvironmentAuthorizationError]),
+});
+
 export const ForkWsRpcGroup = RpcGroup.make(
   WsForkChangelogListReleasesRpc,
   WsForkChangelogReleaseChangesRpc,
@@ -175,6 +189,7 @@ export const ForkWsRpcGroup = RpcGroup.make(
   WsWebPushSubscribeRpc,
   WsWebPushTestRpc,
   WsForkPreviewSubscribeLocalListenersRpc,
+  WsVcsPrepareDraftWorktreeRpc,
 );
 
 /** The fork part of `CLIENT_GUARDED_RPC_SCOPES`. */
@@ -188,6 +203,8 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [FORK_WS_METHODS.machineMapShareSettings]: AuthSettingsWriteScope,
   // Fork: the local desktop app reports desktop command results and its waiting update.
   [FORK_WS_METHODS.machineMapReportDesktop]: AuthEnvironmentMaintainScope,
+  // Fork: creates a worktree, as `vcs.createWorktree` does, and runs the project setup script.
+  [FORK_WS_METHODS.vcsPrepareDraftWorktree]: AuthSourceControlWriteScope,
 } as const;
 
 /** The fork RPCs that the server's `RPC_REQUIRED_SCOPES` adds to `CLIENT_GUARDED_RPC_SCOPES`. */

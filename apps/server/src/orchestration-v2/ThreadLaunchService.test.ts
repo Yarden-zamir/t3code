@@ -2497,6 +2497,7 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
         checkWorktreeBase: launches.checkWorktreeBase,
         retryPreparation: launches.retryPreparation,
         prepareRun: launches.prepareRun,
+        prepareDraftWorktree: launches.prepareDraftWorktree,
       }),
       Effect.flip,
     );
@@ -3192,3 +3193,84 @@ it.effect.each(
       }).pipe(Effect.provide(Layer.merge(harness.layer, layerService)));
     }),
 );
+
+// Fork: the new worktree of a draft in Terminal mode, which has no thread yet.
+const draftSetupStarted = (
+  async: boolean,
+  completion: Effect.Effect<{ exitCode: number | null; durationMs: number }>,
+) =>
+  Effect.succeed({
+    status: "started" as const,
+    async,
+    scriptId: "setup",
+    scriptName: "Setup",
+    scriptCommand: "vp install",
+    terminalId: "setup-setup",
+    cwd: "/repo-worktrees/feature",
+    completion,
+  });
+
+it.effect("prepares a draft worktree from origin and starts its setup script", () =>
+  Effect.gen(function* () {
+    const fetchRemote = vi.fn(() => Effect.void);
+    const harness = makeHarness({
+      fetchRemote,
+      runSetup: () => draftSetupStarted(true, Effect.never),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const threadId = ThreadId.make("thread:draft-worktree");
+      const prepared = yield* launches.prepareDraftWorktree({
+        projectId,
+        threadId,
+        baseRef: "main",
+        startFromOrigin: true,
+      });
+      assert.equal(prepared.worktreePath, "/repo-worktrees/feature");
+      assert.match(prepared.branch ?? "", /^t3\//u);
+      assert.equal(fetchRemote.mock.calls.length, 1);
+      assert.equal(harness.createWorktree.mock.calls[0]?.[0].refName, "remote-main-sha");
+      assert.deepEqual(
+        harness.runSetup.mock.calls.map(([input]) => [input.threadId, input.worktreePath]),
+        [[threadId, "/repo-worktrees/feature"]],
+      );
+      assert.deepEqual(
+        (yield* tracker.get(threadId))?.stages.map((stage) => [stage.id, stage.status]),
+        [
+          ["fetch", "done"],
+          ["checkout", "done"],
+          ["setup-script", "running"],
+        ],
+      );
+      assert.isEmpty(harness.removeWorktree.mock.calls);
+      assert.isNull(yield* threads.getThreadShell(threadId));
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
+it.effect("removes a draft worktree whose setup script fails", () => {
+  const harness = makeHarness({
+    runSetup: () => draftSetupStarted(false, Effect.succeed({ exitCode: 1, durationMs: 1 })),
+    git: { hasRefNamed: () => Effect.succeed(true) },
+  });
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+    const threadId = ThreadId.make("thread:draft-worktree-setup-fails");
+    const failure = yield* launches
+      .prepareDraftWorktree({ projectId, threadId, baseRef: "main", startFromOrigin: false })
+      .pipe(Effect.flip);
+    assert.match(ThreadLaunch.failureDetail(failure), /Setup script exited with 1/u);
+    assert.deepEqual(
+      harness.removeWorktree.mock.calls.map(([input]) => input.path),
+      ["/repo-worktrees/feature"],
+    );
+    assert.deepEqual(
+      harness.closeTerminal.mock.calls.map(([input]) => [input.threadId, input.terminalId]),
+      [[threadId, "setup-setup"]],
+    );
+    assert.equal((yield* tracker.get(threadId))?.phase, "failed");
+  }).pipe(Effect.provide(harness.layer));
+});

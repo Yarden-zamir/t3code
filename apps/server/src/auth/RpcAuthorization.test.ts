@@ -152,6 +152,15 @@ describe("RPC authorization scopes", () => {
     }
   });
 
+  it("requires source control writes to prepare the new worktree of a terminal draft", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.vcsPrepareDraftWorktree)).toBe(
+      requiredScopeForRpcMethod(WS_METHODS.vcsCreateWorktree),
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.vcsPrepareDraftWorktree)).toBe(
+      AuthSourceControlWriteScope,
+    );
+  });
+
   it("separates viewing pull request file progress from writing it", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.pullRequestsFilesViewed)).toBe(
       AuthOrchestrationReadScope,

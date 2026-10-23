@@ -62,7 +62,7 @@ const textGeneration: ProviderTextGeneration = {
  * One model for each shell, the default shell first. The path shows next to the name. The legacy
  * model `terminal` stays listed for the threads, schedules and agents that name it.
  */
-export function terminalShellModels(
+function terminalShellModels(
   shells: ReadonlyArray<TerminalShell>,
 ): ReadonlyArray<ServerProviderModel> {
   return [

@@ -190,6 +190,8 @@ export class TerminalManager extends Context.Service<
     readonly closeIdle: (input: {
       readonly threadId: string;
       readonly terminalId?: string;
+      /** Fork: a terminal that stays open, such as the shell of a terminal thread. */
+      readonly keepTerminalId?: string;
     }) => Effect.Effect<void>;
 
     readonly subscribe: (
@@ -309,7 +311,6 @@ type DrainProcessEventAction =
       sequence: number;
       exitCode: number | null;
       exitSignal: number | null;
-      closeAfterExit: boolean;
     };
 
 interface TerminalManagerState {
@@ -2110,7 +2111,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           sequence: eventStamp.sequence,
           exitCode: session.exitCode,
           exitSignal: session.exitSignal,
-          closeAfterExit: isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv),
         } as const;
       });
 
@@ -2157,19 +2157,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         exitCode: action.exitCode,
         exitSignal: action.exitSignal,
       });
-      if (action.closeAfterExit) {
-        // An open or restart that won the lock already replaced the process; leave that session.
-        yield* withThreadLock(
-          action.threadId,
-          Effect.gen(function* () {
-            const current = yield* getSession(action.threadId, action.terminalId);
-            // The history stays, so the next session shows why the shell ended.
-            if (Option.isSome(current) && current.value === session && session.process === null) {
-              yield* closeSession(action.threadId, action.terminalId, false);
-            }
-          }),
-        );
-      }
       yield* evictInactiveSessionsIfNeeded();
       return;
     }
@@ -2786,7 +2773,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       liveSession.runtimeEnv = nextRuntimeEnv;
       liveSession.worktreePath = nextWorktreePath;
       liveSession.shellName = nextShellName;
-      liveSession.history.clear();
+      // Fork: a terminal thread keeps the output of the shell that ended above the new one, so
+      // the screen still shows why it ended.
+      if (!isTerminalThreadMainTerminal(liveSession.terminalId, liveSession.runtimeEnv)) {
+        liveSession.history.clear();
+      }
       liveSession.pendingHistoryControlSequence = "";
       liveSession.pendingProcessEvents = [];
       liveSession.pendingProcessEventIndex = 0;
@@ -3002,7 +2993,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         [...state.sessions.entries()]
           .filter(
             ([key, session]) =>
-              session.status === "running" &&
+              // An exited draft shell holds its output; it goes too.
+              (session.status === "running" || session.status === "exited") &&
               !attachStreamCounts.has(key) &&
               isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv),
           )
@@ -3293,7 +3285,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           (session): session is TerminalSessionState & { pid: number } =>
             session.status === "running" &&
             Number.isInteger(session.pid) &&
-            (input.terminalId === undefined || session.terminalId === input.terminalId),
+            (input.terminalId === undefined || session.terminalId === input.terminalId) &&
+            session.terminalId !== input.keepTerminalId,
         );
         if (running.length === 0) return;
         const activityMark = (session: TerminalSessionState) =>
