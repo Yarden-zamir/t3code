@@ -7,7 +7,7 @@
  * Known limits: a thread link does not switch to the tab of the thread, and web theme icon packs
  * do not apply. Revisit if users open threads from links on the phone often.
  */
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -28,7 +28,7 @@ import {
 import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useMemo } from "react";
+import { useCallback, useDeferredValue, useMemo } from "react";
 import { Pressable, ScrollView } from "react-native";
 import { useResolveClassNames } from "uniwind";
 
@@ -41,13 +41,14 @@ import { Menu } from "../../components/ui/Menu";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { cn } from "../../lib/cn";
 import { scopedProjectKey } from "../../lib/scopedEntities";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom } from "../../state/preferences";
 import {
   createMobileSidebarTab,
   editSidebarTabs,
   openSidebarTabEditor,
   sidebarTabsAtom,
 } from "../../state/forkSidebarTabs";
+import { selectedSidebarTabIdAtom, selectSidebarTab } from "../../state/forkSidebarTabSelection";
 import { threadHasUnseenCompletion } from "../threads/threadListV2";
 import { SidebarTabIcon } from "./forkTabIcons";
 
@@ -80,9 +81,12 @@ export interface HomeSidebarTabItem {
 
 export interface HomeSidebarTabs {
   readonly tabs: ReadonlyArray<HomeSidebarTabItem>;
+  /** The open tab of the tab bar. */
   readonly tabId: string;
+  /** The tab that the list shows. It follows `tabId` one deferred render later. */
+  readonly listTabId: string;
   readonly selectTab: (tabId: string) => void;
-  /** The threads of the open tab. Search covers every tab, so it sees every thread. */
+  /** The threads of `listTabId`. Search covers every tab, so it sees every thread. */
   readonly filterThreads: (
     threads: ReadonlyArray<EnvironmentThreadShell>,
   ) => ReadonlyArray<EnvironmentThreadShell>;
@@ -106,15 +110,19 @@ export function useHomeSidebarTabs(input: {
 }): HomeSidebarTabs | null {
   const { threads, projects, environmentId, projectKeys, searching, now } = input;
   const settings = useAtomValue(sidebarTabsAtom);
+  const selectedTabId = useAtomValue(selectedSidebarTabIdAtom);
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
-  const storedTabId = AsyncResult.isSuccess(preferences)
-    ? preferences.value.sidebarTabId
-    : undefined;
+  const openTabId =
+    selectedTabId ??
+    (AsyncResult.isSuccess(preferences) ? preferences.value.sidebarTabId : undefined);
   const tabId =
-    settings !== null && settings.tabs.some((tab) => tab.id === storedTabId)
-      ? storedTabId!
+    settings !== null && settings.tabs.some((tab) => tab.id === openTabId)
+      ? openTabId!
       : DEFAULT_SIDEBAR_TAB_ID;
+  // A new list renders every row in its draw distance at once (LegendList resets its containers
+  // in a layout effect), and that render cannot yield. So the tab bar commits first, and the
+  // list follows in a deferred render that a quicker tap on another tab replaces.
+  const listTabId = useDeferredValue(tabId);
 
   const compiled = useMemo(
     () => (settings === null ? null : compileSidebarTabs(settings)),
@@ -191,19 +199,18 @@ export function useHomeSidebarTabs(input: {
     ];
   }, [environmentId, now, projectKeys, settings, showsThread, threads]);
 
-  const selectTab = useCallback(
-    (next: string) => savePreferences({ sidebarTabId: next }),
-    [savePreferences],
-  );
   const filterThreads = useCallback(
     (list: ReadonlyArray<EnvironmentThreadShell>) =>
-      searching ? list : list.filter((thread) => showsThread(tabId, thread)),
-    [searching, showsThread, tabId],
+      searching ? list : list.filter((thread) => showsThread(listTabId, thread)),
+    [listTabId, searching, showsThread],
   );
 
   return useMemo(
-    () => (settings === null ? null : { tabs, tabId, selectTab, filterThreads }),
-    [filterThreads, selectTab, settings, tabId, tabs],
+    () =>
+      settings === null
+        ? null
+        : { tabs, tabId, listTabId, selectTab: selectSidebarTab, filterThreads },
+    [filterThreads, listTabId, settings, tabId, tabs],
   );
 }
 

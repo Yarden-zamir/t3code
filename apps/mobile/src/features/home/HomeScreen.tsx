@@ -840,7 +840,7 @@ export function HomeScreen(props: HomeScreenProps) {
       />
     ) : sidebarTabs ? (
       <EmptyState
-        title={`No threads in ${sidebarTabs.tabs.find((tab) => tab.id === sidebarTabs.tabId)?.name ?? "this tab"}`}
+        title={`No threads in ${sidebarTabs.tabs.find((tab) => tab.id === sidebarTabs.listTabId)?.name ?? "this tab"}`}
         detail="Choose another tab or create a new task."
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
