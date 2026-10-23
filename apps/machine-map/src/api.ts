@@ -9,6 +9,8 @@ import {
   ClientId,
   CommandDelivery,
   MachineCommandInput,
+  type ArrowCapability,
+  MachineCallRecord,
   MachineExecRecord,
   MachineId,
   MachineKind,
@@ -249,6 +251,17 @@ export type ResourceSampleEvent = typeof ResourceSampleEvent.Type;
 export const ExecsEvent = Schema.TaggedStruct("execs", { execs: Schema.Array(MachineExecRecord) });
 export type ExecsEvent = typeof ExecsEvent.Type;
 
+/** MM-1922: page event with the newest forwarded calls, on connection and on each call. */
+export const CallsEvent = Schema.TaggedStruct("calls", { calls: Schema.Array(MachineCallRecord) });
+export type CallsEvent = typeof CallsEvent.Type;
+
+/** MM-1915: what agents on `from` can do on `to`, for each arrow that gives anything. */
+export interface ArrowCapabilities {
+  readonly from: MachineId;
+  readonly to: MachineId;
+  readonly can: ReadonlyArray<ArrowCapability>;
+}
+
 /** MM-212: page event when a machine used its join code. It holds no part of the code. */
 export const EnrolledEvent = Schema.TaggedStruct("enrolled", { machineId: MachineId });
 export type EnrolledEvent = typeof EnrolledEvent.Type;
@@ -372,6 +385,10 @@ export type MapToolResult =
       readonly resources: ResourcesOverview;
       /** MM-1908: the newest 50 `machine_exec` runs, without their output. */
       readonly execs: ReadonlyArray<MachineExecRecord>;
+      /** MM-1922: the newest 50 calls forwarded over arrow links, without arguments or output. */
+      readonly calls: ReadonlyArray<MachineCallRecord>;
+      /** MM-1915: "what can A do on B" for each arrow that gives anything. */
+      readonly capabilities: ReadonlyArray<ArrowCapabilities>;
     }
   | {
       readonly _tag: "resources";

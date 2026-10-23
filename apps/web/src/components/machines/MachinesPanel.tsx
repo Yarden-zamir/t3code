@@ -1,4 +1,6 @@
 import {
+  ARROW_CAPABILITY_TEXT,
+  arrowCapabilities,
   type ArrowRecord,
   DEFAULT_MACHINE_MAP_PORTAL_URL,
   type EnvironmentId,
@@ -98,11 +100,15 @@ const untilLabel = (isoDate: string) => {
 const machineName = (read: MachinesReadResult, id: string) =>
   read.map.machines.find((machine) => machine.id === id)?.name ?? id;
 
-const arrowLabel = (read: MachinesReadResult, arrow: ArrowRecord) =>
-  `${machineName(read, arrow.from)} uses ${machineName(read, arrow.to)}: ${arrow.level}` +
-  (arrow.agentTools ? ", agent tools" : "") +
-  (arrow.exec ? ", exec" : "") +
-  (arrow.expiresAt === null ? "" : `, ends ${untilLabel(arrow.expiresAt)}`);
+/** MM-1915: the level, then what agents on the source can do on the target. */
+const arrowLabel = (read: MachinesReadResult, arrow: ArrowRecord) => {
+  const can = arrowCapabilities(arrow).map((capability) => ARROW_CAPABILITY_TEXT[capability]);
+  return (
+    `${machineName(read, arrow.from)} uses ${machineName(read, arrow.to)}: ${arrow.level}` +
+    (can.length === 0 ? "" : `, agents can ${can.join(", ")}`) +
+    (arrow.expiresAt === null ? "" : `, ends ${untilLabel(arrow.expiresAt)}`)
+  );
+};
 
 /** An unknown kind of a newer portal shows as its raw name. */
 const alertLabel = (alert: MachinesReadResult["resources"]["alerts"][number]) =>

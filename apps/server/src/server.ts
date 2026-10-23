@@ -66,7 +66,6 @@ import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceR
 import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrideSweep.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
-import * as PeerForwarding from "./peer/PeerForwarding.ts";
 import * as RemoteDelegation from "./peer/RemoteDelegation.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -183,6 +182,7 @@ import * as MachineHost from "./fork/machineMap/MachineHost.ts";
 import * as MachineMap from "./fork/machineMap/MachineMap.ts";
 import * as MachineMapState from "./fork/machineMap/MachineMapState.ts";
 import * as WebPush from "./fork/webPush/WebPush.ts";
+import * as MachineCallHistory from "./fork/machineMap/MachineCallHistory.ts";
 import * as MachinePeers from "./fork/machineMap/MachinePeers.ts";
 import * as MachineResources from "./fork/machineMap/MachineResources.ts";
 import * as MachineTunnel from "./fork/machineMap/MachineTunnel.ts";
@@ -799,8 +799,9 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(ServerBrowser.layer.pipe(Layer.provide(DesktopBrowserChannel.layer))),
   Layer.provide(PreviewBrowser.layer),
   // Links to other environments, shared by Settings (WebSocket) and agents (/mcp).
-  // Fork: `MachinePeers.layer` in the runtime core provides the links, from the machine map arrows.
-  Layer.provide(PeerForwarding.layer),
+  // Fork: `MachinePeers.layer` in the runtime core provides the links, from the machine map arrows,
+  // and `MachineCallHistory` reports each forwarded call to the portal History (MM-1922).
+  Layer.provide(MachineCallHistory.layer),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(layerServerSelfUpdate),
   Layer.provide(layerCommandReadiness),

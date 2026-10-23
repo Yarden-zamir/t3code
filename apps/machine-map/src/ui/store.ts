@@ -7,6 +7,7 @@ import { MachineId, PortalEvent, type PortalSnapshot } from "@t3tools/contracts/
 import type { ResourcesOverview } from "@t3tools/contracts/machineMapResources";
 
 import {
+  CallsEvent,
   ClientInvitesEvent,
   EnrolledEvent,
   ExecsEvent,
@@ -36,6 +37,8 @@ export interface PortalState {
   readonly invites: ReadonlyArray<ClientInvite>;
   /** MM-1908: the newest `machine_exec` runs. */
   readonly execs: ExecsEvent["execs"];
+  /** MM-1922: the newest calls forwarded over arrow links. */
+  readonly calls: CallsEvent["calls"];
 }
 
 export type PageEvent =
@@ -47,7 +50,8 @@ export type PageEvent =
   | EnrolledEvent
   | PendingClientsEvent
   | ClientInvitesEvent
-  | ExecsEvent;
+  | ExecsEvent
+  | CallsEvent;
 
 const EMPTY_HEALTH: ResourcesOverview = { latest: {}, alerts: [], thresholds: {} };
 
@@ -60,6 +64,7 @@ export const INITIAL_STATE: PortalState = {
   pending: null,
   invites: [],
   execs: [],
+  calls: [],
 };
 
 export function reduce(state: PortalState, event: PageEvent): PortalState {
@@ -70,6 +75,7 @@ export function reduce(state: PortalState, event: PageEvent): PortalState {
   if (event._tag === "pendingClients") return { ...state, pending: event.pending };
   if (event._tag === "clientInvites") return { ...state, invites: event.invites };
   if (event._tag === "execs") return { ...state, execs: event.execs };
+  if (event._tag === "calls") return { ...state, calls: event.calls };
   if (event._tag === "resourceSample") {
     const latest = { ...state.health.latest, [event.machineId]: event.sample };
     return { ...state, health: { ...state.health, latest } };
@@ -171,6 +177,7 @@ const decodeEvent = Schema.decodeUnknownSync(
     PendingClientsEvent,
     ClientInvitesEvent,
     ExecsEvent,
+    CallsEvent,
   ]),
 );
 

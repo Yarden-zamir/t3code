@@ -85,7 +85,7 @@ const toolsWith = (
         callMapTool,
       }),
     ),
-    Layer.provide(Layer.mock(MachinePeers.MachinePeers)({})),
+    Layer.provide(Layer.mock(MachinePeers.MachinePeers)({ machineOf: () => undefined })),
     Layer.provide(Layer.mock(MachineExec.MachineExec)({})),
   );
 

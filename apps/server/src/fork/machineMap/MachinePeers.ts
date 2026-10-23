@@ -10,6 +10,7 @@
  * client that adds the machine token and pairs again once when the peer ends the session.
  */
 import {
+  ARROW_LINK_NO_EXPIRY,
   AuthAccessTokenResult,
   AuthAccessTokenType,
   AuthEnvironmentBootstrapTokenType,
@@ -57,11 +58,7 @@ import * as MachineMapState from "./MachineMapState.ts";
 const REQUEST_TIMEOUT = Duration.seconds(15);
 // An offline peer must not hold up the `@` menu of every client for the full request timeout.
 const DESCRIPTOR_TIMEOUT = Duration.seconds(5);
-/**
- * Upstream links always expire; an arrow link ends only when the arrow does. Known limit: a
- * permanent arrow reports this date as its expiry. Revisit when `PeerLink.expiresAt` may be null.
- */
-const NO_EXPIRY = DateTime.makeUnsafe("9999-12-31T00:00:00.000Z");
+const NO_EXPIRY = DateTime.makeUnsafe(ARROW_LINK_NO_EXPIRY);
 
 export class MachinePeerError extends Schema.TaggedError<MachinePeerError>()("MachinePeerError", {
   reason: Schema.Literals([
@@ -126,6 +123,8 @@ export class MachinePeers extends Context.Service<
     >;
     /** MM-1907: the linked machines that answer now, with their environment ids. */
     readonly readableEnvironments: Effect.Effect<ReadonlyArray<ReadableEnvironment>>;
+    /** MM-1922: the machine that answered as this environment id, once a lookup reached it. */
+    readonly machineOf: (environmentId: EnvironmentId) => MachineId | undefined;
   }
 >()("t3/fork/machineMap/MachinePeers") {}
 
@@ -628,7 +627,12 @@ const make = Effect.gen(function* () {
 
   return Context.make(
     MachinePeers,
-    MachinePeers.of({ testArrow, exec, readableEnvironments }),
+    MachinePeers.of({
+      testArrow,
+      exec,
+      readableEnvironments,
+      machineOf: (environmentId) => machineOfEnvironment.get(environmentId),
+    }),
   ).pipe(
     Context.add(PeerLinks.PeerLinks, peerLinks),
     Context.add(PeerMcpClient.PeerMcpClient, peerMcp),

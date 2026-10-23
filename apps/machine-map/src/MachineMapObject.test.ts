@@ -1,5 +1,5 @@
 import * as NodeSqlite from "node:sqlite";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 import { MachineMapDocument } from "@t3tools/contracts/machineMap";
 
@@ -7,7 +7,8 @@ import { CloudflareApi } from "./cloudflare.ts";
 import type { Env } from "./env.ts";
 import { MachineMapObject, type OwnerContext } from "./MachineMapObject.ts";
 import { emptyMap } from "./rules/map.ts";
-import { MAC, threeMachines } from "./rules/testMap.ts";
+import { arrowChange } from "./rules/access.ts";
+import { MAC, threeMachines, VPS, WIN } from "./rules/testMap.ts";
 import { APPROVAL_CHANGED, captureApproval } from "./rules/approval.ts";
 
 vi.mock("cloudflare:workers", () => ({
@@ -53,19 +54,32 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function portal(machines = false) {
+/**
+ * `true` starts with three machines and no arrows; a map starts with that map. `connectMac` gives
+ * MAC an open socket, so the test reads what the portal sends it.
+ */
+function portal(machines: boolean | MachineMapDocument = false, connectMac = false) {
   const db = new NodeSqlite.DatabaseSync(":memory:");
   databases.push(db);
   db.exec("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   db.prepare("INSERT INTO meta VALUES ('map', ?)").run(
-    JSON.stringify(machines ? threeMachines() : emptyMap()),
+    JSON.stringify(
+      machines === false ? emptyMap() : machines === true ? threeMachines() : machines,
+    ),
   );
   db.prepare("INSERT INTO meta VALUES ('absolute_places', ?)").run(NOW);
   const send = vi.fn();
+  // What the portal sends to the machine MAC, for example the result of an agent tool.
+  const sendToMac = vi.fn();
   const setAlarm = vi.fn(async (_at: number) => {});
   const ctx = {
     setWebSocketAutoResponse: vi.fn(),
-    getWebSockets: (tag: string) => (tag === "page" ? [{ send }] : []),
+    getWebSockets: (tag: string) =>
+      tag === "page"
+        ? [{ send }]
+        : connectMac && tag === `machine:${MAC}`
+          ? [{ send: sendToMac }]
+          : [],
     waitUntil: (_work: Promise<unknown>) => {},
     storage: {
       sql: {
@@ -89,9 +103,9 @@ function portal(machines = false) {
     OWNER_EMAILS: owner.email,
     TEAM_DOMAIN: "team.cloudflareaccess.com",
     DEV_FAKE_ACCESS: "1",
-    ...(machines ? { CF_API_TOKEN: "test-only" } : {}),
+    ...(machines === false ? {} : { CF_API_TOKEN: "test-only" }),
   } as Env;
-  return { db, ctx, env, object: new MachineMapObject(ctx, env), send, setAlarm };
+  return { db, ctx, env, object: new MachineMapObject(ctx, env), send, sendToMac, setAlarm };
 }
 
 it("reads push registration without restoring a subscription deleted by sign-out", async () => {
@@ -466,4 +480,112 @@ it("moves the shared sidebar group settings of the map to the tab keys once", ()
   db.prepare("UPDATE meta SET value = ? WHERE key = 'map'").run(JSON.stringify(legacy));
   expect(new MachineMapObject(ctx, env)).toBeInstanceOf(MachineMapObject);
   expect(readMap(db).settings).toEqual(legacy.settings);
+});
+
+describe("owner-only grants (MM-803)", () => {
+  const macSocket = {
+    deserializeAttachment: () => ({ kind: "machine", machineId: MAC }),
+  } as WebSocket;
+  /** MAC has the map role edit, and VPS uses WIN at `standard` with agent tools. */
+  const linkedMap = (): MachineMapDocument => ({
+    ...threeMachines(),
+    machines: threeMachines().machines.map((m) => (m.id === MAC ? { ...m, mapRole: "edit" } : m)),
+    arrows: [
+      {
+        from: VPS,
+        to: WIN,
+        level: "standard",
+        agentTools: true,
+        exec: false,
+        expiresAt: null,
+        revertLevel: null,
+      },
+    ],
+  });
+  const setAccess = (object: MachineMapObject, input: Record<string, unknown>) =>
+    object.webSocketMessage(
+      macSocket,
+      JSON.stringify({
+        _tag: "toolCall",
+        requestId: "request-1",
+        tool: "machines_set_access",
+        input: { from: VPS, to: WIN, ...input },
+        threadId: "thread-1",
+        threadTitle: "Tidy the map",
+      }),
+    );
+  const toolResult = (sendToMac: ReturnType<typeof vi.fn>) =>
+    sendToMac.mock.calls
+      .map(([text]) => JSON.parse(text))
+      .find((message) => message._tag === "toolResult");
+
+  it("turns a raise by an edit agent into a proposal and changes nothing", async () => {
+    for (const input of [{ level: "admin" }, { level: "standard", exec: true }]) {
+      const { object, db, sendToMac } = portal(linkedMap(), true);
+      await setAccess(object, input);
+      expect(toolResult(sendToMac)).toMatchObject({
+        ok: true,
+        result: { _tag: "proposed", reason: "owner-only" },
+      });
+      expect(readMap(db).arrows).toEqual(linkedMap().arrows);
+      expect(db.prepare("SELECT id FROM proposals").all()).toHaveLength(1);
+    }
+  });
+
+  it("applies a lower level from an edit agent at once", async () => {
+    const { object, db, sendToMac } = portal(linkedMap(), true);
+    await setAccess(object, { level: "read" });
+    expect(toolResult(sendToMac)).toMatchObject({ ok: true, result: { _tag: "applied" } });
+    expect(readMap(db).arrows[0]).toMatchObject({ from: VPS, to: WIN, level: "read" });
+    expect(db.prepare("SELECT id FROM proposals").all()).toEqual([]);
+  });
+
+  it("applies a raise by the owner at once", async () => {
+    const { object, db } = portal(linkedMap());
+    const map = readMap(db);
+    const raise = arrowChange(map, {
+      from: VPS,
+      to: WIN,
+      level: "admin",
+      exec: true,
+      expiresAt: null,
+    });
+    expect(
+      await object.changes(owner, { summary: "VPS uses WIN: admin", changes: [raise] }),
+    ).toMatchObject({
+      ok: true,
+      value: { _tag: "applied" },
+    });
+    expect(readMap(db).arrows[0]).toMatchObject({ level: "admin", agentTools: true, exec: true });
+  });
+});
+
+it("records a forwarded call for History without arguments, once per call", async () => {
+  const { object, db, send } = portal(true);
+  const socket = {
+    deserializeAttachment: () => ({ kind: "machine", machineId: MAC }),
+  } as WebSocket;
+  const report = {
+    id: "call-1",
+    at: NOW,
+    to: VPS,
+    threadId: "thread-1",
+    threadTitle: "Fix the build",
+    tool: "t3_thread_launch",
+    outcome: "succeeded",
+  };
+  // A report that carries arguments by mistake stores none of them.
+  const withArguments = { ...report, arguments: { message: "secret plan" } };
+  await object.webSocketMessage(
+    socket,
+    JSON.stringify({ _tag: "callForwarded", report: withArguments }),
+  );
+  await object.webSocketMessage(socket, JSON.stringify({ _tag: "callForwarded", report }));
+  expect(db.prepare("SELECT id FROM call_log").all()).toEqual([{ id: "call-1" }]);
+  expect(String(db.prepare("SELECT data FROM call_log").get()?.data)).not.toContain("secret");
+  // MM-1922: the machine that reported the call is the one that forwarded it.
+  expect(send.mock.calls.map(([text]) => JSON.parse(text)).at(-1)).toEqual({
+    _tag: "calls",
+    calls: [{ ...report, from: MAC }],
+  });
 });

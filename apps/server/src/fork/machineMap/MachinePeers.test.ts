@@ -13,6 +13,7 @@ import {
   NodeId,
   ProviderDriverKind,
   ProviderThreadId,
+  type MachineCallReport,
   type MachineDesiredState,
   MACHINE_LEVEL_SCOPES,
   MachineId,
@@ -76,6 +77,8 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as SourceControlRepositoryService from "../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import { machineMcpClientFor, MANUAL_LINK_REFUSAL } from "./machineAccess.ts";
+import * as MachineCallHistory from "./MachineCallHistory.ts";
+import * as MachineMap from "./MachineMap.ts";
 import { arrow, desiredState, PEER, SELF } from "./MachineMap.testkit.ts";
 import * as MachineMapState from "./MachineMapState.ts";
 import * as MachinePeers from "./MachinePeers.ts";
@@ -469,7 +472,8 @@ const callerModes = (threadId: ThreadId) =>
 
 /**
  * A: its orchestrator and project toolkits with upstream forwarding over the arrow links of
- * `MachinePeers`. Its own threads never matter here, only the modes of the caller.
+ * `MachinePeers`, which reports each forwarded call to the portal History (MM-1922). Its own
+ * threads never matter here, only the modes of the caller.
  */
 const makeMac = (
   mapNow: Ref.Ref<MapNow>,
@@ -477,6 +481,7 @@ const makeMac = (
   network: Layer.Layer<HttpClient.HttpClient>,
 ) =>
   Effect.gen(function* () {
+    const reportedCalls = yield* Ref.make<ReadonlyArray<MachineCallReport>>([]);
     const links = yield* MachinePeers.layer.pipe(
       Layer.provide(layerMacState(mapNow, pausedLook)),
       Layer.provide(network),
@@ -503,7 +508,15 @@ const makeMac = (
         ),
       ),
       Layer.provide(NodeServices.layer),
-      Layer.provide(PeerForwarding.layer),
+      Layer.provide(
+        MachineCallHistory.layer.pipe(
+          Layer.provide(
+            Layer.mock(MachineMap.MachineMap)({
+              reportCall: (report) => Ref.update(reportedCalls, (calls) => [...calls, report]),
+            }),
+          ),
+        ),
+      ),
       Layer.provide(Layer.succeedContext(links)),
       Layer.provide(NodeCrypto.layer),
       Layer.provideMerge(
@@ -541,7 +554,7 @@ const makeMac = (
         }),
         Effect.provideService(McpSchema.McpServerClient, mcpClient),
       );
-    return { links: Context.get(links, PeerLinks.PeerLinks), call };
+    return { links: Context.get(links, PeerLinks.PeerLinks), call, reportedCalls };
   });
 
 const failureOf = (result: McpSchema.CallToolResult) => {
@@ -614,6 +627,40 @@ it.effect("a standard arrow is a linked environment fenced to auto", () =>
       expect(wire.requests.every((request) => request.accessClientId === "mac-token.access")).toBe(
         true,
       );
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("each forwarded call goes to History, never with its arguments", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({ level: "standard", agentTools: true, paused: false });
+      yield* env.call("thread:mac-full", "t3_thread_launch", launchOnVps("thread:mac-full"));
+      yield* env.call("thread:mac-full", "t3_project_update", {
+        environmentId: vps.environmentId,
+        projectId: vpsProject,
+        title: "Renamed from the Mac",
+      });
+      const reported = yield* Ref.get(env.reportedCalls);
+      expect(reported.map(({ id: _id, at: _at, ...call }) => call)).toEqual([
+        {
+          to: PEER,
+          threadId: "thread:mac-full",
+          threadTitle: "thread:mac-full",
+          tool: "t3_thread_launch",
+          outcome: "succeeded",
+        },
+        {
+          to: PEER,
+          threadId: "thread:mac-full",
+          threadTitle: "thread:mac-full",
+          tool: "t3_project_update",
+          outcome: "refused",
+        },
+      ]);
+      const text = JSON.stringify(reported);
+      expect(text).not.toContain("Run the suite there");
+      expect(text).not.toContain("Renamed from the Mac");
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

@@ -159,7 +159,7 @@ const makeLayer = (input: {
         Layer.mock(ProcessRunner.ProcessRunner)({
           run: () => Effect.succeed({ code: 128, stdout: "" } as never),
         }),
-        Layer.mock(MachinePeers.MachinePeers)({}),
+        Layer.mock(MachinePeers.MachinePeers)({ machineOf: () => undefined }),
         Layer.mock(ForkUpdates.ForkUpdates)({ available: false }),
       ),
     ),

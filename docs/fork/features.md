@@ -92,7 +92,7 @@ The portal has the views Map, Table, Health, Settings, Queue, Tasks, History, In
 
 The map role never raises a thread's limits. Map writes need a live full-access/default caller, even with `edit`. These checks run on the server for agents started from web, desktop and mobile.
 
-The full list of arrow capabilities and secret copy are specified in MM-1915 to MM-1918. They are not available yet.
+Each arrow lists what agents on the source can do on the target: read threads, launch and delegate, exec and settings (MM-1915). The arrow panel, Map, Table and `machines_read` show the list. Secret copy waits for MM-1917.
 
 ### Work on other machines
 
@@ -102,7 +102,8 @@ An arrow with agent tools makes the target machine a linked environment of the s
 - **Access:** `read` gives read-only access. `standard` gives `auto`, and it changes only the threads that its own link started: not the projects, settings or threads of the other machine. `admin` gives full access (MM-302).
 - **Thread limits:** each call carries the limits of the calling thread, and the other machine applies the narrower of those and the level. A thread in plan or approval-required mode can work on another machine within its own mode (MM-1902).
 - **Pause and removal:** while the owner's emergency pause is on, work on other machines waits and tries again after Resume. Removing the arrow or its agent tools fails that work with the reason (MM-1914).
-- **Manual links:** `t3 environment link`, `t3 environment unlink` and Link and Forget in Settings > Connections refuse. Set the arrow in the portal instead.
+- **Manual links:** `t3 environment link` and `t3 environment unlink` refuse. Settings > Connections on web, desktop and mobile shows the arrow links read-only, with "Set arrows in the portal". A permanent arrow shows no expiry. A temporary arrow shows its end; renew it in the portal.
+- **History:** each tool call that an agent forwards to another machine shows in the portal History, with the machines, the calling thread, the tool, the outcome and the time. The arguments and the output stay out of the portal (MM-1922).
 - **Limits:** a link reaches the other machine through its tunnel hostname. A machine that never answered since this server started is not listed.
 
 ### Commands on other machines
@@ -178,6 +179,8 @@ A browser client session lasts 1 day, also on sibling machines (MM-922). A refus
 ### Owner-only access changes
 
 Only the owner changes `clientAccess` and `machineMap`: in the portal with the passkey step, or in the desktop app of the machine (MM-919). Agents cannot change them, not even as a proposal.
+
+Only the owner raises access between machines, in the portal (MM-803). When an agent raises a level, turns on agent tools or exec, or raises a map role, the change waits in the Inbox as "owner only", also with the map role `edit`. An agent with `edit` still lowers or removes access at once.
 
 ### App invites and app tokens
 
