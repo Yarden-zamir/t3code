@@ -482,6 +482,40 @@ it("moves the shared sidebar group settings of the map to the tab keys once", ()
   expect(readMap(db).settings).toEqual(legacy.settings);
 });
 
+it("an undo or a restore of a revision from before the tab keys sets the new keys (MM-415)", async () => {
+  const { object, db, ctx, env } = portal(true);
+  const setGroups = async (name: string) => {
+    const result = await object.changes(owner, {
+      summary: `Groups ${name}`,
+      changes: [
+        {
+          _tag: "setSetting",
+          machineId: null,
+          scope: "server",
+          key: "sidebarGroups",
+          present: true,
+          value: { groups: [{ id: "a", name, rules: [] }] },
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    return readMap(db).revision;
+  };
+  await setGroups("A");
+  const second = await setGroups("B");
+  // The new version moves the keys of the map when it starts.
+  db.prepare("DELETE FROM meta WHERE key = 'sidebar_tab_keys'").run();
+  const moved = new MachineMapObject(ctx, env);
+  const server = () => readMap(db).settings.shared.server;
+  expect(server()).toEqual({ sidebarTabs: { tabs: [{ id: "a", name: "B", rules: [] }] } });
+
+  expect((await moved.undo(owner, second)).ok).toBe(true);
+  expect(server()).toEqual({ sidebarTabs: { tabs: [{ id: "a", name: "A", rules: [] }] } });
+
+  expect((await moved.restore(owner, second)).ok).toBe(true);
+  expect(server()).toEqual({ sidebarTabs: { tabs: [{ id: "a", name: "B", rules: [] }] } });
+});
+
 describe("owner-only grants (MM-803)", () => {
   const macSocket = {
     deserializeAttachment: () => ({ kind: "machine", machineId: MAC }),

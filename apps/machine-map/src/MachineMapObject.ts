@@ -328,6 +328,41 @@ const ALERT_PUSH: Record<HealthAlertKind, { readonly title: string; readonly uni
 
 const nowIso = () => new Date().toISOString();
 
+type ScopedValues = { server?: Record<string, unknown>; client?: Record<string, unknown> };
+
+/**
+ * MM-415: setting values with the old sidebar group keys moved to the sidebar tab keys, and the old
+ * command names of a shared `keybindings` value renamed. The portal moves its map once, and an undo
+ * or a restore of a revision from before the move moves the same way.
+ */
+const currentSidebarTabValues = <Values extends ScopedValues>(values: Values): Values => {
+  const server =
+    values.server && (moveLegacySidebarTabKeys("server", values.server) ?? values.server);
+  const keybindings = server?.[KEYBINDINGS_SETTING_KEY];
+  const renamed = Array.isArray(keybindings) ? renameLegacySidebarTabCommands(keybindings) : null;
+  return {
+    ...values,
+    ...(server === undefined
+      ? {}
+      : { server: renamed === null ? server : { ...server, [KEYBINDINGS_SETTING_KEY]: renamed } }),
+    ...(values.client === undefined
+      ? {}
+      : { client: moveLegacySidebarTabKeys("client", values.client) ?? values.client }),
+  };
+};
+
+/** MM-415: one setting change of an old revision, on the sidebar tab keys. */
+const currentSidebarTabChange = (change: MapChange): MapChange => {
+  if (change._tag !== "setSetting") return change;
+  const moved = currentSidebarTabValues({ [change.scope]: { [change.key]: change.value } })[
+    change.scope
+  ];
+  const [entry] = Object.entries(moved ?? {});
+  return entry === undefined || (entry[0] === change.key && entry[1] === change.value)
+    ? change
+    : { ...change, key: entry[0], value: entry[1] };
+};
+
 const slug = (name: string): string => {
   let out = "";
   for (const char of name.toLowerCase()) {
@@ -450,32 +485,14 @@ export class MachineMapObject extends DurableObject<Env> {
   }
 
   /**
-   * Fork: sidebar groups became sidebar tabs. The shared values and the overrides of the map move
-   * once to the new keys, and a shared `keybindings` value gets the new command names. A machine
+   * Fork (MM-415): sidebar groups became sidebar tabs. The shared values and the overrides of the
+   * map move once to the new keys, and a shared `keybindings` value gets the new command names. A machine
    * on an older version keeps the old keys, so it does not sync tabs with a newer one.
    */
   #sidebarTabKeys(): void {
     if (this.#sql("SELECT key FROM meta WHERE key = 'sidebar_tab_keys'").length > 0) return;
-    type Scoped = { server?: Record<string, unknown>; client?: Record<string, unknown> };
-    const scoped = (values: Scoped): Scoped => {
-      const server =
-        values.server && (moveLegacySidebarTabKeys("server", values.server) ?? values.server);
-      const keybindings = server?.[KEYBINDINGS_SETTING_KEY];
-      const renamed = Array.isArray(keybindings)
-        ? renameLegacySidebarTabCommands(keybindings)
-        : null;
-      return {
-        ...values,
-        ...(server === undefined
-          ? {}
-          : {
-              server: renamed === null ? server : { ...server, [KEYBINDINGS_SETTING_KEY]: renamed },
-            }),
-        ...(values.client === undefined
-          ? {}
-          : { client: moveLegacySidebarTabKeys("client", values.client) ?? values.client }),
-      };
-    };
+    type Scoped = ScopedValues;
+    const scoped = currentSidebarTabValues;
     this.ctx.storage.transactionSync(() => {
       const current = this.#sql<{ value: string }>("SELECT value FROM meta WHERE key = 'map'")[0];
       if (current) {
@@ -1645,7 +1662,8 @@ export class MachineMapObject extends DurableObject<Env> {
   #undoChanges(revisionNumber: number): { summary: string; changes: ReadonlyArray<MapChange> } {
     const revision = this.#revision(revisionNumber);
     if (!revision) throw new PortalError(404, `Unknown revision ${revisionNumber}.`);
-    const changes = undoChanges(this.#map, revision.inverse);
+    // MM-415: an undo of a revision from before the sidebar tab keys sets the new keys.
+    const changes = undoChanges(this.#map, revision.inverse).map(currentSidebarTabChange);
     checkEditableChanges(this.#map, changes);
     return { summary: `Undo rev ${revision.revision}: ${revision.summary}`, changes };
   }
@@ -2243,7 +2261,20 @@ export class MachineMapObject extends DurableObject<Env> {
   /** MM-704: a new revision that returns the map to an older revision. */
   restore(owner: OwnerContext, revision: number) {
     return this.#run(owner, (): WriteResult => {
-      const target = this.#mapAt(revision);
+      const old = this.#mapAt(revision);
+      // MM-415: a revision from before the sidebar tab keys comes back on the new keys.
+      const target: MachineMapDocument = {
+        ...old,
+        settings: {
+          shared: currentSidebarTabValues(old.settings.shared),
+          overrides: Object.fromEntries(
+            Object.entries(old.settings.overrides).map(([id, values]) => [
+              id,
+              currentSidebarTabValues(values),
+            ]),
+          ),
+        },
+      };
       const changes = restoreChanges(this.#map, target);
       if (changes.length === 0)
         throw new PortalError(409, `The map already matches rev ${revision}.`);
