@@ -132,9 +132,14 @@ export function redactUrlSecretsInText(text: string): string {
     // `http://a/?u=http://b&token=x` the token parses as part of `http://b` and stays.
     // Revisit if agents pass such unencoded nested URLs with secrets.
     const next = text.indexOf("://", marker + 3);
-    const nextStart = next >= 0 && next < end ? schemeStart(text, next, marker + 3) : end;
     // A `://` without a scheme, as in `?a=://b&token=x`, stays part of this URL.
-    if (nextStart < next) end = nextStart;
+    for (let later = next; later >= 0 && later < end; later = text.indexOf("://", later + 3)) {
+      const laterStart = schemeStart(text, later, marker + 3);
+      if (laterStart < later) {
+        end = laterStart;
+        break;
+      }
+    }
     while (end > marker + 3 && belongsToSurroundingText(text.slice(start, end))) end -= 1;
     if (start < marker) {
       const candidate = text.slice(start, end);

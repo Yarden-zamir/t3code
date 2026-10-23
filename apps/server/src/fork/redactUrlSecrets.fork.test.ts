@@ -85,6 +85,11 @@ describe("redactUrlSecretsInText", () => {
     );
     assert.notInclude(adjacent, "fake-one");
     assert.notInclude(adjacent, "fake-two");
+    const afterSchemeless = redactUrlSecretsInText(
+      "[a](http://a/?token=fake-one&safe=://placeholder),[b](http://b/?token=fake-two)",
+    );
+    assert.notInclude(afterSchemeless, "fake-one");
+    assert.notInclude(afterSchemeless, "fake-two");
     for (const value of ["://placeholder", "123://placeholder"]) {
       assert.notInclude(
         redactUrlSecretsInText(`https://example.test/?safe=${value}&token=fake`),
