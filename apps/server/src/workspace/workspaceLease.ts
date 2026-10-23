@@ -18,16 +18,15 @@ export const withWorkspaceLease = <A, E, R>(
   cwd: string,
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
-  Effect.gen(function* () {
-    const held = yield* heldLeases;
+  Effect.flatMap(Effect.service(heldLeases), (held) => {
     const existing = leases.get(cwd);
     const token = held.get(cwd);
-    if (token !== undefined && existing?.holder === token) return yield* effect;
+    if (token !== undefined && existing?.holder === token) return effect;
     const lease = existing ?? { semaphore: Semaphore.makeUnsafe(1), users: 0, holder: undefined };
     leases.set(cwd, lease);
     lease.users++;
     const holder = Symbol(cwd);
-    return yield* lease.semaphore
+    return lease.semaphore
       .withPermit(
         Effect.sync(() => {
           lease.holder = holder;
