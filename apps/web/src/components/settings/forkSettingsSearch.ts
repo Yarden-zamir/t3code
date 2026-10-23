@@ -209,6 +209,18 @@ export const BEHAVIOR_ITEMS = [
     searchTerms: ["keyboard shortcuts keybindings tooltip chips limit more how many"],
   },
   {
+    id: "back-forward-buttons",
+    title: "Back and forward buttons",
+    to: "/settings/general",
+    searchTerms: ["back forward arrows navigation history title bar vs code"],
+  },
+  {
+    id: "remember-back-forward-history",
+    title: "Remember back and forward history",
+    to: "/settings/general",
+    searchTerms: ["back forward navigation history restart restore skip deleted threads"],
+  },
+  {
     id: "repository-owner-filters",
     title: "Repository owner filters",
     to: "/settings/general",

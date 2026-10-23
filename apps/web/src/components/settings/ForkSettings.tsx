@@ -6,6 +6,10 @@ import { RestoreWorktreesSettingsRow, WorktreeArtifactSettingsRows } from "./For
 import { EnvironmentLabelSettingsRow } from "./EnvironmentLabelSettingsRow";
 import { AppToggleShortcutsSettingsRow } from "./AppToggleShortcutsSettingsRow";
 import {
+  BackForwardButtonsSettingsRow,
+  RememberBackForwardHistorySettingsRow,
+} from "./BackForwardSettingsRows";
+import {
   FocusLevelHighlightSettingsRow,
   TooltipShortcutLimitSettingsRow,
   TooltipShortcutsSettingsRow,
@@ -111,6 +115,8 @@ const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>> = {
   "mobile-new-thread-project": MobileNewThreadProjectSettingsRow,
   "mobile-composer-camera": MobileComposerCameraSettingsRow,
   "mobile-sidebar-tabs": MobileSidebarTabsSettingsRow,
+  "back-forward-buttons": BackForwardButtonsSettingsRow,
+  "remember-back-forward-history": RememberBackForwardHistorySettingsRow,
 };
 
 /** Opens the row of `item` in its usual place, the way a search result does. */

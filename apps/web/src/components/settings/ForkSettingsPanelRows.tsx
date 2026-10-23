@@ -5,6 +5,10 @@
 import { isElectron } from "../../env";
 import { AppToggleShortcutsSettingsRow } from "./AppToggleShortcutsSettingsRow";
 import {
+  BackForwardButtonsSettingsRow,
+  RememberBackForwardHistorySettingsRow,
+} from "./BackForwardSettingsRows";
+import {
   FocusLevelHighlightSettingsRow,
   TooltipShortcutLimitSettingsRow,
   TooltipShortcutsSettingsRow,
@@ -75,6 +79,10 @@ export function BehaviorRows() {
       <TooltipShortcutsSettingsRow />
 
       <TooltipShortcutLimitSettingsRow />
+
+      <BackForwardButtonsSettingsRow />
+
+      <RememberBackForwardHistorySettingsRow />
 
       {isElectron ? <AppToggleShortcutsSettingsRow /> : null}
 

@@ -52,6 +52,8 @@ const FORK_RESTORED_SETTINGS = [
   ["focusLevelHighlight", "Focus highlight"],
   ["tooltipShortcuts", "Shortcuts in tooltips"],
   ["tooltipShortcutLimit", "Keys per tooltip"],
+  ["backForwardButtons", "Back and forward buttons"],
+  ["rememberBackForwardHistory", "Remember back and forward history"],
   ["confirmTerminalClose", "Terminal close confirmation"],
   ["restartReconnectWarningGrace", "Quiet reconnect after restart"],
 ] as const satisfies ReadonlyArray<
