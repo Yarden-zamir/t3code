@@ -735,6 +735,21 @@ it.effect("a new hostname of B gets its own pairing, never the old session", () 
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
+it.effect("a known machine at a new hostname that does not answer yet is unreachable", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
+      yield* env.call("thread:mac-full", "t3_project_list", { environmentId: vps.environmentId });
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-moved.example.com" }));
+      const moved = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: vps.environmentId,
+      });
+      // The arrow is still there, so remote tasks wait instead of failing.
+      expect(failureOf(moved)).toMatchObject({ code: "orchestration_error" });
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
 it.effect("a link that B refuses before A sees the change fails as unreachable", () =>
   Effect.scoped(
     Effect.gen(function* () {

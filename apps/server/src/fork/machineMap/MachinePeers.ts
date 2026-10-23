@@ -159,6 +159,8 @@ const make = Effect.gen(function* () {
   const sessions = new Map<string, PeerSession>();
   // What each peer address answered as. A peer keeps its environment id across restarts.
   const identities = new Map<string, PeerIdentity>();
+  // The machine that each environment id answered for, at any of its addresses.
+  const machineOfEnvironment = new Map<EnvironmentId, MachineId>();
   // The links of the last look outside a pause. A pause sets every arrow to `none` and keeps the
   // levels only in the portal, so these say which links the pause holds (MM-1914).
   let lastLinks: ReadonlyArray<ArrowLink> = [];
@@ -238,6 +240,7 @@ const make = Effect.gen(function* () {
         descriptor.capabilities.linkFence === true,
     };
     identities.set(target.origin, identity);
+    machineOfEnvironment.set(identity.environmentId, target.machine.id);
     return identity;
   });
 
@@ -362,14 +365,18 @@ const make = Effect.gen(function* () {
         );
       }
       if (looked.found === undefined) {
-        // A machine that answered as this id before has lost its arrow. Known limit: an id that
-        // never answered, while a machine with an arrow is offline and was never reached, reads
-        // as unreachable, so its work retries instead of failing. Revisit if the portal gives each
+        // A machine that answered as this id before is unknown once it has no arrow, and only
+        // offline while it keeps one, also at a new hostname. Known limit: an id that never
+        // answered, while a machine with an arrow is offline and was never reached, reads as
+        // unreachable, so its work retries instead of failing. Revisit if the portal gives each
         // machine its environment id.
-        const answeredBefore = [...identities.values()].some(
-          (identity) => identity.environmentId === environmentId,
-        );
-        return yield* looked.unknown > 0 && !answeredBefore
+        const machine = machineOfEnvironment.get(environmentId);
+        const arrowed =
+          machine !== undefined &&
+          arrowLinkTargets(local.desired, yield* Clock.currentTimeMillis).some(
+            (target) => target.machine.id === machine,
+          );
+        return yield* arrowed || (machine === undefined && looked.unknown > 0)
           ? linkError(
               "unreachable",
               `No machine with an arrow from this one answers as ${environmentId} now. A machine may be offline.`,
