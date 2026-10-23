@@ -129,13 +129,15 @@ export function selectKnownTerminalSessions(
 export function useAttachedTerminalSession(input: {
   readonly environmentId: EnvironmentId | null;
   readonly terminal: TerminalAttachInput | null;
+  /** Fork: the shell of a draft in Terminal mode, whose stream detaches soon after its view. */
+  readonly draft?: boolean | undefined;
 }): TerminalSessionState {
   const canRead = useEnvironmentScope(input.environmentId, AuthTerminalReadScope);
   const canOperate = useEnvironmentScope(input.environmentId, AuthTerminalOperateScope);
   const attach = useEnvironmentQuery(
     input.environmentId !== null && input.terminal !== null
       ? canOperate
-        ? terminalEnvironment.attach({
+        ? (input.draft ? terminalEnvironment.attachDraft : terminalEnvironment.attach)({
             environmentId: input.environmentId,
             input: input.terminal,
           })

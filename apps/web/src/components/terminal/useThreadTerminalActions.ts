@@ -4,6 +4,7 @@ import {
   DEFAULT_TERMINAL_ID,
   isTerminalThread,
   type ScopedThreadRef,
+  terminalThreadShell,
 } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
@@ -47,6 +48,11 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
       : null;
   const project = useProject(projectRef);
   const threadWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
+  // Fork: every terminal of a terminal thread (drawer, right panel) runs the shell of the thread.
+  const threadShell =
+    serverThread && isTerminalThread(serverThread)
+      ? terminalThreadShell(serverThread.modelSelection.model)
+      : undefined;
   const knownSessions = useKnownTerminalSessions({
     environmentId: threadRef?.environmentId ?? null,
     threadId: threadRef?.threadId ?? null,
@@ -122,6 +128,7 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
           worktreePath: location.worktreePath,
           ...(input.extraEnv ? { extraEnv: input.extraEnv } : {}),
         }),
+        ...(threadShell ? { shell: threadShell } : {}),
         ...input.size,
       },
     });

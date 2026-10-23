@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../appearanceFonts";
+import { terminalThreadOpenInput } from "../forkTerminalThreadOpen";
 import { useGrabTerminalFocus } from "../hooks/useForkTerminalFocus";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { observeResize } from "../lib/observeResize";
@@ -38,6 +39,8 @@ export function ForkShellTerminal(props: {
   readonly workspaceRoot: string;
   readonly worktreePath: string | null;
   readonly shell: string | undefined;
+  /** A draft in Terminal mode, whose shell the server discards once no view holds it. */
+  readonly draft?: boolean;
   readonly focusRequestId: number;
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly onInput?: (data: string) => void;
@@ -73,14 +76,12 @@ export function ForkShellTerminal(props: {
     // `.finally`, not `try`/`finally`: React Compiler skips a component with `try`/`finally`.
     void openTerminal({
       environmentId: threadRef.environmentId,
-      input: {
+      input: terminalThreadOpenInput({
         threadId: threadRef.threadId,
-        terminalId: DEFAULT_TERMINAL_ID,
-        cwd: launch.cwd,
-        worktreePath: launch.worktreePath,
-        env: { ...launch.env },
-        ...(props.shell ? { shell: props.shell } : {}),
-      },
+        workspaceRoot: props.workspaceRoot,
+        worktreePath: props.worktreePath,
+        shell: props.shell,
+      }),
     }).finally(() => {
       setRestarting(false);
       // The button had focus; the new shell gets it back.
@@ -130,6 +131,7 @@ export function ForkShellTerminal(props: {
         worktreePath={launch.worktreePath}
         runtimeEnv={launch.env}
         shell={props.shell}
+        draft={props.draft}
         onSessionExited={() => {}}
         onStatusChange={setStatus}
         onInput={props.onInput}

@@ -15,8 +15,6 @@ import {
   BackgroundWorkDetailsSettingsRow,
   CheckNewerBeforeUpdateInstallSettingsRow,
   ForkAutoUpdateSettingsRow,
-  TerminalAppShortcutsFirstSettingsRow,
-  TerminalCloseConfirmationSettingsRow,
 } from "./ForkSettingsRows";
 import { InstalledAppSettingsRow } from "./InstalledAppSettingsRow";
 import { MobileAppSettingsSection } from "./MobileAppSettings";
@@ -63,10 +61,6 @@ export function NotificationRows() {
 export function BehaviorRows() {
   return (
     <>
-      <TerminalCloseConfirmationSettingsRow />
-
-      <TerminalAppShortcutsFirstSettingsRow />
-
       <KeyboardFocusLevelsSettingsRow />
 
       <FocusLevelHighlightSettingsRow />

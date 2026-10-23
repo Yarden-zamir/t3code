@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { forkSettingGroups } from "./forkSettingsCatalog";
 import { FORK_SETTINGS_RESTORE_PATCH } from "./forkSettingsRestore";
-import type { SettingsSearchItemId } from "./settingsSearch";
+import { SETTINGS_SEARCH_ITEMS, type SettingsSearchItemId } from "./settingsSearch";
 
 // Fork: a new fork setting must show on Settings > Fork and reset with Restore defaults.
 // docs/fork/operations.md "Change the fork" names both places.
@@ -105,6 +105,16 @@ describe("fork settings registration", () => {
       ];
     });
     expect(missing).toEqual([]);
+  });
+
+  it("puts each terminal setting on Settings > Terminal", () => {
+    const misplaced = forkSettingKeys.flatMap((key) => {
+      const row = FORK_PAGE_ROWS[key];
+      if (typeof row !== "string" || !key.toLowerCase().includes("terminal")) return [];
+      const item = SETTINGS_SEARCH_ITEMS.find((candidate) => candidate.id === row);
+      return item?.to === "/settings/terminal" ? [] : [`${key}: ${row} leads to ${item?.to}`];
+    });
+    expect(misplaced).toEqual([]);
   });
 
   it("resets or deliberately keeps each fork setting on Restore defaults", () => {

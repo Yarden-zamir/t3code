@@ -13,6 +13,7 @@ import {
 import {
   Plus,
   Square,
+  SquareArrowOutUpRight,
   SquareSplitHorizontal,
   SquareSplitVertical,
   TerminalSquare,
@@ -406,6 +407,8 @@ interface TerminalViewportProps {
   providerInstanceId?: ProviderInstanceId;
   /** Fork: the shell slug of a terminal thread; the server default when absent. */
   shell?: string | undefined;
+  /** Fork: the shell of a draft in Terminal mode, which detaches soon after it leaves. */
+  draft?: boolean | undefined;
   onSessionExited: () => void;
   /** Fork: the session status after each change, for a screen that shows the ended state. */
   onStatusChange?: ((status: TerminalSessionState["status"]) => void) | undefined;
@@ -452,6 +455,7 @@ function TerminalSessionViewport({
   runtimeEnv,
   providerInstanceId,
   shell,
+  draft,
   onSessionExited,
   onStatusChange,
   onInput,
@@ -545,6 +549,7 @@ function TerminalSessionViewport({
       ...(providerInstanceId ? { providerInstanceId } : {}),
       ...(shell ? { shell } : {}),
     },
+    draft,
   });
   const canResizeTerminal =
     canOperateTerminal && terminalSession.version > 0 && terminalSession.status === "running";
@@ -1220,6 +1225,8 @@ interface ThreadTerminalDrawerProps {
   closeShortcutLabel?: string | undefined;
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string) => void;
+  /** Fork: turns the terminal into a terminal thread. Absent where terminal threads are off. */
+  onMoveTerminalToThread?: ((terminalId: string) => void) | undefined;
   onHeightChange: (height: number) => void;
   onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   keybindings: ResolvedKeybindingsConfig;
@@ -1506,6 +1513,7 @@ export default function ThreadTerminalDrawer({
   closeShortcutLabel,
   onActiveTerminalChange,
   onCloseTerminal,
+  onMoveTerminalToThread,
   onHeightChange,
   onAddTerminalContext,
   keybindings,
@@ -1925,6 +1933,20 @@ export default function ThreadTerminalDrawer({
             >
               <Plus className="size-3.25" />
             </TerminalActionButton>
+            {onMoveTerminalToThread ? (
+              <>
+                <div className="h-4 w-px bg-border/80" />
+                <TerminalActionButton
+                  disabled={!canOperateTerminal}
+                  className="p-1 text-foreground/90 transition-colors hover:bg-accent"
+                  onClick={() => onMoveTerminalToThread(resolvedActiveTerminalId)}
+                  label="Move to a terminal thread"
+                  tooltipLabel="Move to a terminal thread: the shell goes on there"
+                >
+                  <SquareArrowOutUpRight className="size-3.25" />
+                </TerminalActionButton>
+              </>
+            ) : null}
             <div className="h-4 w-px bg-border/80" />
             <TerminalActionButton
               disabled={!canOperateTerminal}
@@ -2046,6 +2068,17 @@ export default function ThreadTerminalDrawer({
                   >
                     <Plus className="size-3.25" />
                   </TerminalActionButton>
+                  {onMoveTerminalToThread ? (
+                    <TerminalActionButton
+                      disabled={!canOperateTerminal}
+                      className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
+                      onClick={() => onMoveTerminalToThread(resolvedActiveTerminalId)}
+                      label="Move to a terminal thread"
+                      tooltipLabel="Move to a terminal thread: the shell goes on there"
+                    >
+                      <SquareArrowOutUpRight className="size-3.25" />
+                    </TerminalActionButton>
+                  ) : null}
                   <TerminalActionButton
                     disabled={!canOperateTerminal}
                     className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"

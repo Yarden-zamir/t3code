@@ -20,7 +20,11 @@ import { useTerminalThreadEnvironmentIds } from "../hooks/useForkTerminalThreads
 import { useScratchProject } from "../hooks/useScratchProject";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
-import { isTerminalFocused, isTerminalThreadShellKey } from "../lib/terminalFocus";
+import {
+  isTerminalFocused,
+  isTerminalThreadAppChord,
+  isTerminalThreadShellKey,
+} from "../lib/terminalFocus";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { undoLatestThreadAction } from "../hooks/showThreadUndoNotice";
@@ -83,7 +87,7 @@ function ChatRouteGlobalShortcuts() {
           terminalOpen,
           previewFocus: isPreviewFocused(),
           previewOpen,
-          editableFocus: isEditableFocused(event.target),
+          editableFocus: !isTerminalThreadAppChord(event) && isEditableFocused(event.target),
           modelPickerOpen: isModelPickerOpen(),
         },
       });

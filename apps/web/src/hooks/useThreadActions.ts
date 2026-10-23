@@ -347,7 +347,10 @@ export function useThreadActions() {
     const resolved = resolveThreadTarget(target);
     if (!resolved) return AsyncResult.success(undefined);
     const { thread, threadRef } = resolved;
-    if (!threadRuntimeCanArchive(thread.runtime)) {
+    // Fork: archive ends the program that runs in a terminal thread, so it waits like an agent run.
+    // Read before the archive, which closes the main terminal of a terminal thread.
+    const terminal = readTerminalThreadState(thread);
+    if (!threadRuntimeCanArchive(thread.runtime) || terminal?.running === true) {
       return AsyncResult.failure(
         Cause.fail(
           new ThreadArchiveBlockedError({
@@ -362,8 +365,6 @@ export function useThreadActions() {
     const shouldNavigateToDraft =
       currentRouteThreadRef?.threadId === threadRef.threadId &&
       currentRouteThreadRef.environmentId === threadRef.environmentId;
-    // Fork: read before the archive, which closes the main terminal of a terminal thread.
-    const terminal = readTerminalThreadState(thread);
     const action = ThreadUndo.begin("archive", scopedThreadKey(threadRef));
     const archiveResult = await archiveThreadMutation({
       environmentId: threadRef.environmentId,

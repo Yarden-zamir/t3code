@@ -16,9 +16,16 @@ export function getTerminalFocusOwner(): TerminalFocusOwner | null {
  * that terminal fills the screen, so the app would have no shortcuts left (palette, new thread).
  */
 export function isTerminalFocused(event?: { readonly metaKey: boolean }): boolean {
-  const owner = getTerminalFocusOwner();
-  if (owner === "terminal-thread" && event?.metaKey === true) return false;
-  return owner !== null;
+  if (isTerminalThreadAppChord(event)) return false;
+  return getTerminalFocusOwner() !== null;
+}
+
+/**
+ * Fork: a Cmd chord in the main terminal of a terminal thread, which the app handles. The input of
+ * that terminal is then no editable field either, so `!editableFocus` shortcuts such as undo work.
+ */
+export function isTerminalThreadAppChord(event?: { readonly metaKey: boolean }): boolean {
+  return event?.metaKey === true && getTerminalFocusOwner() === "terminal-thread";
 }
 
 /**

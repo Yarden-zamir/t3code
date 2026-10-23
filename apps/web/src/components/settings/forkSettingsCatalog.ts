@@ -91,16 +91,25 @@ const FORK_SETTING_GROUPS = [
     entries: [{ ids: ["repository-owner-filters"] }, { ids: ["pull-request-filter-chips"] }],
   },
   {
-    title: "Scripts and terminal",
+    title: "Scripts and keyboard",
     entries: [
       { ids: ["global-scripts"] },
       { ids: ["app-toggle-shortcuts"] },
-      { ids: ["terminal-app-shortcuts-first"] },
       { ids: ["keyboard-focus-levels"] },
       { ids: ["focus-level-highlight"] },
       { ids: ["tooltip-shortcuts"] },
       { ids: ["tooltip-shortcut-limit"] },
+    ],
+  },
+  {
+    title: "Terminal",
+    entries: [
+      { ids: ["terminal-thread-font-limits"] },
+      { ids: ["terminal-key-mappings"] },
+      { ids: ["terminal-app-shortcuts-first"] },
       { ids: ["terminal-close-confirmation"] },
+      { ids: ["terminal-history"] },
+      { ids: ["terminal-threads"] },
     ],
   },
   {
@@ -112,10 +121,6 @@ const FORK_SETTING_GROUPS = [
       { ids: ["thread-link-chips"] },
       { ids: ["thread-links-open-desktop-app"] },
       { ids: ["preview-local-server-groups"] },
-      { ids: ["terminal-threads"] },
-      { ids: ["terminal-history"] },
-      { ids: ["terminal-key-mappings"] },
-      { ids: ["terminal-thread-font-limits"] },
       { ids: ["mobile-published-themes"] },
     ],
   },

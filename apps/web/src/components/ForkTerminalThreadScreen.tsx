@@ -41,7 +41,7 @@ import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
 import { getTerminalFocusOwner, isTerminalThreadShellKey } from "../lib/terminalFocus";
 import { cn } from "../lib/utils";
 import { useRemoteOpenState } from "../remoteOpen";
-import { useRightPanelStore } from "../rightPanelStore";
+import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { settleAndAdvance } from "../settleAndAdvance";
 import { useProject, useQuietThreadShell } from "../state/entities";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
@@ -53,6 +53,7 @@ import {
 } from "../state/server";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
+import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
@@ -190,13 +191,24 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
     rightPanel.addDiffSurfaceStable();
   };
 
+  const writeTerminal = useAtomCommand(terminalEnvironment.write, { reportFailure: false });
   useChatShortcuts({
     enabled: true,
     keybindings,
     scriptKeybindings: keybindings,
     getShortcutContext,
     threadFindActive: false,
-    typeIntoComposer: () => false,
+    // Like the chat composer: a key typed while focus is on the page (after a dialog, a rename or
+    // Wake now) goes to the shell, and the shell takes focus.
+    typeIntoComposer: (key) => {
+      if (!readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope)) return false;
+      void writeTerminal({
+        environmentId: threadRef.environmentId,
+        input: { threadId: threadRef.threadId, terminalId: DEFAULT_TERMINAL_ID, data: key },
+      });
+      drawer.focusMain();
+      return true;
+    },
     closeThreadFind: () => {},
     commands: {
       "thread.copyReference": shellKeyOr(threadShortcuts.copyReference),
@@ -464,7 +476,9 @@ function TerminalThreadNotices(props: {
   });
   if (statusLine.line === null && environmentBanners.items.length === 0) return null;
   return (
-    <div className="flex flex-col gap-1 px-3 pb-2 [--chat-content-max-width:100%]">
+    // The banners take their width from the composer inset, which this screen has no composer to
+    // set. Without it they shrink to their icon.
+    <div className="flex flex-col gap-1 px-3 pb-2 [--chat-composer-drawer-inset:0px] [--chat-content-max-width:100%]">
       {statusLine.line}
       <ComposerBannerStack items={environmentBanners.items} />
     </div>
@@ -631,8 +645,19 @@ function useTerminalThreadDrawer(threadRef: ScopedThreadRef) {
     environmentId: threadRef.environmentId,
     threadId: threadRef.threadId,
   });
+  // A terminal in the right panel is not a drawer terminal either, like in the chat drawer
+  // (`panelTerminalIds` of PersistentThreadTerminals.tsx). Otherwise the drawer reuses it, and one
+  // shell shows in both places.
+  const panelSurfaces = useRightPanelStore(
+    (state) => selectThreadRightPanelState(state.byThreadKey, threadRef).surfaces,
+  );
+  const panelTerminalIds = new Set(
+    panelSurfaces.flatMap((surface) => (surface.kind === "terminal" ? surface.terminalIds : [])),
+  );
   const drawerSessions = (sessions ?? []).filter(
-    (session) => session.target.terminalId !== DEFAULT_TERMINAL_ID,
+    (session) =>
+      session.target.terminalId !== DEFAULT_TERMINAL_ID &&
+      !panelTerminalIds.has(session.target.terminalId),
   );
   const [focusRequestId, setFocusRequestId] = useState(0);
   // The drawer never holds the thread's own shell. An older client state can list it; that entry
@@ -737,8 +762,9 @@ function MainTerminal(props: {
 }) {
   const { threadRef } = props;
 
-  // Attention that the user sees counts as a visit on the server, so every client clears it. A
-  // window without focus marks it when it gets focus. The visit uses the server time of the
+  // Attention that the user sees counts as a visit on the server, so every client clears it. Like
+  // the chat watermark, a visible page counts without focus (a second screen, a preview tab); a
+  // hidden tab marks it when it shows again. The visit uses the server time of the
   // attention, because a client clock can be behind it.
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const summary = useKnownTerminalSessions({
@@ -763,15 +789,15 @@ function MainTerminal(props: {
   useEffect(() => {
     if (attentionAt === undefined) return;
     const markSeen = () => {
-      if (!document.hasFocus()) return;
+      if (document.visibilityState !== "visible") return;
       void visitThread({
         environmentId: threadRef.environmentId,
         input: { threadId: threadRef.threadId, visitedAt: attentionAt },
       });
     };
     markSeen();
-    window.addEventListener("focus", markSeen);
-    return () => window.removeEventListener("focus", markSeen);
+    document.addEventListener("visibilitychange", markSeen);
+    return () => document.removeEventListener("visibilitychange", markSeen);
   }, [attentionAt, threadRef, visitThread]);
 
   return (

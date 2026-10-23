@@ -38,6 +38,7 @@ import {
 import { newThreadId } from "../../lib/utils";
 import { setDraftTerminalMode, setDraftTerminalShell } from "../../forkDraftTerminalStore";
 import { resolveDraftTerminalWorkspace } from "../../forkDraftTerminalWorkspace";
+import { terminalThreadOpenInput } from "../../forkTerminalThreadOpen";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useProject } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -432,14 +433,12 @@ export function ForkDraftTerminalComposer(props: {
     mountedLaunchKey.current = launchKey;
     void openTerminal({
       environmentId,
-      input: {
+      input: terminalThreadOpenInput({
         threadId: draft.threadId,
-        terminalId: DEFAULT_TERMINAL_ID,
-        cwd: launch.cwd,
-        worktreePath: launch.worktreePath,
-        env: { ...launch.env },
-        ...(shell ? { shell } : {}),
-      },
+        workspaceRoot: props.workspaceRoot,
+        worktreePath,
+        shell,
+      }),
     });
   });
 
@@ -583,6 +582,7 @@ export function ForkDraftTerminalComposer(props: {
             workspaceRoot={props.workspaceRoot}
             worktreePath={worktreePath}
             shell={shell}
+            draft
             focusRequestId={0}
             keybindings={props.keybindings}
             onInput={onInput}

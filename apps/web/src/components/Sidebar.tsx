@@ -4371,6 +4371,19 @@ export default function Sidebar() {
             .threadTitleRegeneration === true;
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const forkMenuState = readForkThreadMenuState(thread);
+        const isRunning = !threadRuntimeCanArchive(thread.runtime) || forkMenuState.programRuns;
+        // Fork: a key or the command palette picks Archive without a menu that shows it disabled,
+        // so it says why instead of doing nothing.
+        if (keyPreset?.[0] === "archive" && isRunning) {
+          toastManager.add({
+            type: "warning",
+            title: "Cannot archive this thread now",
+            description: forkMenuState.programRuns
+              ? "A program runs in its terminal, and archive would end it. Stop the program first."
+              : "An agent runs in it. Stop the run first.",
+          });
+          return;
+        }
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
         const isPinned = thread.pinnedAt != null;
@@ -4404,7 +4417,7 @@ export default function Sidebar() {
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
-              isRunning: !threadRuntimeCanArchive(thread.runtime) || forkMenuState.programRuns,
+              isRunning,
               canMarkUnread: thread.latestRun?.completedAt != null,
               supports: {
                 settlement: supportsSettlement,

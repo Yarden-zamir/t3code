@@ -276,12 +276,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["typography family size monospace code blocks diffs file previews"],
   },
   {
-    id: "terminal-font",
-    title: "Terminal font",
-    to: "/settings/appearance",
-    searchTerms: ["typography family size monospace output"],
-  },
-  {
     id: "font-smoothing",
     title: "Font smoothing",
     to: "/settings/appearance",
@@ -771,6 +765,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["agent opens browser device simulator pop into view hide"],
   },
   ...ForkSearch.PREVIEW_ITEMS,
+  ...ForkSearch.TERMINAL_ITEMS,
   {
     id: "automatic-pull",
     title: "Automatically pull",
