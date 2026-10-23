@@ -178,6 +178,7 @@ import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkPreviewServerGroups from "./fork/PreviewServerGroups.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
 import * as MachineExec from "./fork/machineMap/MachineExec.ts";
+import * as MachineExecRoute from "./fork/machineMap/machineExecRoute.ts";
 import * as MachineHost from "./fork/machineMap/MachineHost.ts";
 import * as MachineMap from "./fork/machineMap/MachineMap.ts";
 import * as MachineMapState from "./fork/machineMap/MachineMapState.ts";
@@ -782,6 +783,11 @@ const layerMakeRoutes = Layer.mergeAll(
   McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
+  ),
+  // Fork: machine map, the stream of `t3 machine exec` (MM-1919).
+  MachineExecRoute.layer.pipe(
+    Layer.provide(McpOAuth.layerMcpClientAuthenticator),
+    Layer.provide(NodeSocket.layerWebSocketConstructor),
   ),
   // Follows delegated tasks running in linked environments, including after a restart.
   Layer.effectDiscard(

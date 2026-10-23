@@ -108,13 +108,24 @@ An arrow with agent tools makes the target machine a linked environment of the s
 
 ### Commands on other machines
 
-An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908).
+An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908). In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's (MM-1919).
 
 - **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Table and the arrow panel show an "exec" sticker.
-- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
+- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Elsewhere it acts as the local user, as `t3 tool` does. The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
 - **Stop:** the emergency pause, a removed arrow or exec turned off stops a running command at once (MM-1916).
-- **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`.
-- **Limits:** a run lasts at most 90 seconds, because the answer goes through Cloudflare. Start long work in the background and check it later. stdout and stderr keep 50,000 bytes each. A timeout loses the output. A command that reads stdin waits for the timeout. A machine that is offline from the portal still runs commands and sends the History entry when it connects, unless it restarts first.
+- **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`. A `t3 machine exec` run gives one entry when it ends.
+- **In a shell:** in a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
+  - `t3 machine exec vps -- uname -a`
+  - `t3 machine exec vps --cwd ~/app -- git status`
+  - `t3 machine exec vps -- cat app.log | grep error`
+  - `echo hi | t3 machine exec vps -- cat`
+- **Copy files:** use tar through the pipe. The target folder must exist; put `mkdir -p <folder> &&` before the remote `tar` if it does not.
+  - Folder to the other machine: `tar c -C dist . | t3 machine exec vps -- tar x -C /srv/app`
+  - Folder from the other machine: `t3 machine exec vps -- tar c -C /srv/app . | tar x -C ./backup`
+  - One file to the other machine: `t3 machine exec vps -- 'cat > /tmp/file' < file`
+- **Exit codes:** the exit code of the command. 124 when `--timeout` stops it. 255 when the stream fails: a refusal, a lost connection, or an arrow that stops allowing exec. The reason goes to stderr.
+- **Long jobs:** `t3 machine exec` has no time limit. A ping every 25 seconds keeps the connection open through Cloudflare. The end of the agent's turn does not stop it, so an agent can run it in the background. A lost connection stops the command, as with ssh. For a job that must outlive the connection, start it with `nohup <command> > job.log 2>&1 &` in a command that exits 0, and read the log later. A command that exits with another code stops its background jobs too. A command that a signal ends keeps them.
+- **Limits:** a `machine_exec` run lasts at most 90 seconds, because the answer goes through Cloudflare. Use `t3 machine exec` for longer work. `machine_exec` keeps 50,000 bytes of stdout and of stderr. A timeout loses the output. A command that reads stdin waits for the timeout. On a Windows machine, Windows PowerShell runs the command. `t3 machine exec` joins the words of the command with spaces, so quote the command for PowerShell, not for a POSIX shell. Byte-exact stdin to a command on Windows is not tested yet. A machine that is offline from the portal still runs commands and sends the History entry when it connects, unless it restarts first.
 
 ### Thread mentions across machines
 
@@ -675,7 +686,7 @@ The fork desktop app, its notifications and the bundled web page use the Tick3d 
 `t3 tool list`, `t3 tool describe <name>` and `t3 tool call <name> --input '<json>'` run T3 MCP tools from the command line. In a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
 
 - **Works on:** server.
-- In an agent's shell, the command uses the credential of the agent's thread, so the limits of that thread apply. See [MM-1920](../../apps/machine-map/SPEC.md#19-cross-machine-work).
+- In an agent's shell, the command uses the credential of the agent's thread, so the limits of that thread apply. See [MM-1920](../../apps/machine-map/SPEC.md#19-cross-machine-work). `t3 machine exec` uses the same credential; see [Commands on other machines](#commands-on-other-machines).
 - Elsewhere, also in a T3 terminal, it calls the running server of its T3 home with a short full-access session. Machine map History names that caller "CLI (local user)".
 - **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session.
 
