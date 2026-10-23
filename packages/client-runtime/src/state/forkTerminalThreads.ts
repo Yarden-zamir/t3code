@@ -170,7 +170,9 @@ export function terminalThreadStatusLabel(
 ): TerminalThreadStatusLabel | null {
   if (!terminal) return null;
   if (terminal.status === "error") {
-    return terminal.failedAt !== null && isUnseen(terminal.failedAt, lastVisitedAt) ? "Error" : null;
+    return terminal.failedAt !== null && isUnseen(terminal.failedAt, lastVisitedAt)
+      ? "Error"
+      : null;
   }
   if (terminal.status === "starting") return "Connecting";
   const { attention } = terminal;

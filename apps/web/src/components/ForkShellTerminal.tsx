@@ -26,6 +26,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { TerminalViewport } from "./ThreadTerminalDrawer";
 import { Button } from "./ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 /** The title of a terminal thread that no command named yet. */
 export const TERMINAL_THREAD_DEFAULT_TITLE = "Terminal";
@@ -185,9 +186,12 @@ export function ForkShellTerminal(props: {
 export function ShellNotFoundMark(props: { readonly reason: string | undefined }) {
   if (props.reason === undefined) return null;
   return (
-    <span className="ms-2 text-muted-foreground text-xs" title={props.reason}>
-      not found
-    </span>
+    <Tooltip>
+      <TooltipTrigger render={<span className="ms-2 text-muted-foreground text-xs" />}>
+        not found
+      </TooltipTrigger>
+      <TooltipPopup>{props.reason}</TooltipPopup>
+    </Tooltip>
   );
 }
 

@@ -93,7 +93,9 @@ export function readForkThreadMenuState(
 
 /** Fork: the line that the Delete confirm adds when a program runs in one of `threads`. */
 export function readForkDeleteNotice(
-  threads: ReadonlyArray<Pick<EnvironmentThreadShell, "environmentId" | "id" | "providerInstanceId">>,
+  threads: ReadonlyArray<
+    Pick<EnvironmentThreadShell, "environmentId" | "id" | "providerInstanceId">
+  >,
 ): ReadonlyArray<string> {
   const programRuns = threads.some((thread) => readTerminalThreadState(thread)?.running === true);
   if (!programRuns) return [];

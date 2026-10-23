@@ -28,7 +28,12 @@ describe("terminalThreadStatusLabel", () => {
   it("maps session failure and start before attention", () => {
     expect(
       terminalThreadStatusLabel(
-        { status: "error", attention: { kind: "bell", at: after }, running: false, failedAt: after },
+        {
+          status: "error",
+          attention: { kind: "bell", at: after },
+          running: false,
+          failedAt: after,
+        },
         visited,
       ),
     ).toBe("Error");
@@ -102,8 +107,11 @@ describe("terminalThreadStatusLabel", () => {
       );
     expect(failed(after)).toBe("Error");
     expect(failed(before)).toBeNull();
-    expect(statesOf(summary("shell", { status: "error", updatedAt: after })).values().next().value)
-      .toMatchObject({ failedAt: after });
+    expect(
+      statesOf(summary("shell", { status: "error", updatedAt: after }))
+        .values()
+        .next().value,
+    ).toMatchObject({ failedAt: after });
   });
 
   it("shows nothing for a thread without terminal state", () => {

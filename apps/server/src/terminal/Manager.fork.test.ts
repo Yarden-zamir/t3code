@@ -236,7 +236,9 @@ it.layer(
       yield* manager.open(threadScreen("python"));
       const printed = yield* Deferred.make<void>();
       const stop = yield* manager.subscribe((event) =>
-        event.type === "output" ? Deferred.succeed(printed, undefined).pipe(Effect.asVoid) : Effect.void,
+        event.type === "output"
+          ? Deferred.succeed(printed, undefined).pipe(Effect.asVoid)
+          : Effect.void,
       );
       pty.processes[0]?.emit(">>> 1\r\n");
       yield* Deferred.await(printed);
