@@ -1294,6 +1294,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           ) : (
             <ThreadCardStatusBadge
               status={topStatus}
+              announce={!props.isRouteThread}
               trailing={
                 status === "working" ? (
                   <span aria-hidden>
