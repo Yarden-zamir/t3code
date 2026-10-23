@@ -1,7 +1,9 @@
 import type { AuthSessionState, EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import * as Data from "effect/Data";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { HttpClient } from "effect/http";
@@ -37,6 +39,31 @@ function initialConfigOption<E>(
 
 const DEFAULT_SESSION_STATE_TIMEOUT_MS = 6_000;
 
+/**
+ * Fork: the session state decides what this client may change, and the atom keeps a failure until
+ * it turns stale. A request that timed out or could not connect (a slow first page load, a server
+ * restart, a slow tunnel) would leave the client unable to change threads, so it is tried again
+ * until it gets an answer, at most every 10 seconds. A server that rejected the session is not
+ * asked again.
+ */
+const SESSION_RETRY_SCHEDULE = Schedule.exponential("500 millis").pipe(
+  Schedule.modifyDelay(({ duration }) =>
+    Effect.succeed(Duration.min(duration, Duration.seconds(10))),
+  ),
+);
+
+export const retryTransientSessionFailures = <A, E extends { readonly _tag: string }, R>(
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  effect.pipe(
+    Effect.retry({
+      schedule: SESSION_RETRY_SCHEDULE,
+      while: (error) =>
+        error._tag === "RemoteEnvironmentAuthTimeoutError" ||
+        error._tag === "RemoteEnvironmentAuthFetchError",
+    }),
+  );
+
 export const fetchEnvironmentSessionState = Effect.fn(
   "clientRuntime.state.fetchEnvironmentSessionState",
 )(function* (input: {
@@ -56,7 +83,7 @@ export const fetchEnvironmentSessionState = Effect.fn(
     request: ({ client, headers }) => client.session({ headers }),
     // This endpoint returns 200 with authenticated:false for expired credentials.
     isUnauthorizedResponse: (response) => !response.authenticated,
-  });
+  }).pipe(retryTransientSessionFailures);
 });
 
 function makeEnvironmentSessionAtoms<R, E>(
