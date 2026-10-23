@@ -11,6 +11,7 @@ import {
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
   type AuthGrantScope,
+  type AuthMcpClientAccess,
   AuthOrchestrationReadScope,
   AuthRelayWriteScope,
   AuthStandardClientScopes,
@@ -57,6 +58,16 @@ export const MACHINE_LEVEL_SCOPES: Readonly<Record<MachineLevel, ReadonlyArray<A
   ),
   admin: AuthStandardClientScopes,
 };
+
+/**
+ * MM-302: the linked-environment access of each level above `none`. `standard` work is fenced to
+ * the threads its link started (upstream `linkOrigin.ts`); only `admin` is not fenced.
+ */
+export const MACHINE_LEVEL_LINK_ACCESS = {
+  read: "read-only",
+  standard: "auto",
+  admin: "full-access",
+} as const satisfies Record<Exclude<MachineLevel, "none">, AuthMcpClientAccess>;
 
 /** The session subject of a machine on the server of another machine (MM-1305). */
 export const machineSessionSubject = (machineId: MachineId): string => `machine:${machineId}`;

@@ -29,6 +29,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult } from "effect/reactivity";
 import { AppState } from "react-native";
 
+import { noticeAccessEnded } from "../features/connection/forkAccessChangeTracker";
 import { buildPairingUrl } from "../features/connection/pairing";
 import { appAtomRegistry } from "../state/atom-registry";
 import {
@@ -238,6 +239,7 @@ export const layer = Layer.effectDiscard(
       for (const environmentId of plan.disable) {
         yield* registry.setEnabled(environmentId, false).pipe(Effect.ignore);
         setError(environmentId, NO_ACCESS_MESSAGE);
+        noticeAccessEnded(environmentId);
       }
       for (const environmentId of plan.enable) {
         yield* registry.setEnabled(environmentId, true).pipe(Effect.ignore);

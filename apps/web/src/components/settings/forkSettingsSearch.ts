@@ -362,6 +362,13 @@ export const CONNECTIONS_ITEMS = [
 // Fork: machine map (apps/machine-map/SPEC.md MM-203).
 export const MACHINE_MAP_ITEMS = [
   {
+    id: "access-change-notices",
+    title: "Access change notices",
+    to: "/settings/machines",
+    searchTerms: ["machine map arrow permissions scopes access changed toast notice popup"],
+    environmentOnly: true,
+  },
+  {
     id: "environment-label-from-machine-map",
     title: "Environment name from machine map",
     to: "/settings/machines",

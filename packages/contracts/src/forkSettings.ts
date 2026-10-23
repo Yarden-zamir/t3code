@@ -354,6 +354,13 @@ export const ForkServerSettingsFields = {
    * highlights it. Off: the link opens the thread only.
    */
   messageLinks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
+   * Fork: a notice when the machine map changes the access of a client to this server, or the
+   * access of the agents of this server to another machine. A server setting, so the mobile app
+   * reads it, and the machine map turns it on for every machine. Off by default, like every fork
+   * behavior that changes what clients show.
+   */
+  accessChangeNotices: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Fork: machine map connection. See `MachineMapSettings`. */
   machineMap: MachineMapSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /** Fork: how a Cloudflare Access sign-in of a browser meets the clients of the map. See `ClientAccessMode`. */
@@ -421,6 +428,7 @@ export const ForkServerSettingsPatchFields = {
   threadLinkChips: Schema.optionalKey(Schema.Boolean),
   threadLinksOpenDesktopApp: Schema.optionalKey(Schema.Boolean),
   messageLinks: Schema.optionalKey(Schema.Boolean),
+  accessChangeNotices: Schema.optionalKey(Schema.Boolean),
   keybindingSync: Schema.optionalKey(Schema.Boolean),
   previewLocalServerGroups: Schema.optionalKey(Schema.Boolean),
   mobilePublishedThemes: Schema.optionalKey(Schema.Boolean),

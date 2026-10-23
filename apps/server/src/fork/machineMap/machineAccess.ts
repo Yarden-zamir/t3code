@@ -11,6 +11,7 @@ import {
   clientSessionSubject,
   type DesiredBrowserClient,
   type DesiredClient,
+  MACHINE_LEVEL_LINK_ACCESS,
   type AuthMcpClientAccess,
   MACHINE_LEVEL_SCOPES,
   type MachineDesiredState,
@@ -183,16 +184,6 @@ export const isMapSubject = (subject: string) =>
   isMachineSubject(subject) || subject.startsWith(CLIENT_SUBJECT_PREFIX);
 
 /**
- * MM-302: the linked-environment access of each level above `none`. `standard` work is fenced to
- * the threads its link started (upstream `linkOrigin.ts`); only `admin` is not fenced.
- */
-const LEVEL_LINK_ACCESS = {
-  read: "read-only",
-  standard: "auto",
-  admin: "full-access",
-} as const satisfies Record<Exclude<MachineLevel, "none">, AuthMcpClientAccess>;
-
-/**
  * MM-1307: the MCP access of a machine session, or undefined when its arrow has no agent tools.
  * The source sends the limits of its calling thread in `T3-Mode-Limit`, and this machine narrows
  * the access to them (MM-1902). A session without `orchestration:operate`, as an older source
@@ -212,7 +203,7 @@ export const machineMcpAccessFor = (
   return {
     peer,
     access: session.scopes.includes(AuthOrchestrationOperateScope)
-      ? LEVEL_LINK_ACCESS[level]
+      ? MACHINE_LEVEL_LINK_ACCESS[level]
       : "read-only",
   };
 };
@@ -419,7 +410,7 @@ export const arrowLinkTargets = (
       {
         machine: peer.machine,
         origin: peer.origin,
-        access: LEVEL_LINK_ACCESS[peer.level],
+        access: MACHINE_LEVEL_LINK_ACCESS[peer.level],
         endsAtMs: endsAtMs !== null && Number.isFinite(endsAtMs) ? endsAtMs : null,
       },
     ];

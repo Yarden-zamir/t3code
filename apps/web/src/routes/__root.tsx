@@ -1,4 +1,5 @@
 import { PermissionUpdateNotice } from "../components/PermissionUpdateNotice";
+import { ForkAccessChangeNotices } from "../components/ForkAccessChangeNotices";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { setCredentialedSiblingOrigins } from "@t3tools/client-runtime/rpc/siblingCredentials";
@@ -280,6 +281,7 @@ function RootRouteView() {
           <SlowRpcRequestToastCoordinator />
           <HostFreezeToastCoordinator />
           <PermissionUpdateNotice />
+          <ForkAccessChangeNotices />
           {primaryEnvironmentAuthenticated ? <LegacyThreadMigrationToast /> : null}
           <ProjectCloneToastCoordinator />
           <AddProjectToMachineDialogHost />

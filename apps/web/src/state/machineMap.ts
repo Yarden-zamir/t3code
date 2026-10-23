@@ -20,6 +20,9 @@ import { useEnvironmentQuery } from "./query";
 const machineMapState = createEnvironmentRpcSubscriptionAtomFamily(connectionAtomRuntime, {
   label: "environment-data:machine-map:state",
   tag: WS_METHODS.machineMapSubscribe,
+  // The last reader that unmounts ends the stream at once, for example access change notices that
+  // were turned off. The server sends the whole state again on the next subscribe.
+  idleTtlMs: 0,
 });
 
 export const joinMachineMap = createEnvironmentRpcCommand(connectionAtomRuntime, {

@@ -102,6 +102,15 @@ Use the machine map name as the server environment name. A name change in the po
 - **Works on:** server, web, desktop and mobile, through direct and relay connections.
 - **Limits:** the server must join the map and receive its machine record. Without a name, it keeps the operating system name. An offline server keeps the last map name until the portal connects again. Disconnected clients get the current name when they connect. Older clients need an update for live display changes.
 
+### Access change notices
+
+When the owner changes an arrow or a client arrow, open clients get the new access without a reload. A notice names the change, for example "Access to VPS changed: You can now send messages." A change of an arrow with agent tools names what the agents of the server can now do on the other machine.
+
+- **Setting:** server setting `accessChangeNotices` (off by default). Settings > Machines > "Access change notices", and Settings > Fork in the mobile app. A shared value in the portal turns it on for every machine.
+- **Works on:** web, desktop (a toast) and mobile (a popup). The mobile app shows the notices of one update in one popup.
+- **How it works:** the portal sends the new desired state to the target machine at once. A changed level ends the sessions of that machine or client (MM-305, MM-912, MM-917), and the client pairs again with the new scopes. The desktop app pairs again at most once in 30 seconds per machine (MM-306), so a second change soon after can take up to 30 seconds. A link of agents follows the map state that the server sends to its clients on each change. Clients subscribe to that state only while the setting is on.
+- **Limits:** a launch or a reload shows no notice, because there is no earlier access to compare. A removed arrow shows "Access to <machine> ended" when the desktop app removes the machine or the mobile app turns it off.
+
 ### Portal views
 
 The portal has the views Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients (MM-1102). Each view and each selected item has its own link. Agents use the `machines_*` and `machine_exec` tools for machine operations, and the T3 tools with `environmentId` for work on other machines. Client approvals, invites and the resume after an emergency pause stay with the owner.

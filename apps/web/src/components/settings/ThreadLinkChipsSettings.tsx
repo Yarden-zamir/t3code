@@ -11,7 +11,7 @@ import {
 
 export function ThreadLinkChipsSettingsRow() {
   return (
-    <ThreadLinkSwitchRow
+    <ForkServerSwitchRow
       settingKey="threadLinkChips"
       searchId="thread-link-chips"
       label="Thread link chips"
@@ -22,7 +22,7 @@ export function ThreadLinkChipsSettingsRow() {
 
 export function ThreadLinksOpenDesktopAppSettingsRow() {
   return (
-    <ThreadLinkSwitchRow
+    <ForkServerSwitchRow
       settingKey="threadLinksOpenDesktopApp"
       searchId="thread-links-open-desktop-app"
       label="Thread addresses open the desktop app"
@@ -33,7 +33,7 @@ export function ThreadLinksOpenDesktopAppSettingsRow() {
 
 export function MessageLinksSettingsRow() {
   return (
-    <ThreadLinkSwitchRow
+    <ForkServerSwitchRow
       settingKey="messageLinks"
       searchId="message-links"
       label="Message links"
@@ -42,9 +42,18 @@ export function MessageLinksSettingsRow() {
   );
 }
 
-function ThreadLinkSwitchRow(props: {
-  readonly settingKey: "threadLinkChips" | "threadLinksOpenDesktopApp" | "messageLinks";
-  readonly searchId: "thread-link-chips" | "thread-links-open-desktop-app" | "message-links";
+/** Fork: a switch row of a boolean fork server setting. */
+export function ForkServerSwitchRow(props: {
+  readonly settingKey:
+    | "threadLinkChips"
+    | "threadLinksOpenDesktopApp"
+    | "messageLinks"
+    | "accessChangeNotices";
+  readonly searchId:
+    | "thread-link-chips"
+    | "thread-links-open-desktop-app"
+    | "message-links"
+    | "access-change-notices";
   readonly label: string;
   readonly description: string;
 }) {

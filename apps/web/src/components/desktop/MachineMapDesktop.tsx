@@ -42,6 +42,7 @@ import {
 } from "../desktopUpdate.logic";
 import { installLocalUpdate } from "../sidebar/SidebarUpdatePill";
 import { armIdleInstall } from "./DesktopUpdateIdleInstall";
+import { noticeAccessEnded } from "../ForkAccessChangeNotices";
 
 /**
  * Fork: the desktop app's part of the machine map (apps/machine-map/SPEC.md). It reads the state
@@ -128,8 +129,11 @@ function MachineCatalogSync({
 
     for (const { origin, environmentId } of plan.remove) {
       if (environmentId !== null) {
+        const label = environments.find((entry) => entry.environmentId === environmentId)?.label;
         const removed = await removeEnvironment(environmentId);
         if (removed._tag === "Failure") continue;
+        // Leaving the map removes every machine too; only a dropped arrow is an access change.
+        if (state.enabled && state.joined) noticeAccessEnded(environmentId, label ?? origin);
       }
       const cleared = await saveRequestHeaders({ origin, headers: [] });
       if (cleared._tag === "Failure") continue;

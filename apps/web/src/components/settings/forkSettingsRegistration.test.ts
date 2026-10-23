@@ -54,6 +54,7 @@ const FORK_PAGE_ROWS: Record<
   backForwardButtons: "back-forward-buttons",
   rememberBackForwardHistory: "remember-back-forward-history",
   restartReconnectWarningGrace: "restart-reconnect-warning-grace",
+  accessChangeNotices: "access-change-notices",
   worktreePathTemplate: "storage-worktree-path-template",
   recoverInterruptedTurns: "recover-interrupted-turns",
   recoverInterruptedTurnsMessage: "recover-interrupted-turns",
