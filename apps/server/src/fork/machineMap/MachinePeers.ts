@@ -158,6 +158,14 @@ interface ArrowLink extends PeerIdentity {
   readonly answered: boolean;
 }
 
+/** `ws` names the HTTP status of a refused upgrade only in the message of its error event. */
+const refusedUpgrade = (cause: unknown) =>
+  Predicate.isTagged(cause, "SocketError") &&
+  Predicate.hasProperty(cause, "reason") &&
+  Predicate.hasProperty(cause.reason, "cause") &&
+  Predicate.hasProperty(cause.reason.cause, "message") &&
+  cause.reason.cause.message === "Unexpected server response: 401";
+
 const describeFailure = (cause: unknown): string => {
   if (HttpClientError.isHttpClientError(cause)) {
     return cause.response === undefined ? cause.reason._tag : `HTTP ${cause.response.status}`;
@@ -646,10 +654,10 @@ const make = Effect.gen(function* () {
           }),
         ),
       );
-      // The peer ends the sessions of this machine on each level change (MM-1306), and a refused
-      // upgrade tells no reason, so any failed open pairs again once.
+      // The peer ends the sessions of this machine on each level change (MM-1306), so a refused
+      // upgrade pairs again once. An older peer without the route answers 404 and pairs no more.
       const socket = yield* open.pipe(
-        Effect.catch(() =>
+        Effect.catchIf(refusedUpgrade, () =>
           Effect.sync(() => sessions.delete(link.target.origin)).pipe(Effect.andThen(open)),
         ),
         Effect.mapError((cause) =>

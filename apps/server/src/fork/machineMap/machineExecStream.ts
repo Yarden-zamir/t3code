@@ -62,10 +62,9 @@ export const readFrame = (frame: Uint8Array | string): ExecFrame => {
 export interface ExecSocket {
   /** The frames as they arrive. Fails when the socket closes. */
   readonly pull: Effect.Effect<ReadonlyArray<Uint8Array | string>, Socket.SocketError>;
-  /** Sends a frame at once, also when the network is slow: for pings. */
-  readonly write: (frame: Uint8Array | string) => Effect.Effect<void, Socket.SocketError>;
   /** Sends a frame, then waits while the socket holds too much: the backpressure of the stream. */
   readonly send: (frame: Uint8Array | string) => Effect.Effect<void, Socket.SocketError>;
+  /** Sends a message at once, also when the network is slow, so pings never wait for data. */
   readonly message: (message: MachineExecStreamMessage) => Effect.Effect<void, Socket.SocketError>;
   /** Ends the stream after the frames that wait. */
   readonly close: Effect.Effect<void>;
@@ -89,7 +88,6 @@ export const execSocket = Effect.fn("MachineExecStream.execSocket")(function* (
   );
   return {
     pull,
-    write: writer.write,
     send: (frame) => Effect.andThen(writer.write(frame), drained),
     message: (message) => writer.write(encodeMessage(message)),
     close: writer.write(new Socket.CloseEvent(1000)).pipe(Effect.ignore),
@@ -224,7 +222,9 @@ export const runExecClient = Effect.fn("MachineExecStream.runExecClient")(functi
           return failed(message.message ?? "The other machine stopped the command.");
         }
         // A command that a signal ended has no exit code.
-        return { exitCode: message.exitCode ?? EXIT_FAILED };
+        return message.exitCode === null
+          ? failed(message.message ?? "A signal ended the command.")
+          : { exitCode: message.exitCode };
       }
     }
   }).pipe(

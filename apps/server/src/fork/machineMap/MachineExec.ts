@@ -85,7 +85,8 @@ type ExecRequest = Omit<MachineExecInput, "timeoutSeconds">;
 
 /** How a stream ended on the machine that ran it. */
 type StreamEnd =
-  | { readonly _tag: "exited"; readonly exitCode: number }
+  /** A command that a signal ended has no exit code. */
+  | { readonly _tag: "exited"; readonly exitCode: number | null }
   | { readonly _tag: "timedOut" }
   | { readonly _tag: "stopped"; readonly message: string }
   | { readonly _tag: "failed"; readonly message: string };
@@ -313,7 +314,17 @@ const make = Effect.gen(function* () {
           ],
           { concurrency: "unbounded" },
         ).pipe(
-          Effect.andThen(child.exitCode),
+          Effect.andThen(
+            child.exitCode.pipe(
+              // The spawner fails `exitCode` for a command that a signal ended. It ran, so it
+              // ends as `exited` without a code, never as a command that did not start.
+              Effect.orElseSucceed(() => null),
+              // Like ssh, a background job of a command that exits 0 outlives the run: an unref
+              // child skips the process group kill when the scope closes. The spawner still ends
+              // the group of a command that exits with another code.
+              Effect.tap(() => child.unref),
+            ),
+          ),
           Effect.map((exitCode): StreamEnd => ({ _tag: "exited", exitCode })),
         );
         const fromCaller = Effect.gen(function* () {
@@ -323,7 +334,10 @@ const make = Effect.gen(function* () {
             for (const raw of frames) {
               const frame = readFrame(raw);
               if (frame._tag === "data" && frame.channel === MachineExecStreamChannel.stdin) {
-                // A command that does not read its stdin holds the caller here, on purpose.
+                // A command that does not read its stdin holds the caller here, on purpose. Known
+                // limit: the silence check pauses meanwhile, so a caller that vanishes without a
+                // TCP close leaves such a command running until its timeout or a lost arrow.
+                // Revisit if that happens: race the offer against the close of the socket.
                 yield* liveness.whileWaitingHere(Queue.offer(stdin, frame.bytes));
               } else if (frame._tag === "message" && frame.message.type === "eof") {
                 yield* Queue.end(stdin);
@@ -367,7 +381,12 @@ const make = Effect.gen(function* () {
     switch (ended._tag) {
       case "exited":
         yield* report("exited", ended.exitCode);
-        return yield* client.message({ type: "exit", outcome: "exited", exitCode: ended.exitCode });
+        return yield* client.message({
+          type: "exit",
+          outcome: "exited",
+          exitCode: ended.exitCode,
+          ...(ended.exitCode === null ? { message: "A signal ended the command." } : {}),
+        });
       case "timedOut":
         yield* report("timedOut", null);
         return yield* client.message({ type: "exit", outcome: "timedOut", exitCode: null });

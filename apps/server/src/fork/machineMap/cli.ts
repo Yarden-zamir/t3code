@@ -158,13 +158,14 @@ const execCommand = Command.make("exec", {
   Command.withHandler(
     Effect.fn("machineExecCommand")(function* (flags) {
       const timeoutSeconds = Option.getOrUndefined(flags.timeout);
+      const checked =
+        timeoutSeconds !== undefined && timeoutSeconds < 1
+          ? Effect.fail(
+              new ToolCliError({ detail: "--timeout takes a number of seconds above 0." }),
+            )
+          : Effect.void;
       const run = callOnServer(flags, (connection) =>
         Effect.gen(function* () {
-          if (timeoutSeconds !== undefined && timeoutSeconds < 1) {
-            return yield* new ToolCliError({
-              detail: "--timeout takes a number of seconds above 0.",
-            });
-          }
           const socket = yield* openExecSocket(
             streamUrl(connection.endpoint, MACHINE_EXEC_STREAM_PATH),
             { authorization: connection.authorization },
@@ -192,7 +193,8 @@ const execCommand = Command.make("exec", {
           });
         }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor)),
       );
-      const result = yield* run.pipe(
+      // The flags are checked before the CLI issues a session of the local user.
+      const result = yield* Effect.andThen(checked, run).pipe(
         Effect.catch((error): Effect.Effect<ExecClientResult> =>
           Effect.succeed({ exitCode: EXIT_FAILED, message: error.message }),
         ),

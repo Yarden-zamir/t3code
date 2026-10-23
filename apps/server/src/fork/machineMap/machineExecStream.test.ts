@@ -364,6 +364,36 @@ it.live("output arrives while the command still runs", () =>
   }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
 );
 
+it.live("a background job of a command that exits 0 outlives the run, as with ssh", () =>
+  Effect.gen(function* () {
+    const env = yield* setup;
+    const started = yield* env.cli({
+      token: "token-full",
+      start: { machine: "VPS", command: "nohup sleep 300 > /dev/null 2>&1 & echo $!" },
+    });
+    expect(started.exitCode).toBe(0);
+    const pid = started.stdout.toString().trim();
+    const alive = yield* env.cli({
+      token: "token-full",
+      start: { machine: "VPS", command: `kill -0 ${pid} && kill ${pid} && echo alive` },
+    });
+    expect(alive.stdout.toString()).toBe("alive\n");
+  }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.live("a command that a signal ended ran: it fails with 255 and History says exited", () =>
+  Effect.gen(function* () {
+    const env = yield* setup;
+    const result = yield* env.cli({
+      token: "token-full",
+      start: { machine: "VPS", command: "echo before; kill -9 $$" },
+    });
+    expect(result).toMatchObject({ exitCode: EXIT_FAILED, message: "A signal ended the command." });
+    expect(result.stdout.toString()).toBe("before\n");
+    expect(env.vpsReports).toMatchObject([{ outcome: "exited", exitCode: null }]);
+  }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
+);
+
 it.live.each([
   {
     name: "the emergency pause",
