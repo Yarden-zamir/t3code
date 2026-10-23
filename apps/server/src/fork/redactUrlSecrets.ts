@@ -109,25 +109,36 @@ export function redactUrlSecrets(value: string): string {
   return changed ? url.href : value;
 }
 
+const schemeStart = (text: string, marker: number, floor: number) => {
+  let start = marker;
+  while (start > floor && isSchemeChar(text[start - 1]!)) start -= 1;
+  return start;
+};
+
 /** Applies {@link redactUrlSecrets} to every URL inside free text. */
 export function redactUrlSecretsInText(text: string): string {
   let result = "";
   let copiedUpTo = 0;
   let marker = text.indexOf("://");
   while (marker >= 0) {
-    let start = marker;
-    while (start > copiedUpTo && isSchemeChar(text[start - 1]!)) start -= 1;
+    const start = schemeStart(text, marker, copiedUpTo);
     let end = marker + 3;
     while (end < text.length && !isUrlEnd(text[end]!)) end += 1;
+    // Each URL gets its own pass, as in `[a](http://x),[b](http://y)`. Known limit: in
+    // `http://a/?u=http://b&token=x` the token parses as part of `http://b` and stays.
+    // Revisit if agents pass such unencoded nested URLs with secrets.
+    const next = text.indexOf("://", marker + 3);
+    if (next >= 0 && next < end) end = schemeStart(text, next, marker + 3);
     while (end > marker + 3 && belongsToSurroundingText(text.slice(start, end))) end -= 1;
-    const candidate = text.slice(start, end);
-    const redacted = start < marker ? redactUrlSecrets(candidate) : candidate;
-    if (redacted !== candidate) {
-      result += text.slice(copiedUpTo, start) + redacted;
-      copiedUpTo = end;
+    if (start < marker) {
+      const candidate = text.slice(start, end);
+      const redacted = redactUrlSecrets(candidate);
+      if (redacted !== candidate) {
+        result += text.slice(copiedUpTo, start) + redacted;
+        copiedUpTo = end;
+      }
     }
-    // An unchanged candidate can run into the next URL, as in `[a](http://x),[b](http://y)`.
-    marker = text.indexOf("://", redacted === candidate ? marker + 3 : end);
+    marker = next;
   }
   return copiedUpTo === 0 ? text : result + text.slice(copiedUpTo);
 }

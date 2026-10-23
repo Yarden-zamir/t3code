@@ -80,6 +80,11 @@ describe("redactUrlSecretsInText", () => {
       ),
       "[docs](https://example.test),[pair](http://localhost/pair#token=REDACTED)",
     );
+    const adjacent = redactUrlSecretsInText(
+      "[a](https://example.test/?token=fake-one&safe=1),[b](http://example.test/pair?token=fake-two)",
+    );
+    assert.notInclude(adjacent, "fake-one");
+    assert.notInclude(adjacent, "fake-two");
   });
 
   it("hides URLs inside prose and JSON text and keeps the text around them", () => {
