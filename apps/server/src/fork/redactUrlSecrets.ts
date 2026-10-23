@@ -57,6 +57,16 @@ function belongsToSurroundingText(candidate: string): boolean {
   return opener !== undefined && count(candidate, last) > count(candidate, opener);
 }
 
+// A URL in text can run on into the text after it, as in `[a](http://a/?token=x),[b](…)`.
+// Known limit: a secret value that holds a bracket keeps the part after it. Revisit if a
+// real token format uses these characters.
+function textAfterValue(value: string): string {
+  const ends = [")", "]", "}", "(", "[", "{"]
+    .map((char) => value.indexOf(char))
+    .filter((index) => index >= 0);
+  return ends.length === 0 ? "" : value.slice(Math.min(...ends));
+}
+
 const isSecretEntry = ([name, value]: [string, string]) =>
   value !== REDACTED && SECRET_KEYS.has(name.toLowerCase());
 
@@ -68,9 +78,11 @@ function redactParams(text: string): string | undefined {
   let changed = false;
   const pieces = (text.startsWith("?") ? text.slice(1) : text).split("&").map((piece) => {
     const [entry] = new URLSearchParams(piece);
-    if (entry === undefined || !piece.includes("=") || !isSecretEntry(entry)) return piece;
-    changed = true;
-    return `${piece.slice(0, piece.indexOf("="))}=${REDACTED}`;
+    const valueStart = piece.indexOf("=") + 1;
+    if (entry === undefined || valueStart === 0 || !isSecretEntry(entry)) return piece;
+    const redacted = `${piece.slice(0, valueStart)}${REDACTED}${textAfterValue(piece.slice(valueStart))}`;
+    if (redacted !== piece) changed = true;
+    return redacted;
   });
   return changed ? pieces.join("&") : undefined;
 }
@@ -175,7 +187,6 @@ function isPreviewTool(toolName: string): boolean {
 
 /** A preview `url` input can be schemeless, such as `localhost:5173/pair#token=…`. */
 function redactPreviewUrl(value: string): string {
-  if (value.includes("://")) return redactUrlSecrets(value);
   // Normalize first: `alice:pass@host` would otherwise parse with `alice:` as its scheme.
   let normalized: string;
   try {
@@ -221,23 +232,26 @@ const redactOutputText = (text: string, key: string | undefined) =>
     ? redactPreviewUrl(text)
     : redactUrlSecretsInText(text);
 
-/** Claude asks with `<tool name>: <input JSON>` when no SDK title is set. */
+/**
+ * Claude asks with `<tool name>: <input JSON>` when no SDK title is set, and cuts a long input.
+ * So find the URL fields by their JSON key, which also works on cut JSON.
+ */
 function redactApprovalPrompt(prompt: string): string {
   const separator = prompt.indexOf(": ");
   if (separator < 0 || !isPreviewTool(prompt.slice(0, separator))) return prompt;
-  const toolName = prompt.slice(0, separator);
-  let input: unknown;
-  try {
-    input = JSON.parse(prompt.slice(separator + 2));
-  } catch {
-    // Claude cuts a long input, so its JSON does not parse. The scan finds URLs with a scheme.
-    return redactUrlSecretsInText(prompt);
+  let result = prompt;
+  for (const key of PREVIEW_URL_KEYS) {
+    const field = `"${key}":"`;
+    for (let start = result.indexOf(field); start >= 0; start = result.indexOf(field, start)) {
+      start += field.length;
+      const quote = result.indexOf('"', start);
+      const end = quote < 0 ? result.length : quote;
+      const redacted = redactPreviewUrl(result.slice(start, end));
+      result = result.slice(0, start) + redacted + result.slice(end);
+    }
   }
-  const redacted = redactStrings(input, redactInputUrl);
   // The scan also covers URLs outside the URL fields, as in a `preview_evaluate` expression.
-  return redactUrlSecretsInText(
-    redacted === input ? prompt : `${toolName}: ${JSON.stringify(redacted)}`,
-  );
+  return redactUrlSecretsInText(result);
 }
 
 /**

@@ -95,6 +95,10 @@ describe("redactUrlSecretsInText", () => {
       ),
       "[a](http://a/?token=REDACTED&safe=://placeholder),[b](http://b/?token=REDACTED)",
     );
+    assert.strictEqual(
+      redactUrlSecretsInText("[a](http://a/?token=fake-one),[b](http://b/?token=fake-two)"),
+      "[a](http://a/?token=REDACTED),[b](http://b/?token=REDACTED)",
+    );
     for (const value of ["://placeholder", "123://placeholder"]) {
       assert.notInclude(
         redactUrlSecretsInText(`https://example.test/?safe=${value}&token=fake`),
@@ -172,9 +176,17 @@ describe("redactTurnItemUrlSecrets", () => {
     );
     assert.notInclude(JSON.stringify(item), "fake-");
     const credentials = redactTurnItemUrlSecrets(
-      toolItem("mcp__t3-code__preview_open", { url: "alice:fake-pass@example.test/?key=fake-key" }),
+      toolItem("mcp__t3-code__preview_open", {
+        url: "alice:fake-pass@example.test/?safe=://placeholder&key=fake-key",
+      }),
     );
     assert.notInclude(JSON.stringify(credentials), "fake");
+    const schemeless = redactTurnItemUrlSecrets(
+      toolItem("mcp__t3-code__preview_open", {
+        url: "example.test/?safe=://placeholder&token=fake",
+      }),
+    );
+    assert.notInclude(JSON.stringify(schemeless), "fake");
     const listed = redactTurnItemUrlSecrets(
       toolItem("mcp__t3-code__t3_preview_list", {}, { tabs: [{ url: "http://x.test/?key=fake" }] }),
     );
@@ -198,8 +210,13 @@ describe("redactTurnItemUrlSecrets", () => {
       requestKind: "command",
       prompt,
     });
-    for (const url of ["http://h.test/pair#token=fake", "localhost:5733/pair#token=fake"]) {
-      const preview = approval(`mcp__t3-code__preview_open: {"url":"${url}"}`);
+    for (const input of [
+      '{"url":"http://h.test/pair#token=fake"}',
+      '{"url":"localhost:5733/pair#token=fake"}',
+      // Claude cuts a long input, so the JSON is incomplete.
+      '{"url":"localhost:5733/pair#token=fake","padding":"aaa...',
+    ]) {
+      const preview = approval(`mcp__t3-code__preview_open: ${input}`);
       assert.notInclude(JSON.stringify(redactTurnItemUrlSecrets(preview)), "fake");
     }
     const other = approval('Bash: curl "https://api.test/?key=x"');
