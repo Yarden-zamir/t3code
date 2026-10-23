@@ -16,6 +16,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Portal](docs/fork/features.md#machine-map):** one portal at `t3.yarden-zamir.com` maps every T3 machine, adds phones with an app invite, and sets access between them.
 - **[Environment name from machine map](docs/fork/features.md#environment-name-from-machine-map):** an optional setting keeps environment names equal to machine map names, also after a name change.
 - **[Portal views](docs/fork/features.md#portal-views):** Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients.
+- **[Work on other machines](docs/fork/features.md#work-on-other-machines):** an arrow with agent tools makes the other machine a linked environment, where agents delegate tasks within their own limits. Each arrow lists what it allows, only the owner raises it, and History lists each forwarded call.
 - **[Join and install](docs/fork/features.md#join-and-install):** "Add machine" shows one command per system that installs the fork and joins.
 - **[Join feedback](docs/fork/features.md#join-and-install):** the open join dialog shows when a machine uses the code, and whether it connected.
 - **[Emergency pause](docs/fork/features.md#emergency-pause):** a big red button stops all agents and sets all access to none.
@@ -28,7 +29,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Zoom and pan](docs/fork/features.md#zoom-and-pan):** the map zooms, pans and fits all cards, with "Auto layout".
 - **[Approved clients](docs/fork/features.md#approved-clients):** a new browser waits until the owner approves it.
 - **[Client access](docs/fork/features.md#client-access):** each machine decides which browsers get in through Cloudflare Access; an open browser waits for approval when its access changes.
-- **[Owner-only access changes](docs/fork/features.md#owner-only-access-changes):** only the owner changes `clientAccess` and `machineMap`.
+- **[Owner-only access changes](docs/fork/features.md#owner-only-access-changes):** only the owner changes `clientAccess` and `machineMap`, and only the owner raises access between machines.
 - **[Sibling client sessions](docs/fork/features.md#sibling-client-sessions):** a browser client session lasts 1 day, also on sibling machines.
 - **[App invites and app tokens](docs/fork/features.md#app-invites-and-app-tokens):** "Invite an app" shows a QR code that a native app uses once.
 - **[Machines panel](docs/fork/features.md#machines-panel):** a read-only map in the right panel of a thread.
@@ -48,7 +49,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Central build caches](docs/fork/features.md#central-build-caches):** opt-in Vite caches and Android app outputs outside checkouts, with central-only pruning.
 - **[Fork Sync](docs/fork/operations.md#fork-sync):** a workflow merges upstream main into fork main; a T3 task on the VPS starts it every 2 hours.
 - **[Fork CI](docs/fork/operations.md#fork-ci):** runs on each push and pull request to main; branch protection requires "Fork CI result".
-- **[Repair agent](docs/fork/operations.md#repair-agent):** a failed Fork Sync, Fork Release or Fork CI run on main calls an agent on the VPS.
+- **[Repair agent](docs/fork/operations.md#repair-agent):** a failed Fork Sync, Fork Release or Fork CI run on main calls an agent on the VPS, which repairs it with the scripts of the [fork-repair skill](.agents/skills/fork-repair/SKILL.md).
 
 **Agents**
 
@@ -61,7 +62,9 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 **Threads**
 
-- **[Sidebar groups](docs/fork/features.md#sidebar-groups):** thread groups as tabs above the sidebar list, filled by drag or by rules. Mobile shows and edits them too.
+- **[Restore worktrees on resume](docs/fork/features.md#restore-worktrees-on-resume):** recover a missing checkout from its saved branch and run project setup before continuing (off by default).
+- **[Artifact-only worktree cleanup](docs/fork/features.md#artifact-only-worktree-cleanup):** evict ignored build outputs before dependencies, keep checkouts and branches, and report logical bytes per folder type (off by default; no orphan cleanup).
+- **[Sidebar tabs](docs/fork/features.md#sidebar-tabs):** tabs above the sidebar list that hold threads, filled by drag or by rules. Mobile shows and edits them too.
 - **[Snooze quick options](docs/fork/features.md#snooze-quick-options):** edit the choices of the snooze menus.
 - **[Worktree path template](docs/fork/features.md#worktree-path-template):** a template decides where new worktrees go.
 - **[Thread link chips](docs/fork/features.md#thread-link-chips):** every thread link in chat shows as an attached-thread chip.

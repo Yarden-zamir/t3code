@@ -30,6 +30,10 @@
     "./machineMapResources": {
       "types": "./src/machineMapResources.ts",
       "import": "./src/machineMapResources.ts"
+    },
+    "./sidebarTabs": {
+      "types": "./src/sidebarTabs.ts",
+      "import": "./src/sidebarTabs.ts"
     }
   },
   "scripts": {

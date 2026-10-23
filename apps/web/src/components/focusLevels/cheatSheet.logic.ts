@@ -2,7 +2,7 @@ import {
   type KeybindingCommand,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
   type ResolvedKeybindingsConfig,
-  SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS,
+  SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS,
   STATIC_KEYBINDING_COMMANDS,
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
@@ -145,8 +145,8 @@ const FAMILIES: ReadonlyArray<{
     context: { modelPickerOpen: true },
   },
   {
-    commands: SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS,
-    label: "Switch to group 1–9",
+    commands: SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS,
+    label: "Switch to tab 1–9",
     context: { sidebarFocus: true },
   },
 ];
@@ -184,8 +184,8 @@ const LABELS: Partial<Record<KeybindingCommand, string>> = {
   "sidebar.previousItem": "Thread above",
   "sidebar.nextItem": "Thread below",
   "sidebar.openItem": "Open thread",
-  "sidebar.previousGroup": "Previous group",
-  "sidebar.nextGroup": "Next group",
+  "sidebar.previousTab": "Previous tab",
+  "sidebar.nextTab": "Next tab",
   "thread.previous": "Previous thread",
   "thread.next": "Next thread",
   "rightPanel.toggle": "Toggle right panel",

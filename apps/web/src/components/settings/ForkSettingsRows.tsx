@@ -253,3 +253,27 @@ export function ForkAutoUpdateSettingsRow() {
     />
   );
 }
+
+/** Fork: `autoSettleWaitsForBackgroundCommands`. */
+export function AutoSettleWaitsForBackgroundCommandsSettingsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("auto-settle-waits-for-background-commands")}
+      serverScoped
+      settingKeys={["autoSettleWaitsForBackgroundCommands"]}
+      description="Auto-settle skips a thread while a background command of its agent runs, so the command can finish and wake the agent. Settling stops the agent session and kills the command. A command left running, such as a dev server, holds the thread until the session releases idle background work."
+      control={
+        <ScopedSwitch
+          settingKeys={["autoSettleWaitsForBackgroundCommands"]}
+          checked={settings.autoSettleWaitsForBackgroundCommands}
+          onCheckedChange={(checked) =>
+            updateSettings({ autoSettleWaitsForBackgroundCommands: Boolean(checked) })
+          }
+          aria-label="Auto-settle waits for background commands"
+        />
+      }
+    />
+  );
+}

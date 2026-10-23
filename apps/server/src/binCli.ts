@@ -10,6 +10,7 @@ import * as NetService from "@t3tools/shared/Net";
 import packageJson from "../package.json" with { type: "json" };
 import { acpMcpBridgeCommand, acpMcpCallCommand } from "./cli/acpMcpBridge.ts";
 import { authCommand } from "./cli/auth.ts";
+import { environmentCommand } from "./cli/environment.ts";
 import { appCommand } from "./cli/app.ts";
 import { browserCommand } from "./cli/browser.ts";
 import { connectCommand } from "./cli/connect.ts";
@@ -31,7 +32,7 @@ import { themeCommand } from "./cli/theme.ts";
 import { toolCommand } from "./cli/tool.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
-import { machineMapCommand } from "./fork/machineMap/cli.ts";
+import { machineCommand, machineMapCommand } from "./fork/machineMap/cli.ts";
 
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
@@ -77,6 +78,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       appCommand,
       pairCommand,
       authCommand,
+      environmentCommand,
       browserCommand,
       projectCommand,
       threadCommand,
@@ -95,6 +97,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       triageCommand,
       // Fork: machine map.
       machineMapCommand,
+      machineCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),
   );

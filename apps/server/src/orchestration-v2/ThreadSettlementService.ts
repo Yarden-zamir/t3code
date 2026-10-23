@@ -5,6 +5,7 @@ import {
   CommandId,
   type ThreadId,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2PendingBackgroundTask,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
@@ -154,6 +155,18 @@ function pullRequestSettles(
   const pullRequestAtMs = Date.parse(terminalAt);
   if (Number.isNaN(pullRequestAtMs)) return false;
   return pullRequestAtMs >= userAnchorMs;
+}
+
+/**
+ * Fork: settling stops the provider session, which kills a running background command before it
+ * can wake its agent. A command left running, such as a dev server, holds the thread until the
+ * provider session releases its silent background work (DEFAULT_MAX_IDLE_PIN_MS in
+ * ProviderSessionManager.ts).
+ */
+function hasPendingBackgroundCommand(
+  tasks: ReadonlyArray<Pick<OrchestrationV2PendingBackgroundTask, "kind">>,
+): boolean {
+  return tasks.some((task) => task.kind === "command");
 }
 
 export function isAutoSettlementCandidate(
@@ -320,7 +333,14 @@ export const make = Effect.gen(function* () {
     // the merged pull request: most threads carry no link and settle from
     // their branch lookup, which would otherwise wait for the next minute's
     // sweep on a possibly stale cached answer.
-    const candidates = threads.filter((thread) => isAutoSettlementCandidate(thread, nowMs));
+    const candidates = threads.filter(
+      (thread) =>
+        isAutoSettlementCandidate(thread, nowMs) &&
+        !(
+          settings.autoSettleWaitsForBackgroundCommands &&
+          hasPendingBackgroundCommand(thread.pendingBackgroundTasks ?? [])
+        ),
+    );
 
     const settleThread = Effect.fn("ThreadSettlementServiceV2.settleThread")(
       function* (thread: (typeof candidates)[number], pullRequest: SettlementPullRequest | null) {

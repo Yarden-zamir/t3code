@@ -5,6 +5,7 @@ import {
   KeybindingShortcut,
   KeybindingWhenNode,
   MAX_KEYBINDINGS_COUNT,
+  renameLegacySidebarTabCommands,
   ResolvedKeybindingRule,
   ResolvedKeybindingsConfig,
   type ServerRemoveKeybindingInput,
@@ -181,6 +182,9 @@ const decodeKeybindingRuleExit = Schema.decodeUnknownExit(KeybindingRule);
 const decodeResolvedKeybindingFromConfigExit = Schema.decodeExit(ResolvedKeybindingFromConfig);
 const decodeRawKeybindingsEntriesExit = Schema.decodeUnknownExit(RawKeybindingsEntries);
 const encodeKeybindingsConfigPrettyJson = Schema.encodeEffect(KeybindingsConfigPrettyJson);
+const encodeRawKeybindingsPrettyJson = Schema.encodeEffect(
+  fromJsonStringPretty(Schema.Array(Schema.Unknown)),
+);
 
 export interface KeybindingsConfigState {
   readonly keybindings: ResolvedKeybindingsConfig;
@@ -409,6 +413,29 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  // Fork: a file from before sidebar tabs were called groups gets the new command names once.
+  const renameLegacySidebarTabKeybindings = Effect.gen(function* () {
+    const entries = decodeRawKeybindingsEntriesExit(yield* readRawConfig);
+    if (entries._tag === "Failure") return;
+    const renamed = renameLegacySidebarTabCommands(entries.value);
+    if (renamed === null) return;
+    yield* encodeRawKeybindingsPrettyJson(renamed).pipe(
+      Effect.flatMap((encoded) =>
+        writeFileStringAtomically({ filePath: keybindingsConfigPath, contents: `${encoded}\n` }),
+      ),
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, path),
+      Effect.mapError(
+        (cause) =>
+          new KeybindingsConfigError({
+            configPath: keybindingsConfigPath,
+            detail: "failed to rename sidebar tab keybindings",
+            cause,
+          }),
+      ),
+    );
+  });
+
   const writeConfigAtomically = (rules: readonly KeybindingRule[]) => {
     return encodeKeybindingsConfigPrettyJson(rules).pipe(
       Effect.map((encoded) => `${encoded}\n`),
@@ -477,6 +504,7 @@ const make = Effect.gen(function* () {
         return;
       }
 
+      yield* renameLegacySidebarTabKeybindings;
       const runtimeConfig = yield* loadRuntimeCustomKeybindingsConfig();
       if (runtimeConfig.issues.length > 0) {
         yield* Effect.logWarning(

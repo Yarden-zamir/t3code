@@ -18,6 +18,7 @@ import { clientKeyCode } from "@t3tools/contracts/machineMap";
 
 import { usesText } from "../rules/access.ts";
 import { effectiveSettings, findArrow, MAP_ROLES, roleRank, sameValue } from "../rules/map.ts";
+import { CapabilityStickers } from "./ArrowCapabilities.tsx";
 import { callApi } from "./apiClient.ts";
 import { usePortalContext } from "./context.ts";
 import { buildStandings } from "./build.ts";
@@ -29,7 +30,9 @@ import {
   ALERT_TEXT,
   COMMAND_LABEL,
   COMMAND_STICKER,
+  CALL_STICKER,
   EXEC_STICKER,
+  PROPOSAL_REASON,
   LEVEL_LABEL,
   machineName,
   PRESENCE_STICKER,
@@ -171,8 +174,7 @@ export function TableView() {
                         </span>
                         {(arrow.agentTools || arrow.expiresAt) && (
                           <span className="stickers">
-                            {arrow.agentTools && <span className="sticker accent flat">tools</span>}
-                            {arrow.exec && <span className="sticker accent flat">exec</span>}
+                            <CapabilityStickers arrow={arrow} />
                             {arrow.expiresAt && <span className="sticker warn flat">temp</span>}
                           </span>
                         )}
@@ -723,6 +725,7 @@ export function HistoryView() {
     portal.snapshot.commands,
     portal.health.alerts,
     portal.execs,
+    portal.calls,
   );
   const actors = new Map<string, string>();
   for (const entry of entries) {
@@ -859,7 +862,10 @@ export function HistoryView() {
     }
     if (entry._tag === "exec") {
       const { exec } = entry;
-      const title = `${machineName(map, exec.from)} ran a command on ${machineName(map, exec.to)}`;
+      const title =
+        exec.outcome === "refused"
+          ? `${machineName(map, exec.from)} was refused a command on ${machineName(map, exec.to)}`
+          : `${machineName(map, exec.from)} ran a command on ${machineName(map, exec.to)}`;
       return (
         <Item
           key={entryKey(entry)}
@@ -874,6 +880,7 @@ export function HistoryView() {
               <p className="small">
                 In <span className="mono">{exec.cwd}</span> · {exec.durationMs} ms
               </p>
+              {exec.reason === undefined ? null : <p className="small">Refused: {exec.reason}</p>}
             </details>
           }
         >
@@ -888,6 +895,29 @@ export function HistoryView() {
           <span className={`sticker ${EXEC_STICKER[exec.outcome]}`}>
             {exec.outcome === "exited" ? `exit ${exec.exitCode ?? "?"}` : exec.outcome}
           </span>
+        </Item>
+      );
+    }
+    if (entry._tag === "call") {
+      const { call } = entry;
+      const title = `${machineName(map, call.from)} called ${call.tool} on ${machineName(map, call.to)}`;
+      return (
+        <Item
+          key={entryKey(entry)}
+          kind="call"
+          on={false}
+          label={title}
+          open={() => portal.select({ _tag: "arrow", from: call.from, to: call.to })}
+        >
+          {kindSticker("call")}
+          <span className="grow">
+            <b>{title}</b>
+            <span className="sub">
+              {actorText(entryActor(entry), map)} · {when(entry.at)}
+            </span>
+          </span>
+          {agentSticker(entryActor(entry))}
+          <span className={`sticker ${CALL_STICKER[call.outcome]}`}>{call.outcome}</span>
         </Item>
       );
     }
@@ -1154,8 +1184,8 @@ export function InboxView() {
                   {timeUntil(proposal.expiresAt, now)}
                 </span>
               </span>
-              <span className={`sticker ${proposal.reason === "self-escalation" ? "" : "wait"}`}>
-                {proposal.reason === "self-escalation" ? "own access" : "proposal"}
+              <span className={`sticker ${PROPOSAL_REASON[proposal.reason].look}`}>
+                {PROPOSAL_REASON[proposal.reason].sticker}
               </span>
             </Item>
           ))}

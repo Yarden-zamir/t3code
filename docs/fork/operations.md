@@ -11,16 +11,55 @@ The fork disables every upstream workflow, because they need upstream's runners 
 
 ### Fork Sync
 
-`.github/workflows/fork-sync.yml` merges `pingdotgg/t3code` main into fork main. The interval task "Fork Sync trigger" on the VPS T3 server starts it every 2 hours with `gh workflow run`. The workflow has no GitHub schedule, because GitHub delays and drops scheduled runs.
+`.github/workflows/fork-sync.yml` merges `pingdotgg/t3code` main into fork main, then the new heads of the [adopted upstream pull requests](#adopted-upstream-pull-requests). The interval task "Fork Sync trigger" on the VPS T3 server starts it every 2 hours with `gh workflow run`. The workflow has no GitHub schedule, because GitHub delays and drops scheduled runs.
 
-- It typechecks the merge, runs the fork tests and pushes the merge as a fast-forward. If main moved during the run, it merges the new main and pushes again.
+- It runs the migration check, typechecks the merge, runs the fork tests and pushes the merge as a fast-forward. If main moved during the run, it merges the new main and pushes again.
 - The fork tests are the test files that the fork changed since `git merge-base upstream/main HEAD`. A diff against a newer upstream main also lists files that only upstream changed.
-- For a local sync repair, run `vp run typecheck` and those fork tests with `vp test run <files>`. Run apps/web tests from `apps/web` with `vp test run --project unit --project browser <files>`; install Playwright Chromium first if needed. Do not run the changed-file checks over all upstream changes; wait for Fork CI on the repair pull request.
+- For a local sync repair, run `vp run typecheck` and those fork tests. The [fork-repair skill](../../.agents/skills/fork-repair/SKILL.md) runs both: `checks.py` and `fork_tests.py`. To run the tests by hand, use `vp test run <files>`, and run apps/web tests from `apps/web` with `vp test run --project unit --project browser <files>`; install Playwright Chromium first if needed. Do not run the changed-file checks over all upstream changes; wait for Fork CI on the repair pull request.
 - The apps/web fork tests run from `apps/web`, in its unit and browser projects. A browser test needs Playwright Chromium, so the job installs it first.
+- Before the other fork tests, the job installs the Electron binary for the desktop tests. When a fork test is in `apps/server`, it also installs Playwright Chromium for the server preview tests.
 - A conflict only in `README.md` resolves by itself. See [Change the fork](#change-the-fork).
-- If the merge conflicts, the typecheck fails or a fork test fails, the sync comments on the issue "Fork sync: upstream merge failed" and stops.
+- If a merge conflicts, upstream closes an adopted pull request without a merge, or a check fails, the sync comments on the issue "Fork sync: upstream merge failed" and stops. The comment and the call to the repair agent name the reason, for example the adopted pull request that conflicted.
 - After each sync, the job "Check upstream workflows" fails when another workflow is active. It prints the `gh workflow disable` command for that workflow.
 - To pause the automatic sync, disable the task "Fork Sync trigger" on the VPS. Before you merge upstream by hand, read [Repair agent](../fork-agents.md#repair-agent).
+
+### Migrations
+
+Fork main registers only the migration ids and names that `upstream/main` has. The fork has no migrations of its own.
+
+- The migrator skips every id up to the highest recorded id, whatever its name. So upstream's startup check (`assertV2MigrationsCanRun` in `apps/server/src/persistence/Migrations.ts`) refuses to start when the database recorded a migration of id 55 or higher under another name, or not at all. A fork-only id that upstream later gives to another migration thus stops every fork machine after the next Fork Sync.
+- Keep fork state outside the migration registry: in fork files, the secret store or existing tables.
+- To adopt an open upstream pull request that adds a migration, remove its entries from `Migrations.ts` and its migration files in the adoption commit. Its code must then work without that schema.
+- `scripts/fork-check-migrations.ts` enforces the rule. `vp run fork:check` and the Fork CI Lint job run it. It compares the registry of the working tree with `upstream/main`, and fails on each id that upstream main lacks or names differently.
+- When upstream merges a migration, Fork Sync merges its file and registry entry like any other upstream change, at upstream's final number. A migration that the fork removed at adoption comes back this way. The fork never recorded the number of the open pull request, so a new number is no problem.
+
+### Adopted upstream pull requests
+
+Fork main holds open `pingdotgg/t3code` pull requests that upstream did not merge yet. [`scripts/fork-adopted-upstream-prs.json`](../../scripts/fork-adopted-upstream-prs.json) lists them in stack order. Each entry has the number, the title, the upstream branch (`headRef`), the head that fork main holds (`mergedHead`), the reason, and the optional `forkRules`. Today the list holds the linked environments stack of Julius, #16653 to #16719, each pull request on the one before it.
+
+After the upstream main merge, Fork Sync runs `node scripts/fork-adopted-prs.ts sync`. For each entry, in list order, it reads the state of the pull request with `gh`:
+
+- Open with the listed head: nothing changes.
+- Open with a new head: it fetches `refs/pull/<number>/head` and merges it with a merge commit that also updates `mergedHead`. It never cherry-picks or rebases.
+- Open, but the head is not on the `pingdotgg` branch `headRef`: the sync stops, because main deploys what the sync pushes. Correct `headRef` if the list has it wrong. A pull request from another repository cannot be adopted: remove the entry.
+- Merged into main: it drops the entry, because upstream main brings the final version. The run summary shows its fork rules as a warning, so that you undo the rules that upstream main now covers.
+- Merged into the branch of another listed pull request: it drops the entry and appends its fork rules to that entry, which now carries its code.
+- Merged into another branch: the sync stops. The owner decides whether the fork follows that branch.
+- Closed without a merge: the sync stops. Fork main keeps the code. The owner decides whether the fork keeps it. To resume Fork Sync, remove the entry, and revert its code if the fork does not keep it.
+
+A conflict stops the sync like an upstream conflict. The migration check then runs, because a new head can bring back a migration that the fork removed at adoption.
+
+To repair a failed sync by hand, run the same script on the repair branch after the upstream merge. It stops at the first conflict. Resolve that merge by hand with `git merge --no-ff <head>`, set `mergedHead` of the entry in the merge commit, and run the script again. `node scripts/fork-adopted-prs.ts check` checks the list: its schema and format, that HEAD holds each `mergedHead`, and that HEAD holds no upstream squash commit of a listed pull request. `vp run fork:check` and the Fork CI Lint job run it.
+
+To adopt another open pull request, merge its head with `git merge --no-ff` on a new branch from `origin/main` and add its entry at its place in the stack order. Apply the [migration rule](#migrations).
+
+The rules of the linked environments stack:
+
+- The fork does not use upstream's manual links. `MachinePeers` gives `PeerLinks` and `PeerMcpClient` the machine map arrows (MM-1921).
+- The migrations `068_PeerLinks` and `069_PeerLinkFence` are not in the fork. See [Migrations](#migrations).
+- Fork runs skip the upstream tests that need their table. `apps/server/src/fork/excludedUpstreamTests.ts` lists them with the reason. `MachinePeers.test.ts` covers the same forwarding and delegation over arrow links. Remove those entries when upstream main has the migration.
+- The fork hooks in upstream files: the provide of `PeerForwarding.layer` in `server.ts`, the refusal layer in `cli/environment.ts`, and the peer link RPC handlers in `fork/forkWs.ts`. With those handlers in `ws.ts`, the handler object is too deep a type, and the server layers lose their types.
+- When an upstream merge conflicts in a file that only the stack touches, take upstream's version, then apply the fork hooks again.
 
 ### Fork Release
 
@@ -49,6 +88,7 @@ Each day at 09:00 Israel time, the VPS task "Fork daily release" promotes a nigh
 - The notes start with the top 5 clusters of each section, the highlights. The full changelog lists every cluster on one line, with its changes in a collapsed block below it. Then the agent runs `gh release edit <tag> --prerelease=false --latest --title "T3 Code Fork <Israel date> (<first 12 characters of the commit>)" --notes-file <file>`. The tag and the assets stay.
 - The title keeps the commit in brackets, because Fork Release and Fork Android find the release of a commit by its name.
 - Each pull request item carries the images of its body, without badges and videos. A cluster in the plan can pick its images with `"images": [<url>, ...]`, from the images of any of its changes. The agent looks at each image and keeps only images that show what the line says. An empty list shows none. The script fails for a URL that no change of the cluster has. Without `images`, the notes show up to 4 images of the first change that has any, and each change's own images in the fold. The script reads the bodies with one GraphQL call per 100 pull requests, for the fork and for upstream.
+- A change without a pull request body, such as a direct commit, gets its images from `docs/fork/release-images.json`. The file maps a ref (`#123` or the full commit) to a list of `{url, alt}`. The data script adds these images to the matching fork change. Add an image there through a pull request, so that it gets a review.
 - A release body holds at most 125000 characters. Over the budget of 120000 characters, the full changelog leaves out the screenshots of its last clusters first.
 - `--release <tag>` writes the data of a given release again, for example to rewrite its notes.
 - Every updater picks a release by its tag, not by the prerelease flag. The tag keeps `-nightly.`, so nightly users get the next nightlies as before.
@@ -63,6 +103,8 @@ Each day at 09:00 Israel time, the VPS task "Fork daily release" promotes a nigh
 - Fork CI compares a push with the commit of the last green push run, and a pull request with its base. Upstream's `.github/scripts/ci-changes.cjs` maps the changed files to packages and their dependents. A pull request runs only the jobs that those packages need. When only `docs/` or Markdown files changed, only the Lint job runs, on the changed files. A code push to main and a manual run run every job.
 - Each job installs through upstream's `.github/actions/setup-ci-deps`. A cache hit makes no request to npm.
 - The Lint job also runs `scripts/fork-check-doc-links.ts`. It fails on a relative link or an anchor that does not resolve in `README.md`, `docs/fork*`, `docs/fork/` or `apps/machine-map/*.md`.
+- The Lint job also fetches upstream main and runs `scripts/fork-check-migrations.ts`. See [Migrations](#migrations).
+- The Lint job also fetches the commits of HEAD without their files and runs `node scripts/fork-adopted-prs.ts check`. See [Adopted upstream pull requests](#adopted-upstream-pull-requests).
 
 ### Repair agent
 
@@ -72,7 +114,7 @@ A failed Fork Sync, Fork Release or Fork CI run on main runs its `notify_agent` 
 - The script retries once a minute for 15 minutes, so a server restart of the VPS does not lose the call. Each auto-update of the VPS restarts its server for about 20 seconds.
 - A manual run with `notify_agent=false` does not post. A failure right after a failure of the same workflow does not post either, when the first notify job succeeded and the first failure started less than 90 minutes before. This window is shorter than the 2-hour sync interval, so the next scheduled failure can call again.
 - The repair agent ignores a cancelled run.
-- How the agent works, and how to stop it: [Repair agent](../fork-agents.md#repair-agent).
+- How the agent works, and how to stop it: [Repair agent](../fork-agents.md#repair-agent). Its repair steps use the scripts of the [fork-repair skill](../../.agents/skills/fork-repair/SKILL.md).
 
 ## Change the fork
 
@@ -118,6 +160,20 @@ vp run migrate-dev-db
 
 Then start the worktree dev server. Use its own UI or API, not the live-server tool CLI.
 
+```sh
+node scripts/fork-dev-server.ts start              # add `-- --share` to share on the tailnet
+node scripts/fork-dev-server.ts status
+node scripts/fork-dev-server.ts stop
+node scripts/fork-dev-server.ts orphans            # reports leftover dev processes, never kills
+```
+
+`start` runs `vp run dev` in a new process group, writes the log to `.t3/dev-server.log` and prints the ports and the `pairingUrl`.
+`stop` stops the whole group, so that no `node --watch` process stays alive.
+It refuses a group that does not run in this worktree.
+`orphans` lists dev process groups with a deleted folder, or under PID 1 without a record.
+It prints a `kill` command for each group. Only the owner runs it, after a check. Agents report the groups.
+The helper works on macOS and Linux, not on Windows.
+
 ### Tool blockers
 
 Check the intended tool first each session: Device panel, browser preview or MCP tool.
@@ -135,7 +191,7 @@ vp run fork:check
 
 - It runs the quick Fork CI checks on the files that changed since the merge base with `origin/main`. Uncommitted and untracked files count.
 - On a branch with a merge whose second parent is not in `origin/main`, it prints one line and exits 0 without checks. This keeps sync repairs from checking every upstream change locally. Run `vp run typecheck` and the fork tests described in [Fork Sync](#fork-sync), then wait for Fork CI on the pull request.
-- The steps are format and lint of the changed files, knip, typecheck of the changed packages, the tests of the changed files, and the doc link check. The tests are the changed test files, the tests next to changed source files, `forkSettingsRegistration.test.ts`, the React Compiler coverage test of a changed web or mobile app, and the import cycle test (`dependency-graph.test.ts`) of a changed mobile app.
+- The steps are format and lint of the changed files, knip, typecheck of the changed packages, the tests of the changed files, the doc link check, the migration check, the check of the adopted upstream pull requests, and the Python tests of the fork-repair skill when its scripts changed. The migration check reads the local `upstream/main`, so run `git fetch upstream main` first. The tests are the changed test files, the tests next to changed source files, `forkSettingsRegistration.test.ts`, the React Compiler coverage test of a changed web or mobile app, and the import cycle test (`dependency-graph.test.ts`) of a changed mobile app.
 - It prints one line per step: pass, fail or skipped with the reason. It exits with an error when a step fails.
 - Without Playwright Chromium, it skips the browser tests and prints the install command.
 - Fork CI still runs the full test suites, the typecheck of dependent packages, the desktop build and the Rust crates.

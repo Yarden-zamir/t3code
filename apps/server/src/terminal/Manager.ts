@@ -72,6 +72,10 @@ import {
   terminalSessionsTotal,
 } from "../observability/Metrics.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import {
+  THREAD_CREDENTIAL_AUTHORIZATION_ENV,
+  THREAD_CREDENTIAL_ENDPOINT_ENV,
+} from "@t3tools/provider-core/server/forkThreadCredential";
 import * as ProcessRunner from "../processRunner.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClient.ts";
@@ -118,6 +122,9 @@ const TERMINAL_ENV_BLOCKLIST = new Set([
   "ZELLIJ",
   "ZELLIJ_SESSION_NAME",
   "ZELLIJ_PANE_ID",
+  // Fork (MM-1920): a server started from an agent shell must not lend that thread's credential.
+  THREAD_CREDENTIAL_ENDPOINT_ENV,
+  THREAD_CREDENTIAL_AUTHORIZATION_ENV,
 ]);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const MAX_TERMINAL_LABEL_LENGTH = 128;

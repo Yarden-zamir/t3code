@@ -1,16 +1,16 @@
 /**
  * Fork parts of the sidebar thread list header (`Sidebar.tsx`): the repository owner filter, the
- * thread group tabs and the theme icon of the project scope button. The sidebar imports this
+ * sidebar tabs and the theme icon of the project scope button. The sidebar imports this
  * module once and keeps one line per hook.
  */
 import type { ComponentProps } from "react";
 
 import { AppIcon } from "../AppIcon";
-import { SidebarGroupTabs } from "./SidebarGroupTabs";
+import { SidebarTabBar } from "./SidebarTabBar";
 import { SidebarOwnerFilterMenu, SidebarOwnerFilterNotice } from "./SidebarOwnerFilter";
 import type { useSidebarOwnerFilter } from "./useSidebarOwnerFilter";
 
-export { useSidebarGroups } from "./useSidebarGroups";
+export { useSidebarTabs } from "./useSidebarTabs";
 export { useSidebarOwnerFilter } from "./useSidebarOwnerFilter";
 
 type OwnerFilterState = Pick<
@@ -40,11 +40,11 @@ export function OwnerFilterMenu({ owner }: { readonly owner: OwnerFilterState })
   ) : null;
 }
 
-/** Below the header: the owner filter notice and the group tabs. */
+/** Below the header: the owner filter notice and the sidebar tabs. */
 export function HeaderFilterRows({
   owner,
-  ...tabs
-}: { readonly owner: OwnerFilterState } & ComponentProps<typeof SidebarGroupTabs>) {
+  ...tabBar
+}: { readonly owner: OwnerFilterState } & ComponentProps<typeof SidebarTabBar>) {
   return (
     <>
       {owner.ownerFilter !== null ? (
@@ -55,7 +55,7 @@ export function HeaderFilterRows({
           onChange={owner.setOwnerFilter}
         />
       ) : null}
-      {tabs.groups.enabled ? <SidebarGroupTabs {...tabs} /> : null}
+      {tabBar.tabs.enabled ? <SidebarTabBar {...tabBar} /> : null}
     </>
   );
 }

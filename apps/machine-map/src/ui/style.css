@@ -838,6 +838,17 @@ p.error-text {
   display: grid;
   gap: 6px;
 }
+/* MM-1915: what agents on the source can do on the target. */
+.capabilities {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.capabilities li.no {
+  opacity: 0.6;
+}
 .with-icon {
   display: flex;
   align-items: center;

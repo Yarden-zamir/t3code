@@ -1,4 +1,4 @@
-import type { ThreadPullRequestWatch } from "@t3tools/contracts";
+import { SourceControlProviderKind, type ThreadPullRequestWatch } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
 import {
@@ -6,7 +6,16 @@ import {
   forgejoComment,
 } from "@t3tools/source-control-forgejo/server/forgejoPullRequestJson";
 
-import { evaluatePullRequestWatch } from "./pullRequestWatch.ts";
+import { evaluatePullRequestWatch as evaluate } from "./pullRequestWatch.ts";
+
+// These cases read the head once or at one moment, so the no-checks notice never comes due.
+// Fork: `now` is not the last parameter, because the fork remark filter follows it.
+type EvaluateArgs = Parameters<typeof evaluate>;
+const evaluatePullRequestWatch = (
+  current: EvaluateArgs[0],
+  pullRequest: EvaluateArgs[1],
+  remarks: EvaluateArgs[2],
+) => evaluate(current, pullRequest, remarks, 0);
 
 const decodeForgejoComment = Schema.decodeSync(ForgejoComment);
 
@@ -25,6 +34,7 @@ describe("Forgejo comment watch boundary", () => {
     wakes: 2,
   } satisfies ThreadPullRequestWatch;
   const finalDetail = {
+    provider: SourceControlProviderKind.make("forgejo"),
     headSha: seen.headSha,
     checks: [],
     mergeability: "mergeable",

@@ -1,4 +1,4 @@
-import { type KeybindingRule, SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS } from "@t3tools/contracts";
+import { type KeybindingRule, SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS } from "@t3tools/contracts";
 
 const SIDEBAR_KEYS = "sidebarFocus && !editableFocus";
 const TIMELINE_KEYS = "timelineFocus && !editableFocus";
@@ -23,12 +23,12 @@ export const FORK_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "arrowup", command: "sidebar.previousItem", when: SIDEBAR_KEYS },
   { key: "arrowdown", command: "sidebar.nextItem", when: SIDEBAR_KEYS },
   { key: "enter", command: "sidebar.openItem", when: SIDEBAR_KEYS },
-  { key: "arrowleft", command: "sidebar.previousGroup", when: SIDEBAR_KEYS },
-  { key: "arrowright", command: "sidebar.nextGroup", when: SIDEBAR_KEYS },
-  { key: "mod+alt+[", command: "sidebar.previousGroup", when: "!terminalFocus" },
-  { key: "mod+alt+]", command: "sidebar.nextGroup", when: "!terminalFocus" },
+  { key: "arrowleft", command: "sidebar.previousTab", when: SIDEBAR_KEYS },
+  { key: "arrowright", command: "sidebar.nextTab", when: SIDEBAR_KEYS },
+  { key: "mod+alt+[", command: "sidebar.previousTab", when: "!terminalFocus" },
+  { key: "mod+alt+]", command: "sidebar.nextTab", when: "!terminalFocus" },
   { key: "mod+f", command: "sidebar.search", when: "sidebarFocus" },
-  ...SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
+  ...SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `${index + 1}`,
     command,
     when: SIDEBAR_KEYS,

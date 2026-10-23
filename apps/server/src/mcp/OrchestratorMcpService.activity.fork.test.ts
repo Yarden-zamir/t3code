@@ -19,6 +19,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 
@@ -52,6 +53,7 @@ it("scheduleTask from a client without a thread uses the project model from proj
             ),
         } satisfies Partial<ScheduledTaskService.ScheduledTaskService["Service"]>),
         Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
+        Layer.mock(RemoteDelegation.RemoteDelegation)({}),
         ServerSettings.layerTest({
           projectSettingsOverrides: { [projectId]: { defaultModelSelection: selection } },
         }),

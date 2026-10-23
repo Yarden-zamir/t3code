@@ -124,6 +124,7 @@ import {
 import {
   readThreadShell,
   useAllEnvironmentProjectSnapshotsReady,
+  useDelegatedUnderParent,
   useProjects,
   useServerConfigs,
   useQuietThreadShells,
@@ -305,7 +306,7 @@ type SidebarOptimisticDrop = {
 
 interface SidebarThreadPartitionInput {
   readonly threads: readonly EnvironmentThreadShell[];
-  /** Fork: the threads of the open group tab, narrowed by the project scope and the owner filter. */
+  /** Fork: the threads of the open sidebar tab, narrowed by the project scope and the owner filter. */
   readonly visibleThreads: readonly EnvironmentThreadShell[];
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
@@ -372,7 +373,7 @@ function useSidebarThreads(input: {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly routeThreadRef: ScopedThreadRef | null;
-  /** Fork: what the group tabs and the owner filter read. */
+  /** Fork: what the sidebar tabs and the owner filter read. */
   readonly fork: {
     readonly ownerFilter: ReturnType<typeof ForkSidebar.useSidebarOwnerFilter>["ownerFilter"];
     readonly ownerVisibleProjectKeys: ReadonlySet<string> | null;
@@ -396,6 +397,7 @@ function useSidebarThreads(input: {
             ),
           ),
         );
+  const delegatedUnderParent = useDelegatedUnderParent();
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
   const nowMinute = useNowMinute();
   // Snooze wake times are second-precise, so classifying with the quantized
@@ -406,9 +408,10 @@ function useSidebarThreads(input: {
     () => scheduleSnoozeWake(nextSnoozeWakeAt, () => bumpSnoozeWakeTick((tick) => tick + 1)),
     [nextSnoozeWakeAt],
   );
-  // Fork: thread groups as tabs. The list shows the threads of the open tab.
-  const sidebarGroups = ForkSidebar.useSidebarGroups({
+  // Fork: sidebar tabs. The list shows the threads of the open tab.
+  const sidebarTabs = ForkSidebar.useSidebarTabs({
     threads,
+    delegatedUnderParent,
     ownerVisibleProjectKeys: input.fork.ownerVisibleProjectKeys,
     scopedProjectKeys,
     projects: input.fork.projects,
@@ -419,7 +422,7 @@ function useSidebarThreads(input: {
   const ownerFilter = input.fork.ownerFilter;
   const settledResetKey = JSON.stringify([
     projectScopeKey,
-    sidebarGroups.tabId,
+    sidebarTabs.tabId,
     ownerFilter ? [ownerFilter.operator, [...ownerFilter.owners]] : null,
   ]);
   const [settledShelfExpanded, setSettledShelfExpanded] = useLocalStorage(
@@ -437,7 +440,7 @@ function useSidebarThreads(input: {
     false,
     Schema.Boolean,
   );
-  // The settled tail restarts whenever the project scope, the group tab or the owner filter changes.
+  // The settled tail restarts whenever the project scope, the sidebar tab or the owner filter changes.
   const [settledTail, setSettledTail] = useState({
     scopeKey: settledResetKey,
     count: SETTLED_TAIL_INITIAL_COUNT,
@@ -450,7 +453,7 @@ function useSidebarThreads(input: {
 
   const partition = partitionSidebarThreads({
     threads,
-    visibleThreads: sidebarGroups.visibleThreads,
+    visibleThreads: sidebarTabs.visibleThreads,
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
@@ -502,7 +505,7 @@ function useSidebarThreads(input: {
     routeRowThreadKey,
     ...partition,
     threads,
-    sidebarGroups,
+    sidebarTabs,
     workingShelfEnabled,
     searchableThreads: [
       ...pinnedThreads,
@@ -552,6 +555,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     workingShelfEnabled,
   } = input;
   const preciseNow = new Date().toISOString();
+
   inboxReturns.observe(workingShelfEnabled ? threads : null);
   const pinned: EnvironmentThreadShell[] = [];
   const active: EnvironmentThreadShell[] = [];
@@ -1093,7 +1097,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
 
   const {
     threads,
-    sidebarGroups,
+    sidebarTabs,
     workingShelfEnabled,
     pinnedThreads,
     draggableThreadKeys,
@@ -1146,6 +1150,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // scope hides or the list has scrolled away. A remount starts the list at
   // the top, so each mount also scrolls to the open thread once, without
   // widening the scope.
+  const delegatedUnderParent = useDelegatedUnderParent();
   const mountRevealOwed = useRef(true);
   const revealRouteRow = useStableCallback(() => {
     const pendingKey = pendingSidebarRouteReveal(routeReveal, routeRowThreadKey);
@@ -1158,8 +1163,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (
       pendingKey !== null &&
       scopedProjectKeys !== null &&
-      filterSidebarV2VisibleThreads([thread], scopedProjectKeys).length === 0 &&
-      filterSidebarV2VisibleThreads([thread], null).length === 1
+      filterSidebarV2VisibleThreads([thread], scopedProjectKeys, delegatedUnderParent).length ===
+        0 &&
+      filterSidebarV2VisibleThreads([thread], null, delegatedUnderParent).length === 1
     ) {
       // The row renders under the widened scope; scroll on that pass.
       setProjectScopeKey(null);
@@ -1495,7 +1501,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const finishThreadDrag = (started: boolean) => {
     dragSensorRef.current = null;
     contextDragKeyRef.current = null;
-    sidebarGroups.endDrag();
+    sidebarTabs.endDrag();
     endThreadContextDrag();
     if (started) {
       listMotionRef.current?.release();
@@ -1523,8 +1529,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     return bounds !== undefined && (point.x < bounds.left || point.x > bounds.right);
   };
   const moveThreadContextDrag = (point: { x: number; y: number }) => {
-    // Fork: over a group tab the list stops sorting and the ghost follows the pointer.
-    const contextDrag = sidebarGroups.moveDrag(point) || pointerOutsideThreadList(point);
+    // Fork: over a sidebar tab the list stops sorting and the ghost follows the pointer.
+    const contextDrag = sidebarTabs.moveDrag(point) || pointerOutsideThreadList(point);
     setDragState((current) =>
       current === null || current.contextDrag === contextDrag
         ? current
@@ -1541,7 +1547,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     return true;
   };
   const dropThreadContextDrag = (point: { x: number; y: number }) => {
-    if (sidebarGroups.dropDrag(point, contextDragThreads().map(scopedThreadKey))) return true;
+    if (sidebarTabs.dropDrag(point, contextDragThreads().map(scopedThreadKey))) return true;
     if (!pointerOutsideThreadList(point)) return false;
     dropThreadContext(point, contextDragThreads());
     return true;
@@ -2874,7 +2880,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             />
             <ForkSidebar.HeaderFilterRows
               owner={owner}
-              groups={sidebarGroups}
+              tabs={sidebarTabs}
               dragging={dragState !== null}
               routeThreadKey={routeRowThreadKey}
               projectFor={(thread) =>
@@ -3280,8 +3286,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 "No threads in the projects of these owners"
               ) : ownerFilter?.operator === "is_not" ? (
                 "No threads outside the hidden owners"
-              ) : sidebarGroups.emptyMessage !== null ? (
-                sidebarGroups.emptyMessage
+              ) : sidebarTabs.emptyMessage !== null ? (
+                sidebarTabs.emptyMessage
               ) : (
                 "No threads yet"
               )}

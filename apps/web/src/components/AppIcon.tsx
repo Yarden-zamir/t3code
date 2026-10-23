@@ -58,7 +58,7 @@ import { createElement, useSyncExternalStore, type ComponentType, type SVGProps 
 import { cn } from "~/lib/utils";
 import { getActiveThemeIcons, subscribeToActiveThemeIcons } from "../themePalette";
 
-/** A filled dot, the default icon of a group. */
+/** A filled dot, the default icon of a tab. */
 function DotIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" {...props}>
@@ -67,8 +67,8 @@ function DotIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-/** The icons a user can pick for a group, in picker order. `dot` is the default. */
-const GROUP_ICONS = {
+/** The icons a user can pick for a tab, in picker order. `dot` is the default. */
+const TAB_ICONS = {
   dot: DotIcon,
   star: StarIcon,
   heart: HeartIcon,
@@ -103,15 +103,14 @@ const GROUP_ICONS = {
   database: DatabaseIcon,
   shield: ShieldIcon,
 } as const satisfies Record<string, LucideIcon | typeof DotIcon>;
-export type GroupIconId = keyof typeof GROUP_ICONS;
+export type TabIconId = keyof typeof TAB_ICONS;
 
-const isGroupIconId = (value: string): value is GroupIconId => Object.hasOwn(GROUP_ICONS, value);
+const isTabIconId = (value: string): value is TabIconId => Object.hasOwn(TAB_ICONS, value);
 
-export const GROUP_ICON_IDS: readonly GroupIconId[] =
-  Object.keys(GROUP_ICONS).filter(isGroupIconId);
+export const TAB_ICON_IDS: readonly TabIconId[] = Object.keys(TAB_ICONS).filter(isTabIconId);
 
 /**
- * The slots besides the group icons, with their stock icons. Thread rows and group tabs draw a
+ * The slots besides the tab icons, with their stock icons. Thread rows and sidebar tabs draw a
  * thread status with its `status.<kind>` slot.
  */
 const STATIC_SLOT_ICONS = {
@@ -123,17 +122,17 @@ const STATIC_SLOT_ICONS = {
   "status.limited": CircleAlertIcon,
   "status.woke": AlarmClockIcon,
   "status.done": CircleCheckIcon,
-  "groups.more": ChevronDownIcon,
-  "groups.new": PlusIcon,
-  "groups.edit": SlidersHorizontalIcon,
+  "tabs.more": ChevronDownIcon,
+  "tabs.new": PlusIcon,
+  "tabs.edit": SlidersHorizontalIcon,
   "sidebar.search": SearchIcon,
   "sidebar.filter": ListFilterIcon,
   "sidebar.add-project": FolderPlusIcon,
   "sidebar.new-thread": SquarePenIcon,
 } as const satisfies Record<string, LucideIcon>;
 
-/** Every slot a theme icon pack can replace: `group.<id>` and the static slots. */
-export type AppIconSlot = `group.${GroupIconId}` | keyof typeof STATIC_SLOT_ICONS;
+/** Every slot a theme icon pack can replace: `tab.<id>` and the static slots. */
+export type AppIconSlot = `tab.${TabIconId}` | keyof typeof STATIC_SLOT_ICONS;
 
 const isStaticSlot = (slot: string): slot is keyof typeof STATIC_SLOT_ICONS =>
   Object.hasOwn(STATIC_SLOT_ICONS, slot);
@@ -142,8 +141,8 @@ function stockIcon(
   slot: AppIconSlot,
 ): ComponentType<SVGProps<SVGSVGElement> & { readonly "data-app-icon"?: string }> {
   if (isStaticSlot(slot)) return STATIC_SLOT_ICONS[slot];
-  const id = slot.slice("group.".length);
-  return GROUP_ICONS[isGroupIconId(id) ? id : "dot"];
+  const id = slot.slice("tab.".length);
+  return TAB_ICONS[isTabIconId(id) ? id : "dot"];
 }
 
 let purifier: ReturnType<typeof DOMPurify> | null = null;
@@ -201,11 +200,14 @@ export function AppIcon(props: { slot: AppIconSlot; className?: string | undefin
 }
 
 /**
- * The icon of a group tab: its chosen icon, the dot when it has none or an unknown id, or
+ * The icon of a sidebar tab: its chosen icon, the dot when it has none or an unknown id, or
  * nothing for `none`.
  */
-export function GroupIcon(props: { icon: string | undefined; className?: string | undefined }) {
+export function SidebarTabIcon(props: {
+  icon: string | undefined;
+  className?: string | undefined;
+}) {
   if (props.icon === "none") return null;
-  const id = props.icon !== undefined && isGroupIconId(props.icon) ? props.icon : "dot";
-  return <AppIcon slot={`group.${id}`} className={props.className} />;
+  const id = props.icon !== undefined && isTabIconId(props.icon) ? props.icon : "dot";
+  return <AppIcon slot={`tab.${id}`} className={props.className} />;
 }

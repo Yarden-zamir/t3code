@@ -506,8 +506,8 @@ describe("sidebar drag projection", () => {
       "a2",
       sidebarMarkerId("settled-placeholder"),
     );
-    expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(-83);
-    expect(result.get(sidebarMarkerId("settled-placeholder"))).toEqual({ ...stationary, y: -83 });
+    expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(0);
+    expect(result.get(sidebarMarkerId("settled-placeholder"))).toEqual(stationary);
   });
 
   it("previews a time-ordered inbox drop at its time slot, above the Working shelf", () => {
@@ -582,8 +582,10 @@ describe("sidebar drag projection", () => {
       settledOrder: [],
       settledExpanded: false,
     });
-    const args = layout(items, "a", sidebarMarkerId("settled-placeholder"), 1, 78);
-    expect(strategy({ ...args, index: 4 })?.y).toBe(-42);
+    // Pinning the only Active row opens the Active placeholder: 36 px from the shelf scale, not
+    // 78 / 82 of it from the card.
+    const args = layout(items, "a", "p", 1, 78);
+    expect(strategy({ ...args, index: 4 })?.y).toBe(37);
   });
 
   it("keeps the route row visible after a settled drop pushes it beyond the page", () => {

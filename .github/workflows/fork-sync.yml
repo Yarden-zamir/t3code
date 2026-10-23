@@ -1,9 +1,11 @@
 name: Fork Sync
 
-# Merges pingdotgg/t3code main into fork main. The "Fork Sync trigger" task on the VPS T3 server
+# Merges pingdotgg/t3code main into fork main, then the new heads of the open upstream pull
+# requests in scripts/fork-adopted-upstream-prs.json. The "Fork Sync trigger" task on the VPS T3 server
 # starts it every 2 hours, because GitHub drops scheduled runs. Main only moves
 # forward: no rebase and no force-push, so checkouts and tags stay valid.
-# A merge conflict (except one only in README.md), a failed typecheck or a failed fork test stops the sync,
+# A merge conflict (except one only in README.md), an adopted pull request that upstream closed
+# without a merge, a failed migration check, typecheck or fork test stops the sync,
 # reports it in an issue and calls the repair agent. See docs/fork/operations.md "Fork Sync".
 
 on:
@@ -33,6 +35,8 @@ jobs:
     permissions:
       contents: write
       issues: write
+    outputs:
+      reason: ${{ steps.report.outputs.reason }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -54,7 +58,6 @@ jobs:
           git fetch --no-tags upstream main
           if git merge-base --is-ancestor upstream/main HEAD; then
             echo "Fork main already contains upstream main."
-            echo "merged=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # A conflict in README.md alone has a fixed rule: the fork section up to the first
@@ -72,7 +75,6 @@ jobs:
           if ! git merge --no-edit -m "chore(sync): merge ${UPSTREAM_REPOSITORY} main" upstream/main > "$RUNNER_TEMP/merge.log" 2>&1; then
             if resolve_readme; then
               echo "::notice title=README.md conflict resolved::Kept the fork section above the first --- line and took the upstream README below it."
-              echo "merged=true" >> "$GITHUB_OUTPUT"
               git log --oneline HEAD^1..HEAD^2 | head -50
               exit 0
             fi
@@ -82,11 +84,35 @@ jobs:
             echo "reason=merge conflict" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-          echo "merged=true" >> "$GITHUB_OUTPUT"
           echo "Upstream commits merged:"
           git log --oneline HEAD^1..HEAD^2 | head -50
 
-      - if: steps.merge.outputs.merged == 'true'
+      # The adopted pull request script needs only Node, so a sync without changes installs nothing.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+
+      # Open upstream pull requests that fork main merged early, in stack order, after upstream main.
+      # See docs/fork/operations.md "Adopted upstream pull requests".
+      - id: adopted
+        name: Merge adopted upstream pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node scripts/fork-adopted-prs.ts sync 2>&1 | tee -a "$RUNNER_TEMP/merge.log"
+          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A new adopted head can bring back a migration that the fork removed at adoption.
+      # See docs/fork/operations.md "Migrations".
+      - id: migrations
+        if: steps.adopted.outputs.changed == 'true'
+        name: Check the migration registry
+        run: node scripts/fork-check-migrations.ts upstream/main
+
+      - if: steps.adopted.outputs.changed == 'true'
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
@@ -94,7 +120,7 @@ jobs:
           run-install: true
 
       - id: checks
-        if: steps.merge.outputs.merged == 'true'
+        if: steps.adopted.outputs.changed == 'true'
         name: Typecheck
         run: vp run typecheck
 
@@ -102,7 +128,7 @@ jobs:
       # are the test files that the fork changed since the last merged upstream
       # commit. Right after the merge, that commit is upstream main.
       - id: fork_tests
-        if: steps.merge.outputs.merged == 'true'
+        if: steps.adopted.outputs.changed == 'true'
         name: Fork tests
         run: |
           set -euo pipefail
@@ -116,6 +142,12 @@ jobs:
           fi
           if (( ${#files[@]} > 0 )); then
             printf '%s\n' "${files[@]}"
+            # As in Fork CI: desktop tests need the Electron binary before they run in parallel,
+            # and server preview tests launch headless Chromium.
+            vp run --filter @t3tools/desktop ensure:electron
+            if printf '%s\n' "${files[@]}" | grep -q '^apps/server/'; then
+              node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+            fi
             vp test run "${files[@]}"
           fi
           if (( ${#web_files[@]} > 0 )); then
@@ -129,7 +161,7 @@ jobs:
       # A fast-forward push. If main moved during the run, merge the new main
       # into the sync commit and push again. Main is never force-pushed.
       - name: Push to main
-        if: steps.merge.outputs.merged == 'true'
+        if: steps.adopted.outputs.changed == 'true'
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
@@ -144,16 +176,18 @@ jobs:
           echo "main kept moving; giving up after 3 attempts." >&2
           exit 1
 
-      - name: Report failure in an issue
+      - id: report
+        name: Report failure in an issue
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-          REASON: ${{ steps.merge.outputs.reason || (steps.checks.outcome == 'failure' && 'typecheck failed') || (steps.fork_tests.outcome == 'failure' && 'fork tests failed') || 'workflow step failed' }}
+          REASON: ${{ steps.merge.outputs.reason || steps.adopted.outputs.reason || (steps.migrations.outcome == 'failure' && 'migration check failed') || (steps.checks.outcome == 'failure' && 'typecheck failed') || (steps.fork_tests.outcome == 'failure' && 'fork tests failed') || 'workflow step failed' }}
         run: |
           set -euo pipefail
+          echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           {
-            echo "Merge of ${UPSTREAM_REPOSITORY} main into fork main stopped: **${REASON}**."
+            echo "Merge of ${UPSTREAM_REPOSITORY} main and the adopted upstream pull requests into fork main stopped: **${REASON}**."
             echo
             echo "Run: ${run_url}"
             if [[ -f "$RUNNER_TEMP/merge.log" ]]; then
@@ -222,4 +256,5 @@ jobs:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           NEEDS_JSON: ${{ toJSON(needs) }}
+          FAILURE_REASON: ${{ needs.sync.outputs.reason }}
         run: scripts/fork-notify-agent.sh

@@ -3,6 +3,7 @@ import type {
   ClientId,
   CommandDelivery,
   MachineCommandInput,
+  MachineCallRecord,
   MachineExecRecord,
   MachineId,
   MachineMapDocument,
@@ -93,6 +94,8 @@ export interface Portal {
   readonly invites: ReadonlyArray<ClientInvite>;
   /** MM-1908: the newest `machine_exec` runs, newest first. */
   readonly execs: ReadonlyArray<MachineExecRecord>;
+  /** MM-1922: the newest calls forwarded over arrow links, newest first. */
+  readonly calls: ReadonlyArray<MachineCallRecord>;
   readonly draft: ReadonlyArray<DraftChange> | null;
   readonly now: number;
   readonly route: Route;

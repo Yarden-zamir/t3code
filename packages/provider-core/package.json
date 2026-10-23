@@ -87,6 +87,10 @@
       "types": "./src/server/notification.ts",
       "import": "./src/server/notification.ts"
     },
+    "./server/forkThreadCredential": {
+      "types": "./src/server/forkThreadCredential.ts",
+      "import": "./src/server/forkThreadCredential.ts"
+    },
     "./server/forkThreadLinkInstructions": {
       "types": "./src/server/forkThreadLinkInstructions.ts",
       "import": "./src/server/forkThreadLinkInstructions.ts"

@@ -27,7 +27,7 @@ export function MobileAppSettingsSection() {
       <MobilePublishedThemesSettingsRow />
       <MobileNewThreadProjectSettingsRow />
       <MobileComposerCameraSettingsRow />
-      <MobileSidebarGroupsSettingsRow />
+      <MobileSidebarTabsSettingsRow />
     </SettingsSection>
   );
 }
@@ -142,31 +142,31 @@ export function MobileNewThreadProjectSettingsRow() {
   );
 }
 
-export function MobileSidebarGroupsSettingsRow() {
+export function MobileSidebarTabsSettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const mixed = useScopedSettingsMixed(["mobileSidebarGroups"]);
-  const fallback = DEFAULT_SERVER_SETTINGS.mobileSidebarGroups;
+  const mixed = useScopedSettingsMixed(["mobileSidebarTabs"]);
+  const fallback = DEFAULT_SERVER_SETTINGS.mobileSidebarTabs;
   return (
     <SettingsRow
-      {...searchableSetting("mobile-sidebar-groups")}
+      {...searchableSetting("mobile-sidebar-tabs")}
       serverScoped
-      settingKeys={["mobileSidebarGroups"]}
-      description="The thread list of the mobile app shows the sidebar group tabs. Tap a tab to show its threads."
+      settingKeys={["mobileSidebarTabs"]}
+      description="The thread list of the mobile app shows the sidebar tabs. Tap a tab to show its threads."
       resetAction={
-        mixed || settings.mobileSidebarGroups !== fallback ? (
+        mixed || settings.mobileSidebarTabs !== fallback ? (
           <SettingResetButton
-            label="sidebar groups on mobile"
-            onClick={() => updateSettings({ mobileSidebarGroups: fallback })}
+            label="sidebar tabs on mobile"
+            onClick={() => updateSettings({ mobileSidebarTabs: fallback })}
           />
         ) : null
       }
       control={
         <ScopedSwitch
-          settingKeys={["mobileSidebarGroups"]}
-          checked={settings.mobileSidebarGroups}
-          onCheckedChange={(checked) => updateSettings({ mobileSidebarGroups: Boolean(checked) })}
-          aria-label="Sidebar groups on mobile"
+          settingKeys={["mobileSidebarTabs"]}
+          checked={settings.mobileSidebarTabs}
+          onCheckedChange={(checked) => updateSettings({ mobileSidebarTabs: Boolean(checked) })}
+          aria-label="Sidebar tabs on mobile"
         />
       }
     />

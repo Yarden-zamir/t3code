@@ -25,6 +25,7 @@ import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Effect from "effect/Effect";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -43,6 +44,7 @@ import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
 import * as ServerConfig from "./config.ts";
 import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
+import { moveLegacySidebarTabSettings } from "./fork/sidebarTabsSettings.ts";
 import {
   applyServerSettingsPatch,
   deriveLegacyProjectOverrides,
@@ -660,9 +662,13 @@ const make = Effect.gen(function* () {
     let legacyProviders: Readonly<Record<string, unknown>> | undefined;
     let legacySourceControl: Parameters<typeof migrateLegacySourceControlSettings>[1] = {};
     let parseFailure = Option.none<unknown>();
+    let movedSidebarTabSettings = false;
 
     if (yield* readConfigExists) {
-      const raw = yield* readRawConfig;
+      // Fork: the sidebar tab settings move once from their old keys.
+      const sidebarTabs = moveLegacySidebarTabSettings(yield* readRawConfig);
+      const raw = sidebarTabs.raw;
+      movedSidebarTabSettings = sidebarTabs.moved;
       const decoded = decodeServerSettingsJsonExit(raw);
       const legacySettings = decodeLegacyProviderSettingsJsonExit(raw);
       if (legacySettings._tag === "Success") {
@@ -711,6 +717,7 @@ const make = Effect.gen(function* () {
       FROM provider_session_runtime
       WHERE provider_name IN ('cursor', 'grok', 'opencode')
     `.pipe(
+      NodeSqliteClient.readOnly,
       Effect.mapError(
         (cause) =>
           new ServerSettingsError({
@@ -734,6 +741,7 @@ const make = Effect.gen(function* () {
           FROM projection_projects
           WHERE deleted_at IS NULL
         `.pipe(
+            NodeSqliteClient.readOnly,
             Effect.mapError(
               (cause) =>
                 new ServerSettingsError({
@@ -785,6 +793,7 @@ const make = Effect.gen(function* () {
     if (
       migrated !== loaded ||
       (settingsFileTrusted && legacyProviders !== undefined) ||
+      (settingsFileTrusted && movedSidebarTabSettings) ||
       hasLegacySourceControl
     ) {
       yield* writeSettingsAtomically(migrated);

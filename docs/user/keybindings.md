@@ -60,7 +60,7 @@ the timeline, the right panel and the sidebar with the keyboard. It is off by de
   **Settings → General → Focus highlight**.
 
 In the sidebar, Up and Down move between threads, and Enter opens one and focuses its timeline.
-Up from the first thread reaches the group tabs. Left and Right, or `1` to `9`, switch groups.
+Up from the first thread reaches the sidebar tabs. Left and Right, or `1` to `9`, switch tabs.
 `mod+f` focuses sidebar search.
 
 In the timeline, Up and Down move a cursor between messages. Right goes one level deeper:

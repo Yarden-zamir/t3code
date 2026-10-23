@@ -1,13 +1,22 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  SourceControlProviderKind,
   type PullRequestCheck,
-  type PullRequestComment,
+  PullRequestComment,
   type PullRequestWatchRemarkFilter,
-  type ThreadPullRequestWatch,
+  ThreadPullRequestWatch,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 
-import { evaluatePullRequestWatch } from "./pullRequestWatch.ts";
+import { evaluatePullRequestWatch as evaluate } from "./pullRequestWatch.ts";
+
+type EvaluateArgs = Parameters<typeof evaluate>;
+const evaluatePullRequestWatch = (
+  current: EvaluateArgs[0],
+  pullRequest: EvaluateArgs[1],
+  remarks: EvaluateArgs[2],
+  remarkFilter?: EvaluateArgs[4],
+) => evaluate(current, pullRequest, remarks, 0, remarkFilter);
 
 const STARTED = "2026-10-02T12:00:00.000Z";
 
@@ -34,6 +43,7 @@ const check = (name: string, status: PullRequestCheck["status"]): PullRequestChe
 type Detail = Parameters<typeof evaluatePullRequestWatch>[1];
 
 const detail = (overrides: Partial<Detail> = {}): Detail => ({
+  provider: SourceControlProviderKind.make("github"),
   headSha: "aaaaaaaaaa",
   checks: [check("lint", "success"), check("test", "pending")],
   mergeability: "mergeable",

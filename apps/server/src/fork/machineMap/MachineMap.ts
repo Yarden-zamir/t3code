@@ -25,6 +25,7 @@ import {
   ClientAccessMode,
   type MachineMapShareSettingsInput,
   type MachineMapShareSettingsResult,
+  type MachineCallReport,
   type MachineExecReport,
   MachinesReadResult,
   MachineMapRequestError,
@@ -208,6 +209,8 @@ export class MachineMap extends Context.Service<
      * the next connection loses it. Revisit when the History must survive that.
      */
     readonly reportExec: (report: MachineExecReport) => Effect.Effect<void>;
+    /** MM-1922: tells the portal about a T3 tool call forwarded over an arrow link, like `reportExec`. */
+    readonly reportCall: (report: MachineCallReport) => Effect.Effect<void>;
   }
 >()("t3/fork/machineMap/MachineMap") {}
 
@@ -1414,6 +1417,7 @@ const make = Effect.gen(function* () {
     readPanel,
     shareSettings,
     reportExec: (report) => sendOrQueue({ _tag: "execRan", report }).pipe(Effect.asVoid),
+    reportCall: (report) => sendOrQueue({ _tag: "callForwarded", report }).pipe(Effect.asVoid),
   });
 });
 

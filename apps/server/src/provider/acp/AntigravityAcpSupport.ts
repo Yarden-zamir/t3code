@@ -37,6 +37,8 @@ export interface AntigravityAcpRuntimeInput extends Omit<
   | "transformStdout"
 > {
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
+  /** Fork (MM-1920): provider-acp's thread credential for the agent's shells. */
+  readonly processEnvironment?: NodeJS.ProcessEnv;
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly onAuthorizationUrl?: (url: string) => Effect.Effect<void, EffectAcpErrors.AcpError>;
   readonly clientFileSystem?: boolean;

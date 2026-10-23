@@ -7,13 +7,10 @@
  * It depends on no auth service, because `EnvironmentAuth` reads it.
  */
 import {
-  type AuthEnvironmentScope,
-  type AuthMcpClientAccess,
   ClientAccessMode,
   DEFAULT_MACHINE_MAP_PORTAL_URL,
   type MachineToPortal,
   MachineCommand,
-  type MachineId,
   MachineDesiredState,
   type MachineMapTokenHeaders,
   TrimmedNonEmptyString,
@@ -42,7 +39,7 @@ import {
   isLocalDesktopSubject,
   clientGrantFor,
   machineGrantFor,
-  machineMcpAccessFor,
+  machineMcpClientFor,
 } from "./machineAccess.ts";
 
 /** The secret store entry of the machine token. Never `settings.json` (MM-1302). */
@@ -178,22 +175,10 @@ export class MachineMapState extends Context.Service<
     }) => Effect.Effect<MachineGrant | undefined>;
     /** MM-906: browser keys that wait to reach the portal. `MachineMap` sends them. */
     readonly clientSeen: Queue.Dequeue<Extract<MachineToPortal, { _tag: "clientSeen" }>>;
-    /** MM-1307: the MCP client of a machine session whose arrow has agent tools. */
-    readonly mcpClient: (session: {
-      readonly sessionId: string;
-      readonly subject: string;
-      readonly method: string;
-      readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
-    }) => Effect.Effect<
-      | {
-          readonly sessionId: string;
-          readonly label: string;
-          readonly access: AuthMcpClientAccess;
-          /** The source machine, for the request namespace (MM-1908). */
-          readonly machineId: MachineId;
-        }
-      | undefined
-    >;
+    /** MM-1307, MM-1921: `machineMcpClientFor` with the desired state of now. */
+    readonly mcpClient: (
+      session: Parameters<typeof machineMcpClientFor>[1],
+    ) => Effect.Effect<ReturnType<typeof machineMcpClientFor>>;
   }
 >()("t3/fork/machineMap/MachineMapState") {}
 
@@ -405,19 +390,9 @@ const make = Effect.gen(function* () {
       ),
     mcpClient: (session) =>
       Effect.all([activeDesired, Clock.currentTimeMillis]).pipe(
-        Effect.map(([desired, nowMs]) => {
-          // Only a bearer token, as an MCP client presents it. Never a cookie.
-          if (desired === null || session.method !== "bearer-access-token") return undefined;
-          const granted = machineMcpAccessFor(desired, session, nowMs);
-          return granted === undefined
-            ? undefined
-            : {
-                sessionId: session.sessionId,
-                label: `machine ${granted.peer.name}`,
-                access: granted.access,
-                machineId: granted.peer.id,
-              };
-        }),
+        Effect.map(([desired, nowMs]) =>
+          desired === null ? undefined : machineMcpClientFor(desired, session, nowMs),
+        ),
       ),
   });
 });

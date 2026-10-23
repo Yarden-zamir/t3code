@@ -784,6 +784,52 @@ function readPullRequestBodies(
 }
 
 /** Adds the images of each pull request body. Two GraphQL calls per 100 pull requests at most. */
+/**
+ * Images for fork changes without a pull request body, such as direct commits. The keys are refs:
+ * `#123` or a full commit. A change in docs/fork/release-images.json goes through review, so a plan
+ * still picks only images that a reviewed source names.
+ */
+export type ReleaseImages = ReadonlyMap<string, ReadonlyArray<PullRequestImage>>;
+
+export function decodeReleaseImages(value: unknown): ReleaseImages {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("docs/fork/release-images.json must be an object of refs to image lists.");
+  }
+  return new Map(
+    Object.entries(value).map(([ref, images]) => {
+      const valid =
+        Array.isArray(images) &&
+        images.every(
+          (image: unknown) =>
+            typeof image === "object" &&
+            image !== null &&
+            typeof (image as { url?: unknown }).url === "string" &&
+            (image as { url: string }).url.startsWith("https://") &&
+            typeof (image as { alt?: unknown }).alt === "string",
+        );
+      if (!valid)
+        throw new Error(`docs/fork/release-images.json: "${ref}" needs a list of {url, alt}.`);
+      return [ref, images as ReadonlyArray<PullRequestImage>];
+    }),
+  );
+}
+
+/** Adds the images of the file to the fork changes that they name, after the body images. */
+export function withReleaseImages<Change extends ForkChange>(
+  change: Change,
+  releaseImages: ReleaseImages,
+): Change {
+  const extra = releaseImages.get(forkChangeRef(change)) ?? [];
+  const known = new Set(change.images.map((image) => image.url));
+  const added = extra.filter((image) => !known.has(image.url));
+  return added.length === 0 ? change : { ...change, images: [...change.images, ...added] };
+}
+
+function readReleaseImages(): ReleaseImages {
+  const file = new URL("../docs/fork/release-images.json", import.meta.url);
+  return decodeReleaseImages(JSON.parse(NodeFS.readFileSync(file, "utf8")));
+}
+
 function withImages(changes: DailyChanges): DailyChanges {
   const forkNumbers = [...changes.fork, ...changes.integration].flatMap((change) =>
     change.source._tag === "PullRequest" ? [change.source.number] : [],
@@ -793,10 +839,14 @@ function withImages(changes: DailyChanges): DailyChanges {
   );
   const forkBodies = readPullRequestBodies(FORK_REPOSITORY, forkNumbers);
   const upstreamBodies = readPullRequestBodies(UPSTREAM_REPOSITORY, upstreamNumbers);
+  const releaseImages = readReleaseImages();
   const forkImages = <Change extends ForkChange>(change: Change): Change =>
-    change.source._tag === "PullRequest"
-      ? { ...change, images: extractImages(forkBodies.get(change.source.number) ?? "") }
-      : change;
+    withReleaseImages(
+      change.source._tag === "PullRequest"
+        ? { ...change, images: extractImages(forkBodies.get(change.source.number) ?? "") }
+        : change,
+      releaseImages,
+    );
   return {
     fork: changes.fork.map(forkImages),
     integration: changes.integration.map(forkImages),

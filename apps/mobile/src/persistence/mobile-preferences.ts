@@ -119,8 +119,8 @@ export interface Preferences {
   readonly scratchProject?: ScratchProjectRef;
   /** Fork: the last `mobileNewThreadProject` of a server, so a cold start uses it before connecting. */
   readonly newThreadProjectMode?: MobileNewThreadProject;
-  /** Fork: the open sidebar group tab of the home thread list. */
-  readonly sidebarGroupTabId?: string;
+  /** Fork: the open sidebar tab of the home thread list. */
+  readonly sidebarTabId?: string;
   /** Fork: environments that the app token repair disabled because the portal no longer lists them. */
   readonly appTokenDisabledEnvironmentIds?: ReadonlyArray<string>;
   /** Fork: the app token client of this phone (MM-913) and its machine list (MM-914). */
@@ -202,7 +202,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     lastNewThreadProject?: LastNewThreadProject;
     scratchProject?: ScratchProjectRef;
     newThreadProjectMode?: MobileNewThreadProject;
-    sidebarGroupTabId?: string;
+    sidebarTabId?: string;
     appTokenDisabledEnvironmentIds?: ReadonlyArray<string>;
     appTokenClient?: AppTokenClient;
     voice?: VoicePreferences;
@@ -351,8 +351,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (isMobileNewThreadProject(parsed.newThreadProjectMode)) {
     preferences.newThreadProjectMode = parsed.newThreadProjectMode;
   }
-  if (typeof parsed.sidebarGroupTabId === "string") {
-    preferences.sidebarGroupTabId = parsed.sidebarGroupTabId;
+  if (typeof parsed.sidebarTabId === "string") {
+    preferences.sidebarTabId = parsed.sidebarTabId;
   }
   if (
     Array.isArray(parsed.appTokenDisabledEnvironmentIds) &&

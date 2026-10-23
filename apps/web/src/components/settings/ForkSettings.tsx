@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ComponentType } from "react";
 
 import { Button } from "../ui/button";
+import { RestoreWorktreesSettingsRow, WorktreeArtifactSettingsRows } from "./ForkWorktreeSettings";
 import { EnvironmentLabelSettingsRow } from "./EnvironmentLabelSettingsRow";
 import { AppToggleShortcutsSettingsRow } from "./AppToggleShortcutsSettingsRow";
 import {
@@ -13,6 +14,7 @@ import {
 import { ForkChangelogSettingsRow } from "./ForkChangelogSettingsRow";
 import {
   AgentSessionImportSettingsRows,
+  AutoSettleWaitsForBackgroundCommandsSettingsRow,
   BackgroundWorkDetailsSettingsRow,
   CheckNewerBeforeUpdateInstallSettingsRow,
   ForkAutoUpdateSettingsRow,
@@ -25,7 +27,7 @@ import { KeybindingSyncSettingsRow } from "./KeybindingSyncSettingsRow";
 import { MachineMapSettingsRows } from "./MachinesSettings";
 import {
   MobileComposerCameraSettingsRow,
-  MobileSidebarGroupsSettingsRow,
+  MobileSidebarTabsSettingsRow,
   MobileNewThreadProjectSettingsRow,
   MobilePublishedThemesSettingsRow,
 } from "./MobileAppSettings";
@@ -37,7 +39,7 @@ import { RecoverInterruptedTurnsSettings } from "./RecoverInterruptedTurnsSettin
 import { RepositoryOwnerFiltersSettingsRow } from "./RepositoryOwnerFiltersSettingsRow";
 import { AboutVersionSection } from "./SettingsPanels";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { SidebarGroupsSettingsRow } from "./SidebarGroupsSettingsRow";
+import { SidebarTabsSettingsRow } from "./SidebarTabsSettingsRow";
 import { SnoozeQuickOptionsSettingsRow } from "./SnoozeQuickOptionsSettingsRow";
 import { WorktreesDirectoryRow } from "./StorageSettings";
 import { ThreadCardLayoutSettingsRows } from "./ThreadCardLayoutSettings";
@@ -66,6 +68,9 @@ import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchIte
  * link-only.
  */
 const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>> = {
+  "restore-worktrees-on-resume": RestoreWorktreesSettingsRow,
+  "auto-settle-waits-for-background-commands": AutoSettleWaitsForBackgroundCommandsSettingsRow,
+  "worktree-artifact-eviction": WorktreeArtifactSettingsRows,
   "environment-label-from-machine-map": EnvironmentLabelSettingsRow,
   "tunnel-pairing": TunnelPairingSettingsRow,
   "installed-app": InstalledAppSettingsRow,
@@ -79,7 +84,7 @@ const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>> = {
   "prefer-origin-remote": PreferOriginRemoteSettingsRow,
   "pull-request-watch-roles": PullRequestWatchSettingsRows,
   "agent-session-import-window": AgentSessionImportSettingsRows,
-  "sidebar-groups": SidebarGroupsSettingsRow,
+  "sidebar-tabs": SidebarTabsSettingsRow,
   "snooze-quick-options": SnoozeQuickOptionsSettingsRow,
   "storage-worktree-path-template": WorktreePathTemplateRow,
   "storage-worktrees-location": WorktreesDirectoryRow,
@@ -103,7 +108,7 @@ const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>> = {
   "mobile-published-themes": MobilePublishedThemesSettingsRow,
   "mobile-new-thread-project": MobileNewThreadProjectSettingsRow,
   "mobile-composer-camera": MobileComposerCameraSettingsRow,
-  "mobile-sidebar-groups": MobileSidebarGroupsSettingsRow,
+  "mobile-sidebar-tabs": MobileSidebarTabsSettingsRow,
 };
 
 /** Opens the row of `item` in its usual place, the way a search result does. */
@@ -128,7 +133,7 @@ export function ForkSettingsPanel() {
         // An entry shows where search reaches its first row, and each other row that search
         // lists: on this platform and at the selected scope. Storage, for example, hides its
         // worktree rows at a project scope. A row that its own setting hides, such as
-        // "Single-thread tabs" while sidebar groups are off, is not listed and does not count.
+        // "Single-thread tabs" while sidebar tabs are off, is not listed and does not count.
         const entries = group.entries.flatMap((entry) => {
           const items = entry.ids.map((id) => availableById.get(id));
           const [item] = items;

@@ -30,6 +30,7 @@ import {
   sameValue,
 } from "../rules/map.ts";
 import { DEFAULT_COMMAND_MINUTES, ROTATION_MINUTES } from "../rules/queue.ts";
+import { CapabilityList, CapabilityStickers } from "./ArrowCapabilities.tsx";
 import { callApi, StepUpNeeded } from "./apiClient.ts";
 import { ApprovalsSetup, PasskeyStepUp } from "./Approvals.tsx";
 import { captureApproval } from "../rules/approval.ts";
@@ -60,6 +61,7 @@ import {
   PRESENCE_STICKER,
   presenceState,
   presenceText,
+  PROPOSAL_REASON,
   ROLE_TEXT,
   shortTime,
   timeAgo,
@@ -370,6 +372,9 @@ function ArrowPanel({ from, to }: { from: string; to: string }) {
           }
         />
       </label>
+
+      <Section>What it can do</Section>
+      <CapabilityList arrow={arrow} from={f} to={t} />
 
       <Section>Delivery</Section>
       <p className="small">
@@ -878,8 +883,7 @@ function MachineAccess({ machine }: { machine: MachineRecord }) {
                 <span className="t">{usesText(from.name, to.name)}</span>
                 {arrow.expiresAt && <span className="v">Until {shortTime(arrow.expiresAt)}</span>}
               </RouteLink>
-              {arrow.agentTools && <span className="sticker accent flat">tools</span>}
-              {arrow.exec && <span className="sticker accent flat">exec</span>}
+              <CapabilityStickers arrow={arrow} />
               {was ? (
                 <>
                   <span className={`sticker lvl-${was} was`}>{LEVEL_LABEL[was]}</span>
@@ -1795,7 +1799,7 @@ function ProposalPanel({ id }: { id: string }) {
   const portal = usePortalContext();
   const proposal = portal.snapshot.proposals.find((p) => p.id === id);
   if (!proposal) return <Missing what="proposal" />;
-  const own = proposal.reason === "self-escalation";
+  const reason = PROPOSAL_REASON[proposal.reason];
   return (
     <>
       <h2>{proposal.summary}</h2>
@@ -1803,13 +1807,9 @@ function ProposalPanel({ id }: { id: string }) {
         {actorText(proposal.actor, portal.map)} · {timeAgo(proposal.at, portal.now)}
       </p>
       <div className="stickers-row">
-        <span className={`sticker ${own ? "" : "wait"}`}>{own ? "own access" : "proposal"}</span>
+        <span className={`sticker ${reason.look}`}>{reason.sticker}</span>
       </div>
-      <p className="desc">
-        {own
-          ? "The agent asks for more access for its own machine. That always needs you."
-          : "The machine has the map role propose, so its changes wait for you."}
-      </p>
+      <p className="desc">{reason.text}</p>
       <Section>Changes</Section>
       <ul className="changes small">
         {proposal.changes.map((change) => (

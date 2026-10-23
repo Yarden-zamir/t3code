@@ -105,6 +105,49 @@ export const ArrowRecord = Schema.Struct({
 });
 export type ArrowRecord = typeof ArrowRecord.Type;
 
+/**
+ * MM-1915: what agents on `from` can do on `to`. Each capability follows from fields that the
+ * target enforces: agent tools give a link (MM-1921) with the access of the level (MM-302), and
+ * exec needs agent tools and `standard` or `admin` (MM-1908). Copy-secrets waits for MM-1917.
+ */
+export const ArrowCapability = Schema.Literals(["readThreads", "launch", "exec", "settings"]);
+export type ArrowCapability = typeof ArrowCapability.Type;
+
+/** MM-1915: the capabilities of an arrow at its level now, in the order of `ArrowCapability`. */
+export const arrowCapabilities = (
+  arrow: Pick<ArrowRecord, "level" | "agentTools" | "exec">,
+): ReadonlyArray<ArrowCapability> => {
+  if (!arrow.agentTools || arrow.level === "none") return [];
+  // `read` links are read-only; `standard` launches fenced to its own threads; `admin` is not fenced.
+  const works = arrow.level === "standard" || arrow.level === "admin";
+  return ArrowCapability.literals.filter((capability) => {
+    switch (capability) {
+      case "readThreads":
+        return true;
+      case "launch":
+        return works;
+      case "exec":
+        return works && arrow.exec;
+      case "settings":
+        return arrow.level === "admin";
+    }
+  });
+};
+
+/** MM-1915: each capability in words, for lists such as "Mac on VPS: read threads, exec". */
+export const ARROW_CAPABILITY_TEXT: Record<ArrowCapability, string> = {
+  readThreads: "read threads",
+  launch: "launch and delegate",
+  exec: "exec",
+  settings: "settings",
+};
+
+/**
+ * MM-1921: upstream links always expire, so a permanent arrow link reports this expiry. Clients
+ * show no expiry for it. Revisit when upstream `PeerLink.expiresAt` may be null.
+ */
+export const ARROW_LINK_NO_EXPIRY = "9999-12-31T00:00:00.000Z";
+
 /** A browser profile that the owner approved (MM-904). */
 export const ClientId = TrimmedNonEmptyString.pipe(Schema.brand("ClientId"));
 export type ClientId = typeof ClientId.Type;
@@ -363,8 +406,11 @@ export const MapProposal = Schema.Struct({
   actor: MapActor,
   summary: TrimmedNonEmptyString,
   changes: Schema.Array(MapChange),
-  /** Why it waits: the map role is `propose`, or the change raises access for its own machine. */
-  reason: Schema.Literals(["map-role", "self-escalation"]),
+  /**
+   * Why it waits: the map role is `propose`, the change raises access for its own machine, or it
+   * raises access for another machine, which only the owner does (MM-803).
+   */
+  reason: Schema.Literals(["map-role", "self-escalation", "owner-only"]),
 });
 export type MapProposal = typeof MapProposal.Type;
 
@@ -648,7 +694,7 @@ export const ClientEnrollResponse = Schema.Struct({
 });
 export type ClientEnrollResponse = typeof ClientEnrollResponse.Type;
 
-/** Agent tools that run through the portal (MM-801). `machine_tool_call` goes machine to machine. */
+/** Agent tools that run through the portal (MM-801). `machine_exec` goes machine to machine. */
 export const MapToolName = Schema.Literals([
   "machines_read",
   "machines_set_access",
@@ -661,8 +707,17 @@ export const MapToolName = Schema.Literals([
 ]);
 export type MapToolName = typeof MapToolName.Type;
 
-/** MM-1908: the outcome of one `machine_exec` run. `stopped`: a pause or an arrow change ended it. */
-export const MachineExecOutcome = Schema.Literals(["exited", "timedOut", "stopped", "failed"]);
+/**
+ * MM-1908: the outcome of one `machine_exec` run. `stopped`: a pause or an arrow change ended it.
+ * `refused`: the arrow or the caller limits did not allow the call, so nothing ran.
+ */
+export const MachineExecOutcome = Schema.Literals([
+  "exited",
+  "timedOut",
+  "stopped",
+  "failed",
+  "refused",
+]);
 export type MachineExecOutcome = typeof MachineExecOutcome.Type;
 
 /** MM-1908: one `machine_exec` run, as the machine that ran it reports it. No output of the command. */
@@ -679,12 +734,44 @@ export const MachineExecReport = Schema.Struct({
   outcome: MachineExecOutcome,
   exitCode: Schema.NullOr(Schema.Int),
   durationMs: NonNegativeInt,
+  /** Why the call was refused. Only with the outcome `refused`. */
+  reason: Schema.optionalKey(Schema.String),
+  /**
+   * The machine that the command was for, when the calling machine reports its own refusal. The
+   * portal accepts it only from `from`. Absent: the reporting machine.
+   */
+  target: Schema.optionalKey(MachineId),
 });
 export type MachineExecReport = typeof MachineExecReport.Type;
 
 /** MM-1908: one run in the History view. The portal adds `to`: the machine that reported it. */
 export const MachineExecRecord = Schema.Struct({ ...MachineExecReport.fields, to: MachineId });
 export type MachineExecRecord = typeof MachineExecRecord.Type;
+
+/** MM-1922: `refused`: the link or the target refused the call, so the tool did not run. */
+export const MachineCallOutcome = Schema.Literals(["succeeded", "refused", "failed"]);
+export type MachineCallOutcome = typeof MachineCallOutcome.Type;
+
+/**
+ * MM-1922: one T3 tool call that a machine forwarded over an arrow link, as that machine reports
+ * it. Never the arguments or the output of the call.
+ */
+export const MachineCallReport = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  at: MapTime,
+  /** The machine that the call went to. */
+  to: MachineId,
+  /** The calling thread on the reporting machine. */
+  threadId: Schema.NullOr(Schema.String),
+  threadTitle: Schema.NullOr(Schema.String),
+  tool: TrimmedNonEmptyString,
+  outcome: MachineCallOutcome,
+});
+export type MachineCallReport = typeof MachineCallReport.Type;
+
+/** MM-1922: one call in the History. The portal adds `from`: the machine that reported it. */
+export const MachineCallRecord = Schema.Struct({ ...MachineCallReport.fields, from: MachineId });
+export type MachineCallRecord = typeof MachineCallRecord.Type;
 
 export const MachineToPortal = Schema.Union([
   Schema.TaggedStruct("hello", {
@@ -725,6 +812,8 @@ export const MachineToPortal = Schema.Union([
   }),
   /** MM-1908: this machine ran a command for another machine. */
   Schema.TaggedStruct("execRan", { report: MachineExecReport }),
+  /** MM-1922: this machine forwarded a T3 tool call over an arrow link. */
+  Schema.TaggedStruct("callForwarded", { report: MachineCallReport }),
   /** MM-207: the machine saved the new token secret. */
   Schema.TaggedStruct("rotated", { tokenClientId: TrimmedNonEmptyString }),
   /** MM-906: a browser key that no client holds signed in through Cloudflare Access. */
@@ -799,7 +888,7 @@ export const MapToolInputs = {
     agentTools: Schema.optionalKey(
       Schema.Boolean.annotate({
         description:
-          "True lets agents on `from` call T3 tools on `to` with machine_tool_call. Omit to keep the current value. False also turns exec off.",
+          "True makes `to` a linked environment of `from`: agents on `from` call T3 tools there with environmentId. Omit to keep the current value. False also turns exec off.",
       }),
     ),
     exec: Schema.optionalKey(

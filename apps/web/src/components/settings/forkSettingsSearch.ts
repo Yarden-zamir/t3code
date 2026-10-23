@@ -19,6 +19,34 @@ export const CATEGORY_SCOPES: Readonly<Record<ForkSettingsPath, SettingsSearchSc
 
 export const WORKTREE_PATH_TEMPLATE_ITEMS = [
   {
+    id: "worktree-artifact-eviction",
+    title: "Evict worktree artifacts",
+    to: "/settings/fork",
+    environmentOnly: true,
+    searchTerms: ["storage cleanup disk node_modules caches build dependencies worktrees"],
+  },
+  {
+    id: "worktree-artifact-eviction-days",
+    title: "Artifact eviction inactivity days",
+    to: "/settings/fork",
+    environmentOnly: true,
+    searchTerms: ["storage cleanup disk inactive days worktrees"],
+  },
+  {
+    id: "restore-worktrees-on-resume",
+    title: "Restore worktrees on resume",
+    to: "/settings/fork",
+    environmentOnly: true,
+    searchTerms: ["missing folder restore checkout dependencies setup node_modules"],
+  },
+  {
+    id: "auto-settle-waits-for-background-commands",
+    title: "Auto-settle waits for background commands",
+    to: "/settings/fork",
+    environmentOnly: true,
+    searchTerms: ["settle background command bash wake typecheck test run killed"],
+  },
+  {
     id: "storage-worktree-path-template",
     title: "Worktree path template",
     to: "/settings/storage",
@@ -78,10 +106,10 @@ export const APPEARANCE_ITEMS = [
     environmentOnly: true,
   },
   {
-    id: "mobile-sidebar-groups",
-    title: "Sidebar groups on mobile",
+    id: "mobile-sidebar-tabs",
+    title: "Sidebar tabs on mobile",
     to: "/settings/appearance",
-    searchTerms: ["mobile phone android app sidebar groups tabs thread list home"],
+    searchTerms: ["mobile phone android app sidebar tabs groups thread list home"],
     environmentOnly: true,
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
@@ -160,7 +188,7 @@ export const BEHAVIOR_ITEMS = [
     id: "keyboard-focus-levels",
     title: "Keyboard focus levels",
     to: "/settings/general",
-    searchTerms: ["keyboard escape arrows focus composer timeline sidebar cursor cite groups"],
+    searchTerms: ["keyboard escape arrows focus composer timeline sidebar cursor cite tabs"],
   },
   {
     id: "focus-level-highlight",
@@ -195,16 +223,16 @@ export const BEHAVIOR_ITEMS = [
     searchTerms: ["snooze menu presets choices later tonight tomorrow next week remind wake"],
   },
   {
-    id: "sidebar-groups",
-    title: "Sidebar groups",
+    id: "sidebar-tabs",
+    title: "Sidebar tabs",
     to: "/settings/general",
     searchTerms: ["tabs folders groups organize threads drag rules monitors views sidebar"],
   },
   {
-    id: "sidebar-group-single-thread",
+    id: "sidebar-tab-single-thread",
     title: "Single-thread tabs",
     to: "/settings/general",
-    searchTerms: ["sidebar group tab one thread open directly"],
+    searchTerms: ["sidebar tab one thread open directly"],
   },
   {
     id: "pull-request-filter-chips",

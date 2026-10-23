@@ -137,6 +137,17 @@ jobs:
       # On both paths, because a code change can rename a file that a doc links to.
       - name: Check the links of the fork docs
         run: node scripts/fork-check-doc-links.ts
+      # See docs/fork/operations.md "Migrations".
+      - name: Check the migration registry against upstream main
+        run: |
+          git fetch --depth=1 --no-tags https://github.com/pingdotgg/t3code.git main:refs/remotes/upstream/main
+          node scripts/fork-check-migrations.ts
+      # See docs/fork/operations.md "Adopted upstream pull requests". The check walks the commits
+      # of HEAD, so it fetches them without their trees and files (a few seconds).
+      - name: Check the adopted upstream pull requests
+        run: |
+          git fetch --no-tags --filter=tree:0 --unshallow origin "$(git rev-parse HEAD)"
+          node scripts/fork-adopted-prs.ts check
 
   typecheck:
     name: Typecheck

@@ -406,8 +406,8 @@ export function applyServerSettingsPatch(
     pinnedProjectScriptIds: pinnedProjectScriptIdsPatch,
     // Replaced per surface: deepMerge would merge the layout rows index by index.
     threadCardLayouts: threadCardLayoutsPatch,
-    // Fork: replaced whole, so deleted groups and assignments do not come back.
-    sidebarGroups: sidebarGroupsPatch,
+    // Fork: replaced whole, so deleted tabs and assignments do not come back.
+    sidebarTabs: sidebarTabsPatch,
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
     projectAutoPullOverrides: _legacyAutoPull,
     projectScriptOverrides: _legacyScripts,
@@ -500,7 +500,7 @@ export function applyServerSettingsPatch(
     ...(threadCardLayoutsPatch === undefined
       ? {}
       : { threadCardLayouts: { ...current.threadCardLayouts, ...threadCardLayoutsPatch } }),
-    ...(sidebarGroupsPatch === undefined ? {} : { sidebarGroups: sidebarGroupsPatch }),
+    ...(sidebarTabsPatch === undefined ? {} : { sidebarTabs: sidebarTabsPatch }),
     favorites,
     providerModelPreferences: nextModelPreferences,
     ...(worktreeCleanupPatch === undefined

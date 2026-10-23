@@ -14,6 +14,7 @@ import {
 import { useThreadSelectionStore } from "../../threadSelectionStore";
 import type { SidebarThreadSummary } from "../../types";
 import { useUiStateStore } from "../../uiStateStore";
+import { useDelegatedUnderParent } from "../../state/entities";
 import { filterSidebarV2VisibleThreads } from "../Sidebar.logic";
 import {
   buildSidebarOwnerOptions,
@@ -36,7 +37,7 @@ export function useSidebarOwnerFilter<Group extends SidebarProjectSnapshot>(inpu
 }) {
   const { unsortedProjectGroups, projectGroups, projectGroupingSettings } = input;
   // Counts cover the threads the sidebar lists: no archived threads and no subagents.
-  const threads = filterSidebarV2VisibleThreads(input.threads, null);
+  const threads = filterSidebarV2VisibleThreads(input.threads, null, useDelegatedUnderParent());
   const repositoryOwnerFiltersEnabled = useClientSettings((s) => s.repositoryOwnerFilters);
   const savedOwnerFilter = useClientSettings((s) => s.sidebarOwnerFilter);
   const ownerFilter = resolveSidebarOwnerFilter({
