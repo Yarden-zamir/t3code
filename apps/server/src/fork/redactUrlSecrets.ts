@@ -120,15 +120,14 @@ export function redactUrlSecretsInText(text: string): string {
     let end = marker + 3;
     while (end < text.length && !isUrlEnd(text[end]!)) end += 1;
     while (end > marker + 3 && belongsToSurroundingText(text.slice(start, end))) end -= 1;
-    if (start < marker) {
-      const candidate = text.slice(start, end);
-      const redacted = redactUrlSecrets(candidate);
-      if (redacted !== candidate) {
-        result += text.slice(copiedUpTo, start) + redacted;
-        copiedUpTo = end;
-      }
+    const candidate = text.slice(start, end);
+    const redacted = start < marker ? redactUrlSecrets(candidate) : candidate;
+    if (redacted !== candidate) {
+      result += text.slice(copiedUpTo, start) + redacted;
+      copiedUpTo = end;
     }
-    marker = text.indexOf("://", end);
+    // An unchanged candidate can run into the next URL, as in `[a](http://x),[b](http://y)`.
+    marker = text.indexOf("://", redacted === candidate ? marker + 3 : end);
   }
   return copiedUpTo === 0 ? text : result + text.slice(copiedUpTo);
 }

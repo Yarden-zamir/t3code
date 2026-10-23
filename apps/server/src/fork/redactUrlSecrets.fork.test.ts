@@ -74,6 +74,12 @@ describe("redactUrlSecretsInText", () => {
       redactUrlSecretsInText("[pair](http://localhost/pair#token=fake)"),
       "[pair](http://localhost/pair#token=REDACTED)",
     );
+    assert.strictEqual(
+      redactUrlSecretsInText(
+        "[docs](https://example.test),[pair](http://localhost/pair#token=fake)",
+      ),
+      "[docs](https://example.test),[pair](http://localhost/pair#token=REDACTED)",
+    );
   });
 
   it("hides URLs inside prose and JSON text and keeps the text around them", () => {
