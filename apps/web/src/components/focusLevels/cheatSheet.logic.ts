@@ -219,6 +219,7 @@ const LABELS: Partial<Record<KeybindingCommand, string>> = {
   "chat.new": "New thread",
   "chat.find": "Find in thread",
   "settings.open": "Open settings",
+  "settings.find": "Find in settings",
   "usage.cost": "Usage page: show cost",
   "usage.tokens": "Usage page: show tokens",
   "usage.limits": "Usage page: show limits",

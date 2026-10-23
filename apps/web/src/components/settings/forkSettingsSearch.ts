@@ -247,6 +247,12 @@ export const CONFIRMATION_ITEMS = [
 
 export const KEYBOARD_ITEMS = [
   {
+    id: "settings-find",
+    title: "Find in settings",
+    to: "/settings/keybindings",
+    searchTerms: ["find search filter settings page cmd ctrl f shortcut"],
+  },
+  {
     id: "keyboard-focus-levels",
     title: "Keyboard focus levels",
     to: "/settings/keybindings",

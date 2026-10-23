@@ -594,6 +594,14 @@ Control tooltips show the keys of the control as chips, such as "Stash ⌘S", fo
 - The terminal keeps `mod+/`, because Ctrl+/ is undo in shells.
 - **Limits:** the 1 to 9 jump commands show as one row each.
 
+### Find in settings
+
+On a Settings page, `mod+f` opens a find box in the header. The rows of that page that do not match hide, and a section without a match hides with its header. Enter jumps to the first match. Escape or another page closes the box and shows all rows again.
+
+- **Setting:** client setting `settingsFind` (off by default, because it takes `mod+f` from the browser's own find). Settings > Keybindings > Keyboard > "Find in settings". The key is the keybinding command `settings.find`, with the `when` condition `settingsPageOpen`. Rebind it in Settings > Keybindings. While the box can open, the command palette has "Find in settings".
+- **Works on:** web, desktop. The mobile app has no settings search, so this does not apply there.
+- **Limits:** a row matches by its search title and keywords, not by its description. A row without a search item, such as a row that another switch reveals, hides while the box has text.
+
 ### Terminal settings
 
 App shortcuts take priority in a focused terminal, and the app asks before a terminal closes.

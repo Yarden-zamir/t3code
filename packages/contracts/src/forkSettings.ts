@@ -230,6 +230,11 @@ export const ForkClientSettingsFields = {
   restartReconnectWarningGrace: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  /**
+   * Fork: `settings.find` (`mod+f` by default) opens a find box that filters the rows of the open
+   * Settings page. Off by default, because it takes the key from the browser's own find.
+   */
+  settingsFind: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 };
 
 export const ForkClientSettingsPatchFields = {
@@ -254,6 +259,7 @@ export const ForkClientSettingsPatchFields = {
   backForwardButtons: Schema.optionalKey(Schema.Boolean),
   rememberBackForwardHistory: Schema.optionalKey(Schema.Boolean),
   restartReconnectWarningGrace: Schema.optionalKey(Schema.Boolean),
+  settingsFind: Schema.optionalKey(Schema.Boolean),
 };
 
 /**

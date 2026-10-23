@@ -91,6 +91,33 @@ export function AgentSessionImportSettingsRows() {
   );
 }
 
+/** Fork: `settingsFind`. */
+export function SettingsFindSettingsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("settings-find")}
+      description="On a Settings page, Find in settings (⌘F or Ctrl+F by default) opens a box that hides the rows of that page that do not match. Off: the browser keeps the key for its own find."
+      resetAction={
+        settings.settingsFind !== DEFAULT_UNIFIED_SETTINGS.settingsFind ? (
+          <SettingResetButton
+            label="find in settings"
+            onClick={() => updateSettings({ settingsFind: DEFAULT_UNIFIED_SETTINGS.settingsFind })}
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.settingsFind}
+          onCheckedChange={(checked) => updateSettings({ settingsFind: Boolean(checked) })}
+          aria-label="Find in settings"
+        />
+      }
+    />
+  );
+}
+
 /** Fork: `confirmTerminalClose`. */
 export function TerminalCloseConfirmationSettingsRow() {
   const settings = useScopedSettings();

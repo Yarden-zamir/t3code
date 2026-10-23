@@ -170,3 +170,9 @@
 ::highlight(timeline-cursor) {
   background-color: color-mix(in srgb, var(--primary) 24%, transparent);
 }
+
+/* Settings find (ForkSettingsFind.tsx): the rows and sections of the open page that do not
+   match. The find box sets the attribute on page elements it does not render itself. */
+[data-settings-find-hidden] {
+  display: none !important;
+}

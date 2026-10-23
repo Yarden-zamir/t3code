@@ -20,6 +20,7 @@ import {
   CheckNewerBeforeUpdateInstallSettingsRow,
   ForkAutoUpdateSettingsRow,
   RestartReconnectWarningGraceSettingsRow,
+  SettingsFindSettingsRow,
   TerminalAppShortcutsFirstSettingsRow,
   TerminalCloseConfirmationSettingsRow,
 } from "./ForkSettingsRows";
@@ -101,6 +102,7 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "focus-level-highlight": FocusLevelHighlightSettingsRow,
   "tooltip-shortcuts": TooltipShortcutsSettingsRow,
   "tooltip-shortcut-limit": TooltipShortcutLimitSettingsRow,
+  "settings-find": SettingsFindSettingsRow,
   "terminal-close-confirmation": TerminalCloseConfirmationSettingsRow,
   "thread-card-layout": ThreadCardLayoutSettingsRows,
   "thread-link-chips": ThreadLinkChipsSettingsRow,

@@ -51,6 +51,7 @@ export const FORK_KEYBINDING_COMMANDS = [
   "rightPanel.previousTab",
   "rightPanel.nextTab",
   "settings.open",
+  "settings.find",
   "keyboard.cheatSheet",
 ] as const;
 export type ForkKeybindingCommand = (typeof FORK_KEYBINDING_COMMANDS)[number];

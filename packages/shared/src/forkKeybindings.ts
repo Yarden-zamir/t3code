@@ -57,6 +57,9 @@ export const FORK_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "ctrl+shift+tab", command: "rightPanel.previousTab", when: DESKTOP_KEYS },
   { key: "ctrl+tab", command: "rightPanel.nextTab", when: DESKTOP_KEYS },
   { key: "mod+,", command: "settings.open", when: "isWeb" },
+  // After the upstream `chat.find` rule, so a Settings page takes `mod+f`. It runs only while
+  // the client setting `settingsFind` is on; otherwise the browser keeps its own find.
+  { key: "mod+f", command: "settings.find", when: "settingsPageOpen" },
   // Ctrl+/ is undo in shells, so the terminal keeps it.
   { key: "mod+/", command: "keyboard.cheatSheet", when: "!terminalFocus" },
 ];

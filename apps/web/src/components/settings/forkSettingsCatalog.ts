@@ -193,6 +193,7 @@ const FORK_SETTING_GROUPS = [
       { ids: ["focus-level-highlight"], place: "keybindings-keyboard" },
       { ids: ["tooltip-shortcuts"], place: "keybindings-keyboard" },
       { ids: ["tooltip-shortcut-limit"], place: "keybindings-keyboard" },
+      { ids: ["settings-find"], place: "keybindings-keyboard" },
       { ids: ["terminal-close-confirmation"], place: "general-confirmations" },
     ],
   },
