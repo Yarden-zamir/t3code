@@ -27,6 +27,8 @@ export interface DevServerRecord {
   readonly ports: { readonly server: number; readonly web: number } | null;
   readonly logFile: string;
   readonly startedAt: string;
+  /** The `ps` start time of the leader. A different start time on the same PID means reuse. */
+  readonly leaderStartedAt: string;
 }
 
 export interface ProcessEntry {
@@ -94,7 +96,8 @@ export function parseRecord(text: string): DevServerRecord {
     typeof record.cwd !== "string" ||
     !portsValid ||
     typeof record.logFile !== "string" ||
-    typeof record.startedAt !== "string"
+    typeof record.startedAt !== "string" ||
+    typeof record.leaderStartedAt !== "string"
   ) {
     throw new Error(`The dev server record has an unexpected shape: ${text}`);
   }
@@ -142,23 +145,32 @@ function assertOwnedGroup(
   record: DevServerRecord,
   members: ReadonlyArray<ProcessEntry>,
 ): void {
+  const refuse = (reason: string) =>
+    new Error(`Refusing to stop process group ${record.pgid}: ${reason}`);
+  // A folder that cannot be read (another user, or a process that just exited) proves nothing.
   const cwds = host.cwds(members.map((entry) => entry.pid));
-  const leaderCwd = cwds.get(record.pgid);
-  if (leaderCwd !== undefined) {
-    if (isInside(leaderCwd, root)) return;
-    throw new Error(
-      `Refusing to stop process group ${record.pgid}: its leader runs in ${leaderCwd}, not in ${root}.`,
+  const leader = members.find((entry) => entry.pid === record.pgid);
+  if (leader !== undefined) {
+    if (leader.startedAt !== record.leaderStartedAt) {
+      throw refuse(
+        `PID ${leader.pid} started at ${leader.startedAt}, not at ${record.leaderStartedAt}, so another process reuses it.`,
+      );
+    }
+    const leaderCwd = cwds.get(leader.pid);
+    if (leaderCwd !== undefined && isInside(leaderCwd, root)) return;
+    throw refuse(
+      `its leader runs in ${leaderCwd ?? "a folder that cannot be read"}, not in ${root}.`,
     );
   }
   const foreign = members.filter((entry) => {
     const cwd = cwds.get(entry.pid);
-    return cwd !== undefined && !isInside(cwd, root);
+    return cwd === undefined || !isInside(cwd, root);
   });
   if (foreign.length > 0) {
-    const list = foreign.map((entry) => `${entry.pid} in ${cwds.get(entry.pid)}`).join(", ");
-    throw new Error(
-      `Refusing to stop process group ${record.pgid}: its leader exited and these processes run outside ${root}: ${list}.`,
-    );
+    const list = foreign
+      .map((entry) => `${entry.pid} in ${cwds.get(entry.pid) ?? "a folder that cannot be read"}`)
+      .join(", ");
+    throw refuse(`its leader exited and these processes do not run in ${root}: ${list}.`);
   }
 }
 
@@ -209,10 +221,16 @@ export interface OrphanGroup {
   readonly members: ReadonlyArray<ProcessEntry & { readonly cwd: string | undefined }>;
 }
 
-/** The record of the worktree that holds `directory`, if any. */
+/** The record of the worktree that holds `directory`, if any. A broken record counts as none. */
 function findRecordAbove(directory: string): DevServerRecord | undefined {
   for (let current = directory; ; current = NodePath.dirname(current)) {
-    if (NodeFS.existsSync(recordPath(current))) return readRecord(current);
+    if (NodeFS.existsSync(recordPath(current))) {
+      try {
+        return readRecord(current);
+      } catch {
+        return undefined;
+      }
+    }
     if (NodePath.dirname(current) === current) return undefined;
   }
 }
@@ -300,11 +318,15 @@ function linuxCwds(pids: ReadonlyArray<number>): ReadonlyMap<number, string> {
 const nodeProcessHost: ProcessHost = {
   list: () =>
     parsePs(
-      NodeChildProcess.execFileSync("ps", ["-A", "-o", "pid=,ppid=,pgid=,lstart=,command="], {
-        encoding: "utf8",
-        env: { ...process.env, LC_ALL: "C" },
-        maxBuffer: 64 * 1024 * 1024,
-      }),
+      NodeChildProcess.execFileSync(
+        "ps",
+        ["-A", "-ww", "-o", "pid=,ppid=,pgid=,lstart=,command="],
+        {
+          encoding: "utf8",
+          env: { ...process.env, LC_ALL: "C" },
+          maxBuffer: 64 * 1024 * 1024,
+        },
+      ),
     ),
   cwds: (pids) => {
     if (pids.length === 0) return new Map();
@@ -357,11 +379,9 @@ export function readStartupOutput(log: string): StartupOutput {
   const web = runnerLine === undefined ? undefined : valueAfter(runnerLine, "webPort=");
   const pairingLine = lines.find((line) => line.includes("pairingUrl: "));
   const sharedLine = lines.find((line) => line.includes("[dev-runner] shared on tailnet: "));
+  const ports = { server: Number(server), web: Number(web) };
   return {
-    ports:
-      server !== undefined && web !== undefined
-        ? { server: Number(server), web: Number(web) }
-        : null,
+    ports: isPositiveInteger(ports.server) && isPositiveInteger(ports.web) ? ports : null,
     sharedUrl: sharedLine === undefined ? undefined : valueAfter(sharedLine, "shared on tailnet: "),
     pairingUrl: pairingLine === undefined ? undefined : valueAfter(pairingLine, "pairingUrl: "),
   };
@@ -394,6 +414,8 @@ async function start(host: ProcessHost, root: string, devArgs: ReadonlyArray<str
   if (pid === undefined) throw new Error(`Could not start ${vp}. See ${logFile}.`);
   child.unref();
 
+  const leader = host.list().find((entry) => entry.pid === pid);
+  if (leader === undefined) throw new Error(`The dev server exited at once. See ${logFile}.`);
   const record: DevServerRecord = {
     pgid: pid,
     pid,
@@ -401,6 +423,7 @@ async function start(host: ProcessHost, root: string, devArgs: ReadonlyArray<str
     ports: null,
     logFile,
     startedAt: new Date().toISOString(),
+    leaderStartedAt: leader.startedAt,
   };
   writeRecord(root, record);
   console.log(`Started process group ${pid}. Log: ${logFile}`);
@@ -409,9 +432,14 @@ async function start(host: ProcessHost, root: string, devArgs: ReadonlyArray<str
   for (let waited = 0; waited < START_WAIT_MILLISECONDS; waited += POLL_MILLISECONDS) {
     output = readStartupOutput(NodeFS.readFileSync(logFile, "utf8"));
     if (output.ports !== null && output.pairingUrl !== undefined) break;
-    if (groupMembers(host, pid).length === 0) {
-      removeRecord(root);
-      throw new Error(`The dev server exited during startup. See ${logFile}.`);
+    const members = groupMembers(host, pid);
+    if (!members.some((entry) => entry.pid === pid)) {
+      if (members.length === 0) removeRecord(root);
+      throw new Error(
+        members.length === 0
+          ? `The dev server exited during startup. See ${logFile}.`
+          : `The dev server leader exited during startup, and ${members.length} processes of its group still run. See ${logFile}, then run \`node scripts/fork-dev-server.ts stop\`.`,
+      );
     }
     await host.sleep(POLL_MILLISECONDS);
   }
@@ -460,9 +488,11 @@ function printOrphans(host: ProcessHost): void {
         `  ${member.pid}  ${member.startedAt}  ${member.cwd ?? "(folder unknown)"}  ${command}`,
       );
     }
-    console.log(`  To stop it: kill ${group.members.map((member) => member.pid).join(" ")}`);
+    console.log(`  Owner only: kill ${group.members.map((member) => member.pid).join(" ")}`);
   }
-  console.log("This command only reports. Check each process before you stop it.");
+  console.log(
+    "This command only reports. Agents report these groups to the owner and never run the kill commands.",
+  );
 }
 
 async function main(args: ReadonlyArray<string>): Promise<void> {
@@ -473,8 +503,12 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
   const host = nodeProcessHost;
   switch (command) {
     case "start": {
-      const separator = rest.indexOf("--");
-      return start(host, worktreeRoot(), separator === -1 ? rest : rest.slice(separator + 1));
+      if (rest.length > 0 && rest[0] !== "--") {
+        throw new Error(
+          "Put the `vp run dev` arguments after `--`, for example `start -- --share`.",
+        );
+      }
+      return start(host, worktreeRoot(), rest.slice(1));
     }
     case "stop": {
       const result = await stopDevServer(host, worktreeRoot());

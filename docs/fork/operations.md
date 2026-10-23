@@ -168,7 +168,8 @@ node scripts/fork-dev-server.ts orphans            # reports leftover dev proces
 `start` runs `vp run dev` in a new process group, writes the log to `.t3/dev-server.log` and prints the ports and the `pairingUrl`.
 `stop` stops the whole group, so that no `node --watch` process stays alive.
 It refuses a group that does not run in this worktree.
-`orphans` lists dev process groups with a deleted folder, or under PID 1 without a record, and prints a `kill` command for each.
+`orphans` lists dev process groups with a deleted folder, or under PID 1 without a record.
+It prints a `kill` command for each group. Only the owner runs it, after a check. Agents report the groups.
 The helper works on macOS and Linux, not on Windows.
 
 ### Tool blockers
