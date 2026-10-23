@@ -14,6 +14,7 @@ import {
 import { ForkChangelogSettingsRow } from "./ForkChangelogSettingsRow";
 import {
   AgentSessionImportSettingsRows,
+  AutoSettleWaitsForBackgroundCommandsSettingsRow,
   BackgroundWorkDetailsSettingsRow,
   CheckNewerBeforeUpdateInstallSettingsRow,
   ForkAutoUpdateSettingsRow,
@@ -68,6 +69,7 @@ import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchIte
  */
 const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>> = {
   "restore-worktrees-on-resume": RestoreWorktreesSettingsRow,
+  "auto-settle-waits-for-background-commands": AutoSettleWaitsForBackgroundCommandsSettingsRow,
   "worktree-artifact-eviction": WorktreeArtifactSettingsRows,
   "environment-label-from-machine-map": EnvironmentLabelSettingsRow,
   "tunnel-pairing": TunnelPairingSettingsRow,
