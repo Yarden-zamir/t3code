@@ -186,6 +186,40 @@ export function BackgroundWorkDetailsSettingsRow() {
   );
 }
 
+/** Fork: `restartReconnectWarningGrace` (forkReconnectWarningGrace.ts). */
+export function RestartReconnectWarningGraceSettingsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("restart-reconnect-warning-grace")}
+      description="For the first 45 seconds after T3 Code starts, do not warn in the composer that a server is reconnecting. A refused sign-in or an offline device still shows at once."
+      resetAction={
+        settings.restartReconnectWarningGrace !==
+        DEFAULT_UNIFIED_SETTINGS.restartReconnectWarningGrace ? (
+          <SettingResetButton
+            label="quiet reconnect after restart"
+            onClick={() =>
+              updateSettings({
+                restartReconnectWarningGrace: DEFAULT_UNIFIED_SETTINGS.restartReconnectWarningGrace,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.restartReconnectWarningGrace}
+          onCheckedChange={(checked) =>
+            updateSettings({ restartReconnectWarningGrace: Boolean(checked) })
+          }
+          aria-label="Quiet reconnect after restart"
+        />
+      }
+    />
+  );
+}
+
 /** Fork: `checkNewerBeforeUpdateInstall`. Only the desktop app installs downloaded updates. */
 export function CheckNewerBeforeUpdateInstallSettingsRow() {
   const settings = useScopedSettings();

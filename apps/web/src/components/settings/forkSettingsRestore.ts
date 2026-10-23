@@ -53,6 +53,7 @@ const FORK_RESTORED_SETTINGS = [
   ["tooltipShortcuts", "Shortcuts in tooltips"],
   ["tooltipShortcutLimit", "Keys per tooltip"],
   ["confirmTerminalClose", "Terminal close confirmation"],
+  ["restartReconnectWarningGrace", "Quiet reconnect after restart"],
 ] as const satisfies ReadonlyArray<
   readonly [keyof UnifiedSettings & keyof ScopedSettingsPatch, string]
 >;

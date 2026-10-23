@@ -13,9 +13,11 @@ import {
   type OrchestrationV2ThreadHistoryPage,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import type { HttpClient } from "effect/http";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
@@ -518,6 +520,26 @@ describe("authenticated environment HTTP requests", () => {
         rejectedAccessToken: "current-token",
       });
       expect(harness.calls).toHaveLength(2);
+    }),
+  );
+
+  it.effect("retries a session fetch that fails while the host restarts", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness((requestNumber) =>
+        requestNumber === 1
+          ? Promise.reject(new Error("Network unreachable"))
+          : requestNumber === 2
+            ? new Response(null, { status: 502 })
+            : Response.json(SESSION),
+      );
+      const fiber = yield* fetchEnvironmentSessionState(harness.input).pipe(
+        Effect.provide(harness.httpLayer),
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust("3 seconds");
+
+      expect(yield* Fiber.join(fiber)).toEqual(SESSION);
+      expect(harness.calls).toHaveLength(3);
     }),
   );
 
