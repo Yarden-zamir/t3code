@@ -5,9 +5,11 @@ import type {
   RunAttemptId,
   ProviderThreadId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -22,7 +24,6 @@ import * as Settings from "../serverSettings.ts";
 import * as Git from "../vcs/GitVcsDriver.ts";
 import { makeSetupMarker } from "./forkWorktreeSetup.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
-import { makeWorkspaceDependencies } from "./forkWorkspaceDependencies.ts";
 
 export class WorktreeResumeError extends Schema.TaggedError<WorktreeResumeError>()(
   "WorktreeResumeError",
@@ -51,6 +52,7 @@ export class ForkWorktreeResume extends Context.Service<
 >()("t3/fork/ForkWorktreeResume") {}
 
 const isWorktreeResumeError = Schema.is(WorktreeResumeError);
+const RESTORE_SIGNAL = "fork-worktree-restore";
 
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -63,7 +65,6 @@ const make = Effect.gen(function* () {
   const ids = yield* IdAllocator.IdAllocatorV2;
   const markerFor = yield* makeSetupMarker;
   const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
-  const workspaceDependencies = yield* makeWorkspaceDependencies;
 
   const prepare: ForkWorktreeResume["Service"]["prepare"] = Effect.fn("ForkWorktreeResume.prepare")(
     function* (input: Parameters<ForkWorktreeResume["Service"]["prepare"]>[0]) {
@@ -128,20 +129,9 @@ const make = Effect.gen(function* () {
       const exists = yield* fs.exists(cwd);
       if (exists && (yield* fs.stat(cwd)).type !== "Directory")
         return yield* fail("The saved path exists but is not a directory; it was left untouched.");
-      let missingDependencies = false;
-      if (exists)
-        for (const relative of yield* workspaceDependencies(cwd)) {
-          const dependencyPath = path.join(cwd, relative);
-          if (!(yield* fs.exists(dependencyPath))) {
-            missingDependencies = true;
-            break;
-          }
-          if ((yield* fs.stat(dependencyPath)).type !== "Directory")
-            return yield* fail(
-              "A dependency path exists but is not a directory; it was left untouched.",
-            );
-        }
-      const needsSetup = pendingSetup || !exists || missingDependencies;
+      // Only a restored checkout or dependencies that eviction removed need setup. A project
+      // whose setup never creates node_modules must not rerun setup on every turn.
+      const needsSetup = pendingSetup || !exists;
       const branch = yield* git.execute({
         cwd: repository,
         args: ["show-ref", "--verify", "--quiet", `refs/heads/${thread.branch}`],
@@ -265,13 +255,13 @@ const make = Effect.gen(function* () {
       if (!needsSetup) return;
       yield* marker.mark;
       const startedAt = yield* DateTime.now;
-      const activity = Effect.fn("ForkWorktreeResume.activity")(function* (
-        status: "running" | "completed" | "failed",
+      const activityEvent = Effect.fn("ForkWorktreeResume.activityEvent")(function* (
+        status: "running" | "completed" | "failed" | "interrupted",
         output: string,
       ) {
         const now = yield* DateTime.now;
         const item: OrchestrationV2TurnItem = {
-          id: ids.derive.runSignalTurnItem({ runId: run.id, signal: "fork-worktree-restore" }),
+          id: ids.derive.runSignalTurnItem({ runId: run.id, signal: RESTORE_SIGNAL }),
           threadId: thread.id,
           runId: run.id,
           nodeId: run.rootNodeId,
@@ -291,32 +281,63 @@ const make = Effect.gen(function* () {
           title: exists ? "Restoring worktree dependencies" : "Restored missing worktree",
           input: "Project setup",
           output: recreationNotice ? `${recreationNotice}\n${output}` : output,
-          ...(status === "running" ? {} : { exitCode: status === "completed" ? 0 : 1 }),
+          ...(status === "completed"
+            ? { exitCode: 0 }
+            : status === "failed"
+              ? { exitCode: 1 }
+              : {}),
           startedAt,
           completedAt: status === "running" ? null : now,
           updatedAt: now,
         };
+        return {
+          id: yield* ids.allocate.event({ threadId: thread.id }),
+          threadId: thread.id,
+          runId: run.id,
+          ...(run.rootNodeId === null ? {} : { nodeId: run.rootNodeId }),
+          providerInstanceId: run.providerInstanceId,
+          occurredAt: now,
+          type: "turn-item.updated" as const,
+          payload: item,
+        };
+      });
+      const activity = Effect.fn("ForkWorktreeResume.activity")(function* (
+        status: "running" | "completed",
+        output: string,
+      ) {
         yield* sink.writeIfRunCurrent({
           threadId: thread.id,
           runId: run.id,
           activeAttemptId: input.attemptId,
           expectedStatus: "starting",
-          events: [
-            {
-              id: yield* ids.allocate.event({ threadId: thread.id }),
-              threadId: thread.id,
-              runId: run.id,
-              ...(run.rootNodeId === null ? {} : { nodeId: run.rootNodeId }),
-              providerInstanceId: run.providerInstanceId,
-              occurredAt: now,
-              type: "turn-item.updated",
-              payload: item,
-            },
-          ],
+          events: [yield* activityEvent(status, output)],
         });
       });
-      yield* activity("running", "Running project setup before the agent starts.");
+      // A stopped or crashed setup must still close its row, and the run may no longer be
+      // starting by then, so this write is not tied to the run's state.
+      const finishActivity = Effect.fn("ForkWorktreeResume.finishActivity")(function* <E>(
+        exit: Exit.Exit<void, E>,
+      ) {
+        if (Exit.isSuccess(exit)) return;
+        const interrupted = Cause.hasInterruptsOnly(exit.cause);
+        const failure = Cause.findErrorOption(exit.cause);
+        const output = interrupted
+          ? "Project setup stopped before it finished. Retry setup before continuing."
+          : Option.isSome(failure) && isWorktreeResumeError(failure.value)
+            ? failure.value.reason
+            : "Project setup failed. The checkout and branch were kept.";
+        yield* activityEvent(interrupted ? "interrupted" : "failed", output).pipe(
+          Effect.flatMap((event) => sink.write({ events: [event] })),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("fork worktree restore could not close its activity", {
+              threadId: thread.id,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        );
+      });
       yield* Effect.gen(function* () {
+        yield* activity("running", "Running project setup before the agent starts.");
         const result = yield* setup.runForThread({
           threadId: thread.id,
           projectId: thread.projectId,
@@ -343,16 +364,7 @@ const make = Effect.gen(function* () {
             ? "No project setup script is configured."
             : "Project setup finished.",
         );
-      }).pipe(
-        Effect.tapError((error) =>
-          activity(
-            "failed",
-            isWorktreeResumeError(error)
-              ? error.reason
-              : "Project setup failed. The checkout and branch were kept.",
-          ),
-        ),
-      );
+      }).pipe(Effect.onExit(finishActivity));
     },
     (effect, input) =>
       effect.pipe(

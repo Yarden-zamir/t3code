@@ -20,7 +20,7 @@ Local builds can keep their disposable Vite caches and Android app outputs outsi
 
 ### Restore worktrees on resume
 
-Restore a missing worktree at its saved path before starting the next turn. If its branch still exists, recovery preserves it. If the branch was deleted, recovery fetches origin's default branch and creates the saved branch name from that revision. The thread warns that earlier uncommitted work is not in the recreated checkout. Project setup runs before the agent starts. Missing `node_modules` in the root or any package declared by `pnpm-workspace.yaml` also runs normal setup. The thread shows the restore as an activity. Missing build outputs do not add a setup or build step on resume; the next build recreates them.
+Restore a missing worktree at its saved path before starting the next turn. If its branch still exists, recovery preserves it. If the branch was deleted, recovery fetches origin's default branch and creates the saved branch name from that revision. The thread warns that earlier uncommitted work is not in the recreated checkout. Project setup runs before the agent starts. Dependencies that artifact eviction removed also run normal setup. A missing `node_modules` that eviction did not remove does not run setup. The thread shows the restore as an activity. A stopped, failed or crashed setup closes that activity, and so does a server restart during setup. Missing build outputs do not add a setup or build step on resume; the next build recreates them.
 
 - **Setting:** `restoreWorktreesOnResume` (server setting, off by default). Settings > Fork > Threads > Restore worktrees on resume.
 - **Works on:** server, for web, desktop, mobile, agent tools and scheduled turns.
