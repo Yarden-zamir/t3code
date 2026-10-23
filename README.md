@@ -49,7 +49,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Central build caches](docs/fork/features.md#central-build-caches):** opt-in Vite caches and Android app outputs outside checkouts, with central-only pruning.
 - **[Fork Sync](docs/fork/operations.md#fork-sync):** a workflow merges upstream main into fork main; a T3 task on the VPS starts it every 2 hours.
 - **[Fork CI](docs/fork/operations.md#fork-ci):** runs on each push and pull request to main; branch protection requires "Fork CI result".
-- **[Repair agent](docs/fork/operations.md#repair-agent):** a failed Fork Sync, Fork Release or Fork CI run on main calls an agent on the VPS.
+- **[Repair agent](docs/fork/operations.md#repair-agent):** a failed Fork Sync, Fork Release or Fork CI run on main calls an agent on the VPS, which repairs it with the scripts of the [fork-repair skill](.agents/skills/fork-repair/SKILL.md).
 
 **Agents**
 
