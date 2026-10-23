@@ -130,6 +130,7 @@ import { onOpenCommandPalette } from "../commandPaletteBus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { focusLevelPaletteItems } from "./focusLevels/focusLevelPaletteItems";
 import { handleForkMessageLinkPaletteShortcut } from "./chat/ForkCopyMessageLink";
+import { navigationHistoryPaletteItems } from "./ForkNavigationHistory";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
   PULL_REQUESTS_PANEL_REF,
@@ -1573,6 +1574,7 @@ function OpenCommandPaletteDialog(props: {
       await navigate({ to: "/settings" });
     },
   });
+  actionItems.push(...navigationHistoryPaletteItems());
 
   const contextualProjectGroup =
     (contextualProjectRef

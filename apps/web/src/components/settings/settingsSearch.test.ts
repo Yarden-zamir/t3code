@@ -198,10 +198,10 @@ describe("auto-settlement search availability", () => {
       hasThreadAutoSettlement: availability.eligibleEnvironmentIds.length > 0,
     });
     expect(searchSettings("auto-settle", items).map((item) => item.id)).toEqual([
-      // Fork: Settings > Fork > Threads "Auto-settle waits for background commands".
-      "auto-settle-waits-for-background-commands",
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
+      // Fork: General > Organization "Auto-settle waits for background commands".
+      "auto-settle-waits-for-background-commands",
       "days-before-auto-settle",
     ]);
   });

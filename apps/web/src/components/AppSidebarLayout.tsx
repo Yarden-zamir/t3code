@@ -63,6 +63,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ShortcutHint } from "./focusLevels/ShortcutHint";
 import { TitlebarPinnedScripts, usePinnedScriptsTargetStore } from "./PinnedScripts";
+import { NavigationHistoryButtons, NavigationHistoryRecorder } from "./ForkNavigationHistory";
 import { useThreadRouteRef } from "../hooks/useThreadRouteTarget";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
@@ -128,8 +129,10 @@ function readInitialThreadSidebarWidth(): number {
 
 function SidebarControl({
   onPinnedScriptsWidthChange,
+  onNavigationButtonsWidthChange,
 }: {
   onPinnedScriptsWidthChange: (width: number) => void;
+  onNavigationButtonsWidthChange: (width: number) => void;
 }) {
   const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -200,6 +203,12 @@ function SidebarControl({
       </TooltipPopup>
     </Tooltip>
   );
+  const controls = (
+    <>
+      {trigger}
+      <NavigationHistoryButtons onWidthChange={onNavigationButtonsWidthChange} />
+    </>
+  );
 
   return (
     <div
@@ -214,10 +223,10 @@ function SidebarControl({
           target={pinnedScriptsTarget}
           onWidthChange={onPinnedScriptsWidthChange}
         >
-          {trigger}
+          {controls}
         </TitlebarPinnedScripts>
       ) : (
-        trigger
+        controls
       )}
     </div>
   );
@@ -367,6 +376,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
   const [brandWidth, setBrandWidth] = useState(0);
   const [pinnedScriptsWidth, setPinnedScriptsWidth] = useState(0);
+  const [navigationButtonsWidth, setNavigationButtonsWidth] = useState(0);
+  const titlebarExtrasWidth = pinnedScriptsWidth + navigationButtonsWidth;
   const sidebarMinimumWidth = resolveThreadSidebarMinimumWidth(brandWidth);
   const sidebarMaximumWidth = resolveThreadSidebarMaximumWidth(viewportWidth, sidebarMinimumWidth);
   const resetSidebarWidth = () => {
@@ -390,10 +401,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     "--sidebar-width": `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
     ...windowControlsInsetStyle,
-    // Title bar pins sit right of the sidebar toggle, so content starts after them.
-    ...(pinnedScriptsWidth > 0
+    // Title bar pins and back and forward buttons sit right of the sidebar toggle, so content starts after them.
+    ...(titlebarExtrasWidth > 0
       ? {
-          "--workspace-titlebar-content-left": `calc(var(--workspace-controls-left) + var(--workspace-titlebar-control-size) + var(--workspace-titlebar-control-gap) + ${pinnedScriptsWidth}px)`,
+          "--workspace-titlebar-content-left": `calc(var(--workspace-controls-left) + var(--workspace-titlebar-control-size) + var(--workspace-titlebar-control-gap) + ${titlebarExtrasWidth}px)`,
         }
       : {}),
   } as CSSProperties;
@@ -459,8 +470,12 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
         {children}
-        <SidebarControl onPinnedScriptsWidthChange={setPinnedScriptsWidth} />
+        <SidebarControl
+          onPinnedScriptsWidthChange={setPinnedScriptsWidth}
+          onNavigationButtonsWidthChange={setNavigationButtonsWidth}
+        />
         <NavigationHistoryShortcuts />
+        <NavigationHistoryRecorder />
         {isOnSettings ? null : <ThreadUndoShortcut />}
         <MainAppLocationTracker />
       </SidebarProvider>

@@ -872,7 +872,7 @@ export function GeneralSettingsPanel() {
   return (
     <SettingsPageContainer>
       <ProjectDefaultsSettings category="general" />
-      <Fork.GlobalScriptsSettings />
+      <Fork.ForkSettingsSlot place="general-global-scripts" />
       <SettingsSection id="organization" title="Organization">
         <SettingsRow
           {...searchableSetting("project-grouping")}
@@ -1158,11 +1158,12 @@ export function GeneralSettingsPanel() {
             ) : null}
           </>
         ) : null}
+        <Fork.ForkSettingsSlot place="general-organization" />
       </SettingsSection>
 
       <SettingsSection id="behavior" title="Behavior">
         <NotificationSettings />
-        <Fork.NotificationRows />
+        <Fork.ForkSettingsSlot place="general-notifications" />
         <SettingsRow
           {...searchableSetting("in-app-notifications")}
           description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
@@ -1628,7 +1629,7 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        <Fork.RecoverInterruptedTurnsSettings />
+        <Fork.ForkSettingsSlot place="general-behavior" />
 
         <BackgroundActivitySettingsRow />
       </SettingsSection>
@@ -1694,7 +1695,7 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-        <Fork.AgentSessionImportSettingsRows />
+        <Fork.ForkSettingsSlot place="general-projects-and-threads" />
       </SettingsSection>
 
       <SettingsSection id="confirmations" title="Confirmations">
@@ -1776,7 +1777,7 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        <Fork.BehaviorRows />
+        <Fork.ForkSettingsSlot place="general-confirmations" />
 
         {isElectron ? (
           <SettingsRow
@@ -1940,7 +1941,7 @@ export function GeneralSettingsPanel() {
           </>
         )}
         <MobileAppSettingsRow />
-        <Fork.AboutRows />
+        <Fork.ForkSettingsSlot place="general-about" />
         <SettingsRow
           {...searchableSetting("privacy-policy")}
           description="How we handle your data, including the anonymous usage data T3 Code collects."

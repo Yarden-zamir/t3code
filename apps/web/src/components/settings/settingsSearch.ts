@@ -169,7 +169,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment-defaults",
     searchTerms: ["worktree location folder directory path drive external disk"],
   },
-  ...ForkSearch.WORKTREE_PATH_TEMPLATE_ITEMS,
+  ...ForkSearch.WORKTREE_ITEMS,
   {
     id: "storage-artifacts",
     title: "Artifacts and logs",
@@ -370,6 +370,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresThreadAutoSettlement: true,
     scope: "project-defaults",
   },
+  ...ForkSearch.ORGANIZATION_ITEMS,
   {
     id: "thread-notifications",
     title: "Thread notifications",
@@ -457,7 +458,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["installed cli versions newer available codex claude cursor grok opencode"],
     scope: "environment-defaults",
   },
-  ...ForkSearch.RECOVER_INTERRUPTED_TURNS_ITEMS,
+  ...ForkSearch.BEHAVIOR_ITEMS,
   {
     id: "continue-threads-after-server-update",
     title: "Continue threads after restarts",
@@ -523,7 +524,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     searchTerms: ["ask before thread chat history"],
   },
-  ...ForkSearch.BEHAVIOR_ITEMS,
+  ...ForkSearch.CONFIRMATION_ITEMS,
   {
     id: "quit-confirmation",
     title: "Quit shortcut",
@@ -622,6 +623,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["keyboard shortcuts hotkeys commands bindings json"],
   },
   ...KEYBINDING_SEARCH_ITEMS,
+  ...ForkSearch.KEYBOARD_ITEMS,
   {
     id: "snap-shot-enabled",
     title: "SnapShots",
@@ -940,7 +942,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["expose backend remote pairing local machine interfaces host restart"],
     localBackendManagementOnly: true,
   },
-  ...ForkSearch.TUNNEL_PAIRING_ITEMS,
+  ...ForkSearch.CONNECTIONS_ITEMS,
   {
     id: "tailscale-https",
     title: "Tailscale HTTPS",

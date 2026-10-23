@@ -121,7 +121,7 @@ import { searchableSetting } from "./settingsSearch";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { BrowserImportWizard, type WizardTarget } from "./BrowserImportWizard";
 import type { ImportOutcome } from "./browserImportWizard.logic";
-import { PreviewLocalServerGroupsSettingsRow } from "./PreviewLocalServerGroupsSettingsRow";
+import { ForkSettingsSlot } from "./ForkSettingsSlot";
 
 const FILL_VALUE = "fill";
 const RESPONSIVE_VALUE = "responsive";
@@ -1641,7 +1641,7 @@ export function IntegrationsSettingsPanel() {
         {/* Not desktop-only: web clients search from server-run browser tabs too. */}
         <BrowserSearchEngineSetting />
         <PullRequestLinksOpenInAppSetting />
-        <PreviewLocalServerGroupsSettingsRow />
+        <ForkSettingsSlot place="integrations-browser" />
       </SettingsSection>
       <DeviceIntegrationSettings />
     </SettingsPageContainer>

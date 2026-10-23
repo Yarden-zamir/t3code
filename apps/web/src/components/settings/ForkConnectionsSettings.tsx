@@ -33,7 +33,7 @@ import {
 } from "./RequestHeadersEditor";
 import { SettingsRow } from "./settingsLayout";
 
-export { TunnelPairingSettingsRow } from "./TunnelPairingSettingsRow";
+export { ForkSettingsSlot } from "./ForkSettingsSlot";
 
 /** Request headers and the Access state of one saved backend row. */
 export function useEnvironmentRequestHeaders(

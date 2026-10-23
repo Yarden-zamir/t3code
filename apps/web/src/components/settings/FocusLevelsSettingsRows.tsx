@@ -20,7 +20,7 @@ export function KeyboardFocusLevelsSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("keyboard-focus-levels")}
-      description="Escape moves focus from the composer to the timeline, then to the sidebar. Arrow keys move a cursor there to open threads, switch groups and cite parts of messages."
+      description="Escape moves focus from the composer to the timeline, then to the sidebar. Arrow keys move a cursor there to open threads, switch tabs and cite parts of messages."
       resetAction={
         enabled !== DEFAULT_CLIENT_SETTINGS.keyboardFocusLevels ? (
           <SettingResetButton

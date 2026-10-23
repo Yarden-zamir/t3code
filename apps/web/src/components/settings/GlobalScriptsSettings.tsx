@@ -18,24 +18,10 @@ import {
 } from "../projectScriptEditor";
 import { Button } from "../ui/button";
 import { ProjectActionsList } from "./ProjectActionsList";
-import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
-
-/**
- * Scripts available in every project of the selected environments. Shown at
- * environment scope only, because they belong to the environment.
- */
-export function GlobalScriptsSettings() {
-  const { scope, target } = useSettingsScope();
-  if (scope.kind === "project" || scope.kind === "checkout" || !target) return null;
-  return (
-    <SettingsSection title="Global scripts">
-      <GlobalScriptsSettingsRows />
-    </SettingsSection>
-  );
-}
 
 export function GlobalScriptsSettingsRows() {
   const { scope, targets, target } = useSettingsScope();
