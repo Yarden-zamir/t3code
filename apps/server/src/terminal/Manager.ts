@@ -42,6 +42,7 @@ import { mergePathEntries } from "@t3tools/shared/shell";
 
 import { acpRegistryManagedBinaryDirectories } from "@t3tools/provider-acp-registry/server";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Context from "effect/Context";
@@ -81,7 +82,7 @@ import {
   type ShellIntegration,
 } from "../fork/shellIntegration.ts";
 import { makeShellMarkParser } from "../fork/shellMarks.ts";
-import { applyShellItems } from "../fork/terminalShellState.ts";
+import { applyShellItems, forgetUnconfirmedShellState } from "../fork/terminalShellState.ts";
 
 export {
   TerminalCwdError,
@@ -267,6 +268,7 @@ interface TerminalSessionState {
   /** Fork: what the user is asked for in a terminal thread (`forkTerminalThreads.ts`). */
   attention: TerminalAttention | null;
   shell: TerminalShellState | null;
+  shellConfirmedAt: number;
   shellMarks: ReturnType<typeof makeShellMarkParser> | null;
   runtimeEnv: Record<string, string> | null;
 }
@@ -1552,7 +1554,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   const publishEvent = (event: TerminalEvent) =>
     Effect.gen(function* () {
-      for (const listener of terminalEventListeners) {
+      // A listener that subscribes while this event goes out gets the next event, not this one.
+      for (const listener of Array.from(terminalEventListeners)) {
         yield* listener(event).pipe(Effect.ignoreCause({ log: true }));
       }
     });
@@ -2130,8 +2133,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           action.threadId,
           Effect.gen(function* () {
             const current = yield* getSession(action.threadId, action.terminalId);
+            // The history stays, so the next session shows why the shell ended.
             if (Option.isSome(current) && current.value === session && session.process === null) {
-              yield* closeSession(action.threadId, action.terminalId, true);
+              yield* closeSession(action.threadId, action.terminalId, false);
             }
           }),
         );
@@ -2178,7 +2182,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     index = 0,
     lastError: PtyAdapter.PtySpawnError | null = null,
   ): Effect.fn.Return<
-    { process: PtyAdapter.PtyProcess; shellLabel: string },
+    { process: PtyAdapter.PtyProcess; shellLabel: string; integrated: boolean },
     PtyAdapter.PtySpawnError
   > {
     if (index >= shellCandidates.length) {
@@ -2224,6 +2228,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       return {
         process: attempt.success,
         shellLabel: formatShellCandidate(candidate),
+        integrated: integrated !== null,
       };
     }
 
@@ -2261,6 +2266,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session.childCommandLabel = null;
       session.attention = null;
       session.shell = null;
+      // Fork: the marks also carry the bell, which a shell without the hook still rings.
       session.shellMarks = isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv)
         ? makeShellMarkParser()
         : null;
@@ -2338,10 +2344,16 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               updatedAt: session.updatedAt,
               sequence: session.eventSequence,
             };
+            const spawnedAtMs = yield* Clock.currentTimeMillis;
             yield* modifyManagerState((state) => {
               session.process = ptyProcess;
               session.pid = processPid;
               session.status = "running";
+              // Fork: a shell with integration reports its state from its first prompt on.
+              if (spawnResult.integrated) {
+                session.shell = "starting";
+                session.shellConfirmedAt = spawnedAtMs;
+              }
               // onExit may replay an exit immediately; accept it before subscribing.
               session.unsubscribeData = spawnResult.process.onData((data) => {
                 if (!enqueueProcessEvent(session, processPid, { type: "output", data })) {
@@ -2467,8 +2479,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       (session): session is TerminalSessionState & { pid: number } =>
         session.status === "running" &&
         Number.isInteger(session.pid) &&
-        // Fork: a shell with integration reports its own state.
-        session.shell === null,
+        // Fork: a shell at its prompt reports its own state, and a background job is no program
+        // that runs. A starting or running state is checked against the child processes.
+        session.shell !== "prompt",
     );
 
     if (runningSessions.length === 0) {
@@ -2524,6 +2537,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         processIds: next.processIds,
       });
       const nextChildLabel = next.hasRunningSubprocess ? next.childCommand : null;
+      const polledAtMs = yield* Clock.currentTimeMillis;
       const event = yield* modifyManagerState((state) => {
         const liveSession: Option.Option<TerminalSessionState> = Option.fromNullishOr(
           state.sessions.get(toSessionKey(session.threadId, session.terminalId)),
@@ -2531,15 +2545,28 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         if (
           Option.isNone(liveSession) ||
           liveSession.value.status !== "running" ||
-          liveSession.value.pid !== terminalPid ||
-          (liveSession.value.hasRunningSubprocess === next.hasRunningSubprocess &&
-            liveSession.value.childCommandLabel === nextChildLabel)
+          liveSession.value.pid !== terminalPid
         ) {
           return [Option.none(), state] as const;
         }
-
-        liveSession.value.hasRunningSubprocess = next.hasRunningSubprocess;
-        liveSession.value.childCommandLabel = nextChildLabel;
+        const live = liveSession.value;
+        const before = [live.shell, live.hasRunningSubprocess, live.childCommandLabel] as const;
+        // Fork: the marks of an integrated shell say whether a program runs, and the poll only
+        // names it. A state that no child process confirms is forgotten.
+        forgetUnconfirmedShellState(live, next.hasRunningSubprocess, polledAtMs);
+        if (live.shell === null) {
+          live.hasRunningSubprocess = next.hasRunningSubprocess;
+          live.childCommandLabel = nextChildLabel;
+        } else if (live.hasRunningSubprocess && nextChildLabel !== null) {
+          live.childCommandLabel = nextChildLabel;
+        }
+        if (
+          before[0] === live.shell &&
+          before[1] === live.hasRunningSubprocess &&
+          before[2] === live.childCommandLabel
+        ) {
+          return [Option.none(), state] as const;
+        }
         const eventStamp = advanceEventSequence(liveSession.value);
 
         return [
@@ -2548,8 +2575,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             threadId: liveSession.value.threadId,
             terminalId: liveSession.value.terminalId,
             sequence: eventStamp.sequence,
-            hasRunningSubprocess: next.hasRunningSubprocess,
-            label: terminalWireLabel(liveSession.value),
+            hasRunningSubprocess: live.hasRunningSubprocess,
+            label: terminalWireLabel(live),
           }),
           state,
         ] as const;
@@ -2665,6 +2692,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         childCommandLabel: null,
         attention: null,
         shell: null,
+        shellConfirmedAt: 0,
         shellMarks: null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
       };
@@ -3107,6 +3135,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           childCommandLabel: null,
           attention: null,
           shell: null,
+          shellConfirmedAt: 0,
           shellMarks: null,
           runtimeEnv: normalizedRuntimeEnv(input.env),
         };

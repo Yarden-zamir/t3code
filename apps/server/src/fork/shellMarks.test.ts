@@ -52,6 +52,33 @@ describe("makeShellMarkParser", () => {
     expect(kinds(parser.push("\u001b]9;9;/home/user\u001b\\"))).toEqual(["text"]);
   });
 
+  it("reads the continuation prompt mark", () => {
+    const parser = makeShellMarkParser();
+    expect(parser.push("\u001b]133;A;k=s\u0007")).toEqual([{ type: "continuation" }]);
+  });
+
+  it("drops a sequence too long to hold, so its end is no bell", () => {
+    const parser = makeShellMarkParser();
+    expect(textOf(parser.push(`before\u001b]1337;File=${"x".repeat(5_000)}`))).toBe("before");
+    expect(parser.push("y".repeat(3_000))).toEqual([]);
+    expect(parser.push("z\u0007after")).toEqual([{ type: "text", text: "after" }]);
+  });
+
+  it("keeps the marks after a sequence that a program cut off", () => {
+    const parser = makeShellMarkParser();
+    parser.push(`\u001b]1337;File=${"x".repeat(5_000)}`);
+    expect(kinds(parser.push("^C\r\n\u001b]133;D;130\u0007\u001b]133;A\u0007$ "))).toEqual([
+      "commandEnd",
+      "prompt",
+      "text",
+    ]);
+    const short = makeShellMarkParser();
+    expect(kinds(short.push("\u001b]1337;File=abc\u001b]133;D;1\u0007"))).toEqual([
+      "text",
+      "commandEnd",
+    ]);
+  });
+
   it("reads an end mark without an exit code", () => {
     const parser = makeShellMarkParser();
     expect(parser.push("\u001b]133;D\u0007")).toEqual([{ type: "commandEnd", exitCode: null }]);

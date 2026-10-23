@@ -37,8 +37,10 @@ export const TerminalAttention = Schema.Struct({
 export type TerminalAttention = typeof TerminalAttention.Type;
 
 /**
- * Where the shell of a terminal thread stands, as its shell integration reports it. `prompt` waits
- * for a command and `running` runs one. A terminal without shell integration has no state.
+ * Where the shell of a terminal thread stands, as its shell integration reports it. `starting`
+ * runs its startup files, `prompt` waits for a command and `running` runs one. A terminal without
+ * shell integration has no state, and neither has a shell that stopped reporting (`exec zsh`).
+ * Old clients fail to decode a value they do not know, so add values only before a release.
  */
-export const TerminalShellState = Schema.Literals(["prompt", "running"]);
+export const TerminalShellState = Schema.Literals(["starting", "prompt", "running"]);
 export type TerminalShellState = typeof TerminalShellState.Type;

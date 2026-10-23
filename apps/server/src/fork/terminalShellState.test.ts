@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { applyShellItems, type ShellStateHolder } from "./terminalShellState.ts";
+import {
+  applyShellItems,
+  forgetUnconfirmedShellState,
+  type ShellStateHolder,
+  UNCONFIRMED_SHELL_STATE_MS,
+} from "./terminalShellState.ts";
 
 const fresh = (): ShellStateHolder => ({
-  shell: null,
+  shell: "starting",
+  shellConfirmedAt: 0,
   attention: null,
   hasRunningSubprocess: false,
 });
@@ -41,5 +47,28 @@ describe("applyShellItems", () => {
       false,
     );
     expect(applyShellItems(session, [{ type: "attention" }], t1)).toBe(true);
+  });
+});
+
+describe("forgetUnconfirmedShellState", () => {
+  it("forgets a running state that no child process confirms for long enough", () => {
+    const session = fresh();
+    applyShellItems(session, [{ type: "commandStart" }], t0);
+    const startedAt = Date.parse(t0);
+    expect(forgetUnconfirmedShellState(session, false, startedAt + 1_000)).toBe(false);
+    // A child process confirms the state and starts the wait again.
+    const confirmedAt = startedAt + UNCONFIRMED_SHELL_STATE_MS;
+    expect(forgetUnconfirmedShellState(session, true, confirmedAt)).toBe(false);
+    expect(forgetUnconfirmedShellState(session, false, confirmedAt + 1_000)).toBe(false);
+    expect(
+      forgetUnconfirmedShellState(session, false, confirmedAt + UNCONFIRMED_SHELL_STATE_MS),
+    ).toBe(true);
+    expect(session).toMatchObject({ shell: null, hasRunningSubprocess: false });
+  });
+
+  it("keeps a prompt state", () => {
+    const session = fresh();
+    applyShellItems(session, [{ type: "prompt" }], t0);
+    expect(forgetUnconfirmedShellState(session, false, Date.parse(t1) + 60_000)).toBe(false);
   });
 });

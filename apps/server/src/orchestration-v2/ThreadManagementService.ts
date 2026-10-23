@@ -32,6 +32,7 @@ import {
   resolveProjectProviderInstanceEnabled,
   RunId,
   type ScheduledTaskId,
+  TERMINAL_THREAD_INSTANCE_ID,
   ThreadId,
   type TurnItemId,
 } from "@t3tools/contracts";
@@ -131,6 +132,8 @@ export interface ThreadManagementSendInput {
   readonly mode: ThreadManagementSendMode;
   readonly createdBy: OrchestrationV2Actor;
   readonly creationSource: OrchestrationV2CreationSource;
+  /** Fork: refuses a terminal thread, for text from a sender that nobody checked (a webhook). */
+  readonly refuseTerminalThread?: boolean;
 }
 
 export interface ThreadManagementSendResult {
@@ -295,6 +298,18 @@ export class ThreadManagementProviderInstanceDisabledError extends Schema.Tagged
   }
 }
 
+/** Fork: see `ThreadManagementSendInput.refuseTerminalThread`. */
+export class ThreadManagementTerminalThreadRefusedError extends Schema.TaggedError<ThreadManagementTerminalThreadRefusedError>()(
+  "ThreadManagementTerminalThreadRefusedError",
+  {
+    threadId: ThreadId,
+  },
+) {
+  override get message(): string {
+    return `Thread ${this.threadId} is a terminal thread, and this message would be typed into its shell.`;
+  }
+}
+
 export const ThreadManagementError = Schema.Union([
   ThreadManagementThreadNotFoundError,
   ThreadManagementRunNotFoundError,
@@ -305,6 +320,7 @@ export const ThreadManagementError = Schema.Union([
   ThreadManagementProjectThreadsListError,
   ThreadManagementDurableRunProjectionError,
   ThreadManagementProviderInstanceDisabledError,
+  ThreadManagementTerminalThreadRefusedError,
 ]);
 export type ThreadManagementError = typeof ThreadManagementError.Type;
 
@@ -755,6 +771,12 @@ const make = Effect.gen(function* () {
         return yield* new ThreadManagementThreadArchivedError({
           threadId: input.threadId,
         });
+      }
+      if (
+        input.refuseTerminalThread === true &&
+        target.thread.modelSelection.instanceId === TERMINAL_THREAD_INSTANCE_ID
+      ) {
+        return yield* new ThreadManagementTerminalThreadRefusedError({ threadId: input.threadId });
       }
       const steerableRun = latestSteerableRun(target);
       let dispatchMode: Extract<

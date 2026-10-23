@@ -15,38 +15,66 @@ export const SHELL_READY_TIMEOUT_MS = 10_000;
 export const TERMINAL_OUTPUT_MAX_CHARS = 20_000;
 
 export interface CommandResult {
-  /** Null when the shell ended or the run timed out before the command ended. */
+  /** Null when no command ran, the shell ended, or the run timed out before the command ended. */
   readonly exitCode: number | null;
   readonly output: string;
   readonly truncated: boolean;
 }
 
+const PASTE_START = "\u001b[200~";
+const PASTE_END = "\u001b[201~";
+
 /**
- * Collects the output of the first command that starts after it was created. The shell echoes
- * the typed message before the command starts, so the echo is not part of the output.
+ * The input for a shell at its prompt. A bracketed paste puts all lines on one command line, so
+ * the shell reports one end for the whole message, with the exit code of its last command.
+ */
+export function pastedCommand(text: string): string {
+  return `${PASTE_START}${text.replaceAll(PASTE_END, "").trimEnd()}${PASTE_END}\r`;
+}
+
+/**
+ * Collects the output of the message that was typed at the prompt after it was created. The shell
+ * was at its prompt, so the first end mark belongs to the message. A comment or an empty message
+ * ends without a start mark. The shell echoes the message before the first start mark, so the
+ * echo is not part of the output.
  */
 export function makeCommandCapture() {
-  let running = false;
+  let started = false;
   let text = "";
-  let exitCode: number | null = null;
-  let done = false;
+  let outcome:
+    | { readonly type: "ended"; readonly exitCode: number | null }
+    | { readonly type: "incomplete" }
+    | null = null;
 
   return {
-    /** Returns true once the command ended. */
+    /** Returns true once the command ended or the shell asks for the rest of it. */
     push(items: ReadonlyArray<ShellItem>): boolean {
       for (const item of items) {
-        if (done) break;
-        if (item.type === "commandStart") {
-          running = true;
-          text = "";
-        } else if (item.type === "text" && running) {
-          text += item.text;
-        } else if (item.type === "commandEnd" && running) {
-          exitCode = item.exitCode;
-          done = true;
+        if (outcome !== null) break;
+        switch (item.type) {
+          // A message with several commands starts each of them; the output covers all.
+          case "commandStart":
+            started = true;
+            break;
+          case "text":
+            if (started) text += item.text;
+            break;
+          case "commandEnd":
+            outcome = { type: "ended", exitCode: started ? item.exitCode : null };
+            break;
+          case "continuation":
+            outcome = { type: "incomplete" };
+            break;
+          case "prompt":
+          case "attention":
+            break;
         }
       }
-      return done;
+      return outcome !== null;
+    },
+    /** True when the shell waits for the rest of an unfinished command, such as an open quote. */
+    incomplete(): boolean {
+      return outcome?.type === "incomplete";
     },
     result(): CommandResult {
       // A bare carriage return redraws a progress line in place; each redraw is a line.
@@ -56,7 +84,7 @@ export function makeCommandCapture() {
       let output = lines.join("\n").trim();
       const truncated = output.length > TERMINAL_OUTPUT_MAX_CHARS;
       if (truncated) output = output.slice(-TERMINAL_OUTPUT_MAX_CHARS);
-      return { exitCode, output, truncated };
+      return { exitCode: outcome?.type === "ended" ? outcome.exitCode : null, output, truncated };
     },
   };
 }
@@ -68,7 +96,7 @@ function outputBlock(result: CommandResult): string {
 }
 
 export function formatCompletedRun(result: CommandResult): string {
-  return `${result.exitCode === null ? "The command ended without an exit code." : `Exit code ${result.exitCode}.`}\n\n${outputBlock(result)}`;
+  return `${result.exitCode === null ? "No exit code: the message ran no command." : `Exit code ${result.exitCode}.`}\n\n${outputBlock(result)}`;
 }
 
 export function formatTimedOutRun(result: CommandResult): string {
@@ -81,6 +109,9 @@ export const TYPED_INTO_PROGRAM_MESSAGE =
 
 export const TYPED_WITHOUT_RESULT_MESSAGE =
   "Typed into the terminal. This shell does not report results, so the exit code and output are not captured. Use bash or zsh for results.";
+
+export const INCOMPLETE_COMMAND_MESSAGE =
+  "The message is not a complete command, for example it has an open quote. The shell waited for the rest, so the message was canceled with Ctrl+C.";
 
 export const SHELL_ENDED_MESSAGE =
   "The shell exited, so the terminal session is closed. The next message starts a new one.";

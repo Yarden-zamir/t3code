@@ -10,12 +10,40 @@ import type { ShellItem } from "./shellMarks.ts";
 
 export interface ShellStateHolder {
   shell: TerminalShellState | null;
+  /** Epoch milliseconds of the last change of `shell`, or of a poll that saw a child process. */
+  shellConfirmedAt: number;
   attention: TerminalAttention | null;
   hasRunningSubprocess: boolean;
 }
 
 // A bell storm raises one attention per second, so the sidebar does not repaint on each ring.
 const BELL_MIN_INTERVAL_MS = 1000;
+
+/**
+ * A shell that starts or runs a command for this long with no child process may have stopped
+ * reporting: `exec zsh` replaces it with a shell without the hook, and a `.bashrc` that runs
+ * `exec zsh` never shows the hooked prompt. A builtin that waits (`read`) or a loop of builtins
+ * looks the same, so those also lose their state after this long. Revisit when that matters.
+ */
+export const UNCONFIRMED_SHELL_STATE_MS = 10_000;
+
+/** Forgets a `starting` or `running` state that no child process confirms. */
+export function forgetUnconfirmedShellState(
+  session: ShellStateHolder,
+  hasChildProcess: boolean,
+  nowMs: number,
+): boolean {
+  if (session.shell !== "starting" && session.shell !== "running") return false;
+  if (hasChildProcess) {
+    session.shellConfirmedAt = nowMs;
+    return false;
+  }
+  if (nowMs - session.shellConfirmedAt < UNCONFIRMED_SHELL_STATE_MS) return false;
+  session.shell = null;
+  session.shellConfirmedAt = nowMs;
+  session.hasRunningSubprocess = false;
+  return true;
+}
 
 /** Applies the marks of one chunk of output. Returns true when a reported field changed. */
 export function applyShellItems(
@@ -27,11 +55,13 @@ export function applyShellItems(
   const set = <K extends keyof ShellStateHolder>(key: K, value: ShellStateHolder[K]) => {
     if (session[key] === value) return;
     session[key] = value;
+    if (key === "shell") session.shellConfirmedAt = Date.parse(at);
     changed = true;
   };
   for (const item of items) {
     switch (item.type) {
       case "text":
+      case "continuation":
         break;
       case "prompt":
         set("shell", "prompt");

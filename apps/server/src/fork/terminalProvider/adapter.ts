@@ -1,7 +1,8 @@
 /**
  * Fork: the `terminal` provider adapter. A turn types the message into the main terminal of the
  * thread (`term-1`), the same terminal that the thread view shows. See `protocol.ts` for what the
- * run answers. The adapter has no model, no tools, no approvals and no steering.
+ * run answers. A message that arrives during a run is typed into the program that runs (a steer).
+ * The adapter has no model, no tools and no approvals.
  */
 import {
   DEFAULT_TERMINAL_ID,
@@ -29,7 +30,9 @@ import { makeShellMarkParser } from "../shellMarks.ts";
 import {
   formatCompletedRun,
   formatTimedOutRun,
+  INCOMPLETE_COMMAND_MESSAGE,
   makeCommandCapture,
+  pastedCommand,
   SHELL_ENDED_MESSAGE,
   SHELL_READY_TIMEOUT_MS,
   TERMINAL_RUN_TIMEOUT_MS,
@@ -177,6 +180,12 @@ function makeProviderThread(input: {
   };
 }
 
+type RunAnswer =
+  | { readonly type: "answered"; readonly text: string }
+  | { readonly type: "failed"; readonly message: string };
+const answered = (text: string): RunAnswer => ({ type: "answered", text });
+const failed = (message: string): RunAnswer => ({ type: "failed", message });
+
 const unsupported = (detail: string) =>
   Effect.fail(
     new ProviderAdapter.ProviderAdapterProtocolError({ driver: TERMINAL_DRIVER, detail }),
@@ -213,6 +222,8 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
         const activeTurn = yield* Ref.make<{
           readonly providerTurnId: OrchestrationV2ProviderTurn["id"];
           readonly interrupted: Deferred.Deferred<void>;
+          /** True once the message was typed, so a steer goes after it; false if it never was. */
+          readonly typed: Deferred.Deferred<boolean>;
         } | null>(null);
         const now = yield* DateTime.now;
         const providerSession: OrchestrationV2ProviderSession = {
@@ -228,14 +239,18 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
           lastError: null,
         };
 
-        // The text of the answer. A failure of the terminal is an answer too: the run completes,
-        // and the message says what went wrong.
-        const runMessage = (turn: ProviderAdapter.ProviderAdapterV2TurnInput) =>
+        // A failure fails the run, so a caller such as a schedule sees it.
+        const runMessage = (
+          turn: ProviderAdapter.ProviderAdapterV2TurnInput,
+          typed: Deferred.Deferred<boolean>,
+        ): Effect.Effect<RunAnswer> =>
           Effect.gen(function* () {
             // The message runs as a command of the user, so it needs the mode that asks for
             // nothing. A caller in a narrower mode falls back to approval-required here.
             if (turn.runtimePolicy.runtimeMode !== "full-access") {
-              return "A terminal thread runs commands without approval. Use full access mode.";
+              return failed(
+                "A terminal thread runs commands without approval. Use full access mode.",
+              );
             }
             const ids = { threadId: String(turn.threadId), terminalId };
             const launch = terminalThreadLaunch({
@@ -255,50 +270,68 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
                 env: { ...launch.env },
               });
             }
-            const typed = `${turn.message.text}\r`;
             const state = yield* waitForShellState(ids);
-            if (state === undefined) {
-              yield* port.write({ ...ids, data: typed });
-              return TYPED_WITHOUT_RESULT_MESSAGE;
-            }
-            if (state === "running") {
-              yield* port.write({ ...ids, data: typed });
-              return TYPED_INTO_PROGRAM_MESSAGE;
+            if (state === undefined || state === "running") {
+              yield* port.write({ ...ids, data: `${turn.message.text}\r` });
+              yield* Deferred.succeed(typed, true);
+              return answered(
+                state === undefined ? TYPED_WITHOUT_RESULT_MESSAGE : TYPED_INTO_PROGRAM_MESSAGE,
+              );
             }
 
             const capture = makeCommandCapture();
             const parser = makeShellMarkParser();
             const finished = yield* Deferred.make<void>();
+            // The prompt after the Ctrl+C that cancels an unfinished command.
+            const cancelled = yield* Deferred.make<void>();
             const shellEnded = yield* Ref.make(false);
             // Subscribe before writing, so no mark passes the listener.
-            const unsubscribe = yield* port.subscribe(ids, (event) =>
-              event.type === "ended"
-                ? Ref.set(shellEnded, true).pipe(
-                    Effect.andThen(Deferred.succeed(finished, undefined)),
-                    Effect.asVoid,
-                  )
-                : capture.push(parser.push(event.data))
-                  ? Deferred.succeed(finished, undefined).pipe(Effect.asVoid)
-                  : Effect.void,
-            );
+            const unsubscribe = yield* port.subscribe(ids, (event) => {
+              if (event.type === "ended") {
+                return Ref.set(shellEnded, true).pipe(
+                  Effect.andThen(Deferred.succeed(finished, undefined)),
+                  Effect.andThen(Deferred.succeed(cancelled, undefined)),
+                  Effect.asVoid,
+                );
+              }
+              const items = parser.push(event.data);
+              if (capture.incomplete() && items.some((item) => item.type === "prompt")) {
+                return Deferred.succeed(cancelled, undefined).pipe(Effect.asVoid);
+              }
+              return capture.push(items)
+                ? Deferred.succeed(finished, undefined).pipe(Effect.asVoid)
+                : Effect.void;
+            });
             return yield* Effect.gen(function* () {
-              yield* port.write({ ...ids, data: typed });
+              yield* port.write({ ...ids, data: pastedCommand(turn.message.text) });
+              yield* Deferred.succeed(typed, true);
               const outcome = yield* Deferred.await(finished).pipe(
                 Effect.timeoutOption(TERMINAL_RUN_TIMEOUT_MS),
               );
-              if (yield* Ref.get(shellEnded)) return SHELL_ENDED_MESSAGE;
-              return Option.isSome(outcome)
-                ? formatCompletedRun(capture.result())
-                : formatTimedOutRun(capture.result());
+              if (yield* Ref.get(shellEnded)) return answered(SHELL_ENDED_MESSAGE);
+              if (capture.incomplete()) {
+                yield* port.write({ ...ids, data: "\u0003" });
+                // The next message waits for the prompt, so the end mark of the Ctrl+C is not
+                // taken for its own.
+                yield* Deferred.await(cancelled).pipe(Effect.timeoutOption(SHELL_READY_TIMEOUT_MS));
+                return failed(INCOMPLETE_COMMAND_MESSAGE);
+              }
+              return answered(
+                Option.isSome(outcome)
+                  ? formatCompletedRun(capture.result())
+                  : formatTimedOutRun(capture.result()),
+              );
             }).pipe(Effect.ensuring(Effect.sync(unsubscribe)));
           }).pipe(
             Effect.catch((error: { readonly message: string }) =>
-              Effect.succeed(`The terminal could not run the message. ${error.message}`),
+              Effect.succeed(failed(`The terminal could not run the message. ${error.message}`)),
             ),
+            // A steer never waits for a message that was not typed, and is not typed either.
+            Effect.ensuring(Deferred.succeed(typed, false)),
           );
 
-        // A shell that just started shows its prompt after its startup files ran. A shell
-        // without integration never reports a state, so the wait ends after a timeout.
+        // A shell with integration reports `starting` until its first prompt, after its startup
+        // files ran. A shell without integration has no state, so the message goes at once.
         const waitForShellState = (ids: { threadId: string; terminalId: string }) =>
           Effect.gen(function* () {
             const ready = yield* Deferred.make<void>();
@@ -311,9 +344,10 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
             );
             return yield* Effect.gen(function* () {
               const known = yield* port.shellState(ids);
-              if (known !== undefined) return known;
+              if (known !== "starting") return known;
               yield* Deferred.await(ready).pipe(Effect.timeoutOption(SHELL_READY_TIMEOUT_MS));
-              return yield* port.shellState(ids);
+              const after = yield* port.shellState(ids);
+              return after === "starting" ? undefined : after;
             }).pipe(Effect.ensuring(Effect.sync(unsubscribe)));
           });
 
@@ -322,6 +356,7 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
           providerTurnId: OrchestrationV2ProviderTurn["id"],
           startedAt: DateTime.Utc,
           interrupted: Deferred.Deferred<void>,
+          typed: Deferred.Deferred<boolean>,
         ) =>
           Effect.gen(function* () {
             const providerTurn = (
@@ -349,12 +384,19 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
               providerTurn: providerTurn("running", null),
             });
             const answer = yield* Effect.raceFirst(
-              runMessage(turn).pipe(Effect.map((text) => ({ text }) as const)),
+              runMessage(turn, typed),
               Deferred.await(interrupted).pipe(Effect.as(null)),
             );
-            const status = answer === null ? ("interrupted" as const) : ("completed" as const);
+            // A steer from now on would type at the prompt, outside of this run.
+            yield* Ref.set(activeTurn, null);
+            const status =
+              answer === null
+                ? ("interrupted" as const)
+                : answer.type === "failed"
+                  ? ("failed" as const)
+                  : ("completed" as const);
             const completedAt = yield* DateTime.now;
-            if (answer !== null) {
+            if (answer?.type === "answered") {
               const nativeItemId = `${providerTurnId}:answer`;
               const nodeId = idAllocator.derive.nodeFromProviderItem({
                 driver: TERMINAL_DRIVER,
@@ -451,17 +493,35 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
                 updatedAt: completedAt,
               },
             });
-            yield* emit({
-              type: "turn.terminal",
-              driver: TERMINAL_DRIVER,
-              providerThreadId: turn.providerThread.id,
-              providerTurnId,
-              runOrdinal: turn.runOrdinal,
-              status,
-              failure: null,
-              threadDisposition: "reusable",
-            });
-            yield* Ref.set(activeTurn, null);
+            yield* emit(
+              answer?.type === "failed"
+                ? {
+                    type: "turn.terminal",
+                    driver: TERMINAL_DRIVER,
+                    providerThreadId: turn.providerThread.id,
+                    providerTurnId,
+                    runOrdinal: turn.runOrdinal,
+                    failureItemOrdinal: turn.providerTurnOrdinal * 100 + 2,
+                    status: "failed",
+                    failure: {
+                      class: "provider_error",
+                      message: answer.message,
+                      code: null,
+                      retryable: false,
+                    },
+                    threadDisposition: "reusable",
+                  }
+                : {
+                    type: "turn.terminal",
+                    driver: TERMINAL_DRIVER,
+                    providerThreadId: turn.providerThread.id,
+                    providerTurnId,
+                    runOrdinal: turn.runOrdinal,
+                    status: answer === null ? "interrupted" : "completed",
+                    failure: null,
+                    threadDisposition: "reusable",
+                  },
+            );
           });
 
         const startTurn = (turn: ProviderAdapter.ProviderAdapterV2TurnInput) =>
@@ -473,9 +533,12 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
               nativeTurnId: `${turn.runId}:${turn.attemptId}`,
             });
             const interrupted = yield* Deferred.make<void>();
-            yield* Ref.set(activeTurn, { providerTurnId, interrupted });
+            const typed = yield* Deferred.make<boolean>();
+            yield* Ref.set(activeTurn, { providerTurnId, interrupted, typed });
             // The turn ends through the event stream, so `startTurn` returns at once.
-            yield* runTurn(turn, providerTurnId, startedAt, interrupted).pipe(Effect.forkIn(scope));
+            yield* runTurn(turn, providerTurnId, startedAt, interrupted, typed).pipe(
+              Effect.forkIn(scope),
+            );
           }).pipe(
             Effect.mapError(
               (cause) =>
@@ -523,6 +586,14 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
             Effect.gen(function* () {
               const active = yield* Ref.get(activeTurn);
               if (active === null || active.providerTurnId !== turnInput.providerTurnId) {
+                return yield* unsupported("The command ended before the message was typed.");
+              }
+              const typedFirst = yield* Deferred.await(active.typed);
+              if (
+                !typedFirst ||
+                (yield* Deferred.isDone(active.interrupted)) ||
+                (yield* Ref.get(activeTurn)) !== active
+              ) {
                 return yield* unsupported("The command ended before the message was typed.");
               }
               yield* port.write({

@@ -793,6 +793,12 @@ export const layer = Layer.effect(
               taskId: active.id,
             });
           }
+          // Fork: the project default can be the terminal, which types the text into a shell.
+          if (webhook !== undefined && selection.instanceId === TERMINAL_THREAD_INSTANCE_ID) {
+            return yield* taskError("A webhook task cannot run in a terminal thread.", {
+              taskId: active.id,
+            });
+          }
           return selection;
         });
         const result =
@@ -835,6 +841,8 @@ export const layer = Layer.effect(
                   mode: "queue",
                   createdBy: active.createdBy,
                   creationSource: active.creationSource,
+                  // Fork: the bound thread can be a terminal thread, whatever model the task has.
+                  refuseTerminalThread: webhook !== undefined,
                 }),
               );
 

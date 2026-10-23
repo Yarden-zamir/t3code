@@ -257,6 +257,9 @@ interface CreateManagerOptions {
   >[0]["resolveProviderInstanceEnvironment"];
   managedBinaryCacheDir?: string;
   managedBinaryToolsDir?: string;
+  forkShellIntegration?: Parameters<
+    typeof TerminalManager.makeWithOptions
+  >[0]["forkShellIntegration"];
 }
 
 interface ManagerFixture {
@@ -305,6 +308,9 @@ const createManager = (
         ...(options.resolveProviderInstanceEnvironment !== undefined
           ? { resolveProviderInstanceEnvironment: options.resolveProviderInstanceEnvironment }
           : {}),
+        ...(options.forkShellIntegration === undefined
+          ? {}
+          : { forkShellIntegration: options.forkShellIntegration }),
         ...(options.managedBinaryCacheDir === undefined
           ? {}
           : {
@@ -511,6 +517,7 @@ it.layer(
       expect(process).toBeDefined();
       if (!process) return;
 
+      process.emitData("why the shell ended\n");
       process.emitExit({ exitCode: 0, signal: 0 });
 
       yield* waitFor(
@@ -519,12 +526,17 @@ it.layer(
       );
       const types = (yield* getEvents).map((event) => event.type);
       expect(types.indexOf("exited")).toBeLessThan(types.indexOf("closed"));
+      // The next session shows the screen of the shell that ended.
+      const reopened = yield* manager.open(openInput({ env: { T3CODE_TERMINAL_THREAD: "1" } }));
+      expect(reopened.history).toContain("why the shell ended");
     }),
   );
 
   it.effect("reports the shell state of a terminal thread from the marks of its shell", () =>
     Effect.gen(function* () {
-      const { manager, ptyAdapter } = yield* createManager();
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        forkShellIntegration: (candidate, env) => ({ candidate, env }),
+      });
       const summaries = yield* Ref.make<ReadonlyArray<TerminalSummary>>([]);
       const unsubscribe = yield* manager.subscribeMetadata((event) =>
         event.type === "upsert"
@@ -549,6 +561,7 @@ it.layer(
       );
 
       const list = yield* Ref.get(summaries);
+      expect(list[0]?.shell).toBe("starting");
       expect(
         list.some((summary) => summary.shell === "running" && summary.hasRunningSubprocess),
       ).toBe(true);

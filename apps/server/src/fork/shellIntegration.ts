@@ -5,8 +5,10 @@
  * when a command starts and when it ends with its exit code. The server then knows, without
  * wrapper text in the terminal, whether a program runs and how a command ended.
  *
- * Supported: bash 4.4 or newer and zsh. Another shell, or an older bash, runs without the hook
- * and reports no state. Revisit when a user needs fish; its hook is a function on the
+ * Supported: bash 4.4 or newer and zsh. Another shell runs without the hook and reports no state.
+ * An older bash (macOS /bin/bash is 3.2) gets the rcfile but no hook, so it stays `starting`: the
+ * first message of each session waits SHELL_READY_TIMEOUT_MS, and the process poll then forgets
+ * the state. Revisit if users run terminal threads on bash 3.2. Revisit when a user needs fish; its hook is a function on the
  * `fish_prompt` and `fish_preexec` events.
  */
 import * as NodePath from "node:path";
@@ -42,24 +44,38 @@ if [[ \${BASH_VERSINFO[0]} -gt 4 || (\${BASH_VERSINFO[0]} -eq 4 && \${BASH_VERSI
     PROMPT_COMMAND="__t3_prompt\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
   fi
   PS0=$'\\e]133;C\\a'"\${PS0:-}"
+  # The continuation prompt shows a command that is not complete, such as an open quote.
+  PS2='\\[\\e]133;A;k=s\\a\\]'"\${PS2-> }"
+  # A message arrives as a paste, so all of its lines run as one command line.
+  bind 'set enable-bracketed-paste on' 2>/dev/null
 fi
 `;
 
-/** zsh reads these four files from $ZDOTDIR, so each forwards to the file of the user. */
+/**
+ * zsh reads these four files from $ZDOTDIR, so each forwards to the file of the user. A file of
+ * the user can move ZDOTDIR (often to ~/.config/zsh), and zsh reads the next file from there.
+ */
+const ZSH_USER_ZDOTDIR = `# The user files see ZDOTDIR as zsh would: unset unless the user set it.
+if [[ -n "$T3_USER_ZDOTDIR" ]]; then ZDOTDIR="$T3_USER_ZDOTDIR"; else unset ZDOTDIR; fi`;
+
 const zshForward = (file: string) => `# Written by T3 Code: forwards to the ${file} of the user.
-ZDOTDIR="\${T3_USER_ZDOTDIR:-$HOME}"
-[[ -f "$ZDOTDIR/${file}" ]] && . "$ZDOTDIR/${file}"
+${ZSH_USER_ZDOTDIR}
+[[ -f "\${ZDOTDIR:-$HOME}/${file}" ]] && . "\${ZDOTDIR:-$HOME}/${file}"
+T3_USER_ZDOTDIR="\${ZDOTDIR-}"
 ZDOTDIR="$T3_ZDOTDIR"
 `;
 
 const ZSHRC = `# Written by T3 Code: loads the .zshrc of the user, then reports where the shell stands.
-ZDOTDIR="\${T3_USER_ZDOTDIR:-$HOME}"
-[[ -f "$ZDOTDIR/.zshrc" ]] && . "$ZDOTDIR/.zshrc"
-autoload -Uz add-zsh-hook
+${ZSH_USER_ZDOTDIR}
+[[ -f "\${ZDOTDIR:-$HOME}/.zshrc" ]] && . "\${ZDOTDIR:-$HOME}/.zshrc"
 __t3_precmd() { local code=$?; print -rn -- $'\\e]133;D;'"$code"$'\\a\\e]133;A\\a'; return $code }
-__t3_preexec() { print -rn -- $'\\e]133;C\\a' }
+# PROMPT_SP prints its end-of-line mark before precmd, so the mark would end up in the output of
+# the command. Themes such as powerlevel10k turn it on again, so it goes off before each command.
+__t3_preexec() { setopt no_prompt_sp; print -rn -- $'\\e]133;C\\a' }
 precmd_functions=(__t3_precmd $precmd_functions)
 preexec_functions+=(__t3_preexec)
+# The continuation prompt shows a command that is not complete, such as an open quote.
+PS2=$'%{\\e]133;A;k=s\\a%}'"$PS2"
 `;
 
 /** The shell command and environment with the hook, or null for a shell without support. */
