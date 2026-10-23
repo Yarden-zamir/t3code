@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { useEffect } from "react";
 
 /**
  * Fork: the back and forward history of the app. The browser history is the only history: the
@@ -105,72 +106,97 @@ export function forgetNavigationHistory(storage: Storage): void {
   storage.removeItem(STORAGE_KEY);
 }
 
-/** The last back or forward move: the entry it went to, and its direction. */
-export interface NavigationTraverse {
-  readonly key: string;
-  readonly direction: -1 | 1;
+/** Where the window stands in its history, as the Navigation API reports it. */
+export interface NavigationPosition {
+  readonly key: string | null;
+  readonly index: number;
+  readonly canGoBack: boolean;
+  readonly canGoForward: boolean;
 }
 
 /**
- * The direction to keep going when the current entry is a thread or a draft that no longer
- * exists: the direction of the move that reached it, while there is an entry that way. Null
- * means no skip: the entry was not reached by back or forward, or nothing is left that way.
+ * Skips a thread or a draft that no longer exists when back or forward reaches it: the move
+ * goes on in the same direction while there is an entry that way. Only on arrival: an entry
+ * that showed its view and lost it later keeps the upstream redirect.
  */
-export function skipDirection(input: {
-  readonly traverse: NavigationTraverse | null;
-  readonly currentKey: string | null;
-  readonly canGoBack: boolean;
-  readonly canGoForward: boolean;
-}): -1 | 1 | null {
-  const { traverse } = input;
-  if (traverse === null || traverse.key !== input.currentKey) return null;
-  const canContinue = traverse.direction === -1 ? input.canGoBack : input.canGoForward;
-  return canContinue ? traverse.direction : null;
+export function createMissingEntrySkipper(
+  read: () => NavigationPosition,
+  go: (direction: -1 | 1) => void,
+) {
+  /** The entry that the last back or forward move reached, while its view has not shown. */
+  let arrival: { readonly key: string; readonly direction: -1 | 1 } | null = null;
+  /** The entry that a skip left, so that a second call before the move starts does nothing. */
+  let skippingFromKey: string | null = null;
+  return {
+    onNavigate(navigationType: NavigationType, destination: { key: string; index: number }) {
+      skippingFromKey = null;
+      arrival =
+        navigationType === "traverse"
+          ? { key: destination.key, direction: destination.index < read().index ? -1 : 1 }
+          : null;
+    },
+    /** The view of the current entry showed, so a later loss of it is not a skip. */
+    settle() {
+      arrival = null;
+    },
+    reset() {
+      arrival = null;
+      skippingFromKey = null;
+    },
+    leave(fallback: () => void) {
+      const position = read();
+      if (position.key !== null && position.key === skippingFromKey) return;
+      const direction = arrival !== null && arrival.key === position.key ? arrival.direction : null;
+      const canContinue =
+        direction === -1 ? position.canGoBack : direction === 1 && position.canGoForward;
+      if (direction === null || !canContinue) {
+        fallback();
+        return;
+      }
+      skippingFromKey = position.key;
+      go(direction);
+    },
+  };
 }
 
-let lastTraverse: NavigationTraverse | null = null;
-/** The entry that a skip started from, so that a second call during the move does nothing. */
-let skippingFromKey: string | null = null;
+function readWindowPosition(): NavigationPosition {
+  const navigation = windowNavigation();
+  const current = navigation?.currentEntry ?? null;
+  return {
+    key: current?.key ?? null,
+    index: current?.index ?? -1,
+    canGoBack: navigation?.canGoBack ?? false,
+    canGoForward: navigation?.canGoForward ?? false,
+  };
+}
+
+const windowSkipper = createMissingEntrySkipper(readWindowPosition, (direction) =>
+  window.history.go(direction),
+);
 
 /** Records each back and forward move, while `rememberBackForwardHistory` is on. */
 export function trackNavigationTraverses(navigation: Navigation): () => void {
-  const onNavigate = (event: NavigateEvent) => {
-    const from = navigation.currentEntry?.index ?? -1;
-    lastTraverse =
-      event.navigationType === "traverse"
-        ? { key: event.destination.key, direction: event.destination.index < from ? -1 : 1 }
-        : null;
-  };
+  const onNavigate = (event: NavigateEvent) =>
+    windowSkipper.onNavigate(event.navigationType, event.destination);
   navigation.addEventListener("navigate", onNavigate);
   return () => {
     navigation.removeEventListener("navigate", onNavigate);
-    lastTraverse = null;
+    windowSkipper.reset();
   };
 }
 
-/**
- * Fork hook for the thread route: a missing thread or draft that back or forward reached is
- * skipped in the same direction. Otherwise `fallback` runs, the upstream redirect.
- */
+/** Fork hook for the thread route: skips a missing entry, or runs `fallback`, the upstream redirect. */
 export function leaveMissingRoute(fallback: () => void): void {
-  const navigation = windowNavigation();
-  const currentKey = navigation?.currentEntry?.key ?? null;
-  if (currentKey !== null && currentKey === skippingFromKey) return;
-  const direction =
-    navigation === undefined
-      ? null
-      : skipDirection({
-          traverse: lastTraverse,
-          currentKey,
-          canGoBack: navigation.canGoBack,
-          canGoForward: navigation.canGoForward,
-        });
-  if (direction === null) {
-    fallback();
-    return;
-  }
-  skippingFromKey = currentKey;
-  window.history.go(direction);
+  windowSkipper.leave(fallback);
+}
+
+/** Fork hook for the thread route: `shown` is true while the thread or draft shows its view. */
+export function useSettleNavigationTraverse(shown: boolean): void {
+  // No dependency list: a move between two shown threads keeps `shown` true, and each such
+  // arrival must settle too. The call is a cheap assignment.
+  useEffect(() => {
+    if (shown) windowSkipper.settle();
+  });
 }
 
 /**

@@ -2,11 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   NAVIGATION_HISTORY_LIMIT,
+  createMissingEntrySkipper,
   keptNavigationEntries,
   navigationAvailability,
   restoreNavigationHistory,
   saveNavigationHistory,
-  skipDirection,
   type NavigationRestoreTarget,
 } from "./forkNavigationHistory";
 
@@ -119,39 +119,93 @@ describe("restoreNavigationHistory", () => {
   });
 });
 
-describe("skipDirection", () => {
-  const traverse = { key: "missing", direction: -1 } as const;
+/**
+ * A window history of entry keys. `traverse` moves like back and forward do: the navigate
+ * event first, then the current entry changes. A skip calls `traverse` again.
+ */
+function createHistoryStub(keys: ReadonlyArray<string>, startIndex: number) {
+  let index = startIndex;
+  const fallbacks: string[] = [];
+  const skipper = createMissingEntrySkipper(
+    () => ({
+      key: keys[index] ?? null,
+      index,
+      canGoBack: index > 0,
+      canGoForward: index < keys.length - 1,
+    }),
+    (direction) => traverse(direction),
+  );
+  function traverse(delta: number) {
+    const next = index + delta;
+    skipper.onNavigate("traverse", { key: keys[next] ?? "", index: next });
+    index = next;
+  }
+  return {
+    skipper,
+    traverse,
+    current: () => keys[index],
+    /** The thread route of the current entry found its thread missing. */
+    reportMissing: () => skipper.leave(() => fallbacks.push(keys[index] ?? "")),
+    fallbacks,
+  };
+}
 
+describe("createMissingEntrySkipper", () => {
   it("keeps going back past a missing entry that back reached", () => {
-    expect(
-      skipDirection({ traverse, currentKey: "missing", canGoBack: true, canGoForward: true }),
-    ).toBe(-1);
+    const history = createHistoryStub(["a", "missing", "b"], 2);
+    history.traverse(-1);
+    history.reportMissing();
+    expect(history.current()).toBe("a");
+    expect(history.fallbacks).toEqual([]);
   });
 
-  it("keeps going forward past a missing entry that forward reached", () => {
-    expect(
-      skipDirection({
-        traverse: { key: "missing", direction: 1 },
-        currentKey: "missing",
-        canGoBack: true,
-        canGoForward: true,
-      }),
-    ).toBe(1);
+  it("skips the same missing entry again on the way forward", () => {
+    const history = createHistoryStub(["a", "missing", "b"], 2);
+    history.traverse(-1);
+    history.reportMissing();
+    history.skipper.settle();
+    history.traverse(1);
+    history.reportMissing();
+    expect(history.current()).toBe("b");
+    expect(history.fallbacks).toEqual([]);
   });
 
-  it("does not skip when nothing is left in that direction", () => {
-    expect(
-      skipDirection({ traverse, currentKey: "missing", canGoBack: false, canGoForward: true }),
-    ).toBeNull();
+  it("skips once when the route reports the missing entry twice before the move", () => {
+    const keys = ["a", "missing", "b"];
+    let index = 2;
+    const moves: number[] = [];
+    const skipper = createMissingEntrySkipper(
+      () => ({ key: keys[index] ?? null, index, canGoBack: true, canGoForward: true }),
+      (direction) => moves.push(direction),
+    );
+    skipper.onNavigate("traverse", { key: "missing", index: 1 });
+    index = 1;
+    skipper.leave(() => {});
+    skipper.leave(() => {});
+    expect(moves).toEqual([-1]);
   });
 
-  it("does not skip an entry that a link or a new navigation reached", () => {
-    expect(
-      skipDirection({ traverse, currentKey: "other", canGoBack: true, canGoForward: true }),
-    ).toBeNull();
-    expect(
-      skipDirection({ traverse: null, currentKey: "missing", canGoBack: true, canGoForward: true }),
-    ).toBeNull();
+  it("runs the upstream redirect when nothing is left in that direction", () => {
+    const history = createHistoryStub(["missing", "b"], 1);
+    history.traverse(-1);
+    history.reportMissing();
+    expect(history.fallbacks).toEqual(["missing"]);
+  });
+
+  it("runs the upstream redirect for an entry that a link reached", () => {
+    const history = createHistoryStub(["a", "missing"], 1);
+    history.skipper.onNavigate("push", { key: "", index: -1 });
+    history.reportMissing();
+    expect(history.fallbacks).toEqual(["missing"]);
+  });
+
+  it("runs the upstream redirect for a thread that disappears after it showed", () => {
+    const history = createHistoryStub(["a", "deleted-later", "b"], 2);
+    history.traverse(-1);
+    history.skipper.settle();
+    history.reportMissing();
+    expect(history.current()).toBe("deleted-later");
+    expect(history.fallbacks).toEqual(["deleted-later"]);
   });
 });
 

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import ChatView from "./ChatView";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
 import { waitForDraftHeroTransition } from "./chat/draftHeroTransition";
-import { leaveMissingRoute } from "../forkNavigationHistory";
+import { leaveMissingRoute, useSettleNavigationTraverse } from "../forkNavigationHistory";
 import { SidebarInset } from "./ui/sidebar";
 import {
   finalizePromotedDraftThreadByRef,
@@ -108,6 +108,9 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     draftThreadExists: draftThread !== null,
   });
   const serverThreadStarted = threadHasStarted(serverThreadShell);
+  useSettleNavigationTraverse(
+    target.kind === "draft" ? draftSession !== null : renderState === "ready",
+  );
   const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
 
   useEffect(() => {
