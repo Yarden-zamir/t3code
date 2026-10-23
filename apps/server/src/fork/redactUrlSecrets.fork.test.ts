@@ -85,6 +85,12 @@ describe("redactUrlSecretsInText", () => {
     );
     assert.notInclude(adjacent, "fake-one");
     assert.notInclude(adjacent, "fake-two");
+    for (const value of ["://placeholder", "123://placeholder"]) {
+      assert.notInclude(
+        redactUrlSecretsInText(`https://example.test/?safe=${value}&token=fake`),
+        "fake",
+      );
+    }
   });
 
   it("hides URLs inside prose and JSON text and keeps the text around them", () => {

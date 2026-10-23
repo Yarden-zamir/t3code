@@ -109,9 +109,13 @@ export function redactUrlSecrets(value: string): string {
   return changed ? url.href : value;
 }
 
+const isLetter = (char: string) => (char >= "a" && char <= "z") || (char >= "A" && char <= "Z");
+
 const schemeStart = (text: string, marker: number, floor: number) => {
   let start = marker;
   while (start > floor && isSchemeChar(text[start - 1]!)) start -= 1;
+  // A scheme starts with a letter, so `1http` starts at `h` and `123` is no scheme.
+  while (start < marker && !isLetter(text[start]!)) start += 1;
   return start;
 };
 
@@ -128,7 +132,9 @@ export function redactUrlSecretsInText(text: string): string {
     // `http://a/?u=http://b&token=x` the token parses as part of `http://b` and stays.
     // Revisit if agents pass such unencoded nested URLs with secrets.
     const next = text.indexOf("://", marker + 3);
-    if (next >= 0 && next < end) end = schemeStart(text, next, marker + 3);
+    const nextStart = next >= 0 && next < end ? schemeStart(text, next, marker + 3) : end;
+    // A `://` without a scheme, as in `?a=://b&token=x`, stays part of this URL.
+    if (nextStart < next) end = nextStart;
     while (end > marker + 3 && belongsToSurroundingText(text.slice(start, end))) end -= 1;
     if (start < marker) {
       const candidate = text.slice(start, end);
