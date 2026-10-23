@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as ServerConfig from "../config.ts";
+import * as ForkWorktreeResume from "../fork/ForkWorktreeResume.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -118,6 +119,7 @@ export const layer: Layer.Layer<
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
+    const prepareWorktree = yield* ForkWorktreeResume.makePrepare;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -473,6 +475,15 @@ export const layer: Layer.Layer<
           return;
         }
       }
+      // Fork: runs only when a fork worktree setting asks for it. A checkout it restores
+      // already exists, so upstream's recovery below does nothing.
+      yield* prepareWorktree({
+        thread: projection.thread,
+        run,
+        attemptId: attempt.id,
+        providerThreadId: providerThread.id,
+        turnItems: projection.turnItems,
+      });
       const { worktreePath, branch } = projection.thread;
       if (worktreePath !== null && branch !== null) {
         const exists = yield* fileSystem

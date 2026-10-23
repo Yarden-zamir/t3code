@@ -1,10 +1,10 @@
 /**
- * Fork: the state of the sidebar thread groups, kept out of `Sidebar.tsx` so that the upstream
- * file changes little. The groups live in the server setting `sidebarGroups` of the primary
+ * Fork: the state of the sidebar thread tabs, kept out of `Sidebar.tsx` so that the upstream
+ * file changes little. The tabs live in the server setting `sidebarTabs` of the primary
  * environment, and the machine map owns their sync: a change saves on the primary, then becomes
  * the shared value of the map (MM-411), which every machine applies.
  */
-import type { SidebarGroup, SidebarGroupRuleField, SidebarGroups } from "@t3tools/contracts";
+import type { SidebarTab, SidebarTabRuleField, SidebarTabs } from "@t3tools/contracts";
 import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import {
   isAtomCommandInterrupted,
@@ -36,68 +36,68 @@ import {
 } from "../Sidebar.logic";
 import { toastManager } from "../ui/toast";
 import { filterSidebarThreadsByOwner } from "./ownerFilter.logic";
-import { useSidebarGroupTabStore } from "./sidebarGroupTabStore";
+import { useSidebarTabStore } from "./sidebarTabStore";
 import {
-  buildSidebarGroupProjectFacts,
-  buildSidebarGroupRuleOptions,
-  createSidebarGroup,
-  DEFAULT_SIDEBAR_GROUP_ID,
+  buildSidebarTabProjectFacts,
+  buildSidebarTabRuleOptions,
+  createSidebarTab,
+  DEFAULT_SIDEBAR_TAB_ID,
   sidebarDefaultTabName,
   updateSidebarDefaultTab,
-  deleteSidebarGroup,
-  compileSidebarGroups,
-  moveSidebarGroup,
+  deleteSidebarTab,
+  compileSidebarTabs,
+  moveSidebarTab,
   moveSidebarThreads,
-  pruneSidebarGroupAssignments,
-  resolveSidebarGroupTabStatus,
-  resolveSidebarThreadGroupId,
-  SIDEBAR_GROUP_ATTENTION_STATUSES,
-  sidebarGroupShowsThread,
-  sidebarGroupThreadKey,
-  updateSidebarGroup,
-} from "./sidebarGroups.logic";
-import { sidebarGroupTabStatus, type SidebarGroupTabStatus } from "./sidebarGroupStatus";
+  pruneSidebarTabAssignments,
+  resolveSidebarTabStatus,
+  resolveSidebarThreadTabId,
+  SIDEBAR_TAB_ATTENTION_STATUSES,
+  sidebarTabShowsThread,
+  sidebarTabThreadKey,
+  updateSidebarTab,
+} from "./sidebarTabs.logic";
+import { sidebarTabStatus, type SidebarTabStatus } from "./sidebarTabStatus";
 
 /** The data attribute that marks a drop target in the tab bar: a tab id, or `new`. */
-export const SIDEBAR_GROUP_DROP_ATTRIBUTE = "data-sidebar-group-drop";
-export const SIDEBAR_GROUP_DROP_NEW = "new";
+export const SIDEBAR_TAB_DROP_ATTRIBUTE = "data-sidebar-tab-drop";
+export const SIDEBAR_TAB_DROP_NEW = "new";
 /** The "more" button: a drag over it opens the menu of the tabs that do not fit. */
-export const SIDEBAR_GROUP_DROP_MORE = "more";
+export const SIDEBAR_TAB_DROP_MORE = "more";
 
-export interface SidebarGroupTab {
+export interface SidebarTabItem {
   readonly id: string;
   readonly name: string;
   readonly isDefault: boolean;
   readonly isView: boolean;
-  /** An id of the group icon set, `none`, or undefined for the default dot. */
+  /** An id of the tab icon set, `none`, or undefined for the default dot. */
   readonly icon: string | undefined;
   readonly showName: boolean;
   /** Threads that the tab shows, without the settled ones. */
   readonly threadCount: number;
   /** The status of the most urgent thread that is not asleep. */
-  readonly status: SidebarGroupTabStatus | null;
+  readonly status: SidebarTabStatus | null;
   readonly needsAttention: boolean;
   /** The one thread of the tab, when a click on the tab opens it. */
   readonly singleThread: SidebarThreadSummary | null;
 }
 
-const EMPTY_SETTINGS: SidebarGroups = { groups: [], assignments: {}, defaultTab: {} };
+const EMPTY_SETTINGS: SidebarTabs = { tabs: [], assignments: {}, defaultTab: {} };
 
-const NO_TABS: readonly SidebarGroupTab[] = [];
+const NO_TABS: readonly SidebarTabItem[] = [];
 
 /**
- * The tab of each group. It reads the clock, so `clockKey` changes at each snooze wake and the
+ * The item of each tab. It reads the clock, so `clockKey` changes at each snooze wake and the
  * compiler builds the tabs again.
  */
-function buildSidebarGroupTabs(input: {
+function buildSidebarTabItems(input: {
   readonly threads: ReadonlyArray<SidebarThreadSummary>;
   readonly localLastVisitedAt: ReadonlyArray<string | undefined>;
-  readonly settings: SidebarGroups;
-  readonly compiled: ReturnType<typeof compileSidebarGroups>;
+  readonly settings: SidebarTabs;
+  readonly compiled: ReturnType<typeof compileSidebarTabs>;
   readonly showsThread: (tab: string, thread: SidebarThreadSummary) => boolean;
   readonly singleThreadOpens: boolean;
   readonly clockKey: number;
-}): readonly SidebarGroupTab[] {
+}): readonly SidebarTabItem[] {
   const { threads, localLastVisitedAt, settings, compiled, showsThread, singleThreadOpens } = input;
   const now = new Date().toISOString();
   const states = threads.map((thread, index) => {
@@ -121,33 +121,32 @@ function buildSidebarGroupTabs(input: {
   const describe = (
     id: string,
     name: string,
-    group: SidebarGroup | null,
+    tab: SidebarTab | null,
     look: { readonly icon?: string | undefined; readonly showName?: boolean | undefined },
-  ): SidebarGroupTab => {
+  ): SidebarTabItem => {
     const shown = states.filter((state) => showsThread(id, state.thread));
     const open = shown.filter((state) => !state.settled);
-    const kind = resolveSidebarGroupTabStatus(shown.filter((state) => !state.asleep));
+    const kind = resolveSidebarTabStatus(shown.filter((state) => !state.asleep));
     return {
       id,
       name,
-      isDefault: group === null,
-      isView: group !== null && compiled.byId.get(group.id)?.isView === true,
+      isDefault: tab === null,
+      isView: tab !== null && compiled.byId.get(tab.id)?.isView === true,
       icon: look.icon,
       showName: look.showName !== false,
       threadCount: open.length,
-      status: kind === null ? null : sidebarGroupTabStatus(kind),
-      needsAttention: kind !== null && SIDEBAR_GROUP_ATTENTION_STATUSES.has(kind),
-      singleThread:
-        singleThreadOpens && group !== null && open.length === 1 ? open[0]!.thread : null,
+      status: kind === null ? null : sidebarTabStatus(kind),
+      needsAttention: kind !== null && SIDEBAR_TAB_ATTENTION_STATUSES.has(kind),
+      singleThread: singleThreadOpens && tab !== null && open.length === 1 ? open[0]!.thread : null,
     };
   };
   return [
-    describe(DEFAULT_SIDEBAR_GROUP_ID, sidebarDefaultTabName(settings), null, settings.defaultTab),
-    ...settings.groups.map((group) => describe(group.id, group.name, group, group)),
+    describe(DEFAULT_SIDEBAR_TAB_ID, sidebarDefaultTabName(settings), null, settings.defaultTab),
+    ...settings.tabs.map((tab) => describe(tab.id, tab.name, tab, tab)),
   ];
 }
 
-export function useSidebarGroups(input: {
+export function useSidebarTabs(input: {
   /** Every thread shell, before any filter. */
   readonly threads: ReadonlyArray<SidebarThreadSummary>;
   /** Tasks linked environments run for a listed thread; they show under it. */
@@ -162,24 +161,24 @@ export function useSidebarGroups(input: {
   readonly snoozeWakeTick: number;
 }) {
   const { routeThreadKey, searching, snoozeWakeTick } = input;
-  const enabledOnDevice = useClientSettings((s) => s.sidebarGroupsEnabled);
-  // The hosted app has no primary server to hold the groups, so it shows none.
+  const enabledOnDevice = useClientSettings((s) => s.sidebarTabsEnabled);
+  // The hosted app has no primary server to hold the tabs, so it shows none.
   const primaryAvailable = usePrimarySettingsAvailable();
   const enabled = enabledOnDevice && primaryAvailable;
-  const savedSettings = usePrimarySettings((s) => s.sidebarGroups);
-  // Until the primary config arrives, the groups read as empty, and every thread looks ungrouped.
+  const savedSettings = usePrimarySettings((s) => s.sidebarTabs);
+  // Until the primary config arrives, the tabs read as empty, and every thread is in no tab.
   const ready = useAtomValue(primaryServerConfigAtom) !== null;
-  const singleThreadOpens = useClientSettings((s) => s.sidebarGroupSingleThreadOpens);
+  const singleThreadOpens = useClientSettings((s) => s.sidebarTabSingleThreadOpens);
   const settings = enabled ? savedSettings : EMPTY_SETTINGS;
-  const storedTabId = useSidebarGroupTabStore((s) => s.tabId);
-  const setTabId = useSidebarGroupTabStore((s) => s.setTabId);
+  const storedTabId = useSidebarTabStore((s) => s.tabId);
+  const setTabId = useSidebarTabStore((s) => s.setTabId);
   const tabId =
-    enabled && settings.groups.some((group) => group.id === storedTabId)
+    enabled && settings.tabs.some((tab) => tab.id === storedTabId)
       ? storedTabId
-      : DEFAULT_SIDEBAR_GROUP_ID;
+      : DEFAULT_SIDEBAR_TAB_ID;
 
-  const projects = buildSidebarGroupProjectFacts(input.projects);
-  // Non-archived sidebar threads: what the groups hold and what an assignment can name.
+  const projects = buildSidebarTabProjectFacts(input.projects);
+  // Non-archived sidebar threads: what the tabs hold and what an assignment can name.
   const liveThreads = filterSidebarV2VisibleThreads(
     input.threads,
     null,
@@ -191,21 +190,20 @@ export function useSidebarGroups(input: {
     input.delegatedUnderParent,
   );
 
-  // Known rules and view flags, once per change of the groups, not once per thread.
-  const compiled = compileSidebarGroups(settings);
-  const groupIdByThreadKey = new Map(
+  // Known rules and view flags, once per change of the tabs, not once per thread.
+  const compiled = compileSidebarTabs(settings);
+  const tabIdByThreadKey = new Map(
     threads.map((thread) => [
-      sidebarGroupThreadKey(thread),
-      resolveSidebarThreadGroupId(thread, compiled, projects),
+      sidebarTabThreadKey(thread),
+      resolveSidebarThreadTabId(thread, compiled, projects),
     ]),
   );
 
   const showsThread = (tab: string, thread: SidebarThreadSummary) =>
-    sidebarGroupShowsThread({
+    sidebarTabShowsThread({
       tabId: tab,
       thread,
-      threadGroupId:
-        groupIdByThreadKey.get(sidebarGroupThreadKey(thread)) ?? DEFAULT_SIDEBAR_GROUP_ID,
+      threadTabId: tabIdByThreadKey.get(sidebarTabThreadKey(thread)) ?? DEFAULT_SIDEBAR_TAB_ID,
       compiled,
       projects,
     });
@@ -227,13 +225,13 @@ export function useSidebarGroups(input: {
   const localLastVisitedAt = useUiStateStore(
     useShallow((state) =>
       enabled
-        ? threads.map((thread) => state.threadLastVisitedAtById[sidebarGroupThreadKey(thread)])
+        ? threads.map((thread) => state.threadLastVisitedAtById[sidebarTabThreadKey(thread)])
         : [],
     ),
   );
 
   const tabs = enabled
-    ? buildSidebarGroupTabs({
+    ? buildSidebarTabItems({
         threads,
         localLastVisitedAt,
         settings,
@@ -246,22 +244,22 @@ export function useSidebarGroups(input: {
 
   // Opening a thread from a link, a notification or a new-thread action shows its tab, so the
   // open row is visible. Browsing other tabs while the thread stays open does not switch back.
-  // It waits for the groups: before they load, every thread resolves to the default tab.
+  // It waits for the tabs: before they load, every thread resolves to the default tab.
   const followedRouteKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!enabled || !ready || routeThreadKey === null) return;
     if (followedRouteKeyRef.current === routeThreadKey) return;
-    const thread = threads.find((candidate) => sidebarGroupThreadKey(candidate) === routeThreadKey);
+    const thread = threads.find((candidate) => sidebarTabThreadKey(candidate) === routeThreadKey);
     if (thread === undefined) return;
     followedRouteKeyRef.current = routeThreadKey;
     if (showsThread(tabId, thread)) return;
-    const groupId = groupIdByThreadKey.get(routeThreadKey) ?? DEFAULT_SIDEBAR_GROUP_ID;
+    const threadTabId = tabIdByThreadKey.get(routeThreadKey) ?? DEFAULT_SIDEBAR_TAB_ID;
     // A single-thread tab stands for its thread, so it is visible without a switch.
-    if (tabs.some((tab) => tab.id === groupId && tab.singleThread !== null)) return;
-    setTabId(groupId);
+    if (tabs.some((tab) => tab.id === threadTabId && tab.singleThread !== null)) return;
+    setTabId(threadTabId);
   }, [
     enabled,
-    groupIdByThreadKey,
+    tabIdByThreadKey,
     ready,
     routeThreadKey,
     setTabId,
@@ -273,41 +271,41 @@ export function useSidebarGroups(input: {
 
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const persist = useAtomCommand(serverEnvironment.updateSettings, {
-    label: "sidebar groups update",
+    label: "sidebar tabs update",
     reportFailure: false,
   });
   const shareToMachineMap = useShareServerSettingsToMachineMap();
-  // Each write replaces the groups whole. Two quick edits chain through this ref, so the second
+  // Each write replaces the tabs whole. Two quick edits chain through this ref, so the second
   // does not undo the first before the server echoes it. Edits from two devices at the same
-  // moment still keep only the last one; revisit with per-group commands if that bites.
+  // moment still keep only the last one; revisit with per-tab commands if that bites.
   const latestSettingsRef = useRef(savedSettings);
   const savedSettingsRef = useRef(savedSettings);
   useEffect(() => {
     latestSettingsRef.current = savedSettings;
     savedSettingsRef.current = savedSettings;
   }, [savedSettings]);
-  const update = (change: (current: SidebarGroups) => SidebarGroups) => {
+  const update = (change: (current: SidebarTabs) => SidebarTabs) => {
     if (primaryEnvironmentId === null || !ready) return;
     const current = latestSettingsRef.current;
-    const next = pruneSidebarGroupAssignments(change(current), liveThreads);
+    const next = pruneSidebarTabAssignments(change(current), liveThreads);
     if (JSON.stringify(next) === JSON.stringify(current)) return;
     latestSettingsRef.current = next;
     void persist({
       environmentId: primaryEnvironmentId,
-      input: { patch: { sidebarGroups: next } },
+      input: { patch: { sidebarTabs: next } },
     }).then((result) => {
       if (result._tag === "Success") {
-        shareToMachineMap(primaryEnvironmentId, ["sidebarGroups"]);
+        shareToMachineMap(primaryEnvironmentId, ["sidebarTabs"]);
         return;
       }
-      // The next edit starts from the saved groups, not from the edit that failed. An edit made
+      // The next edit starts from the saved tabs, not from the edit that failed. An edit made
       // on top of it in the meantime stays: its own save reports its own result.
       if (latestSettingsRef.current === next) latestSettingsRef.current = savedSettingsRef.current;
       if (isAtomCommandInterrupted(result)) return;
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: "Groups not saved",
+        title: "Tabs not saved",
         description: error instanceof Error ? error.message : "Try reconnecting and saving again.",
       });
     });
@@ -315,36 +313,36 @@ export function useSidebarGroups(input: {
 
   const threadsForRefs = (threadKeys: readonly string[]) => {
     const keys = new Set(threadKeys);
-    return liveThreads.filter((thread) => keys.has(sidebarGroupThreadKey(thread)));
+    return liveThreads.filter((thread) => keys.has(sidebarTabThreadKey(thread)));
   };
 
-  /** The id of the new group, or null before the groups load, when no edit can save. */
-  const createGroup = (threadKeys: readonly string[]): string | null => {
+  /** The id of the new tab, or null before the tabs load, when no edit can save. */
+  const createTab = (threadKeys: readonly string[]): string | null => {
     if (!ready) return null;
     const id = randomUUID();
     update((current) =>
-      moveSidebarThreads(createSidebarGroup(current, id), threadsForRefs(threadKeys), id, projects),
+      moveSidebarThreads(createSidebarTab(current, id), threadsForRefs(threadKeys), id, projects),
     );
     setTabId(id);
     return id;
   };
 
-  // The tab or the new-group area under a dragged thread. A view takes no drop: it holds no threads.
+  // The tab or the new-tab area under a dragged thread. A view takes no drop: it holds no threads.
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const tabsRef = useRef(tabs);
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
   const dropTargetAt = (point: { x: number; y: number }) => {
-    // Before the groups load, no edit can save, so the tab bar takes no drop.
+    // Before the tabs load, no edit can save, so the tab bar takes no drop.
     if (!enabled || !ready) return null;
     const target =
       document
         .elementFromPoint(point.x, point.y)
-        ?.closest(`[${SIDEBAR_GROUP_DROP_ATTRIBUTE}]`)
-        ?.getAttribute(SIDEBAR_GROUP_DROP_ATTRIBUTE) ?? null;
-    return target === SIDEBAR_GROUP_DROP_NEW ||
-      target === SIDEBAR_GROUP_DROP_MORE ||
+        ?.closest(`[${SIDEBAR_TAB_DROP_ATTRIBUTE}]`)
+        ?.getAttribute(SIDEBAR_TAB_DROP_ATTRIBUTE) ?? null;
+    return target === SIDEBAR_TAB_DROP_NEW ||
+      target === SIDEBAR_TAB_DROP_MORE ||
       tabsRef.current.some((tab) => tab.id === target && !tab.isView)
       ? target
       : null;
@@ -362,8 +360,8 @@ export function useSidebarGroups(input: {
       setDropTargetId(null);
       if (target === null) return false;
       // A drop on the "more" button itself moves nothing: the open menu holds the targets.
-      if (target === SIDEBAR_GROUP_DROP_MORE) return true;
-      if (target === SIDEBAR_GROUP_DROP_NEW) createGroup(threadKeys);
+      if (target === SIDEBAR_TAB_DROP_MORE) return true;
+      if (target === SIDEBAR_TAB_DROP_NEW) createTab(threadKeys);
       else
         update((current) =>
           moveSidebarThreads(current, threadsForRefs(threadKeys), target, projects),
@@ -373,43 +371,36 @@ export function useSidebarGroups(input: {
   );
   const endDrag = useStableCallback(() => setDropTargetId(null));
 
-  // The empty list of a group says why it is empty. The default tab keeps the upstream text.
-  const openGroup = compiled.byId.get(tabId);
+  // The empty list of a tab says why it is empty. The default tab keeps the upstream text.
+  const openTab = compiled.byId.get(tabId);
   const emptyMessage =
-    !enabled || openGroup === undefined
+    !enabled || openTab === undefined
       ? null
-      : openGroup.rules.length > 0
+      : openTab.rules.length > 0
         ? "No threads match the rules"
         : "Drag threads onto this tab";
 
-  const ruleOptions = (field: Exclude<SidebarGroupRuleField, "title">, groupId: string) =>
-    buildSidebarGroupRuleOptions({ field, groupId, threads, projects, settings });
+  const ruleOptions = (field: Exclude<SidebarTabRuleField, "title">, id: string) =>
+    buildSidebarTabRuleOptions({ field, tabId: id, threads, projects, settings });
 
-  const renameGroup = (groupId: string, name: string) => {
+  const renameTab = (id: string, name: string) => {
     const trimmed = name.trim();
     if (trimmed.length === 0) return;
-    update((current) =>
-      updateSidebarGroup(current, groupId, (group) => ({ ...group, name: trimmed })),
-    );
+    update((current) => updateSidebarTab(current, id, (tab) => ({ ...tab, name: trimmed })));
   };
-  const setGroupRules = (groupId: string, rules: SidebarGroup["rules"]) =>
-    update((current) => updateSidebarGroup(current, groupId, (group) => ({ ...group, rules })));
-  const setDefaultTab = (
-    change: (tab: SidebarGroups["defaultTab"]) => SidebarGroups["defaultTab"],
-  ) => update((current) => updateSidebarDefaultTab(current, change));
-  const setGroupLook = (
-    groupId: string,
-    look: { readonly icon?: string; readonly showName?: boolean },
-  ) =>
-    update((current) => updateSidebarGroup(current, groupId, (group) => ({ ...group, ...look })));
-  const deleteGroup = (groupId: string) =>
-    update((current) => deleteSidebarGroup(current, groupId));
-  const moveGroup = (groupId: string, toIndex: number) =>
-    update((current) => moveSidebarGroup(current, groupId, toIndex));
+  const setTabRules = (id: string, rules: SidebarTab["rules"]) =>
+    update((current) => updateSidebarTab(current, id, (tab) => ({ ...tab, rules })));
+  const setDefaultTab = (change: (tab: SidebarTabs["defaultTab"]) => SidebarTabs["defaultTab"]) =>
+    update((current) => updateSidebarDefaultTab(current, change));
+  const setTabLook = (id: string, look: { readonly icon?: string; readonly showName?: boolean }) =>
+    update((current) => updateSidebarTab(current, id, (tab) => ({ ...tab, ...look })));
+  const deleteTab = (id: string) => update((current) => deleteSidebarTab(current, id));
+  const moveTab = (id: string, toIndex: number) =>
+    update((current) => moveSidebarTab(current, id, toIndex));
 
   return {
     enabled,
-    /** The groups have loaded, so edits can save. */
+    /** The tabs have loaded, so edits can save. */
     ready,
     emptyMessage,
     settings,
@@ -422,14 +413,14 @@ export function useSidebarGroups(input: {
     moveDrag,
     dropDrag,
     endDrag,
-    createGroup,
-    renameGroup,
-    setGroupRules,
-    setGroupLook,
+    createTab,
+    renameTab,
+    setTabRules,
+    setTabLook,
     setDefaultTab,
-    deleteGroup,
-    moveGroup,
+    deleteTab,
+    moveTab,
   };
 }
 
-export type SidebarGroupsState = ReturnType<typeof useSidebarGroups>;
+export type SidebarTabsState = ReturnType<typeof useSidebarTabs>;

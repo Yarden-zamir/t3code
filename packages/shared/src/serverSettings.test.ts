@@ -52,23 +52,23 @@ describe("fallbackTextGenerationModelSelection", () => {
 });
 
 describe("serverSettings helpers", () => {
-  it("replaces the sidebar groups whole, so deleted groups and assignments stay deleted", () => {
+  it("replaces the sidebar tabs whole, so deleted tabs and assignments stay deleted", () => {
     const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      sidebarGroups: {
-        groups: [{ id: "monitors", name: "Monitors", rules: [] }],
+      sidebarTabs: {
+        tabs: [{ id: "monitors", name: "Monitors", rules: [] }],
         assignments: { "environment:thread-1": "monitors", "environment:thread-2": "default" },
         defaultTab: {},
       },
     });
     const next = applyServerSettingsPatch(saved, {
-      sidebarGroups: {
-        groups: [],
+      sidebarTabs: {
+        tabs: [],
         assignments: { "environment:thread-2": "default" },
         defaultTab: {},
       },
     });
-    expect(next.sidebarGroups).toEqual({
-      groups: [],
+    expect(next.sidebarTabs).toEqual({
+      tabs: [],
       assignments: { "environment:thread-2": "default" },
       defaultTab: {},
     });

@@ -116,6 +116,12 @@ jobs:
           fi
           if (( ${#files[@]} > 0 )); then
             printf '%s\n' "${files[@]}"
+            # As in Fork CI: desktop tests need the Electron binary before they run in parallel,
+            # and server preview tests launch headless Chromium.
+            vp run --filter @t3tools/desktop ensure:electron
+            if printf '%s\n' "${files[@]}" | grep -q '^apps/server/'; then
+              node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+            fi
             vp test run "${files[@]}"
           fi
           if (( ${#web_files[@]} > 0 )); then

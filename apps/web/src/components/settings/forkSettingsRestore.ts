@@ -7,11 +7,14 @@ import type { ScopedSettingsPatch } from "./scopedSettings";
  * Fork: the fork settings that Restore defaults resets, with the label that its confirmation
  * names. Like upstream, Restore defaults resets preferences, and user data and access stay. That
  * keep list is deliberate: `globalScripts` and the pin lists (like project scripts),
- * `sidebarGroups` and `threadCardLayouts` (content that the user built, like keybindings),
+ * `sidebarTabs` and `threadCardLayouts` (content that the user built, like keybindings),
  * `machineMap` and `clientAccess` (a reset leaves the map or changes access), and tunnel pairing
  * (desktop connection settings). A new fork preference goes in this list.
  */
 const FORK_RESTORED_SETTINGS = [
+  ["restoreWorktreesOnResume", "Restore worktrees on resume"],
+  ["worktreeArtifactEviction", "Evict worktree artifacts"],
+  ["worktreeArtifactEvictionDays", "Artifact eviction inactivity days"],
   ["installedAppEnabled", "Installed app"],
   ["webPushEnabled", "Web Push"],
   ["forkAutoUpdate", "Server auto-update"],
@@ -29,14 +32,14 @@ const FORK_RESTORED_SETTINGS = [
   ["mobilePublishedThemes", "Published themes on mobile"],
   ["mobileNewThreadProject", "New thread on mobile"],
   ["mobileComposerCamera", "Camera on mobile"],
-  ["mobileSidebarGroups", "Sidebar groups on mobile"],
+  ["mobileSidebarTabs", "Sidebar tabs on mobile"],
   ["keybindingSync", "Keybinding sync"],
   ["environmentLabelFromMachineMap", "Environment name from machine map"],
   ["pullRequestWatchRemarkFilter", "Pull request watch remarks"],
   ["agentSessionImportWindowDays", "Session import window"],
   ["agentSessionImportMaxMessages", "Imported messages per session"],
-  ["sidebarGroupsEnabled", "Sidebar groups"],
-  ["sidebarGroupSingleThreadOpens", "Single-thread tabs"],
+  ["sidebarTabsEnabled", "Sidebar tabs"],
+  ["sidebarTabSingleThreadOpens", "Single-thread tabs"],
   ["snoozeQuickOptions", "Snooze quick options"],
   ["worktreePathTemplate", "Worktree path template"],
   ["repositoryOwnerFilters", "Repository owner filters"],

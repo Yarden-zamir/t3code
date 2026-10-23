@@ -219,6 +219,28 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
+  it.effect("reads the old sidebar group settings as the tab settings", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          `{ "sidebarGroupsEnabled": true, "sidebarGroupSingleThreadOpens": true }\n`,
+        );
+
+        const persisted = yield* settings.get;
+        assert.isTrue(Option.isSome(persisted));
+        if (Option.isSome(persisted)) {
+          assert.isTrue(persisted.value.sidebarTabsEnabled);
+          assert.isTrue(persisted.value.sidebarTabSingleThreadOpens);
+        }
+      }),
+    ),
+  );
+
   it.effect("loads legacy wrapped client settings documents", () =>
     withClientSettings(
       Effect.gen(function* () {

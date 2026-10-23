@@ -1,22 +1,22 @@
 /**
- * Fork: the tab bar of sidebar thread groups, under the Search field. Each tab is a group: a view
- * with rules over the same threads. Drop a thread on a tab to move it there, or on the empty end
- * of the bar to make a new group.
+ * Fork: the bar of sidebar tabs, under the Search field. A tab holds threads, or is a view with
+ * rules over the same threads. Drop a thread on a tab to assign it there, or on the empty end of
+ * the bar to make a new tab.
  */
 import {
-  isKnownSidebarGroupRule,
+  isKnownSidebarTabRule,
   type KeybindingCommand,
-  SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS,
-  type SidebarGroup,
-  type SidebarGroupRule,
-  type SidebarGroupRuleField,
-  type SidebarGroupStoredRule,
-  type SidebarGroups,
+  SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS,
+  type SidebarTab,
+  type SidebarTabRule,
+  type SidebarTabRuleField,
+  type SidebarTabStoredRule,
+  type SidebarTabs,
 } from "@t3tools/contracts";
 import { BanIcon, PlusIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
-import { AppIcon, GroupIcon, GROUP_ICON_IDS } from "../AppIcon";
+import { AppIcon, SidebarTabIcon, TAB_ICON_IDS } from "../AppIcon";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { restrictToHorizontalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
@@ -47,23 +47,23 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ShortcutHint } from "../focusLevels/ShortcutHint";
 import { SidebarHeaderIconButton } from "./SidebarThreadHeader";
 import {
-  DEFAULT_SIDEBAR_GROUP_ID,
-  DEFAULT_SIDEBAR_GROUP_NAME,
-  fitSidebarGroupTabs,
-  isAnyGroupRule,
-  SIDEBAR_GROUP_RULE_FIELDS,
-  sidebarGroupRuleFieldLabel,
-  toggleSidebarGroupRuleValue,
-  type SidebarGroupRuleOption,
-} from "./sidebarGroups.logic";
+  DEFAULT_SIDEBAR_TAB_ID,
+  DEFAULT_SIDEBAR_TAB_NAME,
+  fitSidebarTabItems,
+  isAnyTabRule,
+  SIDEBAR_TAB_RULE_FIELDS,
+  sidebarTabRuleFieldLabel,
+  toggleSidebarTabRuleValue,
+  type SidebarTabRuleOption,
+} from "./sidebarTabs.logic";
 import { THREAD_CARD_TITLE_CLASS } from "./threadCardParts";
 import {
-  SIDEBAR_GROUP_DROP_ATTRIBUTE,
-  SIDEBAR_GROUP_DROP_MORE,
-  SIDEBAR_GROUP_DROP_NEW,
-  type SidebarGroupsState,
-  type SidebarGroupTab,
-} from "./useSidebarGroups";
+  SIDEBAR_TAB_DROP_ATTRIBUTE,
+  SIDEBAR_TAB_DROP_MORE,
+  SIDEBAR_TAB_DROP_NEW,
+  type SidebarTabsState,
+  type SidebarTabItem,
+} from "./useSidebarTabs";
 
 const attentionKeyframes: Keyframe[] = [
   { transform: "rotate(0deg)" },
@@ -91,26 +91,26 @@ function useAttentionWiggle(element: HTMLElement | null, attentionKey: string | 
 }
 
 /**
- * The status icon of the most urgent thread, else the group's own icon. A tab with neither an icon
- * nor a name shows the dot, so it never renders empty. A squeezed tab gives its group icon's room
+ * The status icon of the most urgent thread, else the tab's own icon. A tab with neither an icon
+ * nor a name shows the dot, so it never renders empty. A squeezed tab gives its icon's room
  * to its name.
  */
-function TabIcon(props: { tab: SidebarGroupTab; squeezed: boolean }) {
+function TabIcon(props: { tab: SidebarTabItem; squeezed: boolean }) {
   const { tab } = props;
   if (tab.status !== null) {
     return <AppIcon slot={tab.status.slot} className={cn("size-3.5", tab.status.className)} />;
   }
   if (props.squeezed && tab.showName) return null;
   const icon = tab.icon === "none" && !tab.showName ? undefined : tab.icon;
-  return <GroupIcon icon={icon} className="size-3.5 text-muted-foreground" />;
+  return <SidebarTabIcon icon={icon} className="size-3.5 text-muted-foreground" />;
 }
 
-/** What a tab shows: the favicon of a single thread, the status or group icon, the name and count. */
+/** What a tab shows: the favicon of a single thread, the status or tab icon, the name and count. */
 function TabLabel(props: {
-  tab: SidebarGroupTab;
+  tab: SidebarTabItem;
   project: EnvironmentProject | null;
   /**
-   * The tab does not fit whole. It drops the count and the group icon before it cuts the name; the
+   * The tab does not fit whole. It drops the count and the tab icon before it cuts the name; the
    * tooltip keeps the count.
    */
   squeezed?: boolean;
@@ -145,15 +145,15 @@ function TabLabel(props: {
 const TAB_BOX_CLASS = "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs";
 const TAB_DRAG_MODIFIERS = [restrictToHorizontalAxis, restrictToParentElement];
 
-function tabTooltip(tab: SidebarGroupTab) {
+function tabTooltip(tab: SidebarTabItem) {
   const statusLabel = tab.status === null ? "" : `, ${tab.status.label}`;
   return tab.singleThread === null
     ? `${tab.name}: ${tab.threadCount} threads${statusLabel}`
     : `${tab.singleThread.title} (${tab.name})${statusLabel}`;
 }
 
-function GroupTab(props: {
-  tab: SidebarGroupTab;
+function TabButton(props: {
+  tab: SidebarTabItem;
   selected: boolean;
   dropTarget: boolean;
   /** The bar is narrower than this tab, which then shows its name without the count. */
@@ -193,14 +193,14 @@ function GroupTab(props: {
             role="tab"
             aria-selected={selected}
             // Hooks for theme CSS: the tab, its state, and the status of its most urgent thread.
-            data-sidebar-group-tab={tab.isDefault ? "default" : "group"}
+            data-sidebar-tab={tab.isDefault ? "default" : "custom"}
             data-selected={selected ? "" : undefined}
             data-status={tab.status?.kind}
             data-attention={tab.needsAttention ? "" : undefined}
             data-drop-target={dropTarget ? "" : undefined}
             data-dragging={isDragging ? "" : undefined}
             aria-label={tooltip}
-            {...{ [SIDEBAR_GROUP_DROP_ATTRIBUTE]: tab.id }}
+            {...{ [SIDEBAR_TAB_DROP_ATTRIBUTE]: tab.id }}
             className={cn(
               // A tab can shrink a little and end its name with an ellipsis, so a rounding error
               // of the fit never cuts it mid-word.
@@ -241,18 +241,18 @@ function GroupTab(props: {
  * takes a dropped thread.
  */
 function MoreTabsMenu(props: {
-  tabs: readonly SidebarGroupTab[];
+  tabs: readonly SidebarTabItem[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   dropTargetId: string | null;
   projectFor: (thread: SidebarThreadSummary) => EnvironmentProject | null;
-  onSelect: (tab: SidebarGroupTab) => void;
+  onSelect: (tab: SidebarTabItem) => void;
   /** The open tab does not fit whole, so the button gives up its chevron to the tab's name. */
   compact: boolean;
 }) {
   // The button carries the color of a hidden tab that needs the user.
   const attention = props.tabs.find((tab) => tab.needsAttention) ?? null;
-  const label = `${props.tabs.length} more ${props.tabs.length === 1 ? "group" : "groups"}`;
+  const label = `${props.tabs.length} more ${props.tabs.length === 1 ? "tab" : "tabs"}`;
   return (
     <Menu open={props.open} onOpenChange={props.onOpenChange} modal={false}>
       <MenuTrigger
@@ -260,29 +260,29 @@ function MoreTabsMenu(props: {
           <button
             type="button"
             aria-label={label}
-            data-sidebar-group-more=""
+            data-sidebar-tab-more=""
             data-attention={attention !== null ? "" : undefined}
-            data-drop-target={props.dropTargetId === SIDEBAR_GROUP_DROP_MORE ? "" : undefined}
-            {...{ [SIDEBAR_GROUP_DROP_ATTRIBUTE]: SIDEBAR_GROUP_DROP_MORE }}
+            data-drop-target={props.dropTargetId === SIDEBAR_TAB_DROP_MORE ? "" : undefined}
+            {...{ [SIDEBAR_TAB_DROP_ATTRIBUTE]: SIDEBAR_TAB_DROP_MORE }}
             className={cn(
               TAB_BOX_CLASS,
               "shrink-0 cursor-pointer gap-0.5 text-muted-foreground outline-none select-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               attention !== null && "bg-current/8 ring-1 ring-inset ring-current/30",
               attention?.status?.className,
-              props.dropTargetId === SIDEBAR_GROUP_DROP_MORE &&
+              props.dropTargetId === SIDEBAR_TAB_DROP_MORE &&
                 "bg-primary/10 text-primary ring-1 ring-inset ring-primary/40",
             )}
           />
         }
       >
         <span className="tabular-nums">+{props.tabs.length}</span>
-        {props.compact ? null : <AppIcon slot="groups.more" className="size-3.5" />}
+        {props.compact ? null : <AppIcon slot="tabs.more" className="size-3.5" />}
       </MenuTrigger>
       <MenuPopup align="end">
         {props.tabs.map((tab) => (
           <MenuItem
             key={tab.id}
-            {...{ [SIDEBAR_GROUP_DROP_ATTRIBUTE]: tab.id }}
+            {...{ [SIDEBAR_TAB_DROP_ATTRIBUTE]: tab.id }}
             onClick={() => props.onSelect(tab)}
           >
             <span
@@ -355,21 +355,21 @@ function useTabWidths(tabIds: readonly string[]) {
   };
 }
 
-export function SidebarGroupTabs(props: {
-  groups: SidebarGroupsState;
-  /** A thread drag is in progress, so the bar shows a "+" that takes a drop for a new group. */
+export function SidebarTabBar(props: {
+  tabs: SidebarTabsState;
+  /** A thread drag is in progress, so the bar shows a "+" that takes a drop for a new tab. */
   dragging: boolean;
   routeThreadKey: string | null;
   projectFor: (thread: SidebarThreadSummary) => EnvironmentProject | null;
   onOpenThread: (thread: SidebarThreadSummary) => void;
 }) {
-  const { groups: state } = props;
-  const groups = state.settings.groups;
-  const [editing, setEditing] = useState<{ groupId: string; anchor: HTMLElement } | null>(null);
+  const { tabs: state } = props;
+  const savedTabs = state.settings.tabs;
+  const [editing, setEditing] = useState<{ tabId: string; anchor: HTMLElement } | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  const editingDefault = editing?.groupId === DEFAULT_SIDEBAR_GROUP_ID;
-  const editingGroup =
-    editing === null ? null : (groups.find((group) => group.id === editing.groupId) ?? null);
+  const editingDefault = editing?.tabId === DEFAULT_SIDEBAR_TAB_ID;
+  const editingTab =
+    editing === null ? null : (savedTabs.find((tab) => tab.id === editing.tabId) ?? null);
   const selected = state.tabs.find((tab) => tab.id === state.tabId) ?? null;
 
   const { setListElement, setMeasureElement, available, gap, tabWidths, moreWidth } = useTabWidths(
@@ -378,7 +378,7 @@ export function SidebarGroupTabs(props: {
   const visibleIndexes =
     available === null || tabWidths === null
       ? state.tabs.map((_, index) => index)
-      : fitSidebarGroupTabs({
+      : fitSidebarTabItems({
           widths: tabWidths,
           available,
           gap,
@@ -406,8 +406,8 @@ export function SidebarGroupTabs(props: {
   if (seenDrag.dropTargetId !== state.dropTargetId || seenDrag.dragging !== props.dragging) {
     setSeenDrag({ dropTargetId: state.dropTargetId, dragging: props.dragging });
     if (
-      state.dropTargetId === SIDEBAR_GROUP_DROP_MORE &&
-      seenDrag.dropTargetId !== SIDEBAR_GROUP_DROP_MORE
+      state.dropTargetId === SIDEBAR_TAB_DROP_MORE &&
+      seenDrag.dropTargetId !== SIDEBAR_TAB_DROP_MORE
     ) {
       setMoreOpenedByDrag(true);
       setMoreOpen(true);
@@ -417,7 +417,7 @@ export function SidebarGroupTabs(props: {
     }
   }
 
-  // Drag a tab to reorder the groups. Not on the mobile layout, where a drag scrolls.
+  // Drag a tab to reorder the tabs. Not on the mobile layout, where a drag scrolls.
   const reorderable = !useSidebar().isMobile;
   const reorderSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -425,32 +425,32 @@ export function SidebarGroupTabs(props: {
   const sortableTabIds = visibleTabs.filter((tab) => !tab.isDefault).map((tab) => tab.id);
   const reorderTabs = ({ active, over }: DragEndEvent) => {
     if (over === null || active.id === over.id) return;
-    const toIndex = groups.findIndex((group) => group.id === over.id);
-    if (toIndex !== -1) state.moveGroup(String(active.id), toIndex);
+    const toIndex = savedTabs.findIndex((tab) => tab.id === over.id);
+    if (toIndex !== -1) state.moveTab(String(active.id), toIndex);
   };
 
-  const newGroupTarget = state.dropTargetId === SIDEBAR_GROUP_DROP_NEW;
-  // The tab bar's right-click menu and the editors make a group here. The editor then opens on it.
-  const createGroupAndEdit = () => {
-    const id = state.createGroup([]);
+  const newTabTarget = state.dropTargetId === SIDEBAR_TAB_DROP_NEW;
+  // The tab bar's right-click menu and the editors make a tab here. The editor then opens on it.
+  const createTabAndEdit = () => {
+    const id = state.createTab([]);
     // The new tab renders on the next frame; anchor the editor to the bar until then.
     if (id !== null && barRef.current !== null) {
-      setEditing({ groupId: id, anchor: barRef.current });
+      setEditing({ tabId: id, anchor: barRef.current });
     }
   };
   const openBarMenu = async (position: { x: number; y: number }) => {
     const clicked = await showContextMenuFallback(
-      [{ id: "new", label: "New group", disabled: !state.ready }],
+      [{ id: "new", label: "New tab", disabled: !state.ready }],
       position,
     );
-    if (clicked === "new") createGroupAndEdit();
+    if (clicked === "new") createTabAndEdit();
   };
   return (
     <div
       ref={barRef}
       className="flex items-center gap-1 px-2 pb-1.5"
       // No "+" button: it read as "new thread". A right-click on the bar, outside a tab, makes a
-      // group, and so does a thread dropped on the "+" that a drag shows.
+      // tab, and so does a thread dropped on the "+" that a drag shows.
       onContextMenu={(event) => {
         // A tab opens its own editor and marks the event handled.
         if (event.defaultPrevented) return;
@@ -461,17 +461,17 @@ export function SidebarGroupTabs(props: {
       <div
         ref={setListElement}
         role="tablist"
-        aria-label="Thread groups"
-        data-sidebar-group-tabs=""
+        aria-label="Sidebar tabs"
+        data-sidebar-tabs=""
         className="relative flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
       >
         <DndContext sensors={reorderSensors} modifiers={TAB_DRAG_MODIFIERS} onDragEnd={reorderTabs}>
           <SortableContext items={sortableTabIds} strategy={horizontalListSortingStrategy}>
             {visibleTabs.map((tab, index) => (
-              <GroupTab
+              <TabButton
                 key={tab.id}
                 tab={tab}
-                jumpCommand={SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS[index] ?? null}
+                jumpCommand={SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS[index] ?? null}
                 selected={tab.id === state.tabId}
                 dropTarget={state.dropTargetId === tab.id}
                 squeezed={squeezedIndex !== null && state.tabs[squeezedIndex] === tab}
@@ -480,7 +480,7 @@ export function SidebarGroupTabs(props: {
                 sortable={reorderable && !tab.isDefault}
                 onSelect={() => state.setTabId(tab.id)}
                 onOpenThread={props.onOpenThread}
-                onEdit={(anchor) => setEditing({ groupId: tab.id, anchor })}
+                onEdit={(anchor) => setEditing({ tabId: tab.id, anchor })}
               />
             ))}
           </SortableContext>
@@ -510,7 +510,7 @@ export function SidebarGroupTabs(props: {
           {state.tabs.map((tab) => (
             <span
               key={tab.id}
-              data-sidebar-group-tab={tab.isDefault ? "default" : "group"}
+              data-sidebar-tab={tab.isDefault ? "default" : "custom"}
               data-selected=""
               className={cn(TAB_BOX_CLASS, "shrink-0 font-medium")}
             >
@@ -520,37 +520,37 @@ export function SidebarGroupTabs(props: {
               />
             </span>
           ))}
-          <span data-sidebar-group-more="" className={cn(TAB_BOX_CLASS, "shrink-0 gap-0.5")}>
+          <span data-sidebar-tab-more="" className={cn(TAB_BOX_CLASS, "shrink-0 gap-0.5")}>
             <span className="tabular-nums">+{state.tabs.length}</span>
-            <AppIcon slot="groups.more" className="size-3.5" />
+            <AppIcon slot="tabs.more" className="size-3.5" />
           </span>
         </div>
       </div>
-      {/* During a thread drag the edit button's slot takes a drop for a new group, at the same
+      {/* During a thread drag the edit button's slot takes a drop for a new tab, at the same
           size, so the tabs do not reflow. */}
       {props.dragging ? (
         <div
-          aria-label="Drop here for a new group"
-          data-sidebar-group-new=""
-          data-drop-target={newGroupTarget ? "" : undefined}
-          {...{ [SIDEBAR_GROUP_DROP_ATTRIBUTE]: SIDEBAR_GROUP_DROP_NEW }}
+          aria-label="Drop here for a new tab"
+          data-sidebar-tab-new=""
+          data-drop-target={newTabTarget ? "" : undefined}
+          {...{ [SIDEBAR_TAB_DROP_ATTRIBUTE]: SIDEBAR_TAB_DROP_NEW }}
           className={cn(
             "flex size-7 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground",
-            newGroupTarget && "border-primary/60 bg-primary/10 text-primary",
+            newTabTarget && "border-primary/60 bg-primary/10 text-primary",
           )}
         >
-          <AppIcon slot="groups.new" />
+          <AppIcon slot="tabs.new" />
         </div>
       ) : selected !== null ? (
         <SidebarHeaderIconButton
-          label={`Edit group ${selected.name}`}
-          onClick={(event) => setEditing({ groupId: selected.id, anchor: event.currentTarget })}
+          label={`Edit tab ${selected.name}`}
+          onClick={(event) => setEditing({ tabId: selected.id, anchor: event.currentTarget })}
         >
-          <AppIcon slot="groups.edit" />
+          <AppIcon slot="tabs.edit" />
         </SidebarHeaderIconButton>
       ) : null}
       <Popover
-        open={editing !== null && (editingGroup !== null || editingDefault)}
+        open={editing !== null && (editingTab !== null || editingDefault)}
         onOpenChange={(open) => {
           if (!open) setEditing(null);
         }}
@@ -560,25 +560,25 @@ export function SidebarGroupTabs(props: {
             <SidebarDefaultTabEditor
               defaultTab={state.settings.defaultTab}
               onChange={(update) => state.setDefaultTab(update)}
-              onNewGroup={createGroupAndEdit}
+              onNewTab={createTabAndEdit}
             />
-          ) : editingGroup === null ? null : (
-            <SidebarGroupEditor
-              // Keyed by group, so a name typed for one group never renames another.
-              key={editingGroup.id}
-              group={editingGroup}
-              index={groups.indexOf(editingGroup)}
-              groupCount={groups.length}
-              ruleOptions={(field) => state.ruleOptions(field, editingGroup.id)}
-              onRename={(name) => state.renameGroup(editingGroup.id, name)}
-              onSetLook={(look) => state.setGroupLook(editingGroup.id, look)}
-              onSetRules={(rules) => state.setGroupRules(editingGroup.id, rules)}
-              onMove={(toIndex) => state.moveGroup(editingGroup.id, toIndex)}
+          ) : editingTab === null ? null : (
+            <SidebarTabEditor
+              // Keyed by tab, so a name typed for one tab never renames another.
+              key={editingTab.id}
+              tab={editingTab}
+              index={savedTabs.indexOf(editingTab)}
+              tabCount={savedTabs.length}
+              ruleOptions={(field) => state.ruleOptions(field, editingTab.id)}
+              onRename={(name) => state.renameTab(editingTab.id, name)}
+              onSetLook={(look) => state.setTabLook(editingTab.id, look)}
+              onSetRules={(rules) => state.setTabRules(editingTab.id, rules)}
+              onMove={(toIndex) => state.moveTab(editingTab.id, toIndex)}
               onDelete={() => {
                 setEditing(null);
-                state.deleteGroup(editingGroup.id);
+                state.deleteTab(editingTab.id);
               }}
-              onNewGroup={createGroupAndEdit}
+              onNewTab={createTabAndEdit}
             />
           )}
         </PopoverPopup>
@@ -587,7 +587,7 @@ export function SidebarGroupTabs(props: {
   );
 }
 
-function ruleValueLabel(rule: SidebarGroupRule, options: readonly SidebarGroupRuleOption[]) {
+function ruleValueLabel(rule: SidebarTabRule, options: readonly SidebarTabRuleOption[]) {
   return rule.values
     .map((value) =>
       rule.field === "title"
@@ -598,7 +598,7 @@ function ruleValueLabel(rule: SidebarGroupRule, options: readonly SidebarGroupRu
 }
 
 /** React keys for rules, which have no id. Equal rules get a counter. */
-function ruleKeys(rules: readonly SidebarGroupStoredRule[]): string[] {
+function ruleKeys(rules: readonly SidebarTabStoredRule[]): string[] {
   const seen = new Map<string, number>();
   return rules.map((rule) => {
     const base = `${rule.field}:${rule.operator}:${rule.values.map((value) => value ?? "").join("|")}`;
@@ -609,20 +609,20 @@ function ruleKeys(rules: readonly SidebarGroupStoredRule[]): string[] {
 }
 
 function RuleChip(props: {
-  rule: SidebarGroupStoredRule;
-  ruleOptions: (field: Exclude<SidebarGroupRuleField, "title">) => SidebarGroupRuleOption[];
-  onChange: (rule: SidebarGroupRule) => void;
+  rule: SidebarTabStoredRule;
+  ruleOptions: (field: Exclude<SidebarTabRuleField, "title">) => SidebarTabRuleOption[];
+  onChange: (rule: SidebarTabRule) => void;
   onRemove: () => void;
 }) {
   const { rule, onRemove } = props;
   // A rule from a newer T3 version: this version skips it, and it can only go.
-  if (!isKnownSidebarGroupRule(rule)) {
+  if (!isKnownSidebarTabRule(rule)) {
     return (
       <FilterChip field="Rule" operator={null} value="from a newer version" onRemove={onRemove} />
     );
   }
-  const field = sidebarGroupRuleFieldLabel(rule.field);
-  if (isAnyGroupRule(rule)) {
+  const field = sidebarTabRuleFieldLabel(rule.field);
+  if (isAnyTabRule(rule)) {
     return <FilterChip field={field} operator={null} value="any" onRemove={onRemove} />;
   }
   if (rule.field === "title") {
@@ -648,25 +648,25 @@ function RuleChip(props: {
   );
 }
 
-function SidebarGroupEditor(props: {
-  group: SidebarGroup;
+function SidebarTabEditor(props: {
+  tab: SidebarTab;
   index: number;
-  groupCount: number;
-  ruleOptions: (field: Exclude<SidebarGroupRuleField, "title">) => SidebarGroupRuleOption[];
+  tabCount: number;
+  ruleOptions: (field: Exclude<SidebarTabRuleField, "title">) => SidebarTabRuleOption[];
   onRename: (name: string) => void;
   onSetLook: (look: TabLook) => void;
-  onSetRules: (rules: SidebarGroup["rules"]) => void;
+  onSetRules: (rules: SidebarTab["rules"]) => void;
   onMove: (toIndex: number) => void;
   onDelete: () => void;
-  onNewGroup: () => void;
+  onNewTab: () => void;
 }) {
-  const { group } = props;
-  const [name, setName] = useState(group.name);
+  const { tab } = props;
+  const [name, setName] = useState(tab.name);
   const [titleText, setTitleText] = useState("");
-  const toggleValue = (field: SidebarGroupRuleField, value: string | null, checked: boolean) =>
-    props.onSetRules(toggleSidebarGroupRuleValue(group.rules, field, value, checked));
+  const toggleValue = (field: SidebarTabRuleField, value: string | null, checked: boolean) =>
+    props.onSetRules(toggleSidebarTabRuleValue(tab.rules, field, value, checked));
   // The name the editor saved last, so a blur and the close that follows save once.
-  const savedName = useRef(group.name);
+  const savedName = useRef(tab.name);
   const deleted = useRef(false);
   const commitName = () => {
     const trimmed = name.trim();
@@ -677,15 +677,15 @@ function SidebarGroupEditor(props: {
   // Closing the popover unmounts the input without a blur, so the name also saves on close.
   const commitNameOnClose = useEffectEvent(commitName);
   useEffect(() => () => commitNameOnClose(), []);
-  const knownRules = group.rules.filter(isKnownSidebarGroupRule);
-  const isView = knownRules.some((rule) => rule.field === "group");
-  const keys = ruleKeys(group.rules);
+  const knownRules = tab.rules.filter(isKnownSidebarTabRule);
+  const isView = knownRules.some((rule) => rule.field === "tab");
+  const keys = ruleKeys(tab.rules);
   return (
     <div className="flex flex-col gap-3 text-sm">
       <Input
         size="sm"
         value={name}
-        aria-label="Group name"
+        aria-label="Tab name"
         autoFocus
         onChange={(event) => setName(event.target.value)}
         onBlur={commitName}
@@ -693,28 +693,28 @@ function SidebarGroupEditor(props: {
           if (event.key === "Enter") commitName();
         }}
       />
-      <TabLookEditor look={group} onChange={props.onSetLook} />
+      <TabLookEditor look={tab} onChange={props.onSetLook} />
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-muted-foreground">
           {knownRules.length === 0
-            ? "No rules. The group holds the threads that you drag into it."
+            ? "No rules. The tab holds the threads that you drag into it."
             : isView
-              ? "A view: it shows the threads of other groups that match every rule."
+              ? "A view: it shows the threads of other tabs that match every rule."
               : "Holds every thread that matches every rule, and the threads that you drag into it."}
         </span>
         <div className="flex flex-wrap gap-1">
-          {group.rules.map((rule, index) => (
+          {tab.rules.map((rule, index) => (
             <RuleChip
               key={keys[index]}
               rule={rule}
               ruleOptions={props.ruleOptions}
               onChange={(next) =>
                 props.onSetRules(
-                  group.rules.map((current, candidate) => (candidate === index ? next : current)),
+                  tab.rules.map((current, candidate) => (candidate === index ? next : current)),
                 )
               }
               onRemove={() =>
-                props.onSetRules(group.rules.filter((_, candidate) => candidate !== index))
+                props.onSetRules(tab.rules.filter((_, candidate) => candidate !== index))
               }
             />
           ))}
@@ -727,22 +727,22 @@ function SidebarGroupEditor(props: {
             Add rule
           </MenuTrigger>
           <MenuPopup align="start">
-            {SIDEBAR_GROUP_RULE_FIELDS.filter(
-              (field): field is Exclude<SidebarGroupRuleField, "title"> => field !== "title",
+            {SIDEBAR_TAB_RULE_FIELDS.filter(
+              (field): field is Exclude<SidebarTabRuleField, "title"> => field !== "title",
             ).map((field) => (
               <MenuSub key={field}>
-                <MenuSubTrigger>{sidebarGroupRuleFieldLabel(field)}</MenuSubTrigger>
+                <MenuSubTrigger>{sidebarTabRuleFieldLabel(field)}</MenuSubTrigger>
                 <MenuSubPopup className="max-h-80 max-w-64 overflow-y-auto">
-                  {field === "group" ? (
+                  {field === "tab" ? (
                     <MenuItem
                       onClick={() =>
                         props.onSetRules([
-                          ...group.rules.filter((rule) => rule.field !== "group"),
-                          { field: "group", operator: "is_not", values: [] },
+                          ...tab.rules.filter((rule) => rule.field !== "tab"),
+                          { field: "tab", operator: "is_not", values: [] },
                         ])
                       }
                     >
-                      Any group (shows every thread)
+                      Any tab (shows every thread)
                     </MenuItem>
                   ) : null}
                   {props.ruleOptions(field).map((option) => (
@@ -792,14 +792,14 @@ function SidebarGroupEditor(props: {
         <Button
           variant="ghost"
           size="xs"
-          disabled={props.index >= props.groupCount - 1}
+          disabled={props.index >= props.tabCount - 1}
           onClick={() => props.onMove(props.index + 1)}
         >
           Move right
         </Button>
       </div>
       <EditorFooter>
-        <NewGroupButton onClick={props.onNewGroup} />
+        <NewTabButton onClick={props.onNewTab} />
         <Button
           variant="destructive"
           size="xs"
@@ -809,7 +809,7 @@ function SidebarGroupEditor(props: {
             props.onDelete();
           }}
         >
-          Delete group
+          Delete tab
         </Button>
       </EditorFooter>
     </div>
@@ -853,7 +853,9 @@ function TabLookEditor(props: {
   return (
     <div className="flex flex-col gap-2">
       <div role="radiogroup" aria-label="Tab icon" className="grid grid-cols-9 gap-0.5">
-        {GROUP_ICON_IDS.map((id) => choice(id, id === "dot" ? "Dot" : id, <GroupIcon icon={id} />))}
+        {TAB_ICON_IDS.map((id) =>
+          choice(id, id === "dot" ? "Dot" : id, <SidebarTabIcon icon={id} />),
+        )}
         {choice("none", "No icon", <BanIcon aria-hidden className="size-4" />)}
       </div>
       <label className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -868,11 +870,11 @@ function TabLookEditor(props: {
   );
 }
 
-/** The first tab: its name and look, and whether it shows every thread or the ungrouped ones. */
+/** The first tab: its name and look, and whether it shows every thread or the threads in no other tab. */
 function SidebarDefaultTabEditor(props: {
-  defaultTab: SidebarGroups["defaultTab"];
-  onChange: (update: (tab: SidebarGroups["defaultTab"]) => SidebarGroups["defaultTab"]) => void;
-  onNewGroup: () => void;
+  defaultTab: SidebarTabs["defaultTab"];
+  onChange: (update: (tab: SidebarTabs["defaultTab"]) => SidebarTabs["defaultTab"]) => void;
+  onNewTab: () => void;
 }) {
   const { defaultTab } = props;
   const [name, setName] = useState(defaultTab.name ?? "");
@@ -894,7 +896,7 @@ function SidebarDefaultTabEditor(props: {
       <Input
         size="sm"
         value={name}
-        placeholder={DEFAULT_SIDEBAR_GROUP_NAME}
+        placeholder={DEFAULT_SIDEBAR_TAB_NAME}
         aria-label="First tab name"
         autoFocus
         onChange={(event) => setName(event.target.value)}
@@ -913,9 +915,9 @@ function SidebarDefaultTabEditor(props: {
           <Button
             variant={showsAll ? "ghost" : "secondary"}
             size="xs"
-            onClick={() => props.onChange((tab) => ({ ...tab, show: "ungrouped" }))}
+            onClick={() => props.onChange((tab) => ({ ...tab, show: "untabbed" }))}
           >
-            Threads in no group
+            Threads in no other tab
           </Button>
           <Button
             variant={showsAll ? "secondary" : "ghost"}
@@ -927,20 +929,20 @@ function SidebarDefaultTabEditor(props: {
         </div>
       </div>
       <EditorFooter>
-        <NewGroupButton onClick={props.onNewGroup} />
+        <NewTabButton onClick={props.onNewTab} />
       </EditorFooter>
     </div>
   );
 }
 
 /**
- * The way to a new group without a right-click or a drag, for touch screens and the keyboard.
+ * The way to a new tab without a right-click or a drag, for touch screens and the keyboard.
  */
-function NewGroupButton(props: { onClick: () => void }) {
+function NewTabButton(props: { onClick: () => void }) {
   return (
     <Button variant="ghost" size="xs" onClick={props.onClick}>
       <PlusIcon />
-      New group
+      New tab
     </Button>
   );
 }

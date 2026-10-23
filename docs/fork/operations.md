@@ -17,6 +17,7 @@ The fork disables every upstream workflow, because they need upstream's runners 
 - The fork tests are the test files that the fork changed since `git merge-base upstream/main HEAD`. A diff against a newer upstream main also lists files that only upstream changed.
 - For a local sync repair, run `vp run typecheck` and those fork tests with `vp test run <files>`. Run apps/web tests from `apps/web` with `vp test run --project unit --project browser <files>`; install Playwright Chromium first if needed. Do not run the changed-file checks over all upstream changes; wait for Fork CI on the repair pull request.
 - The apps/web fork tests run from `apps/web`, in its unit and browser projects. A browser test needs Playwright Chromium, so the job installs it first.
+- Before the other fork tests, the job installs the Electron binary for the desktop tests. When a fork test is in `apps/server`, it also installs Playwright Chromium for the server preview tests.
 - A conflict only in `README.md` resolves by itself. See [Change the fork](#change-the-fork).
 - If the merge conflicts, the typecheck fails or a fork test fails, the sync comments on the issue "Fork sync: upstream merge failed" and stops.
 - After each sync, the job "Check upstream workflows" fails when another workflow is active. It prints the `gh workflow disable` command for that workflow.

@@ -12,6 +12,7 @@ import {
   type ClientEnrollResponse,
   type ClientMachine,
   isOwnerOnlySetting,
+  KEYBINDINGS_SETTING_KEY,
   MACHINE_MAP_PROTOCOL,
   clientSessionSubject,
   machineSessionSubject,
@@ -90,6 +91,10 @@ import type {
 import { CLOUDFLARE_STEP_PERMISSION, PauseState } from "./api.ts";
 import { configured, ownerEmails } from "./access.ts";
 import { HEALTH_TABLES, HealthStore } from "./healthStore.ts";
+import {
+  moveLegacySidebarTabKeys,
+  renameLegacySidebarTabCommands,
+} from "@t3tools/contracts/sidebarTabs";
 import { sendPush, vapidKey, type PushTarget, type VapidKey } from "@t3tools/shared/webPush";
 import {
   approvalsAppProblem,
@@ -433,6 +438,66 @@ export class MachineMapObject extends DurableObject<Env> {
     this.ctx.storage.sql.exec(HEALTH_TABLES);
     this.#dropManageSetting();
     this.#absolutePlaces();
+    this.#sidebarTabKeys();
+  }
+
+  /**
+   * Fork: sidebar groups became sidebar tabs. The shared values and the overrides of the map move
+   * once to the new keys, and a shared `keybindings` value gets the new command names. A machine
+   * on an older version keeps the old keys, so it does not sync tabs with a newer one.
+   */
+  #sidebarTabKeys(): void {
+    if (this.#sql("SELECT key FROM meta WHERE key = 'sidebar_tab_keys'").length > 0) return;
+    type Scoped = { server?: Record<string, unknown>; client?: Record<string, unknown> };
+    const scoped = (values: Scoped): Scoped => {
+      const server =
+        values.server && (moveLegacySidebarTabKeys("server", values.server) ?? values.server);
+      const keybindings = server?.[KEYBINDINGS_SETTING_KEY];
+      const renamed = Array.isArray(keybindings)
+        ? renameLegacySidebarTabCommands(keybindings)
+        : null;
+      return {
+        ...values,
+        ...(server === undefined
+          ? {}
+          : {
+              server: renamed === null ? server : { ...server, [KEYBINDINGS_SETTING_KEY]: renamed },
+            }),
+        ...(values.client === undefined
+          ? {}
+          : { client: moveLegacySidebarTabKeys("client", values.client) ?? values.client }),
+      };
+    };
+    this.ctx.storage.transactionSync(() => {
+      const current = this.#sql<{ value: string }>("SELECT value FROM meta WHERE key = 'map'")[0];
+      if (current) {
+        const map = JSON.parse(current.value) as {
+          settings?: { shared?: Scoped; overrides?: Record<string, Scoped> };
+        };
+        const settings = map.settings;
+        if (settings !== undefined) {
+          const next = {
+            ...map,
+            settings: {
+              ...settings,
+              ...(settings.shared === undefined ? {} : { shared: scoped(settings.shared) }),
+              ...(settings.overrides === undefined
+                ? {}
+                : {
+                    overrides: Object.fromEntries(
+                      Object.entries(settings.overrides).map(([id, values]) => [
+                        id,
+                        scoped(values),
+                      ]),
+                    ),
+                  }),
+            },
+          };
+          this.#sql("UPDATE meta SET value = ? WHERE key = 'map'", JSON.stringify(next));
+        }
+      }
+      this.#sql("INSERT INTO meta (key, value) VALUES ('sidebar_tab_keys', ?)", nowIso());
+    });
   }
 
   /**

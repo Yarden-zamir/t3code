@@ -1,4 +1,5 @@
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
+import * as ForkWorktreeResume from "../fork/ForkWorktreeResume.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -362,7 +363,21 @@ export const layer = Layer.mergeAll(
 );
 
 export const layerProduction = Layer.mergeAll(
-  layer.pipe(Layer.provide(layerProjectService)),
+  layer.pipe(
+    Layer.provide(layerProjectService),
+    Layer.provide(
+      ForkWorktreeResume.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            layerEventSinkProvided,
+            IdAllocator.layer,
+            layerProjectSetupScriptRunner,
+            layerProjectService,
+          ),
+        ),
+      ),
+    ),
+  ),
   layerProjectService,
   layerManagedProjectFoldersProvided,
   layerThreadLaunchProvided,

@@ -1,35 +1,35 @@
 /**
- * Fork: sidebar thread groups. Each group is a tab above the sidebar list. A thread lives in one
- * group: the group that the user dragged it into, else the first group whose rules match it, else
- * the default tab. A group with a `group` rule is a view: it shows the threads of other groups and
- * holds none itself, so a user can build an "All" tab.
+ * Fork: sidebar tabs above the sidebar list. A thread lives in one tab: the tab that the user
+ * assigned it to, else the first tab whose rules match it, else the default tab. A tab with a
+ * `tab` rule is a view: it shows the threads of other tabs and holds none itself, so a user can
+ * build an "All" tab.
  */
 import {
-  isKnownSidebarGroupRule,
+  isKnownSidebarTabRule,
   repositoryGroupingDisplayNameOf,
   repositoryGroupingKeyOf,
   repositoryOwnerOf,
-  SidebarGroupRuleField,
+  SidebarTabRuleField,
   type RepositoryIdentity,
-  type SidebarGroup,
-  type SidebarGroupRule,
-  type SidebarGroups,
+  type SidebarTab,
+  type SidebarTabRule,
+  type SidebarTabs,
 } from "@t3tools/contracts";
 
 import type { EnvironmentThreadShell } from "./models.ts";
 
-export const DEFAULT_SIDEBAR_GROUP_ID = "default";
-export const DEFAULT_SIDEBAR_GROUP_NAME = "Threads";
+export const DEFAULT_SIDEBAR_TAB_ID = "default";
+export const DEFAULT_SIDEBAR_TAB_NAME = "Threads";
 
 /** The name of the first tab: the user's name for it, or "Threads". */
-export const sidebarDefaultTabName = (settings: Pick<SidebarGroups, "defaultTab">) =>
-  settings.defaultTab.name ?? DEFAULT_SIDEBAR_GROUP_NAME;
+export const sidebarDefaultTabName = (settings: Pick<SidebarTabs, "defaultTab">) =>
+  settings.defaultTab.name ?? DEFAULT_SIDEBAR_TAB_NAME;
 
-/** Whether the first tab shows every thread, not only the threads in no group. */
-const defaultTabShowsAll = (settings: Pick<SidebarGroups, "defaultTab">) =>
+/** Whether the first tab shows every thread, not only the threads in no tab. */
+const defaultTabShowsAll = (settings: Pick<SidebarTabs, "defaultTab">) =>
   settings.defaultTab.show === "all";
 
-export type SidebarGroupThread = Pick<
+export type SidebarTabThread = Pick<
   EnvironmentThreadShell,
   | "environmentId"
   | "id"
@@ -44,7 +44,7 @@ export type SidebarGroupThread = Pick<
 > & { readonly source: Pick<EnvironmentThreadShell["source"], "createdBy"> };
 
 /** The thread status that a `status` rule compares. */
-export type SidebarGroupThreadStatus =
+export type SidebarTabThreadStatus =
   | "approval"
   | "input"
   | "working"
@@ -58,12 +58,12 @@ export type SidebarGroupThreadStatus =
  * `resolveSidebarThreadStatus`, mobile `resolveThreadListV2Status`), because a rule value saved
  * on one client must match the same threads on the other.
  */
-function sidebarGroupThreadStatus(
+function sidebarTabThreadStatus(
   thread: Pick<
     EnvironmentThreadShell,
     "hasPendingApprovals" | "hasPendingUserInput" | "pendingSubagentRequest" | "runtime"
   >,
-): SidebarGroupThreadStatus {
+): SidebarTabThreadStatus {
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") return "approval";
   if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") return "input";
   if (
@@ -80,7 +80,7 @@ function sidebarGroupThreadStatus(
 }
 
 /** The status that a tab shows: the most urgent thread status, with unread and woke threads. */
-export type SidebarGroupTabStatusKind =
+export type SidebarTabStatusKind =
   | "approval"
   | "done"
   | "failed"
@@ -95,22 +95,22 @@ export type SidebarGroupTabStatusKind =
  * on every machine, unlike a project id, a path or the sidebar's project grouping, so a project
  * rule in the shared setting matches the same repository everywhere.
  */
-interface SidebarGroupProjectFacts {
+interface SidebarTabProjectFacts {
   /** `repositoryGroupingKeyOf`, such as `github.com/yarden-zamir/t3code`. Null without a remote. */
   readonly repository: string | null;
   readonly repositoryLabel: string | null;
   readonly owner: string | null;
 }
 
-type SidebarGroupProjectLookup = ReadonlyMap<string, SidebarGroupProjectFacts>;
+type SidebarTabProjectLookup = ReadonlyMap<string, SidebarTabProjectFacts>;
 
-export function buildSidebarGroupProjectFacts(
+export function buildSidebarTabProjectFacts(
   projects: ReadonlyArray<{
     readonly environmentId: string;
     readonly id: string;
     readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
   }>,
-): SidebarGroupProjectLookup {
+): SidebarTabProjectLookup {
   return new Map(
     projects.map((project) => {
       const identity = project.repositoryIdentity ?? null;
@@ -128,73 +128,73 @@ export function buildSidebarGroupProjectFacts(
   );
 }
 
-export const sidebarGroupThreadKey = (thread: Pick<SidebarGroupThread, "environmentId" | "id">) =>
+export const sidebarTabThreadKey = (thread: Pick<SidebarTabThread, "environmentId" | "id">) =>
   `${thread.environmentId}:${thread.id}`;
 
-const projectFactsOf = (thread: SidebarGroupThread, projects: SidebarGroupProjectLookup) =>
+const projectFactsOf = (thread: SidebarTabThread, projects: SidebarTabProjectLookup) =>
   projects.get(`${thread.environmentId}:${thread.projectId}`);
 
 /** The rules this version knows. A rule from a newer version is skipped. */
-const knownSidebarGroupRules = (group: Pick<SidebarGroup, "rules">) =>
-  group.rules.filter(isKnownSidebarGroupRule);
+const knownSidebarTabRules = (tab: Pick<SidebarTab, "rules">) =>
+  tab.rules.filter(isKnownSidebarTabRule);
 
-const isSidebarGroupView = (group: Pick<SidebarGroup, "rules">) =>
-  knownSidebarGroupRules(group).some((rule) => rule.field === "group");
+const isSidebarTabView = (tab: Pick<SidebarTab, "rules">) =>
+  knownSidebarTabRules(tab).some((rule) => rule.field === "tab");
 
-interface CompiledSidebarGroup {
+interface CompiledSidebarTab {
   readonly id: string;
-  readonly rules: readonly SidebarGroupRule[];
+  readonly rules: readonly SidebarTabRule[];
   readonly isView: boolean;
   /** It has a known rule and is not a view, so its rules claim threads. */
   readonly takesThreadsByRules: boolean;
 }
 
 /**
- * The groups with their known rules and view flags, checked once per change of the groups. The
+ * The tabs with their known rules and view flags, checked once per change of the tabs. The
  * per-thread loops read this, so the rule guard does not run for every thread.
  */
-interface CompiledSidebarGroups {
-  readonly assignments: SidebarGroups["assignments"];
+interface CompiledSidebarTabs {
+  readonly assignments: SidebarTabs["assignments"];
   readonly defaultShowsAll: boolean;
   /** In tab order, which is the order rules claim threads in. */
-  readonly groups: readonly CompiledSidebarGroup[];
-  readonly byId: ReadonlyMap<string, CompiledSidebarGroup>;
+  readonly tabs: readonly CompiledSidebarTab[];
+  readonly byId: ReadonlyMap<string, CompiledSidebarTab>;
 }
 
-export function compileSidebarGroups(settings: SidebarGroups): CompiledSidebarGroups {
-  const groups = settings.groups.map((group): CompiledSidebarGroup => {
-    const rules = knownSidebarGroupRules(group);
-    const isView = rules.some((rule) => rule.field === "group");
-    return { id: group.id, rules, isView, takesThreadsByRules: rules.length > 0 && !isView };
+export function compileSidebarTabs(settings: SidebarTabs): CompiledSidebarTabs {
+  const tabs = settings.tabs.map((tab): CompiledSidebarTab => {
+    const rules = knownSidebarTabRules(tab);
+    const isView = rules.some((rule) => rule.field === "tab");
+    return { id: tab.id, rules, isView, takesThreadsByRules: rules.length > 0 && !isView };
   });
   return {
     assignments: settings.assignments,
     defaultShowsAll: defaultTabShowsAll(settings),
-    groups,
-    byId: new Map(groups.map((group) => [group.id, group])),
+    tabs,
+    byId: new Map(tabs.map((tab) => [tab.id, tab])),
   };
 }
 
-/** "Group is not (no group)": the rule of an "All" view. */
-export const isAnyGroupRule = (rule: SidebarGroupRule) =>
-  rule.field === "group" && rule.operator === "is_not" && rule.values.length === 0;
+/** "Tab is not (no tab)": the rule of an "All" view. */
+export const isAnyTabRule = (rule: SidebarTabRule) =>
+  rule.field === "tab" && rule.operator === "is_not" && rule.values.length === 0;
 
 /** The values that a thread has for a field. Null stands for "none". */
 function threadValues(
-  field: Exclude<SidebarGroupRuleField, "title">,
-  thread: SidebarGroupThread,
-  projects: SidebarGroupProjectLookup,
-  groupId: string,
+  field: Exclude<SidebarTabRuleField, "title">,
+  thread: SidebarTabThread,
+  projects: SidebarTabProjectLookup,
+  tabId: string,
 ): ReadonlyArray<string | null> {
   switch (field) {
-    case "group":
-      return [groupId];
+    case "tab":
+      return [tabId];
     case "project":
       return [projectFactsOf(thread, projects)?.repository ?? null];
     case "owner":
       return [projectFactsOf(thread, projects)?.owner ?? null];
     case "status":
-      return [sidebarGroupThreadStatus(thread)];
+      return [sidebarTabThreadStatus(thread)];
     case "provider":
       return [thread.providerInstanceId];
     case "createdBy":
@@ -207,207 +207,203 @@ function threadValues(
 }
 
 function ruleMatches(
-  rule: SidebarGroupRule,
-  thread: SidebarGroupThread,
-  projects: SidebarGroupProjectLookup,
-  groupId: string,
+  rule: SidebarTabRule,
+  thread: SidebarTabThread,
+  projects: SidebarTabProjectLookup,
+  tabId: string,
 ): boolean {
   const hit =
     rule.field === "title"
       ? rule.values.some(
           (value) => value !== null && thread.title.toLowerCase().includes(value.toLowerCase()),
         )
-      : threadValues(rule.field, thread, projects, groupId).some((value) =>
+      : threadValues(rule.field, thread, projects, tabId).some((value) =>
           rule.values.includes(value),
         );
   return rule.operator === "is" ? hit : !hit;
 }
 
 const matchesEveryRule = (
-  group: CompiledSidebarGroup,
-  thread: SidebarGroupThread,
-  projects: SidebarGroupProjectLookup,
-  groupId: string,
-) => group.rules.every((rule) => ruleMatches(rule, thread, projects, groupId));
+  tab: CompiledSidebarTab,
+  thread: SidebarTabThread,
+  projects: SidebarTabProjectLookup,
+  tabId: string,
+) => tab.rules.every((rule) => ruleMatches(rule, thread, projects, tabId));
 
-/** The group that the rules alone give a thread: the first group whose rules match it. */
-function resolveRuleGroupId(
-  thread: SidebarGroupThread,
-  compiled: CompiledSidebarGroups,
-  projects: SidebarGroupProjectLookup,
+/** The tab that the rules alone give a thread: the first tab whose rules match it. */
+function resolveRuleTabId(
+  thread: SidebarTabThread,
+  compiled: CompiledSidebarTabs,
+  projects: SidebarTabProjectLookup,
 ): string {
-  const group = compiled.groups.find(
+  const tab = compiled.tabs.find(
     (candidate) =>
       candidate.takesThreadsByRules &&
-      matchesEveryRule(candidate, thread, projects, DEFAULT_SIDEBAR_GROUP_ID),
+      matchesEveryRule(candidate, thread, projects, DEFAULT_SIDEBAR_TAB_ID),
   );
-  return group?.id ?? DEFAULT_SIDEBAR_GROUP_ID;
+  return tab?.id ?? DEFAULT_SIDEBAR_TAB_ID;
 }
 
-/** Whether a drag assignment can hold a thread: the default tab, or a group that is not a view. */
-const canHold = (compiled: CompiledSidebarGroups, groupId: string) =>
-  groupId === DEFAULT_SIDEBAR_GROUP_ID || compiled.byId.get(groupId)?.isView === false;
+/** Whether a drag assignment can hold a thread: the default tab, or a tab that is not a view. */
+const canHold = (compiled: CompiledSidebarTabs, tabId: string) =>
+  tabId === DEFAULT_SIDEBAR_TAB_ID || compiled.byId.get(tabId)?.isView === false;
 
-/** The group that holds a thread. A drag assignment wins over the rules. */
-export function resolveSidebarThreadGroupId(
-  thread: SidebarGroupThread,
-  compiled: CompiledSidebarGroups,
-  projects: SidebarGroupProjectLookup,
+/** The tab that holds a thread. A drag assignment wins over the rules. */
+export function resolveSidebarThreadTabId(
+  thread: SidebarTabThread,
+  compiled: CompiledSidebarTabs,
+  projects: SidebarTabProjectLookup,
 ): string {
-  const assigned = compiled.assignments[sidebarGroupThreadKey(thread)];
+  const assigned = compiled.assignments[sidebarTabThreadKey(thread)];
   return assigned !== undefined && canHold(compiled, assigned)
     ? assigned
-    : resolveRuleGroupId(thread, compiled, projects);
+    : resolveRuleTabId(thread, compiled, projects);
 }
 
-/** Whether a tab shows a thread, given the group that holds the thread. */
-export function sidebarGroupShowsThread(input: {
+/** Whether a tab shows a thread, given the tab that holds the thread. */
+export function sidebarTabShowsThread(input: {
   readonly tabId: string;
-  readonly thread: SidebarGroupThread;
-  readonly threadGroupId: string;
-  readonly compiled: CompiledSidebarGroups;
-  readonly projects: SidebarGroupProjectLookup;
+  readonly thread: SidebarTabThread;
+  readonly threadTabId: string;
+  readonly compiled: CompiledSidebarTabs;
+  readonly projects: SidebarTabProjectLookup;
 }): boolean {
-  if (input.tabId === DEFAULT_SIDEBAR_GROUP_ID) {
-    return input.compiled.defaultShowsAll || input.threadGroupId === DEFAULT_SIDEBAR_GROUP_ID;
+  if (input.tabId === DEFAULT_SIDEBAR_TAB_ID) {
+    return input.compiled.defaultShowsAll || input.threadTabId === DEFAULT_SIDEBAR_TAB_ID;
   }
-  const group = input.compiled.byId.get(input.tabId);
-  if (group === undefined) return false;
-  if (!group.isView) return input.threadGroupId === group.id;
-  return matchesEveryRule(group, input.thread, input.projects, input.threadGroupId);
+  const tab = input.compiled.byId.get(input.tabId);
+  if (tab === undefined) return false;
+  if (!tab.isView) return input.threadTabId === tab.id;
+  return matchesEveryRule(tab, input.thread, input.projects, input.threadTabId);
 }
 
 /**
- * Moves threads into a group by drag. A thread that the group already holds does not change. An
- * assignment is written only where the rules give another group, so a drop on the default tab
+ * Assigns threads to a tab, by drag or by "Assign to tab". A thread that the tab already holds does not change. An
+ * assignment is written only where the rules give another tab, so a drop on the default tab
  * writes nothing for a thread that no rule claims.
  */
 export function moveSidebarThreads(
-  settings: SidebarGroups,
-  threads: ReadonlyArray<SidebarGroupThread>,
-  groupId: string,
-  projects: SidebarGroupProjectLookup,
-): SidebarGroups {
-  const compiled = compileSidebarGroups(settings);
-  if (!canHold(compiled, groupId)) return settings;
+  settings: SidebarTabs,
+  threads: ReadonlyArray<SidebarTabThread>,
+  tabId: string,
+  projects: SidebarTabProjectLookup,
+): SidebarTabs {
+  const compiled = compileSidebarTabs(settings);
+  if (!canHold(compiled, tabId)) return settings;
   const assignments = { ...settings.assignments };
   for (const thread of threads) {
-    if (resolveSidebarThreadGroupId(thread, compiled, projects) === groupId) continue;
-    const key = sidebarGroupThreadKey(thread);
-    if (resolveRuleGroupId(thread, compiled, projects) === groupId) delete assignments[key];
-    else assignments[key] = groupId;
+    if (resolveSidebarThreadTabId(thread, compiled, projects) === tabId) continue;
+    const key = sidebarTabThreadKey(thread);
+    if (resolveRuleTabId(thread, compiled, projects) === tabId) delete assignments[key];
+    else assignments[key] = tabId;
   }
   return { ...settings, assignments };
 }
 
 /**
  * Drops assignments that can do nothing any more: a thread that is gone or archived on an
- * environment whose threads are loaded, or a group that cannot hold threads. An entry that the
+ * environment whose threads are loaded, or a tab that cannot hold threads. An entry that the
  * rules agree with stays: rules on status, background work or title change over time, and the
  * drag must still hold when they stop matching. An offline environment keeps its entries,
  * because its threads are not known.
  */
-export function pruneSidebarGroupAssignments(
-  settings: SidebarGroups,
-  liveThreads: ReadonlyArray<SidebarGroupThread>,
-): SidebarGroups {
-  const compiled = compileSidebarGroups(settings);
-  const liveKeys = new Set(liveThreads.map(sidebarGroupThreadKey));
+export function pruneSidebarTabAssignments(
+  settings: SidebarTabs,
+  liveThreads: ReadonlyArray<SidebarTabThread>,
+): SidebarTabs {
+  const compiled = compileSidebarTabs(settings);
+  const liveKeys = new Set(liveThreads.map(sidebarTabThreadKey));
   const loadedEnvironments = new Set<string>(liveThreads.map((thread) => thread.environmentId));
   const assignments = Object.fromEntries(
     Object.entries(settings.assignments).filter(
-      ([key, groupId]) =>
-        canHold(compiled, groupId) &&
+      ([key, tabId]) =>
+        canHold(compiled, tabId) &&
         (liveKeys.has(key) || !loadedEnvironments.has(key.slice(0, key.indexOf(":")))),
     ),
   );
   return { ...settings, assignments };
 }
 
-/** A new group named "Group N" with the lowest free N. */
-export function createSidebarGroup(settings: SidebarGroups, id: string): SidebarGroups {
-  const names = new Set(settings.groups.map((group) => group.name));
-  let index = settings.groups.length + 1;
-  while (names.has(`Group ${index}`)) index += 1;
-  return { ...settings, groups: [...settings.groups, { id, name: `Group ${index}`, rules: [] }] };
+/** A new tab named "Tab N" with the lowest free N. */
+export function createSidebarTab(settings: SidebarTabs, id: string): SidebarTabs {
+  const names = new Set(settings.tabs.map((tab) => tab.name));
+  let index = settings.tabs.length + 1;
+  while (names.has(`Tab ${index}`)) index += 1;
+  return { ...settings, tabs: [...settings.tabs, { id, name: `Tab ${index}`, rules: [] }] };
 }
 
-/** Deletes a group. Its dragged threads go back to the rules, and views stop naming it. */
-export function deleteSidebarGroup(settings: SidebarGroups, groupId: string): SidebarGroups {
+/** Deletes a tab. Its dragged threads go back to the rules, and views stop naming it. */
+export function deleteSidebarTab(settings: SidebarTabs, tabId: string): SidebarTabs {
   const assignments = Object.fromEntries(
-    Object.entries(settings.assignments).filter(([, assigned]) => assigned !== groupId),
+    Object.entries(settings.assignments).filter(([, assigned]) => assigned !== tabId),
   );
-  const groups = settings.groups
-    .filter((group) => group.id !== groupId)
-    .map((group) => ({
-      ...group,
-      // The rule stays, also with no values, so a view does not turn into a group that holds threads.
-      rules: group.rules.map((rule) =>
-        rule.field === "group"
-          ? { ...rule, values: rule.values.filter((value) => value !== groupId) }
+  const tabs = settings.tabs
+    .filter((tab) => tab.id !== tabId)
+    .map((tab) => ({
+      ...tab,
+      // The rule stays, also with no values, so a view does not turn into a tab that holds threads.
+      rules: tab.rules.map((rule) =>
+        rule.field === "tab"
+          ? { ...rule, values: rule.values.filter((value) => value !== tabId) }
           : rule,
       ),
     }));
-  return { ...settings, groups, assignments };
+  return { ...settings, tabs, assignments };
 }
 
-export function updateSidebarGroup(
-  settings: SidebarGroups,
-  groupId: string,
-  update: (group: SidebarGroup) => SidebarGroup,
-): SidebarGroups {
+export function updateSidebarTab(
+  settings: SidebarTabs,
+  tabId: string,
+  update: (tab: SidebarTab) => SidebarTab,
+): SidebarTabs {
   return {
     ...settings,
-    groups: settings.groups.map((group) => (group.id === groupId ? update(group) : group)),
+    tabs: settings.tabs.map((tab) => (tab.id === tabId ? update(tab) : tab)),
   };
 }
 
 export function updateSidebarDefaultTab(
-  settings: SidebarGroups,
-  update: (tab: SidebarGroups["defaultTab"]) => SidebarGroups["defaultTab"],
-): SidebarGroups {
+  settings: SidebarTabs,
+  update: (tab: SidebarTabs["defaultTab"]) => SidebarTabs["defaultTab"],
+): SidebarTabs {
   return { ...settings, defaultTab: update(settings.defaultTab) };
 }
 
-/** Moves a group to a new tab position, counted among the groups (the default tab is fixed). */
-export function moveSidebarGroup(
-  settings: SidebarGroups,
-  groupId: string,
-  toIndex: number,
-): SidebarGroups {
-  const group = settings.groups.find((candidate) => candidate.id === groupId);
-  if (group === undefined) return settings;
-  const rest = settings.groups.filter((candidate) => candidate.id !== groupId);
+/** Moves a tab to a new position, counted among the tabs (the default tab is fixed). */
+export function moveSidebarTab(settings: SidebarTabs, tabId: string, toIndex: number): SidebarTabs {
+  const tab = settings.tabs.find((candidate) => candidate.id === tabId);
+  if (tab === undefined) return settings;
+  const rest = settings.tabs.filter((candidate) => candidate.id !== tabId);
   const index = Math.max(0, Math.min(toIndex, rest.length));
-  return { ...settings, groups: [...rest.slice(0, index), group, ...rest.slice(index)] };
+  return { ...settings, tabs: [...rest.slice(0, index), tab, ...rest.slice(index)] };
 }
 
 /**
  * Checks or unchecks one value of a field in the rule editor. A field has one rule. Checking a
- * group in an "any group" view turns it into "group is X". Unchecking the last value removes the
+ * tab in an "any tab" view turns it into "tab is X". Unchecking the last value removes the
  * rule, so no rule is left with no values: "is not (nothing)" would match every thread. A view
- * keeps its group rule as "any group", so it does not turn into a group that takes threads.
+ * keeps its tab rule as "any tab", so it does not turn into a tab that takes threads.
  */
-export function toggleSidebarGroupRuleValue(
-  rules: SidebarGroup["rules"],
-  field: SidebarGroupRuleField,
+export function toggleSidebarTabRuleValue(
+  rules: SidebarTab["rules"],
+  field: SidebarTabRuleField,
   value: string | null,
   checked: boolean,
-): SidebarGroup["rules"] {
-  const index = rules.findIndex((rule) => isKnownSidebarGroupRule(rule) && rule.field === field);
+): SidebarTab["rules"] {
+  const index = rules.findIndex((rule) => isKnownSidebarTabRule(rule) && rule.field === field);
   const current = index === -1 ? null : rules[index]!;
-  if (current === null || !isKnownSidebarGroupRule(current)) {
+  if (current === null || !isKnownSidebarTabRule(current)) {
     return checked ? [...rules, { field, operator: "is", values: [value] }] : rules;
   }
-  const next: SidebarGroupRule = checked
-    ? isAnyGroupRule(current)
+  const next: SidebarTabRule = checked
+    ? isAnyTabRule(current)
       ? { field, operator: "is", values: [value] }
       : { ...current, values: [...current.values, value] }
     : { ...current, values: current.values.filter((candidate) => candidate !== value) };
-  const kept: SidebarGroupRule | null =
+  const kept: SidebarTabRule | null =
     next.values.length > 0
       ? next
-      : field === "group"
+      : field === "tab"
         ? { field, operator: "is_not", values: [] }
         : null;
   return kept === null
@@ -416,7 +412,7 @@ export function toggleSidebarGroupRuleValue(
 }
 
 // Highest first. A tab shows the status of its most urgent thread.
-const TAB_STATUS_PRIORITY: readonly SidebarGroupTabStatusKind[] = [
+const TAB_STATUS_PRIORITY: readonly SidebarTabStatusKind[] = [
   "approval",
   "input",
   "failed",
@@ -428,7 +424,7 @@ const TAB_STATUS_PRIORITY: readonly SidebarGroupTabStatusKind[] = [
 ];
 
 /** The statuses that make a tab play its attention animation. */
-export const SIDEBAR_GROUP_ATTENTION_STATUSES: ReadonlySet<SidebarGroupTabStatusKind> = new Set([
+export const SIDEBAR_TAB_ATTENTION_STATUSES: ReadonlySet<SidebarTabStatusKind> = new Set([
   "approval",
   "input",
   "failed",
@@ -436,28 +432,28 @@ export const SIDEBAR_GROUP_ATTENTION_STATUSES: ReadonlySet<SidebarGroupTabStatus
 ]);
 
 /** The tab status of one thread. It mirrors web `resolveSidebarV2TopStatus`. */
-function sidebarGroupTopStatus(state: {
-  readonly status: SidebarGroupThreadStatus;
+function sidebarTabTopStatus(state: {
+  readonly status: SidebarTabThreadStatus;
   readonly isUnread: boolean;
   readonly isWoke: boolean;
-}): SidebarGroupTabStatusKind | null {
+}): SidebarTabStatusKind | null {
   if (state.status !== "ready") return state.status;
   if (state.isWoke) return "woke";
   return state.isUnread ? "done" : null;
 }
 
 /** The most urgent status of a tab, or null when every thread rests. */
-export function resolveSidebarGroupTabStatus(
+export function resolveSidebarTabStatus(
   states: ReadonlyArray<{
-    readonly thread: SidebarGroupThread;
+    readonly thread: SidebarTabThread;
     readonly isUnread: boolean;
     readonly isWoke: boolean;
   }>,
-): SidebarGroupTabStatusKind | null {
-  let best: SidebarGroupTabStatusKind | null = null;
+): SidebarTabStatusKind | null {
+  let best: SidebarTabStatusKind | null = null;
   for (const state of states) {
-    const kind = sidebarGroupTopStatus({
-      status: sidebarGroupThreadStatus(state.thread),
+    const kind = sidebarTabTopStatus({
+      status: sidebarTabThreadStatus(state.thread),
       isUnread: state.isUnread,
       isWoke: state.isWoke,
     });
@@ -469,8 +465,8 @@ export function resolveSidebarGroupTabStatus(
   return best;
 }
 
-const RULE_FIELD_LABELS: Record<SidebarGroupRuleField, string> = {
-  group: "Group",
+const RULE_FIELD_LABELS: Record<SidebarTabRuleField, string> = {
+  tab: "Tab",
   project: "Repository",
   owner: "Owner",
   status: "Status",
@@ -481,12 +477,11 @@ const RULE_FIELD_LABELS: Record<SidebarGroupRuleField, string> = {
 };
 
 /** Rule fields in menu order. */
-export const SIDEBAR_GROUP_RULE_FIELDS = SidebarGroupRuleField.literals;
+export const SIDEBAR_TAB_RULE_FIELDS = SidebarTabRuleField.literals;
 
-export const sidebarGroupRuleFieldLabel = (field: SidebarGroupRuleField) =>
-  RULE_FIELD_LABELS[field];
+export const sidebarTabRuleFieldLabel = (field: SidebarTabRuleField) => RULE_FIELD_LABELS[field];
 
-const STATUS_LABELS: Record<SidebarGroupThreadStatus, string> = {
+const STATUS_LABELS: Record<SidebarTabThreadStatus, string> = {
   approval: "Approval",
   input: "Input",
   working: "Working",
@@ -496,13 +491,13 @@ const STATUS_LABELS: Record<SidebarGroupThreadStatus, string> = {
   ready: "Ready",
 };
 
-const CREATED_BY_LABELS: Record<SidebarGroupThread["source"]["createdBy"], string> = {
+const CREATED_BY_LABELS: Record<SidebarTabThread["source"]["createdBy"], string> = {
   user: "You",
   agent: "An agent",
   system: "T3 Code",
 };
 
-type BackgroundKind = NonNullable<SidebarGroupThread["pendingBackgroundTasks"]>[number]["kind"];
+type BackgroundKind = NonNullable<SidebarTabThread["pendingBackgroundTasks"]>[number]["kind"];
 const BACKGROUND_LABELS: Record<BackgroundKind, string> = {
   monitor: "Monitor or pull request watch",
   subagent: "Subagent",
@@ -510,37 +505,37 @@ const BACKGROUND_LABELS: Record<BackgroundKind, string> = {
   background_task: "Background task",
 };
 
-export interface SidebarGroupRuleOption {
+export interface SidebarTabRuleOption {
   readonly value: string | null;
   readonly label: string;
 }
 
 /**
  * The values a rule of a field can pick. Repositories, owners and providers come from the
- * threads, so the menu lists only values that some thread has. A group rule lists the other
- * groups that hold threads.
+ * threads, so the menu lists only values that some thread has. A tab rule lists the other
+ * tabs that hold threads.
  */
-export function buildSidebarGroupRuleOptions(input: {
-  readonly field: Exclude<SidebarGroupRuleField, "title">;
-  readonly groupId: string;
-  readonly threads: ReadonlyArray<SidebarGroupThread>;
-  readonly projects: SidebarGroupProjectLookup;
-  readonly settings: SidebarGroups;
-}): SidebarGroupRuleOption[] {
+export function buildSidebarTabRuleOptions(input: {
+  readonly field: Exclude<SidebarTabRuleField, "title">;
+  readonly tabId: string;
+  readonly threads: ReadonlyArray<SidebarTabThread>;
+  readonly projects: SidebarTabProjectLookup;
+  readonly settings: SidebarTabs;
+}): SidebarTabRuleOption[] {
   const distinct = (values: ReadonlyArray<readonly [string | null, string]>, none: string) =>
     [...new Map(values)]
       .map(([value, label]) => ({ value, label: value === null ? none : label }))
       .sort((left, right) =>
         left.value === null ? 1 : right.value === null ? -1 : left.label.localeCompare(right.label),
       );
-  const facts = (thread: SidebarGroupThread) => projectFactsOf(thread, input.projects);
+  const facts = (thread: SidebarTabThread) => projectFactsOf(thread, input.projects);
   switch (input.field) {
-    case "group":
+    case "tab":
       return [
-        { value: DEFAULT_SIDEBAR_GROUP_ID, label: sidebarDefaultTabName(input.settings) },
-        ...input.settings.groups
-          .filter((group) => group.id !== input.groupId && !isSidebarGroupView(group))
-          .map((group) => ({ value: group.id, label: group.name })),
+        { value: DEFAULT_SIDEBAR_TAB_ID, label: sidebarDefaultTabName(input.settings) },
+        ...input.settings.tabs
+          .filter((tab) => tab.id !== input.tabId && !isSidebarTabView(tab))
+          .map((tab) => ({ value: tab.id, label: tab.name })),
       ];
     case "project":
       return distinct(
@@ -580,7 +575,7 @@ export function buildSidebarGroupRuleOptions(input: {
  * rest go to the "more" menu, which then takes `moreWidth`. The selected tab always shows: when
  * it would overflow, it takes the place of the last tabs that fit before it.
  */
-export function fitSidebarGroupTabs(input: {
+export function fitSidebarTabItems(input: {
   readonly widths: readonly number[];
   readonly available: number;
   readonly gap: number;

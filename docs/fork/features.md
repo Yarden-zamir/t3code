@@ -16,6 +16,28 @@ Local builds can keep their disposable Vite caches and Android app outputs outsi
 - **Works on:** local web, server, desktop, portal and marketing Vite tools, shared-client tests, and Android prebuilds. Each canonical checkout path has its own SHA-256 key. APKs remain at `apps/mobile/android/app/build/outputs/apk` through a link.
 - **Limits:** existing local outputs are not moved or deleted. Enable before a clean Android prebuild. Root Android outputs, dependency codegen and `.cxx` stay in place. Disabling the variable does not remove an existing link; the next clean prebuild restores the normal layout. `node scripts/fork-build-cache-prune.ts --dry-run` previews central-only cleanup, with 14 days as the default age. See [operations](operations.md#central-build-caches).
 
+## Worktrees
+
+### Restore worktrees on resume
+
+Restore a missing worktree at its saved path before starting the next turn. If its branch still exists, recovery preserves it. If the branch was deleted, recovery fetches origin's default branch and creates the saved branch name from that revision. The thread warns that earlier uncommitted work is not in the recreated checkout. Project setup runs before the agent starts. Missing `node_modules` in the root or any package declared by `pnpm-workspace.yaml` also runs normal setup. The thread shows the restore as an activity. Missing build outputs do not add a setup or build step on resume; the next build recreates them.
+
+- **Setting:** `restoreWorktreesOnResume` (server setting, off by default). Settings > Fork > Threads > Restore worktrees on resume.
+- **Works on:** server, for web, desktop, mobile, agent tools and scheduled turns.
+- **Limits:** a conflicting path stops recovery. Only this checkout's Git registration is repaired; no broad prune runs. When its branch exists, its saved index and refs, including staged changes, stay. Existing branches are never reset. Deleted-branch recovery requires a reachable origin with a discoverable default branch; its old index is not restored. Dependencies require a configured project setup script. When this setting is off, upstream's recovery runs unchanged: for a managed worktree path, it runs `git worktree prune` and adds the worktree again, without project setup. Pending dependency restoration after artifact eviction still runs.
+
+### Artifact-only worktree cleanup
+
+Remove regenerable build outputs before dependencies, without removing the worktree or its branch. The storage cleanup report splits logical file bytes and folder counts into Android builds, Gradle caches, other builds, other caches and `node_modules`. These are not recorded as physical space freed: pnpm files can share APFS blocks with its store. Evicted dependencies run normal project setup before the next turn, even if eviction has since been switched off. Build outputs do not trigger setup or an extra build step on resume; the agent's next build recreates them.
+
+The measured Mac examples were 6.91 GiB logical `node_modules` removed for 0.13 GiB reclaimed, and 1.35 GiB `apps/mobile/android/app/build` removed for 1.18 GiB reclaimed. These are reference measurements, not a conversion rule or a prediction of the next cleanup's physical reclamation.
+
+- **Setting:** `worktreeArtifactEviction` (server setting, off by default) and `worktreeArtifactEvictionDays` (14 days by default, 1–3650). Settings > Fork > Threads > Evict worktree artifacts.
+- **Works on:** server. All clients, scheduled turns and agent tools use the same recovery path.
+- **Eligibility:** this protects process cwds and T3-known active work. A single idle thread must own the checkout and be settled or inactive for the configured days. Shared threads and subagents, running, queued or pending work, setup, builds, open terminals and uncertain process visibility keep artifacts. T3 metadata naming the worktree blocks cleanup even when its cwd is higher. Any process cwd in the checkout, a descendant or its container (the immediate parent holding sibling worktrees) also blocks cleanup. A project setup script must be configured. These guards stay independent of the process scan and run again before deletion.
+- **Files:** exact reviewed relative paths only, including `apps/mobile/android/app/build`; there is no arbitrary `build` or `dist` basename rule. Dependency paths are expanded from workspace declarations into exact `node_modules` paths. Git must ignore each folder and track no file within it. Extension and path rules classify conservatively; they do not prove where a file came from or distinguish every hand-written ignored `.js` or `.json` file from generated output. A `.env*` file, secret, original source or unknown content, `_shared` link, or link outside the checkout keeps the whole folder. For an unrecognized file type, the report says the folder was kept and gives its reason and an example path. Kotlin incremental table exceptions apply only under `kotlin/<task>/cacheable/caches-jvm/`. Shared pnpm storage is not managed by this feature.
+- **Limits:** orphan Git worktrees without a stored T3 thread are excluded. A clean process list does not prove no external activity. A process above the container, such as one with cwd `$HOME` or `/`, can still act on the worktree through an absolute path; revisit if a real tool does that. T3-known active work remains protected independently of that cwd bound. Process checks support macOS and Linux. Other systems keep artifacts until inspection is available. This setting does not change or disable upstream whole-worktree cleanup rules; turn those off separately if you want every checkout kept. With [central build caches](#central-build-caches) on, `apps/mobile/android/app/build` is a link, so this feature keeps it. Use `node scripts/fork-build-cache-prune.ts` for the central caches.
+
 ## Remote access
 
 ### Cloudflare Access login
@@ -336,29 +358,31 @@ The model applies to runs that launch a new thread. A run that posts into a boun
 
 ## Threads
 
-### Sidebar groups
+### Sidebar tabs
 
-Thread groups show as tabs under the sidebar search. A thread lives in one group, so the groups act like folders.
+Tabs under the sidebar search hold threads. A thread lives in one tab, so the tabs act like folders.
 
-- **Setting:** client settings `sidebarGroupsEnabled` (off by default) and `sidebarGroupSingleThreadOpens` (off by default). Settings > General > "Sidebar groups" and "Single-thread tabs". The groups are the server setting `sidebarGroups` of the primary server. The machine map syncs them to every machine (MM-411). The mobile app shows the tabs while the server setting `mobileSidebarGroups` is on (off by default): Settings > Appearance > Mobile app, or Fork in the mobile Settings.
-- **Works on:** web, desktop, mobile. On mobile the tabs show above the thread list. Tap a tab to show its threads. Long-press a tab to edit, move or delete it, and tap + to make a group. Long-press a thread and pick "Move to group". Settings > Fork > Sidebar groups lists the groups too.
+- **Setting:** client settings `sidebarTabsEnabled` (off by default) and `sidebarTabSingleThreadOpens` (off by default). Settings > General > "Sidebar tabs" and "Single-thread tabs". The tabs are the server setting `sidebarTabs` of the primary server. The machine map syncs them to every machine (MM-411). The mobile app shows the tabs while the server setting `mobileSidebarTabs` is on (off by default): Settings > Appearance > Mobile app, or Fork in the mobile Settings.
+- **Works on:** web, desktop, mobile. On mobile the tabs show above the thread list. Tap a tab to show its threads. Long-press a tab to edit, move or delete it, and tap + to make a tab. Long-press a thread and pick "Assign to tab". Settings > Fork > Sidebar tabs lists the tabs too.
 - **Use it:**
-  - The first tab, "Threads", holds every thread that is in no group. It can be renamed, and it can show all threads.
-  - Drag a thread onto a tab to move it into that group. During a drag, a + shows at the end of the bar. A drop on it makes a new group.
-  - Right-click the bar outside a tab and pick "New group" to make an empty group. Right-click a tab, or click the sliders button of the open tab, to rename it, pick its icon, edit its rules, move it or delete it.
-  - Rules put threads in a group. A thread matches a group when it matches every rule. Rules compare the repository, the repository owner, the status, the provider, the creator, the background work and the title. A repository rule matches on every machine.
-  - A thread lives in the group that you dragged it into. Otherwise it lives in the first group, from left to right, whose rules match. Otherwise it lives in "Threads".
-  - A rule on "Group" makes a view: a tab that shows the threads of other groups. Pick Group > "Any group" for an "All" tab.
-  - A tab shows the status of its most urgent thread. Settled and snoozed threads stay in the Settled and Snoozed shelves of their group.
-  - With "Single-thread tabs", a group with one thread shows that thread on its tab, and a click opens it.
+  - The first tab, "Threads", holds every thread that is in no other tab. It can be renamed, and it can show all threads.
+  - Drag a thread onto a tab to assign it to that tab. During a drag, a + shows at the end of the bar. A drop on it makes a new tab.
+  - Right-click the bar outside a tab and pick "New tab" to make an empty tab. Right-click a tab, or click the sliders button of the open tab, to rename it, pick its icon, edit its rules, move it or delete it.
+  - Rules put threads in a tab. A thread matches a tab when it matches every rule. Rules compare the repository, the repository owner, the status, the provider, the creator, the background work and the title. A repository rule matches on every machine.
+  - A thread lives in the tab that you assigned it to. Otherwise it lives in the first tab, from left to right, whose rules match. Otherwise it lives in "Threads".
+  - A rule on "Tab" makes a view: a tab that shows the threads of other tabs. Pick Tab > "Any tab" for an "All" tab.
+  - A tab shows the status of its most urgent thread. Settled and snoozed threads stay in the Settled and Snoozed shelves of their tab.
+  - With "Single-thread tabs", a tab with one thread shows that thread on its tab, and a click opens it.
   - Each tab has an icon, or a dot by default. Turn off "Show the name on the tab" to show the icon only.
   - Tabs that do not fit go to a "+N" menu. Drag a tab to move it; the first tab stays first.
   - Search covers every tab. A thread that you open from a link or a notification shows its tab.
 - **Limits:**
   - On mobile, "Single-thread tabs" does not apply, and a thread link does not switch to the tab of the thread. Revisit if users open threads from links on the phone often.
-  - The hosted app at app.t3.codes has no primary server to keep the groups, so it shows no tabs. Revisit if hosted clients get a place for shared settings.
-  - When two devices change groups at the same moment, the last change wins. Revisit if groups get lost in practice.
+  - The hosted app at app.t3.codes has no primary server to keep the tabs, so it shows no tabs. Revisit if hosted clients get a place for shared settings.
+  - When two devices change tabs at the same moment, the last change wins. Revisit if tabs get lost in practice.
   - A machine without the map role `edit`, or off the map, keeps a change on its own server only.
+  - Tabs were called groups before. A server moves `sidebarGroups` and `mobileSidebarGroups` in `settings.json` to the new keys once at start, and renames the old `sidebar.group.*`, `sidebar.previousGroup` and `sidebar.nextGroup` keybindings. A client moves `sidebarGroupsEnabled` and `sidebarGroupSingleThreadOpens` when it loads. The portal moves the shared values and overrides of the map once. A machine on an older version keeps the old keys, so it does not sync tabs with a machine on a newer version until both update. The open tab resets to "Threads" once.
+  - Applies only after upstream thread groups merge ([pingdotgg/t3code#15988](https://github.com/pingdotgg/t3code/pull/15988) "feat: related threads stay together as a group"): a nested thread always shows in the tab of its top thread, so a nested group never splits across tabs. This holds for views too. A drag or "Assign to tab" on a nested thread assigns its top thread. Fork Sync resolves that merge with this rule.
 
 ### Snooze quick options
 
@@ -512,13 +536,13 @@ Global keys that show and hide the desktop app.
 
 ### Keyboard focus levels
 
-Escape moves focus from the composer to the timeline, then to the sidebar. Arrow keys move a cursor there to open threads, switch groups and cite parts of messages. Inside a message, the cursor also stops on links, section headers and buttons, and Enter clicks them.
+Escape moves focus from the composer to the timeline, then to the sidebar. Arrow keys move a cursor there to open threads, switch tabs and cite parts of messages. Inside a message, the cursor also stops on links, section headers and buttons, and Enter clicks them.
 
 - **Setting:** client settings `keyboardFocusLevels` (off by default) and `focusLevelHighlight` (on by default). Settings > General > "Keyboard focus levels" and "Focus highlight". Change the keys in Settings > Keybindings (`focus.*`, `sidebar.*` and `timeline.*` commands).
 - **Works on:** web, desktop.
 - Keys for thread actions, approvals and right panel tabs, and `mod+,` on web, work with the setting off.
 - `focusLevelHighlight` outlines the area that takes focus from a key.
-- **Limits:** the setting is off by default because it changes existing keys. Escape in the timeline and the right panel moves focus. A click into the timeline makes Up and Down move the cursor instead of scrolling. `mod+f` in the sidebar focuses sidebar search. Letters typed in the sidebar no longer go to the composer, and digits switch groups.
+- **Limits:** the setting is off by default because it changes existing keys. Escape in the timeline and the right panel moves focus. A click into the timeline makes Up and Down move the cursor instead of scrolling. `mod+f` in the sidebar focuses sidebar search. Letters typed in the sidebar no longer go to the composer, and digits switch tabs.
 
 ### Shortcuts in tooltips
 
@@ -527,7 +551,7 @@ Control tooltips show the keys of the control as chips, such as "Stash ⌘S", fo
 - **Setting:** client settings `tooltipShortcuts` (on by default) and `tooltipShortcutLimit` (default 4, 1 to 9). Settings > General > "Shortcuts in tooltips" and "Keys per tooltip".
 - **Works on:** web, desktop.
 - Your own keys come first. More keys than the limit show as "+N".
-- **Limits:** a group tab names no digit while focus levels are off. A sidebar row names the pin and settle keys only for the open thread.
+- **Limits:** a sidebar tab names no digit while focus levels are off. A sidebar row names the pin and settle keys only for the open thread.
 
 ### Keyboard cheat sheet
 
@@ -611,10 +635,10 @@ Fork in the mobile Settings holds the fork settings that apply to the mobile app
 A published theme can replace app icons with its own SVGs, in the theme JSON field `icons`. Without it, every icon stays stock.
 
 - **Works on:** web, desktop.
-- The slots are the sidebar group icons (`group.<id>`), the thread statuses (`status.<status>`), the group tab bar buttons (`groups.more`, `groups.new`, `groups.edit`) and the sidebar header (`sidebar.search`, `sidebar.filter`, `sidebar.add-project`, `sidebar.new-thread`). `apps/web/src/components/AppIcon.tsx` lists them.
-- Each icon carries `data-app-icon="<slot>"`. The group tabs carry `data-sidebar-group-tab`, `data-selected`, `data-status`, `data-attention` and `data-drop-target` for theme CSS.
+- The slots are the sidebar tab icons (`tab.<id>`), the thread statuses (`status.<status>`), the tab bar buttons (`tabs.more`, `tabs.new`, `tabs.edit`) and the sidebar header (`sidebar.search`, `sidebar.filter`, `sidebar.add-project`, `sidebar.new-thread`). `apps/web/src/components/AppIcon.tsx` lists them.
+- Each icon carries `data-app-icon="<slot>"`. The sidebar tabs carry `data-sidebar-tab` (`default` or `custom`), `data-selected`, `data-status`, `data-attention` and `data-drop-target` for theme CSS.
 - The tick3d themes in the dotfiles carry a neo-brutalism pack. The `t3-theme` skill in the dotfiles describes the fields.
-- **Limits:** the app strips scripts, styles, links and remote content from each SVG, and an icon is at most 4096 characters. The mobile app shows stock icons. Revisit after sidebar groups reach mobile.
+- **Limits:** the app strips scripts, styles, links and remote content from each SVG, and an icon is at most 4096 characters. The mobile app shows stock icons. Revisit after sidebar tabs reach mobile.
 
 ### Local server groups
 

@@ -46,6 +46,7 @@ import {
   ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
+import { ForkStorageCleanupReportEntryFields } from "./forkStorageCleanup.ts";
 import {
   ForkClientSettingsFields,
   ForkClientSettingsPatchFields,
@@ -54,6 +55,7 @@ import {
 } from "./forkSettings.ts";
 
 export * from "./forkSettings.ts";
+export * from "./forkStorageCleanup.ts";
 
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export type TimestampFormat = typeof TimestampFormat.Type;
@@ -1096,6 +1098,7 @@ export function shouldRecommendDatabaseCompaction(status: DatabaseStorageStatus)
 }
 
 export const StorageCleanupReportEntry = Schema.Struct({
+  ...ForkStorageCleanupReportEntryFields,
   kind: Schema.Literals(["worktree", "browser-artifacts", "logs"]),
   outcome: Schema.Literals(["removed", "kept", "failed"]),
   reason: Schema.String,

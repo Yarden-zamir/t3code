@@ -1,5 +1,5 @@
 /**
- * Fork: how a sidebar group tab shows the status of its most urgent thread. The icon is the
+ * Fork: how a sidebar tab shows the status of its most urgent thread. The icon is the
  * `status.<kind>` theme icon slot (`AppIcon`), which the thread row badge uses too. The label and
  * colour mirror the row (`topStatus` in `SidebarThreadRow`, Sidebar.tsx); update them when
  * upstream changes a row status.
@@ -7,7 +7,7 @@
 import type { AppIconSlot } from "../AppIcon";
 import type { SidebarV2TopStatusKind } from "../Sidebar.logic";
 
-export interface SidebarGroupTabStatus {
+export interface SidebarTabStatus {
   readonly kind: SidebarV2TopStatusKind;
   readonly label: string;
   readonly className: string;
@@ -15,7 +15,7 @@ export interface SidebarGroupTabStatus {
   readonly slot: AppIconSlot;
 }
 
-const TAB_STATUS: Record<SidebarV2TopStatusKind, Omit<SidebarGroupTabStatus, "kind" | "slot">> = {
+const TAB_STATUS: Record<SidebarV2TopStatusKind, Omit<SidebarTabStatus, "kind" | "slot">> = {
   working: { label: "Working", className: "text-info" },
   waiting: { label: "Waiting", className: "text-muted-foreground" },
   approval: { label: "Approval", className: "text-warning-foreground" },
@@ -26,7 +26,7 @@ const TAB_STATUS: Record<SidebarV2TopStatusKind, Omit<SidebarGroupTabStatus, "ki
   done: { label: "Done", className: "text-success" },
 };
 
-export const sidebarGroupTabStatus = (kind: SidebarV2TopStatusKind): SidebarGroupTabStatus => ({
+export const sidebarTabStatus = (kind: SidebarV2TopStatusKind): SidebarTabStatus => ({
   kind,
   ...TAB_STATUS[kind],
   slot: `status.${kind}`,

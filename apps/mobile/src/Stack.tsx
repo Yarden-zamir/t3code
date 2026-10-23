@@ -88,7 +88,7 @@ import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppea
 import { SettingsForkRouteScreen } from "./features/settings/SettingsForkRouteScreen";
 import { SettingsVoiceRouteScreen } from "./features/settings/SettingsVoiceRouteScreen";
 import { SettingsVoiceProjectRouteScreen } from "./features/settings/SettingsVoiceProjectRouteScreen";
-import { SettingsSidebarGroupRouteScreen } from "./features/settings/forkSidebarGroupEditor";
+import { SettingsSidebarTabRouteScreen } from "./features/settings/forkSidebarTabEditor";
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
 import { SettingsDiagnosticsRouteScreen } from "./features/diagnostics/SettingsDiagnosticsRouteScreen";
 import { SettingsProviderAccountsRouteScreen } from "./features/settings/SettingsProviderAccountsRouteScreen";
@@ -325,10 +325,10 @@ const SettingsContentStack = createV5SheetStackNavigator({
         title: "Project",
       },
     }),
-    SettingsSidebarGroup: createNativeStackScreen({
-      screen: SettingsSidebarGroupRouteScreen,
+    SettingsSidebarTab: createNativeStackScreen({
+      screen: SettingsSidebarTabRouteScreen,
       options: {
-        title: "Group",
+        title: "Tab",
       },
     }),
     SettingsProjectGrouping: createNativeStackScreen({

@@ -5,26 +5,25 @@ import { Switch } from "../ui/switch";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
-const selectEnabled = (settings: ClientSettings) => settings.sidebarGroupsEnabled;
-const selectSingleThreadOpens = (settings: ClientSettings) =>
-  settings.sidebarGroupSingleThreadOpens;
+const selectEnabled = (settings: ClientSettings) => settings.sidebarTabsEnabled;
+const selectSingleThreadOpens = (settings: ClientSettings) => settings.sidebarTabSingleThreadOpens;
 
-/** Fork: `sidebarGroupsEnabled` and `sidebarGroupSingleThreadOpens`, thread groups as tabs. */
-export function SidebarGroupsSettingsRow() {
+/** Fork: `sidebarTabsEnabled` and `sidebarTabSingleThreadOpens`, sidebar tabs. */
+export function SidebarTabsSettingsRow() {
   const enabled = useClientSettings(selectEnabled);
   const singleThreadOpens = useClientSettings(selectSingleThreadOpens);
   return (
     <>
       <SettingsRow
-        {...searchableSetting("sidebar-groups")}
-        description="Group threads in tabs above the sidebar list. Drag a thread onto a tab to move it, or onto the empty end of the tab bar to make a new group. Rules put matching threads in a group. The machine map syncs the groups to your other machines."
+        {...searchableSetting("sidebar-tabs")}
+        description="Put threads in tabs above the sidebar list. Drag a thread onto a tab to assign it, or onto the empty end of the tab bar to make a new tab. Rules put matching threads in a tab. The machine map syncs the tabs to your other machines."
         resetAction={
-          enabled !== DEFAULT_CLIENT_SETTINGS.sidebarGroupsEnabled ? (
+          enabled !== DEFAULT_CLIENT_SETTINGS.sidebarTabsEnabled ? (
             <SettingResetButton
-              label="sidebar groups"
+              label="sidebar tabs"
               onClick={() =>
                 void updateClientSettings({
-                  sidebarGroupsEnabled: DEFAULT_CLIENT_SETTINGS.sidebarGroupsEnabled,
+                  sidebarTabsEnabled: DEFAULT_CLIENT_SETTINGS.sidebarTabsEnabled,
                 })
               }
             />
@@ -34,24 +33,24 @@ export function SidebarGroupsSettingsRow() {
           <Switch
             checked={enabled}
             onCheckedChange={(checked) =>
-              void updateClientSettings({ sidebarGroupsEnabled: Boolean(checked) })
+              void updateClientSettings({ sidebarTabsEnabled: Boolean(checked) })
             }
-            aria-label="Sidebar groups"
+            aria-label="Sidebar tabs"
           />
         }
       />
       {enabled ? (
         <SettingsRow
-          {...searchableSetting("sidebar-group-single-thread")}
+          {...searchableSetting("sidebar-tab-single-thread")}
           description="A tab with one thread shows that thread, and a click opens it."
           resetAction={
-            singleThreadOpens !== DEFAULT_CLIENT_SETTINGS.sidebarGroupSingleThreadOpens ? (
+            singleThreadOpens !== DEFAULT_CLIENT_SETTINGS.sidebarTabSingleThreadOpens ? (
               <SettingResetButton
                 label="single-thread tabs"
                 onClick={() =>
                   void updateClientSettings({
-                    sidebarGroupSingleThreadOpens:
-                      DEFAULT_CLIENT_SETTINGS.sidebarGroupSingleThreadOpens,
+                    sidebarTabSingleThreadOpens:
+                      DEFAULT_CLIENT_SETTINGS.sidebarTabSingleThreadOpens,
                   })
                 }
               />
@@ -61,7 +60,7 @@ export function SidebarGroupsSettingsRow() {
             <Switch
               checked={singleThreadOpens}
               onCheckedChange={(checked) =>
-                void updateClientSettings({ sidebarGroupSingleThreadOpens: Boolean(checked) })
+                void updateClientSettings({ sidebarTabSingleThreadOpens: Boolean(checked) })
               }
               aria-label="Single-thread tabs open the thread"
             />

@@ -18,6 +18,9 @@ const FORK_PAGE_ROWS: Record<
   ForkSettingKey,
   SettingsSearchItemId | { readonly notListed: string }
 > = {
+  restoreWorktreesOnResume: "restore-worktrees-on-resume",
+  worktreeArtifactEviction: "worktree-artifact-eviction",
+  worktreeArtifactEvictionDays: "worktree-artifact-eviction-days",
   confirmTerminalClose: "terminal-close-confirmation",
   terminalAppShortcutsFirst: "terminal-app-shortcuts-first",
   appToggleShortcuts: "app-toggle-shortcuts",
@@ -29,8 +32,8 @@ const FORK_PAGE_ROWS: Record<
   repositoryOwnerFilters: "repository-owner-filters",
   pullRequestFilterChips: "pull-request-filter-chips",
   sidebarOwnerFilter: { notListed: "The sidebar owner filter menu sets it." },
-  sidebarGroupsEnabled: "sidebar-groups",
-  sidebarGroupSingleThreadOpens: "sidebar-group-single-thread",
+  sidebarTabsEnabled: "sidebar-tabs",
+  sidebarTabSingleThreadOpens: "sidebar-tab-single-thread",
   snoozeQuickOptions: "snooze-quick-options",
   keyboardFocusLevels: "keyboard-focus-levels",
   focusLevelHighlight: "focus-level-highlight",
@@ -56,14 +59,14 @@ const FORK_PAGE_ROWS: Record<
     notListed: "The portal sets it. Settings > Machines holds the way back in (MM-919).",
   },
   threadCardLayouts: "thread-card-layout",
-  sidebarGroups: { notListed: "Content that the user builds in the sidebar." },
+  sidebarTabs: { notListed: "Content that the user builds in the sidebar." },
   keybindingSync: "keybinding-sync",
   environmentLabelFromMachineMap: "environment-label-from-machine-map",
   previewLocalServerGroups: "preview-local-server-groups",
   mobilePublishedThemes: "mobile-published-themes",
   mobileNewThreadProject: "mobile-new-thread-project",
   mobileComposerCamera: "mobile-composer-camera",
-  mobileSidebarGroups: "mobile-sidebar-groups",
+  mobileSidebarTabs: "mobile-sidebar-tabs",
 };
 
 /** The settings that Restore defaults keeps, with the reason. */
@@ -71,7 +74,7 @@ const KEPT_BY_RESTORE: Partial<Record<ForkSettingKey, string>> = {
   globalScripts: "User data, like project scripts.",
   pinnedGlobalScriptIds: "User data, like project scripts.",
   pinnedProjectScriptIds: "User data, like project scripts.",
-  sidebarGroups: "Content that the user built, like keybindings.",
+  sidebarTabs: "Content that the user built, like keybindings.",
   threadCardLayouts: "Content that the user built, like keybindings.",
   machineMap: "A reset leaves the machine map.",
   clientAccess: "A reset changes access.",

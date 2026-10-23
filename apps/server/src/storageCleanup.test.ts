@@ -20,6 +20,7 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerConfig from "./config.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
+import * as SetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as Settings from "./serverSettings.ts";
@@ -459,19 +460,12 @@ const pausedMeasurementFixture = (storageCleanup?: StorageCleanupSettings) =>
     return { ...fixture, measuring, resume };
   });
 const cleanupTestLayer = GitVcsDriver.layer.pipe(
+  Layer.provideMerge(SetupTracker.layer),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "storage-cleanup-" })),
   Layer.provideMerge(NodeServices.layer),
 );
 const runCleanupTest = <A, E>(
-  effect: Effect.Effect<
-    A,
-    E,
-    | FileSystem.FileSystem
-    | ServerConfig.ServerConfig
-    | GitVcsDriver.GitVcsDriver
-    | Path.Path
-    | Scope.Scope
-  >,
+  effect: Effect.Effect<A, E, Layer.Success<typeof cleanupTestLayer> | Scope.Scope>,
 ) => effect.pipe(Effect.provide(cleanupTestLayer), Effect.scoped);
 
 const submoduleCleanupFixture = () =>

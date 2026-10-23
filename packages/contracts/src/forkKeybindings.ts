@@ -3,19 +3,18 @@
  * and approvals. `keybindings.ts` spreads them into the upstream command list.
  */
 
-export const SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS = [
-  "sidebar.group.1",
-  "sidebar.group.2",
-  "sidebar.group.3",
-  "sidebar.group.4",
-  "sidebar.group.5",
-  "sidebar.group.6",
-  "sidebar.group.7",
-  "sidebar.group.8",
-  "sidebar.group.9",
+export const SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS = [
+  "sidebar.tab.1",
+  "sidebar.tab.2",
+  "sidebar.tab.3",
+  "sidebar.tab.4",
+  "sidebar.tab.5",
+  "sidebar.tab.6",
+  "sidebar.tab.7",
+  "sidebar.tab.8",
+  "sidebar.tab.9",
 ] as const;
-export type SidebarGroupJumpKeybindingCommand =
-  (typeof SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS)[number];
+export type SidebarTabJumpKeybindingCommand = (typeof SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS)[number];
 
 export const FORK_KEYBINDING_COMMANDS = [
   "focus.up",
@@ -28,10 +27,10 @@ export const FORK_KEYBINDING_COMMANDS = [
   "sidebar.previousItem",
   "sidebar.nextItem",
   "sidebar.openItem",
-  "sidebar.previousGroup",
-  "sidebar.nextGroup",
+  "sidebar.previousTab",
+  "sidebar.nextTab",
   "sidebar.search",
-  ...SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS,
+  ...SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS,
   "timeline.previous",
   "timeline.next",
   "timeline.deeper",

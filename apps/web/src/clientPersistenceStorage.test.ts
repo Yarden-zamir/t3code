@@ -56,6 +56,23 @@ describe("clientPersistenceStorage", () => {
     },
   );
 
+  it("moves the old sidebar group settings to the tab keys once", async () => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({ sidebarGroupsEnabled: true, sidebarGroupSingleThreadOpens: true }),
+    );
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+
+    const settings = readBrowserClientSettings();
+    expect(settings?.sidebarTabsEnabled).toBe(true);
+    expect(settings?.sidebarTabSingleThreadOpens).toBe(true);
+    expect(JSON.parse(testWindow.localStorage.getItem("t3code:client-settings:v1")!)).toEqual({
+      sidebarTabsEnabled: true,
+      sidebarTabSingleThreadOpens: true,
+    });
+  });
+
   it("preserves saved settings across a transient read failure", async () => {
     const testWindow = getTestWindow();
     const settings = { ...DEFAULT_CLIENT_SETTINGS, timestampFormat: "12-hour" as const };

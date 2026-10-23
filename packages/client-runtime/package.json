@@ -331,9 +331,9 @@
       "types": "./src/state/threadSubagents.ts",
       "default": "./src/state/threadSubagents.ts"
     },
-    "./state/sidebarGroups": {
-      "types": "./src/state/sidebarGroups.ts",
-      "default": "./src/state/sidebarGroups.ts"
+    "./state/sidebarTabs": {
+      "types": "./src/state/sidebarTabs.ts",
+      "default": "./src/state/sidebarTabs.ts"
     },
     "./state/thread-undo": {
       "types": "./src/state/threadUndo.ts",

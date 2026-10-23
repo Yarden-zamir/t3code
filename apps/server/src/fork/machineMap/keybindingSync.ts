@@ -13,6 +13,7 @@
 import {
   KEYBINDINGS_SETTING_KEY,
   MAX_KEYBINDINGS_COUNT,
+  renameLegacySidebarTabCommands,
   type ServerSettings,
 } from "@t3tools/contracts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
@@ -123,7 +124,9 @@ export const applyKeybindingSettings = Effect.fn(function* (input: {
   if (!syncOnFor(input.values, input.current)) {
     return yield* Effect.logWarning("Machine map skipped keybindings: keybindingSync is off.");
   }
-  const value = input.values[KEYBINDINGS_SETTING_KEY];
+  const stored = input.values[KEYBINDINGS_SETTING_KEY];
+  // A value shared before sidebar tabs were called groups gets the new command names.
+  const value = Array.isArray(stored) ? (renameLegacySidebarTabCommands(stored) ?? stored) : stored;
   const previous = input.previous;
   if (
     previous !== null &&

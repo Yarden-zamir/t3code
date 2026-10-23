@@ -35,6 +35,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { parse as parseYaml } from "yaml";
 
 import * as ServerConfig from "./config.ts";
+import * as ForkWorktreeArtifacts from "./fork/ForkWorktreeArtifacts.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -257,6 +258,13 @@ const make = Effect.gen(function* () {
           inside(worktreePath, cwd)
         );
       });
+
+  const cleanWorktreeArtifacts = yield* ForkWorktreeArtifacts.makeSweep({
+    hasTerminal,
+    terminals: () => [...liveTerminals.values()].flatMap((entries) => [...entries.values()]),
+    idle: storageCleanupThreadIdle,
+    activityAt: storageCleanupActivityAt,
+  }).pipe(Effect.provide(ForkWorktreeArtifacts.layerDefault));
 
   // pnpm imports packages by clone or reflink when its store shares a device
   // with the worktree. Those files have one link but share blocks with the
@@ -1124,6 +1132,7 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
+    yield* cleanWorktreeArtifacts(serverSettings, now, entries);
     for (const category of [
       {
         kind: "browser-artifacts" as const,
@@ -1256,7 +1265,8 @@ const make = Effect.gen(function* () {
         if (
           Equal.equals(settings.storageCleanup, lastSettings.storageCleanup) &&
           Equal.equals(settings.worktreeCleanup, lastSettings.worktreeCleanup) &&
-          sameProjectWorktreePolicies(settings, lastSettings)
+          sameProjectWorktreePolicies(settings, lastSettings) &&
+          ForkWorktreeArtifacts.sameSettings(settings, lastSettings)
         )
           return Effect.void;
         lastSettings = settings;

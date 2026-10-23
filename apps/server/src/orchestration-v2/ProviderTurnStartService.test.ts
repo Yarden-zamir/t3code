@@ -31,6 +31,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as ForkWorktreeResume from "../fork/ForkWorktreeResume.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -73,6 +74,7 @@ function startWithMissingWorktree(
     [managedWorktreesDir]: managedWorktreesDir,
     [`${managedWorktreesDir}/project`]: `${managedWorktreesDir}/project`,
   },
+  setupFailure?: ForkWorktreeResume.WorktreeResumeError,
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -120,9 +122,17 @@ function startWithMissingWorktree(
     Effect.succeed({ committed: true, storedEvents: [] } as never),
   );
   const startRootRun = vi.fn(() => Effect.void);
+  const openSession = vi.fn(() => Effect.die("Provider must not open before setup succeeds"));
   const pruneWorktrees = vi.fn(() => Effect.void);
   const createWorktree = vi.fn(() => Effect.succeed({} as never));
   const layer = ProviderTurnStart.layer.pipe(
+    Layer.provide(
+      setupFailure === undefined
+        ? Layer.empty
+        : Layer.succeed(ForkWorktreeResume.ForkWorktreeResume, {
+            prepare: () => Effect.fail(setupFailure),
+          }),
+    ),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
@@ -177,7 +187,7 @@ function startWithMissingWorktree(
             );
           },
         }),
-        Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({}),
+        Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({ open: openSession }),
         Layer.mock(ProviderAuthService.ProviderAuthService)({
           tryHandlePromptCommand: () => Effect.succeed(false),
         }),
@@ -198,6 +208,7 @@ function startWithMissingWorktree(
     createWorktree,
     writeIfRunCurrent,
     startRootRun,
+    openSession,
     projectionReads: () => projectionReadCount,
   };
 }
@@ -255,6 +266,22 @@ it.each([
   const harness = startWithMissingWorktree(input.worktreePath, input.realPaths);
   await harness.start;
   expect(harness.createWorktree).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
+});
+
+it("does not open a provider or start a turn when setup fails, and preserves its error", async () => {
+  const cwd = `${managedWorktreesDir}/project/feature-restore`;
+  const failure = new ForkWorktreeResume.WorktreeResumeError({
+    cwd,
+    reason: "Project setup exited with code 7.",
+  });
+  const harness = startWithMissingWorktree(cwd, undefined, failure);
+  const error = await harness.start;
+  expect(error.cause).toBe(failure);
+  expect(failure.message).toContain("setup exited with code 7");
+  expect(harness.openSession).not.toHaveBeenCalled();
+  expect(harness.startRootRun).not.toHaveBeenCalled();
+  expect(harness.pruneWorktrees).not.toHaveBeenCalled();
+  expect(harness.createWorktree).not.toHaveBeenCalled();
 });
 
 function makeLocalCommandHarness(input: {

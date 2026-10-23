@@ -429,3 +429,41 @@ it("records a refusal that the calling machine reports, and only its own", async
     execs: [{ ...refusal, to: "vps" }],
   });
 });
+
+it("moves the shared sidebar group settings of the map to the tab keys once", () => {
+  const { db, ctx, env } = portal(true);
+  const map = readMap(db);
+  const legacy = {
+    ...map,
+    settings: {
+      shared: {
+        server: {
+          sidebarGroups: { groups: [{ id: "a", name: "A", rules: [] }] },
+          keybindings: [{ key: "1", command: "sidebar.group.1" }],
+        },
+        client: { sidebarGroupsEnabled: true },
+      },
+      overrides: { [MAC]: { server: { mobileSidebarGroups: true }, client: {} } },
+    },
+  };
+  db.prepare("UPDATE meta SET value = ? WHERE key = 'map'").run(JSON.stringify(legacy));
+  db.prepare("DELETE FROM meta WHERE key = 'sidebar_tab_keys'").run();
+
+  expect(new MachineMapObject(ctx, env)).toBeInstanceOf(MachineMapObject);
+  const moved = {
+    shared: {
+      server: {
+        sidebarTabs: { tabs: [{ id: "a", name: "A", rules: [] }] },
+        keybindings: [{ key: "1", command: "sidebar.tab.1" }],
+      },
+      client: { sidebarTabsEnabled: true },
+    },
+    overrides: { [MAC]: { server: { mobileSidebarTabs: true }, client: {} } },
+  };
+  expect(readMap(db).settings).toEqual(moved);
+
+  // Once: an older machine that shares the old key again keeps it apart from the new one.
+  db.prepare("UPDATE meta SET value = ? WHERE key = 'map'").run(JSON.stringify(legacy));
+  expect(new MachineMapObject(ctx, env)).toBeInstanceOf(MachineMapObject);
+  expect(readMap(db).settings).toEqual(legacy.settings);
+});

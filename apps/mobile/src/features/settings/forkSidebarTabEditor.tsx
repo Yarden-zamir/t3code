@@ -1,29 +1,29 @@
 /**
- * Fork: the editor of one sidebar group, like the group editor of web (SidebarGroupTabs.tsx):
+ * Fork: the editor of one sidebar tab, like the tab editor of web (SidebarTabBar.tsx):
  * its name, icon and rules, or the name, icon and threads of the first tab. Each change saves at
- * once through `editSidebarGroups`.
+ * once through `editSidebarTabs`.
  */
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import {
-  buildSidebarGroupProjectFacts,
-  buildSidebarGroupRuleOptions,
-  DEFAULT_SIDEBAR_GROUP_ID,
-  DEFAULT_SIDEBAR_GROUP_NAME,
-  deleteSidebarGroup,
-  isAnyGroupRule,
-  SIDEBAR_GROUP_RULE_FIELDS,
-  sidebarGroupRuleFieldLabel,
-  toggleSidebarGroupRuleValue,
+  buildSidebarTabProjectFacts,
+  buildSidebarTabRuleOptions,
+  DEFAULT_SIDEBAR_TAB_ID,
+  DEFAULT_SIDEBAR_TAB_NAME,
+  deleteSidebarTab,
+  isAnyTabRule,
+  SIDEBAR_TAB_RULE_FIELDS,
+  sidebarTabRuleFieldLabel,
+  toggleSidebarTabRuleValue,
   updateSidebarDefaultTab,
-  updateSidebarGroup,
-} from "@t3tools/client-runtime/state/sidebarGroups";
+  updateSidebarTab,
+} from "@t3tools/client-runtime/state/sidebarTabs";
 import {
-  isKnownSidebarGroupRule,
-  type SidebarGroup,
-  type SidebarGroupRule,
-  type SidebarGroupRuleField,
-  type SidebarGroups,
+  isKnownSidebarTabRule,
+  type SidebarTab,
+  type SidebarTabRule,
+  type SidebarTabRuleField,
+  type SidebarTabs,
 } from "@t3tools/contracts";
 import { useMemo, useState } from "react";
 import { Pressable, TextInput, View } from "react-native";
@@ -41,29 +41,29 @@ import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { cn } from "../../lib/cn";
 import { useProjects, useThreadShells } from "../../state/entities";
 import {
-  createMobileSidebarGroup,
-  editedSidebarGroupIdAtom,
-  editSidebarGroups,
-  openSidebarGroupEditor,
-  sidebarGroupsAtom,
-} from "../../state/forkSidebarGroups";
-import { GROUP_ICON_IDS, GroupIcon } from "../home/forkGroupIcons";
+  createMobileSidebarTab,
+  editedSidebarTabIdAtom,
+  editSidebarTabs,
+  openSidebarTabEditor,
+  sidebarTabsAtom,
+} from "../../state/forkSidebarTabs";
+import { TAB_ICON_IDS, SidebarTabIcon } from "../home/forkTabIcons";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 
-type ValueField = Exclude<SidebarGroupRuleField, "title">;
-const VALUE_FIELDS = SIDEBAR_GROUP_RULE_FIELDS.filter(
+type ValueField = Exclude<SidebarTabRuleField, "title">;
+const VALUE_FIELDS = SIDEBAR_TAB_RULE_FIELDS.filter(
   (field): field is ValueField => field !== "title",
 );
 
-export function SettingsSidebarGroupRouteScreen() {
+export function SettingsSidebarTabRouteScreen() {
   const insets = useSafeAreaInsets();
-  const settings = useAtomValue(sidebarGroupsAtom);
-  const groupId = useAtomValue(editedSidebarGroupIdAtom);
-  const group = settings?.groups.find((candidate) => candidate.id === groupId);
-  const isDefault = groupId === DEFAULT_SIDEBAR_GROUP_ID;
+  const settings = useAtomValue(sidebarTabsAtom);
+  const tabId = useAtomValue(editedSidebarTabIdAtom);
+  const tab = settings?.tabs.find((candidate) => candidate.id === tabId);
+  const isDefault = tabId === DEFAULT_SIDEBAR_TAB_ID;
   return (
-    <SettingsScreen title={isDefault ? "First tab" : (group?.name ?? "Group")}>
+    <SettingsScreen title={isDefault ? "First tab" : (tab?.name ?? "Tab")}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -72,30 +72,29 @@ export function SettingsSidebarGroupRouteScreen() {
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         keyboardShouldPersistTaps="handled"
       >
-        {settings === null || (!isDefault && group === undefined) ? (
+        {settings === null || (!isDefault && tab === undefined) ? (
           <AppText className="px-2 text-base text-foreground-muted">
-            This group no longer exists, or no connected environment has sidebar group tabs on.
+            This tab no longer exists, or no connected environment has sidebar tabs on.
           </AppText>
         ) : isDefault ? (
           <DefaultTabEditor settings={settings} />
         ) : (
-          <GroupEditor settings={settings} group={group!} />
+          <TabEditor settings={settings} tab={tab!} />
         )}
       </ScrollView>
     </SettingsScreen>
   );
 }
 
-function DefaultTabEditor(props: { readonly settings: SidebarGroups }) {
+function DefaultTabEditor(props: { readonly settings: SidebarTabs }) {
   const { defaultTab } = props.settings;
-  const setDefaultTab = (
-    change: (tab: SidebarGroups["defaultTab"]) => SidebarGroups["defaultTab"],
-  ) => editSidebarGroups((current) => updateSidebarDefaultTab(current, change));
+  const setDefaultTab = (change: (tab: SidebarTabs["defaultTab"]) => SidebarTabs["defaultTab"]) =>
+    editSidebarTabs((current) => updateSidebarDefaultTab(current, change));
   return (
     <>
       <NameField
         name={defaultTab.name ?? ""}
-        placeholder={DEFAULT_SIDEBAR_GROUP_NAME}
+        placeholder={DEFAULT_SIDEBAR_TAB_NAME}
         onCommit={(name) =>
           setDefaultTab(({ name: _name, ...rest }) =>
             name.length === 0 ? rest : { ...rest, name },
@@ -108,9 +107,9 @@ function DefaultTabEditor(props: { readonly settings: SidebarGroups }) {
       />
       <SettingsSection title="This tab shows">
         <ListChoiceRow
-          label="Threads in no group"
+          label="Threads in no other tab"
           selected={defaultTab.show !== "all"}
-          onPress={() => setDefaultTab((tab) => ({ ...tab, show: "ungrouped" }))}
+          onPress={() => setDefaultTab((tab) => ({ ...tab, show: "untabbed" }))}
         />
         <ListChoiceRow
           label="All threads"
@@ -123,20 +122,20 @@ function DefaultTabEditor(props: { readonly settings: SidebarGroups }) {
   );
 }
 
-function GroupEditor(props: { readonly settings: SidebarGroups; readonly group: SidebarGroup }) {
-  const { settings, group } = props;
+function TabEditor(props: { readonly settings: SidebarTabs; readonly tab: SidebarTab }) {
+  const { settings, tab } = props;
   const navigation = useNavigation();
-  const update = (change: (group: SidebarGroup) => SidebarGroup) =>
-    editSidebarGroups((current) => updateSidebarGroup(current, group.id, change));
-  const setRules = (rules: SidebarGroup["rules"]) => update((current) => ({ ...current, rules }));
-  const knownRules = group.rules.filter(isKnownSidebarGroupRule);
-  const isView = knownRules.some((rule) => rule.field === "group");
-  const unknownCount = group.rules.length - knownRules.length;
+  const update = (change: (tab: SidebarTab) => SidebarTab) =>
+    editSidebarTabs((current) => updateSidebarTab(current, tab.id, change));
+  const setRules = (rules: SidebarTab["rules"]) => update((current) => ({ ...current, rules }));
+  const knownRules = tab.rules.filter(isKnownSidebarTabRule);
+  const isView = knownRules.some((rule) => rule.field === "tab");
+  const unknownCount = tab.rules.length - knownRules.length;
 
   // Options come from every live thread, once per change of the threads or the projects.
   const threads = useThreadShells();
   const projects = useProjects();
-  const facts = useMemo(() => buildSidebarGroupProjectFacts(projects), [projects]);
+  const facts = useMemo(() => buildSidebarTabProjectFacts(projects), [projects]);
   const liveThreads = useMemo(
     () => threads.filter((thread) => thread.archivedAt === null),
     [threads],
@@ -147,23 +146,20 @@ function GroupEditor(props: { readonly settings: SidebarGroups; readonly group: 
   return (
     <>
       <NameField
-        name={group.name}
-        placeholder="Group name"
+        name={tab.name}
+        placeholder="Tab name"
         onCommit={(name) => {
           if (name.length > 0) update((current) => ({ ...current, name }));
         }}
       />
-      <LookEditor
-        look={group}
-        onChange={(look) => update((current) => ({ ...current, ...look }))}
-      />
+      <LookEditor look={tab} onChange={(look) => update((current) => ({ ...current, ...look }))} />
       <SettingsSection
         title="Rules"
         footer={
           (knownRules.length === 0
-            ? "No rules. The group holds the threads that you move into it."
+            ? "No rules. The tab holds the threads that you move into it."
             : isView
-              ? "A view: it shows the threads of other groups that match every rule."
+              ? "A view: it shows the threads of other tabs that match every rule."
               : "Holds every thread that matches every rule, and the threads that you move into it.") +
           (unknownCount > 0
             ? ` ${unknownCount} rule${unknownCount === 1 ? "" : "s"} from a newer version stay as they are.`
@@ -177,30 +173,28 @@ function GroupEditor(props: { readonly settings: SidebarGroups; readonly group: 
             separated={index > 0}
             rule={knownRules.find((rule) => rule.field === field) ?? null}
             options={() =>
-              buildSidebarGroupRuleOptions({
+              buildSidebarTabRuleOptions({
                 field,
-                groupId: group.id,
+                tabId: tab.id,
                 threads: liveThreads,
                 projects: facts,
                 settings,
               })
             }
             onToggle={(value, checked) =>
-              setRules(toggleSidebarGroupRuleValue(group.rules, field, value, checked))
+              setRules(toggleSidebarTabRuleValue(tab.rules, field, value, checked))
             }
             onSetRule={(next) =>
               setRules(
                 next === null
-                  ? group.rules.filter(
-                      (rule) => !(isKnownSidebarGroupRule(rule) && rule.field === field),
+                  ? tab.rules.filter(
+                      (rule) => !(isKnownSidebarTabRule(rule) && rule.field === field),
                     )
-                  : group.rules.some(
-                        (rule) => isKnownSidebarGroupRule(rule) && rule.field === field,
+                  : tab.rules.some((rule) => isKnownSidebarTabRule(rule) && rule.field === field)
+                    ? tab.rules.map((rule) =>
+                        isKnownSidebarTabRule(rule) && rule.field === field ? next : rule,
                       )
-                    ? group.rules.map((rule) =>
-                        isKnownSidebarGroupRule(rule) && rule.field === field ? next : rule,
-                      )
-                    : [...group.rules, next],
+                    : [...tab.rules, next],
               )
             }
           />
@@ -212,9 +206,7 @@ function GroupEditor(props: { readonly settings: SidebarGroups; readonly group: 
             key={value ?? ""}
             label={value ?? ""}
             detail="Remove"
-            onPress={() =>
-              setRules(toggleSidebarGroupRuleValue(group.rules, "title", value, false))
-            }
+            onPress={() => setRules(toggleSidebarTabRuleValue(tab.rules, "title", value, false))}
           />
         ))}
         <View className="px-4 py-3">
@@ -226,7 +218,7 @@ function GroupEditor(props: { readonly settings: SidebarGroups; readonly group: 
             onSubmitEditing={() => {
               const text = titleText.trim();
               if (text.length === 0) return;
-              setRules(toggleSidebarGroupRuleValue(group.rules, "title", text, true));
+              setRules(toggleSidebarTabRuleValue(tab.rules, "title", text, true));
               setTitleText("");
             }}
             placeholder="Add text, then press Done"
@@ -237,16 +229,16 @@ function GroupEditor(props: { readonly settings: SidebarGroups; readonly group: 
       </SettingsSection>
       <SettingsSection>
         <ListActionRow
-          label="Delete group"
+          label="Delete tab"
           tone="danger"
           onPress={() =>
             Dialog.confirm({
-              title: `Delete ${group.name}?`,
+              title: `Delete ${tab.name}?`,
               message: "Its threads go back to the rules or to the first tab.",
               confirmText: "Delete",
               destructive: true,
               onConfirm: () => {
-                editSidebarGroups((current) => deleteSidebarGroup(current, group.id));
+                editSidebarTabs((current) => deleteSidebarTab(current, tab.id));
                 navigation.goBack();
               },
             })
@@ -261,32 +253,32 @@ function GroupEditor(props: { readonly settings: SidebarGroups; readonly group: 
 function RuleFieldEditor(props: {
   readonly field: ValueField;
   readonly separated: boolean;
-  readonly rule: SidebarGroupRule | null;
-  readonly options: () => ReturnType<typeof buildSidebarGroupRuleOptions>;
+  readonly rule: SidebarTabRule | null;
+  readonly options: () => ReturnType<typeof buildSidebarTabRuleOptions>;
   readonly onToggle: (value: string | null, checked: boolean) => void;
-  readonly onSetRule: (rule: SidebarGroupRule | null) => void;
+  readonly onSetRule: (rule: SidebarTabRule | null) => void;
 }) {
   const { field, rule } = props;
   const [open, setOpen] = useState(false);
   // Built only while open, so a closed field costs nothing.
   const options = open ? props.options() : [];
-  const anyGroup = rule !== null && isAnyGroupRule(rule);
+  const anyTab = rule !== null && isAnyTabRule(rule);
   const summary =
     rule === null
       ? "Any"
-      : anyGroup
-        ? "Any group"
+      : anyTab
+        ? "Any tab"
         : `${rule.operator === "is" ? "Is" : "Is not"} ${rule.values.length} value${rule.values.length === 1 ? "" : "s"}`;
   return (
     <View className={cn(props.separated && "border-t border-border-subtle")}>
       <ListActionRow
-        label={sidebarGroupRuleFieldLabel(field)}
+        label={sidebarTabRuleFieldLabel(field)}
         detail={summary}
         onPress={() => setOpen((current) => !current)}
       />
       {open ? (
         <View className="pb-2">
-          {rule !== null && !anyGroup ? (
+          {rule !== null && !anyTab ? (
             <View className="px-4 pb-2">
               <SegmentedControl
                 size="compact"
@@ -299,12 +291,12 @@ function RuleFieldEditor(props: {
               />
             </View>
           ) : null}
-          {field === "group" ? (
+          {field === "tab" ? (
             <ListToggleRow
-              label="Any group (shows every thread)"
-              value={anyGroup}
+              label="Any tab (shows every thread)"
+              value={anyTab}
               onValueChange={(checked) =>
-                props.onSetRule(checked ? { field: "group", operator: "is_not", values: [] } : null)
+                props.onSetRule(checked ? { field: "tab", operator: "is_not", values: [] } : null)
               }
             />
           ) : null}
@@ -312,7 +304,7 @@ function RuleFieldEditor(props: {
             <ListToggleRow
               key={option.value ?? ""}
               label={option.label}
-              value={!anyGroup && rule !== null && rule.values.includes(option.value)}
+              value={!anyTab && rule !== null && rule.values.includes(option.value)}
               onValueChange={(checked) => props.onToggle(option.value, checked)}
             />
           ))}
@@ -365,7 +357,7 @@ function LookEditor(props: {
   return (
     <SettingsSection title="Tab">
       <View accessibilityRole="radiogroup" className="flex-row flex-wrap gap-1 px-3 py-3">
-        {[...GROUP_ICON_IDS, "none"].map((id) => (
+        {[...TAB_ICON_IDS, "none"].map((id) => (
           <Pressable
             key={id}
             accessibilityRole="radio"
@@ -380,7 +372,11 @@ function LookEditor(props: {
             {id === "none" ? (
               <SymbolView name="xmark" size={18} tintColorClassName="accent-foreground-muted" />
             ) : (
-              <GroupIcon icon={id} size={20} color={current === id ? selectedColor : mutedColor} />
+              <SidebarTabIcon
+                icon={id}
+                size={20}
+                color={current === id ? selectedColor : mutedColor}
+              />
             )}
           </Pressable>
         ))}
@@ -394,32 +390,32 @@ function LookEditor(props: {
   );
 }
 
-/** The groups in the Fork settings page: each one opens its editor, and the last row makes one. */
-export function SidebarGroupSettingsSection() {
-  const settings = useAtomValue(sidebarGroupsAtom);
+/** The tabs in the Fork settings page: each one opens its editor, and the last row makes one. */
+export function SidebarTabSettingsSection() {
+  const settings = useAtomValue(sidebarTabsAtom);
   const navigation = useNavigation();
   if (settings === null) return null;
   return (
     <SettingsSection
-      title="Sidebar groups"
+      title="Sidebar tabs"
       footer="Long-press a tab or a thread on the thread list for the same changes."
     >
       <ListActionRow
-        label={settings.defaultTab.name ?? DEFAULT_SIDEBAR_GROUP_NAME}
+        label={settings.defaultTab.name ?? DEFAULT_SIDEBAR_TAB_NAME}
         detail="First tab"
-        onPress={() => openSidebarGroupEditor(navigation, DEFAULT_SIDEBAR_GROUP_ID)}
+        onPress={() => openSidebarTabEditor(navigation, DEFAULT_SIDEBAR_TAB_ID)}
       />
-      {settings.groups.map((group) => (
+      {settings.tabs.map((tab) => (
         <ListActionRow
-          key={group.id}
-          label={group.name}
-          onPress={() => openSidebarGroupEditor(navigation, group.id)}
+          key={tab.id}
+          label={tab.name}
+          onPress={() => openSidebarTabEditor(navigation, tab.id)}
         />
       ))}
       <ListActionRow
         icon="plus"
-        label="New group"
-        onPress={() => openSidebarGroupEditor(navigation, createMobileSidebarGroup())}
+        label="New tab"
+        onPress={() => openSidebarTabEditor(navigation, createMobileSidebarTab())}
       />
     </SettingsSection>
   );

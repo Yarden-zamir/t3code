@@ -1,6 +1,6 @@
 /**
- * Fork: the group icons of the sidebar group tabs. The ids are the web ids (`GROUP_ICONS` in web
- * `AppIcon.tsx`), so a group shows the same icon on web and mobile.
+ * Fork: the icons of the sidebar tabs. The ids are the web ids (`TAB_ICONS` in web
+ * `AppIcon.tsx`), so a tab shows the same icon on web and mobile.
  */
 import type { Icon } from "@tabler/icons-react-native/types";
 import IconArchive from "@tabler/icons-react-native/IconArchive";
@@ -38,8 +38,8 @@ import IconTool from "@tabler/icons-react-native/IconTool";
 import IconWorld from "@tabler/icons-react-native/IconWorld";
 import type { ColorValue } from "react-native";
 
-/** The web group icon ids (`GROUP_ICONS` in web `AppIcon.tsx`), with Tabler icons. */
-export const GROUP_ICONS: Record<string, Icon> = {
+/** The web tab icon ids (`TAB_ICONS` in web `AppIcon.tsx`), with Tabler icons. */
+export const TAB_ICONS: Record<string, Icon> = {
   dot: IconPointFilled,
   star: IconStar,
   heart: IconHeart,
@@ -75,16 +75,16 @@ export const GROUP_ICONS: Record<string, Icon> = {
   shield: IconShield,
 };
 
-/** The icon ids in picker order, like web `GROUP_ICON_IDS`. */
-export const GROUP_ICON_IDS = Object.keys(GROUP_ICONS);
+/** The icon ids in picker order, like web `TAB_ICON_IDS`. */
+export const TAB_ICON_IDS = Object.keys(TAB_ICONS);
 
-/** The icon of a tab: a group icon id, the dot without one, or nothing for `none`. */
-export function GroupIcon(props: {
+/** The icon of a tab: a tab icon id, the dot without one, or nothing for `none`. */
+export function SidebarTabIcon(props: {
   readonly icon: string | undefined;
   readonly size: number;
   readonly color: ColorValue | undefined;
 }) {
   if (props.icon === "none") return null;
-  const TabIcon = GROUP_ICONS[props.icon ?? "dot"] ?? IconPointFilled;
+  const TabIcon = TAB_ICONS[props.icon ?? "dot"] ?? IconPointFilled;
   return <TabIcon size={props.size} strokeWidth={2} color={props.color} />;
 }

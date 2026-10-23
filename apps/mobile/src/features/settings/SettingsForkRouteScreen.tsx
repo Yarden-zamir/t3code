@@ -17,7 +17,7 @@ import {
 } from "./components/SettingsEnvironmentFilterHeader";
 import { SettingsChoiceRow } from "./components/SettingsChoiceRow";
 import { AppTokenSettingsSection } from "./forkAppTokenSettings";
-import { SidebarGroupSettingsSection } from "./forkSidebarGroupEditor";
+import { SidebarTabSettingsSection } from "./forkSidebarTabEditor";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
@@ -122,11 +122,11 @@ export function SettingsForkRouteScreen() {
                 />
                 <SettingsSwitchRow
                   icon="square.grid.2x2"
-                  label="Sidebar group tabs"
-                  subtitle="The thread list shows the group tabs of the web sidebar. Tap a tab to show its threads."
-                  value={uniformMobileSetting(targets, "mobileSidebarGroups")}
+                  label="Sidebar tabs"
+                  subtitle="The thread list shows the tabs of the web sidebar. Tap a tab to show its threads."
+                  value={uniformMobileSetting(targets, "mobileSidebarTabs")}
                   disabled={disabled}
-                  onValueChange={(value) => write({ mobileSidebarGroups: value })}
+                  onValueChange={(value) => write({ mobileSidebarTabs: value })}
                 />
                 <SettingsSwitchRow
                   icon="link"
@@ -145,7 +145,7 @@ export function SettingsForkRouteScreen() {
                   onValueChange={(value) => write({ messageLinks: value })}
                 />
               </SettingsSection>
-              <SidebarGroupSettingsSection />
+              <SidebarTabSettingsSection />
               <AppTokenSettingsSection />
               <SettingsSection title="New thread opens">
                 {NEW_THREAD_CHOICES.map((choice, index) => (

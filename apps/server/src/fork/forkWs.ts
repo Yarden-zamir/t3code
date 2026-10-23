@@ -5,8 +5,6 @@
 import {
   FORK_WS_METHODS,
   ForkWsRpcGroup,
-  WS_METHODS,
-  WsRpcGroup,
   OrchestrationV2ThreadLaunchError,
   type OrchestrationV2ThreadLaunchInput,
   type ServerConfig,
@@ -16,7 +14,6 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { HttpServerResponse } from "effect/http";
-import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 import type * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import type * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
@@ -29,46 +26,11 @@ import * as MachineMap from "./machineMap/MachineMap.ts";
 import { isLocalDesktopSubject, isMachineSubject } from "./machineMap/machineAccess.ts";
 import * as MachineMapState from "./machineMap/MachineMapState.ts";
 import * as MachinePeers from "./machineMap/MachinePeers.ts";
-import * as PeerLinks from "../peer/PeerLinks.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
 import * as WebPush from "./webPush/WebPush.ts";
 
 /** The fork RPC tags, which the upstream handler object in `ws.ts` omits. */
 export const FORK_WS_RPC_TAGS = Object.values(FORK_WS_METHODS);
-
-/**
- * Upstream's linked-environment RPCs, which the upstream handler object in `ws.ts` omits too.
- * With them, that object is too deep a type for tsc, and the server layers lose their types.
- * Revisit when upstream splits its handler object.
- */
-export const PEER_LINK_WS_RPC_TAGS = [
-  WS_METHODS.peerLinksList,
-  WS_METHODS.peerLinksLink,
-  WS_METHODS.peerLinksUnlink,
-] as const;
-type PeerLinkWsRpcTag = (typeof PEER_LINK_WS_RPC_TAGS)[number];
-const peerLinkWsRpcTags: ReadonlySet<string> = new Set(PEER_LINK_WS_RPC_TAGS);
-
-/** `WsRpcGroup` with only the linked-environment RPCs: RpcGroup has `omit` and no `pick`. */
-const PeerLinkWsRpcGroup = WsRpcGroup.omit(
-  ...([...WsRpcGroup.requests.keys()].filter((tag) => !peerLinkWsRpcTags.has(tag)) as Array<
-    Exclude<RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"], PeerLinkWsRpcTag>
-  >),
-);
-
-/** MM-1921: the links come from the arrows, so linking and unlinking refuse (`MachinePeers`). */
-export const layerPeerLinkWsRpc = PeerLinkWsRpcGroup.toLayer(
-  Effect.gen(function* () {
-    const peerLinks = yield* PeerLinks.PeerLinks;
-    return PeerLinkWsRpcGroup.of({
-      [WS_METHODS.peerLinksList]: (_input) =>
-        peerLinks.list.pipe(Effect.map((links) => ({ links }))),
-      [WS_METHODS.peerLinksLink]: (input) => peerLinks.link(input),
-      [WS_METHODS.peerLinksUnlink]: ({ environmentId }) =>
-        peerLinks.unlink(environmentId).pipe(Effect.map((removed) => ({ removed }))),
-    });
-  }),
-);
 
 // Reuse snapshots so older clients do not need a new config event type.
 export const environmentLabelUpdates = <E>(

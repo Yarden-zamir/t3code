@@ -36,6 +36,10 @@ import {
   useRelativeTimeTick,
 } from "./settingsLayout";
 import { DatabaseStorageNotice } from "./DatabaseStorageNotice";
+import {
+  ForkWorktreeArtifactBreakdown,
+  forkArtifactReclamationSummary,
+} from "./ForkWorktreeArtifactBreakdown";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { SettingsGroup } from "./SettingsGroup";
@@ -214,6 +218,7 @@ function CleanupResults({
               <span className="block space-y-2 wrap-anywhere select-text">
                 <span className={`block ${entry.outcome === "failed" ? "text-destructive" : ""}`}>
                   {entry.reason}
+                  <ForkWorktreeArtifactBreakdown breakdown={entry.artifactBreakdown} />
                 </span>
                 <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-l border-border/60 pl-3">
                   <span>Machine</span>
@@ -332,7 +337,7 @@ function CleanupSection() {
         ? `${report.counts.removed} removed, ${report.counts.kept} kept${report.counts.failed > 0 ? `, ${report.counts.failed} failed` : ""}`
         : "",
       description: report
-        ? `Last run ${formatRelativeTimeLabel(report.finishedAt)}. ${formatBytes(report.bytesFreed)} recovered.${report.counts.failed > 0 ? ` ${report.counts.failed} ${report.counts.failed === 1 ? "item" : "items"} couldn't be removed.` : ""}`
+        ? `Last run ${formatRelativeTimeLabel(report.finishedAt)}. ${forkArtifactReclamationSummary(report)}${report.counts.failed > 0 ? ` ${report.counts.failed} ${report.counts.failed === 1 ? "item" : "items"} couldn't be removed.` : ""}`
         : query?.failed
           ? "Could not load the last run."
           : query?.loading

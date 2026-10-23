@@ -1,7 +1,7 @@
 /**
- * Fork: the sidebar group tabs of web, above the home thread list, while a connected server has
- * `mobileSidebarGroups` on. The groups come from the server setting `sidebarGroups`, which the
- * machine map syncs, so web and mobile show the same groups. Tap a tab to show its threads, and
+ * Fork: the sidebar tabs of web, above the home thread list, while a connected server has
+ * `mobileSidebarTabs` on. The tabs come from the server setting `sidebarTabs`, which the
+ * machine map syncs, so web and mobile show the same tabs. Tap a tab to show its threads, and
  * long-press it to edit, move or delete it.
  *
  * Known limits: a thread link does not switch to the tab of the thread, and web theme icon packs
@@ -13,18 +13,18 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import {
-  buildSidebarGroupProjectFacts,
-  compileSidebarGroups,
-  deleteSidebarGroup,
-  moveSidebarGroup,
-  DEFAULT_SIDEBAR_GROUP_ID,
-  resolveSidebarGroupTabStatus,
-  resolveSidebarThreadGroupId,
+  buildSidebarTabProjectFacts,
+  compileSidebarTabs,
+  deleteSidebarTab,
+  moveSidebarTab,
+  DEFAULT_SIDEBAR_TAB_ID,
+  resolveSidebarTabStatus,
+  resolveSidebarThreadTabId,
   sidebarDefaultTabName,
-  sidebarGroupShowsThread,
-  sidebarGroupThreadKey,
-  type SidebarGroupTabStatusKind,
-} from "@t3tools/client-runtime/state/sidebarGroups";
+  sidebarTabShowsThread,
+  sidebarTabThreadKey,
+  type SidebarTabStatusKind,
+} from "@t3tools/client-runtime/state/sidebarTabs";
 import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
@@ -43,17 +43,17 @@ import { cn } from "../../lib/cn";
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import {
-  createMobileSidebarGroup,
-  editSidebarGroups,
-  openSidebarGroupEditor,
-  sidebarGroupsAtom,
-} from "../../state/forkSidebarGroups";
+  createMobileSidebarTab,
+  editSidebarTabs,
+  openSidebarTabEditor,
+  sidebarTabsAtom,
+} from "../../state/forkSidebarTabs";
 import { threadHasUnseenCompletion } from "../threads/threadListV2";
-import { GroupIcon } from "./forkGroupIcons";
+import { SidebarTabIcon } from "./forkTabIcons";
 
 /** The icon and colour of the thread row status (`STATUS_LABEL_BY_STATUS` in thread-list-v2-items). */
 const TAB_STATUS: Record<
-  SidebarGroupTabStatusKind,
+  SidebarTabStatusKind,
   { readonly icon: AppSymbolName; readonly tint: string }
 > = {
   approval: { icon: "exclamationmark.shield", tint: "accent-warning-foreground" },
@@ -66,20 +66,20 @@ const TAB_STATUS: Record<
   done: { icon: "checkmark.circle", tint: "accent-adaptive-emerald-700-300" },
 };
 
-export interface HomeSidebarGroupTab {
+export interface HomeSidebarTabItem {
   readonly id: string;
   readonly name: string;
-  /** A web group icon id, `none`, or undefined for the default dot. */
+  /** A web tab icon id, `none`, or undefined for the default dot. */
   readonly icon: string | undefined;
   readonly showName: boolean;
   /** Threads that the tab shows, without the settled ones. */
   readonly threadCount: number;
   /** The status of the most urgent thread that is not asleep. */
-  readonly status: SidebarGroupTabStatusKind | null;
+  readonly status: SidebarTabStatusKind | null;
 }
 
-export interface HomeSidebarGroups {
-  readonly tabs: ReadonlyArray<HomeSidebarGroupTab>;
+export interface HomeSidebarTabs {
+  readonly tabs: ReadonlyArray<HomeSidebarTabItem>;
   readonly tabId: string;
   readonly selectTab: (tabId: string) => void;
   /** The threads of the open tab. Search covers every tab, so it sees every thread. */
@@ -89,11 +89,11 @@ export interface HomeSidebarGroups {
 }
 
 /**
- * The tabs and the filter of the open tab, or null while no server has groups for the phone.
- * The work runs once per change of the groups, the projects, the threads or the clock, not once
+ * The tabs and the filter of the open tab, or null while no server has tabs for the phone.
+ * The work runs once per change of the tabs, the projects, the threads or the clock, not once
  * per row.
  */
-export function useHomeSidebarGroups(input: {
+export function useHomeSidebarTabs(input: {
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
   readonly projects: ReadonlyArray<EnvironmentProject>;
   /** The list scope, so the tab counts match the list. */
@@ -103,30 +103,30 @@ export function useHomeSidebarGroups(input: {
   readonly searching: boolean;
   /** The list clock, so the tabs see snoozed threads wake. Minute precision is enough for a tab. */
   readonly now: string;
-}): HomeSidebarGroups | null {
+}): HomeSidebarTabs | null {
   const { threads, projects, environmentId, projectKeys, searching, now } = input;
-  const settings = useAtomValue(sidebarGroupsAtom);
+  const settings = useAtomValue(sidebarTabsAtom);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const storedTabId = AsyncResult.isSuccess(preferences)
-    ? preferences.value.sidebarGroupTabId
+    ? preferences.value.sidebarTabId
     : undefined;
   const tabId =
-    settings !== null && settings.groups.some((group) => group.id === storedTabId)
+    settings !== null && settings.tabs.some((tab) => tab.id === storedTabId)
       ? storedTabId!
-      : DEFAULT_SIDEBAR_GROUP_ID;
+      : DEFAULT_SIDEBAR_TAB_ID;
 
   const compiled = useMemo(
-    () => (settings === null ? null : compileSidebarGroups(settings)),
+    () => (settings === null ? null : compileSidebarTabs(settings)),
     [settings],
   );
-  const facts = useMemo(() => buildSidebarGroupProjectFacts(projects), [projects]);
-  const groupIdByThreadKey = useMemo(() => {
+  const facts = useMemo(() => buildSidebarTabProjectFacts(projects), [projects]);
+  const tabIdByThreadKey = useMemo(() => {
     if (compiled === null) return null;
     return new Map(
       threads.map((thread) => [
-        sidebarGroupThreadKey(thread),
-        resolveSidebarThreadGroupId(thread, compiled, facts),
+        sidebarTabThreadKey(thread),
+        resolveSidebarThreadTabId(thread, compiled, facts),
       ]),
     );
   }, [compiled, facts, threads]);
@@ -134,16 +134,15 @@ export function useHomeSidebarGroups(input: {
   const showsThread = useCallback(
     (tab: string, thread: EnvironmentThreadShell) =>
       compiled !== null &&
-      groupIdByThreadKey !== null &&
-      sidebarGroupShowsThread({
+      tabIdByThreadKey !== null &&
+      sidebarTabShowsThread({
         tabId: tab,
         thread,
-        threadGroupId:
-          groupIdByThreadKey.get(sidebarGroupThreadKey(thread)) ?? DEFAULT_SIDEBAR_GROUP_ID,
+        threadTabId: tabIdByThreadKey.get(sidebarTabThreadKey(thread)) ?? DEFAULT_SIDEBAR_TAB_ID,
         compiled,
         projects: facts,
       }),
-    [compiled, facts, groupIdByThreadKey],
+    [compiled, facts, tabIdByThreadKey],
   );
 
   const tabs = useMemo(() => {
@@ -175,7 +174,7 @@ export function useHomeSidebarGroups(input: {
       id: string,
       name: string,
       look: { readonly icon?: string | undefined; readonly showName?: boolean | undefined },
-    ): HomeSidebarGroupTab => {
+    ): HomeSidebarTabItem => {
       const shown = states.filter((state) => showsThread(id, state.thread));
       return {
         id,
@@ -183,17 +182,17 @@ export function useHomeSidebarGroups(input: {
         icon: look.icon,
         showName: look.showName !== false,
         threadCount: shown.filter((state) => !state.settled).length,
-        status: resolveSidebarGroupTabStatus(shown.filter((state) => !state.asleep)),
+        status: resolveSidebarTabStatus(shown.filter((state) => !state.asleep)),
       };
     };
     return [
-      describe(DEFAULT_SIDEBAR_GROUP_ID, sidebarDefaultTabName(settings), settings.defaultTab),
-      ...settings.groups.map((group) => describe(group.id, group.name, group)),
+      describe(DEFAULT_SIDEBAR_TAB_ID, sidebarDefaultTabName(settings), settings.defaultTab),
+      ...settings.tabs.map((tab) => describe(tab.id, tab.name, tab)),
     ];
   }, [environmentId, now, projectKeys, settings, showsThread, threads]);
 
   const selectTab = useCallback(
-    (next: string) => savePreferences({ sidebarGroupTabId: next }),
+    (next: string) => savePreferences({ sidebarTabId: next }),
     [savePreferences],
   );
   const filterThreads = useCallback(
@@ -208,18 +207,16 @@ export function useHomeSidebarGroups(input: {
   );
 }
 
-export function HomeSidebarGroupTabBar(props: { readonly groups: HomeSidebarGroups }) {
-  const { tabs, tabId, selectTab } = props.groups;
+export function HomeSidebarTabBar(props: { readonly sidebarTabs: HomeSidebarTabs }) {
+  const { tabs, tabId, selectTab } = props.sidebarTabs;
   const navigation = useNavigation();
   const { color: selectedColor } = useResolveClassNames("text-foreground");
   const { color: mutedColor } = useResolveClassNames("text-foreground-muted");
-  const groupCount = tabs.length - 1;
-  const handleTabAction = (tab: HomeSidebarGroupTab, groupIndex: number, event: string) => {
-    if (event === "edit") openSidebarGroupEditor(navigation, tab.id);
-    if (event === "move-left")
-      editSidebarGroups((s) => moveSidebarGroup(s, tab.id, groupIndex - 1));
-    if (event === "move-right")
-      editSidebarGroups((s) => moveSidebarGroup(s, tab.id, groupIndex + 1));
+  const positionCount = tabs.length - 1;
+  const handleTabAction = (tab: HomeSidebarTabItem, position: number, event: string) => {
+    if (event === "edit") openSidebarTabEditor(navigation, tab.id);
+    if (event === "move-left") editSidebarTabs((s) => moveSidebarTab(s, tab.id, position - 1));
+    if (event === "move-right") editSidebarTabs((s) => moveSidebarTab(s, tab.id, position + 1));
     if (event === "delete") {
       Dialog.confirm({
         title: `Delete ${tab.name}?`,
@@ -227,8 +224,8 @@ export function HomeSidebarGroupTabBar(props: { readonly groups: HomeSidebarGrou
         confirmText: "Delete",
         destructive: true,
         onConfirm: () => {
-          if (tabId === tab.id) selectTab(DEFAULT_SIDEBAR_GROUP_ID);
-          editSidebarGroups((s) => deleteSidebarGroup(s, tab.id));
+          if (tabId === tab.id) selectTab(DEFAULT_SIDEBAR_TAB_ID);
+          editSidebarTabs((s) => deleteSidebarTab(s, tab.id));
         },
       });
     }
@@ -243,18 +240,18 @@ export function HomeSidebarGroupTabBar(props: { readonly groups: HomeSidebarGrou
       {tabs.map((tab, index) => {
         const selected = tab.id === tabId;
         const status = tab.status === null ? null : TAB_STATUS[tab.status];
-        const groupIndex = index - 1;
+        const position = index - 1;
         return (
           <Menu
             key={tab.id}
             shouldOpenOnLongPress
-            actions={tabMenuActions(groupIndex, groupCount)}
-            onPressAction={({ nativeEvent }) => handleTabAction(tab, groupIndex, nativeEvent.event)}
+            actions={tabMenuActions(position, positionCount)}
+            onPressAction={({ nativeEvent }) => handleTabAction(tab, position, nativeEvent.event)}
           >
             <Pressable
               accessibilityRole="tab"
               accessibilityLabel={`${tab.name}, ${tab.threadCount} threads`}
-              accessibilityHint="Long-press to edit the group"
+              accessibilityHint="Long-press to edit the tab"
               accessibilityState={{ selected }}
               onPress={() => selectTab(tab.id)}
               className={cn(
@@ -262,7 +259,11 @@ export function HomeSidebarGroupTabBar(props: { readonly groups: HomeSidebarGrou
                 selected ? "bg-subtle" : "bg-transparent",
               )}
             >
-              <GroupIcon icon={tab.icon} size={16} color={selected ? selectedColor : mutedColor} />
+              <SidebarTabIcon
+                icon={tab.icon}
+                size={16}
+                color={selected ? selectedColor : mutedColor}
+              />
               {tab.showName || tab.icon === "none" ? (
                 <AppText
                   className={cn(
@@ -284,11 +285,11 @@ export function HomeSidebarGroupTabBar(props: { readonly groups: HomeSidebarGrou
       })}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="New group"
+        accessibilityLabel="New tab"
         onPress={() => {
-          const id = createMobileSidebarGroup();
+          const id = createMobileSidebarTab();
           selectTab(id);
-          openSidebarGroupEditor(navigation, id);
+          openSidebarTabEditor(navigation, id);
         }}
         className="size-9 items-center justify-center rounded-full active:opacity-70"
       >
@@ -299,13 +300,13 @@ export function HomeSidebarGroupTabBar(props: { readonly groups: HomeSidebarGrou
 }
 
 /** The long-press menu of a tab. The first tab has no position and cannot be deleted. */
-function tabMenuActions(groupIndex: number, groupCount: number): MenuAction[] {
+function tabMenuActions(position: number, positionCount: number): MenuAction[] {
   const edit: MenuAction = { id: "edit", title: "Edit", image: "slider.horizontal.3" };
-  if (groupIndex < 0) return [edit];
+  if (position < 0) return [edit];
   return [
     edit,
-    ...(groupIndex > 0 ? [{ id: "move-left", title: "Move left", image: "chevron.left" }] : []),
-    ...(groupIndex < groupCount - 1
+    ...(position > 0 ? [{ id: "move-left", title: "Move left", image: "chevron.left" }] : []),
+    ...(position < positionCount - 1
       ? [{ id: "move-right", title: "Move right", image: "chevron.right" }]
       : []),
     { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },

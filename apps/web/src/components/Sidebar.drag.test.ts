@@ -491,23 +491,49 @@ describe("sidebar drag projection", () => {
     expect(result.get("s")?.y).toBe(13);
   });
 
-  it("keeps a collapsed settled target without inserting a hidden row", () => {
+  it("keeps folded shelves still when a row goes into the collapsed Settled shelf", () => {
+    // A long list: no free space above the shelves to absorb the row that leaves.
     const items = [
       pinnedHeader,
       thread("p", "pinned"),
       divider,
       thread("a1", "active"),
       thread("a2", "active"),
+      thread("a3", "active"),
+      marker("working-header"),
+      marker("snoozed-header"),
       settledHeader,
       marker("settled-placeholder"),
     ];
-    const result = preview(
-      { items, settledOrder: [], settledExpanded: false },
-      "a2",
-      sidebarMarkerId("settled-placeholder"),
-    );
-    expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(-83);
-    expect(result.get(sidebarMarkerId("settled-placeholder"))).toEqual({ ...stationary, y: -83 });
+    const input = { items, settledOrder: [], settledExpanded: false, snoozedThreadCount: 2 };
+    const overActive = preview(input, "a2", "a1");
+    const overSettled = preview(input, "a2", sidebarMarkerId("settled-placeholder"));
+    // No hidden row: the rows below the source close the gap.
+    expect(overSettled.get("a3")?.y).toBe(-83);
+    for (const shelf of ["working-header", "snoozed-header", "settled-header"] as const) {
+      // A shelf that moved up here would shorten the list, clamp its scroll position and flip
+      // the target under the pointer.
+      expect(overSettled.get(sidebarMarkerId(shelf))).toEqual(
+        overActive.get(sidebarMarkerId(shelf)),
+      );
+    }
+  });
+
+  it("keeps the shelves still when the only Active row leaves for the collapsed Settled shelf", () => {
+    const items = [
+      pinnedHeader,
+      thread("p", "pinned"),
+      divider,
+      thread("a", "active"),
+      settledHeader,
+      marker("settled-placeholder"),
+    ];
+    const input = { items, settledOrder: [], settledExpanded: false };
+    expect(
+      preview(input, "a", sidebarMarkerId("settled-placeholder")).get(
+        sidebarMarkerId("settled-header"),
+      ),
+    ).toEqual(preview(input, "a", "a").get(sidebarMarkerId("settled-header")));
   });
 
   it("previews a time-ordered inbox drop at its time slot, above the Working shelf", () => {
@@ -582,8 +608,10 @@ describe("sidebar drag projection", () => {
       settledOrder: [],
       settledExpanded: false,
     });
-    const args = layout(items, "a", sidebarMarkerId("settled-placeholder"), 1, 78);
-    expect(strategy({ ...args, index: 4 })?.y).toBe(-42);
+    // Pinning the only Active row opens the Active placeholder: 36 px from the shelf scale, not
+    // 78 / 82 of it from the card.
+    const args = layout(items, "a", "p", 1, 78);
+    expect(strategy({ ...args, index: 4 })?.y).toBe(37);
   });
 
   it("keeps the route row visible after a settled drop pushes it beyond the page", () => {
