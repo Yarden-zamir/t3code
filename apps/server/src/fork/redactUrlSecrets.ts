@@ -1,7 +1,11 @@
 import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
-import { mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+import { normalizePreviewUrl } from "@t3tools/shared/preview";
+import { resolveT3McpToolId } from "@t3tools/shared/t3McpToolPresentation";
 
 // Always on, no setting: a stored secret leaks to every client and copy of the thread.
+// Only preview tool calls get this. Known limit: other tools keep secrets in their stored URLs,
+// because changing their data shows the agent and the user output that the tool never returned.
+// Revisit when a second real leak comes through another tool.
 // `token` is also the fragment key of the T3 pairing URL (packages/shared/src/remote.ts).
 const SECRET_KEYS: ReadonlySet<string> = new Set([
   "token",
@@ -154,20 +158,49 @@ export function redactUrlSecretsInText(text: string): string {
   return copiedUpTo === 0 ? text : result + text.slice(copiedUpTo);
 }
 
+// URL fields of the preview tool inputs and results (packages/contracts/src/previewAutomation.ts).
+const PREVIEW_URL_KEYS: ReadonlySet<string> = new Set(["url", "requestedUrl", "resolvedUrl"]);
+
+/** `preview_*` and `t3_preview_*`, under any adapter's name for the T3 MCP server. */
+function isPreviewTool(toolName: string): boolean {
+  // Cheap check first: this runs for each stored update of every tool call.
+  if (!toolName.includes("preview_")) return false;
+  const id = resolveT3McpToolId(toolName);
+  return id !== null && (id.startsWith("preview_") || id.startsWith("t3_preview_"));
+}
+
+/** A preview `url` input can be schemeless, such as `localhost:5173/pair#token=…`. */
+function redactPreviewUrl(value: string): string {
+  const redacted = redactUrlSecrets(value);
+  if (redacted !== value || value.includes("://")) return redacted;
+  let normalized: string;
+  try {
+    normalized = normalizePreviewUrl(value);
+  } catch {
+    return value;
+  }
+  const redactedNormalized = redactUrlSecrets(normalized);
+  return redactedNormalized === normalized ? value : redactedNormalized;
+}
+
 /** Walks JSON-like data. Returns the same reference when nothing changed. */
-export function redactUrlSecretsDeep(value: unknown): unknown {
-  if (typeof value === "string") return redactUrlSecretsInText(value);
+function redactStrings(
+  value: unknown,
+  redactString: (text: string, key: string | undefined) => string,
+  key?: string,
+): unknown {
+  if (typeof value === "string") return redactString(value, key);
   if (Array.isArray(value)) {
-    const next = value.map(redactUrlSecretsDeep);
+    const next = value.map((entry) => redactStrings(entry, redactString, key));
     return next.some((entry, index) => entry !== value[index]) ? next : value;
   }
   if (typeof value === "object" && value !== null) {
     let changed = false;
     const next = Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => {
-        const redacted = redactUrlSecretsDeep(entry);
+      Object.entries(value).map(([entryKey, entry]) => {
+        const redacted = redactStrings(entry, redactString, entryKey);
         if (redacted !== entry) changed = true;
-        return [key, redacted];
+        return [entryKey, redacted];
       }),
     );
     return changed ? next : value;
@@ -175,25 +208,38 @@ export function redactUrlSecretsDeep(value: unknown): unknown {
   return value;
 }
 
+const redactInputUrl = (text: string, key: string | undefined) =>
+  key !== undefined && PREVIEW_URL_KEYS.has(key) ? redactPreviewUrl(text) : text;
+
+// Results also repeat URLs in text, such as MCP text content or page text.
+const redactOutputText = (text: string, key: string | undefined) =>
+  key !== undefined && PREVIEW_URL_KEYS.has(key)
+    ? redactPreviewUrl(text)
+    : redactUrlSecretsInText(text);
+
 /**
- * Tool calls and approval prompts carry agent-chosen URLs, such as a preview tab on a pairing
- * URL. Hide their secrets before the item is stored or sent to clients.
+ * Hides URL secrets of preview tool calls before the item is stored or sent to clients, as when
+ * an agent opens a pairing URL in a preview tab. The tab itself still opens the real URL.
  */
 export function redactTurnItemUrlSecrets(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   switch (item.type) {
     case "dynamic_tool":
-      // An MCP app gets its call's stored input and output as live data, so keep them intact.
-      if (mcpAppFromToolItem(item) !== undefined) return item;
+      if (item.toolName === null || !isPreviewTool(item.toolName)) return item;
       return {
         ...item,
         title: item.title === null ? null : redactUrlSecretsInText(item.title),
-        input: redactUrlSecretsDeep(item.input),
-        ...(item.output === undefined ? {} : { output: redactUrlSecretsDeep(item.output) }),
+        input: redactStrings(item.input, redactInputUrl),
+        ...(item.output === undefined
+          ? {}
+          : { output: redactStrings(item.output, redactOutputText) }),
       };
-    case "approval_request":
-      return item.prompt === undefined
+    case "approval_request": {
+      // Claude asks with `<tool name>: <input JSON>` when no SDK title is set.
+      const toolName = item.prompt?.split(": ", 1)[0];
+      return item.prompt === undefined || toolName === undefined || !isPreviewTool(toolName)
         ? item
         : { ...item, prompt: redactUrlSecretsInText(item.prompt) };
+    }
     default:
       return item;
   }

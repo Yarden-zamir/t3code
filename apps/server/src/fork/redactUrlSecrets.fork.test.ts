@@ -1,11 +1,15 @@
 import { assert, describe, it } from "@effect/vitest";
-import { ThreadId, TurnItemId, type OrchestrationV2TurnItem } from "@t3tools/contracts";
+import {
+  RuntimeRequestId,
+  ThreadId,
+  TurnItemId,
+  type OrchestrationV2TurnItem,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 import {
   redactTurnItemUrlSecrets,
   redactUrlSecrets,
-  redactUrlSecretsDeep,
   redactUrlSecretsInText,
 } from "./redactUrlSecrets.ts";
 
@@ -110,47 +114,73 @@ describe("redactUrlSecretsInText", () => {
   });
 });
 
-describe("redactUrlSecretsDeep", () => {
-  it("returns the same reference when nothing changes", () => {
-    const value = { url: "https://example.test/?page=1", list: ["plain"] };
-    assert.strictEqual(redactUrlSecretsDeep(value), value);
-  });
-});
-
 describe("redactTurnItemUrlSecrets", () => {
-  const toolItem = (toolName: string, output: unknown): OrchestrationV2TurnItem => {
-    const now = DateTime.makeUnsafe("2026-10-23T12:00:00.000Z");
-    return {
-      id: TurnItemId.make("item:tool"),
-      threadId: ThreadId.make("thread:tool"),
-      runId: null,
-      nodeId: null,
-      providerThreadId: null,
-      providerTurnId: null,
-      nativeItemRef: null,
-      parentItemId: null,
-      ordinal: 0,
-      status: "completed",
-      title: null,
-      startedAt: now,
-      completedAt: now,
-      updatedAt: now,
-      type: "dynamic_tool",
-      toolName,
-      input: { url: "https://example.test/?token=fake" },
-      output,
-    };
-  };
+  const now = DateTime.makeUnsafe("2026-10-23T12:00:00.000Z");
+  const base = {
+    id: TurnItemId.make("item:tool"),
+    threadId: ThreadId.make("thread:tool"),
+    runId: null,
+    nodeId: null,
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal: 0,
+    status: "completed",
+    title: null,
+    startedAt: now,
+    completedAt: now,
+    updatedAt: now,
+  } as const;
+  const toolItem = (
+    toolName: string,
+    input: unknown,
+    output?: unknown,
+  ): OrchestrationV2TurnItem => ({
+    ...base,
+    type: "dynamic_tool",
+    toolName,
+    input,
+    ...(output === undefined ? {} : { output }),
+  });
 
-  it("keeps the data of an MCP app call, which the app gets as live input", () => {
-    const item = toolItem("weather.get_weather", {
-      t3McpApp: {
-        attachmentId: "thread-1-abc-html",
-        server: "weather",
-        tool: "get_weather",
-        resourceUri: "ui://weather/dashboard",
-      },
-    });
+  it("hides URL fields and result text of preview tools under each adapter's tool name", () => {
+    const item = redactTurnItemUrlSecrets(
+      toolItem(
+        "t3-code.preview_navigate",
+        { target: { kind: "url", url: "localhost:5733/pair#token=fake-one" } },
+        {
+          content: [{ type: "text", text: '{"url":"http://localhost:5733/pair#token=fake-two"}' }],
+        },
+      ),
+    );
+    assert.notInclude(JSON.stringify(item), "fake-");
+    const listed = redactTurnItemUrlSecrets(
+      toolItem("mcp__t3-code__t3_preview_list", {}, { tabs: [{ url: "http://x.test/?key=fake" }] }),
+    );
+    assert.notInclude(JSON.stringify(listed), "fake");
+  });
+
+  it("keeps the data of other tools", () => {
+    const item = toolItem(
+      "WebFetch",
+      { url: "https://docs.test/?code=x" },
+      "see https://docs.test/?code=x",
+    );
     assert.strictEqual(redactTurnItemUrlSecrets(item), item);
+  });
+
+  it("hides a preview URL in an approval prompt only", () => {
+    const approval = (prompt: string): OrchestrationV2TurnItem => ({
+      ...base,
+      type: "approval_request",
+      requestId: RuntimeRequestId.make("request:tool"),
+      requestKind: "command",
+      prompt,
+    });
+    const preview = approval('mcp__t3-code__preview_open: {"url":"http://h.test/pair#token=fake"}');
+    assert.notInclude(JSON.stringify(redactTurnItemUrlSecrets(preview)), "fake");
+    const other = approval('Bash: curl "https://api.test/?key=x"');
+    assert.strictEqual(redactTurnItemUrlSecrets(other), other);
   });
 });
