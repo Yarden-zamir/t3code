@@ -36,15 +36,28 @@ editor, a dev server), makes it a terminal thread with the same shell, named aft
 command. The enlarge button next to the hint makes it a terminal thread at once. Until then:
 
 - The Terminal button switches back to an agent, and closes the shell.
-- The Terminal button is off while the prompt holds text or files, which a terminal thread
-  would not keep.
+- A prompt that you typed before switching to Terminal stays in the draft. When the terminal
+  becomes a thread, the prompt waits in the project's next new thread.
 - Leaving the new thread discards the shell, like an empty new thread.
-- The shell runs in the project folder, or in the worktree that the new thread already uses.
-  A new worktree is not available in Terminal mode.
+- The workspace and branch controls under the box work like for a new thread. The shell runs
+  in the project folder or in the chosen worktree, and restarts when you change it.
+- With New worktree, click Create worktree first. The worktree is set up as for a new
+  thread: it fetches origin first when that option is on, and runs the project's setup
+  script. The shell starts in the worktree when the setup script starts. A setup script
+  that is not async must end first. If the setup fails, the worktree is removed.
+- While the worktree is set up, Cancel stops it, and Work locally runs the shell in the
+  project folder instead.
 
 The screen is the header of a normal thread above the terminal. `mod+j` opens the drawer
 for more terminals of the thread. On Linux and Windows, Ctrl+W, Ctrl+D, Ctrl+N and Ctrl+J
 in the main terminal go to the shell, so open the drawer from the header there.
+
+The right panel (`mod+alt+b`) and the thread details (`mod+shift+b`, with the focus outside
+the terminal) work like in a chat thread: changes and diff, files, pull requests, browser,
+devices, machines, and the git actions of the branch. A link that you click in a terminal
+opens in the browser of the panel when it is available, like in a chat thread. A terminal
+thread has no prompt, so the panel has no "send to chat", and the thread details have no
+project scripts. Comments on a diff or a file stay in the panel.
 
 ## Messages
 
@@ -58,14 +71,19 @@ into its terminal. The terminal shows exactly what the message said.
   Ctrl+C cancels it in the shell.
 - A run ends after 10 minutes. If the command still runs, the reply says so, and the command
   continues in the terminal.
-- While a command runs, a new message is typed into that command, for example to answer a
-  prompt.
+- A message that arrives while a program that you started runs, for example an editor, waits
+  for the prompt. If the program still runs after 10 minutes, the run fails and the message is
+  not typed.
+- A message that you send while a run waits or runs is typed into the program, for example to
+  answer a prompt.
 - The reply needs the shell integration of the thread. It works with bash 4.4 or newer and
   zsh. With another shell, or after `exec` replaced the shell, the message is only typed,
   and the reply says that no result is captured.
 - A message outside full access mode fails.
 - A scheduled task with a webhook never types into a terminal thread. Its run fails, also
   when the task or the project default model points to a terminal thread.
+- An agent cannot delegate a task to a terminal thread. A thread cannot switch between an agent
+  and a terminal; start a new thread instead.
 
 ## Sidebar
 
@@ -75,12 +93,17 @@ The sidebar shows the state of a terminal thread until you visit it:
 - A program that ends shows Done, or Failed when its exit code is not zero.
 - A program that runs in the shell shows Working. A background job does not.
 
+With Web Push on, a phone also gets a notification for a bell (Input needed) and for a program
+that ends (Program done or Program failed).
+
 ## Shell exit
 
-When the shell of a terminal thread exits or is killed, the session closes. The screen
-offers Start a new session, and a message to the thread also starts one. The new session
-shows the output of the shell that ended above its prompt. Archiving the thread deletes that
-output. A server restart ends the programs in the terminal.
+When the shell of a terminal thread exits or is killed, the thread keeps its output and
+shows that the shell exited, also after a reload. Start a new shell, or press Enter, to
+continue; a message to the thread also starts one. The new shell starts below the output of
+the one that ended. Archiving the thread deletes that
+output. Settling the thread keeps its shell open. A server restart ends the programs in the
+terminal.
 
 ## Zoom and keys
 
