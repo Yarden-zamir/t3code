@@ -5,7 +5,8 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { canSnooze, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
+import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
+import { forkThreadWokeAt } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import {
   AuthOrchestrationOperateScope,
@@ -30,6 +31,7 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
+import { readTerminalThreadState } from "./useForkTerminalThreadState";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
@@ -360,6 +362,8 @@ export function useThreadActions() {
     const shouldNavigateToDraft =
       currentRouteThreadRef?.threadId === threadRef.threadId &&
       currentRouteThreadRef.environmentId === threadRef.environmentId;
+    // Fork: read before the archive, which closes the main terminal of a terminal thread.
+    const terminal = readTerminalThreadState(thread);
     const action = ThreadUndo.begin("archive", scopedThreadKey(threadRef));
     const archiveResult = await archiveThreadMutation({
       environmentId: threadRef.environmentId,
@@ -369,7 +373,7 @@ export function useThreadActions() {
       action.finish();
       return archiveResult;
     }
-    const wokeAt = threadWokeAt(thread, { now: new Date().toISOString() });
+    const wokeAt = forkThreadWokeAt(thread, { now: new Date().toISOString() }, terminal);
     if (wokeAt !== null) {
       markThreadVisited(scopedThreadKey(threadRef), wokeAt);
     }
@@ -703,7 +707,11 @@ export function useThreadActions() {
     }
     const resolved = resolveThreadTarget(target);
     const wokeAt = resolved
-      ? threadWokeAt(resolved.thread, { now: new Date().toISOString() })
+      ? forkThreadWokeAt(
+          resolved.thread,
+          { now: new Date().toISOString() },
+          readTerminalThreadState(resolved.thread),
+        )
       : null;
     // Settling also drops the pin and the snooze server-side, so Undo
     // has to put those back as well.

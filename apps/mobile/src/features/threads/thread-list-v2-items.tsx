@@ -24,6 +24,11 @@ import {
   type MobileThreadCardLayout,
 } from "@t3tools/contracts";
 import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  terminalStateOf,
+  terminalThreadRowStatus,
+  terminalThreadStatusLabel,
+} from "@t3tools/client-runtime/state/fork-terminal-threads";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
@@ -39,6 +44,7 @@ import { ProviderIcon, ProviderInstanceIcon } from "../../components/ProviderIco
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { useTerminalThreadStates } from "../../state/forkTerminalThreads";
 import { useEnvironmentScope } from "../../state/session";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import {
@@ -589,8 +595,15 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const selected = props.selected === true;
   const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected);
 
-  const status = resolveThreadListV2Status(thread);
-  const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
+  // Fork: a terminal thread fills in an idle row from its main terminal.
+  const terminalStates = useTerminalThreadStates([thread]);
+  const terminalLabel = terminalThreadStatusLabel(
+    terminalStateOf(terminalStates, thread),
+    thread.lastVisitedAt,
+  );
+  const status = terminalThreadRowStatus(resolveThreadListV2Status(thread), terminalLabel);
+  const isUnread =
+    status === "ready" && (threadHasUnseenCompletion(thread) || terminalLabel === "Completed");
   const workingLabel = STATUS_LABEL_BY_STATUS[status];
   const statusLabel =
     (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"

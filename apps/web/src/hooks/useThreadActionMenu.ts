@@ -6,7 +6,8 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { canSnooze, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
+import { forkEffectiveSnoozed } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import {
   AuthOrchestrationOperateScope,
   type ScopedThreadRef,
@@ -43,6 +44,7 @@ import {
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
+import { readForkThreadMenuState } from "./useForkTerminalThreadState";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { useThreadActions } from "./useThreadActions";
@@ -119,12 +121,15 @@ export function useThreadActionMenu(input: {
       const thread = readThreadShell(threadRef);
       if (!thread) return;
       const now = new Date();
+      const forkMenuState = readForkThreadMenuState(thread);
       const supports = {
         settlement: readEnvironmentSupportsSettlement(threadRef.environmentId),
         autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
         snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
         pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
-        titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
+        titleRegeneration:
+          readEnvironmentSupportsTitleRegeneration(threadRef.environmentId) &&
+          forkMenuState.titleRegeneration,
       };
       const isRegeneratingTitle = thread.titleRegeneration != null;
       const snoozePresets = resolveSnoozePresets(now, timestampFormat);
@@ -135,10 +140,13 @@ export function useThreadActionMenu(input: {
         isPinned: thread.pinnedAt != null,
         isSettled: supports.settlement && thread.settledOverride === "settled",
         autoSettleEnabled: thread.autoSettleDisabledAt == null,
-        isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
+        isSnoozed:
+          supports.snooze &&
+          forkEffectiveSnoozed(thread, { now: now.toISOString() }, forkMenuState.terminal),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
-        isRunning: !threadRuntimeCanArchive(thread.runtime),
+        isRunning: !threadRuntimeCanArchive(thread.runtime) || forkMenuState.programRuns,
+        canMarkUnread: thread.latestRun?.completedAt != null,
         supports,
         snoozePresets,
       });

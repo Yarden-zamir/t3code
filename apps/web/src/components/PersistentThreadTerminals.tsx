@@ -311,7 +311,7 @@ export interface PersistentThreadTerminalPanelProps {
   launchContext: PersistentTerminalLaunchContext | null;
   focusRequestId: number;
   keybindings: ResolvedKeybindingsConfig;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext: ((selection: TerminalContextSelection) => void) | undefined;
   onSplitTerminal: () => void;
   onSplitTerminalVertical: () => void;
   onNewTerminal: () => void;

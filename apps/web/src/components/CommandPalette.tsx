@@ -540,7 +540,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
-          terminalFocus: isTerminalFocused(),
+          terminalFocus: isTerminalFocused(event),
           terminalOpen,
           previewFocus: isPreviewFocused(),
           previewOpen,
@@ -1811,39 +1811,41 @@ function OpenCommandPaletteDialog(props: {
           .open(scopeThreadRef(thread.environmentId, thread.id), "machines");
       },
     });
-    actionItems.push({
-      kind: "action",
-      value: "action:restart-agent-session",
-      searchTerms: ["restart", "reset", "reload", "agent", "session", "skills", "plugins", "mcp"],
-      title: "Restart agent session",
-      icon: <RotateCcwIcon className={ITEM_ICON_CLASS} />,
-      run: async () => {
-        const { environmentId } = thread;
-        if (thread.runtime !== null) {
-          const stopped = await stopThreadSession({
-            environmentId,
-            input: { threadId: thread.id },
+    // Fork: a terminal thread has no agent session; its shell restarts from its own screen.
+    if (!isTerminalThread(thread))
+      actionItems.push({
+        kind: "action",
+        value: "action:restart-agent-session",
+        searchTerms: ["restart", "reset", "reload", "agent", "session", "skills", "plugins", "mcp"],
+        title: "Restart agent session",
+        icon: <RotateCcwIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          const { environmentId } = thread;
+          if (thread.runtime !== null) {
+            const stopped = await stopThreadSession({
+              environmentId,
+              input: { threadId: thread.id },
+            });
+            if (stopped._tag === "Failure") throw squashAtomCommandFailure(stopped);
+          }
+          toastManager.add({
+            type: "success",
+            title: "Agent session will restart",
+            description: "Your next message starts a fresh session.",
           });
-          if (stopped._tag === "Failure") throw squashAtomCommandFailure(stopped);
-        }
-        toastManager.add({
-          type: "success",
-          title: "Agent session will restart",
-          description: "Your next message starts a fresh session.",
-        });
-        const project = projectByKey.get(`${environmentId}:${thread.projectId}`);
-        if (!project) return;
-        const refreshed = await refreshProviders({
-          environmentId,
-          input: {
-            instanceId: thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId,
-            cwd: thread.worktreePath ?? project.workspaceRoot,
-            fresh: true,
-          },
-        });
-        if (refreshed._tag === "Failure") throw squashAtomCommandFailure(refreshed);
-      },
-    });
+          const project = projectByKey.get(`${environmentId}:${thread.projectId}`);
+          if (!project) return;
+          const refreshed = await refreshProviders({
+            environmentId,
+            input: {
+              instanceId: thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId,
+              cwd: thread.worktreePath ?? project.workspaceRoot,
+              fresh: true,
+            },
+          });
+          if (refreshed._tag === "Failure") throw squashAtomCommandFailure(refreshed);
+        },
+      });
   }
 
   actionItems.push({
@@ -2076,7 +2078,11 @@ function OpenCommandPaletteDialog(props: {
     applyOpenIntent(openIntent);
   }, [openIntent, newThreadInItemCount]);
 
-  actionItems.push(...focusLevelPaletteItems(ITEM_ICON_CLASS));
+  actionItems.push(
+    ...focusLevelPaletteItems(ITEM_ICON_CLASS, {
+      terminalThread: activeThread !== null && isTerminalThread(activeThread),
+    }),
+  );
   actionItems.push({
     kind: "action",
     value: "action:theme-editor",
@@ -2976,7 +2982,12 @@ function OpenCommandPaletteDialog(props: {
     }
     // ChatView ignores shortcuts while the palette is open, so handle find here
     // instead of letting the browser's own Find open.
-    if (command === "chat.find" && activeThreadId && !event.nativeEvent.isComposing) {
+    if (
+      command === "chat.find" &&
+      activeThreadId &&
+      !(activeThread && isTerminalThread(activeThread)) &&
+      !event.nativeEvent.isComposing
+    ) {
       event.preventDefault();
       event.stopPropagation();
       setOpen(false);

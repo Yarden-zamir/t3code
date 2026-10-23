@@ -55,6 +55,21 @@ describe("isTerminalFocused", () => {
     expect(isTerminalFocused()).toBe(false);
   });
 
+  it("leaves Cmd chords of a terminal thread's main terminal to the app", () => {
+    const main = new MockHTMLElement();
+    main.isConnected = true;
+    main.terminalOwner = "terminal-thread";
+    main.dataset.terminalOwner = "terminal-thread";
+    globalThis.HTMLElement = MockHTMLElement as unknown as typeof HTMLElement;
+    globalThis.document = { activeElement: main } as unknown as Document;
+
+    expect(isTerminalFocused({ metaKey: true })).toBe(false);
+    expect(isTerminalFocused({ metaKey: false })).toBe(true);
+    main.terminalOwner = "drawer";
+    main.dataset.terminalOwner = "drawer";
+    expect(isTerminalFocused({ metaKey: true })).toBe(true);
+  });
+
   it("returns the drawer owner for connected xterm helper textareas", () => {
     const attached = new MockHTMLElement();
     attached.className = "xterm-helper-textarea";

@@ -70,6 +70,7 @@ import {
   isTerminalSplitVerticalShortcut,
   isTerminalToggleShortcut,
   isTerminalAppShortcut,
+  resolveShortcutCommand,
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
 } from "../keybindings";
@@ -92,7 +93,7 @@ import { useEnvironmentScope } from "../state/session";
 import { openTerminalLinkInPreview } from "./preview/openTerminalLinkInPreview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
-import { isTerminalThreadShellKey } from "../lib/terminalFocus";
+import { getTerminalFocusOwner, isTerminalThreadShellKey } from "../lib/terminalFocus";
 import { useActiveThemeFonts } from "../hooks/useEnvironmentTheme";
 import {
   compileTerminalKeyMappings,
@@ -566,6 +567,7 @@ function TerminalSessionViewport({
   const terminalStatus = terminalSession.status;
   const outputCursorRef = useRef<TerminalOutputCursor>(INITIAL_TERMINAL_OUTPUT_CURSOR);
   const synchronizedStatusRef = useRef<TerminalSessionState["status"]>("closed");
+  const reportedStatusRef = useRef<TerminalSessionState["status"] | null>(null);
   const synchronizeTerminalStatus = useEffectEvent(
     (terminal: GhosttyTerminalSurface, status: TerminalSessionState["status"], version: number) => {
       const synchronized = synchronizedStatusRef.current;
@@ -584,7 +586,12 @@ function TerminalSessionViewport({
       }
       if (version > 0) {
         synchronizedStatusRef.current = status;
-        if (status !== synchronized) onStatusChange?.(status);
+        // Reported per change, including the first status after a mount (a shell that is
+        // already dead when the screen opens).
+        if (reportedStatusRef.current !== status) {
+          reportedStatusRef.current = status;
+          onStatusChange?.(status);
+        }
       }
     },
   );
@@ -919,6 +926,17 @@ function TerminalSessionViewport({
         }
         const currentKeybindings = readKeybindings();
         const options = { context: { terminalFocus: true, terminalOpen: true } };
+        // Fork: a Cmd chord in the main terminal of a terminal thread is an app shortcut
+        // (`isTerminalFocused`), so it stays out of the shell.
+        if (
+          event.metaKey &&
+          getTerminalFocusOwner() === "terminal-thread" &&
+          resolveShortcutCommand(event, currentKeybindings, {
+            context: { terminalFocus: false, terminalOpen: true },
+          }) !== null
+        ) {
+          return false;
+        }
         if (
           isTerminalThreadShellKey(event) &&
           (isTerminalToggleShortcut(event, currentKeybindings, options) ||

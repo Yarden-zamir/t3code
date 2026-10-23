@@ -20,7 +20,7 @@ import { useTerminalThreadEnvironmentIds } from "../hooks/useForkTerminalThreads
 import { useScratchProject } from "../hooks/useScratchProject";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
-import { isTerminalFocused } from "../lib/terminalFocus";
+import { isTerminalFocused, isTerminalThreadShellKey } from "../lib/terminalFocus";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { undoLatestThreadAction } from "../hooks/showThreadUndoNotice";
@@ -79,7 +79,7 @@ function ChatRouteGlobalShortcuts() {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
-          terminalFocus: isTerminalFocused(),
+          terminalFocus: isTerminalFocused(event),
           terminalOpen,
           previewFocus: isPreviewFocused(),
           previewOpen,
@@ -163,7 +163,8 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
-      if (command === "preview.toggle") {
+      // Fork: a Ctrl chord in the main terminal of a terminal thread goes to its shell.
+      if (command === "preview.toggle" && !isTerminalThreadShellKey(event)) {
         event.preventDefault();
         event.stopPropagation();
         if (!routeThreadRef || (!canOperatePreview && !previewOpen)) return;

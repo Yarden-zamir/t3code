@@ -1,3 +1,4 @@
+import { SquareTerminalIcon } from "lucide-react";
 import { type CSSProperties, memo } from "react";
 
 import { providerInstanceInitials } from "@t3tools/client-runtime/state/provider-instance-display";
@@ -18,6 +19,8 @@ const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
   [ProviderDriverKind.make("codex")]: OpenAI,
   [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
   [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
+  // Fork: terminal threads (`forkTerminalThreads.ts`) show a terminal, not initials.
+  [ProviderDriverKind.make("terminal")]: SquareTerminalIcon,
 };
 
 const PROVIDER_TEXT_COLOR_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {

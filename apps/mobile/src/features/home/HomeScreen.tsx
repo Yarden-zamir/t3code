@@ -48,6 +48,7 @@ import {
 } from "../../native/native-layout-metrics";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
+import { useTerminalThreadStates } from "../../state/forkTerminalThreads";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
@@ -543,6 +544,7 @@ export function HomeScreen(props: HomeScreenProps) {
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder(nowMinute, snoozeWakeTick);
+  const terminalStates = useTerminalThreadStates(props.threads);
   // Up/down menu availability for every card, computed once per section per
   // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
   // list construction quadratic, and this list rebuilds on every minute tick.
@@ -562,6 +564,7 @@ export function HomeScreen(props: HomeScreenProps) {
           settlementEnvironmentIds,
           snoozeEnvironmentIds,
           queuedThreadKeys,
+          terminalStates,
         }),
       });
     return new Map([
@@ -577,6 +580,7 @@ export function HomeScreen(props: HomeScreenProps) {
     queuedThreadKeys,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
+    terminalStates,
     nowMinute,
     snoozeWakeTick,
   ]);
@@ -609,8 +613,10 @@ export function HomeScreen(props: HomeScreenProps) {
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey,
+      terminalStates,
     });
   }, [
+    terminalStates,
     workingShelfEnabled,
     workingShelfExpanded,
     pendingOrder,

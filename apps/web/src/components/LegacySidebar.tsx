@@ -3440,7 +3440,7 @@ export default function LegacySidebar() {
 
   const onWindowKeyDown = useEffectEvent((event: globalThis.KeyboardEvent) => {
     const shortcutContext = {
-      terminalFocus: isTerminalFocused(),
+      terminalFocus: isTerminalFocused(event),
       terminalOpen: routeTerminalOpen,
       modelPickerOpen: isModelPickerOpen(),
     };

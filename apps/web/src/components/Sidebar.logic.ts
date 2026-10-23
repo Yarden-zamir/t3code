@@ -1,7 +1,7 @@
 import {
   terminalThreadStatusLabel,
   type TerminalThreadState,
-} from "../lib/forkTerminalThreadStatus";
+} from "@t3tools/client-runtime/state/fork-terminal-threads";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";

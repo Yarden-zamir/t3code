@@ -25,7 +25,11 @@ import {
   sidebarGroupThreadKey,
   type SidebarGroupTabStatusKind,
 } from "@t3tools/client-runtime/state/sidebarGroups";
-import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  forkEffectiveSnoozed,
+  forkThreadWokeAt,
+  terminalStateOf,
+} from "@t3tools/client-runtime/state/fork-terminal-threads";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useMemo } from "react";
@@ -41,6 +45,7 @@ import { Menu } from "../../components/ui/Menu";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { cn } from "../../lib/cn";
 import { scopedProjectKey } from "../../lib/scopedEntities";
+import { useTerminalThreadStates } from "../../state/forkTerminalThreads";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import {
   createMobileSidebarGroup,
@@ -106,6 +111,7 @@ export function useHomeSidebarGroups(input: {
 }): HomeSidebarGroups | null {
   const { threads, projects, environmentId, projectKeys, searching, now } = input;
   const settings = useAtomValue(sidebarGroupsAtom);
+  const terminalStates = useTerminalThreadStates(threads);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const storedTabId = AsyncResult.isSuccess(preferences)
@@ -159,11 +165,12 @@ export function useHomeSidebarGroups(input: {
       )
       .map((thread) => {
         const settled = thread.settledOverride === "settled";
-        const wokeAt = threadWokeAt(thread, { now });
+        const terminal = terminalStateOf(terminalStates, thread);
+        const wokeAt = forkThreadWokeAt(thread, { now }, terminal);
         return {
           thread,
           settled,
-          asleep: settled || effectiveSnoozed(thread, { now }),
+          asleep: settled || forkEffectiveSnoozed(thread, { now }, terminal),
           isUnread: threadHasUnseenCompletion(thread),
           isWoke:
             wokeAt !== null &&
@@ -190,7 +197,7 @@ export function useHomeSidebarGroups(input: {
       describe(DEFAULT_SIDEBAR_GROUP_ID, sidebarDefaultTabName(settings), settings.defaultTab),
       ...settings.groups.map((group) => describe(group.id, group.name, group)),
     ];
-  }, [environmentId, now, projectKeys, settings, showsThread, threads]);
+  }, [environmentId, now, projectKeys, settings, showsThread, terminalStates, threads]);
 
   const selectTab = useCallback(
     (next: string) => savePreferences({ sidebarGroupTabId: next }),

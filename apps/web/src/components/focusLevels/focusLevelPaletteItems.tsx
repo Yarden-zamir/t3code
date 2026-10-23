@@ -42,18 +42,26 @@ function afterPaletteCloses(run: () => void): Promise<void> {
   );
 }
 
-/** Fork: command palette items for the focus level commands. */
-export function focusLevelPaletteItems(iconClassName: string): CommandPaletteActionItem[] {
+/**
+ * Fork: command palette items for the focus level commands. A terminal thread has no timeline,
+ * and its shell is the composer (`focusLevels.ts`).
+ */
+export function focusLevelPaletteItems(
+  iconClassName: string,
+  options: { readonly terminalThread: boolean } = { terminalThread: false },
+): CommandPaletteActionItem[] {
   return [
-    ...FOCUS_ITEMS.map(([command, level, title, Icon]) => ({
-      kind: "action" as const,
-      value: `action:${command}`,
-      searchTerms: ["focus", "keyboard", "move", title],
-      title,
-      icon: <Icon className={iconClassName} />,
-      shortcutCommand: command,
-      run: () => afterPaletteCloses(() => void focusLevel(level)),
-    })),
+    ...FOCUS_ITEMS.filter(([, level]) => !(options.terminalThread && level === "timeline")).map(
+      ([command, level, title, Icon]) => ({
+        kind: "action" as const,
+        value: `action:${command}`,
+        searchTerms: ["focus", "keyboard", "move", title],
+        title,
+        icon: <Icon className={iconClassName} />,
+        shortcutCommand: command,
+        run: () => afterPaletteCloses(() => void focusLevel(level)),
+      }),
+    ),
     ...THREAD_ITEMS.map(([command, title, Icon]) => ({
       kind: "action" as const,
       value: `action:${command}`,

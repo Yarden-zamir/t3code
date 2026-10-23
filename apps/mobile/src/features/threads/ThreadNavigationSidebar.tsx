@@ -29,6 +29,7 @@ import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
+import { useTerminalThreadStates } from "../../state/forkTerminalThreads";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
 import { usePendingThreadOrder } from "../../state/thread-order";
@@ -312,6 +313,7 @@ function ThreadNavigationSidebarPane(
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder(nowMinute, snoozeWakeTick);
+  const terminalStates = useTerminalThreadStates(threads);
   // Up/down menu availability for every card, computed once per section per
   // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
   // list construction quadratic, and this list rebuilds on every minute tick.
@@ -331,6 +333,7 @@ function ThreadNavigationSidebarPane(
           settlementEnvironmentIds,
           snoozeEnvironmentIds,
           queuedThreadKeys,
+          terminalStates,
         }),
       });
     return new Map([
@@ -346,6 +349,7 @@ function ThreadNavigationSidebarPane(
     queuedThreadKeys,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
+    terminalStates,
     nowMinute,
     snoozeWakeTick,
   ]);
@@ -369,8 +373,10 @@ function ThreadNavigationSidebarPane(
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey: props.selectedThreadKey ?? null,
+      terminalStates,
     });
   }, [
+    terminalStates,
     workingShelfEnabled,
     workingShelfExpanded,
     pendingOrder,

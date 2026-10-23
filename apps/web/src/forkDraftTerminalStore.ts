@@ -5,7 +5,7 @@ import { useComposerDraftStore } from "./composerDraftStore";
 import { resolveStorage } from "./lib/storage";
 
 /** The shell of the server that the terminal manager picks when a draft names none. */
-export const DEFAULT_DRAFT_SHELL = null;
+const DEFAULT_DRAFT_SHELL = null;
 
 /**
  * Fork: the drafts in Terminal mode (`ForkDraftTerminalComposer`). Such a draft shows a live
@@ -22,7 +22,7 @@ interface ForkDraftTerminalState {
   readonly leaveTerminalMode: (draftId: string) => void;
 }
 
-export const useForkDraftTerminalStore = create<ForkDraftTerminalState>()(
+const useForkDraftTerminalStore = create<ForkDraftTerminalState>()(
   persist(
     (set) => ({
       shellByDraftId: {},
@@ -55,7 +55,9 @@ export const useForkDraftTerminalStore = create<ForkDraftTerminalState>()(
     {
       name: "t3code:fork:draft-terminals:v1",
       storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+        // Per tab: two tabs write their whole state, so a shared store would drop the other
+        // tab's drafts. A reload of the tab keeps its drafts in Terminal mode.
+        resolveStorage(typeof window !== "undefined" ? window.sessionStorage : undefined),
       ),
       version: 1,
       partialize: ({ shellByDraftId, lastShellByEnvironmentId }) => ({

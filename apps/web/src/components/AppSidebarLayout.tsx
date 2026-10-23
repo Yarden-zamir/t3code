@@ -230,7 +230,7 @@ function NavigationHistoryShortcuts() {
       }
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
-          terminalFocus: isTerminalFocused(),
+          terminalFocus: isTerminalFocused(event),
           terminalOpen: routeThreadRef
             ? selectThreadTerminalUiState(
                 useTerminalUiStateStore.getState().terminalUiStateByThreadKey,

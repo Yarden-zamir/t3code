@@ -1,6 +1,6 @@
 import type { DraftId } from "~/composerDraftStore";
 import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDraftStore";
-import { isDraftInTerminalMode } from "~/forkDraftTerminalStore";
+import { isDraftInTerminalMode, useDraftTerminalShell } from "~/forkDraftTerminalStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
@@ -74,6 +74,8 @@ export function DraftHeroHeadline({
   const openAddProject = () => openCommandPalette({ open: "add-project" });
   const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
   const openProjectDraft = useNewThreadHandler();
+  // Fork: a draft in Terminal mode opens a shell, it builds nothing yet.
+  const terminalMode = useDraftTerminalShell(draftId) !== undefined;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
   const pickerFilter = useComboboxFilter();
@@ -316,7 +318,9 @@ export function DraftHeroHeadline({
   const headingLabel = isScratchDraft
     ? "What should we work on?"
     : hasResolvedProject
-      ? `What should we build in ${activeProjectDisplayName}?`
+      ? terminalMode
+        ? `Open a terminal in ${activeProjectDisplayName}`
+        : `What should we build in ${activeProjectDisplayName}?`
       : canChooseProject
         ? `${activeProjectDisplayName ?? "Choose a project"} to start`
         : "Add a project to start";
@@ -357,7 +361,11 @@ export function DraftHeroHeadline({
         {isScratchDraft ? (
           <>What should we work on?</>
         ) : hasResolvedProject ? (
-          <>What should we build in {projectSelector}?</>
+          terminalMode ? (
+            <>Open a terminal in {projectSelector}</>
+          ) : (
+            <>What should we build in {projectSelector}?</>
+          )
         ) : canChooseProject ? (
           <>{projectSelector} to start</>
         ) : (

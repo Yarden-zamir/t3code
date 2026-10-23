@@ -1,5 +1,5 @@
 import type { OrchestrationV2ProviderFailureClass } from "@t3tools/contracts";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { CircleAlertIcon, XIcon } from "lucide-react";
@@ -29,6 +29,21 @@ export function dismissThreadErrorBannerForSession(bannerKey: string | null): vo
 
 export function isThreadErrorBannerDismissedForSession(bannerKey: string | null): boolean {
   return bannerKey !== null && sessionDismissedThreadErrorBannerKeys.has(bannerKey);
+}
+
+/** The error of a thread until the user dismisses it, which hides it for the session. */
+export function useThreadErrorBanner(threadKey: string, error: string | null) {
+  const bannerKey = getThreadErrorBannerKey(threadKey, error);
+  // State, not only the session set, so a dismiss re-renders a compiled caller.
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const dismissed = bannerKey === dismissedKey || isThreadErrorBannerDismissedForSession(bannerKey);
+  return {
+    visibleError: shouldShowThreadErrorBanner(threadKey, error, dismissed) ? error : null,
+    dismiss: () => {
+      dismissThreadErrorBannerForSession(bannerKey);
+      setDismissedKey(bannerKey);
+    },
+  };
 }
 
 export const ThreadErrorBanner = memo(function ThreadErrorBanner({

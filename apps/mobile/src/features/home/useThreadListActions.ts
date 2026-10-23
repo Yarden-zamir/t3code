@@ -1,6 +1,10 @@
 import type { ThreadMoveDestination } from "../threads/threadOrder";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { canSnooze, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  forkEffectiveSnoozed,
+  terminalStateOf,
+} from "@t3tools/client-runtime/state/fork-terminal-threads";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Haptics from "expo-haptics";
@@ -12,6 +16,7 @@ import { scopedThreadKey } from "../../lib/scopedEntities";
 import { refreshArchivedThreadsForEnvironment } from "../archive/useArchivedThreadSnapshots";
 import { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
 import { appAtomRegistry } from "../../state/atom-registry";
+import { readTerminalThreadStates } from "../../state/forkTerminalThreads";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { readEnvironmentScope } from "../../state/session";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";
@@ -583,6 +588,8 @@ export function useThreadListActions(): {
         }
       }
       const configs = appAtomRegistry.get(environmentServerConfigsAtom);
+      const terminalStates = readTerminalThreadStates(shells);
+      const terminal = terminalStateOf(terminalStates, thread);
       const supportsReorder = (environmentId: EnvironmentThreadShell["environmentId"]) => {
         const capabilities = configs.get(environmentId)?.environment.capabilities;
         return section === "pinned"
@@ -611,6 +618,7 @@ export function useThreadListActions(): {
             config.environment.capabilities.threadSnooze === true ? [id] : [],
           ),
         ),
+        terminalStates,
       });
       const assignments = createThreadMovePlanner({
         allThreads: shells,
@@ -619,7 +627,7 @@ export function useThreadListActions(): {
         reorderableEnvironmentIds: new Set([...configs.keys()].filter(supportsReorder)),
       })(scopedThreadKey(thread.environmentId, thread.id), direction);
       if (assignments === null) return false;
-      const lifecycle = threadDropLifecycle(thread, section, new Date().toISOString());
+      const lifecycle = threadDropLifecycle(thread, section, new Date().toISOString(), terminal);
       const crossSection = !ordered.some(
         (row) => row.id === thread.id && row.environmentId === thread.environmentId,
       );
@@ -629,7 +637,7 @@ export function useThreadListActions(): {
           !environmentSupportsPinning(thread.environmentId)) ||
           (thread.settledOverride === "settled" &&
             !environmentSupportsSettlement(thread.environmentId)) ||
-          (effectiveSnoozed(thread, { now: new Date().toISOString() }) &&
+          (forkEffectiveSnoozed(thread, { now: new Date().toISOString() }, terminal) &&
             !environmentSupportsSnooze(thread.environmentId)))
       )
         return false;

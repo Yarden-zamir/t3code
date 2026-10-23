@@ -2,7 +2,6 @@ import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/Th
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
 import {
-  isThreadWokeUnseen,
   mergeDirectPreviewAnnotation,
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
@@ -27,12 +26,18 @@ import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnviron
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
-import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
+import {
+  ThreadPanelHeaderControl,
+  threadPanelToggleProps,
+  ThreadPanelLayoutControls,
+  ThreadRightPanelHosts,
+  ThreadRightPanelView,
+  useThreadRightPanel,
+} from "./chat/useThreadRightPanel";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import {
   latestExecutedRun,
   latestRootProviderFailure,
@@ -55,7 +60,6 @@ import * as Schema from "effect/Schema";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
-  AuthPreviewOperateScope,
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
   type AssistantCitation,
@@ -80,16 +84,14 @@ import {
   resolveProjectProviderInstanceEnabled,
   RuntimeMode,
 } from "@t3tools/contracts";
-import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import {
   wasBootstrapThreadDeleted,
   wasBootstrapThreadNotCreated,
 } from "@t3tools/client-runtime/errors";
 import { readPastedComposerContext } from "./composerInlineTokenPaste";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
-import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import { childThreadInputsTitle } from "@t3tools/client-runtime/state/threads";
-import { useAcknowledgeThreadWoke, useThreadActions } from "../hooks/useThreadActions";
+import { useThreadActions } from "../hooks/useThreadActions";
 import {
   deriveProviderSubagentStatus,
   deriveReportedModelSelection,
@@ -215,44 +217,17 @@ import { settleAndAdvance } from "../settleAndAdvance";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { FileMetadataThreadProvider } from "../hooks/FileMetadataThreadProvider";
-import { usePreviewPanelInlineSize } from "../hooks/usePreviewPanelInlineSize";
-import {
-  RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
-  type ThreadPanelPresentation,
-} from "../rightPanelLayout";
-import { PopoverCreateHandle } from "./ui/popover";
 import {
   selectActiveRightPanel,
-  selectActiveRightPanelSurface,
-  selectThreadPanelOpen,
   selectThreadRightPanelState,
-  type RightPanelSurface,
   useRightPanelStore,
 } from "../rightPanelStore";
-import {
-  isPreviewSupportedInRuntime,
-  setActivePreviewTab,
-  useThreadPreviewState,
-} from "../previewStateStore";
-import { BrowserSettingsReadError, openUrlInPreview } from "../browser/openFileInPreview";
+import { PopoverCreateHandle } from "./ui/popover";
+import { isPreviewSupportedInRuntime } from "../previewStateStore";
+import { openUrlInPreview } from "../browser/openFileInPreview";
 import { resolveDiscoveredServerUrl } from "../browser/browserTargetResolver";
-import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
-import { addBrowserSurface } from "./preview/addBrowserSurface";
-import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
-import { usePreviewSession } from "./preview/usePreviewSession";
-import { subscribePreviewAction } from "./preview/previewActionBus";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
-
-import {
-  browserMiniPlayerSource,
-  previewMiniPlayerSourceKey,
-  selectThreadPreviewMiniPlayer,
-  usePreviewMiniPlayerStore,
-} from "../previewMiniPlayerStore";
-import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.logic";
-import { RightPanelTabs } from "./RightPanelTabs";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
-import { useDeviceState } from "~/state/device";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { isEditableFocused } from "../lib/editableFocus";
@@ -260,8 +235,6 @@ import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { shortcutLabelForCommand } from "../keybindings";
 import { PersistentThreadTerminalDrawer } from "./PersistentThreadTerminals";
 import {
-  AlarmClockIcon,
-  CheckCircle2Icon,
   MessageCircleIcon,
   PaperclipIcon,
   ChevronDownIcon,
@@ -269,7 +242,6 @@ import {
   GitBranchIcon,
   ShieldQuestionIcon,
   TargetIcon,
-  WifiOffIcon,
 } from "lucide-react";
 import { cn, randomUUID } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
@@ -347,9 +319,6 @@ import {
   terminalContextReference,
 } from "../lib/composerContextRecords";
 import { type ReviewCommentContext } from "../reviewCommentContext";
-import { environmentCatalog } from "../connection/catalog";
-import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
-import { useEnvironmentDisconnectDelay } from "../hooks/useEnvironmentDisconnectDelay";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useEnvironmentQuery } from "../state/query";
@@ -374,7 +343,6 @@ import {
 } from "../state/environments";
 import {
   resolveThreadDetailRef,
-  useEnvironmentSupportsServerBrowser,
   useProject,
   useProjects,
   useThreadProjection,
@@ -403,9 +371,7 @@ import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
 import {
   BranchRestoreConfirmHost,
-  DeviceSetupDialogHost,
   openBranchRestoreConfirm,
-  openDeviceSetupDialog,
   openPullRequestThreadDialog,
   openRevertConfirm,
   PullRequestThreadDialogHost,
@@ -427,11 +393,7 @@ import { useThreadPinnedScripts } from "./PinnedScripts";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
-import {
-  PanelLayoutControls,
-  type PanelLayoutControlsProps,
-  RightPanelMaximizeControl,
-} from "./chat/PanelLayoutControls";
+import { PanelLayoutControls } from "./chat/PanelLayoutControls";
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -446,22 +408,13 @@ import {
   ProviderStatusBanner,
   shouldShowProviderStatusBanner,
 } from "./chat/ProviderStatusBanner";
-import {
-  dismissThreadErrorBannerForSession,
-  getThreadErrorBannerKey,
-  isThreadErrorBannerDismissedForSession,
-  shouldShowThreadErrorBanner,
-  ThreadErrorBanner,
-} from "./chat/ThreadErrorBanner";
+import { ThreadErrorBanner, useThreadErrorBanner } from "./chat/ThreadErrorBanner";
 import { QueuedRunsControl, type QueuedRunsControlHandle } from "./chat/QueuedRunsControl";
 import { useThreadLinkedPullRequest } from "./pullRequest/useThreadLinkedPullRequest";
 import { useProactivePanels } from "../hooks/useProactivePanels";
 import { useIncrementalTimelineEntries } from "../hooks/useIncrementalTimelineEntries";
-import { useRightPanelSurfaceClose } from "../hooks/useRightPanelSurfaceClose";
-import { useAgentOpenedPreviews } from "./preview/useAgentOpenedPreviews";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
-import { ThreadStatusLine } from "./chat/ThreadStatusLine";
-import { formatRelativeTimeLabel, formatRelativeTimeUntilLabel } from "../timestampFormat";
+import { useThreadStatusLine } from "./chat/ThreadStatusLine";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { resolveThreadSyncPhase } from "../threadSync";
 import {
@@ -491,14 +444,11 @@ import {
   deriveCommittedServerUserMessageIds,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
-  hasEnvironmentReconnectWarningGraceElapsed,
-  scheduleEnvironmentReconnectWarning,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   shouldShowBranchMismatchBanner,
   shouldShowPlanFollowUpPrompt,
   shouldReleaseTimelineAnchorForToolActivity,
-  shouldRenderPreviewMiniPlayer,
   getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -531,7 +481,6 @@ import {
   startAttachmentUpload,
 } from "../lib/attachmentUploadQueue";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
-import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -543,24 +492,8 @@ import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { Button, InlineButton } from "./ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { ServerUpdateAction } from "./ServerUpdateAction";
 import { useAutoBalanceUpdateBanner } from "./chat/useAutoBalanceUpdateBanner";
-import {
-  ComposerServerUpdateIcon,
-  ComposerServerUpdateStatus,
-} from "./chat/ComposerServerUpdateStatus";
-import {
-  buildVersionMismatchDismissalKey,
-  dismissServerUpdateFailure,
-  dismissVersionMismatch,
-  isServerUpdateFailureDismissed,
-  isVersionMismatchDismissed,
-  resolveServerConfigVersionMismatch,
-  resolveServerSelfUpdateCapability,
-  serverUpdateGuidance,
-  supportsDesktopAppUpdate,
-  supportsServerUpdateThreadContinuation,
-} from "../versionSkew";
+import { useEnvironmentBanners } from "./chat/useEnvironmentBanners";
 import { useAssetUrls } from "../assets/assetUrls";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 import { recallableComposerPrompt } from "./chat/composerPromptHistory";
@@ -641,13 +574,6 @@ function useDraftHeroLayoutTransition(
 
   return { transitionGroupRef, composerAnchorRef, captureComposerRect } as const;
 }
-
-const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
-type EnvironmentUnavailableState = {
-  readonly environmentId: EnvironmentId;
-  readonly label: string;
-  readonly connection: EnvironmentConnectionPresentation;
-};
 
 // Kept per route so a send in flight, and the multiple-model selections, survive
 // ChatView remounting while the user navigates.
@@ -1108,10 +1034,6 @@ export default function ChatView(props: ChatViewProps) {
   const { environments } = useEnvironments();
   const providersByEnvironment = useEnvironmentProviders();
   const primaryEnvironment = usePrimaryEnvironment();
-  const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
-  const setEnvironmentEnabled = useAtomCommand(environmentCatalog.setEnabled, {
-    reportFailure: false,
-  });
   const environmentById = new Map(
     environments.map((environment) => [environment.environmentId, environment]),
   );
@@ -1325,7 +1247,6 @@ export default function ChatView(props: ChatViewProps) {
     window.addEventListener("dragend", clearWorkspaceFileDrag);
     return () => window.removeEventListener("dragend", clearWorkspaceFileDrag);
   }, [isWorkspaceFileDragActive]);
-  const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
   const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
   const threadPanelPopoverAnchorRef = useRef<HTMLElement | null>(null);
@@ -1494,15 +1415,8 @@ export default function ChatView(props: ChatViewProps) {
   const threadError = isServerThread
     ? (localServerError ?? serverRuntime?.lastError ?? null)
     : localDraftError;
-  const threadErrorBannerKey = getThreadErrorBannerKey(routeThreadKey, threadError);
-  const visibleThreadError = shouldShowThreadErrorBanner(
-    routeThreadKey,
-    threadError,
-    isThreadErrorBannerDismissedForSession(threadErrorBannerKey),
-  )
-    ? threadError
-    : null;
-  const [, setThreadErrorBannerDismissTick] = useState(0);
+  const threadErrorBanner = useThreadErrorBanner(routeThreadKey, threadError);
+  const visibleThreadError = threadErrorBanner.visibleError;
   const defaultRuntimeMode = resolveProjectSettings(settings, activeThread?.projectId ?? null)
     .settings.defaultRuntimeMode;
   const runtimeMode =
@@ -1552,14 +1466,6 @@ export default function ChatView(props: ChatViewProps) {
   const activeThreadRef = useActiveThreadRef(activeThread);
   const terminalActions = useThreadTerminalActions(activeThreadRef);
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
-  const activeEnvironmentServerBrowser = useEnvironmentSupportsServerBrowser(
-    activeThreadRef?.environmentId ?? null,
-  );
-  const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
-  const previewPanelInlineSize = usePreviewPanelInlineSize(undefined, {
-    container: workspaceLayoutElement,
-    widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}`,
-  });
   const activeThreadShell = useQuietThreadShell(isServerThread ? activeThreadRef : null);
   const timelineThreadError =
     serverRuntime?.status === "failed" &&
@@ -1613,26 +1519,12 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
-  const activeRightPanelSurface = useRightPanelStore((state) =>
-    selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
-  );
-  const activePreviewState = useThreadPreviewState(activeThreadRef);
-  const activePreviewServerEpoch = activePreviewState.serverEpoch;
-  const previewSessionsReady = !activeEnvironmentServerBrowser || activePreviewState.listLoaded;
-  const resolvePreviewRuntimeTabId = activeThreadRef
-    ? (tabId: string) => previewRuntimeTabId(activeThreadRef, activePreviewServerEpoch, tabId)
-    : undefined;
-  const activePreviewMiniPlayer = usePreviewMiniPlayerStore((state) =>
-    selectThreadPreviewMiniPlayer(state.byThreadKey, activeThreadRef),
-  );
   const panelTerminalIds = new Set(
     rightPanelState.surfaces.flatMap((surface) =>
       surface.kind === "terminal" ? surface.terminalIds : [],
     ),
   );
   const canReuseTerminal = activeThreadKnownSessionsRaw !== null;
-  const previewPanelOpen = activeRightPanelKind === "preview" && browserAvailable;
-  const rightPanelOpen = rightPanelState.isOpen;
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const activeTerminalDrawerPresence = usePanelPresence(
@@ -1642,68 +1534,6 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadKey,
     panelAnimationDurationMs,
   );
-  const rightPanelPresenceValue = {
-    activeSurface: activeRightPanelSurface,
-    surfaces: rightPanelState.surfaces,
-  };
-  const rightPanelPresence = usePanelPresence(
-    rightPanelOpen && activeThreadRef !== null,
-    rightPanelPresenceValue,
-    panelAnimationsActive,
-    activeThreadKey,
-    panelAnimationDurationMs,
-  );
-  const rightPanelPresent = rightPanelPresence.present;
-  const rightPanelControlsInPanel =
-    shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
-  const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
-  const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
-  const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
-  const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
-    activePreviewMiniPlayer?.source ?? null,
-    renderedRightPanelSurface,
-  );
-  const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
-  const rightPanelMaximized = canMaximizeRightPanel && rightPanelState.maximized === true;
-  const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
-  const [threadPanelPresentation, setThreadPanelPresentation] =
-    useState<ThreadPanelPresentation>("inline");
-  const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
-  const threadPanelOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(
-      state.threadPanelVisibilityByThreadKey,
-      activeThreadRef,
-      threadPanelPresentation,
-    ),
-  );
-
-  useEffect(() => {
-    if (!activeThreadRef || !previewSessionsReady) return;
-    const hiddenTabIds = new Set(
-      Object.values(activePreviewState.sessions)
-        .filter((session) => session.runtime === "server" && session.reveal === false)
-        .map((session) => session.tabId),
-    );
-    useRightPanelStore
-      .getState()
-      .reconcileBrowserSurfaces(
-        activeThreadRef,
-        Object.keys(activePreviewState.sessions),
-        hiddenTabIds,
-      );
-  }, [activePreviewState.sessions, activeThreadRef, previewSessionsReady]);
-
-  useEffect(() => {
-    const source = activePreviewMiniPlayer?.source;
-    if (
-      activeThreadRef &&
-      previewSessionsReady &&
-      source?.kind === "browser" &&
-      !activePreviewState.sessions[source.tabId]
-    ) {
-      usePreviewMiniPlayerStore.getState().close(activeThreadRef);
-    }
-  }, [activePreviewMiniPlayer, activePreviewState.sessions, activeThreadRef, previewSessionsReady]);
 
   const existingOpenTerminalThreadKeys = (() => {
     const existingThreadKeys = new Set<string>([...serverThreadKeys, ...draftThreadKeys]);
@@ -1877,28 +1707,6 @@ export default function ChatView(props: ChatViewProps) {
   const activeProjectKey = activeProject
     ? `${activeProject.environmentId}:${activeProject.workspaceRoot}`
     : null;
-  const [pendingFileSurfaceIdsByProject, setPendingFileSurfaceIdsByProject] = useState<
-    ReadonlyMap<string, ReadonlySet<string>>
-  >(() => new Map());
-  const pendingFileSurfaceIds = activeProjectKey
-    ? (pendingFileSurfaceIdsByProject.get(activeProjectKey) ?? EMPTY_PENDING_FILE_SURFACE_IDS)
-    : EMPTY_PENDING_FILE_SURFACE_IDS;
-  const handleFilePendingChange = (relativePath: string, pending: boolean) => {
-    if (!activeProjectKey) return;
-    setPendingFileSurfaceIdsByProject((currentByProject) => {
-      const current = currentByProject.get(activeProjectKey) ?? EMPTY_PENDING_FILE_SURFACE_IDS;
-      const surfaceId = `file:${relativePath}`;
-      if (current.has(surfaceId) === pending) return currentByProject;
-      const next = new Set(current);
-      if (pending) next.add(surfaceId);
-      else next.delete(surfaceId);
-      const nextByProject = new Map(currentByProject);
-      if (next.size === 0) nextByProject.delete(activeProjectKey);
-      else nextByProject.set(activeProjectKey, next);
-      return nextByProject;
-    });
-  };
-  const handleFilePendingChangeStable = useStableCallback(handleFilePendingChange);
   const configuredPreviewUrls = getConfiguredPreviewUrls(activeProjectScripts);
 
   useEffect(() => {
@@ -1917,91 +1725,7 @@ export default function ChatView(props: ChatViewProps) {
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";
   const activeEnvironmentUnavailable =
     activeEnvironment !== null && activeEnvironmentConnectionPhase !== "connected";
-  const activeReconnectingEnvironmentId =
-    activeEnvironmentConnectionPhase === "connecting" ||
-    activeEnvironmentConnectionPhase === "reconnecting"
-      ? (activeEnvironment?.environmentId ?? null)
-      : null;
-  const [reconnectWarningGraceElapsedEnvironmentId, setReconnectWarningGraceElapsedEnvironmentId] =
-    useState<EnvironmentId | null>(null);
-  // Each reconnect attempt gets its own grace period, including a later one to
-  // the same environment.
-  const [graceReconnectingEnvironmentId, setGraceReconnectingEnvironmentId] = useState(
-    activeReconnectingEnvironmentId,
-  );
-  if (graceReconnectingEnvironmentId !== activeReconnectingEnvironmentId) {
-    setGraceReconnectingEnvironmentId(activeReconnectingEnvironmentId);
-    setReconnectWarningGraceElapsedEnvironmentId(null);
-  }
-  const reconnectWarningGraceElapsed = hasEnvironmentReconnectWarningGraceElapsed(
-    activeReconnectingEnvironmentId,
-    reconnectWarningGraceElapsedEnvironmentId,
-  );
-  useEffect(() => {
-    if (activeReconnectingEnvironmentId === null) return;
-    return scheduleEnvironmentReconnectWarning(() =>
-      setReconnectWarningGraceElapsedEnvironmentId(activeReconnectingEnvironmentId),
-    );
-  }, [activeReconnectingEnvironmentId]);
   const activeEnvironmentUnavailableLabel = activeEnvironment?.label ?? null;
-  const activeEnvironmentUnavailableState = (() => {
-    if (!activeEnvironmentUnavailable || !activeEnvironmentUnavailableLabel || !activeEnvironment) {
-      return null;
-    }
-
-    return {
-      environmentId: activeEnvironment.environmentId,
-      label: activeEnvironmentUnavailableLabel,
-      connection: activeEnvironment.connection,
-    };
-  })() as EnvironmentUnavailableState | null;
-  const handleReconnectActiveEnvironment = async (environmentId: EnvironmentId) => {
-    const result = await retryEnvironment(environmentId);
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Could not reconnect environment",
-          description: error instanceof Error ? error.message : "Failed to reconnect.",
-        }),
-      );
-    }
-  };
-  const handleReconnectActiveEnvironmentStable = useStableCallback(
-    handleReconnectActiveEnvironment,
-  );
-  const disconnectDelayElapsed = useEnvironmentDisconnectDelay(
-    activeEnvironmentUnavailable ? activeEnvironment.environmentId : null,
-  );
-  const canDisconnectActiveEnvironment =
-    disconnectDelayElapsed &&
-    activeEnvironment !== null &&
-    activeEnvironment.entry.target._tag !== "PrimaryConnectionTarget" &&
-    !isDesktopLocalConnectionTarget(activeEnvironment.entry.target);
-  const [disconnectingEnvironment, setDisconnectingEnvironment] = useState(false);
-  const handleDisconnectActiveEnvironment = async (environmentId: EnvironmentId) => {
-    setDisconnectingEnvironment(true);
-    const result = await setEnvironmentEnabled({ environmentId, enabled: false });
-    setDisconnectingEnvironment(false);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not disconnect server",
-            description: error instanceof Error ? error.message : "Failed to disconnect.",
-          }),
-        );
-      }
-      return;
-    }
-    void navigate({ to: "/", replace: true });
-  };
-  const handleDisconnectActiveEnvironmentStable = useStableCallback(
-    handleDisconnectActiveEnvironment,
-  );
   const { openScratchProject } = useScratchProject();
   const activeProjectIsScratch =
     activeProject !== null &&
@@ -2169,172 +1893,14 @@ export default function ChatView(props: ChatViewProps) {
       })
     : EMPTY_AUTO_UPDATE_ENVIRONMENTS;
   const autoBalanceUpdateBanner = useAutoBalanceUpdateBanner(autoUpdateEnvironments);
-  const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
-  const versionMismatchDismissKey =
-    versionMismatch && activeThread
-      ? buildVersionMismatchDismissalKey(activeThread.environmentId, versionMismatch)
-      : null;
-  const [dismissedVersionMismatchKey, setDismissedVersionMismatchKey] = useState<string | null>(
-    null,
-  );
-  const versionMismatchDismissed =
-    versionMismatchDismissKey === dismissedVersionMismatchKey ||
-    isVersionMismatchDismissed(versionMismatchDismissKey);
-  const showVersionMismatchBanner =
-    versionMismatch !== null && versionMismatchDismissKey !== null && !versionMismatchDismissed;
-  const hasMultipleRegisteredEnvironments = environments.length > 1;
-  const versionMismatchServerLabel =
-    hasMultipleRegisteredEnvironments && activeThread
-      ? `${environmentById.get(activeThread.environmentId)?.label ?? serverConfig?.environment.label ?? activeThread.environmentId} server`
-      : "server";
-  const serverUpdateEnvironmentId = activeThread?.environmentId ?? null;
-  const versionMismatchSelfUpdate = resolveServerSelfUpdateCapability(serverConfig);
-  const versionMismatchInstallation = serverConfig?.environment.capabilities.serverInstallation;
-  const versionMismatchDesktopAppUpdate = supportsDesktopAppUpdate(serverConfig);
-  const versionMismatchThreadContinuation = supportsServerUpdateThreadContinuation(serverConfig);
-  const serverUpdateState = useAtomValue(
-    serverEnvironment.updateStateAtom(serverUpdateEnvironmentId),
-  );
-  const [dismissedServerUpdateState, setDismissedServerUpdateState] = useState<
-    typeof serverUpdateState | null
-  >(null);
-  const serverUpdateFailureDismissed =
-    serverUpdateState === dismissedServerUpdateState ||
-    isServerUpdateFailureDismissed(serverUpdateState);
-  const systemComposerBannerItems = (() => {
-    const items: ComposerBannerStackItem[] = [];
-    const updateRunning = serverUpdateState.status === "running";
-    const unavailableConnection = activeEnvironmentUnavailableState?.connection ?? null;
-    const disconnectAction =
-      canDisconnectActiveEnvironment && activeEnvironmentUnavailableState ? (
-        <Button
-          size="xs"
-          variant="ghost"
-          disabled={disconnectingEnvironment}
-          title="Hide this server's threads. Switch it on again in Connections."
-          onClick={() =>
-            void handleDisconnectActiveEnvironmentStable(
-              activeEnvironmentUnavailableState.environmentId,
-            )
-          }
-        >
-          Disconnect server
-        </Button>
-      ) : undefined;
-    const environmentReconnecting =
-      unavailableConnection !== null &&
-      (unavailableConnection.phase === "connecting" ||
-        unavailableConnection.phase === "reconnecting");
-    const suppressUnavailableBanner =
-      environmentReconnecting && (updateRunning || !reconnectWarningGraceElapsed);
-    if (activeEnvironmentUnavailableState && unavailableConnection && !suppressUnavailableBanner) {
-      items.push({
-        id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
-        variant: unavailableConnection.phase === "error" ? "error" : "warning",
-        icon: <WifiOffIcon />,
-        title: `${activeEnvironmentUnavailableState.label} is ${environmentReconnecting ? "reconnecting" : "offline"}`,
-        actions: (
-          <>
-            {!environmentReconnecting ? (
-              <Button
-                size="xs"
-                variant="ghost"
-                onClick={() =>
-                  void handleReconnectActiveEnvironmentStable(
-                    activeEnvironmentUnavailableState.environmentId,
-                  )
-                }
-              >
-                Reconnect
-              </Button>
-            ) : null}
-            {disconnectAction}
-          </>
-        ),
-      });
-    }
-    if (
-      !automaticEnvironment &&
-      serverUpdateEnvironmentId &&
-      (serverUpdateState.status === "idle"
-        ? showVersionMismatchBanner
-        : !serverUpdateFailureDismissed)
-    ) {
-      const updateInProgress = serverUpdateState.status === "running";
-      const updateFailed = serverUpdateState.status === "failed";
-      items.push({
-        id: `server-version:${serverUpdateEnvironmentId}`,
-        variant: updateFailed ? "error" : "default",
-        priority: updateInProgress ? "urgent" : "notice",
-        icon: <ComposerServerUpdateIcon status={serverUpdateState.status} />,
-        title:
-          updateInProgress || updateFailed ? (
-            <ComposerServerUpdateStatus
-              state={serverUpdateState}
-              serverLabel={versionMismatchServerLabel}
-            />
-          ) : versionMismatch ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    className="block max-w-full cursor-help truncate rounded-sm text-left"
-                  >
-                    Server update available
-                  </button>
-                }
-              />
-              <TooltipPopup side="top">
-                {versionMismatchServerLabel} {versionMismatch.serverVersion}{" "}
-                <span aria-hidden="true">→</span> {versionMismatch.clientVersion}
-              </TooltipPopup>
-            </Tooltip>
-          ) : (
-            "Server update available"
-          ),
-        description:
-          !updateInProgress &&
-          !updateFailed &&
-          versionMismatchSelfUpdate !== null &&
-          (versionMismatchSelfUpdate !== "desktop-managed" || !versionMismatchDesktopAppUpdate)
-            ? serverUpdateGuidance(versionMismatchSelfUpdate)
-            : undefined,
-        actions: updateInProgress ? (
-          disconnectAction
-        ) : !versionMismatch ||
-          (versionMismatchSelfUpdate === "desktop-managed" &&
-            !versionMismatchDesktopAppUpdate) ? undefined : (
-          <ServerUpdateAction
-            environmentId={serverUpdateEnvironmentId}
-            serverLabel={versionMismatchServerLabel}
-            selfUpdate={versionMismatchSelfUpdate}
-            installation={versionMismatchInstallation}
-            desktopAppUpdate={versionMismatchDesktopAppUpdate}
-            threadContinuation={versionMismatchThreadContinuation}
-            targetVersion={versionMismatch.clientVersion}
-            label={updateFailed ? "Retry" : "Update"}
-            variant="ghost"
-          />
-        ),
-        ...(updateInProgress || (!updateFailed && !versionMismatchDismissKey)
-          ? {}
-          : {
-              dismissLabel: "Dismiss update notice",
-              onDismiss: () => {
-                if (updateFailed) {
-                  dismissServerUpdateFailure(serverUpdateState);
-                  setDismissedServerUpdateState(serverUpdateState);
-                }
-                dismissVersionMismatch(versionMismatchDismissKey);
-                setDismissedVersionMismatchKey(versionMismatchDismissKey);
-              },
-            }),
-      });
-    }
-    if (autoBalanceUpdateBanner) items.push(autoBalanceUpdateBanner);
-    return items;
-  })() as ComposerBannerStackItem[];
+  const environmentBanners = useEnvironmentBanners({
+    environment: activeEnvironment,
+    automaticEnvironment,
+  });
+  const activeEnvironmentUnavailableState = environmentBanners.unavailableState;
+  const systemComposerBannerItems = autoBalanceUpdateBanner
+    ? [...environmentBanners.items, autoBalanceUpdateBanner]
+    : environmentBanners.items;
   const providerInstanceEntries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(
       deriveProviderInstanceEntries(providerStatuses),
@@ -2951,12 +2517,13 @@ export default function ChatView(props: ChatViewProps) {
   if (providerStatusBannerKey === null && dismissedProviderStatusBannerKey !== null) {
     setDismissedProviderStatusBannerKey(null);
   }
-  const visibleProviderStatus = shouldShowProviderStatusBanner(
-    activeProviderStatus,
-    dismissedProviderStatusBannerKey,
-  )
-    ? activeProviderStatus
-    : null;
+  // Fork: a draft in Terminal mode runs no agent, so an agent provider's status is noise there.
+  const forkDraftTerminalShell = useDraftTerminalShell(draftId);
+  const visibleProviderStatus =
+    forkDraftTerminalShell === undefined &&
+    shouldShowProviderStatusBanner(activeProviderStatus, dismissedProviderStatusBannerKey)
+      ? activeProviderStatus
+      : null;
   const hasTimelineTopBanner = Boolean(timelineThreadError) || visibleProviderStatus !== null;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
@@ -3017,8 +2584,7 @@ export default function ChatView(props: ChatViewProps) {
           reportedModelSelection,
         );
   // Fork: a draft in Terminal mode shows a shell in place of the prompt
-  // (`ForkDraftTerminalComposer`); its shell runs in the project root.
-  const forkDraftTerminalShell = useDraftTerminalShell(draftId);
+  // (`ForkDraftTerminalComposer`); its shell runs in the workspace that the draft picks.
   const forkTerminalModeAvailable = useTerminalModeAvailable(draftThread?.environmentId ?? null);
   // Availability only offers the toggle: a draft that is in Terminal mode keeps its shell while a
   // reconnect briefly reads the grants as missing.
@@ -3029,30 +2595,22 @@ export default function ChatView(props: ChatViewProps) {
     forkDraftTerminalShell !== undefined
       ? { draftId, draft: draftThread, shell: forkDraftTerminalShell }
       : null;
-  // Terminal mode would hide a prompt or attachments, and the thread it makes drops them.
-  const forkDraftHasContent = useComposerDraftStore((store) =>
-    draftId === null ? false : composerDraftHasUserContent(store.getComposerDraft(draftId)),
-  );
-  const mountComposerContextStrip =
-    forkDraftTerminal === null &&
-    shouldShowComposerContextStrip({
-      isDraftHeroState,
-      persistInActiveThreads: settings.persistComposerContextStrip,
-      hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-      isGitRepo,
-      showEnvironmentIndicator: showComposerEnvironmentIndicator,
-      hostsRestingComposerControls: routeKind === "server",
-    });
-  const showComposerContextStrip =
-    forkDraftTerminal === null &&
-    shouldShowComposerContextStrip({
-      isDraftHeroState,
-      persistInActiveThreads: settings.persistComposerContextStrip,
-      hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-      isGitRepo,
-      showEnvironmentIndicator: showComposerEnvironmentIndicator,
-      hostsRestingComposerControls: routeKind === "server" && restingComposerControlsVisible,
-    });
+  const mountComposerContextStrip = shouldShowComposerContextStrip({
+    isDraftHeroState,
+    persistInActiveThreads: settings.persistComposerContextStrip,
+    hasActiveProject: activeProject !== null && !showProviderSubagentBar,
+    isGitRepo,
+    showEnvironmentIndicator: showComposerEnvironmentIndicator,
+    hostsRestingComposerControls: routeKind === "server",
+  });
+  const showComposerContextStrip = shouldShowComposerContextStrip({
+    isDraftHeroState,
+    persistInActiveThreads: settings.persistComposerContextStrip,
+    hasActiveProject: activeProject !== null && !showProviderSubagentBar,
+    isGitRepo,
+    showEnvironmentIndicator: showComposerEnvironmentIndicator,
+    hostsRestingComposerControls: routeKind === "server" && restingComposerControlsVisible,
+  });
   const mountComposerModelStrip =
     routeKind === "server" && !mountComposerContextStrip && !showProviderSubagentBar;
   const showComposerModelStrip = mountComposerModelStrip && restingComposerControlsVisible;
@@ -3610,92 +3168,6 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
   const openProviderSetupStable = useStableCallback(openProviderSetup);
-  const canOperatePreview = useEnvironmentScope(
-    activeThreadRef?.environmentId ?? null,
-    AuthPreviewOperateScope,
-  );
-  const createBrowserSurface = (profileId?: string) => {
-    if (!activeThreadRef || !canOperatePreview) return;
-    void addBrowserSurface({
-      threadRef: activeThreadRef,
-      openPreview,
-      ...(profileId === undefined ? {} : { profileId }),
-    }).then((result) => {
-      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-      const error = squashAtomCommandFailure(result);
-      if (error instanceof BrowserSettingsReadError) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to open browser",
-            description: error.message,
-          }),
-        );
-      }
-    });
-  };
-  const createBrowserSurfaceStable = useStableCallback(createBrowserSurface);
-  const addDiffSurface = () => {
-    if (!activeThreadRef || !isServerThread || !isGitRepo) return;
-    useDiffPanelStore.getState().selectGitScope(activeThreadRef, "branch");
-    useRightPanelStore.getState().open(activeThreadRef, "diff");
-    onDiffPanelOpen?.();
-  };
-  const addDiffSurfaceStable = useStableCallback(addDiffSurface);
-  const openChangesFromThreadPanel = () => {
-    addDiffSurface();
-  };
-  const openChangesFromThreadPanelStable = useStableCallback(openChangesFromThreadPanel);
-  const addFilesSurface = () => {
-    if (!activeThreadRef || !activeProject) return;
-    useRightPanelStore.getState().open(activeThreadRef, "files");
-  };
-  const addFilesSurfaceStable = useStableCallback(addFilesSurface);
-  const supportsThreadPullRequests =
-    serverConfig?.environment.capabilities.threadPullRequests === true;
-  const visiblePullRequests = visibleThreadPullRequests(
-    (activeThreadShell ?? activeThread)?.pullRequests ?? [],
-  );
-  const visiblePullRequestCount = visiblePullRequests.length;
-  const pullRequestsSurfaceAvailable =
-    isServerThread && supportsThreadPullRequests && visiblePullRequestCount > 0;
-  const addPullRequestsSurface = () => {
-    if (!activeThreadRef || !pullRequestsSurfaceAvailable) return;
-    useRightPanelStore.getState().open(activeThreadRef, "pull-requests");
-  };
-  const addPullRequestsSurfaceStable = useStableCallback(addPullRequestsSurface);
-  const addMachinesSurface = () => {
-    if (!activeThreadRef) return;
-    useRightPanelStore.getState().open(activeThreadRef, "machines");
-  };
-  const addMachinesSurfaceStable = useStableCallback(addMachinesSurface);
-  const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(
-    activeThreadRef?.environmentId ?? null,
-  );
-  const addDeviceSurface = () => {
-    if (!activeThreadRef) return;
-    if (!deviceState.onboardingCompleted || deviceState.hostStatus === "disabled") {
-      openDeviceSetupDialog(scopedThreadKey(activeThreadRef));
-      return;
-    }
-    useRightPanelStore.getState().open(activeThreadRef, "device");
-  };
-  const addDeviceSurfaceStable = useStableCallback(addDeviceSurface);
-  useAgentOpenedPreviews({
-    threadRef: activeThreadRef,
-    deviceState,
-    deviceStateLoaded,
-    previewState: activePreviewState,
-    serverBrowserAvailable: activeEnvironmentServerBrowser,
-    panelSurfaces: rightPanelState.surfaces,
-    miniPlayerSource: activePreviewMiniPlayer?.source ?? null,
-    sheetLayout: shouldUsePlanSidebarSheet,
-  });
-  const openFileSurface = (relativePath: string) => {
-    if (!activeThreadRef || !activeProject) return;
-    useRightPanelStore.getState().openFile(activeThreadRef, relativePath);
-  };
-  const openFileSurfaceStable = useStableCallback(openFileSurface);
   // The thread's own change request, placed against the project it belongs to. Without a
   // project there is nothing to resolve it against, so the caller falls back to the browser.
   const activeProjectRepository = sourceControlRepositorySelector(
@@ -3716,6 +3188,44 @@ export default function ChatView(props: ChatViewProps) {
     threadBranch: activeThread?.branch ?? null,
     gitStatus: gitStatusQuery.data ?? null,
   });
+  const rightPanel = useThreadRightPanel({
+    threadRef: activeThreadRef,
+    routeThreadRef,
+    project: activeProject,
+    projectId: activeThread?.projectId ?? null,
+    isServerThread,
+    isGitRepo,
+    serverConfig,
+    pullRequests: (activeThreadShell ?? activeThread)?.pullRequests ?? [],
+    linkedPullRequest: linkedThreadPullRequest,
+    branchPullRequest: activeThreadShell?.branchPullRequest ?? activeThread?.branchPullRequest,
+    container: workspaceLayoutElement,
+    terminalLabelsById: activeTerminalLabelsById,
+    requestTerminalFocus: () => setTerminalFocusRequestId((value) => value + 1),
+    onDiffPanelOpen,
+  });
+  const {
+    shouldUsePlanSidebarSheet,
+    activeRightPanelSurface,
+    previewPanelOpen,
+    rightPanelControlsInPanel,
+    rightPanelControlsAtRoot,
+    rightPanelMaximized,
+    inlineRightPanelOwnsTitleBar,
+    setThreadPanelPresentation,
+    visiblePullRequests,
+    visiblePullRequestCount,
+    pullRequestsSurfaceAvailable,
+    openChangesFromThreadPanelStable,
+    addTerminalSurfaceStable,
+    splitPanelTerminalStable,
+    requestClosePanelTerminalStable,
+    toggleRightPanelStable,
+    toggleThreadPanelStable,
+    toggleRightPanelMaximizedStable,
+    closeRightPanelSurfaceStable,
+  } = rightPanel;
+  const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
   const proactivePullRequestsKey = pullRequestsSurfaceAvailable
     ? JSON.stringify(
         visiblePullRequests.map((link) => [link.host, link.repository, link.number]).sort(),
@@ -3741,95 +3251,6 @@ export default function ChatView(props: ChatViewProps) {
     visiblePullRequestCount,
     onDiffPanelOpen,
   });
-  const closePreviewPanel = () => {
-    if (activeThreadRef) {
-      if (activeRightPanelSurface?.kind === "preview" && activeRightPanelSurface.resourceId) {
-        usePreviewMiniPlayerStore
-          .getState()
-          .open(activeThreadRef, browserMiniPlayerSource(activeRightPanelSurface.resourceId));
-      } else if (activeRightPanelSurface?.kind === "device" && activeRightPanelSurface.target) {
-        usePreviewMiniPlayerStore
-          .getState()
-          .open(activeThreadRef, { kind: "device", ...activeRightPanelSurface.target });
-      }
-      useRightPanelStore.getState().setMaximized(activeThreadRef, false);
-      useRightPanelStore.getState().close(activeThreadRef);
-    }
-  };
-  const closePreviewPanelStable = useStableCallback(closePreviewPanel);
-  const togglePreviewPanel = () => {
-    if (!activeThreadRef || !browserAvailable) return;
-    if (previewPanelOpen) {
-      closePreviewPanel();
-      return;
-    }
-    if (!canOperatePreview) return;
-    const activeTabId = activePreviewState.activeTabId;
-    if (activeTabId) {
-      useRightPanelStore.getState().openBrowser(activeThreadRef, activeTabId);
-    } else {
-      createBrowserSurface();
-    }
-  };
-  const togglePreviewPanelStable = useStableCallback(togglePreviewPanel);
-  const addTerminalSurface = () => {
-    if (!activeThreadRef) return;
-    const launched = terminalActions.launchTerminal({
-      place: (terminalId) =>
-        useRightPanelStore.getState().openTerminal(activeThreadRef, terminalId),
-    });
-    if (!launched) return;
-    setTerminalFocusRequestId((value) => value + 1);
-    void launched.result;
-  };
-  const addTerminalSurfaceStable = useStableCallback(addTerminalSurface);
-  const splitPanelTerminal = (direction: "horizontal" | "vertical" = "horizontal") => {
-    if (
-      !activeThreadRef ||
-      activeRightPanelSurface?.kind !== "terminal" ||
-      activeRightPanelSurface.terminalIds.length >= MAX_TERMINALS_PER_GROUP
-    ) {
-      return;
-    }
-    const surfaceId = activeRightPanelSurface.id;
-    const launched = terminalActions.launchTerminal({
-      place: (terminalId) =>
-        useRightPanelStore
-          .getState()
-          .splitTerminal(activeThreadRef, surfaceId, terminalId, direction),
-    });
-    if (!launched) return;
-    setTerminalFocusRequestId((value) => value + 1);
-    void launched.result;
-  };
-  const splitPanelTerminalStable = useStableCallback(splitPanelTerminal);
-  const splitPanelTerminalVertical = () => {
-    splitPanelTerminal("vertical");
-  };
-  const splitPanelTerminalVerticalStable = useStableCallback(splitPanelTerminalVertical);
-  const activatePanelTerminal = (terminalId: string) => {
-    if (!activeThreadRef || activeRightPanelSurface?.kind !== "terminal") return;
-    useRightPanelStore
-      .getState()
-      .activateTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId);
-    setTerminalFocusRequestId((value) => value + 1);
-  };
-  const activatePanelTerminalStable = useStableCallback(activatePanelTerminal);
-  const closePanelTerminal = (terminalId: string) => {
-    if (
-      !hasTerminalWriteAccess() ||
-      !activeThreadRef ||
-      activeRightPanelSurface?.kind !== "terminal"
-    )
-      return;
-    terminalActions.closeTerminalSession(terminalId);
-    storeCloseTerminal(activeThreadRef, terminalId);
-    useRightPanelStore
-      .getState()
-      .closeTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId);
-    setTerminalFocusRequestId((value) => value + 1);
-  };
-  const closePanelTerminalStable = useStableCallback(closePanelTerminal);
   const requestCloseTerminal = (terminalId: string) => {
     if (!hasTerminalWriteAccess()) return;
     const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
@@ -3840,109 +3261,6 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
   const requestCloseTerminalStable = useStableCallback(requestCloseTerminal);
-  const requestClosePanelTerminal = (terminalId: string) => {
-    if (!hasTerminalWriteAccess()) return;
-    const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
-    void confirmTerminalClose([label]).then((confirmed) => {
-      if (confirmed && readEnvironmentScope(environmentId, AuthTerminalOperateScope)) {
-        closePanelTerminal(terminalId);
-      }
-    });
-  };
-  const requestClosePanelTerminalStable = useStableCallback(requestClosePanelTerminal);
-  const activateRightPanelSurface = (surface: RightPanelSurface) => {
-    if (!activeThreadRef) return;
-    useRightPanelStore.getState().activateSurface(activeThreadRef, surface.id);
-    if (surface.kind === "preview" && surface.resourceId) {
-      setActivePreviewTab(activeThreadRef, surface.resourceId);
-    }
-    if (surface.kind === "terminal") {
-      setTerminalFocusRequestId((value) => value + 1);
-    }
-    if (surface.kind === "diff" && !diffOpen) {
-      onDiffPanelOpen?.();
-    }
-  };
-  const activateRightPanelSurfaceStable = useStableCallback(activateRightPanelSurface);
-  const toggleRightPanel = () => {
-    if (!activeThreadRef) return;
-    if (rightPanelOpen) {
-      closePreviewPanel();
-      return;
-    }
-    useRightPanelStore.getState().toggleVisibility(activeThreadRef);
-  };
-  const toggleRightPanelStable = useStableCallback(toggleRightPanel);
-  const toggleThreadPanel = () => {
-    if (!activeThreadRef) return;
-    useRightPanelStore.getState().toggleThreadPanel(activeThreadRef, threadPanelPresentation);
-  };
-  const toggleThreadPanelStable = useStableCallback(toggleThreadPanel);
-  useEffect(() => {
-    if (!canMaximizeRightPanel) return;
-    if (useRightPanelStore.getState().consumeMaximizeRequest(routeThreadRef)) {
-      useRightPanelStore.getState().setMaximized(routeThreadRef, true);
-    }
-  }, [canMaximizeRightPanel, routeThreadRef]);
-  const toggleRightPanelMaximized = () => {
-    if (!canMaximizeRightPanel || !activeThreadRef) return;
-    useRightPanelStore.getState().setMaximized(activeThreadRef, !rightPanelMaximized);
-  };
-  const toggleRightPanelMaximizedStable = useStableCallback(toggleRightPanelMaximized);
-  const {
-    closeSurface: closeRightPanelSurface,
-    closeOtherSurfaces: closeOtherRightPanelSurfacesStable,
-    closeSurfacesToRight: closeRightPanelSurfacesToRightStable,
-    closeAllSurfaces: closeAllRightPanelSurfacesStable,
-  } = useRightPanelSurfaceClose({
-    threadRef: activeThreadRef,
-    terminalLabelsById: activeTerminalLabelsById,
-  });
-  const closeRightPanelSurfaceStable = closeRightPanelSurface;
-  const moveRightPanelSurface = (surfaceId: string, toIndex: number) => {
-    if (activeThreadRef)
-      useRightPanelStore.getState().moveSurface(activeThreadRef, surfaceId, toIndex);
-  };
-  const moveRightPanelSurfaceStable = useStableCallback(moveRightPanelSurface);
-  const copyRightPanelFilePath = (relativePath: string) => {
-    if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to copy path",
-          description: "Clipboard API unavailable.",
-        }),
-      );
-      return;
-    }
-
-    void navigator.clipboard.writeText(relativePath).then(
-      () => {
-        toastManager.add({
-          type: "success",
-          title: "Path copied",
-          description: relativePath,
-        });
-      },
-      (error) => {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to copy path",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      },
-    );
-  };
-  const copyRightPanelFilePathStable = useStableCallback(copyRightPanelFilePath);
-  useEffect(
-    () =>
-      subscribePreviewAction((action) => {
-        if (action === "toggle-panel") togglePreviewPanelStable();
-      }),
-    [togglePreviewPanelStable],
-  );
   const persistThreadSettingsForNextTurn = async (input: {
     threadId: ThreadId;
     createdAt: string;
@@ -4785,152 +4103,19 @@ export default function ChatView(props: ChatViewProps) {
     );
   };
   const copyActiveThreadReferenceStable = useStableCallback(copyActiveThreadReference);
-  const pullRequestPanelTarget = activeThread
-    ? threadPullRequestPanelTarget({
-        projectId: activeThread.projectId,
-        pullRequests: visiblePullRequests,
-        linkedPullRequest: linkedThreadPullRequest,
-        branchPullRequest: activeThreadShell?.branchPullRequest ?? activeThread.branchPullRequest,
-      })
-    : null;
-  const addPullRequestSurface = () => {
-    if (!supportsPullRequests || activeThreadRef === null || pullRequestPanelTarget === null)
-      return;
-    useRightPanelStore.getState().openPullRequest(activeThreadRef, pullRequestPanelTarget);
-  };
-  const addPullRequestSurfaceStable = useStableCallback(addPullRequestSurface);
-  const pullRequestSurfaceAvailable = supportsPullRequests && pullRequestPanelTarget !== null;
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
-  const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const supportsPinning = serverConfig?.environment.capabilities.threadPinning === true;
   const activeThreadPinned = supportsPinning && activeThreadShell?.pinnedAt != null;
-  // The compiler caches render results on their inputs, so a clock read in render
-  // stays frozen until the shell changes. The clock is state: reset with the shell,
-  // and moved by the wake timer.
-  const [snoozeClockState, setSnoozeClockState] = useState(() => ({
-    shell: activeThreadShell,
-    now: new Date().toISOString(),
-  }));
-  if (snoozeClockState.shell !== activeThreadShell) {
-    setSnoozeClockState({ shell: activeThreadShell, now: new Date().toISOString() });
-  }
-  const snoozeClock = snoozeClockState.now;
-  const activeThreadSnoozed =
-    activeThreadShell !== null &&
-    supportsSnooze &&
-    effectiveSnoozed(activeThreadShell, { now: snoozeClock });
-  useEffect(() => {
-    if (!activeThreadSnoozed) return;
-    const wakeAtMs = Date.parse(activeThreadShell?.snoozedUntil ?? "");
-    if (!Number.isFinite(wakeAtMs)) return;
-    const id = window.setTimeout(
-      () => setSnoozeClockState((clock) => ({ ...clock, now: new Date().toISOString() })),
-      Math.min(Math.max(0, wakeAtMs - Date.now()) + 50, 2_147_483_647),
-    );
-    return () => window.clearTimeout(id);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A clock that lands before the wake time (timer clamping, clock skew) re-arms the timer.
-  }, [activeThreadShell?.snoozedUntil, activeThreadSnoozed, snoozeClock]);
-  const activeThreadWokeAt =
-    activeThreadShell !== null && supportsSnooze
-      ? threadWokeAt(activeThreadShell, { now: snoozeClock })
-      : null;
-  const acknowledgeThreadWoke = useAcknowledgeThreadWoke();
-  const acknowledgeActiveThreadWoke = () => {
-    if (activeThreadRef === null || activeThreadWokeAt === null) return;
-    acknowledgeThreadWoke(activeThreadRef, activeThreadWokeAt);
-  };
-  const acknowledgeActiveThreadWokeStable = useStableCallback(acknowledgeActiveThreadWoke);
-  const activeThreadLocalVisitedAt = useUiStateStore((store) =>
-    activeThreadKey === null ? undefined : store.threadLastVisitedAtById[activeThreadKey],
-  );
-  const activeThreadLastVisitedAt = resolveThreadLastVisitedAt(
-    activeThreadShell?.lastVisitedAt,
-    activeThreadLocalVisitedAt,
-  );
-  const activeThreadWokeVisible = isThreadWokeUnseen({
-    wokeAt: activeThreadWokeAt,
-    settled: activeThreadShell?.settledOverride === "settled",
-    lastVisitedAt: activeThreadLastVisitedAt,
+  const statusLine = useThreadStatusLine({
+    threadRef: activeThreadRef,
+    thread: activeThreadShell,
+    // ChatView never shows a terminal thread (ThreadRouteView).
+    terminal: undefined,
     latestRunCompletedAt: activeLatestRun?.completedAt ?? null,
+    supportsSnooze: serverConfig?.environment.capabilities.threadSnooze === true,
+    supportsSettlement,
+    canOperate: canOperateThread,
   });
-  const activeThreadSettled =
-    supportsSettlement && activeThreadShell?.settledOverride === "settled";
-  const unsettleThreadMutation = useOrchestrationCommand(threadEnvironment.unsettle, {
-    reportFailure: false,
-  });
-  const [unsettlingThreadKey, setUnsettlingThreadKey] = useState<string | null>(null);
-  const isUnsettling = unsettlingThreadKey !== null && unsettlingThreadKey === activeThreadKey;
-  const handleUnsettleActiveThread = async () => {
-    if (
-      !activeThreadRef ||
-      !readEnvironmentScope(activeThreadRef.environmentId, AuthOrchestrationOperateScope)
-    )
-      return;
-    const threadKey = scopedThreadKey(activeThreadRef);
-    setUnsettlingThreadKey(threadKey);
-    // Commands settle into a result, so this always runs.
-    const result = await unsettleThreadMutation({
-      environmentId: activeThreadRef.environmentId,
-      input: { threadId: activeThreadRef.threadId, reason: "user" },
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to un-settle thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        }),
-      );
-    }
-    setUnsettlingThreadKey((current) => (current === threadKey ? null : current));
-  };
-  const handleUnsettleActiveThreadStable = useStableCallback(handleUnsettleActiveThread);
-  const unsnoozeThreadMutation = useOrchestrationCommand(threadEnvironment.unsnooze, {
-    reportFailure: false,
-  });
-  const [unsnoozingThreadKey, setUnsnoozingThreadKey] = useState<string | null>(null);
-  const isUnsnoozing = unsnoozingThreadKey !== null && unsnoozingThreadKey === activeThreadKey;
-  const handleUnsnoozeActiveThread = async () => {
-    if (
-      !activeThreadRef ||
-      !readEnvironmentScope(activeThreadRef.environmentId, AuthOrchestrationOperateScope)
-    )
-      return;
-    const threadKey = scopedThreadKey(activeThreadRef);
-    setUnsnoozingThreadKey(threadKey);
-    // Commands settle into a result, so this always runs.
-    const recovery = activeThreadShell?.limitRecovery;
-    const recoveryOwnsSnooze =
-      recovery?.snooze === true &&
-      recovery.runId === activeThreadShell?.latestRun?.runId &&
-      activeThreadShell?.snoozedUntil != null &&
-      Date.parse(activeThreadShell.snoozedUntil) === Date.parse(recovery.resetAt);
-    const result = recoveryOwnsSnooze
-      ? await updateThreadMetadata({
-          environmentId: activeThreadRef.environmentId,
-          input: {
-            threadId: activeThreadRef.threadId,
-            limitRecovery: { runId: recovery.runId, resetAt: recovery.resetAt, snooze: false },
-          },
-        })
-      : await unsnoozeThreadMutation({
-          environmentId: activeThreadRef.environmentId,
-          input: { threadId: activeThreadRef.threadId, reason: "user" },
-        });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to wake thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        }),
-      );
-    }
-    setUnsnoozingThreadKey((current) => (current === threadKey ? null : current));
-  };
-  const handleUnsnoozeActiveThreadStable = useStableCallback(handleUnsnoozeActiveThread);
   const [isRestoringThreadBranch, setIsRestoringThreadBranch] = useState(false);
   const [revealedBranchMismatchKey, setRevealedBranchMismatchKey] = useState<string | null>(null);
   const [, setBranchMismatchDismissTick] = useState(0);
@@ -5260,35 +4445,6 @@ export default function ChatView(props: ChatViewProps) {
       ),
     };
   })() as ComposerBannerStackItem | null;
-  // The relative times read the clock; nowMinute re-renders them on the minute.
-  const snoozedUntil = activeThreadShell?.snoozedUntil ?? null;
-  const settledAt = activeThreadShell?.settledAt ?? null;
-  const threadStatusLine = activeThreadSnoozed ? (
-    <ThreadStatusLine
-      icon={<AlarmClockIcon />}
-      label={snoozedUntil ? `Snoozed, ${formatRelativeTimeUntilLabel(snoozedUntil)}` : "Snoozed"}
-      clockMinute={nowMinute}
-      actionLabel={isUnsnoozing ? "Waking..." : "Wake now"}
-      actionDisabled={!canOperateThread || isUnsnoozing}
-      onAction={() => void handleUnsnoozeActiveThreadStable()}
-    />
-  ) : activeThreadSettled ? (
-    <ThreadStatusLine
-      icon={<CheckCircle2Icon />}
-      label={settledAt ? `Settled ${formatRelativeTimeLabel(settledAt)}` : "Settled"}
-      clockMinute={nowMinute}
-      actionLabel={isUnsettling ? "Un-settling..." : "Un-settle"}
-      actionDisabled={!canOperateThread || isUnsettling}
-      onAction={() => void handleUnsettleActiveThreadStable()}
-    />
-  ) : activeThreadWokeVisible ? (
-    <ThreadStatusLine
-      icon={<AlarmClockIcon />}
-      label="Woke from snooze"
-      actionLabel="Dismiss"
-      onAction={acknowledgeActiveThreadWokeStable}
-    />
-  ) : null;
   const activeThreadHasCompactableConversation = serverVisibleTurnItems.some(
     ({ item }) =>
       item.type === "user_message" &&
@@ -5563,8 +4719,8 @@ export default function ChatView(props: ChatViewProps) {
       "thread.settle": () => {
         if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return false;
         if (!isServerThread || !activeThreadRef || !supportsSettlement) return;
-        if (activeThreadSettled) {
-          void handleUnsettleActiveThreadStable();
+        if (statusLine.settled) {
+          void statusLine.unsettle();
           return;
         }
         if (settleAndAdvance(activeThreadRef)) return;
@@ -5677,14 +4833,6 @@ export default function ChatView(props: ChatViewProps) {
       return script ? () => void runProjectScriptStable(script) : undefined;
     },
   });
-
-  // A focused desktop browser page forwards these chords as menu actions.
-  useEffect(() => {
-    return window.desktopBridge?.onMenuAction((action) => {
-      if (action === "rightPanel.toggle") toggleRightPanelStable();
-      else if (action === "rightPanel.toggleMaximized") toggleRightPanelMaximizedStable();
-    });
-  }, [toggleRightPanelStable, toggleRightPanelMaximizedStable]);
 
   // Paste-to-focus: the resting composer blurs on a click into the timeline,
   // so a paste that follows has no editable target and would be dropped.
@@ -7048,7 +6196,7 @@ export default function ChatView(props: ChatViewProps) {
         if (turnUsesAttachmentUploads) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
         }
-        acknowledgeActiveThreadWoke();
+        statusLine.acknowledgeWoke();
         if (backgroundThreadRef) {
           if (backgroundDraftOpened || currentRouteThreadKeyRef.current !== routeThreadKey) {
             finalizePromotedDraftThreadByRef(backgroundThreadRef);
@@ -7731,115 +6879,21 @@ export default function ChatView(props: ChatViewProps) {
     return <NoActiveThreadState />;
   }
 
-  const rightPanelContent = activeThreadRef ? (
-    <RightPanelSurfaceContent
-      surface={renderedRightPanelSurface}
-      activeSurfaceId={activeRightPanelSurface?.id ?? null}
-      threadRef={activeThreadRef}
-      environmentId={activeThread.environmentId}
-      visible={rightPanelOpen}
-      composerDraftTarget={composerDraftTarget}
-      keybindings={keybindings}
-      configuredPreviewUrls={configuredPreviewUrls}
-      workspaceMutationId={workspaceMutationId}
-      getShortcutContext={getShortcutContextStable}
-      onSendAnnotation={sendPreviewAnnotationStable}
-      onCloseSurface={closeRightPanelSurface}
-      terminal={{
-        launchContext: activeTerminalLaunchContext ?? null,
-        focusRequestId: terminalFocusRequestId,
-        keybindings,
-        onAddTerminalContext: addTerminalContextToDraftStable,
-        onSplitTerminal: splitPanelTerminalStable,
-        onSplitTerminalVertical: splitPanelTerminalVerticalStable,
-        onNewTerminal: addTerminalSurfaceStable,
-        onActiveTerminalChange: activatePanelTerminalStable,
-        onCloseTerminal: closePanelTerminalStable,
-        splitShortcutLabel: splitTerminalShortcutLabel ?? undefined,
-        splitVerticalShortcutLabel: splitTerminalVerticalShortcutLabel ?? undefined,
-        newShortcutLabel: newTerminalShortcutLabel ?? undefined,
-        closeShortcutLabel: closeTerminalShortcutLabel ?? undefined,
-      }}
-      pullRequest={{
-        capabilityKnown: pullRequestsCapabilityKnown,
-        supported: supportsPullRequests,
-        projectId: activeThread.projectId,
-        pullRequests: visiblePullRequests,
-        linkedPullRequest: linkedThreadPullRequest,
-        branchPullRequest: activeThreadShell?.branchPullRequest ?? activeThread.branchPullRequest,
-        onBack:
-          pullRequestsSurfaceAvailable && visiblePullRequestCount > 1
-            ? addPullRequestsSurfaceStable
-            : undefined,
-      }}
-      files={{
-        projectName: activeProject?.title ?? null,
-        workspaceRoot: activeWorkspaceRoot,
-        availableEditors,
-        pendingSurfaceIds: pendingFileSurfaceIds,
-        onOpenFile: openFileSurfaceStable,
-        onPendingChange: handleFilePendingChangeStable,
-      }}
-    />
-  ) : null;
-  const panelToggleControlProps = {
+  const panelToggleControlProps = threadPanelToggleProps(rightPanel, {
     terminalAvailable: activeProject !== null,
     terminalOpen: terminalUiState.terminalOpen,
-    threadPanelOpen,
-    threadPanelPresentation,
-    threadPanelPopoverHandle,
-    rightPanelAvailable: activeProject !== null,
-    rightPanelOpen,
     onToggleTerminal: toggleTerminalVisibilityStable,
-    onToggleThreadPanel: toggleThreadPanelStable,
-    onToggleRightPanel: toggleRightPanelStable,
-  } satisfies PanelLayoutControlsProps;
+    threadPanelPopoverHandle,
+  });
   const panelToggleControls = (
     <PanelLayoutControls
       {...panelToggleControlProps}
       showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
     />
   );
-  const threadPanelHeaderControl = (
-    <div
-      className="absolute top-[var(--workspace-controls-top)] right-[calc(env(safe-area-inset-right)+0.75rem)] z-50 flex h-[var(--workspace-topbar-height)] items-center [-webkit-app-region:no-drag]"
-      data-workspace-titlebar-controls
-    >
-      <PanelLayoutControls
-        {...panelToggleControlProps}
-        showTerminalControl={false}
-        showRightPanelControl={false}
-      />
-    </div>
-  );
+  const threadPanelHeaderControl = <ThreadPanelHeaderControl toggles={panelToggleControlProps} />;
   const panelLayoutControls = (
-    <div
-      className={cn(
-        "pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
-      )}
-      data-workspace-titlebar-controls
-    >
-      {!shouldUsePlanSidebarSheet ? (
-        <span
-          aria-hidden={!rightPanelOpen}
-          className={cn(
-            "flex shrink-0",
-            panelAnimationsActive &&
-              "motion-safe:transition-opacity motion-safe:duration-(--panel-animation-duration) motion-safe:ease-out",
-            rightPanelOpen
-              ? "pointer-events-auto opacity-100"
-              : "pointer-events-none absolute right-full mr-1 opacity-0",
-          )}
-          inert={!rightPanelOpen}
-        >
-          <RightPanelMaximizeControl
-            maximized={rightPanelMaximized}
-            onToggle={toggleRightPanelMaximizedStable}
-          />
-        </span>
-      ) : null}
-      <div className="pointer-events-auto flex h-full items-center">{panelToggleControls}</div>
-    </div>
+    <ThreadPanelLayoutControls panel={rightPanel} toggles={panelToggleControls} />
   );
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
     setDragActive: setIsWorkspaceFileDragActive,
@@ -7852,11 +6906,6 @@ export default function ChatView(props: ChatViewProps) {
       ref={setWorkspaceLayoutElement}
       className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
     >
-      <DeviceSetupDialogHost
-        threadKey={activeThreadKey}
-        threadRef={activeThreadRef}
-        state={deviceState}
-      />
       {rightPanelControlsAtRoot ? panelLayoutControls : null}
       <div
         className={cn(
@@ -7957,8 +7006,7 @@ export default function ChatView(props: ChatViewProps) {
                 }
                 onDismiss={() => {
                   setThreadError(activeThread.id, null);
-                  dismissThreadErrorBannerForSession(threadErrorBannerKey);
-                  setThreadErrorBannerDismissTick((tick) => tick + 1);
+                  threadErrorBanner.dismiss();
                 }}
               />
             </div>
@@ -8001,7 +7049,7 @@ export default function ChatView(props: ChatViewProps) {
                 isPreparingWorktree={!paintOnlyDisplayedTimeline && isPreparingWorktree}
                 footer={
                   paintOnlyDisplayedTimeline ? null : pendingHandoff === null ? (
-                    threadStatusLine
+                    statusLine.line
                   ) : (
                     <>
                       <div className="chat-content-lane">
@@ -8011,7 +7059,7 @@ export default function ChatView(props: ChatViewProps) {
                           pending
                         />
                       </div>
-                      {threadStatusLine}
+                      {statusLine.line}
                     </>
                   )
                 }
@@ -8198,11 +7246,6 @@ export default function ChatView(props: ChatViewProps) {
                                 forkTerminalModeAvailable ? (
                                   <ForkTerminalModeToggle
                                     active={false}
-                                    disabledReason={
-                                      forkDraftHasContent
-                                        ? "Clear the prompt to use a terminal"
-                                        : null
-                                    }
                                     onToggle={() =>
                                       setDraftTerminalMode(draftId, draftThread.environmentId, true)
                                     }
@@ -8457,19 +7500,7 @@ export default function ChatView(props: ChatViewProps) {
               </div>
             </div>
 
-            {canOperatePreview && activeThreadRef && activeEnvironmentServerBrowser ? (
-              <PreviewSessionSync threadRef={activeThreadRef} />
-            ) : null}
-            {activeThreadRef &&
-            activePreviewMiniPlayer &&
-            previewMiniPlayerVisible &&
-            (activePreviewMiniPlayer.source.kind === "device" || canOperatePreview) ? (
-              <ThreadPreviewMiniPlayer
-                key={`${activeThreadKey}:${previewMiniPlayerSourceKey(activePreviewMiniPlayer.source)}`}
-                threadRef={activeThreadRef}
-                miniPlayer={activePreviewMiniPlayer}
-              />
-            ) : null}
+            <ThreadRightPanelHosts panel={rightPanel} />
 
             <BranchRestoreConfirmHost
               threadKey={activeThreadKey}
@@ -8563,112 +7594,31 @@ export default function ChatView(props: ChatViewProps) {
         ))}
       </div>
 
-      {rightPanelPresent && !shouldUsePlanSidebarSheet && activeThreadRef ? (
-        <RightPanelTabs
-          mode="inline"
-          open={rightPanelOpen}
-          keybindings={keybindings}
-          getShortcutContext={getShortcutContextStable}
-          maximized={rightPanelMaximized}
-          inlineSize={previewPanelInlineSize}
-          surfaces={renderedRightPanelSurfaces}
-          environmentId={activeThreadRef.environmentId}
-          activeSurfaceId={renderedRightPanelSurface?.id ?? null}
-          pendingSurfaceIds={pendingFileSurfaceIds}
-          previewSessions={activePreviewState.sessions}
-          desktopByTabId={activePreviewState.desktopByTabId}
-          previewRuntimeTabId={resolvePreviewRuntimeTabId}
-          terminalLabelsById={activeTerminalLabelsById}
-          onActivate={activateRightPanelSurfaceStable}
-          onCloseSurface={closeRightPanelSurfaceStable}
-          onRenameDevice={(surfaceId, title) => {
-            if (activeThreadRef)
-              useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
-          }}
-          onCloseOtherSurfaces={closeOtherRightPanelSurfacesStable}
-          onCloseSurfacesToRight={closeRightPanelSurfacesToRightStable}
-          onCloseAllSurfaces={closeAllRightPanelSurfacesStable}
-          onMoveSurface={moveRightPanelSurfaceStable}
-          onCopyFilePath={copyRightPanelFilePathStable}
-          onAddBrowser={() => createBrowserSurface()}
-          onAddBrowserInProfile={createBrowserSurfaceStable}
-          onAddTerminal={addTerminalSurfaceStable}
-          onAddDiff={addDiffSurfaceStable}
-          onAddFiles={addFilesSurfaceStable}
-          onAddPullRequest={addPullRequestSurfaceStable}
-          onAddPullRequests={addPullRequestsSurfaceStable}
-          onAddMachines={addMachinesSurfaceStable}
-          machinesAvailable={activeThreadRef !== null}
-          onAddDevice={addDeviceSurfaceStable}
-          browserAvailable={canOperatePreview && browserAvailable}
-          terminalAvailable={activeProject !== null && canOperateTerminal}
-          diffAvailable={isServerThread && isGitRepo}
-          filesAvailable={activeProject !== null}
-          pullRequestAvailable={pullRequestSurfaceAvailable}
-          pullRequestsAvailable={pullRequestsSurfaceAvailable}
-          deviceAvailable={activeThreadRef !== null}
-        >
-          {rightPanelContent}
-        </RightPanelTabs>
-      ) : null}
-      {rightPanelPresent && shouldUsePlanSidebarSheet && activeThreadRef ? (
-        <RightPanelSheet
-          animationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
-          open={rightPanelOpen}
-          onClose={closePreviewPanelStable}
-        >
-          <RightPanelTabs
-            mode="sheet"
-            open={rightPanelOpen}
-            keybindings={keybindings}
-            getShortcutContext={getShortcutContextStable}
-            inlineSize={previewPanelInlineSize}
-            layoutControls={
-              rightPanelOpen ? (
-                <div className="mr-px flex items-center">{panelToggleControls}</div>
-              ) : null
-            }
-            surfaces={renderedRightPanelSurfaces}
-            environmentId={activeThreadRef.environmentId}
-            activeSurfaceId={renderedRightPanelSurface?.id ?? null}
-            pendingSurfaceIds={pendingFileSurfaceIds}
-            previewSessions={activePreviewState.sessions}
-            desktopByTabId={activePreviewState.desktopByTabId}
-            previewRuntimeTabId={resolvePreviewRuntimeTabId}
-            terminalLabelsById={activeTerminalLabelsById}
-            onActivate={activateRightPanelSurfaceStable}
-            onCloseSurface={closeRightPanelSurfaceStable}
-            onRenameDevice={(surfaceId, title) => {
-              if (activeThreadRef)
-                useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
-            }}
-            onCloseOtherSurfaces={closeOtherRightPanelSurfacesStable}
-            onCloseSurfacesToRight={closeRightPanelSurfacesToRightStable}
-            onCloseAllSurfaces={closeAllRightPanelSurfacesStable}
-            onMoveSurface={moveRightPanelSurfaceStable}
-            onCopyFilePath={copyRightPanelFilePathStable}
-            onAddBrowser={() => createBrowserSurface()}
-            onAddBrowserInProfile={createBrowserSurfaceStable}
-            onAddTerminal={addTerminalSurfaceStable}
-            onAddDiff={addDiffSurfaceStable}
-            onAddFiles={addFilesSurfaceStable}
-            onAddPullRequest={addPullRequestSurfaceStable}
-            onAddPullRequests={addPullRequestsSurfaceStable}
-            onAddMachines={addMachinesSurfaceStable}
-            machinesAvailable={activeThreadRef !== null}
-            onAddDevice={addDeviceSurfaceStable}
-            browserAvailable={canOperatePreview && browserAvailable}
-            terminalAvailable={activeProject !== null && canOperateTerminal}
-            diffAvailable={isServerThread && isGitRepo}
-            filesAvailable={activeProject !== null}
-            pullRequestAvailable={pullRequestSurfaceAvailable}
-            pullRequestsAvailable={pullRequestsSurfaceAvailable}
-            deviceAvailable={activeThreadRef !== null}
-          >
-            {rightPanelContent}
-          </RightPanelTabs>
-        </RightPanelSheet>
-      ) : null}
+      <ThreadRightPanelView
+        panel={rightPanel}
+        keybindings={keybindings}
+        getShortcutContext={getShortcutContextStable}
+        layoutControls={panelToggleControls}
+        composerDraftTarget={composerDraftTarget}
+        configuredPreviewUrls={configuredPreviewUrls}
+        workspaceMutationId={workspaceMutationId}
+        onSendAnnotation={sendPreviewAnnotationStable}
+        terminal={{
+          launchContext: activeTerminalLaunchContext ?? null,
+          focusRequestId: terminalFocusRequestId,
+          keybindings,
+          onAddTerminalContext: addTerminalContextToDraftStable,
+          splitShortcutLabel: splitTerminalShortcutLabel ?? undefined,
+          splitVerticalShortcutLabel: splitTerminalVerticalShortcutLabel ?? undefined,
+          newShortcutLabel: newTerminalShortcutLabel ?? undefined,
+          closeShortcutLabel: closeTerminalShortcutLabel ?? undefined,
+        }}
+        files={{
+          projectName: activeProject?.title ?? null,
+          workspaceRoot: activeWorkspaceRoot,
+          availableEditors,
+        }}
+      />
 
       <RevertConfirmHost threadKey={routeThreadKey} onConfirm={onConfirmRevertStable} />
       <LinkPullRequestDialogHost />
@@ -8685,11 +7635,6 @@ export default function ChatView(props: ChatViewProps) {
       {content}
     </FileMetadataThreadProvider>
   );
-}
-
-function PreviewSessionSync(props: { readonly threadRef: ScopedThreadRef }) {
-  usePreviewSession(props.threadRef);
-  return null;
 }
 
 /** The header link to the parent of a subagent thread. */

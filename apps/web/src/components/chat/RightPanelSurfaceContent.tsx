@@ -70,10 +70,10 @@ export function RightPanelSurfaceContent(props: {
   readonly configuredPreviewUrls: ReadonlyArray<string>;
   readonly workspaceMutationId: string | null;
   readonly getShortcutContext: () => ShortcutMatchContext;
-  readonly onSendAnnotation: (
-    annotation: PreviewAnnotationPayload,
-    image: ComposerImageAttachment | null,
-  ) => void;
+  /** Absent on a screen without a composer, which hides "send to chat". */
+  readonly onSendAnnotation:
+    | ((annotation: PreviewAnnotationPayload, image: ComposerImageAttachment | null) => void)
+    | undefined;
   readonly onCloseSurface: (surface: RightPanelSurface) => void;
   readonly terminal: RightPanelTerminalProps;
   readonly pullRequest: RightPanelPullRequestProps;
@@ -91,7 +91,7 @@ export function RightPanelSurfaceContent(props: {
             tabId={surface.resourceId}
             configuredUrls={props.configuredPreviewUrls}
             visible={visible}
-            onSendAnnotation={props.onSendAnnotation}
+            {...(props.onSendAnnotation ? { onSendAnnotation: props.onSendAnnotation } : {})}
           />
         </Suspense>
       );

@@ -1,7 +1,6 @@
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import {
   canSnooze,
-  effectiveSnoozed,
   hasQueuedTurnStart,
   QUEUED_TURN_START_GRACE_MS,
   resolveSnoozePresets,
@@ -13,10 +12,16 @@ import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import {
   createInboxReturnTracker,
-  isThreadWorking,
   sortInboxThreadsByReturn,
   sortWorkingThreadsBySend,
 } from "@t3tools/client-runtime/state/thread-inbox";
+import {
+  forkEffectiveSnoozed,
+  forkInboxReturnAt,
+  forkThreadIsWorking,
+  terminalStateOf,
+  type TerminalThreadStates,
+} from "@t3tools/client-runtime/state/fork-terminal-threads";
 import {
   sortActiveThreadsByOrderKey,
   resolveSettledThreadTimestamp,
@@ -203,6 +208,8 @@ export function getThreadListV2OrderedSection(input: {
   readonly settlementEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly queuedThreadKeys?: ReadonlySet<string>;
+  /** Fork: the main terminals of terminal threads. */
+  readonly terminalStates?: TerminalThreadStates;
 }): EnvironmentThreadShell[] {
   const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const threads = input.threads.filter((thread) => {
@@ -217,7 +224,11 @@ export function getThreadListV2OrderedSection(input: {
     }
     if (
       (input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true) &&
-      effectiveSnoozed(thread, { now: input.now })
+      forkEffectiveSnoozed(
+        thread,
+        { now: input.now },
+        terminalStateOf(input.terminalStates, thread),
+      )
     ) {
       return false;
     }
@@ -563,6 +574,8 @@ export function buildThreadListV2Items(input: {
   readonly settledShelfExpanded?: boolean;
   readonly selectedThreadKey?: string | null;
   readonly queuedThreadKeys?: ReadonlySet<string>;
+  /** Fork: the main terminals of terminal threads. */
+  readonly terminalStates?: TerminalThreadStates;
 }): ThreadListV2Layout {
   const now = input.now;
   const pending =
@@ -612,7 +625,8 @@ export function buildThreadListV2Items(input: {
     }
     const supportsSettlement = input.settlementEnvironmentIds?.has(thread.environmentId) ?? true;
     const supportsSnooze = input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true;
-    if (supportsSnooze && effectiveSnoozed(thread, { now })) {
+    const terminal = terminalStateOf(input.terminalStates, thread);
+    if (supportsSnooze && forkEffectiveSnoozed(thread, { now }, terminal)) {
       snoozed.push(thread);
       if (
         thread.snoozedUntil != null &&
@@ -629,7 +643,7 @@ export function buildThreadListV2Items(input: {
       settled.push(thread);
     } else if (thread.pinnedAt != null) {
       pinned.push(thread);
-    } else if (workingShelfEnabled && isThreadWorking(thread)) {
+    } else if (workingShelfEnabled && forkThreadIsWorking(thread, terminal)) {
       working.push(thread);
     } else {
       active.push(thread);
@@ -637,7 +651,7 @@ export function buildThreadListV2Items(input: {
   }
 
   const orderedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
+    ? sortInboxThreadsByReturn(active, forkInboxReturnAt(input.inboxReturnAt, input.terminalStates))
     : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
   const orderedWorking = sortWorkingThreadsBySend(working);
   const orderedSnoozed = [...snoozed].sort(

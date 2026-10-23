@@ -194,7 +194,7 @@ export function useThreadRunningTerminalIds(input: {
   const sessions = useKnownTerminalSessions(input);
   const running = selectRunningSubprocessTerminalIds(sessions ?? []);
   // Fork: the main terminal of a terminal thread is the thread itself, and its status pill shows
-  // what runs there (`forkTerminalThreadStatus.ts`). Only its drawer terminals count here.
+  // what runs there (`client-runtime/src/state/forkTerminalThreads.ts`). Only its drawer terminals count here.
   const thread = useQuietThreadShell(
     input.environmentId !== null && input.threadId !== null
       ? scopeThreadRef(input.environmentId, input.threadId)

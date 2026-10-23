@@ -10,8 +10,15 @@ export function getTerminalFocusOwner(): TerminalFocusOwner | null {
   return null;
 }
 
-export function isTerminalFocused(): boolean {
-  return getTerminalFocusOwner() !== null;
+/**
+ * Whether a key goes to a focused terminal before the app shortcuts. Fork: in the main terminal
+ * of a terminal thread, a Cmd chord (macOS) is an app shortcut. The shell never receives Cmd, and
+ * that terminal fills the screen, so the app would have no shortcuts left (palette, new thread).
+ */
+export function isTerminalFocused(event?: { readonly metaKey: boolean }): boolean {
+  const owner = getTerminalFocusOwner();
+  if (owner === "terminal-thread" && event?.metaKey === true) return false;
+  return owner !== null;
 }
 
 /**

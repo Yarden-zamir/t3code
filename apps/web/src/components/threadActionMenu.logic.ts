@@ -78,6 +78,8 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
+  /** Mark unread needs a finished run; without one the server refuses it. */
+  readonly canMarkUnread: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
@@ -158,7 +160,12 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
-    { id: "mark-unread", label: "Mark unread", icon: "mail-open" },
+    {
+      id: "mark-unread",
+      label: "Mark unread",
+      icon: "mail-open",
+      disabled: !state.canMarkUnread,
+    },
     ...(state.projectFilter
       ? [
           {
