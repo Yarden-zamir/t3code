@@ -25,9 +25,7 @@ describe("EnvironmentThemeFile style fields", () => {
     expect(
       decodeThemeFile({ ...base, icons: { "tab.star": svg, "status.working": svg } })._tag,
     ).toBe("Success");
-    expect(decodeThemeFile({ ...base, icons: { "tab.star": "<img src=x>" } })._tag).toBe(
-      "Failure",
-    );
+    expect(decodeThemeFile({ ...base, icons: { "tab.star": "<img src=x>" } })._tag).toBe("Failure");
   });
 
   it("leaves every style field absent when the file has none", () => {

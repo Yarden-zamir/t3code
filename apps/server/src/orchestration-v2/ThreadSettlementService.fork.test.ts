@@ -5,6 +5,7 @@ import {
   ThreadId,
   type OrchestrationV2Command,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -33,10 +34,10 @@ const PROJECT_ID = ProjectId.make("settlement-project");
 
 type AutoSettleCommand = Extract<OrchestrationV2Command, { readonly type: "thread.auto-settle" }>;
 
-function makeThread(
-  id: string,
-  overrides: Partial<ProjectionStore.ProjectionSettlementCandidate> = {},
-): ProjectionStore.ProjectionSettlementCandidate {
+type SettlementShell = OrchestrationV2ThreadShell &
+  Pick<ProjectionStore.ProjectionSettlementCandidate, "latestUserAuthoredMessageAt">;
+
+function makeThread(id: string, overrides: Partial<SettlementShell> = {}): SettlementShell {
   const threadId = ThreadId.make(id);
   return {
     id: threadId,
