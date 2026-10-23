@@ -51,12 +51,12 @@ Requirements have stable numbers. Do not renumber them. Mark a removed requireme
 ## 3. Arrows
 
 - **MM-301** Each ordered pair of machines has one arrow. A new pair starts at level `none`.
-- **MM-302** The levels map to T3 scopes:
+- **MM-302** The levels map to T3 scopes, and to the access of the linked environment of MM-1921:
   - `none`: no access.
-  - `read`: `orchestration:read`, `filesystem:read`, `terminal:read`, `diagnostics:read`.
-  - `standard`: `AuthStandardClientScopes` without `access:read`, `access:write` and `relay:write`.
-  - `admin`: `AuthStandardClientScopes`.
-- **MM-303** An arrow has the option "agent tools". With it on, agents on the source machine can call T3 tools on the target machine, within the scopes of the level.
+  - `read`: `orchestration:read`, `filesystem:read`, `terminal:read`, `diagnostics:read`. Link access `read-only`.
+  - `standard`: `AuthStandardClientScopes` without `access:read`, `access:write` and `relay:write`. Link access `auto`, fenced: the agents of the source change only the threads that its link started, not the projects, settings or other threads of the target.
+  - `admin`: `AuthStandardClientScopes`. Link access `full-access`, not fenced.
+- **MM-303** An arrow has the option "agent tools". With it on, the target machine is a linked environment of the source (MM-1921). Agents on the source call T3 tools on the target with the `environmentId` of the target, within the link access of the level.
 - **MM-304** An arrow can expire. "For 1 hour", "for 1 day" and "until a time" set an expiry. At expiry the arrow returns to its earlier permanent level as a new revision made by the portal. A second temporary level keeps the first permanent level.
 - **MM-305** The target machine enforces an arrow. A lower level ends the sessions of the source machine on the target at once, including open connections. The source then connects again with the new level, or not at all for `none`.
 - **MM-306** The source machine uses an arrow. Its desktop app adds each machine it can reach, with its machine token as request headers. No pairing code is needed. When a machine refuses the connection, the app pairs again with a backoff: at least 30 seconds between two pairings of one machine, up to 10 minutes after repeated failures, and one pairing at a time.
@@ -143,13 +143,12 @@ Requirements have stable numbers. Do not renumber them. Mark a removed requireme
   - `machines_undo`: undo a revision.
   - `machines_preset`: save or apply a preset.
   - `machines_join`: join this machine to the map with a join code.
-  - `machine_tool_call`: call a T3 tool on another machine.
   - `machine_exec`: run a shell command on another machine (MM-1908).
 - **MM-802** A tool works when the machine that runs the agent has the map role for it:
   - `read`: `machines_read`.
   - `propose`: every change becomes a proposal for the owner. A proposal holds only map changes, so `machines_command` and `machines_queue_cancel` need `edit`.
   - `edit`: changes apply at once.
-  - `machine_tool_call` needs an arrow with "agent tools" to the target machine.
+  - A T3 tool with the `environmentId` of another machine needs an arrow with "agent tools" to that machine (MM-1921).
   - `machine_exec` needs an arrow with exec to the target machine (MM-1908).
 - **MM-803** An agent can never raise access for its own machine. That change always becomes a proposal, whatever the map role.
 - **MM-804** Proposals wait in the Inbox of the portal. The owner approves or rejects each one. A proposal expires after 24 hours.
@@ -288,24 +287,25 @@ Requirements have stable numbers. Do not renumber them. Mark a removed requireme
 ## 19. Cross-machine work
 
 - **MM-1901** The arrow from A to B is the only machine-to-machine grant. Each cross-machine feature uses B's T3 server. It uses neither SSH nor a shared database.
-- **MM-1902** Each cross-machine call stays within the source thread's runtime mode, interaction mode and tool capabilities, and the arrow's grant. The narrower limit wins. A restricted thread can call another machine: A sends the thread's limits with each call in the `T3-Mode-Limit` header, and B applies them there. A thread read of MM-1905 works in every mode: A pairs that session without `orchestration:operate`, B makes such a session read-only, and B refuses every write on it. Until the merge of upstream's linked environments brings `T3-Mode-Limit`, A refuses each other cross-machine call of a restricted thread.
+- **MM-1902** Each cross-machine call stays within the source thread's runtime mode, interaction mode and tool capabilities, and the link access of the arrow's level. The narrower limit wins. A restricted thread can call another machine: A sends the thread's limits with each call in the `T3-Mode-Limit` header, and B applies them there.
 - **MM-1903** A machine's map role never raises a thread's limits. A restricted thread cannot use `edit` to change settings, send commands or raise access.
-- **MM-1904** When B cannot enforce a source limit, A refuses the call before it sends work. A checks the live caller again after pairing, after the MCP handshake and before a retry. B never lends its map role or onward arrows to the caller.
-- **MM-1905** One server-side thread reader serves `t3_thread_read` and thread attachments. It reads local threads from the local database and other threads through the same arrow and checks as `machine_tool_call`.
+- **MM-1904** When B cannot enforce a source limit, A refuses the call before it sends work: B's descriptor must report `mcpModeLimitHeader` and `linkFence`. B never lends its map role or onward arrows to the caller. A session of another machine resolves none of B's links, and work that a fenced link started uses none of them.
+- **MM-1905** One server-side thread reader serves `t3_thread_read` and thread attachments. It reads local threads from the local database, and threads of another machine with `environmentId` through the link of MM-1921.
 - **MM-1906** A thread attachment keeps its `environmentId`. The composer send check waits for the list of readable machines, then accepts a reachable thread on another machine and reports a refused or unavailable read without sending incomplete context.
 - **MM-1907** The `@` thread menu on web, desktop and mobile lists reachable threads across machines. When more than one machine is reachable, each item names its machine. Thread chips and message links still open the correct thread and message.
 - **MM-1908** An arrow has an explicit `exec` capability, off by default. It works only with agent tools and the level `standard` or `admin`. Turning agent tools off turns exec off. The arrow panel toggles it, and Map, Table and the arrow panel show an "exec" sticker. `machine_exec` runs a command through B's T3 server, as B's T3 user, in B's home directory or a given directory, for at most 90 seconds. It returns the exit code, stdout and stderr. Each stream keeps at most 50,000 bytes and then ends with a truncation marker. B reports each run to the portal. History and `machines_read` show the source machine, the calling thread, the command, the working directory, the outcome, the exit code and the time, never the output.
 - **MM-1909** The arrow and the caller's credentials control command execution. No shell command blocklist or command-pattern block grants or refuses execution.
-- **MM-1910** `delegate_task` accepts a target machine. The child runs on B. `task_status` and `task_cancel` reach that child through the arrow. Completion wakes the parent on A.
-- **MM-1911** `orchestrator_capabilities` lists the providers and models of reachable machines with their machine and environment ids. A delegation stores both ids with the parent and child thread ids, so a later cross-machine parent link needs no local-only thread reference.
-- **MM-1912** Watches use one server-owned record with a watcher kind, a target, a wake rule, a change cursor and the parent machine, environment and thread ids. `watch_pull_request` uses a pull-request kind. CI runs, threads and tasks can add kinds without a separate wake system.
-- **MM-1913** A watch and its pending wakes survive a server restart and a disconnected machine. Each wake has a stable id; the parent's server records it once and acknowledges it, so a retry cannot wake the parent twice. Cancel stops later wakes; status shows waiting, delivered, cancelled or refused.
-- **MM-1914** Cross-machine watch reads, cancellation and wake delivery use the arrow and the source limits. A removed grant stops work and delivery; restoring it rechecks permission before resuming.
+- **MM-1910** `delegate_task` accepts `target.environmentId` of a linked machine. The child is an ordinary thread on B, launched through the link. `task_status` and `task_cancel` reach that child through the link. Its completion wakes the parent on A once.
+- **MM-1911** `orchestrator_capabilities` with the `environmentId` of a linked machine lists the providers and models of that machine. A delegation stores the environment id and thread id of the child with the parent's task, and the child names the environment and thread of its parent, so a later cross-machine parent link needs no local-only thread reference.
+- **MM-1912** Watches use the watcher tools of the machine that owns the target: `watch_pull_request` and scheduled tasks, called with `environmentId` for another machine. A watch wakes the thread that set it, on the machine of that thread. Delegated tasks on another machine wake their parent through MM-1910. No separate cross-machine wake system exists.
+- **MM-1913** A watch and its pending wakes survive a server restart and a disconnected machine. On A, the follower of a delegated task on another machine starts again after a restart and follows the child until it ends. The parent's server records each result once: a report of a task that has its result is refused, so a retry cannot wake the parent twice. Cancel stops the child on B; `task_status` shows the task's state.
+- **MM-1914** Cross-machine reads, cancellation and wake delivery use the link of the arrow and the source limits. While the emergency pause is on, the links report unreachable: remote tasks wait and try again, and they go on after Resume. A removed arrow, or agent tools turned off, makes the link unknown: remote tasks fail with that reason. A new arrow lets new work start; a failed task stays failed.
 - **MM-1915** Each arrow shows an explicit capability list: read threads, launch or delegate, exec, copy secrets, and settings. The portal reads it as "what can A do on B", also on a phone.
 - **MM-1916** Arrow removal and emergency pause stop every cross-machine capability, including queued work and watch delivery. Resume does not restart cancelled work.
 - **MM-1917** The service that copies `.env` files or secrets to another machine, including "add project to another machine", needs the arrow's copy-secrets capability. Neither launch permission nor `exec` alone permits that service.
 - **MM-1918** Each cross-machine UI feature works on web, desktop and mobile, through local, remote, relay and tunnel connections. UI, MCP tools and scheduled work call the same server services and checks. Unsupported provider operations report that limit without using broader credentials.
 - **MM-1920** An agent's shell holds the MCP credential of its thread in `T3_ACP_MCP_ENDPOINT` and `T3_ACP_MCP_AUTHORIZATION`. `t3 tool call` and `t3 acp-mcp-call` use it, so a call from that shell acts as the thread, with its limits (MM-1902, MM-1903). Without it, `t3 tool call` uses a short full-access session of the local user, and History names that caller "CLI (local user)". The Cursor SDK and OpenCode 2 give no per-thread shell environment, so their shells and T3 terminals keep that fallback. T3 terminals never inherit a credential from the server's environment.
+- **MM-1921** Links to other machines come only from arrows. The arrows out of a machine with agent tools and a level above `none` are its linked environments, named by the environment id that each target reports. The source pairs through Cloudflare Access with its machine token (MM-306). The target admits that session as a linked MCP client named by the source machine, so the work it started stays its own when a level change ends the session (MM-1306). When the target ends the session, the source pairs again once and sends the call again. `t3 environment link`, `t3 environment unlink` and Link and Forget in Settings > Connections refuse and point to the portal. The fork registers none of upstream's link migrations, see `docs/fork/operations.md` "Migrations".
 
 ## Later
 

@@ -32,6 +32,34 @@ Fork main registers only the migration ids and names that `upstream/main` has. T
 - `scripts/fork-check-migrations.ts` enforces the rule. `vp run fork:check` and the Fork CI Lint job run it. It compares the registry of the working tree with `upstream/main`, and fails on each id that upstream main lacks or names differently.
 - When upstream merges a migration, Fork Sync merges its file and registry entry like any other upstream change, at upstream's final number. A migration that the fork removed at adoption comes back this way. The fork never recorded the number of the open pull request, so a new number is no problem.
 
+### Adopted upstream pull requests
+
+Fork main holds these open `pingdotgg/t3code` pull requests of Julius, merged at these heads. They form one stack, each on the one before it.
+
+| Pull request                                             | Title                                                  | Head         |
+| -------------------------------------------------------- | ------------------------------------------------------ | ------------ |
+| [#16653](https://github.com/pingdotgg/t3code/pull/16653) | /mcp narrows a client's modes from T3-Mode-Limit       | `d868b6296c` |
+| [#16654](https://github.com/pingdotgg/t3code/pull/16654) | t3_thread_launch takes clientRequestId                 | `071e661649` |
+| [#16655](https://github.com/pingdotgg/t3code/pull/16655) | link to another environment                            | `197930788c` |
+| [#16684](https://github.com/pingdotgg/t3code/pull/16684) | agents use linked environments through any T3 tool     | `641ee467aa` |
+| [#16695](https://github.com/pingdotgg/t3code/pull/16695) | work a linked environment starts stays within its link | `e7be319131` |
+| [#16698](https://github.com/pingdotgg/t3code/pull/16698) | linked environments in Connections                     | `f580fefde9` |
+| [#16719](https://github.com/pingdotgg/t3code/pull/16719) | delegate_task to a linked environment                  | `70a2a7bdd2` |
+
+- The fork does not use upstream's manual links. `MachinePeers` gives `PeerLinks` and `PeerMcpClient` the machine map arrows (MM-1921).
+- The migrations `068_PeerLinks` and `069_PeerLinkFence` stay out of the registry. See [Migrations](#migrations).
+- Fork runs skip the upstream tests that need their table. `apps/server/src/fork/excludedUpstreamTests.ts` lists them with the reason. `MachinePeers.test.ts` covers the same forwarding and delegation over arrow links.
+- The fork hooks in upstream files: the provide of `PeerForwarding.layer` in `server.ts`, the refusal layer in `cli/environment.ts`, and the peer link RPC handlers in `fork/forkWs.ts`. With those handlers in `ws.ts`, the handler object is too deep a type, and the server layers lose their types.
+
+To take a newer head of the stack:
+
+1. Fetch the head: `git fetch upstream pull/16719/head:refs/remotes/upstream/pr-16719`.
+2. On a new branch from `origin/main`, run `git merge --no-ff upstream/pr-16719`. Do not cherry-pick or rebase.
+3. Remove new migration entries of the stack from `Migrations.ts`, and run `node scripts/fork-check-migrations.ts`.
+4. Run the server typecheck and `MachinePeers.test.ts`. Update the heads in this table.
+
+When upstream merges a pull request of the stack, Fork Sync brings its final version. If that conflicts in a file that only the stack touches, take upstream's version, then apply the fork hooks again. Remove the pull request from this table, and remove its entries from `excludedUpstreamTests.ts` when upstream main has the migration.
+
 ### Fork Release
 
 `.github/workflows/fork-release.yml` builds the desktop apps and the server archives on each push to main and on manual dispatch.
