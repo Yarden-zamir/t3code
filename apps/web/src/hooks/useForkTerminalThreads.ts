@@ -50,15 +50,21 @@ export function useTerminalThreadEnvironmentIds(): ReadonlySet<EnvironmentId> {
   );
 }
 
+// A double click or a held shortcut must not create several terminal threads. Limit: a second
+// creation in another project also waits for the first one. Revisit if that ever blocks a user.
+let creatingTerminalThread = false;
+
 /**
  * Fork: creates a terminal thread (`forkTerminalThreads.ts`) in a project and opens it. Every way
- * to create a terminal thread ends here, through `startNewThreadFromContext` with kind "terminal".
+ * to create a terminal thread ends here, through `startNewThreadInProject` with kind "terminal".
+ * A call while another creation runs does nothing.
  */
 export function useCreateTerminalThread() {
   const createThread = useOrchestrationCommand(threadEnvironment.create);
   const openTerminal = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
+  const closeTerminal = useAtomCommand(terminalEnvironment.close, { reportFailure: false });
   const navigate = useNavigate();
-  return async (projectRef: ScopedProjectRef) => {
+  const create = async (projectRef: ScopedProjectRef) => {
     const project = readProject(projectRef);
     if (project === null) throw new Error(`Project ${projectRef.projectId} is not loaded.`);
     if (!appAtomRegistry.get(terminalThreadsAtom(projectRef.environmentId))) {
@@ -90,11 +96,19 @@ export function useCreateTerminalThread() {
       workspaceRoot: project.workspaceRoot,
       worktreePath: null,
     });
-    void openTerminal({
+    const opened = openTerminal({
       environmentId: projectRef.environmentId,
       input: { threadId, terminalId: DEFAULT_TERMINAL_ID, cwd: launch.cwd, env: { ...launch.env } },
     });
-    if ((await created)._tag === "Failure") return;
+    if ((await created)._tag === "Failure") {
+      // The close waits for the open, so that it cannot arrive before the session exists.
+      await opened;
+      void closeTerminal({
+        environmentId: projectRef.environmentId,
+        input: { threadId, terminalId: DEFAULT_TERMINAL_ID, deleteHistory: true },
+      });
+      return;
+    }
     await waitForAtomValue({
       registry: appAtomRegistry,
       atom: environmentThreadShells.threadShellAtom(
@@ -103,9 +117,21 @@ export function useCreateTerminalThread() {
       predicate: (thread) => thread !== null,
       timeoutMs: THREAD_SHELL_WAIT_MS,
     });
+    // The trigger (a sidebar button, or the button that the palette gave focus back to) keeps
+    // focus otherwise, and the new terminal takes focus only from nothing (`useGrabTerminalFocus`).
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     await navigate({
       to: "/$environmentId/$threadId",
       params: { environmentId: projectRef.environmentId, threadId },
     });
+  };
+  return async (projectRef: ScopedProjectRef) => {
+    if (creatingTerminalThread) return;
+    creatingTerminalThread = true;
+    try {
+      await create(projectRef);
+    } finally {
+      creatingTerminalThread = false;
+    }
   };
 }

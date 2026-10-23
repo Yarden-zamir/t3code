@@ -661,32 +661,31 @@ function ThreadRouteContent(
   // schedule or an agent sent show only in the terminal. Revisit when the terminal screen needs them.
   const terminalThreadRedirected = useRef<string | null>(null);
   useEffect(() => {
-    if (
-      !selectedThread ||
-      !isTerminalThread(selectedThread) ||
-      !selectedThreadProject?.workspaceRoot ||
-      !readEnvironmentScope(selectedThread.environmentId, AuthTerminalOperateScope)
-    ) {
-      return;
-    }
+    if (!selectedThread || !isTerminalThread(selectedThread)) return;
+    if (!canReadTerminal && !canOperateTerminal) return;
+    // A client that can only read terminals shows the session read only and never starts it.
+    const workspaceRoot = selectedThreadProject?.workspaceRoot;
+    if (canOperateTerminal && !workspaceRoot) return;
     const redirectKey = `${selectedThread.environmentId}:${selectedThread.id}`;
     if (terminalThreadRedirected.current === redirectKey) return;
     terminalThreadRedirected.current = redirectKey;
-    const launch = terminalThreadLaunch({
-      workspaceRoot: selectedThreadProject.workspaceRoot,
-      worktreePath: resolvePreferredThreadWorktreePath({
-        threadShellWorktreePath: selectedThread.worktreePath ?? null,
-        threadDetailWorktreePath: selectedThreadDetailWorktreePath,
-      }),
-    });
-    stagePendingTerminalLaunch({
-      target: {
-        environmentId: selectedThread.environmentId,
-        threadId: selectedThread.id,
-        terminalId: DEFAULT_TERMINAL_ID,
-      },
-      launch: { cwd: launch.cwd, worktreePath: launch.worktreePath, env: { ...launch.env } },
-    });
+    if (canOperateTerminal && workspaceRoot) {
+      const launch = terminalThreadLaunch({
+        workspaceRoot,
+        worktreePath: resolvePreferredThreadWorktreePath({
+          threadShellWorktreePath: selectedThread.worktreePath ?? null,
+          threadDetailWorktreePath: selectedThreadDetailWorktreePath,
+        }),
+      });
+      stagePendingTerminalLaunch({
+        target: {
+          environmentId: selectedThread.environmentId,
+          threadId: selectedThread.id,
+          terminalId: DEFAULT_TERMINAL_ID,
+        },
+        launch: { cwd: launch.cwd, worktreePath: launch.worktreePath, env: { ...launch.env } },
+      });
+    }
     navigation.dispatch(
       StackActions.replace("ThreadTerminal", {
         environmentId: String(selectedThread.environmentId),
@@ -694,7 +693,14 @@ function ThreadRouteContent(
         terminalId: DEFAULT_TERMINAL_ID,
       }),
     );
-  }, [navigation, selectedThread, selectedThreadDetailWorktreePath, selectedThreadProject]);
+  }, [
+    canOperateTerminal,
+    canReadTerminal,
+    navigation,
+    selectedThread,
+    selectedThreadDetailWorktreePath,
+    selectedThreadProject,
+  ]);
 
   const handleOpenNewTerminal = useCallback(() => {
     terminalDebugLog("terminal-menu:open-new", {

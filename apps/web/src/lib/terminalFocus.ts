@@ -13,3 +13,15 @@ export function getTerminalFocusOwner(): TerminalFocusOwner | null {
 export function isTerminalFocused(): boolean {
   return getTerminalFocusOwner() !== null;
 }
+
+/**
+ * Fork: whether a Ctrl chord in the main terminal of a terminal thread goes to the shell before
+ * the terminal pane shortcuts. `mod` is Ctrl on Linux and Windows, where Ctrl+D, Ctrl+W, Ctrl+N
+ * and Ctrl+J are shell keys. On macOS `mod` is Cmd, so the pane shortcuts keep working there.
+ */
+export function isTerminalThreadShellKey(event: {
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+}): boolean {
+  return event.ctrlKey && !event.metaKey && getTerminalFocusOwner() === "terminal-thread";
+}

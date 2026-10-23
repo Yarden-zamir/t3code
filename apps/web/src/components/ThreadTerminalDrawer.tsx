@@ -64,6 +64,7 @@ import { isTerminalUrl } from "../terminal-links";
 import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,
+  isTerminalCloseShortcut,
   isTerminalNewShortcut,
   isTerminalSplitShortcut,
   isTerminalSplitVerticalShortcut,
@@ -91,6 +92,7 @@ import { useEnvironmentScope } from "../state/session";
 import { openTerminalLinkInPreview } from "./preview/openTerminalLinkInPreview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
+import { isTerminalThreadShellKey } from "../lib/terminalFocus";
 import { useActiveThemeFonts } from "../hooks/useEnvironmentTheme";
 import {
   compileTerminalKeyMappings,
@@ -902,6 +904,16 @@ function TerminalSessionViewport({
         }
         const currentKeybindings = readKeybindings();
         const options = { context: { terminalFocus: true, terminalOpen: true } };
+        if (
+          isTerminalThreadShellKey(event) &&
+          (isTerminalToggleShortcut(event, currentKeybindings, options) ||
+            isTerminalSplitShortcut(event, currentKeybindings, options) ||
+            isTerminalSplitVerticalShortcut(event, currentKeybindings, options) ||
+            isTerminalNewShortcut(event, currentKeybindings, options) ||
+            isTerminalCloseShortcut(event, currentKeybindings, options))
+        ) {
+          return true;
+        }
         if (preventTerminalCloseShortcut(event, currentKeybindings)) {
           return false;
         }

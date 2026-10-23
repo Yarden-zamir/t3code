@@ -31,6 +31,7 @@ import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import {
   latestExecutedRun,
@@ -1482,25 +1483,7 @@ export default function ChatView(props: ChatViewProps) {
       ? run.id
       : null;
   })();
-  const parentSubagentThreadId =
-    activeThread?.lineage.relationshipToParent === "subagent"
-      ? activeThread.lineage.parentThreadId
-      : null;
-  const parentSubagentEnvironmentId = activeThread?.environmentId ?? null;
-  const parentSubagentThreadRef = (() => {
-    if (parentSubagentEnvironmentId === null || parentSubagentThreadId === null) {
-      return null;
-    }
-    return scopeThreadRef(parentSubagentEnvironmentId, parentSubagentThreadId);
-  })();
-  const parentSubagentThread = useQuietThreadShell(parentSubagentThreadRef);
-  const parentThreadLink =
-    parentSubagentThreadRef === null
-      ? null
-      : {
-          threadId: parentSubagentThreadRef.threadId,
-          title: parentSubagentThread?.title ?? "Parent thread",
-        };
+  const parentThreadLink = useParentThreadLink(activeThread);
   const threadError = isServerThread
     ? (localServerError ?? serverRuntime?.lastError ?? null)
     : localDraftError;
@@ -8649,6 +8632,25 @@ export default function ChatView(props: ChatViewProps) {
 function PreviewSessionSync(props: { readonly threadRef: ScopedThreadRef }) {
   usePreviewSession(props.threadRef);
   return null;
+}
+
+/** The header link to the parent of a subagent thread. */
+export function useParentThreadLink(
+  thread: Pick<EnvironmentThreadShell, "environmentId" | "lineage"> | null | undefined,
+): { threadId: ThreadId; title: string } | null {
+  const parentSubagentThreadId =
+    thread?.lineage.relationshipToParent === "subagent" ? thread.lineage.parentThreadId : null;
+  const parentSubagentThreadRef =
+    thread && parentSubagentThreadId !== null
+      ? scopeThreadRef(thread.environmentId, parentSubagentThreadId)
+      : null;
+  const parentSubagentThread = useQuietThreadShell(parentSubagentThreadRef);
+  return parentSubagentThreadRef === null
+    ? null
+    : {
+        threadId: parentSubagentThreadRef.threadId,
+        title: parentSubagentThread?.title ?? "Parent thread",
+      };
 }
 
 // The visit watermark is the one part of the chat view that follows the

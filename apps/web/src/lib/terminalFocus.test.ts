@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
-import { getTerminalFocusOwner, isTerminalFocused } from "./terminalFocus";
+import {
+  getTerminalFocusOwner,
+  isTerminalFocused,
+  isTerminalThreadShellKey,
+} from "./terminalFocus";
 
 class MockHTMLElement {
   isConnected = false;
@@ -77,5 +81,29 @@ describe("isTerminalFocused", () => {
 
     expect(getTerminalFocusOwner()).toBe("right-panel");
     expect(isTerminalFocused()).toBe(true);
+  });
+});
+
+describe("isTerminalThreadShellKey", () => {
+  const focusTerminal = (owner: "drawer" | "terminal-thread") => {
+    const textarea = new MockHTMLElement();
+    textarea.isConnected = true;
+    textarea.terminalOwner = owner;
+    textarea.dataset.terminalOwner = owner;
+    globalThis.HTMLElement = MockHTMLElement as unknown as typeof HTMLElement;
+    globalThis.document = { activeElement: textarea } as unknown as Document;
+  };
+  const ctrl = { ctrlKey: true, metaKey: false };
+  const cmd = { ctrlKey: false, metaKey: true };
+
+  it("gives Ctrl chords of the main terminal of a terminal thread to the shell", () => {
+    focusTerminal("terminal-thread");
+    expect(isTerminalThreadShellKey(ctrl)).toBe(true);
+    expect(isTerminalThreadShellKey(cmd)).toBe(false);
+  });
+
+  it("keeps Ctrl chords of the drawer for its pane shortcuts", () => {
+    focusTerminal("drawer");
+    expect(isTerminalThreadShellKey(ctrl)).toBe(false);
   });
 });

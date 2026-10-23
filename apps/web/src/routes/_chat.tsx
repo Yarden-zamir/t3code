@@ -110,6 +110,10 @@ function ChatRouteGlobalShortcuts() {
       // Fork: each new-thread shortcut has a terminal twin that starts a terminal thread.
       const terminalTwin = command === "chat.newTerminal" || command === "chat.newTerminalLocal";
       if (terminalTwin && !terminalThreadsAvailable) return;
+      if (terminalTwin && event.repeat) {
+        event.preventDefault();
+        return;
+      }
       const newThreadKind = terminalTwin ? "terminal" : "chat";
 
       if (command === "chat.newLocal" || command === "chat.newTerminalLocal") {

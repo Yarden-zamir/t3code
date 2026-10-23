@@ -23,7 +23,7 @@ import { isEditableFocused } from "../lib/editableFocus";
 import { observeResize } from "../lib/observeResize";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
-import { getTerminalFocusOwner } from "../lib/terminalFocus";
+import { getTerminalFocusOwner, isTerminalThreadShellKey } from "../lib/terminalFocus";
 import { cn } from "../lib/utils";
 import { useProject, useQuietThreadShell } from "../state/entities";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -34,11 +34,11 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { MAX_TERMINALS_PER_GROUP } from "../types";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
-import { ThreadVisitWatermark } from "./ChatView";
+import { ThreadVisitWatermark, useParentThreadLink } from "./ChatView";
 import { startNewThreadForProject } from "./ChatView.logic";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls } from "./chat/PanelLayoutControls";
-import { useChatShortcuts } from "./chat/useChatShortcuts";
+import { type ChatShortcutHandler, useChatShortcuts } from "./chat/useChatShortcuts";
 import { focusLevelContext } from "./focusLevels/focusLevels";
 import { PersistentThreadTerminalDrawer } from "./PersistentThreadTerminals";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
@@ -46,6 +46,12 @@ import { TerminalViewport } from "./ThreadTerminalDrawer";
 import { Button } from "./ui/button";
 
 const NO_PROJECT_SCRIPTS: never[] = [];
+
+/** A pane shortcut that leaves Ctrl chords of the main terminal to its shell. */
+const shellKeyOr =
+  (run: () => false | void): ChatShortcutHandler =>
+  ({ event }) =>
+    isTerminalThreadShellKey(event) ? false : run();
 
 /**
  * Fork: the screen of a terminal thread (`forkTerminalThreads.ts`), shown in place of ChatView.
@@ -62,6 +68,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const handleNewThread = useNewThreadHandler();
   const drawer = useTerminalThreadDrawer(threadRef);
+  const parentThreadLink = useParentThreadLink(thread);
   const terminalShortcutLabel = (command: Parameters<typeof shortcutLabelForCommand>[1]) =>
     shortcutLabelForCommand(keybindings, command, {
       context: { terminalFocus: true, terminalOpen: drawer.open },
@@ -86,11 +93,12 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
     typeIntoComposer: () => false,
     closeThreadFind: () => {},
     commands: {
-      "terminal.toggle": () => drawer.toggle(),
-      "terminal.new": () => drawer.launch("new"),
-      "terminal.split": () => drawer.launch("split"),
-      "terminal.splitVertical": () => drawer.launch("splitVertical"),
-      // In the main terminal the key stays with the shell: the screen owns `term-1`.
+      "terminal.toggle": shellKeyOr(() => drawer.toggle()),
+      "terminal.new": shellKeyOr(() => drawer.launch("new")),
+      "terminal.split": shellKeyOr(() => drawer.launch("split")),
+      "terminal.splitVertical": shellKeyOr(() => drawer.launch("splitVertical")),
+      // The screen owns `term-1`, so the key never closes it. The viewport decides whether the
+      // key goes to the shell (`isTerminalThreadShellKey`) or does nothing.
       "terminal.close": ({ terminalFocusOwner }) =>
         terminalFocusOwner === "drawer" ? drawer.requestCloseActive() : false,
     },
@@ -116,7 +124,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
           isServerThread
           activeThreadTitle={thread.title}
           activeProject={project}
-          parentThreadLink={null}
+          parentThreadLink={parentThreadLink}
           onOpenThread={(threadId) =>
             void navigate({
               to: "/$environmentId/$threadId",
@@ -291,7 +299,8 @@ function MainTerminal(props: {
   useGrabTerminalFocus(containerRef);
 
   // Attention that the user sees counts as a visit on the server, so every client clears it. A
-  // window without focus marks it when it gets focus.
+  // window without focus marks it when it gets focus. The visit uses the server time of the
+  // attention, because a client clock can be behind it.
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const attentionAt = useKnownTerminalSessions({
     environmentId: threadRef.environmentId,
@@ -304,7 +313,7 @@ function MainTerminal(props: {
       if (!document.hasFocus()) return;
       void visitThread({
         environmentId: threadRef.environmentId,
-        input: { threadId: threadRef.threadId, visitedAt: new Date().toISOString() },
+        input: { threadId: threadRef.threadId, visitedAt: attentionAt },
       });
     };
     markSeen();
