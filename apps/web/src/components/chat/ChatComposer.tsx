@@ -1487,6 +1487,8 @@ export interface ChatComposerHandle {
 }
 
 export interface ChatComposerProps {
+  /** Fork: a control before the model picker, the Terminal mode toggle of a draft. */
+  forkLeadingControl?: ReactNode;
   composerDraftTarget: ScopedThreadRef | DraftId;
   environmentId: EnvironmentId;
   canOperateThread: boolean;
@@ -1887,6 +1889,7 @@ const NO_PROVIDER_SLASH_COMMANDS: ServerProvider["slashCommands"] = [];
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
+    forkLeadingControl,
     composerDraftTarget,
     environmentId,
     canOperateThread,
@@ -5066,20 +5069,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     .slice(restingBlockDefs.length - restingHiddenBlockCount)
     .map((def) => def.id);
   const composerControls = showProviderUnavailable ? (
-    <ComposerControl
-      type="button"
-      disabled={!providerSetupInstanceId}
-      onClick={() => {
-        if (providerSetupInstanceId) {
-          onOpenProviderSetup(providerSetupInstanceId);
-        }
-      }}
-      data-chat-provider-unavailable="true"
-      className="shrink-0"
-    >
-      <CircleAlertIcon className="size-4" />
-      {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
-    </ComposerControl>
+    <>
+      {forkLeadingControl}
+      <ComposerControl
+        type="button"
+        disabled={!providerSetupInstanceId}
+        onClick={() => {
+          if (providerSetupInstanceId) {
+            onOpenProviderSetup(providerSetupInstanceId);
+          }
+        }}
+        data-chat-provider-unavailable="true"
+        className="shrink-0"
+      >
+        <CircleAlertIcon className="size-4" />
+        {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
+      </ComposerControl>
+    </>
   ) : (
     <>
       {composerControlsCollapsed &&
@@ -5091,6 +5097,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           data-resting-controls-separator="true"
         />
       ) : null}
+      {forkLeadingControl}
       <ProviderModelPicker
         environmentId={environmentId}
         compact={false}

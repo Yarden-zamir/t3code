@@ -8,6 +8,7 @@ import {
   type RuntimeMode,
   type ProviderInteractionMode,
   type ServerSettings,
+  TERMINAL_THREAD_INSTANCE_ID,
 } from "@t3tools/contracts";
 import { parseMaxDeliveryAge } from "@t3tools/client-runtime/scheduled-task-webhook";
 
@@ -192,11 +193,14 @@ export function scheduledTaskDefaultModel(
     )
       return selection;
   }
-  const models = available.flatMap((entry) =>
-    entry.models
-      .filter((model) => !model.isLegacy)
-      .map((model) => ({ instanceId: entry.instanceId, model })),
-  );
+  // Fork: the fallback is an agent model; a terminal shell is only an explicit choice.
+  const models = available
+    .filter((entry) => entry.instanceId !== TERMINAL_THREAD_INSTANCE_ID)
+    .flatMap((entry) =>
+      entry.models
+        .filter((model) => !model.isLegacy)
+        .map((model) => ({ instanceId: entry.instanceId, model })),
+    );
   const fallback = models.find(({ model }) => model.isDefault) ?? models[0];
   return fallback ? { instanceId: fallback.instanceId, model: fallback.model.slug } : null;
 }

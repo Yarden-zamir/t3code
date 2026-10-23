@@ -390,6 +390,13 @@ import {
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import {
+  ForkDraftTerminalComposer,
+  ForkTerminalModeToggle,
+} from "./chat/ForkDraftTerminalComposer";
+import { withoutTerminalProvider } from "../lib/forkTerminalProviders";
+import { setDraftTerminalMode, useDraftTerminalShell } from "../forkDraftTerminalStore";
+import { useTerminalModeAvailable } from "../hooks/useForkTerminalThreads";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { isTimelineScrollTarget } from "./chat/timelineScrollTarget";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
@@ -2106,10 +2113,12 @@ export default function ChatView(props: ChatViewProps) {
     : (primaryEnvironment?.serverConfig ?? null);
   const providerEnvironmentId = (activeThread ? activeEnvironment : primaryEnvironment)
     ?.environmentId;
-  const providerStatuses =
+  const environmentProviderStatuses =
     (providerEnvironmentId === undefined
       ? undefined
       : providersByEnvironment.get(providerEnvironmentId)) ?? EMPTY_PROVIDERS;
+  // Fork: the terminal is no model; a draft switches to it with its own toggle.
+  const providerStatuses = withoutTerminalProvider(environmentProviderStatuses);
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
@@ -3007,22 +3016,43 @@ export default function ChatView(props: ChatViewProps) {
           providerSubagentModels,
           reportedModelSelection,
         );
-  const mountComposerContextStrip = shouldShowComposerContextStrip({
-    isDraftHeroState,
-    persistInActiveThreads: settings.persistComposerContextStrip,
-    hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-    isGitRepo,
-    showEnvironmentIndicator: showComposerEnvironmentIndicator,
-    hostsRestingComposerControls: routeKind === "server",
-  });
-  const showComposerContextStrip = shouldShowComposerContextStrip({
-    isDraftHeroState,
-    persistInActiveThreads: settings.persistComposerContextStrip,
-    hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-    isGitRepo,
-    showEnvironmentIndicator: showComposerEnvironmentIndicator,
-    hostsRestingComposerControls: routeKind === "server" && restingComposerControlsVisible,
-  });
+  // Fork: a draft in Terminal mode shows a shell in place of the prompt
+  // (`ForkDraftTerminalComposer`); its shell runs in the project root.
+  const forkDraftTerminalShell = useDraftTerminalShell(draftId);
+  const forkTerminalModeAvailable = useTerminalModeAvailable(draftThread?.environmentId ?? null);
+  // Availability only offers the toggle: a draft that is in Terminal mode keeps its shell while a
+  // reconnect briefly reads the grants as missing.
+  const forkDraftTerminal =
+    draftId !== null &&
+    draftThread !== null &&
+    draftThread !== undefined &&
+    forkDraftTerminalShell !== undefined
+      ? { draftId, draft: draftThread, shell: forkDraftTerminalShell }
+      : null;
+  // Terminal mode would hide a prompt or attachments, and the thread it makes drops them.
+  const forkDraftHasContent = useComposerDraftStore((store) =>
+    draftId === null ? false : composerDraftHasUserContent(store.getComposerDraft(draftId)),
+  );
+  const mountComposerContextStrip =
+    forkDraftTerminal === null &&
+    shouldShowComposerContextStrip({
+      isDraftHeroState,
+      persistInActiveThreads: settings.persistComposerContextStrip,
+      hasActiveProject: activeProject !== null && !showProviderSubagentBar,
+      isGitRepo,
+      showEnvironmentIndicator: showComposerEnvironmentIndicator,
+      hostsRestingComposerControls: routeKind === "server",
+    });
+  const showComposerContextStrip =
+    forkDraftTerminal === null &&
+    shouldShowComposerContextStrip({
+      isDraftHeroState,
+      persistInActiveThreads: settings.persistComposerContextStrip,
+      hasActiveProject: activeProject !== null && !showProviderSubagentBar,
+      isGitRepo,
+      showEnvironmentIndicator: showComposerEnvironmentIndicator,
+      hostsRestingComposerControls: routeKind === "server" && restingComposerControlsVisible,
+    });
   const mountComposerModelStrip =
     routeKind === "server" && !mountComposerContextStrip && !showProviderSubagentBar;
   const showComposerModelStrip = mountComposerModelStrip && restingComposerControlsVisible;
@@ -8149,8 +8179,36 @@ export default function ChatView(props: ChatViewProps) {
                               }
                             />
                           ) : null}
-                          {!composerMounted ? null : (
+                          {!composerMounted ? null : forkDraftTerminal !== null &&
+                            activeProject !== null ? (
+                            <ForkDraftTerminalComposer
+                              draftId={forkDraftTerminal.draftId}
+                              draft={forkDraftTerminal.draft}
+                              workspaceRoot={activeProject.workspaceRoot}
+                              shell={forkDraftTerminal.shell}
+                              providers={environmentProviderStatuses}
+                              keybindings={keybindings}
+                            />
+                          ) : (
                             <ChatComposer
+                              forkLeadingControl={
+                                draftId !== null &&
+                                draftThread &&
+                                activeProject !== null &&
+                                forkTerminalModeAvailable ? (
+                                  <ForkTerminalModeToggle
+                                    active={false}
+                                    disabledReason={
+                                      forkDraftHasContent
+                                        ? "Clear the prompt to use a terminal"
+                                        : null
+                                    }
+                                    onToggle={() =>
+                                      setDraftTerminalMode(draftId, draftThread.environmentId, true)
+                                    }
+                                  />
+                                ) : null
+                              }
                               canOperateThread={canOperateThread}
                               reportedModelSelection={reportedModelSelection}
                               multipleModelSelections={multipleModelSelections}

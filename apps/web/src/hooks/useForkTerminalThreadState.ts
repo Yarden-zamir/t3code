@@ -15,6 +15,10 @@ export function useTerminalThreadState(
   });
   const main = sessions?.find((session) => session.target.terminalId === DEFAULT_TERMINAL_ID);
   return main
-    ? { status: main.state.status, attention: main.state.summary?.attention ?? null }
+    ? {
+        status: main.state.status,
+        attention: main.state.summary?.attention ?? null,
+        running: main.state.summary?.hasRunningSubprocess === true,
+      }
     : undefined;
 }

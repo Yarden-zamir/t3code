@@ -1,5 +1,6 @@
 import type { DraftId } from "~/composerDraftStore";
 import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDraftStore";
+import { isDraftInTerminalMode } from "~/forkDraftTerminalStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
@@ -174,7 +175,10 @@ export function DraftHeroHeadline({
     };
     const currentDraft = getComposerDraft(draftId);
     if (!composerDraftHasUserContent(currentDraft)) {
-      void openProjectDraft(scopeProjectRef(project.environmentId, project.id));
+      // Fork: a draft in Terminal mode opens the other project's draft in Terminal mode too.
+      void openProjectDraft(scopeProjectRef(project.environmentId, project.id), {
+        kind: isDraftInTerminalMode(draftId) ? "terminal" : "chat",
+      });
       return;
     }
     setLogicalProjectDraftThreadId(

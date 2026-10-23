@@ -6,7 +6,10 @@ import {
   type KnownTerminalSession,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
+  DEFAULT_TERMINAL_ID,
+  isTerminalThread,
   ThreadId,
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
@@ -15,6 +18,7 @@ import {
   type TerminalSummary,
 } from "@t3tools/contracts";
 
+import { useQuietThreadShell } from "./entities";
 import { useEnvironmentQuery } from "./query";
 import { terminalEnvironment } from "./terminal";
 import { useEnvironmentScope } from "./session";
@@ -188,5 +192,15 @@ export function useThreadRunningTerminalIds(input: {
   readonly threadId: ThreadId | null;
 }): ReadonlyArray<string> {
   const sessions = useKnownTerminalSessions(input);
-  return selectRunningSubprocessTerminalIds(sessions ?? []);
+  const running = selectRunningSubprocessTerminalIds(sessions ?? []);
+  // Fork: the main terminal of a terminal thread is the thread itself, and its status pill shows
+  // what runs there (`forkTerminalThreadStatus.ts`). Only its drawer terminals count here.
+  const thread = useQuietThreadShell(
+    input.environmentId !== null && input.threadId !== null
+      ? scopeThreadRef(input.environmentId, input.threadId)
+      : null,
+  );
+  return thread !== null && isTerminalThread(thread)
+    ? running.filter((terminalId) => terminalId !== DEFAULT_TERMINAL_ID)
+    : running;
 }

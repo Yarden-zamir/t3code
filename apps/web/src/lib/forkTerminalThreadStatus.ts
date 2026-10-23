@@ -4,9 +4,16 @@ import type { TerminalAttention, TerminalSessionStatus } from "@t3tools/contract
 export interface TerminalThreadState {
   readonly status: TerminalSessionStatus | "closed";
   readonly attention: TerminalAttention | null;
+  /** A program runs in the foreground of the shell. A background job does not count. */
+  readonly running: boolean;
 }
 
-export type TerminalThreadStatusLabel = "Connecting" | "Error" | "Awaiting Input" | "Completed";
+export type TerminalThreadStatusLabel =
+  | "Connecting"
+  | "Error"
+  | "Awaiting Input"
+  | "Working"
+  | "Completed";
 
 // A thread that nobody opened yet has no visit, so everything it reports is unseen: a schedule
 // or an agent can start a terminal thread that the user never looked at.
@@ -18,10 +25,10 @@ function attentionIsUnseen(attention: TerminalAttention, lastVisitedAt: string |
 }
 
 /**
- * Fork: the status pill that a terminal thread adds to the pill of its message runs. A bell or an
- * app notification asks for input. A program that ended is completed work, or an error when it
- * exited with a non-zero code. Each shows until the user visits the thread. A program that runs
- * shows no pill: it shows the terminal icon of the row.
+ * Fork: the status pill that a terminal thread adds to the pill of its message runs, the same
+ * pills as an agent thread. A bell or an app notification asks for input. A program that runs is
+ * working. A program that ended is completed work, or an error when it exited with a non-zero
+ * code. Input, completed and error show until the user visits the thread.
  */
 export function terminalThreadStatusLabel(
   terminal: TerminalThreadState | undefined,
@@ -31,8 +38,10 @@ export function terminalThreadStatusLabel(
   if (terminal.status === "error") return "Error";
   if (terminal.status === "starting") return "Connecting";
   const { attention } = terminal;
-  if (!attention || !attentionIsUnseen(attention, lastVisitedAt)) return null;
-  if (attention.kind === "bell") return "Awaiting Input";
+  const unseen = attention !== null && attentionIsUnseen(attention, lastVisitedAt);
+  if (unseen && attention.kind === "bell") return "Awaiting Input";
+  if (terminal.running) return "Working";
+  if (!unseen) return null;
   return (attention.exitCode ?? 0) === 0 ? "Completed" : "Error";
 }
 
@@ -41,7 +50,8 @@ type RowStatus = "approval" | "input" | "working" | "waiting" | "failed" | "limi
 /**
  * Fork: the status of a terminal thread row in the main sidebar. Message runs keep their own
  * status, so the terminal only fills in an idle row. A bell shows Input, a failed session or a
- * program that exited with a non-zero code shows Failed, and a starting session shows Working.
+ * program that exited with a non-zero code shows Failed, and a starting session or a running
+ * program shows Working.
  * `Completed` is the unread dot.
  */
 export function terminalThreadRowStatus<Status extends RowStatus>(
@@ -51,6 +61,6 @@ export function terminalThreadRowStatus<Status extends RowStatus>(
   if (status !== "ready" && status !== "waiting") return status;
   if (label === "Awaiting Input") return "input";
   if (label === "Error") return "failed";
-  if (label === "Connecting") return "working";
+  if (label === "Connecting" || label === "Working") return "working";
   return status;
 }

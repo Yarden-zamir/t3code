@@ -6,21 +6,16 @@ import {
   DEFAULT_TERMINAL_ID,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
+  terminalThreadShell,
 } from "@t3tools/contracts";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
-import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import { useNavigate } from "@tanstack/react-router";
-import * as Schema from "effect/Schema";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../appearanceFonts";
 import { isElectron } from "../env";
-import { useGrabTerminalFocus } from "../hooks/useForkTerminalFocus";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useLocalStorage } from "../hooks/useLocalStorage";
 import { shortcutLabelForCommand } from "../keybindings";
 import { isEditableFocused } from "../lib/editableFocus";
-import { observeResize } from "../lib/observeResize";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
 import { getTerminalFocusOwner, isTerminalThreadShellKey } from "../lib/terminalFocus";
@@ -42,8 +37,7 @@ import { type ChatShortcutHandler, useChatShortcuts } from "./chat/useChatShortc
 import { focusLevelContext } from "./focusLevels/focusLevels";
 import { PersistentThreadTerminalDrawer } from "./PersistentThreadTerminals";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
-import { TerminalViewport } from "./ThreadTerminalDrawer";
-import { Button } from "./ui/button";
+import { ForkShellTerminal } from "./ForkShellTerminal";
 
 const NO_PROJECT_SCRIPTS: never[] = [];
 
@@ -167,6 +161,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
         threadRef={threadRef}
         workspaceRoot={project.workspaceRoot}
         worktreePath={thread.worktreePath}
+        shell={terminalThreadShell(thread.modelSelection.model)}
         focusRequestId={drawer.mainFocusRequestId}
         keybindings={keybindings}
       />
@@ -277,26 +272,16 @@ function useTerminalThreadDrawer(threadRef: ScopedThreadRef) {
   };
 }
 
-/** `term-1`, with zoom, key mappings, attention visits and a restart after the shell exits. */
+/** `term-1` of the thread, and the visit that clears the attention that the user sees. */
 function MainTerminal(props: {
   readonly threadRef: ScopedThreadRef;
   readonly workspaceRoot: string;
   readonly worktreePath: string | null;
+  readonly shell: string | undefined;
   readonly focusRequestId: number;
   readonly keybindings: ResolvedKeybindingsConfig;
 }) {
-  const { threadRef, keybindings } = props;
-  const [advancedTypography] = useLocalStorage(
-    TYPOGRAPHY_ADVANCED_STORAGE_KEY,
-    false,
-    Schema.Boolean,
-  );
-  const launch = terminalThreadLaunch({
-    workspaceRoot: props.workspaceRoot,
-    worktreePath: props.worktreePath,
-  });
-  const containerRef = useRef<HTMLDivElement>(null);
-  useGrabTerminalFocus(containerRef);
+  const { threadRef } = props;
 
   // Attention that the user sees counts as a visit on the server, so every client clears it. A
   // window without focus marks it when it gets focus. The visit uses the server time of the
@@ -321,59 +306,15 @@ function MainTerminal(props: {
     return () => window.removeEventListener("focus", markSeen);
   }, [attentionAt, threadRef, visitThread]);
 
-  // The server closes the session when the shell exits. The next viewport opens a fresh one.
-  const [session, setSession] = useState({ id: 0, ended: false });
-
-  // The viewport refits on a change of these numbers, so a sidebar or window resize refits it.
-  const [layout, setLayout] = useState({ height: 0, epoch: 0 });
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    return observeResize(container, (entries) => {
-      const entry = entries.at(-1);
-      if (!entry) return;
-      setLayout((current) => ({
-        height: Math.round(entry.contentRect.height),
-        epoch: current.epoch + 1,
-      }));
-    });
-  }, []);
-
   return (
-    <div
-      ref={containerRef}
-      data-terminal-owner="terminal-thread"
-      className="relative flex min-h-0 min-w-0 flex-1 bg-(--terminal-background) p-2"
-    >
-      <TerminalViewport
-        key={session.id}
-        advancedTypography={advancedTypography}
-        threadRef={threadRef}
-        threadId={threadRef.threadId}
-        terminalId={DEFAULT_TERMINAL_ID}
-        terminalLabel="Terminal"
-        cwd={launch.cwd}
-        worktreePath={launch.worktreePath}
-        runtimeEnv={launch.env}
-        onSessionExited={() => setSession((current) => ({ ...current, ended: true }))}
-        focusRequestId={props.focusRequestId}
-        autoFocus
-        visible
-        resizeEpoch={layout.epoch}
-        drawerHeight={layout.height}
-        keybindings={keybindings}
-      />
-      {session.ended ? (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-(--terminal-background)/80">
-          <p className="text-sm text-muted-foreground">The shell exited. The session is closed.</p>
-          <Button
-            autoFocus
-            onClick={() => setSession((current) => ({ id: current.id + 1, ended: false }))}
-          >
-            Start a new session
-          </Button>
-        </div>
-      ) : null}
-    </div>
+    <ForkShellTerminal
+      threadRef={threadRef}
+      workspaceRoot={props.workspaceRoot}
+      worktreePath={props.worktreePath}
+      shell={props.shell}
+      focusRequestId={props.focusRequestId}
+      keybindings={props.keybindings}
+      className="p-2"
+    />
   );
 }

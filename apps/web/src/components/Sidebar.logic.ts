@@ -1129,7 +1129,11 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
-  if (thread.runtime?.status === "running" || thread.runtime?.status === "waiting") {
+  if (
+    thread.runtime?.status === "running" ||
+    thread.runtime?.status === "waiting" ||
+    terminalLabel === "Working"
+  ) {
     return {
       label: "Working",
       colorClass: "text-sky-600 dark:text-sky-300/80",

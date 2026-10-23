@@ -403,7 +403,13 @@ interface TerminalViewportProps {
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
   providerInstanceId?: ProviderInstanceId;
+  /** Fork: the shell slug of a terminal thread; the server default when absent. */
+  shell?: string | undefined;
   onSessionExited: () => void;
+  /** Fork: the session status after each change, for a screen that shows the ended state. */
+  onStatusChange?: ((status: TerminalSessionState["status"]) => void) | undefined;
+  /** Fork: the bytes that the user typed, before they go to the terminal. */
+  onInput?: ((data: string) => void) | undefined;
   onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   focusRequestId: number;
   autoFocus: boolean;
@@ -429,6 +435,7 @@ export function TerminalViewport(props: TerminalViewportProps) {
     props.cwd,
     props.worktreePath ?? null,
     runtimeEnvSignature(props.runtimeEnv),
+    props.shell ?? null,
   ]);
   return <TerminalSessionViewport key={sessionKey} {...props} />;
 }
@@ -443,7 +450,10 @@ function TerminalSessionViewport({
   worktreePath,
   runtimeEnv,
   providerInstanceId,
+  shell,
   onSessionExited,
+  onStatusChange,
+  onInput,
   onAddTerminalContext,
   focusRequestId,
   autoFocus,
@@ -532,6 +542,7 @@ function TerminalSessionViewport({
       ...(worktreePath !== undefined ? { worktreePath } : {}),
       ...(runtimeEnv ? { env: runtimeEnv } : {}),
       ...(providerInstanceId ? { providerInstanceId } : {}),
+      ...(shell ? { shell } : {}),
     },
   });
   const canResizeTerminal =
@@ -571,9 +582,13 @@ function TerminalSessionViewport({
           }
         }, 0);
       }
-      if (version > 0) synchronizedStatusRef.current = status;
+      if (version > 0) {
+        synchronizedStatusRef.current = status;
+        if (status !== synchronized) onStatusChange?.(status);
+      }
     },
   );
+  const reportInput = useEffectEvent((data: string) => onInput?.(data));
   const terminalVersion = terminalSession.version;
   const previousSessionRef = useRef({
     output: terminalOutput,
@@ -1004,6 +1019,7 @@ function TerminalSessionViewport({
 
       function handleData(data: string): void {
         if (!hasTerminalWriteAccess()) return;
+        reportInput(data);
         void (async () => {
           const result = await writeTerminal(data);
           if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;

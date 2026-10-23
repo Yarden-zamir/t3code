@@ -1,31 +1,14 @@
 import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
-  DEFAULT_RUNTIME_MODE,
-  DEFAULT_TERMINAL_ID,
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
   type EnvironmentId,
-  type ScopedProjectRef,
-  TERMINAL_THREAD_MODEL_SELECTION,
 } from "@t3tools/contracts";
-import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
-import { useNavigate } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
 
-import { toastManager } from "../components/ui/toast";
-import { newThreadId } from "../lib/utils";
-import { appAtomRegistry } from "../rpc/atomRegistry";
-import { readProject } from "../state/entities";
 import { useEnvironments } from "../state/environments";
 import { serverEnvironment } from "../state/server";
-import { terminalEnvironment } from "../state/terminal";
-import { environmentThreadShells, threadEnvironment } from "../state/threads";
-import { useAtomCommand } from "../state/use-atom-command";
-import { useOrchestrationCommand } from "../state/use-orchestration-command";
-import { waitForAtomValue } from "../state/waitForAtomValue";
-
-// The thread shell normally arrives in well under a second. Limit: when it arrives later, the
-// thread route finds no thread and goes home. Revisit if slow connections show that.
-const THREAD_SHELL_WAIT_MS = 5_000;
+import { useEnvironmentScope } from "../state/session";
 
 /** Fork: the `terminalThreads` server setting of an environment. */
 const terminalThreadsAtom = Atom.family((environmentId: EnvironmentId) =>
@@ -50,88 +33,10 @@ export function useTerminalThreadEnvironmentIds(): ReadonlySet<EnvironmentId> {
   );
 }
 
-// A double click or a held shortcut must not create several terminal threads. Limit: a second
-// creation in another project also waits for the first one. Revisit if that ever blocks a user.
-let creatingTerminalThread = false;
-
-/**
- * Fork: creates a terminal thread (`forkTerminalThreads.ts`) in a project and opens it. Every way
- * to create a terminal thread ends here, through `startNewThreadInProject` with kind "terminal".
- * A call while another creation runs does nothing.
- */
-export function useCreateTerminalThread() {
-  const createThread = useOrchestrationCommand(threadEnvironment.create);
-  const openTerminal = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
-  const closeTerminal = useAtomCommand(terminalEnvironment.close, { reportFailure: false });
-  const navigate = useNavigate();
-  const create = async (projectRef: ScopedProjectRef) => {
-    const project = readProject(projectRef);
-    if (project === null) throw new Error(`Project ${projectRef.projectId} is not loaded.`);
-    if (!appAtomRegistry.get(terminalThreadsAtom(projectRef.environmentId))) {
-      toastManager.add({
-        type: "error",
-        title: "Terminal threads are off",
-        description: `Turn on terminal threads in the settings of the server of ${project.title}.`,
-      });
-      return;
-    }
-    const threadId = newThreadId();
-    const created = createThread({
-      environmentId: projectRef.environmentId,
-      input: {
-        threadId,
-        projectId: projectRef.projectId,
-        title: "Terminal",
-        modelSelection: TERMINAL_THREAD_MODEL_SELECTION,
-        runtimeMode: DEFAULT_RUNTIME_MODE,
-        interactionMode: "default",
-        branch: null,
-        worktreePath: null,
-        createdAt: new Date().toISOString(),
-      },
-    });
-    // The shell starts while the server creates the thread. The screen opens it again with the
-    // same cwd and environment, which the server treats as the same session.
-    const launch = terminalThreadLaunch({
-      workspaceRoot: project.workspaceRoot,
-      worktreePath: null,
-    });
-    const opened = openTerminal({
-      environmentId: projectRef.environmentId,
-      input: { threadId, terminalId: DEFAULT_TERMINAL_ID, cwd: launch.cwd, env: { ...launch.env } },
-    });
-    if ((await created)._tag === "Failure") {
-      // The close waits for the open, so that it cannot arrive before the session exists.
-      await opened;
-      void closeTerminal({
-        environmentId: projectRef.environmentId,
-        input: { threadId, terminalId: DEFAULT_TERMINAL_ID, deleteHistory: true },
-      });
-      return;
-    }
-    await waitForAtomValue({
-      registry: appAtomRegistry,
-      atom: environmentThreadShells.threadShellAtom(
-        scopeThreadRef(projectRef.environmentId, threadId),
-      ),
-      predicate: (thread) => thread !== null,
-      timeoutMs: THREAD_SHELL_WAIT_MS,
-    });
-    // The trigger (a sidebar button, or the button that the palette gave focus back to) keeps
-    // focus otherwise, and the new terminal takes focus only from nothing (`useGrabTerminalFocus`).
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    await navigate({
-      to: "/$environmentId/$threadId",
-      params: { environmentId: projectRef.environmentId, threadId },
-    });
-  };
-  return async (projectRef: ScopedProjectRef) => {
-    if (creatingTerminalThread) return;
-    creatingTerminalThread = true;
-    try {
-      await create(projectRef);
-    } finally {
-      creatingTerminalThread = false;
-    }
-  };
+/** Fork: a draft can switch to Terminal mode: the server allows it and so do the grants. */
+export function useTerminalModeAvailable(environmentId: EnvironmentId | null): boolean {
+  const enabled = useTerminalThreadsEnabled(environmentId);
+  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
+  const canCreateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  return enabled && canOperateTerminal && canCreateThread;
 }

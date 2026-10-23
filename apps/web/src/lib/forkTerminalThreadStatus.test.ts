@@ -10,18 +10,21 @@ describe("terminalThreadStatusLabel", () => {
   it("maps session failure and start before attention", () => {
     expect(
       terminalThreadStatusLabel(
-        { status: "error", attention: { kind: "bell", at: after } },
+        { status: "error", attention: { kind: "bell", at: after }, running: false },
         visited,
       ),
     ).toBe("Error");
-    expect(terminalThreadStatusLabel({ status: "starting", attention: null }, visited)).toBe(
-      "Connecting",
-    );
+    expect(
+      terminalThreadStatusLabel({ status: "starting", attention: null, running: false }, visited),
+    ).toBe("Connecting");
   });
 
   it("maps unseen attention to a pill and seen attention to none", () => {
     const running = (kind: "bell" | "finished", at: string) =>
-      terminalThreadStatusLabel({ status: "running", attention: { kind, at } }, visited);
+      terminalThreadStatusLabel(
+        { status: "running", attention: { kind, at }, running: false },
+        visited,
+      );
     expect(running("bell", after)).toBe("Awaiting Input");
     expect(running("finished", after)).toBe("Completed");
     expect(running("bell", before)).toBeNull();
@@ -33,6 +36,7 @@ describe("terminalThreadStatusLabel", () => {
         {
           status: "running",
           attention: { kind: "finished", at, ...(exitCode === undefined ? {} : { exitCode }) },
+          running: false,
         },
         visited,
       );
@@ -46,10 +50,25 @@ describe("terminalThreadStatusLabel", () => {
   it("treats everything as unseen for a thread that nobody opened", () => {
     expect(
       terminalThreadStatusLabel(
-        { status: "running", attention: { kind: "finished", at: before, exitCode: 5 } },
+        {
+          status: "running",
+          attention: { kind: "finished", at: before, exitCode: 5 },
+          running: false,
+        },
         null,
       ),
     ).toBe("Error");
+  });
+
+  it("shows a running program as Working, below a bell that asks for input", () => {
+    const state = (running: boolean, kind: "bell" | "finished") =>
+      terminalThreadStatusLabel(
+        { status: "running", attention: { kind, at: after, exitCode: 1 }, running },
+        visited,
+      );
+    expect(state(true, "finished")).toBe("Working");
+    expect(state(true, "bell")).toBe("Awaiting Input");
+    expect(state(false, "finished")).toBe("Error");
   });
 
   it("shows nothing for a thread without terminal state", () => {
@@ -63,5 +82,6 @@ describe("terminalThreadRowStatus", () => {
     expect(terminalThreadRowStatus("waiting", "Error")).toBe("failed");
     expect(terminalThreadRowStatus("working", "Awaiting Input")).toBe("working");
     expect(terminalThreadRowStatus("ready", "Completed")).toBe("ready");
+    expect(terminalThreadRowStatus("ready", "Working")).toBe("working");
   });
 });

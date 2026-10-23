@@ -5,6 +5,7 @@ import {
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
+import { withoutTerminalProvider } from "../../lib/forkTerminalProviders";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -57,10 +58,12 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const representative = target
     ? environments.find((environment) => environment.environmentId === target.environmentId)
     : undefined;
-  const providers =
+  // Fork: a project default is an agent model; a terminal starts from its own toggle.
+  const providers = withoutTerminalProvider(
     (representative?.serverConfig
       ? providersByEnvironment.get(representative.environmentId)
-      : undefined) ?? EMPTY_SERVER_PROVIDERS;
+      : undefined) ?? EMPTY_SERVER_PROVIDERS,
+  );
   const selection = resolveDefaultProviderModelSelection(providers, settings.defaultModelSelection);
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(

@@ -1,28 +1,34 @@
 import { useEffect, type RefObject } from "react";
 
-const GRAB_MS = 2_000;
-const GRAB_INTERVAL_MS = 50;
+import { isEditableFocused } from "../lib/editableFocus";
+
+const SURFACE_WAIT_MS = 2_000;
+const SURFACE_POLL_MS = 50;
+const OPEN_LAYER_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
 /**
- * Fork: gives keyboard focus to the terminal inside `containerRef` once its surface exists. It
- * takes focus only while nothing else holds it, or while focus is already inside the container,
- * so an open menu, a dialog or the sidebar keeps it. The surface can appear late, so the grab
- * repeats for a short time.
+ * Fork: gives keyboard focus to the terminal inside `containerRef` once, as soon as its surface
+ * exists (the surface loads after mount). It takes focus from the button that opened the terminal
+ * (a sidebar button, or the trigger that a closing palette focuses again), but not from a text
+ * field, a dialog or a menu that the user moved to in the meantime.
  */
 export function useGrabTerminalFocus(containerRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
-    const deadline = Date.now() + GRAB_MS;
-    const grab = () => {
-      const container = containerRef.current;
-      const input = container?.querySelector("textarea");
+    const deadline = Date.now() + SURFACE_WAIT_MS;
+    const timer = window.setInterval(() => {
+      const input = containerRef.current?.querySelector("textarea");
+      if (!input) {
+        if (Date.now() >= deadline) window.clearInterval(timer);
+        return;
+      }
+      window.clearInterval(timer);
       const active = document.activeElement;
-      const free =
-        active === null || active === document.body || container?.contains(active) === true;
-      if (input && active !== input && free) input.focus();
-      if (Date.now() >= deadline) window.clearInterval(timer);
-    };
-    const timer = window.setInterval(grab, GRAB_INTERVAL_MS);
-    grab();
+      const userMovedOn =
+        active !== input &&
+        (isEditableFocused(active) || active?.closest(OPEN_LAYER_SELECTOR) != null);
+      if (!userMovedOn) input.focus();
+    }, SURFACE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [containerRef]);
 }
