@@ -107,7 +107,7 @@ const printJson = (value: unknown) => Console.log(encodeJson(value));
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /** Whether two URLs reach the same server: the same port, and the same host or both loopback. */
-export const sameServer = (left: string, right: string) => {
+const sameServer = (left: string, right: string) => {
   const host = (url: URL) => (LOOPBACK_HOSTS.has(url.hostname) ? "loopback" : url.hostname);
   const [a, b] = [new URL(left), new URL(right)];
   return a.port === b.port && host(a) === host(b);
