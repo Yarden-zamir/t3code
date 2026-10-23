@@ -31,7 +31,11 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
-import { readForkThreadMenuState, readTerminalThreadState } from "./useForkTerminalThreadState";
+import {
+  readForkDeleteNotice,
+  readForkThreadMenuState,
+  readTerminalThreadState,
+} from "./useForkTerminalThreadState";
 import { THREAD_ARCHIVE_BLOCK_REASON } from "../components/threadActionMenu.logic";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
@@ -904,6 +908,7 @@ export function useThreadActions() {
           [
             `Delete thread "${title}"?`,
             "This permanently clears conversation history for this thread.",
+            ...readForkDeleteNotice(resolved ? [resolved.thread] : []),
           ].join("\n"),
           { variant: "destructive" },
         ),

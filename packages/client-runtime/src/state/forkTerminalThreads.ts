@@ -68,6 +68,14 @@ export const TERMINAL_PROGRAM_ARCHIVE_BLOCK_MESSAGE =
   "A program runs in its terminal, and archive would end it. Stop the program first.";
 
 /**
+ * Delete stays allowed while a program runs, unlike Archive: it is an explicit destructive action.
+ * Its confirm says that the program ends.
+ */
+export const TERMINAL_PROGRAM_DELETE_NOTICE = "A program runs in its terminal. Delete ends it.";
+export const TERMINAL_PROGRAMS_DELETE_NOTICE =
+  "Programs run in some of these terminals. Delete ends them.";
+
+/**
  * Agent threads have a `term-1` drawer terminal too, so only a terminal thread reads its state.
  */
 export function terminalStateOf(

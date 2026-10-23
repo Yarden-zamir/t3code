@@ -285,6 +285,7 @@ import {
   type ProviderInstanceEntry,
 } from "../providerInstances";
 import {
+  readForkDeleteNotice,
   readForkThreadMenuState,
   useTerminalThreadState,
   useTerminalThreadStates,
@@ -4238,6 +4239,7 @@ export default function Sidebar() {
             [
               `Delete ${count} thread${count === 1 ? "" : "s"}?`,
               "This permanently clears conversation history for these threads.",
+              ...readForkDeleteNotice(selectedThreads),
             ].join("\n"),
             { variant: "destructive" },
           ),
@@ -4587,6 +4589,7 @@ export default function Sidebar() {
                   [
                     `Delete thread "${thread.title}"?`,
                     "This permanently clears conversation history for this thread.",
+                    ...readForkDeleteNotice([thread]),
                   ].join("\n"),
                   { variant: "destructive" },
                 ),

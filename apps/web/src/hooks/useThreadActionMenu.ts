@@ -43,7 +43,7 @@ import {
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { useCopyToClipboard } from "./useCopyToClipboard";
-import { readForkThreadMenuState } from "./useForkTerminalThreadState";
+import { readForkDeleteNotice, readForkThreadMenuState } from "./useForkTerminalThreadState";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { refuseBlockedArchive, useThreadActions } from "./useThreadActions";
@@ -306,6 +306,7 @@ export function useThreadActionMenu(input: {
                 [
                   `Delete thread "${thread.title}"?`,
                   "This permanently clears conversation history for this thread.",
+                  ...readForkDeleteNotice([thread]),
                 ].join("\n"),
                 { variant: "destructive" },
               ),

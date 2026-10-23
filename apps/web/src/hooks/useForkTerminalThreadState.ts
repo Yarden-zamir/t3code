@@ -6,6 +6,8 @@ import {
 } from "@t3tools/client-runtime/state/models";
 import {
   createTerminalThreadStatesAtom,
+  TERMINAL_PROGRAM_DELETE_NOTICE,
+  TERMINAL_PROGRAMS_DELETE_NOTICE,
   terminalThreadEnvironmentsKey,
   terminalThreadState,
   type TerminalThreadState,
@@ -87,4 +89,13 @@ export function readForkThreadMenuState(
     titleRegeneration: !isTerminalThread(thread),
     markUnread: !isTerminalThread(thread),
   };
+}
+
+/** Fork: the line that the Delete confirm adds when a program runs in one of `threads`. */
+export function readForkDeleteNotice(
+  threads: ReadonlyArray<Pick<EnvironmentThreadShell, "environmentId" | "id" | "providerInstanceId">>,
+): ReadonlyArray<string> {
+  const programRuns = threads.some((thread) => readTerminalThreadState(thread)?.running === true);
+  if (!programRuns) return [];
+  return [threads.length === 1 ? TERMINAL_PROGRAM_DELETE_NOTICE : TERMINAL_PROGRAMS_DELETE_NOTICE];
 }

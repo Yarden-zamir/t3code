@@ -4,6 +4,7 @@ import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import {
   forkEffectiveSnoozed,
   TERMINAL_PROGRAM_ARCHIVE_BLOCK_MESSAGE,
+  TERMINAL_PROGRAM_DELETE_NOTICE,
   terminalStateOf,
 } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
@@ -224,7 +225,12 @@ function useConfirmDeleteThread(
     (thread: EnvironmentThreadShell) => {
       if (!checkThreadOperationPermission(thread, actionFailureTitle("delete"))) return;
       const title = "Delete thread?";
-      const message = `“${thread.title}” will be permanently deleted, including its terminal history.`;
+      const programRuns =
+        terminalStateOf(readTerminalThreadStates([thread]), thread)?.running === true;
+      const message = [
+        `“${thread.title}” will be permanently deleted, including its terminal history.`,
+        ...(programRuns ? [TERMINAL_PROGRAM_DELETE_NOTICE] : []),
+      ].join(" ");
       Dialog.confirm({
         title,
         message,

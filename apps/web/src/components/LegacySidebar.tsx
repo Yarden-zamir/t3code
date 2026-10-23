@@ -95,7 +95,7 @@ import {
   waitForProjectRemoval,
 } from "../state/entities";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
-import { useTerminalThreadState } from "../hooks/useForkTerminalThreadState";
+import { readForkDeleteNotice, useTerminalThreadState } from "../hooks/useForkTerminalThreadState";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
 import { openDiscoveredPort } from "./preview/openDiscoveredPort";
@@ -1897,6 +1897,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         [
           `Delete ${count} thread${count === 1 ? "" : "s"}?`,
           "This permanently clears conversation history for these threads.",
+          ...readForkDeleteNotice(selectedThreadEntries.map(({ thread }) => thread)),
         ].join("\n"),
         { variant: "destructive" },
       );
@@ -2251,6 +2252,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           [
             `Delete thread "${thread.title}"?`,
             "This permanently clears conversation history for this thread.",
+            ...readForkDeleteNotice([thread]),
           ].join("\n"),
           { variant: "destructive" },
         );
