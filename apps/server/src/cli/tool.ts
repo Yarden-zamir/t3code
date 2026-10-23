@@ -159,7 +159,7 @@ export const callOnServer = Effect.fn("callToolOnServer")(function* <A, R>(
     const target = Option.getOrUndefined(runtimeState)?.origin;
     if (target === undefined || portOf(target) !== portOf(credential.endpoint)) {
       return yield* fail(
-        `${explicitHome} targets ${target ?? "no running T3 server"}, but this shell's thread credential targets ${new URL(credential.endpoint).origin}. Unset ${THREAD_CREDENTIAL_ENDPOINT_ENV} and ${THREAD_CREDENTIAL_AUTHORIZATION_ENV} to call a dev server.`,
+        `${explicitHome} targets ${target ?? "no running T3 server"}, but this shell's thread credential targets ${new URL(credential.endpoint).origin}. Unset ${THREAD_CREDENTIAL_ENDPOINT_ENV} and ${THREAD_CREDENTIAL_AUTHORIZATION_ENV} to call a dev server. To call this shell's own server, set T3CODE_HOME or --base-dir to its home; the desktop t3 command sets T3CODE_HOME to the desktop home.`,
       );
     }
     return yield* run(credential);
