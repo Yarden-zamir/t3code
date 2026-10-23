@@ -227,6 +227,23 @@ it.layer(
     }).pipe(Effect.provideService(SpawnExecutableResolution, uvOnPath)),
   );
 
+  it.effect("lists only the shells that can start when a shell is not defined", () =>
+    Effect.gen(function* () {
+      const customShells = yield* Ref.make<ReadonlyArray<TerminalCustomShell>>([
+        { name: "python", executable: "uv", args: ["run", "python"] },
+        { name: "ghost", executable: "missing-repl", args: [] },
+      ]);
+      const { manager, errorMessages } = yield* createManager({
+        forkShells: [{ name: "zsh", path: "/bin/zsh" }],
+        customShells,
+      });
+
+      yield* manager.open(threadScreen("removed"));
+
+      expect((yield* errorMessages).join(" ")).toContain("This server has: zsh, python.");
+    }).pipe(Effect.provideService(SpawnExecutableResolution, uvOnPath)),
+  );
+
   it.effect("gives a detected shell the hook", () =>
     Effect.gen(function* () {
       const { manager, pty } = yield* createManager({

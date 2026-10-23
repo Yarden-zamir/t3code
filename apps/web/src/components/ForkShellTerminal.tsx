@@ -178,6 +178,20 @@ export function ForkShellTerminal(props: {
 }
 
 /**
+ * Fork: marks a custom shell whose executable the server did not find, with the reason on hover.
+ * The shell stays selectable: the check uses the PATH of the server, which the terminal extends,
+ * and cannot check a relative path. A start that fails shows the same reason in the terminal.
+ */
+export function ShellNotFoundMark(props: { readonly reason: string | undefined }) {
+  if (props.reason === undefined) return null;
+  return (
+    <span className="ms-2 text-muted-foreground text-xs" title={props.reason}>
+      not found
+    </span>
+  );
+}
+
+/**
  * The shell of a terminal thread, which is its model. A change takes effect with the next new
  * shell, because the server starts the thread's shell then.
  */
@@ -194,7 +208,7 @@ function ThreadShellPicker(props: {
   // No `shell` means the default shell, which the server lists first.
   const current = props.shell ?? shells.find((shell) => shell.isDefault === true)?.slug;
   if (!canChange || shells.length === 0 || current === undefined) return null;
-  const known = shells.some((shell) => shell.slug === current);
+  const currentShell = shells.find((shell) => shell.slug === current);
   return (
     <Select
       value={current}
@@ -211,12 +225,16 @@ function ThreadShellPicker(props: {
       items={shells.map((shell) => ({ value: shell.slug, label: shell.name }))}
     >
       <SelectTrigger aria-label="Shell of the new shell" className="w-auto min-w-32" size="xs">
-        <SelectValue>{known ? current : `${current} (not defined)`}</SelectValue>
+        <SelectValue>
+          {currentShell === undefined ? `${current} (not defined)` : current}
+          {currentShell?.unavailableReason === undefined ? null : " (not found)"}
+        </SelectValue>
       </SelectTrigger>
       <SelectPopup>
         {shells.map((shell) => (
           <SelectItem key={shell.slug} value={shell.slug}>
             {shell.name}
+            <ShellNotFoundMark reason={shell.unavailableReason} />
           </SelectItem>
         ))}
       </SelectPopup>

@@ -87,6 +87,7 @@ import { makeShellMarkParser } from "../fork/shellMarks.ts";
 import { applyShellItems, forgetUnconfirmedShellState } from "../fork/terminalShellState.ts";
 import {
   customShellCandidate,
+  customShellProblem,
   type TerminalShell,
   terminalCustomShellsOf,
   terminalShells,
@@ -1525,11 +1526,20 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const shellResolver = options.shellResolver ?? (() => defaultShellResolver(platform, baseEnv));
   const forkShells = options.forkShells ?? [];
   const forkCustomShells = options.forkCustomShells ?? Effect.succeed([]);
-  const shellNotFound = (shellName: string, customShells: ReadonlyArray<TerminalCustomShell>) =>
-    new TerminalShellNotFoundError({
+  // The error lists the shells to choose instead, so it leaves out a custom shell that cannot start.
+  const shellNotFound = Effect.fn("terminal.shellNotFound")(function* (
+    shellName: string,
+    customShells: ReadonlyArray<TerminalCustomShell>,
+  ) {
+    const problems = yield* Effect.forEach(customShells, (shell) =>
+      customShellProblem(shell, { platform, env: baseEnv }),
+    );
+    const startable = customShells.filter((_, index) => problems[index] === undefined);
+    return yield* new TerminalShellNotFoundError({
       shell: shellName,
-      available: [...forkShells, ...customShells].map((shell) => shell.name),
+      available: [...forkShells, ...startable].map((shell) => shell.name),
     });
+  });
   // Fork: only the default shell falls back to the next candidate. A shell that the user chose
   // runs alone, so a thread never runs another shell than its own, and a failed start shows its
   // error. An unknown shell (a custom shell that was removed) fails here, in the start, and not

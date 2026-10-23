@@ -54,7 +54,7 @@ import { waitForAtomValue } from "../../state/waitForAtomValue";
 import { terminalShellOptions } from "../../lib/forkTerminalProviders";
 import { basenameOfPath } from "../../pierre-icons";
 import { recallCheckoutIsRepo } from "../ChatView.logic";
-import { ForkShellTerminal } from "../ForkShellTerminal";
+import { ForkShellTerminal, ShellNotFoundMark } from "../ForkShellTerminal";
 import { focusLevel } from "../focusLevels/focusLevels";
 import { Button } from "../ui/button";
 import { Select, SelectGroup, SelectGroupLabel, SelectItem, SelectPopup } from "../ui/select";
@@ -166,12 +166,14 @@ function ShellPicker(props: {
     /** The path of the shell (`terminalShells.ts` on the server). */
     readonly subProvider?: string | undefined;
     readonly isDefault?: boolean | undefined;
+    readonly unavailableReason?: string;
   }>;
   readonly onChange: (shell: string) => void;
   readonly onClose: () => void;
 }) {
   const menuProps = useComposerMenuProps();
   const selected = props.value ?? props.shells[0]?.slug ?? null;
+  const selectedShell = props.shells.find((shell) => shell.slug === selected);
   if (props.shells.length === 0) return null;
   return (
     <Select
@@ -187,7 +189,8 @@ function ShellPicker(props: {
       }}
     >
       <ComposerSelectControl aria-label="Shell">
-        {props.shells.find((shell) => shell.slug === selected)?.name ?? selected}
+        {selectedShell?.name ?? selected}
+        {selectedShell?.unavailableReason === undefined ? null : " (not found)"}
       </ComposerSelectControl>
       <SelectPopup alignItemWithTrigger={false} {...menuProps} finalFocus={false}>
         <SelectGroup>
@@ -200,7 +203,8 @@ function ShellPicker(props: {
                   {shell.isDefault ? (
                     <span className="ms-2 text-muted-foreground text-xs">default</span>
                   ) : null}
-                  {REPORTING_SHELLS.has(shell.slug) ? null : (
+                  <ShellNotFoundMark reason={shell.unavailableReason} />
+                  {REPORTING_SHELLS.has(shell.slug) || shell.unavailableReason ? null : (
                     <span className="ms-2 text-muted-foreground text-xs">
                       types only, no results
                     </span>

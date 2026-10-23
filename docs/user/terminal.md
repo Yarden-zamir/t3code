@@ -121,7 +121,7 @@ follows the monospace font of Appearance until you choose a separate font.
 Shells lists the shells that the server found, and your custom shells. A custom shell is any
 program with arguments, for example `uv` with `run python`. A program name without a folder
 runs from the PATH of the terminal. Settings shows an error under a custom shell whose program the
-server cannot find. A shell that cannot start shows its error in the terminal;
+server cannot find, and the shell pickers mark it as not found. A shell that cannot start shows its error in the terminal;
 T3 Code never starts another shell in its place. When you remove or rename a custom shell,
 Settings names the threads that use it. Such a thread keeps its output: choose another shell
 next to Start a new shell.
