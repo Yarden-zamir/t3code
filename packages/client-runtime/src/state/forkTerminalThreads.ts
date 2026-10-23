@@ -63,6 +63,10 @@ export function selectTerminalThreadStates(
   return states;
 }
 
+/** Why Archive refuses a terminal thread: archive ends the program that runs in it. */
+export const TERMINAL_PROGRAM_ARCHIVE_BLOCK_MESSAGE =
+  "A program runs in its terminal, and archive would end it. Stop the program first.";
+
 /**
  * Agent threads have a `term-1` drawer terminal too, so only a terminal thread reads its state.
  */
@@ -125,18 +129,28 @@ export type TerminalThreadStatusLabel =
 
 // A thread that nobody opened yet has no visit, so everything it reports is unseen: a schedule
 // or an agent can start a terminal thread that the user never looked at.
-function attentionIsUnseen(attention: TerminalAttention, seenAt: string | null | undefined) {
+function isUnseen(at: string, seenAt: string | null | undefined) {
   if (!seenAt) return true;
-  const at = Date.parse(attention.at);
+  const atMs = Date.parse(at);
   const seen = Date.parse(seenAt);
-  return !Number.isNaN(at) && (Number.isNaN(seen) || at > seen);
+  return !Number.isNaN(atMs) && (Number.isNaN(seen) || atMs > seen);
+}
+
+const attentionIsUnseen = (attention: TerminalAttention, seenAt: string | null | undefined) =>
+  isUnseen(attention.at, seenAt);
+
+/** A later program end keeps the time of the bell before it in `bellAt`. */
+function bellIsUnseen(attention: TerminalAttention | null, seenAt: string | null | undefined) {
+  const bellAt = attention?.kind === "bell" ? attention.at : attention?.bellAt;
+  return bellAt !== undefined && isUnseen(bellAt, seenAt);
 }
 
 /**
  * The status pill that a terminal thread adds to the pill of its message runs, the same pills as
- * an agent thread. A bell or an app notification asks for input. A program that runs is working.
- * A program that ended is completed work, or an error when it exited with a non-zero code. Input,
- * completed and error show until the user visits the thread.
+ * an agent thread. A bell or an app notification asks for input, also while a program runs or
+ * after it ended, because the program wants the user. A program that runs is working. A program
+ * that ended is completed work, or an error when it exited with a non-zero code. Input, completed
+ * and error show until the user visits the thread after them.
  */
 export function terminalThreadStatusLabel(
   terminal: TerminalThreadState | undefined,
@@ -146,18 +160,18 @@ export function terminalThreadStatusLabel(
   if (terminal.status === "error") return "Error";
   if (terminal.status === "starting") return "Connecting";
   const { attention } = terminal;
-  const unseen = attention !== null && attentionIsUnseen(attention, lastVisitedAt);
-  if (unseen && attention.kind === "bell") return "Awaiting Input";
+  if (bellIsUnseen(attention, lastVisitedAt)) return "Awaiting Input";
   if (terminal.running) return "Working";
-  if (!unseen) return null;
+  if (attention === null || !attentionIsUnseen(attention, lastVisitedAt)) return null;
   return (attention.exitCode ?? 0) === 0 ? "Completed" : "Error";
 }
 
 type RowStatus = "approval" | "input" | "working" | "waiting" | "failed" | "limited" | "ready";
 
 /**
- * The status of a terminal thread row in a thread list. Message runs keep their own status, so
- * the terminal only fills in an idle row. A bell shows Input, a failed session or a program that
+ * The status of a terminal thread row in a thread list. A bell shows Input, also over a message
+ * run that works, because a message that runs a program can ring it. Otherwise message runs keep
+ * their own status, so the terminal only fills in an idle row: a failed session or a program that
  * exited with a non-zero code shows Failed, and a starting session or a running program shows
  * Working. `Completed` is the unread dot.
  */
@@ -165,6 +179,7 @@ export function terminalThreadRowStatus<Status extends RowStatus>(
   status: Status,
   label: TerminalThreadStatusLabel | null,
 ): Status | "input" | "failed" | "working" {
+  if (label === "Awaiting Input" && status === "working") return "input";
   if (status !== "ready" && status !== "waiting") return status;
   if (label === "Awaiting Input") return "input";
   if (label === "Error") return "failed";

@@ -8,7 +8,7 @@ import { getClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { resolveShortcutCommand } from "../../keybindings";
 import { isEditableFocused } from "../../lib/editableFocus";
 import { isPreviewFocused } from "../../lib/previewFocus";
-import { getTerminalFocusOwner } from "../../lib/terminalFocus";
+import { isTerminalFocused, isTerminalThreadAppChord } from "../../lib/terminalFocus";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import {
   type FocusLevel,
@@ -134,9 +134,9 @@ export function useFocusLevelShortcuts() {
       if (event.isComposing || isCommandPaletteOpen()) return null;
       const command = resolveShortcutCommand(event, latest.current.keybindings, {
         context: {
-          terminalFocus: getTerminalFocusOwner() !== null,
+          terminalFocus: isTerminalFocused(event),
           previewFocus: isPreviewFocused(),
-          editableFocus: isEditableFocused(event.target),
+          editableFocus: !isTerminalThreadAppChord(event) && isEditableFocused(event.target),
           isWeb: !isElectron,
           isDesktop: isElectron,
           ...focusLevelContext(event.target),

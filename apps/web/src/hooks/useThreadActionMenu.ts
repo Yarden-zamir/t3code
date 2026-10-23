@@ -42,12 +42,11 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
-import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { readForkThreadMenuState } from "./useForkTerminalThreadState";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
-import { useThreadActions } from "./useThreadActions";
+import { refuseBlockedArchive, useThreadActions } from "./useThreadActions";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -63,8 +62,10 @@ export function useThreadActionMenu(input: {
   readonly threadRef: ScopedThreadRef | null;
   readonly projectCwd: string | null;
   readonly onStartRename: () => void;
+  /** Fork: runs once the menu closed and its action ended, also when no item was picked. */
+  readonly onClosed?: (() => void) | undefined;
 }) {
-  const { threadRef, projectCwd, onStartRename } = input;
+  const { threadRef, projectCwd, onStartRename, onClosed } = input;
   const router = useRouter();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -130,6 +131,7 @@ export function useThreadActionMenu(input: {
         titleRegeneration:
           readEnvironmentSupportsTitleRegeneration(threadRef.environmentId) &&
           forkMenuState.titleRegeneration,
+        markUnread: forkMenuState.markUnread,
       };
       const isRegeneratingTitle = thread.titleRegeneration != null;
       const snoozePresets = resolveSnoozePresets(now, timestampFormat);
@@ -145,7 +147,7 @@ export function useThreadActionMenu(input: {
           forkEffectiveSnoozed(thread, { now: now.toISOString() }, forkMenuState.terminal),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
-        isRunning: !threadRuntimeCanArchive(thread.runtime) || forkMenuState.programRuns,
+        archiveBlock: forkMenuState.archiveBlock,
         canMarkUnread: thread.latestRun?.completedAt != null,
         supports,
         snoozePresets,
@@ -275,6 +277,8 @@ export function useThreadActionMenu(input: {
           copyThreadIdToClipboard(thread.id, { threadId: thread.id });
           return;
         case "archive": {
+          // A program can start between the menu and the click.
+          if (refuseBlockedArchive(thread)) return;
           if (confirmThreadArchive) {
             const confirmed = await settlePromise(() =>
               api.dialogs.confirm(`Archive thread "${thread.title}"?`),
@@ -324,7 +328,7 @@ export function useThreadActionMenu(input: {
         default:
           return;
       }
-    })();
+    })().then(() => onClosed?.());
   };
 
   const closeMenu = () => {

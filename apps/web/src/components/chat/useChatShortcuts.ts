@@ -21,7 +21,11 @@ export interface ChatShortcutsInput {
   readonly enabled: boolean;
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly scriptKeybindings: ResolvedKeybindingsConfig;
-  readonly getShortcutContext: (target: EventTarget | null) => ShortcutMatchContext & {
+  /** Fork: `event` is the key event, so a terminal thread can tell an app chord (`isTerminalFocused`). */
+  readonly getShortcutContext: (
+    target: EventTarget | null,
+    event?: KeyboardEvent,
+  ) => ShortcutMatchContext & {
     readonly modelPickerOpen: boolean;
   };
   readonly threadFindActive: boolean;
@@ -59,7 +63,7 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
       if (!current.enabled || isCommandPaletteOpen()) return;
       const terminalFocusOwner = getTerminalFocusOwner();
       if (event.defaultPrevented && terminalFocusOwner === null) return;
-      const shortcutContext = current.getShortcutContext(event.target);
+      const shortcutContext = current.getShortcutContext(event.target, event);
 
       if (
         !shortcutContext.terminalFocus &&

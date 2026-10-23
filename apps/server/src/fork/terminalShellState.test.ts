@@ -41,6 +41,19 @@ describe("applyShellItems", () => {
     expect(session.shell).toBe("prompt");
   });
 
+  it("keeps the bell of a program in its end, so a client can still show the bell", () => {
+    const session = fresh();
+    applyShellItems(session, [{ type: "prompt" }, { type: "commandStart", commandLine: null }], t0);
+    applyShellItems(session, [{ type: "attention" }], t0);
+    applyShellItems(session, [{ type: "commandEnd", exitCode: 0 }, { type: "prompt" }], t1);
+    expect(session.attention).toEqual({ kind: "finished", at: t1, exitCode: 0, bellAt: t0 });
+
+    const t2 = "2026-10-23T10:00:09.000Z";
+    applyShellItems(session, [{ type: "commandStart", commandLine: null }], t2);
+    applyShellItems(session, [{ type: "commandEnd", exitCode: 1 }, { type: "prompt" }], t2);
+    expect(session.attention).toEqual({ kind: "finished", at: t2, exitCode: 1, bellAt: t0 });
+  });
+
   it("raises a bell once per second", () => {
     const session = fresh();
     expect(applyShellItems(session, [{ type: "attention" }], t0)).toBe(true);

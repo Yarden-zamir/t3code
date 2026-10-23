@@ -31,6 +31,7 @@ import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import { useTerminalThreadState } from "../hooks/useForkTerminalThreadState";
+import { useReturnFocusToTerminal } from "../hooks/useForkTerminalFocus";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useWorkspaceMutationRefresh } from "../hooks/useWorkspaceMutationRefresh";
@@ -38,7 +39,11 @@ import { shortcutLabelForCommand } from "../keybindings";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
-import { getTerminalFocusOwner, isTerminalThreadShellKey } from "../lib/terminalFocus";
+import {
+  isTerminalFocused,
+  isTerminalThreadAppChord,
+  isTerminalThreadShellKey,
+} from "../lib/terminalFocus";
 import { cn } from "../lib/utils";
 import { useRemoteOpenState } from "../remoteOpen";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
@@ -167,17 +172,26 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
     onDiffPanelOpen: undefined,
   });
   const threadShortcuts = useThreadShortcuts(threadRef, workspace.linkedPullRequest?.url ?? null);
+  const returnFocusToTerminal = useReturnFocusToTerminal({
+    headerRef,
+    focusMainTerminal: drawer.focusMain,
+  });
   const terminalShortcutLabel = (command: Parameters<typeof shortcutLabelForCommand>[1]) =>
     shortcutLabelForCommand(keybindings, command, {
       context: { terminalFocus: true, terminalOpen: drawer.open },
     }) ?? undefined;
-  const getShortcutContext = (target: EventTarget | null = document.activeElement) => ({
+  // A Cmd chord in the main terminal is an app shortcut, as for every app listener
+  // (`isTerminalFocused`). Without the event (a panel that reads labels), only focus counts.
+  const getShortcutContext = (
+    target: EventTarget | null = document.activeElement,
+    event?: KeyboardEvent,
+  ) => ({
     ...focusLevelContext(target),
-    terminalFocus: getTerminalFocusOwner() !== null,
+    terminalFocus: isTerminalFocused(event),
     terminalOpen: drawer.open,
     previewFocus: isPreviewFocused(),
     previewOpen: rightPanel.previewPanelOpen,
-    editableFocus: isEditableFocused(target),
+    editableFocus: !isTerminalThreadAppChord(event) && isEditableFocused(target),
     modelPickerOpen: false,
     isWeb: !isElectron,
     isDesktop: isElectron,
@@ -334,6 +348,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
             // Pinned scripts run in the chat view's terminals, which this screen does not have.
             projectScripts={NO_PROJECT_SCRIPTS}
             onRunPinnedScript={undefined}
+            onThreadMenuClosed={returnFocusToTerminal}
           />
         </header>
         <TerminalThreadError threadRef={threadRef} thread={thread} />

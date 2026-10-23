@@ -41,6 +41,7 @@ describe("ThreadArchiveBlockedError", () => {
     const error = new ThreadArchiveBlockedError({
       environmentId: EnvironmentId.make("environment-1"),
       threadId: ThreadId.make("thread-1"),
+      reason: "agent",
     });
 
     expect(error).toMatchObject({

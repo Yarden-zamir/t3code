@@ -83,7 +83,14 @@ export function applyShellItems(
       case "commandEnd":
         // The first prompt of a shell reports an end without a command.
         if (session.shell === "running") {
-          session.attention = { kind: "finished", at, exitCode: item.exitCode };
+          const previous = session.attention;
+          const bellAt = previous?.kind === "bell" ? previous.at : previous?.bellAt;
+          session.attention = {
+            kind: "finished",
+            at,
+            exitCode: item.exitCode,
+            ...(bellAt === undefined ? {} : { bellAt }),
+          };
           changed = true;
         }
         set("shell", "prompt");

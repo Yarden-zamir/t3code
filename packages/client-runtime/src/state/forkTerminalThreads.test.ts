@@ -17,6 +17,7 @@ import {
   terminalStateOf,
   terminalThreadRowStatus,
   terminalThreadStatusLabel,
+  type TerminalThreadState,
 } from "./forkTerminalThreads.ts";
 
 const visited = "2026-10-23T10:00:00.000Z";
@@ -91,13 +92,41 @@ describe("terminalThreadStatusLabel", () => {
   it("shows nothing for a thread without terminal state", () => {
     expect(terminalThreadStatusLabel(undefined, visited)).toBeNull();
   });
+
+  it("orders the states: session error, start, unseen bell, running program, unseen end", () => {
+    const label = (state: Partial<TerminalThreadState>) =>
+      terminalThreadStatusLabel(
+        { status: "running", attention: null, running: false, ...state },
+        visited,
+      );
+    const bell: TerminalAttention = { kind: "bell", at: after };
+    // The program that rang the bell ended later, and its end replaced the bell.
+    const failedAfterBell: TerminalAttention = {
+      kind: "finished",
+      at: after,
+      exitCode: 1,
+      bellAt: after,
+    };
+    expect(label({ status: "error", attention: bell })).toBe("Error");
+    expect(label({ status: "starting", attention: bell })).toBe("Connecting");
+    expect(label({ attention: bell, running: true })).toBe("Awaiting Input");
+    expect(label({ attention: failedAfterBell })).toBe("Awaiting Input");
+    expect(label({ attention: failedAfterBell, running: true })).toBe("Awaiting Input");
+    // A visit after the bell clears Input, and the end after the visit shows.
+    expect(label({ attention: { ...failedAfterBell, bellAt: before } })).toBe("Error");
+    expect(label({ attention: { ...failedAfterBell, bellAt: before }, running: true })).toBe(
+      "Working",
+    );
+  });
 });
 
 describe("terminalThreadRowStatus", () => {
-  it("fills in an idle row and leaves a message run alone", () => {
+  it("fills in an idle row, and a bell also replaces a message run that works", () => {
     expect(terminalThreadRowStatus("ready", "Awaiting Input")).toBe("input");
+    expect(terminalThreadRowStatus("working", "Awaiting Input")).toBe("input");
+    expect(terminalThreadRowStatus("approval", "Awaiting Input")).toBe("approval");
     expect(terminalThreadRowStatus("waiting", "Error")).toBe("failed");
-    expect(terminalThreadRowStatus("working", "Awaiting Input")).toBe("working");
+    expect(terminalThreadRowStatus("working", "Error")).toBe("working");
     expect(terminalThreadRowStatus("ready", "Completed")).toBe("ready");
     expect(terminalThreadRowStatus("ready", "Working")).toBe("working");
   });

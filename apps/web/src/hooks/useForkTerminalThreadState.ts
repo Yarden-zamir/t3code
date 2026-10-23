@@ -1,6 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { DEFAULT_TERMINAL_ID, isTerminalThread } from "@t3tools/contracts";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import {
+  threadRuntimeCanArchive,
+  type EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/models";
 import {
   createTerminalThreadStatesAtom,
   terminalThreadEnvironmentsKey,
@@ -11,6 +14,7 @@ import {
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 
+import type { ThreadArchiveBlock } from "../components/threadActionMenu.logic";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentSession } from "../state/session";
 import { terminalEnvironment } from "../state/terminal";
@@ -58,21 +62,29 @@ export function readTerminalThreadState(
 }
 
 /**
- * Fork: what the thread menus read at click time for a thread. A program that runs in the main
- * terminal blocks archive like an agent run, because archive ends it; a terminal thread has no
- * messages to regenerate a title from.
+ * Fork: what the thread menus and Archive read at click time for a thread. A program that runs in
+ * the main terminal blocks archive like an agent run, because archive ends it. A terminal thread
+ * has no messages to regenerate a title from. It has no Mark unread either: the server marks a
+ * thread unread before its last message run, and a terminal thread shows its program ends and
+ * bells without runs. Revisit if a user needs to mark a seen program end unread.
  */
 export function readForkThreadMenuState(
-  thread: Pick<EnvironmentThreadShell, "environmentId" | "id" | "providerInstanceId">,
+  thread: Pick<EnvironmentThreadShell, "environmentId" | "id" | "providerInstanceId" | "runtime">,
 ): {
   readonly terminal: TerminalThreadState | undefined;
-  readonly programRuns: boolean;
+  readonly archiveBlock: ThreadArchiveBlock | null;
   readonly titleRegeneration: boolean;
+  readonly markUnread: boolean;
 } {
   const terminal = readTerminalThreadState(thread);
   return {
     terminal,
-    programRuns: terminal?.running === true,
+    archiveBlock: !threadRuntimeCanArchive(thread.runtime)
+      ? "agent"
+      : terminal?.running === true
+        ? "program"
+        : null,
     titleRegeneration: !isTerminalThread(thread),
+    markUnread: !isTerminalThread(thread),
   };
 }

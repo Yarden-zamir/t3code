@@ -1728,7 +1728,9 @@ function OpenCommandPaletteDialog(props: {
   const plainPromptLink = promptLinkInput
     ? composerPromptLink({ ...promptLinkInput, withContext: false })
     : null;
-  if (promptLinkInput !== null && plainPromptLink !== null) {
+  // Fork: a terminal thread shows no composer, so it has no prompt to link.
+  const promptLinkAvailable = !(activeThread !== null && isTerminalThread(activeThread));
+  if (promptLinkAvailable && promptLinkInput !== null && plainPromptLink !== null) {
     actionItems.push({
       kind: "action",
       value: "action:copy-prompt-link",

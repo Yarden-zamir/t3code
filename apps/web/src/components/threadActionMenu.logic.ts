@@ -1,4 +1,5 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
+import { TERMINAL_PROGRAM_ARCHIVE_BLOCK_MESSAGE } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
 export type ThreadActionMenuId =
@@ -63,6 +64,23 @@ export function buildDraftActionMenuItems(options: {
   ];
 }
 
+/**
+ * Fork: why Archive refuses a thread now. Archive ends a program that runs in a terminal thread,
+ * so the program blocks it like an agent run.
+ */
+export type ThreadArchiveBlock = "agent" | "program";
+
+export const THREAD_ARCHIVE_BLOCK_REASON: Record<
+  ThreadArchiveBlock,
+  { readonly menu: string; readonly message: string }
+> = {
+  agent: { menu: "Stop the agent first", message: "Cannot archive while the provider is active." },
+  program: {
+    menu: "Stop the program first",
+    message: TERMINAL_PROGRAM_ARCHIVE_BLOCK_MESSAGE,
+  },
+};
+
 export interface ThreadActionMenuState {
   readonly canOperate: boolean;
   readonly branch: string | null;
@@ -76,8 +94,11 @@ export interface ThreadActionMenuState {
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
   readonly isRegeneratingTitle: boolean;
-  /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
-  readonly isRunning: boolean;
+  /**
+   * Archive rejects a thread with an attached provider, so disable it here rather than let the
+   * action fail. Fork: the label says why, because a native menu shows no tooltip.
+   */
+  readonly archiveBlock: ThreadArchiveBlock | null;
   /** Mark unread needs a finished run; without one the server refuses it. */
   readonly canMarkUnread: boolean;
   readonly supports: {
@@ -86,6 +107,8 @@ export interface ThreadActionMenuState {
     readonly snooze: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
+    /** Fork: a terminal thread has no Mark unread (`readForkThreadMenuState`). */
+    readonly markUnread: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -160,12 +183,16 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
-    {
-      id: "mark-unread",
-      label: "Mark unread",
-      icon: "mail-open",
-      disabled: !state.canMarkUnread,
-    },
+    ...(state.supports.markUnread
+      ? [
+          {
+            id: "mark-unread" as const,
+            label: "Mark unread",
+            icon: "mail-open",
+            disabled: !state.canMarkUnread,
+          },
+        ]
+      : []),
     ...(state.projectFilter
       ? [
           {
@@ -214,9 +241,12 @@ export function buildThreadActionMenuItems(
     { id: "project-settings", label: "Project settings", icon: "settings" },
     {
       id: "archive",
-      label: "Archive thread",
+      label:
+        state.archiveBlock === null
+          ? "Archive thread"
+          : `Archive thread (${THREAD_ARCHIVE_BLOCK_REASON[state.archiveBlock].menu.toLowerCase()})`,
       icon: "archive",
-      disabled: state.isRunning,
+      disabled: state.archiveBlock !== null,
       separatorBefore: true,
     },
     {

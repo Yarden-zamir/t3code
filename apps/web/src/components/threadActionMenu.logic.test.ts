@@ -16,7 +16,7 @@ const baseState: ThreadActionMenuState = {
   isSnoozed: false,
   canSnoozeNow: true,
   isRegeneratingTitle: false,
-  isRunning: false,
+  archiveBlock: null,
   canMarkUnread: true,
   supports: {
     settlement: true,
@@ -24,6 +24,7 @@ const baseState: ThreadActionMenuState = {
     snooze: true,
     pinning: true,
     titleRegeneration: true,
+    markUnread: true,
   },
   snoozePresets: [
     { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
@@ -102,6 +103,7 @@ describe("buildThreadActionMenuItems", () => {
           snooze: false,
           pinning: false,
           titleRegeneration: false,
+          markUnread: true,
         },
       }),
     ).toEqual(["rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
@@ -211,13 +213,14 @@ describe("buildThreadActionMenuItems", () => {
           snooze: false,
           pinning: false,
           titleRegeneration: false,
+          markUnread: true,
         },
       }),
     ).toContain("archive");
   });
 
   it("disables archive while the thread is running", () => {
-    const archiveItem = buildThreadActionMenuItems({ ...baseState, isRunning: true }).find(
+    const archiveItem = buildThreadActionMenuItems({ ...baseState, archiveBlock: "agent" }).find(
       (item) => item.id === "archive",
     );
     expect(archiveItem?.disabled).toBe(true);

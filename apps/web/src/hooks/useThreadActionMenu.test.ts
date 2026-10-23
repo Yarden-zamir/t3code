@@ -38,8 +38,9 @@ vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn(
 vi.mock("./useForkTerminalThreadState", () => ({
   readForkThreadMenuState: () => ({
     terminal: undefined,
-    programRuns: false,
+    archiveBlock: null,
     titleRegeneration: true,
+    markUnread: true,
   }),
 }));
 vi.mock("react", () => ({
@@ -130,6 +131,7 @@ vi.mock("./useSettings", () => ({
   getClientSettings: () => ({ snoozeQuickOptions: null }),
 }));
 vi.mock("./useThreadActions", () => ({
+  refuseBlockedArchive: () => false,
   useThreadActions: () =>
     Object.fromEntries(
       [

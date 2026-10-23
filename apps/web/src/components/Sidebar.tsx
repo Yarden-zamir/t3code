@@ -69,7 +69,6 @@ import {
 } from "@t3tools/client-runtime/state/thread-search";
 import {
   resolveThreadProviderStack,
-  threadRuntimeCanArchive,
   type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/models";
 import {
@@ -160,7 +159,11 @@ import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
 } from "../threadSelectionStore";
-import { useAcknowledgeThreadWoke, useThreadActions } from "../hooks/useThreadActions";
+import {
+  refuseBlockedArchive,
+  useAcknowledgeThreadWoke,
+  useThreadActions,
+} from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useSidebarProjectGroupSnapshots } from "../hooks/useSidebarProjectGroups";
 import { useTerminalFocus } from "../hooks/useTerminalFocus";
@@ -4371,19 +4374,7 @@ export default function Sidebar() {
             .threadTitleRegeneration === true;
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const forkMenuState = readForkThreadMenuState(thread);
-        const isRunning = !threadRuntimeCanArchive(thread.runtime) || forkMenuState.programRuns;
-        // Fork: a key or the command palette picks Archive without a menu that shows it disabled,
-        // so it says why instead of doing nothing.
-        if (keyPreset?.[0] === "archive" && isRunning) {
-          toastManager.add({
-            type: "warning",
-            title: "Cannot archive this thread now",
-            description: forkMenuState.programRuns
-              ? "A program runs in its terminal, and archive would end it. Stop the program first."
-              : "An agent runs in it. Stop the run first.",
-          });
-          return;
-        }
+        if (keyPreset?.[0] === "archive" && refuseBlockedArchive(thread)) return;
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
         const isPinned = thread.pinnedAt != null;
@@ -4417,7 +4408,7 @@ export default function Sidebar() {
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
-              isRunning,
+              archiveBlock: forkMenuState.archiveBlock,
               canMarkUnread: thread.latestRun?.completedAt != null,
               supports: {
                 settlement: supportsSettlement,
@@ -4425,6 +4416,7 @@ export default function Sidebar() {
                 snooze: supportsSnooze,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration && forkMenuState.titleRegeneration,
+                markUnread: forkMenuState.markUnread,
               },
               snoozePresets,
             }),
@@ -4559,6 +4551,8 @@ export default function Sidebar() {
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
           case "archive": {
+            // A program can start between the menu and the click.
+            if (refuseBlockedArchive(thread)) return;
             if (confirmThreadArchive) {
               const confirmed = await settlePromise(() =>
                 api.dialogs.confirm(`Archive thread "${thread.title}"?`),

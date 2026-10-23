@@ -9,6 +9,7 @@ import {
   PanelLeftIcon,
   PanelRightIcon,
   PencilIcon,
+  SquareTerminalIcon,
   TextCursorInputIcon,
 } from "lucide-react";
 import type { CommandPaletteActionItem } from "../CommandPalette.logic";
@@ -44,7 +45,8 @@ function afterPaletteCloses(run: () => void): Promise<void> {
 
 /**
  * Fork: command palette items for the focus level commands. A terminal thread has no timeline,
- * and its shell is the composer (`focusLevels.ts`).
+ * and its shell is the composer (`focusLevels.ts`), so the composer item names the terminal. It
+ * has no Mark unread either (`readForkThreadMenuState`).
  */
 export function focusLevelPaletteItems(
   iconClassName: string,
@@ -52,17 +54,24 @@ export function focusLevelPaletteItems(
 ): CommandPaletteActionItem[] {
   return [
     ...FOCUS_ITEMS.filter(([, level]) => !(options.terminalThread && level === "timeline")).map(
-      ([command, level, title, Icon]) => ({
-        kind: "action" as const,
-        value: `action:${command}`,
-        searchTerms: ["focus", "keyboard", "move", title],
-        title,
-        icon: <Icon className={iconClassName} />,
-        shortcutCommand: command,
-        run: () => afterPaletteCloses(() => void focusLevel(level)),
-      }),
+      ([command, level, chatTitle, ChatIcon]) => {
+        const terminal = options.terminalThread && level === "composer";
+        const title = terminal ? "Focus terminal" : chatTitle;
+        const Icon = terminal ? SquareTerminalIcon : ChatIcon;
+        return {
+          kind: "action" as const,
+          value: `action:${command}`,
+          searchTerms: ["focus", "keyboard", "move", title],
+          title,
+          icon: <Icon className={iconClassName} />,
+          shortcutCommand: command,
+          run: () => afterPaletteCloses(() => void focusLevel(level)),
+        };
+      },
     ),
-    ...THREAD_ITEMS.map(([command, title, Icon]) => ({
+    ...THREAD_ITEMS.filter(
+      ([command]) => !(options.terminalThread && command === "thread.markUnread"),
+    ).map(([command, title, Icon]) => ({
       kind: "action" as const,
       value: `action:${command}`,
       searchTerms: ["thread", title],

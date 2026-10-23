@@ -3,6 +3,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import {
   forkEffectiveSnoozed,
+  TERMINAL_PROGRAM_ARCHIVE_BLOCK_MESSAGE,
   terminalStateOf,
 } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
@@ -156,6 +157,14 @@ function useThreadActionExecutor(
             actionFailureTitle(action),
             "This thread is working. Interrupt it first, then try again.",
           );
+          return false;
+        }
+        // Fork: archive ends the program that runs in a terminal thread, as on web.
+        if (
+          action === "archive" &&
+          terminalStateOf(readTerminalThreadStates([thread]), thread)?.running === true
+        ) {
+          Dialog.alert(actionFailureTitle(action), TERMINAL_PROGRAM_ARCHIVE_BLOCK_MESSAGE);
           return false;
         }
         const result = await withThreadDismissal(
