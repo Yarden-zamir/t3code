@@ -108,9 +108,14 @@ const FORK_MOBILE_SWITCHES = [
   readonly place?: "threads";
 }>;
 
+type ForkMobileSettings = ReturnType<typeof useForkMobileSettings>;
+
 /** The fork switches; `place` limits them to the ones of that screen. */
-export function ForkMobileSwitchRows(props: { readonly place?: "threads" }) {
-  const { targets, disabled, write } = useForkMobileSettings();
+export function ForkMobileSwitchRows(props: {
+  readonly settings: ForkMobileSettings;
+  readonly place?: "threads";
+}) {
+  const { targets, disabled, write } = props.settings;
   return FORK_MOBILE_SWITCHES.filter(
     (row) => props.place === undefined || ("place" in row && row.place === props.place),
   ).map((row) => (
@@ -128,11 +133,11 @@ export function ForkMobileSwitchRows(props: { readonly place?: "threads" }) {
 
 /** Thread behavior: the fork switches about chat. */
 export function ForkMobileThreadsSection() {
-  const { targets, projectSelected } = useForkMobileSettings();
-  if (targets.length === 0 || projectSelected) return null;
+  const settings = useForkMobileSettings();
+  if (settings.targets.length === 0 || settings.projectSelected) return null;
   return (
     <SettingsSection title="Chat">
-      <ForkMobileSwitchRows place="threads" />
+      <ForkMobileSwitchRows settings={settings} place="threads" />
     </SettingsSection>
   );
 }
@@ -151,10 +156,9 @@ const NEW_THREAD_CHOICES: ReadonlyArray<{
   { mode: "none", label: "No project", description: "Open a draft without a project." },
 ];
 
-/** `mobileNewThreadProject`, on the Fork screen and in Server settings > New threads. */
-export function ForkMobileNewThreadSection() {
-  const { targets, disabled, write } = useForkMobileSettings();
-  if (targets.length === 0) return null;
+/** `mobileNewThreadProject`, on the Fork screen. */
+export function ForkMobileNewThreadSection(props: { readonly settings: ForkMobileSettings }) {
+  const { targets, disabled, write } = props.settings;
   const newThreadProject = uniformMobileSetting(targets, "mobileNewThreadProject");
   return (
     <SettingsSection title="New thread opens">
@@ -171,4 +175,11 @@ export function ForkMobileNewThreadSection() {
       ))}
     </SettingsSection>
   );
+}
+
+/** Server settings > New threads: what New thread opens. */
+export function ForkMobileNewThreadsServerSection() {
+  const settings = useForkMobileSettings();
+  if (settings.targets.length === 0 || settings.projectSelected) return null;
+  return <ForkMobileNewThreadSection settings={settings} />;
 }

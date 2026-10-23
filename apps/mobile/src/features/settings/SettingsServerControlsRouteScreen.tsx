@@ -30,7 +30,7 @@ import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsProjectOverridesSection } from "./components/SettingsProjectOverridesSection";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
-import { ForkMobileNewThreadSection } from "./forkMobileSettings";
+import { ForkMobileNewThreadsServerSection } from "./forkMobileSettings";
 import { useSettingsWriter } from "./useSettingsWriter";
 import {
   planMobileScopedSettingsClear,
@@ -352,7 +352,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       />
                     ))}
                   </SettingsSection>
-                  {projectSelected ? null : <ForkMobileNewThreadSection />}
+                  <ForkMobileNewThreadsServerSection />
                 </>
               ) : null}
 

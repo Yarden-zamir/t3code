@@ -125,14 +125,14 @@ const searchItemsById = new Map<string, SettingsSearchItem>(
 );
 
 /**
- * An entry shows where search reaches each of its rows: on this platform and at the selected
- * scope. Storage, for example, hides its worktree rows at a project scope. The slots and the Fork
- * page use this one rule.
+ * An entry shows where search reaches each of its rows: on this platform and, unless `scopeKind`
+ * is null, at the selected scope. The Fork page checks the scope. A slot checks it only where
+ * its place hides rows at a project scope; elsewhere a server row locks, like its neighbours.
  */
 export function isForkEntryShown(
   ids: ReadonlyArray<string>,
   items: ReadonlyMap<string, SettingsSearchItem>,
-  scopeKind: ResolvedSettingsScope["kind"],
+  scopeKind: ResolvedSettingsScope["kind"] | null,
 ): boolean {
   const platform = typeof navigator === "undefined" ? "" : navigator.platform;
   return ids.every((id) => {
@@ -140,7 +140,11 @@ export function isForkEntryShown(
     return (
       item === undefined ||
       (isSettingsSearchItemOnPlatform(item, platform) &&
-        isSettingsSearchScopeAvailable(getSettingsSearchTargetScope(id)?.scope ?? null, scopeKind))
+        (scopeKind === null ||
+          isSettingsSearchScopeAvailable(
+            getSettingsSearchTargetScope(id)?.scope ?? null,
+            scopeKind,
+          )))
     );
   });
 }
@@ -150,7 +154,13 @@ export function isForkEntryShown(
  * The upstream page keeps one line per place.
  */
 export function ForkSettingsSlot({ place }: { readonly place: ForkSettingPlace }) {
-  const scopeKind = useOptionalSettingsScope()?.scope.kind ?? "all";
+  const definition: {
+    readonly section: string | null;
+    readonly forkSection?: true;
+    readonly hideAtProjectScope?: true;
+  } = FORK_SETTING_PLACES[place];
+  const selectedScopeKind = useOptionalSettingsScope()?.scope.kind ?? "all";
+  const scopeKind = definition.hideAtProjectScope === true ? selectedScopeKind : null;
   const rows = forkSettingRowsAt(place)
     .filter((entry) => isForkEntryShown(entry.ids, searchItemsById, scopeKind))
     .map((entry) => {
@@ -158,9 +168,7 @@ export function ForkSettingsSlot({ place }: { readonly place: ForkSettingPlace }
       return <Row key={entry.ids[0]} />;
     });
   if (rows.length === 0) return null;
-  const definition: { readonly section: string; readonly forkSection?: true } =
-    FORK_SETTING_PLACES[place];
-  if (definition.forkSection !== true) return rows;
+  if (definition.forkSection !== true || definition.section === null) return rows;
   return (
     <SettingsSection id={`fork-${place}`} title={definition.section} className={HIDE_WITHOUT_ROWS}>
       {rows}

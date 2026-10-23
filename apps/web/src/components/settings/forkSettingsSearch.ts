@@ -62,6 +62,7 @@ export const ORGANIZATION_ITEMS = [
     to: "/settings/general",
     scope: "environment-defaults",
     environmentOnly: true,
+    requiresThreadAutoSettlement: true,
     searchTerms: ["settle background command bash wake typecheck test run killed"],
   },
   {

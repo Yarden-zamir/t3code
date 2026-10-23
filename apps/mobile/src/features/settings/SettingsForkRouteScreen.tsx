@@ -22,7 +22,7 @@ import { SettingsSection } from "./components/SettingsSection";
  */
 export function SettingsForkRouteScreen() {
   const insets = useSafeAreaInsets();
-  const { targets } = useForkMobileSettings();
+  const settings = useForkMobileSettings();
 
   return (
     <>
@@ -35,18 +35,18 @@ export function SettingsForkRouteScreen() {
           contentContainerClassName="gap-6 px-5 pt-4"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
-          {targets.length === 0 ? (
+          {settings.targets.length === 0 ? (
             <Text className="px-2 text-base text-foreground-muted">
               Use the filter above to select a connected environment.
             </Text>
           ) : (
             <>
               <SettingsSection title="Web app and look">
-                <ForkMobileSwitchRows />
+                <ForkMobileSwitchRows settings={settings} />
               </SettingsSection>
               <SidebarTabSettingsSection />
               <AppTokenSettingsSection />
-              <ForkMobileNewThreadSection />
+              <ForkMobileNewThreadSection settings={settings} />
             </>
           )}
         </ScrollView>

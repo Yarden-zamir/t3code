@@ -11,6 +11,7 @@ import { BoundedIntegerInput } from "./BoundedIntegerInput";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { useSettingsScope } from "./SettingsScopeContext";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
@@ -293,6 +294,14 @@ export function AutoSettleWaitsForBackgroundCommandsSettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const mixed = useScopedSettingsMixed(["autoSettleWaitsForBackgroundCommands"]);
+  const { connectedEnvironments } = useSettingsScope();
+  // Like the upstream auto-settle rows beside it.
+  const supportsAutoSettlement =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every(
+      (target) => target.serverConfig?.environment.capabilities.threadAutoSettlement === true,
+    );
+  if (!supportsAutoSettlement) return null;
   return (
     <SettingsRow
       {...searchableSetting("auto-settle-waits-for-background-commands")}

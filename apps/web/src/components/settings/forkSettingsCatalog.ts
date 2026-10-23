@@ -2,9 +2,11 @@ import type { SettingsPath, SettingsSearchItem, SettingsSearchItemId } from "./s
 
 /**
  * The places in other settings pages where fork rows render. Each place is one
- * `<ForkSettingsSlot place=... />` hook. `section` names the section of the page. A place with
- * `forkSection` renders its own section with that title; the others add rows at the end of an
- * upstream section.
+ * `<ForkSettingsSlot place=... />` hook. `section` names the section of the page, or is null
+ * when its heading changes, like the machine name in Connections. A place with `forkSection`
+ * renders its own section with that title; the others add rows to an upstream section. A place
+ * with `hideAtProjectScope` hides its rows at a project scope, like the upstream rows beside it.
+ * Elsewhere a server row stays and locks, through `SettingsRow`.
  */
 export const FORK_SETTING_PLACES = {
   "general-global-scripts": {
@@ -47,8 +49,8 @@ export const FORK_SETTING_PLACES = {
     section: "Pull request watch",
     forkSection: true,
   },
-  "storage-worktrees": { to: "/settings/storage", section: "Worktrees" },
-  "connections-local": { to: "/settings/connections", section: "This machine" },
+  "storage-worktrees": { to: "/settings/storage", section: "Worktrees", hideAtProjectScope: true },
+  "connections-local": { to: "/settings/connections", section: null },
   "connections-warnings": {
     to: "/settings/connections",
     section: "Connection warnings",
@@ -57,7 +59,12 @@ export const FORK_SETTING_PLACES = {
   "machines-machine-map": { to: "/settings/machines", section: "Machine map" },
 } as const satisfies Record<
   string,
-  { readonly to: SettingsPath; readonly section: string; readonly forkSection?: true }
+  {
+    readonly to: SettingsPath;
+    readonly section: string | null;
+    readonly forkSection?: true;
+    readonly hideAtProjectScope?: true;
+  }
 >;
 
 export type ForkSettingPlace = keyof typeof FORK_SETTING_PLACES;

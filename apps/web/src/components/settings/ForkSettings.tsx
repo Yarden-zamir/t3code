@@ -76,10 +76,11 @@ export function ForkSettingsPanel() {
                 "place" in entry
                   ? FORK_SETTING_ROWS[entry.ids[0]]
                   : UPSTREAM_SETTING_ROWS[entry.ids[0]];
+              const section = "place" in entry ? FORK_SETTING_PLACES[entry.place].section : null;
               const placeLabel =
-                "place" in entry
-                  ? `${SETTINGS_SECTION_LABELS[item.to]} › ${FORK_SETTING_PLACES[entry.place].section}`
-                  : SETTINGS_SECTION_LABELS[item.to];
+                section === null
+                  ? SETTINGS_SECTION_LABELS[item.to]
+                  : `${SETTINGS_SECTION_LABELS[item.to]} › ${section}`;
               return (
                 <div key={item.id} className={HIDE_WITHOUT_ROWS}>
                   <Row />
