@@ -212,7 +212,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
   }) satisfies McpAuthMiddleware;
 }).pipe(Effect.withSpan("McpHttpServer.makeAuthMiddleware"));
 
-const layerMcpAuthMiddleware = HttpRouter.middleware<{
+export const layerMcpAuthMiddleware = HttpRouter.middleware<{
   provides: McpInvocationContext.McpInvocationContext;
 }>()(makeMcpAuthMiddleware).layer;
 

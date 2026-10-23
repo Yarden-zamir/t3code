@@ -16,10 +16,12 @@ import {
   AuthEnvironmentBootstrapTokenType,
   AuthPairingCredentialResult,
   AuthTokenExchangeGrantType,
-  type EnvironmentId,
+  EnvironmentId,
   ExecutionEnvironmentDescriptor,
+  MACHINE_EXEC_STREAM_PATH,
   type MachineExecInput,
   MachineExecResult,
+  type MachineExecStreamStart,
   MachineId,
   type OrchestratorMcpFailure,
   type PeerLink,
@@ -36,6 +38,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
+import type * as Socket from "effect/socket/Socket";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
@@ -49,10 +53,13 @@ import {
   type ArrowLinkTarget,
   arrowAllowsExec,
   arrowLinkTargets,
+  CLI_LOCAL_USER_REFUSAL,
+  isCliLocalUser,
   isMachineRequestNamespace,
   MANUAL_LINK_REFUSAL,
 } from "./machineAccess.ts";
 import { historyCaller, requireMachineExecCaller } from "./machineCallerAccess.ts";
+import { type ExecSocket, openExecSocket, streamUrl } from "./machineExecStream.ts";
 import * as MachineMapState from "./MachineMapState.ts";
 
 const REQUEST_TIMEOUT = Duration.seconds(15);
@@ -121,6 +128,17 @@ export class MachinePeers extends Context.Service<
       MachinePeerError | OrchestratorMcpFailure,
       CallerServices
     >;
+    /**
+     * MM-1919: opens the exec stream of `t3 machine exec` on a peer whose arrow allows exec, with
+     * the same checks as `exec`, and sends its start. The peer runs the command and reports it.
+     */
+    readonly openExec: (
+      input: MachineExecStreamStart,
+    ) => Effect.Effect<
+      ExecSocket,
+      MachinePeerError | OrchestratorMcpFailure,
+      CallerServices | Scope.Scope | Socket.WebSocketConstructor
+    >;
     /** MM-1907: the linked machines that answer now, with their environment ids. */
     readonly readableEnvironments: Effect.Effect<ReadonlyArray<ReadableEnvironment>>;
     /** MM-1922: the machine that answered as this environment id, once a lookup reached it. */
@@ -141,6 +159,29 @@ interface ArrowLink extends PeerIdentity {
   /** Whether the descriptor of the machine answered on this look. */
   readonly answered: boolean;
 }
+
+/** `ws` names the HTTP status of a refused upgrade only in the message of its error event. */
+const refusedUpgrade = (cause: unknown) =>
+  Predicate.isTagged(cause, "SocketError") &&
+  Predicate.hasProperty(cause, "reason") &&
+  Predicate.hasProperty(cause.reason, "cause") &&
+  Predicate.hasProperty(cause.reason.cause, "message") &&
+  cause.reason.cause.message === "Unexpected server response: 401";
+
+/**
+ * MM-1921: the environment id of an arrow link whose machine has not answered since this server
+ * started, so its real id is not known yet. It only names the link in the list: `resolve` never
+ * sends work with it, so no task or outcome stores it.
+ */
+const UNANSWERED_ID_PREFIX = "machine:";
+const unansweredEnvironmentId = (machine: MachineId) =>
+  EnvironmentId.make(`${UNANSWERED_ID_PREFIX}${machine}`);
+const machineOfUnanswered = (environmentId: EnvironmentId) =>
+  environmentId.startsWith(UNANSWERED_ID_PREFIX)
+    ? MachineId.make(environmentId.slice(UNANSWERED_ID_PREFIX.length))
+    : undefined;
+const notAnswered = (target: ArrowLinkTarget) =>
+  `${target.machine.name} has not answered since this server started. It may be offline, or run a T3 Code version without links; the portal shows its presence and version.`;
 
 const describeFailure = (cause: unknown): string => {
   if (HttpClientError.isHttpClientError(cause)) {
@@ -163,6 +204,8 @@ const make = Effect.gen(function* () {
   // The links of the last look outside a pause. A pause sets every arrow to `none` and keeps the
   // levels only in the portal, so these say which links the pause holds (MM-1914).
   let lastLinks: ReadonlyArray<ArrowLink> = [];
+  let lastUnanswered: ReadonlyArray<ArrowLinkTarget> = [];
+  let lastLookPaused = false;
   const firstSeen = new Map<EnvironmentId, DateTime.Utc>();
   const outcomes = new Map<
     EnvironmentId,
@@ -244,15 +287,18 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * The arrow links now. `refresh` asks each machine for its environment id again. `unknown`
-   * counts the machines that did not answer and have no known environment id.
+   * The arrow links now. `refresh` asks each machine for its environment id again. `unanswered`
+   * holds the arrows to machines that did not answer and have no known environment id.
    */
   const arrowLinks = Effect.fn("MachinePeers.arrowLinks")(function* (
     local: Effect.Success<typeof onMap>,
     refresh: boolean,
   ) {
-    if (local === undefined) return { links: [], unknown: 0, paused: false };
-    if (local.desired.paused === true) return { links: lastLinks, unknown: 0, paused: true };
+    if (local === undefined) return { links: [], unanswered: [], paused: false };
+    if (local.desired.paused === true) {
+      lastLookPaused = true;
+      return { links: lastLinks, unanswered: lastUnanswered, paused: true };
+    }
     const nowMs = yield* Clock.currentTimeMillis;
     const looked = yield* Effect.forEach(
       arrowLinkTargets(local.desired, nowMs),
@@ -265,17 +311,34 @@ const make = Effect.gen(function* () {
         return probe.pipe(
           Effect.map((found) => {
             const identity = Option.getOrUndefined(found) ?? cached;
-            return identity === undefined
-              ? undefined
-              : ({ ...identity, target, answered: Option.isSome(found) } satisfies ArrowLink);
+            return {
+              target,
+              link:
+                identity === undefined
+                  ? undefined
+                  : ({ ...identity, target, answered: Option.isSome(found) } satisfies ArrowLink),
+            };
           }),
         );
       },
       { concurrency: "unbounded" },
     );
-    const links = looked.filter((link) => link !== undefined);
+    const links = looked.flatMap(({ link }) => (link === undefined ? [] : [link]));
+    const unanswered = looked.flatMap(({ target, link }) => (link === undefined ? [target] : []));
+    // A link that the last look did not have came back, with its restored arrow or after a resume:
+    // the error of its absence is stale. Errors of a link that stayed clear on its next success.
+    for (const link of links) {
+      const outcome = outcomes.get(link.environmentId);
+      const isBack =
+        lastLookPaused || !lastLinks.some((last) => last.environmentId === link.environmentId);
+      if (isBack && outcome !== undefined && outcome.lastError !== null) {
+        outcomes.set(link.environmentId, { ...outcome, lastError: null });
+      }
+    }
     lastLinks = links;
-    return { links, unknown: looked.length - links.length, paused: false };
+    lastUnanswered = unanswered;
+    lastLookPaused = false;
+    return { links, unanswered, paused: false };
   });
 
   const toPeerLink = Effect.fn("MachinePeers.toPeerLink")(function* (link: ArrowLink) {
@@ -322,15 +385,35 @@ const make = Effect.gen(function* () {
     unlink: () => manualRefused,
     list: Effect.gen(function* () {
       const looked = yield* arrowLinks(yield* onMap, true);
-      return yield* Effect.forEach(looked.links, (link) =>
+      const paused = "The machine map is paused.";
+      const linked = yield* Effect.forEach(looked.links, (link) =>
         toPeerLink(link).pipe(
           Effect.map((peerLink): PeerLinkSummary => ({
             ...peerLink,
             status: !looked.paused && link.answered ? "reachable" : "unreachable",
-            lastError: looked.paused ? "The machine map is paused." : peerLink.lastError,
+            lastError: looked.paused ? paused : peerLink.lastError,
           })),
         ),
       );
+      // Every arrow with agent tools is a link, also to a machine that never answered.
+      const now = yield* DateTime.now;
+      const unanswered = looked.unanswered.map((target): PeerLinkSummary => {
+        const environmentId = unansweredEnvironmentId(target.machine.id);
+        const linkedAt = firstSeen.get(environmentId) ?? now;
+        firstSeen.set(environmentId, linkedAt);
+        return {
+          environmentId,
+          label: target.machine.name,
+          urls: [target.origin],
+          access: target.access,
+          linkedAt,
+          expiresAt: target.endsAtMs === null ? NO_EXPIRY : DateTime.makeUnsafe(target.endsAtMs),
+          lastReachedAt: null,
+          lastError: looked.paused ? paused : notAnswered(target),
+          status: "unreachable",
+        };
+      });
+      return [...linked, ...unanswered];
     }).pipe(Effect.withSpan("MachinePeers.listLinks")),
     get: (environmentId) =>
       onMap.pipe(
@@ -348,12 +431,36 @@ const make = Effect.gen(function* () {
           "Work from another machine cannot use the arrows of this machine.",
         );
       }
+      // MM-1920: the local-user session of the CLI has no thread limits to send along.
+      if (Option.isSome(scope) && isCliLocalUser(scope.value)) {
+        return yield* linkError("incompatible", CLI_LOCAL_USER_REFUSAL);
+      }
       const local = yield* onMap;
       if (local === undefined) {
         return yield* linkError(
           "unknown_link",
           "This machine is not on the machine map, so it reaches no other machine.",
         );
+      }
+      const unansweredMachine = machineOfUnanswered(environmentId);
+      if (unansweredMachine !== undefined) {
+        const fresh = yield* arrowLinks(local, true);
+        const answered = fresh.links.find((link) => link.target.machine.id === unansweredMachine);
+        const waiting = fresh.unanswered.find((target) => target.machine.id === unansweredMachine);
+        if (!fresh.paused && answered === undefined) {
+          return yield* waiting === undefined
+            ? linkError(
+                "unknown_link",
+                `No arrow with agent tools from this machine reaches ${environmentId}. Set the arrow in the portal.`,
+              )
+            : linkError("unreachable", notAnswered(waiting));
+        }
+        if (answered !== undefined) {
+          return yield* linkError(
+            "unknown_link",
+            `${answered.target.machine.name} answers now as ${answered.environmentId}. Use that environmentId.`,
+          );
+        }
       }
       const looked = yield* findLink(local, environmentId);
       // MM-1914: the pause holds the work. Resume lets it go on.
@@ -375,7 +482,7 @@ const make = Effect.gen(function* () {
           arrowLinkTargets(local.desired, yield* Clock.currentTimeMillis).some(
             (target) => target.machine.id === machine,
           );
-        return yield* arrowed || (machine === undefined && looked.unknown > 0)
+        return yield* arrowed || (machine === undefined && looked.unanswered.length > 0)
           ? linkError(
               "unreachable",
               `No machine with an arrow from this one answers as ${environmentId} now. A machine may be offline.`,
@@ -576,9 +683,10 @@ const make = Effect.gen(function* () {
       ),
   );
 
-  const exec: MachinePeers["Service"]["exec"] = Effect.fn("MachinePeers.exec")(function* (input) {
+  /** MM-1908: the checks of this machine before a command goes to a peer. */
+  const admitExec = Effect.fn("MachinePeers.admitExec")(function* (machine: string) {
     // The peer is resolved first, so a refused call names its target for the History.
-    const resolved = yield* resolvePeer(input.machine);
+    const resolved = yield* resolvePeer(machine);
     const refused = (reason: MachinePeerError["reason"], detail: string) =>
       new MachinePeerError({ reason, detail, target: resolved.peer.id });
     // One read of the caller: its limits go out with the call (`T3-Mode-Limit`), and the target
@@ -601,6 +709,11 @@ const make = Effect.gen(function* () {
     }
     // MM-806: the portal names the calling thread. An agent cannot set it through this path.
     const caller = yield* historyCaller();
+    return { resolved, refused, limits, link, caller };
+  });
+
+  const exec: MachinePeers["Service"]["exec"] = Effect.fn("MachinePeers.exec")(function* (input) {
+    const { resolved, limits, link, caller } = yield* admitExec(input.machine);
     const { caller: _ignored, ...command } = input;
     return yield* peerMcp.call({
       environmentId: link.environmentId,
@@ -610,6 +723,47 @@ const make = Effect.gen(function* () {
       success: MachineExecResult,
     });
   });
+
+  const openExec: MachinePeers["Service"]["openExec"] = Effect.fn("MachinePeers.openExec")(
+    function* (input) {
+      const { resolved, refused, limits, link, caller } = yield* admitExec(input.machine);
+      // The same session, Access headers and limits as a forwarded tool call (`linkHttpClient`).
+      const open = peerLinks.resolve(link.environmentId).pipe(
+        Effect.flatMap((target) =>
+          openExecSocket(streamUrl(target.url, MACHINE_EXEC_STREAM_PATH), {
+            ...MachineMapState.tokenHeaders(resolved.local.token),
+            authorization: `Bearer ${target.token}`,
+            [McpInvocationContext.MODE_LIMIT_HEADER]: `${limits.runtimeMode}/${limits.interactionMode}`,
+          }),
+        ),
+      );
+      // The peer ends the sessions of this machine on each level change (MM-1306), so a refused
+      // upgrade pairs again once. An older peer without the route answers 404 and pairs no more.
+      const socket = yield* open.pipe(
+        Effect.catchIf(refusedUpgrade, () =>
+          Effect.sync(() => sessions.delete(link.target.origin)).pipe(Effect.andThen(open)),
+        ),
+        Effect.mapError((cause) =>
+          refused(
+            "unreachable",
+            `${resolved.peer.name} did not open the exec stream: ${cause.message} It may run a T3 Code version without \`t3 machine exec\`.`,
+          ),
+        ),
+      );
+      const { caller: _ignored, type: _start, ...command } = input;
+      yield* socket
+        .message({ type: "start", ...command, machine: resolved.peer.id, caller })
+        .pipe(
+          Effect.mapError((cause) =>
+            refused(
+              "unreachable",
+              `${resolved.peer.name} closed the exec stream: ${cause.message}`,
+            ),
+          ),
+        );
+      return socket;
+    },
+  );
 
   const readableEnvironments: MachinePeers["Service"]["readableEnvironments"] = onMap.pipe(
     Effect.flatMap((local) => arrowLinks(local, false)),
@@ -630,6 +784,7 @@ const make = Effect.gen(function* () {
     MachinePeers.of({
       testArrow,
       exec,
+      openExec,
       readableEnvironments,
       machineOf: (environmentId) => machineOfEnvironment.get(environmentId),
     }),

@@ -233,14 +233,42 @@ it.effect("recognizes installed dependency payloads without following their inte
   }).pipe(Effect.provide(layerGit)),
 );
 
-it.effect("an incomplete process scan or unreadable cwd keeps all artifacts", () =>
+it.effect("an incomplete process scan keeps all artifacts", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
     yield* f.file("node_modules/.modules.yaml");
     f.processes(null);
     assert.include((yield* f.evict()).reason, "could not be inspected");
-    f.processes([f.path.join(f.root, "unreadable")]);
-    assert.include((yield* f.evict()).reason, "could not be read");
+    assert.isTrue(yield* f.fs.exists(f.path.join(f.cwd, "node_modules/.modules.yaml")));
+  }).pipe(Effect.provide(layerGit)),
+);
+
+it.effect("deleted working directories outside the worktree do not block eviction", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.file("node_modules/.modules.yaml");
+    f.processes([
+      f.path.join(f.root, "deleted-sibling", "apps/web"),
+      `${f.path.join(f.root, "deleted-sibling")} (deleted)`,
+      f.path.join(f.home, "Library/Caches/JetBrains/Toolbox/gone"),
+      f.path.join(f.path.parse(f.cwd).root, "no-such-folder-for-artifact-test"),
+    ]);
+    assert.strictEqual((yield* f.evict()).directories, 1);
+    assert.isFalse(yield* f.fs.exists(f.path.join(f.cwd, "node_modules")));
+  }).pipe(Effect.provide(layerGit)),
+);
+
+it.effect.each([
+  { label: "a deleted folder", name: "apps/web/gone" },
+  { label: "a Linux deleted marker", name: "apps/web/gone (deleted)" },
+])("$label inside the worktree blocks eviction", ({ name }) =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.file("node_modules/.modules.yaml");
+    f.processes([f.path.join(f.cwd, name)]);
+    const result = yield* f.evict();
+    assert.strictEqual(result.directories, 0);
+    assert.include(result.reason, "in this worktree or its container");
     assert.isTrue(yield* f.fs.exists(f.path.join(f.cwd, "node_modules/.modules.yaml")));
   }).pipe(Effect.provide(layerGit)),
 );

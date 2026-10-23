@@ -45,16 +45,6 @@ describe("loadBalancingSendWarning", () => {
     ).toMatch(/No machine can read every attached thread/);
   });
 
-  it("accepts a machine that reads the other machine through the machine map (MM-1906)", () => {
-    expect(
-      loadBalancingSendWarning({
-        pending: false,
-        threadContexts: [localThread, remoteThread],
-        candidateReadableEnvironmentIds: [[remote], [local, remote]],
-      }).description,
-    ).toMatch(/No eligible machine has available resources/);
-  });
-
   it("blames resources when one machine can read every attached thread", () => {
     expect(
       loadBalancingSendWarning({

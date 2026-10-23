@@ -142,6 +142,12 @@ jobs:
         run: |
           git fetch --depth=1 --no-tags https://github.com/pingdotgg/t3code.git main:refs/remotes/upstream/main
           node scripts/fork-check-migrations.ts
+      # See docs/fork/operations.md "Adopted upstream pull requests". The check walks the commits
+      # of HEAD, so it fetches them without their trees and files (a few seconds).
+      - name: Check the adopted upstream pull requests
+        run: |
+          git fetch --no-tags --filter=tree:0 --unshallow origin "$(git rev-parse HEAD)"
+          node scripts/fork-adopted-prs.ts check
 
   typecheck:
     name: Typecheck

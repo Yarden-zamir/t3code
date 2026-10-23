@@ -2,7 +2,8 @@
 # Posts a failed fork workflow run to the repair agent webhook (a T3 scheduled task).
 # Called by the notify_agent job of fork-ci.yml, fork-release.yml and fork-sync.yml. See docs/fork/operations.md "Repair agent".
 # Env: WEBHOOK_URL, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET, GH_TOKEN, NEEDS_JSON
-# (the workflow's toJSON(needs)), plus the default GITHUB_* variables.
+# (the workflow's toJSON(needs)), plus the default GITHUB_* variables. Optional: FAILURE_REASON,
+# for example the adopted upstream pull request that conflicted in Fork Sync.
 set -euo pipefail
 
 if [[ -z "${WEBHOOK_URL:-}" ]]; then
@@ -46,9 +47,11 @@ payload="$(jq -n \
   --arg workflow "$GITHUB_WORKFLOW" \
   --arg run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
   --arg run_id "$GITHUB_RUN_ID" \
+  --arg reason "${FAILURE_REASON:-}" \
   --argjson needs "$NEEDS_JSON" \
   '{repository: $repository, branch: $branch, event: $event, workflow: $workflow,
-    run_url: $run_url, run_id: $run_id, jobs: ($needs | map_values(.result))}')"
+    run_url: $run_url, run_id: $run_id, jobs: ($needs | map_values(.result))}
+    + (if $reason == "" then {} else {reason: $reason} end)')"
 echo "$payload"
 # The webhook server can restart, which takes minutes. So retry once a minute for 15 minutes.
 # The notify jobs have timeout-minutes: 20 to cover the last attempt (up to 120 s).

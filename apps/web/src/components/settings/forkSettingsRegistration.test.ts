@@ -19,6 +19,7 @@ const FORK_PAGE_ROWS: Record<
   SettingsSearchItemId | { readonly notListed: string }
 > = {
   restoreWorktreesOnResume: "restore-worktrees-on-resume",
+  autoSettleWaitsForBackgroundCommands: "auto-settle-waits-for-background-commands",
   worktreeArtifactEviction: "worktree-artifact-eviction",
   worktreeArtifactEvictionDays: "worktree-artifact-eviction-days",
   confirmTerminalClose: "terminal-close-confirmation",

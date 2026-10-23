@@ -20,11 +20,19 @@ Local builds can keep their disposable Vite caches and Android app outputs outsi
 
 ### Restore worktrees on resume
 
-Restore a missing worktree at its saved path before starting the next turn. If its branch still exists, recovery preserves it. If the branch was deleted, recovery fetches origin's default branch and creates the saved branch name from that revision. The thread warns that earlier uncommitted work is not in the recreated checkout. Project setup runs before the agent starts. Missing `node_modules` in the root or any package declared by `pnpm-workspace.yaml` also runs normal setup. The thread shows the restore as an activity. Missing build outputs do not add a setup or build step on resume; the next build recreates them.
+Restore a missing worktree at its saved path before starting the next turn. If its branch still exists, recovery preserves it. If the branch was deleted, recovery fetches origin's default branch and creates the saved branch name from that revision. The thread warns that earlier uncommitted work is not in the recreated checkout. Project setup runs before the agent starts. Dependencies that artifact eviction removed also run normal setup. A missing `node_modules` that eviction did not remove does not run setup. The thread shows the restore as an activity. A stopped, failed or crashed setup closes that activity, and so does a server restart during setup. Missing build outputs do not add a setup or build step on resume; the next build recreates them.
 
 - **Setting:** `restoreWorktreesOnResume` (server setting, off by default). Settings > Fork > Threads > Restore worktrees on resume.
 - **Works on:** server, for web, desktop, mobile, agent tools and scheduled turns.
 - **Limits:** a conflicting path stops recovery. Only this checkout's Git registration is repaired; no broad prune runs. When its branch exists, its saved index and refs, including staged changes, stay. Existing branches are never reset. Deleted-branch recovery requires a reachable origin with a discoverable default branch; its old index is not restored. Dependencies require a configured project setup script. When this setting is off, upstream's recovery runs unchanged: for a managed worktree path, it runs `git worktree prune` and adds the worktree again, without project setup. Pending dependency restoration after artifact eviction still runs.
+
+### Auto-settle waits for background commands
+
+Auto-settle skips a thread while a background command of its agent runs, for example a typecheck that a Claude agent started with `run_in_background`. Settling stops the agent session, and that kills the command before it can wake the agent. Upstream auto-settle waits only for monitors, background agents and other background tasks.
+
+- **Setting:** `autoSettleWaitsForBackgroundCommands` (server setting, off by default). Settings > Fork > Threads > Auto-settle waits for background commands.
+- **Works on:** server, for every provider that reports background commands. Manual settle still stops the session.
+- **Limits:** a command left running, such as a dev server, holds the thread until the session releases idle background work (`DEFAULT_MAX_IDLE_PIN_MS` in `apps/server/src/orchestration-v2/ProviderSessionManager.ts`). Revisit this if threads with dev servers stay unsettled too long.
 
 ### Artifact-only worktree cleanup
 
@@ -34,7 +42,7 @@ The measured Mac examples were 6.91 GiB logical `node_modules` removed for 0.13 
 
 - **Setting:** `worktreeArtifactEviction` (server setting, off by default) and `worktreeArtifactEvictionDays` (14 days by default, 1–3650). Settings > Fork > Threads > Evict worktree artifacts.
 - **Works on:** server. All clients, scheduled turns and agent tools use the same recovery path.
-- **Eligibility:** this protects process cwds and T3-known active work. A single idle thread must own the checkout and be settled or inactive for the configured days. Shared threads and subagents, running, queued or pending work, setup, builds, open terminals and uncertain process visibility keep artifacts. T3 metadata naming the worktree blocks cleanup even when its cwd is higher. Any process cwd in the checkout, a descendant or its container (the immediate parent holding sibling worktrees) also blocks cleanup. A project setup script must be configured. These guards stay independent of the process scan and run again before deletion.
+- **Eligibility:** this protects process cwds and T3-known active work. A single idle thread must own the checkout and be settled or inactive for the configured days. Shared threads and subagents, running, queued or pending work, setup, builds, open terminals and uncertain process visibility keep artifacts. T3 metadata naming the worktree blocks cleanup even when its cwd is higher. Any process cwd in the checkout, a descendant or its container (the immediate parent holding sibling worktrees) also blocks cleanup. A deleted or unreadable cwd blocks cleanup only when its old path is in the checkout, a descendant or its container. The nearest readable folder above it gives that path. This rule also applies to T3 terminal and provider session cwds. A project setup script must be configured. These guards stay independent of the process scan and run again before deletion.
 - **Files:** exact reviewed relative paths only, including `apps/mobile/android/app/build`; there is no arbitrary `build` or `dist` basename rule. Dependency paths are expanded from workspace declarations into exact `node_modules` paths. Git must ignore each folder and track no file within it. Extension and path rules classify conservatively; they do not prove where a file came from or distinguish every hand-written ignored `.js` or `.json` file from generated output. A `.env*` file, secret, original source or unknown content, `_shared` link, or link outside the checkout keeps the whole folder. For an unrecognized file type, the report says the folder was kept and gives its reason and an example path. Kotlin incremental table exceptions apply only under `kotlin/<task>/cacheable/caches-jvm/`. Shared pnpm storage is not managed by this feature.
 - **Limits:** orphan Git worktrees without a stored T3 thread are excluded. A clean process list does not prove no external activity. A process above the container, such as one with cwd `$HOME` or `/`, can still act on the worktree through an absolute path; revisit if a real tool does that. T3-known active work remains protected independently of that cwd bound. Process checks support macOS and Linux. Other systems keep artifacts until inspection is available. This setting does not change or disable upstream whole-worktree cleanup rules; turn those off separately if you want every checkout kept. With [central build caches](#central-build-caches) on, `apps/mobile/android/app/build` is a link, so this feature keeps it. Use `node scripts/fork-build-cache-prune.ts` for the central caches.
 
@@ -104,17 +112,29 @@ An arrow with agent tools makes the target machine a linked environment of the s
 - **Pause and removal:** while the owner's emergency pause is on, work on other machines waits and tries again after Resume. Removing the arrow or its agent tools fails that work with the reason (MM-1914).
 - **Manual links:** `t3 environment link` and `t3 environment unlink` refuse. Settings > Connections on web, desktop and mobile shows the arrow links read-only, with "Set arrows in the portal". A permanent arrow shows no expiry. A temporary arrow shows its end; renew it in the portal.
 - **History:** each tool call that an agent forwards to another machine shows in the portal History, with the machines, the calling thread, the tool, the outcome and the time. The arguments and the output stay out of the portal (MM-1922).
-- **Limits:** a link reaches the other machine through its tunnel hostname. A machine that never answered since this server started is not listed.
+- **Unanswered machines:** a machine that has not answered since this server started shows as an unreachable link with the reason, under the id `machine:<machine id>`. A call with that id fails with the reason, and names the real id once the machine answers. An offline machine or an old T3 Code version is the usual cause; the portal shows its presence and version.
+- **Limits:** a link reaches the other machine through its tunnel hostname.
 
 ### Commands on other machines
 
-An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908).
+An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908). In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's (MM-1919).
 
 - **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Table and the arrow panel show an "exec" sticker.
-- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
+- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Without a thread credential it is refused (MM-1920). The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
 - **Stop:** the emergency pause, a removed arrow or exec turned off stops a running command at once (MM-1916).
-- **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`.
-- **Limits:** a run lasts at most 90 seconds, because the answer goes through Cloudflare. Start long work in the background and check it later. stdout and stderr keep 50,000 bytes each. A timeout loses the output. A command that reads stdin waits for the timeout. A machine that is offline from the portal still runs commands and sends the History entry when it connects, unless it restarts first.
+- **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`. A `t3 machine exec` run gives one entry when it ends.
+- **In a shell:** in a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
+  - `t3 machine exec vps -- uname -a`
+  - `t3 machine exec vps --cwd ~/app -- git status`
+  - `t3 machine exec vps -- cat app.log | grep error`
+  - `echo hi | t3 machine exec vps -- cat`
+- **Copy files:** use tar through the pipe. The target folder must exist; put `mkdir -p <folder> &&` before the remote `tar` if it does not.
+  - Folder to the other machine: `tar c -C dist . | t3 machine exec vps -- tar x -C /srv/app`
+  - Folder from the other machine: `t3 machine exec vps -- tar c -C /srv/app . | tar x -C ./backup`
+  - One file to the other machine: `t3 machine exec vps -- 'cat > /tmp/file' < file`
+- **Exit codes:** the exit code of the command. 124 when `--timeout` stops it. 255 when the stream fails: a refusal, a lost connection, or an arrow that stops allowing exec. The reason goes to stderr.
+- **Long jobs:** `t3 machine exec` has no time limit. A ping every 25 seconds keeps the connection open through Cloudflare. The end of the agent's turn does not stop it, so an agent can run it in the background. A lost connection stops the command, as with ssh. For a job that must outlive the connection, start it with `nohup <command> > job.log 2>&1 &` in a command that exits 0, and read the log later. A command that exits with another code stops its background jobs too. A command that a signal ends keeps them.
+- **Limits:** a `machine_exec` run lasts at most 90 seconds, because the answer goes through Cloudflare. Use `t3 machine exec` for longer work. `machine_exec` keeps 50,000 bytes of stdout and of stderr. A timeout loses the output. A command that reads stdin waits for the timeout. On a Windows machine, Windows PowerShell runs the command. `t3 machine exec` joins the words of the command with spaces, so quote the command for PowerShell, not for a POSIX shell. Byte-exact stdin to a command on Windows is not tested yet. A machine that is offline from the portal still runs commands and sends the History entry when it connects, unless it restarts first.
 
 ### Thread mentions across machines
 
@@ -640,7 +660,6 @@ A published theme can replace app icons with its own SVGs, in the theme JSON fie
 - **Works on:** web, desktop.
 - The slots are the sidebar tab icons (`tab.<id>`), the thread statuses (`status.<status>`), the tab bar buttons (`tabs.more`, `tabs.new`, `tabs.edit`) and the sidebar header (`sidebar.search`, `sidebar.filter`, `sidebar.add-project`, `sidebar.new-thread`). `apps/web/src/components/AppIcon.tsx` lists them.
 - Each icon carries `data-app-icon="<slot>"`. The sidebar tabs carry `data-sidebar-tab` (`default` or `custom`), `data-selected`, `data-status`, `data-attention` and `data-drop-target` for theme CSS.
-- The tick3d themes in the dotfiles carry a neo-brutalism pack. The `t3-theme` skill in the dotfiles describes the fields.
 - **Limits:** the app strips scripts, styles, links and remote content from each SVG, and an icon is at most 4096 characters. The mobile app shows stock icons. Revisit after sidebar tabs reach mobile.
 
 ### Local server groups
@@ -675,9 +694,10 @@ The fork desktop app, its notifications and the bundled web page use the Tick3d 
 `t3 tool list`, `t3 tool describe <name>` and `t3 tool call <name> --input '<json>'` run T3 MCP tools from the command line. In a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
 
 - **Works on:** server.
-- In an agent's shell, the command uses the credential of the agent's thread, so the limits of that thread apply. See [MM-1920](../../apps/machine-map/SPEC.md#19-cross-machine-work).
+- In an agent's shell, the command uses the credential of the agent's thread, so the limits of that thread apply. See [MM-1920](../../apps/machine-map/SPEC.md#19-cross-machine-work). `t3 machine exec` uses the same credential; see [Commands on other machines](#commands-on-other-machines).
 - Elsewhere, also in a T3 terminal, it calls the running server of its T3 home with a short full-access session. Machine map History names that caller "CLI (local user)".
-- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session.
+- To call a dev server from an agent shell, unset `T3_ACP_MCP_ENDPOINT` and `T3_ACP_MCP_AUTHORIZATION`. The CLI refuses a `--base-dir` or `T3CODE_HOME` that does not match the shell's thread credential.
+- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session. That session runs nothing on another machine and forwards no tool there: `machine_exec`, `t3 machine exec`, and tools or delegation with the `environmentId` of another machine refuse it. Use a thread, or the portal. The `machines_*` portal tools follow the map role of the machine.
 
 ### Open workspace with a checkout
 

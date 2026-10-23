@@ -40,6 +40,13 @@ export const WORKTREE_PATH_TEMPLATE_ITEMS = [
     searchTerms: ["missing folder restore checkout dependencies setup node_modules"],
   },
   {
+    id: "auto-settle-waits-for-background-commands",
+    title: "Auto-settle waits for background commands",
+    to: "/settings/fork",
+    environmentOnly: true,
+    searchTerms: ["settle background command bash wake typecheck test run killed"],
+  },
+  {
     id: "storage-worktree-path-template",
     title: "Worktree path template",
     to: "/settings/storage",

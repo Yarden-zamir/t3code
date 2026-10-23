@@ -23,7 +23,13 @@ const NOT_COVERED = [
   "the .github/scripts tests and Fork Android, Fork Release and Fork Sync",
 ];
 const SCRIPT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
-const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.test.ts", ".browser.test.tsx"];
+const REPAIR_SKILL_SCRIPTS = ".agents/skills/fork-repair/scripts/";
+const BASE_TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.test.ts", ".browser.test.tsx"];
+/** Fork tests of an upstream file live next to it as `foo.fork.test.ts`, see docs/fork/operations.md. */
+const TEST_SUFFIXES = [
+  ...BASE_TEST_SUFFIXES,
+  ...BASE_TEST_SUFFIXES.map((suffix) => `.fork${suffix}`),
+];
 /** Tests that run on every check. */
 const ALWAYS_TESTS = ["apps/web/src/components/settings/forkSettingsRegistration.test.ts"];
 /**
@@ -121,7 +127,7 @@ function stripExtension(file: string): string {
   return file.slice(0, file.length - NodePath.extname(file).length);
 }
 
-/** Tests next to a changed source file: `foo.ts` has `foo.test.ts` and the other suffixes. */
+/** Tests next to a changed source file: `foo.ts` has `foo.test.ts`, `foo.fork.test.ts` and the other suffixes. */
 function testsFor(file: string): ReadonlyArray<string> {
   if (TEST_SUFFIXES.some((suffix) => file.endsWith(suffix))) return [file];
   if (!SCRIPT_EXTENSIONS.has(NodePath.extname(file))) return [];
@@ -191,6 +197,33 @@ function testSteps(): ReadonlyArray<Step> {
   return steps;
 }
 
+/** The Python tests of the fork repair skill. Fork CI does not run them: its runners have no uv. */
+function repairSkillStep(): Step {
+  const name = "fork-repair skill tests";
+  if (!changed.some((file) => file.startsWith(REPAIR_SKILL_SCRIPTS))) {
+    return { name, skipped: "no changed fork-repair script" };
+  }
+  if (NodeChildProcess.spawnSync("uv", ["--version"]).status !== 0) {
+    return { name, skipped: "no uv. Install it: https://docs.astral.sh/uv/" };
+  }
+  return {
+    name,
+    detail: REPAIR_SKILL_SCRIPTS,
+    command: [
+      "uv",
+      "run",
+      "--no-project",
+      "--with",
+      "pytest==9.1.1",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      REPAIR_SKILL_SCRIPTS,
+    ],
+  };
+}
+
 function steps(): ReadonlyArray<Step> {
   const scripts = changed.filter((file) => SCRIPT_EXTENSIONS.has(NodePath.extname(file)));
   const codeChanged = changed.some((file) => !isDocFile(file));
@@ -228,6 +261,7 @@ function steps(): ReadonlyArray<Step> {
           ],
         },
     ...testSteps(),
+    repairSkillStep(),
     {
       name: "doc links",
       detail: "fork docs",
@@ -237,6 +271,11 @@ function steps(): ReadonlyArray<Step> {
       name: "migrations",
       detail: "registry against upstream/main",
       command: ["node", NodePath.join(import.meta.dirname, "fork-check-migrations.ts")],
+    },
+    {
+      name: "adopted PRs",
+      detail: "list against HEAD",
+      command: ["node", NodePath.join(import.meta.dirname, "fork-adopted-prs.ts"), "check"],
     },
   ];
 }

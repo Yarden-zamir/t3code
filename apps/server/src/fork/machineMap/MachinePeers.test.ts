@@ -76,7 +76,12 @@ import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as SourceControlRepositoryService from "../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
-import { machineMcpClientFor, MANUAL_LINK_REFUSAL } from "./machineAccess.ts";
+import {
+  CLI_LOCAL_USER_LABEL,
+  CLI_LOCAL_USER_REFUSAL,
+  machineMcpClientFor,
+  MANUAL_LINK_REFUSAL,
+} from "./machineAccess.ts";
 import * as MachineCallHistory from "./MachineCallHistory.ts";
 import * as MachineMap from "./MachineMap.ts";
 import { arrow, desiredState, PEER, SELF } from "./MachineMap.testkit.ts";
@@ -719,6 +724,11 @@ it.effect("the pause holds a link without dropping it, and resume lets work go o
       expect(Option.isSome(yield* env.links.get(vps.environmentId))).toBe(true);
 
       yield* Ref.update(env.mapNow, (map) => ({ ...map, paused: false }));
+      // The error of the pause is stale once the map runs again.
+      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
+      expect(listed.structuredContent).toMatchObject({
+        links: [{ environmentId: vps.environmentId, status: "reachable", lastError: null }],
+      });
       const resumed = yield* env.call("thread:mac-full", "t3_project_list", {
         environmentId: vps.environmentId,
       });
@@ -744,6 +754,46 @@ it.effect("a removed arrow makes the link unknown, with the reason", () =>
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
+it.effect("a restored arrow clears the error of its removal", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
+      yield* env.call("thread:mac-full", "t3_environment_links", {});
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, agentTools: false }));
+      const removed = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: vps.environmentId,
+      });
+      expect(failureOf(removed)?.message).toContain("Set the arrow in the portal");
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, agentTools: true }));
+      const restored = yield* env.call("thread:mac-full", "t3_environment_links", {});
+      expect(restored.structuredContent).toMatchObject({
+        links: [{ environmentId: vps.environmentId, status: "reachable", lastError: null }],
+      });
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("a successful call clears the error of an earlier failure", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
+      yield* env.call("thread:mac-full", "t3_project_list", { environmentId: vps.environmentId });
+      // The link stays, but B does not answer at the new hostname yet.
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-moved.example.com" }));
+      yield* env.call("thread:mac-full", "t3_project_list", { environmentId: vps.environmentId });
+      const failed = yield* env.links.get(vps.environmentId);
+      expect(Option.getOrUndefined(failed)?.lastError).not.toBeNull();
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-vps.example.com" }));
+      const again = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: vps.environmentId,
+      });
+      expect(again.isError, JSON.stringify(again.content)).toBe(false);
+      const cleared = yield* env.links.get(vps.environmentId);
+      expect(Option.getOrUndefined(cleared)?.lastError).toBeNull();
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
 it.effect("a removed arrow is unknown, also while another machine with an arrow is offline", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -762,6 +812,63 @@ it.effect("a removed arrow is unknown, also while another machine with an arrow 
         environmentId: vps.environmentId,
       });
       expect(failureOf(removed)).toMatchObject({ code: "invalid_request" });
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("an arrow to a machine that never answered is an unreachable link with the reason", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({
+        level: "admin",
+        agentTools: true,
+        paused: false,
+        offlinePeer: true,
+      });
+      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
+      expect(listed.structuredContent).toMatchObject({
+        links: [
+          { environmentId: vps.environmentId, status: "reachable" },
+          { environmentId: "machine:offline", label: "Offline", status: "unreachable" },
+        ],
+      });
+      const offlineLink = (
+        listed.structuredContent as { links: ReadonlyArray<{ lastError: string | null }> }
+      ).links[1];
+      expect(offlineLink?.lastError).toContain("has not answered since this server started");
+      // Work that names it waits, instead of failing as unknown.
+      const read = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: "machine:offline",
+      });
+      expect(failureOf(read)).toMatchObject({ code: "orchestration_error" });
+      expect(failureOf(read)?.message).toContain("has not answered");
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("the id of a machine that did not answer yet names its real id once it answers", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      // B is on the map but answers at no hostname yet.
+      const env = yield* setup({
+        level: "admin",
+        agentTools: true,
+        paused: false,
+        vpsHostname: "t3-moved.example.com",
+      });
+      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
+      expect(listed.structuredContent).toMatchObject({
+        links: [{ environmentId: `machine:${PEER}`, status: "unreachable" }],
+      });
+      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-vps.example.com" }));
+      const read = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: `machine:${PEER}`,
+      });
+      expect(failureOf(read)?.message).toContain(`answers now as ${vps.environmentId}`);
+      const again = yield* env.call("thread:mac-full", "t3_project_list", {
+        environmentId: vps.environmentId,
+      });
+      expect(again.isError, JSON.stringify(again.content)).toBe(false);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
@@ -832,6 +939,30 @@ it.effect("a session that B ended pairs again once, and the call goes through", 
       });
       expect(again.isError, JSON.stringify(again.content)).toBe(false);
       expect((yield* Ref.get(env.wire)).pairings).toBe(2);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("the local-user session of the CLI reaches no other machine (MM-1920)", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
+      const refused = yield* env.links.resolve(vps.environmentId).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          environmentId: mac.environmentId,
+          requestNamespace: "client:cli-session",
+          thread: undefined,
+          client: { sessionId: "cli-session", label: CLI_LOCAL_USER_LABEL, access: "full-access" },
+          capabilities: new Set<McpInvocationContext.McpCapability>(["orchestration"]),
+          issuedAt: 1,
+        }),
+        Effect.flip,
+      );
+      expect(refused.message).toBe(CLI_LOCAL_USER_REFUSAL);
+      expect((yield* Ref.get(env.wire)).pairings).toBe(0);
+      // The list of links stays readable: it is local.
+      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
+      expect(listed.isError).toBe(false);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

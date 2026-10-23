@@ -21,6 +21,8 @@ import {
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 
+import type { McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
+
 /** What a pairing credential for a machine holds (MM-1305). */
 export interface MachineGrant {
   readonly subject: string;
@@ -422,6 +424,19 @@ export const arrowLinkTargets = (
       },
     ];
   });
+
+/**
+ * MM-1920: the label of the thread-less session that the `t3` CLI issues for the local user when
+ * its shell has no thread credential. An OAuth client that names itself so is refused the same way.
+ */
+export const CLI_LOCAL_USER_LABEL = "CLI (local user)";
+
+export const CLI_LOCAL_USER_REFUSAL =
+  "Cross-machine calls need a thread credential: run them from an agent shell that has T3_ACP_MCP_ENDPOINT and T3_ACP_MCP_AUTHORIZATION, or use the portal. The local-user session of the t3 CLI has no thread, so no thread limits could go with the call.";
+
+/** MM-1920: the local-user session of the CLI works on this machine only. */
+export const isCliLocalUser = (scope: McpInvocationScope) =>
+  scope.thread === undefined && scope.client?.label === CLI_LOCAL_USER_LABEL;
 
 /** MM-1921: the answer to a manual link or unlink, from the CLI, Connections or an agent. */
 export const MANUAL_LINK_REFUSAL =

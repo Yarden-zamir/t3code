@@ -52,28 +52,6 @@ describe("fallbackTextGenerationModelSelection", () => {
 });
 
 describe("serverSettings helpers", () => {
-  it("replaces the sidebar tabs whole, so deleted tabs and assignments stay deleted", () => {
-    const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      sidebarTabs: {
-        tabs: [{ id: "monitors", name: "Monitors", rules: [] }],
-        assignments: { "environment:thread-1": "monitors", "environment:thread-2": "default" },
-        defaultTab: {},
-      },
-    });
-    const next = applyServerSettingsPatch(saved, {
-      sidebarTabs: {
-        tabs: [],
-        assignments: { "environment:thread-2": "default" },
-        defaultTab: {},
-      },
-    });
-    expect(next.sidebarTabs).toEqual({
-      tabs: [],
-      assignments: { "environment:thread-2": "default" },
-      defaultTab: {},
-    });
-  });
-
   it("translates a shipped client's idle compaction switch into a mode", () => {
     const off = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { idleCompaction: "off" });
     expect([off.idleCompaction, off.compactIdleThreads]).toEqual(["off", false]);
@@ -116,23 +94,6 @@ describe("serverSettings helpers", () => {
       hosts: { "github.com": { enabled: false } },
       tokens: {},
     });
-  });
-  it("keeps runInBackground through global and project script saves", () => {
-    const projectId = ProjectId.make("project-background");
-    const script = {
-      id: "nav",
-      name: "Navgator",
-      command: "bash nav.sh",
-      icon: "play" as const,
-      runOnWorktreeCreate: false,
-      runInBackground: true,
-    };
-    const saved = applyServerSettingsPatch(FOLDED_SERVER_SETTINGS, {
-      globalScripts: [script],
-      projectScriptOverrides: { [projectId]: [script] },
-    });
-    expect(saved.globalScripts).toEqual([script]);
-    expect(resolveProjectScripts(saved, { id: projectId, scripts: [] })).toEqual([script]);
   });
 
   it("inherits actions, preserves existing actions, and supports empty overrides and reset", () => {

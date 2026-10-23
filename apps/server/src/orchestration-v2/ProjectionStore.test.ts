@@ -964,56 +964,6 @@ const runlessNativeSubagentNeedsRecovery = Effect.gen(function* () {
   }
 });
 
-const subagentRecordsSelectById = Effect.gen(function* () {
-  const store = yield* ProjectionStore.ProjectionStoreV2;
-  const threadId = yield* addRolledBackRecoveryCandidate("subagent-records-by-id");
-  const now = yield* DateTime.now;
-  const ids = [NodeId.make("node:subagent-by-id:a"), NodeId.make("node:subagent-by-id:b")];
-  for (const id of ids) {
-    yield* store.apply({
-      id: EventId.make(`event:${id}`),
-      type: "subagent.updated",
-      threadId,
-      nodeId: id,
-      driver,
-      providerInstanceId,
-      occurredAt: now,
-      payload: {
-        id,
-        threadId,
-        runId: null,
-        parentNodeId: NodeId.make("node:subagent-by-id:parent"),
-        origin: "app_owned",
-        createdBy: "agent",
-        driver,
-        providerInstanceId,
-        providerThreadId: null,
-        childThreadId: null,
-        nativeTaskRef: null,
-        prompt: "Do the work",
-        title: "Delegated task",
-        model: null,
-        status: "running",
-        result: null,
-        startedAt: now,
-        completedAt: null,
-        updatedAt: now,
-      },
-    });
-  }
-  const read = (subagentIds?: ReadonlyArray<NodeId>) =>
-    store
-      .getThreadRecords(threadId, ["subagents"], subagentIds === undefined ? {} : { subagentIds })
-      .pipe(Effect.map(({ subagents }) => subagents.map((task) => task.id)));
-  assert.deepEqual(yield* read(), ids);
-  assert.deepEqual(yield* read([ids[1]!]), [ids[1]]);
-  assert.deepEqual(yield* read([]), []);
-});
-
-it.effect("memory record reads select subagents by id", () =>
-  subagentRecordsSelectById.pipe(Effect.provide(ProjectionStore.layerMemory)),
-);
-
 const assertProjectScopedShells = Effect.fn("assertProjectScopedShells")(function* (
   suffix: string,
 ) {
@@ -1155,6 +1105,36 @@ const assertProjectScopedShells = Effect.fn("assertProjectScopedShells")(functio
   return { projectId, activeThreadId, forkThreadId, otherThreadId };
 });
 
+it.effect("lists only active subagent IDs without loading shell data", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const sql = yield* SqlClient.SqlClient;
+    const createdAt = "2026-01-05T00:00:00.000Z";
+    for (const [id, relationship, archivedAt, deletedAt] of [
+      ["parent", null, null, null],
+      ["active-subagent", "subagent", null, null],
+      ["archived-subagent", "subagent", createdAt, null],
+      ["deleted-subagent", "subagent", null, createdAt],
+    ] as const) {
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_threads (
+          thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
+          created_at, updated_at, archived_at, deleted_at, payload_json
+        ) VALUES (
+          ${id}, 'project:test', ${id}, 'codex', 'full-access', 'default',
+          ${createdAt}, ${createdAt}, ${archivedAt}, ${deletedAt},
+          ${JSON.stringify({ lineage: { relationshipToParent: relationship }, archivedAt })}
+        )
+      `;
+    }
+
+    assert.sameMembers(
+      [...(yield* store.listActiveSubagentThreadIds())],
+      [ThreadId.make("active-subagent")],
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.layer(layerTest)("ProjectionStoreV2", (it) => {
   // regression: #21969 keep corrupt plan JSON in the typed read error
   it.effect("returns a typed read error for malformed stored plan JSON", () =>
@@ -1229,7 +1209,6 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       assert.deepEqual(recovery?.restartCancelledBackgroundWork, work);
     }),
   );
-  it.effect("record reads select subagents by id", () => subagentRecordsSelectById);
   it.effect(
     "command reads skip finished leaf nodes of finished runs",
     () => commandReadsSkipSettledLeafNodes,

@@ -4,7 +4,12 @@ import * as Effect from "effect/Effect";
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import { assertFullAccess, assertLiveCaller, readCaller } from "../../mcp/threadAccess.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
-import { isMachineRequestNamespace, MACHINE_MCP_CAPABILITIES } from "./machineAccess.ts";
+import {
+  CLI_LOCAL_USER_REFUSAL,
+  isCliLocalUser,
+  isMachineRequestNamespace,
+  MACHINE_MCP_CAPABILITIES,
+} from "./machineAccess.ts";
 
 /**
  * MM-1908: `machine_exec` runs a shell as the user of the other machine, past every T3 mode, so
@@ -14,6 +19,12 @@ import { isMachineRequestNamespace, MACHINE_MCP_CAPABILITIES } from "./machineAc
 export const requireMachineExecCaller = Effect.fn("MachinePeers.requireMachineExecCaller")(
   function* () {
     const caller = yield* readCaller();
+    if (isCliLocalUser(caller.scope)) {
+      return yield* new OrchestratorMcpFailure({
+        code: "capability_denied",
+        message: CLI_LOCAL_USER_REFUSAL,
+      });
+    }
     yield* assertLiveCaller(caller);
     yield* assertFullAccess(
       caller,
