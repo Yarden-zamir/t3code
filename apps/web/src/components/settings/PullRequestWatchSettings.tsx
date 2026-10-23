@@ -6,7 +6,7 @@ import type {
 
 import { Input } from "../ui/input";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -29,18 +29,6 @@ const parseLogins = (text: string) => [
       .filter((login) => login.length > 0),
   ),
 ];
-
-/**
- * Fork: which remarks on a watched pull request wake its agent. Lives on the server, so every
- * client of the environment edits the same filter.
- */
-export function PullRequestWatchSettingsSection() {
-  return (
-    <SettingsSection id="pull-request-watch" title="Pull request watch">
-      <PullRequestWatchSettingsRows />
-    </SettingsSection>
-  );
-}
 
 /** Fork: the three rows of `pullRequestWatchRemarkFilter`. */
 export function PullRequestWatchSettingsRows() {
@@ -157,7 +145,7 @@ export function PullRequestWatchSettingsRows() {
         settingKeys={["pullRequestWatchRemarkFilter"]}
         mixed={markerMixed}
         {...searchableSetting("pull-request-watch-agent-marker")}
-        description="A remark that contains this text never wakes a watching agent, even from an allowed author. Agents add it to their own remarks."
+        description="A remark that contains this text never wakes a watching agent, even from an allowed author. Tell your agents to add it to their remarks."
         resetAction={
           markerMixed || filter.agentMarker !== "" ? (
             <SettingResetButton

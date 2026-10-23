@@ -43,7 +43,7 @@ import {
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { SettingsGroup } from "./SettingsGroup";
-import { WorktreePathTemplateRow } from "./WorktreePathTemplateRow";
+import { ForkSettingsSlot } from "./ForkSettingsSlot";
 import type { ScopedSettingsTarget } from "./scopedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { searchableSetting } from "./settingsSearch";
@@ -510,7 +510,7 @@ export function StorageSettingsPanel() {
       )}
       <SettingsSection id="storage-worktrees" title="Worktrees">
         {!isProjectScope && <WorktreesDirectoryRow />}
-        {!isProjectScope && <WorktreePathTemplateRow />}
+        <ForkSettingsSlot place="storage-worktrees" />
         {isProjectScope && (
           <SettingsRow
             title="Automatic worktree cleanup"

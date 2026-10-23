@@ -46,7 +46,7 @@ in Settings.
 
 ## Focus levels
 
-Turn on **Settings → General → Keyboard focus levels** to move focus between the composer,
+Turn on **Settings → Keybindings → Keyboard focus levels** to move focus between the composer,
 the timeline, the right panel and the sidebar with the keyboard. It is off by default.
 
 - Escape moves one level up: from the composer to the timeline, then to the sidebar.
@@ -55,9 +55,9 @@ the timeline, the right panel and the sidebar with the keyboard. It is off by de
 - In the desktop app, `mod+alt+left` and `mod+alt+right` move between the sidebar, the chat and
   the right panel.
 - Outside a text field, typing a letter in the chat goes to the composer. In the sidebar, digits
-  switch groups, and other letters do nothing.
+  switch tabs, and other letters do nothing.
 - A key that moves focus outlines the area it moves to. Turn this off in
-  **Settings → General → Focus highlight**.
+  **Settings → Keybindings → Focus highlight**.
 
 In the sidebar, Up and Down move between threads, and Enter opens one and focuses its timeline.
 Up from the first thread reaches the sidebar tabs. Left and Right, or `1` to `9`, switch tabs.

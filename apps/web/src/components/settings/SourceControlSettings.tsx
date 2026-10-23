@@ -51,8 +51,7 @@ import { GitHubAccountSettings } from "./GitHubAccountSettings";
 import { GitHubTokenSettings } from "./GitHubTokenSettings";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
-import { PreferOriginRemoteSettingsSection } from "./PreferOriginRemoteSettings";
-import { PullRequestWatchSettingsSection } from "./PullRequestWatchSettings";
+import { ForkSettingsSlot } from "./ForkSettingsSlot";
 import {
   PolicyTooltip,
   SettingResetButton,
@@ -643,8 +642,8 @@ export function SourceControlSettingsPanel() {
       )}
 
       <SourceControlWritingSettingsSection />
-      <PreferOriginRemoteSettingsSection />
-      <PullRequestWatchSettingsSection />
+      <ForkSettingsSlot place="source-control-fork-checkouts" />
+      <ForkSettingsSlot place="source-control-pull-request-watch" />
     </SettingsPageContainer>
   );
 }

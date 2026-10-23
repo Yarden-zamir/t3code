@@ -40,7 +40,7 @@ import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { ScopedSwitch } from "./ScopedSwitch";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { type SlotLayoutElementOption, SlotLayoutBuilder } from "./SlotLayoutBuilder";
 import { ThreadCardLayoutPreview } from "./ThreadCardLayoutPreview";
@@ -83,15 +83,6 @@ const DESKTOP_OPTIONS: ReadonlyArray<SlotLayoutElementOption<ThreadCardElement>>
 
 const MOBILE_OPTIONS: ReadonlyArray<SlotLayoutElementOption<MobileThreadCardElement>> =
   MOBILE_THREAD_CARD_ELEMENTS.map((id) => ({ id, ...ELEMENT_OPTIONS[id] }));
-
-/** Fork: builds the thread card from its elements, per client surface. Off by default. */
-export function ThreadCardLayoutSettingsSection() {
-  return (
-    <SettingsSection id="thread-cards" title="Thread cards">
-      <ThreadCardLayoutSettingsRows />
-    </SettingsSection>
-  );
-}
 
 export function ThreadCardLayoutSettingsRows() {
   const settings = useScopedSettings();

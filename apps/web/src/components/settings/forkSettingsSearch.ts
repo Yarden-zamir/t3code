@@ -13,45 +13,89 @@ export const SECTION_LABELS: Readonly<Record<ForkSettingsPath, string>> = {
 
 export const CATEGORY_SCOPES: Readonly<Record<ForkSettingsPath, SettingsSearchScope | null>> = {
   "/settings/machines": null,
-  // Each row of the Fork page keeps the scope of its usual place.
+  // Each row of the Fork page keeps the scope of its place.
   "/settings/fork": null,
 };
 
-export const WORKTREE_PATH_TEMPLATE_ITEMS = [
+export const WORKTREE_ITEMS = [
   {
     id: "worktree-artifact-eviction",
     title: "Evict worktree artifacts",
-    to: "/settings/fork",
+    to: "/settings/storage",
+    scope: "environment-defaults",
     environmentOnly: true,
     searchTerms: ["storage cleanup disk node_modules caches build dependencies worktrees"],
   },
   {
     id: "worktree-artifact-eviction-days",
     title: "Artifact eviction inactivity days",
-    to: "/settings/fork",
+    to: "/settings/storage",
+    scope: "environment-defaults",
     environmentOnly: true,
     searchTerms: ["storage cleanup disk inactive days worktrees"],
   },
   {
     id: "restore-worktrees-on-resume",
     title: "Restore worktrees on resume",
-    to: "/settings/fork",
+    to: "/settings/storage",
+    scope: "environment-defaults",
     environmentOnly: true,
-    searchTerms: ["missing folder restore checkout dependencies setup node_modules"],
-  },
-  {
-    id: "auto-settle-waits-for-background-commands",
-    title: "Auto-settle waits for background commands",
-    to: "/settings/fork",
-    environmentOnly: true,
-    searchTerms: ["settle background command bash wake typecheck test run killed"],
+    searchTerms: [
+      "missing folder restore recreate deleted branch checkout dependencies setup node_modules",
+    ],
   },
   {
     id: "storage-worktree-path-template",
     title: "Worktree path template",
     to: "/settings/storage",
     scope: "environment-defaults",
-    searchTerms: ["worktree path template folder branch bare container repository sibling"],
+    searchTerms: [
+      "worktree path template location directory folder branch bare container repository sibling",
+    ],
+  },
+] as const satisfies ReadonlyArray<SettingsSearchItem>;
+
+export const ORGANIZATION_ITEMS = [
+  {
+    id: "auto-settle-waits-for-background-commands",
+    title: "Auto-settle waits for background commands",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    environmentOnly: true,
+    requiresThreadAutoSettlement: true,
+    searchTerms: ["settle background command bash wake typecheck test run killed"],
+  },
+  {
+    id: "sidebar-tabs",
+    title: "Sidebar tabs",
+    to: "/settings/general",
+    searchTerms: ["tabs folders groups organize threads drag rules monitors views sidebar"],
+  },
+  {
+    id: "sidebar-tab-single-thread",
+    title: "Single-thread tabs",
+    to: "/settings/general",
+    searchTerms: ["sidebar tab one thread open directly"],
+  },
+  {
+    id: "snooze-quick-options",
+    title: "Snooze quick options",
+    to: "/settings/general",
+    searchTerms: ["snooze menu presets choices later tonight tomorrow next week remind wake"],
+  },
+  {
+    id: "repository-owner-filters",
+    title: "Repository owner filters",
+    to: "/settings/general",
+    searchTerms: [
+      "github organization org owner account filter hide exclude pull requests pr sidebar work personal",
+    ],
+  },
+  {
+    id: "pull-request-filter-chips",
+    title: "Pull request filter chips",
+    to: "/settings/general",
+    searchTerms: ["active filters chips exclude negative is not pull requests pr list empty"],
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
@@ -112,6 +156,12 @@ export const APPEARANCE_ITEMS = [
     searchTerms: ["mobile phone android app sidebar tabs groups thread list home"],
     environmentOnly: true,
   },
+  {
+    id: "back-forward-buttons",
+    title: "Back and forward buttons",
+    to: "/settings/appearance",
+    searchTerms: ["back forward arrows navigation history title bar vs code"],
+  },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
 export const GLOBAL_SCRIPTS_ITEMS = [
@@ -121,7 +171,7 @@ export const GLOBAL_SCRIPTS_ITEMS = [
     to: "/settings/general",
     scope: "environment-defaults",
     searchTerms: [
-      "scripts commands every project pin pinned buttons background overlay preview global hotkey shortcut accelerator navgator",
+      "scripts commands every project pin pinned buttons background overlay preview global hotkey shortcut accelerator",
     ],
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
@@ -131,18 +181,21 @@ export const NOTIFICATION_ITEMS = [
     id: "installed-app",
     title: "Installed app",
     to: "/settings/general",
-    searchTerms: ["install pwa home screen offline service worker badge phone android iphone"],
+    searchTerms: [
+      "install pwa home screen offline service worker badge notifications phone android iphone ios",
+    ],
     webOnly: true,
   },
   {
     id: "web-push",
     title: "Web Push",
     to: "/settings/general",
-    searchTerms: ["web push notification phone android closed app background"],
+    searchTerms: ["web push notification phone android iphone ios closed app background"],
+    webOnly: true,
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
-export const RECOVER_INTERRUPTED_TURNS_ITEMS = [
+export const BEHAVIOR_ITEMS = [
   {
     id: "recover-interrupted-turns",
     title: "Recover interrupted agents",
@@ -151,6 +204,18 @@ export const RECOVER_INTERRUPTED_TURNS_ITEMS = [
     searchTerms: [
       "recover continue resume restart crash update quit interrupted agent subagent message background",
     ],
+  },
+  {
+    id: "background-work-details",
+    title: "Background work details",
+    to: "/settings/general",
+    searchTerms: ["monitor background command agent task output file popover markdown links"],
+  },
+  {
+    id: "remember-back-forward-history",
+    title: "Remember back and forward history",
+    to: "/settings/general",
+    searchTerms: ["back forward navigation history restart restore skip deleted threads"],
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
@@ -171,105 +236,52 @@ export const AGENT_SESSION_IMPORT_ITEMS = [
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
-export const BEHAVIOR_ITEMS = [
+export const CONFIRMATION_ITEMS = [
   {
     id: "terminal-close-confirmation",
     title: "Terminal close confirmation",
     to: "/settings/general",
     searchTerms: ["ask before terminal close stop process"],
   },
-  {
-    id: "terminal-app-shortcuts-first",
-    title: "App shortcuts in terminal",
-    to: "/settings/general",
-    searchTerms: ["terminal keybindings keyboard shortcuts priority shell focus"],
-  },
+] as const satisfies ReadonlyArray<SettingsSearchItem>;
+
+export const KEYBOARD_ITEMS = [
   {
     id: "keyboard-focus-levels",
     title: "Keyboard focus levels",
-    to: "/settings/general",
+    to: "/settings/keybindings",
     searchTerms: ["keyboard escape arrows focus composer timeline sidebar cursor cite tabs"],
   },
   {
     id: "focus-level-highlight",
     title: "Focus highlight",
-    to: "/settings/general",
+    to: "/settings/keybindings",
     searchTerms: ["keyboard focus outline flash escape composer timeline sidebar right panel"],
   },
   {
     id: "tooltip-shortcuts",
     title: "Shortcuts in tooltips",
-    to: "/settings/general",
+    to: "/settings/keybindings",
     searchTerms: ["keyboard shortcuts keybindings tooltip hint key label"],
   },
   {
     id: "tooltip-shortcut-limit",
     title: "Keys per tooltip",
-    to: "/settings/general",
+    to: "/settings/keybindings",
     searchTerms: ["keyboard shortcuts keybindings tooltip chips limit more how many"],
   },
   {
-    id: "back-forward-buttons",
-    title: "Back and forward buttons",
-    to: "/settings/general",
-    searchTerms: ["back forward arrows navigation history title bar vs code"],
-  },
-  {
-    id: "remember-back-forward-history",
-    title: "Remember back and forward history",
-    to: "/settings/general",
-    searchTerms: ["back forward navigation history restart restore skip deleted threads"],
-  },
-  {
-    id: "repository-owner-filters",
-    title: "Repository owner filters",
-    to: "/settings/general",
-    searchTerms: [
-      "github organization org owner account filter hide exclude pull requests sidebar work personal",
-    ],
-  },
-  {
-    id: "snooze-quick-options",
-    title: "Snooze quick options",
-    to: "/settings/general",
-    searchTerms: ["snooze menu presets choices later tonight tomorrow next week remind wake"],
-  },
-  {
-    id: "sidebar-tabs",
-    title: "Sidebar tabs",
-    to: "/settings/general",
-    searchTerms: ["tabs folders groups organize threads drag rules monitors views sidebar"],
-  },
-  {
-    id: "sidebar-tab-single-thread",
-    title: "Single-thread tabs",
-    to: "/settings/general",
-    searchTerms: ["sidebar tab one thread open directly"],
-  },
-  {
-    id: "pull-request-filter-chips",
-    title: "Pull request filter chips",
-    to: "/settings/general",
-    searchTerms: ["active filters chips exclude negative is not pull requests list empty"],
+    id: "terminal-app-shortcuts-first",
+    title: "App shortcuts in terminal",
+    to: "/settings/keybindings",
+    searchTerms: ["terminal keybindings keyboard shortcuts priority shell focus"],
   },
   {
     id: "app-toggle-shortcuts",
     title: "App toggle shortcuts",
-    to: "/settings/general",
+    to: "/settings/keybindings",
     searchTerms: ["global hotkey keyboard shortcut show hide toggle window raycast f17"],
     desktopOnly: true,
-  },
-  {
-    id: "background-work-details",
-    title: "Background work details",
-    to: "/settings/general",
-    searchTerms: ["monitor background command agent task output file popover markdown links"],
-  },
-  {
-    id: "restart-reconnect-warning-grace",
-    title: "Quiet reconnect after restart",
-    to: "/settings/general",
-    searchTerms: ["reconnecting warning banner composer server offline startup update grace delay"],
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
@@ -328,7 +340,7 @@ export const PULL_REQUEST_ITEMS = [
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
-export const TUNNEL_PAIRING_ITEMS = [
+export const CONNECTIONS_ITEMS = [
   {
     id: "tunnel-pairing",
     title: "Allow pairing through a tunnel",
@@ -339,6 +351,12 @@ export const TUNNEL_PAIRING_ITEMS = [
     desktopOnly: true,
     localBackendManagementOnly: true,
   },
+  {
+    id: "restart-reconnect-warning-grace",
+    title: "Quiet reconnect after restart",
+    to: "/settings/connections",
+    searchTerms: ["reconnecting warning banner composer server offline startup update grace delay"],
+  },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
 // Fork: machine map (apps/machine-map/SPEC.md MM-203).
@@ -346,7 +364,7 @@ export const MACHINE_MAP_ITEMS = [
   {
     id: "environment-label-from-machine-map",
     title: "Environment name from machine map",
-    to: "/settings/fork",
+    to: "/settings/machines",
     searchTerms: ["machine map environment label name hostname computer portal"],
     environmentOnly: true,
   },

@@ -1,7 +1,7 @@
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 
 import { ScopedSwitch } from "./ScopedSwitch";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
   useScopedSettings,
@@ -9,24 +9,13 @@ import {
   useUpdateScopedSettings,
 } from "./useScopedSettings";
 
-/** Fork: the thread link settings, `threadLinkChips`, `threadLinksOpenDesktopApp` and `messageLinks`. */
-export function ThreadLinkChipsSettingsSection() {
-  return (
-    <SettingsSection id="thread-links" title="Thread links">
-      <ThreadLinkChipsSettingsRow />
-      <ThreadLinksOpenDesktopAppSettingsRow />
-      <MessageLinksSettingsRow />
-    </SettingsSection>
-  );
-}
-
 export function ThreadLinkChipsSettingsRow() {
   return (
     <ThreadLinkSwitchRow
       settingKey="threadLinkChips"
       searchId="thread-link-chips"
       label="Thread link chips"
-      description="Every thread link in chat looks like an attached thread: thread links, app links, web addresses of a thread on this machine or a connected machine, and the thread markers that agents copy. A click opens the thread here, not in a browser. Applies on desktop, web and the mobile app."
+      description="Thread links in chat show as attached-thread chips: app links, thread addresses of this or a connected machine, and the thread markers that agents copy. A click opens the thread here, not in a browser. Applies on desktop, web and the mobile app."
     />
   );
 }
@@ -48,7 +37,7 @@ export function MessageLinksSettingsRow() {
       settingKey="messageLinks"
       searchId="message-links"
       label="Message links"
-      description="A thread link that names a message, such as one an agent writes, opens the thread at that message and highlights it. Off: the link opens the thread only. Applies on desktop, web and the mobile app."
+      description="A thread link that names a message, such as one an agent writes, opens the thread at that message and highlights it. Off: the link opens the thread only, and Copy message link is hidden. Applies on desktop, web and the mobile app."
     />
   );
 }
