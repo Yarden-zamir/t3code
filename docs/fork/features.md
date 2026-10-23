@@ -112,14 +112,15 @@ An arrow with agent tools makes the target machine a linked environment of the s
 - **Pause and removal:** while the owner's emergency pause is on, work on other machines waits and tries again after Resume. Removing the arrow or its agent tools fails that work with the reason (MM-1914).
 - **Manual links:** `t3 environment link` and `t3 environment unlink` refuse. Settings > Connections on web, desktop and mobile shows the arrow links read-only, with "Set arrows in the portal". A permanent arrow shows no expiry. A temporary arrow shows its end; renew it in the portal.
 - **History:** each tool call that an agent forwards to another machine shows in the portal History, with the machines, the calling thread, the tool, the outcome and the time. The arguments and the output stay out of the portal (MM-1922).
-- **Limits:** a link reaches the other machine through its tunnel hostname. A machine that never answered since this server started is not listed.
+- **Unanswered machines:** a machine that has not answered since this server started shows as an unreachable link with the reason, under the id `machine:<machine id>`. A call with that id fails with the reason, and names the real id once the machine answers. An offline machine or an old T3 Code version is the usual cause; the portal shows its presence and version.
+- **Limits:** a link reaches the other machine through its tunnel hostname.
 
 ### Commands on other machines
 
 An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908). In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's (MM-1919).
 
 - **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Table and the arrow panel show an "exec" sticker.
-- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Elsewhere it acts as the local user, as `t3 tool` does. The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
+- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Without a thread credential it is refused (MM-1920). The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
 - **Stop:** the emergency pause, a removed arrow or exec turned off stops a running command at once (MM-1916).
 - **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`. A `t3 machine exec` run gives one entry when it ends.
 - **In a shell:** in a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
@@ -659,7 +660,6 @@ A published theme can replace app icons with its own SVGs, in the theme JSON fie
 - **Works on:** web, desktop.
 - The slots are the sidebar tab icons (`tab.<id>`), the thread statuses (`status.<status>`), the tab bar buttons (`tabs.more`, `tabs.new`, `tabs.edit`) and the sidebar header (`sidebar.search`, `sidebar.filter`, `sidebar.add-project`, `sidebar.new-thread`). `apps/web/src/components/AppIcon.tsx` lists them.
 - Each icon carries `data-app-icon="<slot>"`. The sidebar tabs carry `data-sidebar-tab` (`default` or `custom`), `data-selected`, `data-status`, `data-attention` and `data-drop-target` for theme CSS.
-- The tick3d themes in the dotfiles carry a neo-brutalism pack. The `t3-theme` skill in the dotfiles describes the fields.
 - **Limits:** the app strips scripts, styles, links and remote content from each SVG, and an icon is at most 4096 characters. The mobile app shows stock icons. Revisit after sidebar tabs reach mobile.
 
 ### Local server groups
@@ -696,7 +696,8 @@ The fork desktop app, its notifications and the bundled web page use the Tick3d 
 - **Works on:** server.
 - In an agent's shell, the command uses the credential of the agent's thread, so the limits of that thread apply. See [MM-1920](../../apps/machine-map/SPEC.md#19-cross-machine-work). `t3 machine exec` uses the same credential; see [Commands on other machines](#commands-on-other-machines).
 - Elsewhere, also in a T3 terminal, it calls the running server of its T3 home with a short full-access session. Machine map History names that caller "CLI (local user)".
-- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session.
+- To call a dev server from an agent shell, unset `T3_ACP_MCP_ENDPOINT` and `T3_ACP_MCP_AUTHORIZATION`. The CLI refuses a `--base-dir` or `T3CODE_HOME` that does not match the shell's thread credential.
+- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session. That session runs nothing on another machine and forwards no tool there: `machine_exec`, `t3 machine exec`, and tools or delegation with the `environmentId` of another machine refuse it. Use a thread, or the portal. The `machines_*` portal tools follow the map role of the machine.
 
 ### Open workspace with a checkout
 
