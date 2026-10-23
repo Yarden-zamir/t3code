@@ -9,7 +9,12 @@
  */
 import * as Schema from "effect/Schema";
 
-import { EnvironmentId, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  EnvironmentId,
+  NonNegativeInt,
+  PositiveInt,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import {
   MachineCommand,
   MachineDesiredState,
@@ -264,3 +269,39 @@ export const MachineExecResult = Schema.Struct({
   durationMs: NonNegativeInt,
 });
 export type MachineExecResult = typeof MachineExecResult.Type;
+
+/**
+ * MM-1919: the WebSocket route of `t3 machine exec`. The CLI opens it on its own server with the
+ * MCP credential of its thread; that server opens it on the target with the session of its arrow
+ * link. Binary frames carry the data: one channel byte (`MachineExecStreamChannel`), then bytes.
+ * Text frames carry `MachineExecStreamMessage` as JSON.
+ */
+export const MACHINE_EXEC_STREAM_PATH = "/mcp/machine-exec";
+
+export const MachineExecStreamChannel = { stdin: 0, stdout: 1, stderr: 2 } as const;
+export type MachineExecStreamChannel =
+  (typeof MachineExecStreamChannel)[keyof typeof MachineExecStreamChannel];
+
+export const MachineExecStreamMessage = Schema.Union([
+  /** The first frame from the caller. The stream has no time limit unless it sets one. */
+  Schema.Struct({
+    type: Schema.Literal("start"),
+    ...MachineExecInput.fields,
+    timeoutSeconds: Schema.optionalKey(PositiveInt),
+  }),
+  /** From the caller: its stdin ended. */
+  Schema.Struct({ type: Schema.Literal("eof") }),
+  /** From both ends, so that idle streams stay open through Cloudflare. */
+  Schema.Struct({ type: Schema.Literal("ping") }),
+  /** The last frame from the target, after all output. */
+  Schema.Struct({
+    type: Schema.Literal("exit"),
+    outcome: Schema.Literals(["exited", "timedOut", "stopped"]),
+    exitCode: Schema.NullOr(Schema.Int),
+    message: Schema.optionalKey(Schema.String),
+  }),
+  /** A refusal or failure before the command ran. The last frame. */
+  Schema.Struct({ type: Schema.Literal("error"), message: Schema.String }),
+]);
+export type MachineExecStreamMessage = typeof MachineExecStreamMessage.Type;
+export type MachineExecStreamStart = Extract<MachineExecStreamMessage, { readonly type: "start" }>;

@@ -18,8 +18,10 @@ import {
   AuthTokenExchangeGrantType,
   type EnvironmentId,
   ExecutionEnvironmentDescriptor,
+  MACHINE_EXEC_STREAM_PATH,
   type MachineExecInput,
   MachineExecResult,
+  type MachineExecStreamStart,
   MachineId,
   type OrchestratorMcpFailure,
   type PeerLink,
@@ -36,6 +38,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
+import type * as Socket from "effect/socket/Socket";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
@@ -53,6 +57,7 @@ import {
   MANUAL_LINK_REFUSAL,
 } from "./machineAccess.ts";
 import { historyCaller, requireMachineExecCaller } from "./machineCallerAccess.ts";
+import { type ExecSocket, openExecSocket, streamUrl } from "./machineExecStream.ts";
 import * as MachineMapState from "./MachineMapState.ts";
 
 const REQUEST_TIMEOUT = Duration.seconds(15);
@@ -120,6 +125,17 @@ export class MachinePeers extends Context.Service<
       MachineExecResult,
       MachinePeerError | OrchestratorMcpFailure,
       CallerServices
+    >;
+    /**
+     * MM-1919: opens the exec stream of `t3 machine exec` on a peer whose arrow allows exec, with
+     * the same checks as `exec`, and sends its start. The peer runs the command and reports it.
+     */
+    readonly openExec: (
+      input: MachineExecStreamStart,
+    ) => Effect.Effect<
+      ExecSocket,
+      MachinePeerError | OrchestratorMcpFailure,
+      CallerServices | Scope.Scope | Socket.WebSocketConstructor
     >;
     /** MM-1907: the linked machines that answer now, with their environment ids. */
     readonly readableEnvironments: Effect.Effect<ReadonlyArray<ReadableEnvironment>>;
@@ -576,9 +592,10 @@ const make = Effect.gen(function* () {
       ),
   );
 
-  const exec: MachinePeers["Service"]["exec"] = Effect.fn("MachinePeers.exec")(function* (input) {
+  /** MM-1908: the checks of this machine before a command goes to a peer. */
+  const admitExec = Effect.fn("MachinePeers.admitExec")(function* (machine: string) {
     // The peer is resolved first, so a refused call names its target for the History.
-    const resolved = yield* resolvePeer(input.machine);
+    const resolved = yield* resolvePeer(machine);
     const refused = (reason: MachinePeerError["reason"], detail: string) =>
       new MachinePeerError({ reason, detail, target: resolved.peer.id });
     // One read of the caller: its limits go out with the call (`T3-Mode-Limit`), and the target
@@ -601,6 +618,11 @@ const make = Effect.gen(function* () {
     }
     // MM-806: the portal names the calling thread. An agent cannot set it through this path.
     const caller = yield* historyCaller();
+    return { resolved, refused, limits, link, caller };
+  });
+
+  const exec: MachinePeers["Service"]["exec"] = Effect.fn("MachinePeers.exec")(function* (input) {
+    const { resolved, limits, link, caller } = yield* admitExec(input.machine);
     const { caller: _ignored, ...command } = input;
     return yield* peerMcp.call({
       environmentId: link.environmentId,
@@ -610,6 +632,47 @@ const make = Effect.gen(function* () {
       success: MachineExecResult,
     });
   });
+
+  const openExec: MachinePeers["Service"]["openExec"] = Effect.fn("MachinePeers.openExec")(
+    function* (input) {
+      const { resolved, refused, limits, link, caller } = yield* admitExec(input.machine);
+      // The same session, Access headers and limits as a forwarded tool call (`linkHttpClient`).
+      const open = peerLinks.resolve(link.environmentId).pipe(
+        Effect.flatMap((target) =>
+          openExecSocket(streamUrl(target.url, MACHINE_EXEC_STREAM_PATH), {
+            ...MachineMapState.tokenHeaders(resolved.local.token),
+            authorization: `Bearer ${target.token}`,
+            [McpInvocationContext.MODE_LIMIT_HEADER]: `${limits.runtimeMode}/${limits.interactionMode}`,
+          }),
+        ),
+      );
+      // The peer ends the sessions of this machine on each level change (MM-1306), and a refused
+      // upgrade tells no reason, so any failed open pairs again once.
+      const socket = yield* open.pipe(
+        Effect.catch(() =>
+          Effect.sync(() => sessions.delete(link.target.origin)).pipe(Effect.andThen(open)),
+        ),
+        Effect.mapError((cause) =>
+          refused(
+            "unreachable",
+            `${resolved.peer.name} did not open the exec stream: ${cause.message} It may run a T3 Code version without \`t3 machine exec\`.`,
+          ),
+        ),
+      );
+      const { caller: _ignored, type: _start, ...command } = input;
+      yield* socket
+        .message({ type: "start", ...command, machine: resolved.peer.id, caller })
+        .pipe(
+          Effect.mapError((cause) =>
+            refused(
+              "unreachable",
+              `${resolved.peer.name} closed the exec stream: ${cause.message}`,
+            ),
+          ),
+        );
+      return socket;
+    },
+  );
 
   const readableEnvironments: MachinePeers["Service"]["readableEnvironments"] = onMap.pipe(
     Effect.flatMap((local) => arrowLinks(local, false)),
@@ -630,6 +693,7 @@ const make = Effect.gen(function* () {
     MachinePeers.of({
       testArrow,
       exec,
+      openExec,
       readableEnvironments,
       machineOf: (environmentId) => machineOfEnvironment.get(environmentId),
     }),
