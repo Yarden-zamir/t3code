@@ -1,0 +1,797 @@
+/*
+ * Arrow redesigns (`?design=wires|board|focus`). Same tick3d tokens as style.css: ink borders,
+ * hard shadows, level colours. Delete the sections of the designs that lose.
+ */
+
+/* ---------- Shared: design switch, level pills, badges, editor ---------- */
+
+.design-switch a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--ink);
+  text-decoration: none;
+}
+.design-switch a + a {
+  border-left: var(--bw) solid var(--border);
+}
+.design-switch a[aria-current="page"] {
+  background: var(--select);
+  color: var(--select-fg);
+}
+
+/* The level as a flat pill: the one place that carries the level colour. */
+.lvl-pill {
+  display: inline-block;
+  padding: 0 7px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: var(--bw) solid var(--border);
+  border-radius: 999px;
+}
+.lvl-pill.was {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.grant-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.glyph svg,
+.grant-editor svg,
+.chip svg,
+.grant-row svg,
+.agenda svg,
+.port svg,
+.legend svg,
+.focus-picker svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.glyph.timer {
+  padding: 0 4px;
+  color: #000000;
+  background: var(--warning);
+  border-radius: 999px;
+}
+.cut-word,
+.ask-word {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.cut-word {
+  color: var(--panic);
+}
+.ask-word {
+  color: var(--accent);
+}
+.ask-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  color: #ffffff;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.grant-editor .grant-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.grant-editor .grant-title .end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.grant-editor .grant-title svg {
+  width: 22px;
+  height: 22px;
+}
+.grant-editor .arrow-glyph {
+  color: var(--accent);
+}
+.grant-editor .callout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.ask-callout {
+  background: var(--info-surface);
+  border-style: dashed;
+}
+.expiry-callout svg {
+  vertical-align: -2px;
+}
+.ladder {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 6px 0 8px;
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.ladder .rung {
+  min-height: 44px;
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 0;
+  cursor: pointer;
+}
+.ladder .rung + .rung {
+  border-left: var(--bw) solid var(--border);
+}
+.ladder .rung:not([aria-pressed="true"]) {
+  background: var(--surface);
+  color: var(--ink);
+}
+.ladder .rung[aria-pressed="true"] {
+  box-shadow: inset 0 -4px 0 0 var(--border);
+}
+.ladder .rung[aria-pressed="true"].lvl-none {
+  background: var(--none);
+  color: #3d3d5c;
+}
+.ladder .rung[aria-pressed="true"].lvl-read {
+  background: var(--info);
+  color: #000000;
+}
+.ladder .rung[aria-pressed="true"].lvl-standard {
+  background: var(--green);
+  color: #000000;
+}
+.ladder .rung[aria-pressed="true"].lvl-admin {
+  background: var(--accent);
+  color: #ffffff;
+}
+.ladder .rung:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.grant-editor .actions {
+  margin-top: 10px;
+}
+.grant-editor .actions .spacer,
+.board .spacer {
+  flex: 1;
+}
+.lasts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.grant-editor .toggle-row .t {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.delivery {
+  margin-top: 12px;
+}
+
+/* ---------- Wires: the arrow line carries the state ---------- */
+
+.map path.wire {
+  stroke: var(--ink);
+  stroke-linecap: round;
+}
+.map path.wire.lvl-none {
+  stroke-width: 2;
+  stroke-dasharray: 3 6;
+}
+.map path.wire.lvl-read {
+  stroke-width: 2.5;
+}
+.map path.wire.lvl-standard {
+  stroke-width: 4;
+}
+.map path.wire.lvl-admin {
+  stroke-width: 6;
+}
+/* MM-304: a temporary level is a broken line until it returns. */
+.map path.wire.temp {
+  stroke: var(--warning-fg);
+  stroke-dasharray: 10 7;
+}
+/* MM-804: an arrow that only a proposal asks for. */
+.map path.wire.ghost {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-dasharray: 2 7;
+}
+.map path.wire.cut {
+  stroke: var(--panic);
+  stroke-dasharray: 2 12;
+}
+.map path.wire.on,
+.map path.wire.hot {
+  stroke: var(--accent);
+}
+.map path.wire.dim {
+  opacity: 0.18;
+}
+.map marker path {
+  fill: var(--ink);
+  fill: context-stroke;
+  stroke: none;
+}
+.wire-badge {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: var(--bw) solid var(--border);
+  border-radius: 999px;
+  box-shadow: 2px 2px 0 0 var(--shadow-ink);
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+.wire-badge .lvl-pill {
+  font-size: 0.85rem;
+}
+.wire-badge .glyph svg {
+  width: 18px;
+  height: 18px;
+}
+.wire-badge.on {
+  background: var(--select);
+  color: var(--select-fg);
+}
+.wire-badge.ghost {
+  border-style: dashed;
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.wire-badge.cut {
+  border-color: var(--panic);
+}
+.wire-badge .clock {
+  width: 15px;
+  height: 15px;
+}
+.ports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: var(--bw) dashed var(--raised);
+}
+.port {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.6;
+  color: #000000;
+  border: var(--bw) dotted var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.port.role {
+  color: var(--ink);
+  background: var(--raised);
+  border-style: solid;
+  cursor: default;
+}
+.port.lvl-admin {
+  color: #ffffff;
+}
+.ports-note {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* ---------- Board: lanes by source, columns by level ---------- */
+
+.board {
+  padding: 20px;
+}
+.board-head {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ask-chip-sample {
+  padding: 0 6px;
+  border: var(--bw) dashed var(--accent);
+  border-radius: 999px;
+}
+.board-grid {
+  display: grid;
+  gap: 0;
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+.board-row {
+  display: grid;
+  /* Every row uses the same fixed tracks, so the columns line up; a narrow board scrolls. */
+  grid-template-columns: 170px repeat(4, minmax(180px, 1fr));
+  min-width: 900px;
+}
+.board-row + .board-row {
+  border-top: var(--bw) solid var(--border);
+}
+.board-columns {
+  background: var(--raised);
+}
+.column-head {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  padding: 8px 10px;
+  border-left: var(--bw) solid var(--border);
+}
+.lane-title {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  justify-items: start;
+  padding: 10px;
+  font-weight: 800;
+}
+.lane-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  font: inherit;
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.lane-name .icon svg {
+  width: 18px;
+  height: 18px;
+}
+.board-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  min-height: 64px;
+  padding: 8px;
+  border-left: var(--bw) solid var(--border);
+}
+.board-cell.col-none {
+  background: repeating-linear-gradient(-45deg, transparent 0 8px, var(--raised) 8px 16px);
+}
+.board-cell.over {
+  background: var(--select);
+}
+.chip {
+  display: inline-flex;
+  align-items: stretch;
+  font-size: 0.85rem;
+  background: var(--surface);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 2px 2px 0 0 var(--shadow-ink);
+}
+.col-read .chip:not(.ask-chip) {
+  border-left: 6px solid var(--info);
+}
+.col-standard .chip:not(.ask-chip) {
+  border-left: 6px solid var(--green);
+}
+.col-admin .chip:not(.ask-chip) {
+  border-left: 6px solid var(--accent);
+}
+.chip[draggable="true"] {
+  cursor: grab;
+}
+.chip.off {
+  opacity: 0.6;
+  box-shadow: none;
+}
+.chip.on {
+  background: var(--select);
+  color: var(--select-fg);
+}
+.chip.cut {
+  border-color: var(--panic);
+  border-style: dashed;
+}
+.chip-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  font: inherit;
+  font-weight: 800;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.chip .step {
+  min-width: 24px;
+  padding: 0 4px;
+  font: inherit;
+  font-weight: 900;
+  font-size: 1rem;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.chip .step:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.chip .step.yes {
+  color: #000000;
+  background: var(--green);
+  border-left: var(--bw) solid var(--border);
+}
+.chip .step.no {
+  color: #000000;
+  background: var(--pink);
+  border-left: var(--bw) solid var(--border);
+}
+.no-level .lvl-pill {
+  display: none;
+}
+.ask-chip {
+  border: var(--bw) dashed var(--accent);
+  box-shadow: none;
+  overflow: hidden;
+}
+.return-chip {
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  border-style: dotted;
+  box-shadow: none;
+}
+
+/* ---------- Focus: one machine, sentences, one agenda ---------- */
+
+.focus-view {
+  display: grid;
+  gap: 16px;
+}
+.agenda {
+  padding: 14px 18px;
+}
+.agenda.calm {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.agenda ol {
+  display: grid;
+  gap: 0;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.agenda-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: var(--bw) solid var(--raised);
+}
+.agenda-row .when {
+  width: 64px;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.agenda-row .sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.agenda-row .link.grow {
+  flex: 1 1 220px;
+  color: var(--ink);
+  text-align: left;
+  text-decoration: none;
+}
+.agenda-row .link.grow:hover {
+  text-decoration: underline;
+}
+.focus-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.focus-picker .pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 14px;
+  font: inherit;
+  font-weight: 800;
+  color: var(--ink);
+  background: var(--surface);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 2px 2px 0 0 var(--shadow-ink);
+  cursor: pointer;
+}
+.focus-picker .pick[aria-pressed="true"] {
+  background: var(--select);
+  color: var(--select-fg);
+}
+.focus-picker .dot {
+  width: 10px;
+  height: 10px;
+  border: var(--bw) solid var(--border);
+  border-radius: 999px;
+  background: var(--none);
+}
+.focus-picker .dot.ok {
+  background: var(--green);
+}
+.focus-picker .dot.wait {
+  background: var(--yellow);
+}
+.focus-card {
+  padding: 18px 20px 20px;
+}
+.focus-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.focus-head h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.focus-head h2 svg {
+  width: 26px;
+  height: 26px;
+}
+.focus-head .btn {
+  margin-left: auto;
+}
+.role-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.focus-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 6px;
+}
+.grant-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: var(--bw) solid var(--raised);
+}
+.grant-row.off .who {
+  color: var(--muted);
+}
+.grant-row.on {
+  background: var(--select);
+  color: var(--select-fg);
+}
+.grant-row .who {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 0;
+  font: inherit;
+  font-weight: 800;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.grant-row .levels button {
+  min-width: 48px;
+  padding: 4px 8px;
+}
+.grant-row .levels button[aria-pressed="true"].lvl-read {
+  background: var(--info);
+  color: #000000;
+}
+.grant-row .levels button[aria-pressed="true"].lvl-standard {
+  background: var(--green);
+  color: #000000;
+}
+.grant-row .levels button[aria-pressed="true"].lvl-admin {
+  background: var(--accent);
+  color: #ffffff;
+}
+.grant-row .levels button[aria-pressed="true"].lvl-none {
+  background: var(--none);
+  color: #3d3d5c;
+}
+.toggles {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 84px;
+}
+.toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 36px;
+  color: var(--muted);
+  background: var(--surface);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.toggle[aria-pressed="true"] {
+  color: #ffffff;
+  background: var(--accent);
+}
+.toggle:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.row-ask {
+  grid-column: 1 / -1;
+}
+.row-ask .callout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 0;
+}
+
+/* Phone and narrow windows. */
+@media (max-width: 900px) {
+  .board-row {
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+    min-width: 600px;
+  }
+  .board-columns .lane-title {
+    display: none;
+  }
+  .lane .lane-title {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    background: var(--raised);
+    border-bottom: var(--bw) solid var(--border);
+  }
+  .board-cell:nth-child(2),
+  .column-head:nth-child(2) {
+    border-left: 0;
+  }
+  .column-head .small {
+    display: none;
+  }
+  .board-cell {
+    min-height: 48px;
+    padding: 6px 4px;
+  }
+  .chip {
+    font-size: 0.78rem;
+  }
+  .chip .step {
+    min-width: 18px;
+  }
+  .focus-columns {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 560px) {
+  /* The board turns each lane into a list: one line per level that has chips. */
+  .board-columns {
+    display: none;
+  }
+  .lane {
+    grid-template-columns: 1fr;
+    min-width: 0;
+  }
+  .lane .board-cell {
+    border-left: 0;
+    border-top: var(--bw) dashed var(--raised);
+  }
+  .lane .board-cell:empty {
+    display: none;
+  }
+  .lane .board-cell::before {
+    content: attr(data-level);
+    width: 100%;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .grant-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .grant-row .levels {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+  .grant-row .levels button {
+    flex: 1;
+  }
+  .grant-row .levels {
+    display: flex;
+  }
+  .agenda-row .when {
+    width: auto;
+  }
+}
+
+/* Board chips keep their words on one line; a narrow column wraps whole chips instead. */
+.chip-name,
+.glyph,
+.return-chip {
+  white-space: nowrap;
+}
+.ask-chip {
+  flex-wrap: wrap;
+}

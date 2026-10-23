@@ -11,7 +11,10 @@ import type { HistoryResponse, WriteResult } from "../api.ts";
 import { touchesOwnerOnlySettings } from "../rules/access.ts";
 import { applyChanges } from "../rules/map.ts";
 import { DEFAULT_COMMAND_MINUTES } from "../rules/queue.ts";
-import { callApi, StepUpNeeded } from "./apiClient.ts";
+import { callApi, isFixturePage, StepUpNeeded } from "./apiClient.ts";
+import { BoardView } from "./BoardView.tsx";
+import { DESIGN_LABEL, DESIGNS, designHref, pageDesign } from "./design.ts";
+import { FocusView } from "./FocusView.tsx";
 import {
   PortalContext,
   type CommandOptions,
@@ -150,6 +153,11 @@ function Brand({ connection, revision }: { connection: Connection; revision: num
       <span className="live">
         <span className={`sticker ${CONNECTION_STICKER[connection]}`}>{connection}</span>
         {revision !== null && <span className="mono muted">rev {revision}</span>}
+        {isFixturePage() && (
+          <span className="sticker wait" data-tip="Dev fixture: changes stay in this page">
+            fixture
+          </span>
+        )}
       </span>
     </div>
   );
@@ -442,11 +450,21 @@ export function App() {
     clients: waiting,
   };
   const hasPanel = route.selection._tag !== "none";
+  const design = pageDesign();
 
   const view = (() => {
     switch (route.view) {
       case "map":
-        return <MapView map={map} readOnly={false} />;
+        switch (design) {
+          case "current":
+            return <MapView map={map} readOnly={false} />;
+          case "wires":
+            return <MapView map={map} readOnly={false} arrows="wires" />;
+          case "board":
+            return <BoardView />;
+          case "focus":
+            return <FocusView />;
+        }
       case "table":
         return <TableView />;
       case "health":
@@ -561,6 +579,13 @@ export function App() {
             </button>
           </span>
           <span className="spacer" />
+          <nav className="seg tiny design-switch" aria-label="Design">
+            {DESIGNS.map((d) => (
+              <a key={d} href={designHref(d)} aria-current={d === design ? "page" : undefined}>
+                {DESIGN_LABEL[d]}
+              </a>
+            ))}
+          </nav>
           <button type="button" className="btn" onClick={() => setPalette(true)}>
             Search <kbd>{SHORTCUT}</kbd>
           </button>

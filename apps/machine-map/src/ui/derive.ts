@@ -4,6 +4,9 @@
  */
 import {
   isMachineLocalSetting,
+  type ArrowRecord,
+  type ClientArrowRecord,
+  type ClientId,
   type MachineClientSession,
   type MachineCommand,
   type MachineId,
@@ -11,6 +14,7 @@ import {
   type MachineMapDocument,
   type MachineRecord,
   type MapChange,
+  type MapProposal,
   type MapRevision,
   type PortalSnapshot,
   type SettingScope,
@@ -341,4 +345,105 @@ export function groupClientSessions(
     shown: ordered.filter((group) => !isOld(group)),
     folded: ordered.filter(isOld),
   };
+}
+
+/** MM-804: a waiting proposal that sets the arrow from `from` to `to`, with the arrow it asks for. */
+export interface ArrowAsk {
+  readonly proposal: MapProposal;
+  readonly arrow: ArrowRecord;
+}
+
+/** MM-804: the waiting proposals that change one arrow. Agents never touch client arrows (MM-807). */
+export const arrowAsks = (
+  proposals: ReadonlyArray<MapProposal>,
+  from: MachineId,
+  to: MachineId,
+): ReadonlyArray<ArrowAsk> =>
+  proposals.flatMap((proposal) =>
+    proposal.changes.flatMap((change) =>
+      change._tag === "setArrow" && change.arrow.from === from && change.arrow.to === to
+        ? [{ proposal, arrow: change.arrow }]
+        : [],
+    ),
+  );
+
+/** One arrow of the map: a machine arrow (MM-301) or a client arrow (MM-309). */
+export type Grant =
+  | {
+      readonly _tag: "machine";
+      readonly from: MachineRecord;
+      readonly to: MachineRecord;
+      readonly arrow: ArrowRecord;
+    }
+  | {
+      readonly _tag: "client";
+      readonly from: { readonly id: ClientId; readonly name: string };
+      readonly to: MachineRecord;
+      readonly arrow: ClientArrowRecord;
+    };
+
+/** The panel of a grant: the arrow panel, or the client arrow panel. */
+export const grantSelection = (grant: Grant): Route["selection"] =>
+  grant._tag === "machine"
+    ? { _tag: "arrow", from: grant.from.id, to: grant.to.id }
+    : { _tag: "clientArrow", client: grant.from.id, to: grant.to.id };
+
+/**
+ * Every arrow above the default, machine arrows first. Map, board and focus designs read the same
+ * list, so they never disagree about what exists.
+ */
+export function mapGrants(map: MachineMapDocument): ReadonlyArray<Grant> {
+  const machine = (id: MachineId) => map.machines.find((m) => m.id === id);
+  return [
+    ...map.arrows.flatMap((arrow): Array<Grant> => {
+      const from = machine(arrow.from);
+      const to = machine(arrow.to);
+      return from && to ? [{ _tag: "machine", from, to, arrow }] : [];
+    }),
+    ...map.clientArrows.flatMap((arrow): Array<Grant> => {
+      const from = map.clients.find((c) => c.id === arrow.client);
+      const to = machine(arrow.to);
+      return from && to ? [{ _tag: "client", from, to, arrow }] : [];
+    }),
+  ];
+}
+
+/** What changes next on the arrows: a proposal to decide, an expiry, or a machine to apply. */
+export type AgendaItem =
+  | { readonly _tag: "ask"; readonly at: string; readonly ask: ArrowAsk }
+  | { readonly _tag: "expiry"; readonly at: string; readonly grant: Grant }
+  | {
+      readonly _tag: "queued";
+      readonly grant: Grant;
+      readonly waits: ReadonlyArray<MachineRecord>;
+    };
+
+/**
+ * MM-304, MM-602, MM-804: the arrow events that need the owner or happen on their own, soonest
+ * first. Queued arrows have no time, so they come last.
+ */
+export function accessAgenda(snapshot: PortalSnapshot, map: MachineMapDocument): Array<AgendaItem> {
+  const grants = mapGrants(map);
+  const timed: Array<AgendaItem> = [
+    ...snapshot.proposals.flatMap((proposal) =>
+      proposal.changes.flatMap((change): Array<AgendaItem> =>
+        change._tag === "setArrow"
+          ? [{ _tag: "ask", at: proposal.expiresAt, ask: { proposal, arrow: change.arrow } }]
+          : [],
+      ),
+    ),
+    ...grants.flatMap((grant): Array<AgendaItem> =>
+      grant.arrow.expiresAt ? [{ _tag: "expiry", at: grant.arrow.expiresAt, grant }] : [],
+    ),
+  ].toSorted((a, b) => ("at" in a && "at" in b ? Date.parse(a.at) - Date.parse(b.at) : 0));
+  const queued = grants.flatMap((grant): Array<AgendaItem> => {
+    if (grant._tag !== "machine") return [];
+    const ends = arrowEnds(snapshot, grant.from.id, grant.to.id);
+    const waits = [
+      ...(ends.from === "applied" ? [] : [grant.from]),
+      ...(ends.to === "applied" ? [] : [grant.to]),
+    ];
+    return waits.length === 0 ? [] : [{ _tag: "queued", grant, waits }];
+  });
+  return [...timed, ...queued];
 }

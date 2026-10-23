@@ -8,9 +8,11 @@ import {
   type PointerEvent,
 } from "react";
 import type {
+  ArrowRecord,
   ClientArrowRecord,
   ClientRecord,
   MachineId,
+  MachineLevel,
   MachineMapDocument,
   MachineRecord,
   MapChange,
@@ -26,7 +28,9 @@ import { NO_SELECTION, type Route } from "./route.ts";
 import { usePortalContext } from "./context.ts";
 import { buildStandings } from "./build.ts";
 import { BuildLabel, BuildSticker } from "./BuildLabel.tsx";
+import { GrantBadges, LEVEL_SHORT } from "./AccessEditor.tsx";
 import {
+  arrowAsks,
   arrowEndRoute,
   arrowEndWait,
   arrowEnds,
@@ -34,6 +38,7 @@ import {
   cutLevel,
   pairCut,
   pairShows,
+  type ArrowAsk,
 } from "./derive.ts";
 import {
   LEVEL_LABEL,
@@ -63,6 +68,7 @@ import {
   type LayoutLink,
   type MapViewport,
   type Point,
+  wireGeometry,
 } from "./layout.ts";
 import { NoteCard } from "./NoteCard.tsx";
 import { settleHeld, type Held } from "./store.ts";
@@ -203,13 +209,38 @@ interface Wait {
   readonly route: Route;
 }
 
+/**
+ * Wires design: one directed curve per arrow, with the arrow state on a badge on the curve.
+ * Pair cards do not show. `was` is the level before the pause for an arrow that the pause cut.
+ */
+interface Wire {
+  readonly key: string;
+  readonly from: MachineRecord;
+  readonly to: MachineRecord;
+  readonly arrow: ArrowRecord;
+  readonly asks: ReadonlyArray<ArrowAsk>;
+  readonly was: MachineLevel | null;
+  readonly bowed: boolean;
+}
+
+/** How the map shows arrows: pair cards (the current design) or wires (a redesign). */
+export type ArrowStyle = "cards" | "wires";
+
 /** A note that the page shows: a saved one, or a new one that is not saved yet. */
 interface EditingNote {
   readonly note: MapNote;
   readonly saved: boolean;
 }
 
-export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: boolean }) {
+export function MapView({
+  map,
+  readOnly,
+  arrows = "cards",
+}: {
+  map: MachineMapDocument;
+  readOnly: boolean;
+  arrows?: ArrowStyle;
+}) {
   const portal = usePortalContext();
   const { snapshot, route, now } = portal;
   const ref = useRef<HTMLDivElement>(null);
@@ -321,7 +352,8 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
   // MM-1103: a pair with no access either way has no line and no card. The Table view and the
   // command palette still list its arrows. MM-717: while paused, a pair that the pause cut stays.
   const pairs: Array<[MachineRecord, MachineRecord]> = [];
-  for (let i = 0; i < machines.length; i++) {
+  // Wires draw each arrow on its own, so pairs and their cards stay empty.
+  for (let i = 0; i < (arrows === "cards" ? machines.length : 0); i++) {
     for (let j = i + 1; j < machines.length; j++) {
       const a = machines[i];
       const b = machines[j];
@@ -448,6 +480,51 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
   const shown = layout(null);
   const centerOf = (m: MachineRecord): Point => shown.at.get(m.id) ?? toPixels(position(m));
 
+  /** Wires design: every stored arrow, every arrow that a proposal asks for, and every cut arrow. */
+  const wires: ReadonlyArray<Wire> = (() => {
+    if (arrows !== "wires") return [];
+    const ids = new Map<string, readonly [MachineId, MachineId]>();
+    const add = (from: MachineId, to: MachineId) => ids.set(`${from}>${to}`, [from, to]);
+    for (const arrow of map.arrows) add(arrow.from, arrow.to);
+    for (const proposal of snapshot.proposals)
+      for (const change of proposal.changes)
+        if (change._tag === "setArrow") add(change.arrow.from, change.arrow.to);
+    for (const cut of portal.pause?.cut ?? []) add(cut.from, cut.to);
+    return [...ids].flatMap(([key, [fromId, toId]]): Array<Wire> => {
+      const from = machines.find((m) => m.id === fromId);
+      const to = machines.find((m) => m.id === toId);
+      if (!from || !to) return [];
+      const arrow = findArrow(map, fromId, toId);
+      return [
+        {
+          key,
+          from,
+          to,
+          arrow,
+          asks: arrowAsks(snapshot.proposals, fromId, toId),
+          was: arrow.level === "none" ? cutLevel(portal.pause, fromId, toId) : null,
+          bowed: ids.has(`${toId}>${fromId}`),
+        },
+      ];
+    });
+  })();
+  const wireAt = (wire: Wire, at: (m: MachineRecord) => Box | undefined) => {
+    const a = at(wire.from) ?? nodeBox(wire.from, toPixels(position(wire.from)));
+    const b = at(wire.to) ?? nodeBox(wire.to, toPixels(position(wire.to)));
+    return wireGeometry(a, b, wire.bowed);
+  };
+  /** Wires design: redraws every wire and badge from the boxes of a drag. */
+  const drawWires = (root: HTMLElement, at: ReadonlyMap<MachineId, Box>) => {
+    for (const wire of wires) {
+      const { d, badge } = wireAt(wire, (m) => at.get(m.id));
+      root.querySelector(`path[data-wire="${CSS.escape(wire.key)}"]`)?.setAttribute("d", d);
+      const element = root.querySelector<HTMLElement>(
+        `.wire-badge[data-wire="${CSS.escape(wire.key)}"]`,
+      );
+      if (element) moveElement(element, badge);
+    }
+  };
+
   const moveElement = (element: HTMLElement, p: Point) => {
     element.style.left = `${p.x}px`;
     element.style.top = `${p.y}px`;
@@ -500,6 +577,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
     const { at, spots } = layout({ id, at: p });
     const q = at.get(id);
     if (q) moveElement(element, q);
+    drawWires(root, at);
     const spotByPair = new Map(pairs.map((pair, i) => [pairKey(...pair), spots[i]]));
     for (const [a, b] of pairs) {
       const pa = at.get(a.id);
@@ -1341,6 +1419,47 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
       >
         <div className="map-world" ref={worldRef}>
           <svg aria-hidden>
+            {arrows === "wires" && (
+              <defs>
+                <marker
+                  id="wire-head"
+                  viewBox="0 0 10 10"
+                  refX="5"
+                  refY="5"
+                  markerWidth="3.2"
+                  markerHeight="3.2"
+                  orient="auto"
+                >
+                  <path d="M0,0L10,5L0,10z" />
+                </marker>
+              </defs>
+            )}
+            {wires.map((wire) => {
+              const on =
+                selection._tag === "arrow" &&
+                selection.from === wire.from.id &&
+                selection.to === wire.to.id;
+              const touches = focus === wire.from.id || focus === wire.to.id;
+              return (
+                <path
+                  key={wire.key}
+                  data-wire={wire.key}
+                  d={wireAt(wire, (m) => shown.at.get(m.id)).d}
+                  markerEnd="url(#wire-head)"
+                  className={[
+                    "wire",
+                    `lvl-${wire.was ?? wire.arrow.level}`,
+                    wire.arrow.expiresAt && "temp",
+                    wire.arrow.level === "none" && wire.asks.length > 0 && !wire.was && "ghost",
+                    wire.was && "cut",
+                    on && "on",
+                    focus && (touches ? "hot" : "dim"),
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                />
+              );
+            })}
             {pairs.map(([a, b], i) => {
               const pa = centerOf(a);
               const pb = centerOf(b);
@@ -1361,7 +1480,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
                 />
               );
             })}
-            {clientLines.map(({ arrow, cut, machine, client }) => (
+            {(arrows === "cards" ? clientLines : []).map(({ arrow, cut, machine, client }) => (
               <path
                 key={clientLineKey(arrow)}
                 data-client-line={clientLineKey(arrow)}
@@ -1431,6 +1550,57 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
               );
             })}
           {size.width > 0 &&
+            wires.map((wire) => {
+              const { badge } = wireAt(wire, (m) => shown.at.get(m.id));
+              const on =
+                selection._tag === "arrow" &&
+                selection.from === wire.from.id &&
+                selection.to === wire.to.id;
+              const dim = focus !== null && focus !== wire.from.id && focus !== wire.to.id;
+              const waits = waitOf(wire.from, wire.to);
+              const ghost = wire.arrow.level === "none" && wire.asks.length > 0 && !wire.was;
+              const ask = wire.asks[0]?.arrow;
+              return (
+                <button
+                  key={wire.key}
+                  type="button"
+                  data-wire={wire.key}
+                  className={`wire-badge${on ? " on" : ""}${dim ? " dim" : ""}${ghost ? " ghost" : ""}${wire.was ? " cut" : ""}`}
+                  style={{ left: badge.x, top: badge.y }}
+                  aria-label={`${usesText(wire.from.name, wire.to.name)}: ${wire.was ? `cut by the pause, was ${LEVEL_LABEL[wire.was]}` : LEVEL_LABEL[wire.arrow.level]}${ask ? `. Asks for ${LEVEL_LABEL[ask.level]}` : ""}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() =>
+                    portal.select({ _tag: "arrow", from: wire.from.id, to: wire.to.id })
+                  }
+                >
+                  {wire.was ? (
+                    <>
+                      <span className={`lvl-pill lvl-${wire.was} was`}>
+                        {LEVEL_SHORT[wire.was]}
+                      </span>
+                      <span className="cut-word">cut</span>
+                    </>
+                  ) : ghost && ask ? (
+                    <span className="ask-word">asks {LEVEL_SHORT[ask.level]}</span>
+                  ) : (
+                    <GrantBadges
+                      grant={{ _tag: "machine", from: wire.from, to: wire.to, arrow: wire.arrow }}
+                      now={now}
+                      short
+                    />
+                  )}
+                  {!ghost && ask && (
+                    <span className="ask-dot" data-tip={`Asks for ${LEVEL_LABEL[ask.level]}`}>
+                      ?
+                    </span>
+                  )}
+                  {waits.length > 0 && (
+                    <ClockIcon label={waits.map((w) => sentence(w.text)).join(". ")} />
+                  )}
+                </button>
+              );
+            })}
+          {size.width > 0 &&
             clients.map((client) => {
               const p = clientCenter(client);
               const on = selection._tag === "client" && selection.id === client.id;
@@ -1463,20 +1633,27 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
                     </span>
                   </div>
                   {/* MM-309: the level on each machine sits on the card, so no card covers it. */}
-                  <div className="tags">
-                    {clientLines
-                      .filter((line) => line.client.id === client.id)
-                      .map(({ arrow, cut, machine }) => (
-                        <span
-                          key={machine.id}
-                          className={`sticker lvl-${arrow.level}${cut ? " was" : ""}`}
-                          data-tip={`${usesText(client.name, machine.name)}: ${cut ? `cut by the pause, was ${LEVEL_LABEL[arrow.level]}` : LEVEL_LABEL[arrow.level]}${arrow.expiresAt ? `, until ${shortTime(arrow.expiresAt)}` : ""}`}
-                        >
-                          {machine.name} · {LEVEL_LABEL[arrow.level]}
-                          {arrow.expiresAt && " · temp"}
-                        </span>
-                      ))}
-                  </div>
+                  {arrows === "wires" ? (
+                    <div className="sub ports-note">
+                      Uses {clientLines.filter((line) => line.client.id === client.id).length}{" "}
+                      machines. Its level shows on each one.
+                    </div>
+                  ) : (
+                    <div className="tags">
+                      {clientLines
+                        .filter((line) => line.client.id === client.id)
+                        .map(({ arrow, cut, machine }) => (
+                          <span
+                            key={machine.id}
+                            className={`sticker lvl-${arrow.level}${cut ? " was" : ""}`}
+                            data-tip={`${usesText(client.name, machine.name)}: ${cut ? `cut by the pause, was ${LEVEL_LABEL[arrow.level]}` : LEVEL_LABEL[arrow.level]}${arrow.expiresAt ? `, until ${shortTime(arrow.expiresAt)}` : ""}`}
+                          >
+                            {machine.name} · {LEVEL_LABEL[arrow.level]}
+                            {arrow.expiresAt && " · temp"}
+                          </span>
+                        ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1553,6 +1730,41 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
                     <BuildSticker standing={standings.get(machine.id)} />
                     {!readOnly && <MachineStickers machine={machine} />}
                   </div>
+                  {arrows === "wires" && (
+                    <div className="ports">
+                      {machine.mapRole !== "none" && machine.mapRole !== "read" && (
+                        <span
+                          className="port role"
+                          data-tip={`Agents here ${machine.mapRole === "edit" ? "change" : "propose changes to"} the map`}
+                        >
+                          map {machine.mapRole}
+                        </span>
+                      )}
+                      {clientLines
+                        .filter((line) => line.machine.id === machine.id)
+                        .map(({ arrow, cut, client }) => (
+                          <button
+                            key={client.id}
+                            type="button"
+                            className={`port lvl-${arrow.level}${cut ? " was" : ""}`}
+                            data-tip={`${usesText(client.name, machine.name)}: ${LEVEL_LABEL[arrow.level]}${arrow.expiresAt ? `, until ${shortTime(arrow.expiresAt)}` : ""}`}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              portal.select({
+                                _tag: "clientArrow",
+                                client: client.id,
+                                to: machine.id,
+                              });
+                            }}
+                          >
+                            <ClientIcon />
+                            {client.name} {LEVEL_SHORT[arrow.level]}
+                            {arrow.expiresAt && " ⏱"}
+                          </button>
+                        ))}
+                    </div>
+                  )}
                 </div>
               );
             })}

@@ -301,3 +301,26 @@ export function batteryText(battery: BatteryReading): string {
       return `${battery.percent}%, full`;
   }
 }
+
+/** MM-304: how long the next level change lasts. */
+export type Duration = "permanent" | "hour" | "day" | "until";
+
+export const DURATION_LABEL: Record<Duration, string> = {
+  permanent: "Always",
+  hour: "1 hour",
+  day: "1 day",
+  until: "Until…",
+};
+
+/** MM-304: null for a permanent level, undefined for a time that is not in the future. */
+export function durationExpiry(
+  duration: Duration,
+  until: string,
+  now: number,
+): string | null | undefined {
+  if (duration === "permanent") return null;
+  if (duration === "hour") return new Date(now + 3_600_000).toISOString();
+  if (duration === "day") return new Date(now + 86_400_000).toISOString();
+  const at = Date.parse(until);
+  return Number.isNaN(at) || at <= now ? undefined : new Date(at).toISOString();
+}

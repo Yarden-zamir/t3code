@@ -37,6 +37,8 @@ import { captureApproval } from "../rules/approval.ts";
 import { pendingApproval, startApproval } from "./pendingApproval.ts";
 import { usePortalContext, type CommandOptions, type Portal } from "./context.ts";
 import { buildStandings } from "./build.ts";
+import { GrantPanel } from "./AccessEditor.tsx";
+import { pageDesign } from "./design.ts";
 import { BuildLabel, BuildSticker } from "./BuildLabel.tsx";
 import {
   arrowEndRoute,
@@ -53,6 +55,9 @@ import {
 import {
   actorText,
   COMMAND_LABEL,
+  DURATION_LABEL,
+  durationExpiry,
+  type Duration,
   COMMAND_STICKER,
   DANGEROUS_COMMANDS,
   LEVEL_LABEL,
@@ -77,6 +82,7 @@ import { settingControl, settingProblem } from "./settingControls.ts";
 
 const PANEL_LABEL: Record<Exclude<Selection["_tag"], "none">, string> = {
   arrow: "Arrow",
+  clientArrow: "Client arrow",
   machine: "Machine",
   client: "Client",
   pending: "Sign-in",
@@ -93,7 +99,13 @@ export function Panel({ selection }: { selection: Selection }) {
   const body = (() => {
     switch (selection._tag) {
       case "arrow":
-        return <ArrowPanel from={selection.from} to={selection.to} />;
+        return pageDesign() === "current" ? (
+          <ArrowPanel from={selection.from} to={selection.to} />
+        ) : (
+          <GrantPanel selection={selection} />
+        );
+      case "clientArrow":
+        return <GrantPanel selection={selection} />;
       case "machine":
         return <MachinePanel id={selection.id} />;
       case "client":
@@ -144,24 +156,6 @@ const PausedNote = () => (
     <span className="sticker">paused</span> Access only goes down until you resume.
   </div>
 );
-
-type Duration = "permanent" | "hour" | "day" | "until";
-
-const DURATION_LABEL: Record<Duration, string> = {
-  permanent: "Always",
-  hour: "1 hour",
-  day: "1 day",
-  until: "Until…",
-};
-
-/** MM-304: null for a permanent level, undefined for a time that is not in the future. */
-function durationExpiry(duration: Duration, until: string, now: number): string | null | undefined {
-  if (duration === "permanent") return null;
-  if (duration === "hour") return new Date(now + 3_600_000).toISOString();
-  if (duration === "day") return new Date(now + 86_400_000).toISOString();
-  const at = Date.parse(until);
-  return Number.isNaN(at) || at <= now ? undefined : new Date(at).toISOString();
-}
 
 /** MM-301 to MM-307, MM-604. */
 function ArrowPanel({ from, to }: { from: string; to: string }) {

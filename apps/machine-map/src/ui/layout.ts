@@ -573,3 +573,45 @@ export function autoLayout(
   const shift = (b: Box): Point => ({ x: b.x + center.x - middleX, y: b.y + center.y - middleY });
   return { cards: placed.map(shift), notes: noteBoxes.map(shift) };
 }
+
+/** Wires design: how far a two-way pair bows its two curves apart, in map pixels. */
+const WIRE_BOW = 26;
+/** Room between a card edge and the arrowhead. */
+const WIRE_GAP = 6;
+
+/** Where the ray from the center of `box` toward `toward` leaves the box, plus a gap. */
+function boxExit(box: Box, toward: Point, gap: number): Point {
+  const dx = toward.x - box.x;
+  const dy = toward.y - box.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return box;
+  const scale = Math.min(
+    dx === 0 ? Infinity : box.w / 2 / Math.abs(dx),
+    dy === 0 ? Infinity : box.h / 2 / Math.abs(dy),
+  );
+  return {
+    x: box.x + dx * scale + (dx / length) * gap,
+    y: box.y + dy * scale + (dy / length) * gap,
+  };
+}
+
+/**
+ * Wires design: one directed curve from card `a` to card `b`, from edge to edge. `bowed` bends it
+ * to the left of its direction, so the two arrows of a two-way pair never cover each other. The
+ * badge point sits before the middle, so the badges of a two-way pair sit apart.
+ */
+export function wireGeometry(a: Box, b: Box, bowed: boolean): { d: string; badge: Point } {
+  const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const n = { x: -(b.y - a.y) / length, y: (b.x - a.x) / length };
+  const bow = bowed ? WIRE_BOW * 2 : 0;
+  const control = { x: (a.x + b.x) / 2 + n.x * bow, y: (a.y + b.y) / 2 + n.y * bow };
+  const start = boxExit(a, control, 0);
+  const end = boxExit(b, control, WIRE_GAP);
+  const t = bowed ? 0.4 : 0.5;
+  const at = (p: number, q: number, r: number) =>
+    (1 - t) * (1 - t) * p + 2 * (1 - t) * t * q + t * t * r;
+  return {
+    d: `M${start.x},${start.y}Q${control.x},${control.y} ${end.x},${end.y}`,
+    badge: { x: at(start.x, control.x, end.x), y: at(start.y, control.y, end.y) },
+  };
+}
