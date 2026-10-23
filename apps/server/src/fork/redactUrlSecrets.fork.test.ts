@@ -89,17 +89,33 @@ describe("redactUrlSecretsInText", () => {
     );
     assert.notInclude(adjacent, "fake-one");
     assert.notInclude(adjacent, "fake-two");
-    const afterSchemeless = redactUrlSecretsInText(
-      "[a](http://a/?token=fake-one&safe=://placeholder),[b](http://b/?token=fake-two)",
+    assert.strictEqual(
+      redactUrlSecretsInText(
+        "[a](http://a/?token=fake-one&safe=://placeholder),[b](http://b/?token=fake-two)",
+      ),
+      "[a](http://a/?token=REDACTED&safe=://placeholder),[b](http://b/?token=REDACTED)",
     );
-    assert.notInclude(afterSchemeless, "fake-one");
-    assert.notInclude(afterSchemeless, "fake-two");
     for (const value of ["://placeholder", "123://placeholder"]) {
       assert.notInclude(
         redactUrlSecretsInText(`https://example.test/?safe=${value}&token=fake`),
         "fake",
       );
     }
+  });
+
+  it("keeps an apostrophe inside a URL and drops a closing one", () => {
+    assert.strictEqual(
+      redactUrlSecretsInText('{"url":"http://example.test/#token=fake\'token"}'),
+      '{"url":"http://example.test/#token=REDACTED"}',
+    );
+    assert.notInclude(
+      redactUrlSecretsInText('{"url":"https://alice:fake\'pass@example.test/"}'),
+      "fake",
+    );
+    assert.strictEqual(
+      redactUrlSecretsInText("open 'http://example.test/?token=fake' now"),
+      "open 'http://example.test/?token=REDACTED' now",
+    );
   });
 
   it("hides URLs inside prose and JSON text and keeps the text around them", () => {
@@ -155,6 +171,10 @@ describe("redactTurnItemUrlSecrets", () => {
       ),
     );
     assert.notInclude(JSON.stringify(item), "fake-");
+    const credentials = redactTurnItemUrlSecrets(
+      toolItem("mcp__t3-code__preview_open", { url: "alice:fake-pass@example.test/?key=fake-key" }),
+    );
+    assert.notInclude(JSON.stringify(credentials), "fake");
     const listed = redactTurnItemUrlSecrets(
       toolItem("mcp__t3-code__t3_preview_list", {}, { tabs: [{ url: "http://x.test/?key=fake" }] }),
     );
@@ -178,8 +198,10 @@ describe("redactTurnItemUrlSecrets", () => {
       requestKind: "command",
       prompt,
     });
-    const preview = approval('mcp__t3-code__preview_open: {"url":"http://h.test/pair#token=fake"}');
-    assert.notInclude(JSON.stringify(redactTurnItemUrlSecrets(preview)), "fake");
+    for (const url of ["http://h.test/pair#token=fake", "localhost:5733/pair#token=fake"]) {
+      const preview = approval(`mcp__t3-code__preview_open: {"url":"${url}"}`);
+      assert.notInclude(JSON.stringify(redactTurnItemUrlSecrets(preview)), "fake");
+    }
     const other = approval('Bash: curl "https://api.test/?key=x"');
     assert.strictEqual(redactTurnItemUrlSecrets(other), other);
   });

@@ -26,7 +26,7 @@ const SECRET_KEYS: ReadonlySet<string> = new Set([
 const REDACTED = "REDACTED";
 
 // Free text and JSON text put these characters around a URL.
-const URL_TERMINATORS: ReadonlySet<string> = new Set(['"', "'", "`", "<", ">", "\\"]);
+const URL_TERMINATORS: ReadonlySet<string> = new Set(['"', "`", "<", ">", "\\"]);
 
 const isSchemeChar = (char: string) =>
   (char >= "a" && char <= "z") ||
@@ -38,8 +38,9 @@ const isSchemeChar = (char: string) =>
 
 const isUrlEnd = (char: string) => char.trim() === "" || URL_TERMINATORS.has(char);
 
-// Sentence punctuation after a URL in prose belongs to the sentence.
-const TRAILING_PUNCTUATION: ReadonlySet<string> = new Set([".", ",", ";", ":", "!", "?"]);
+// Sentence punctuation after a URL in prose belongs to the sentence. A `'` can sit inside a
+// URL, so only a trailing one ends it, as in `'http://x'`.
+const TRAILING_PUNCTUATION: ReadonlySet<string> = new Set([".", ",", ";", ":", "!", "?", "'"]);
 // A closing bracket belongs to the URL only when the URL opened it, as in `http://[::1]/`.
 const BRACKET_PAIRS: ReadonlyMap<string, string> = new Map([
   [")", "("],
@@ -59,16 +60,19 @@ function belongsToSurroundingText(candidate: string): boolean {
 const isSecretEntry = ([name, value]: [string, string]) =>
   value !== REDACTED && SECRET_KEYS.has(name.toLowerCase());
 
-/** Returns the params text with secret values replaced, or undefined when none holds a secret. */
+/**
+ * Returns the params text with secret values replaced, or undefined when none holds a secret.
+ * Other params keep their exact text, so text that runs on after a URL is not re-encoded.
+ */
 function redactParams(text: string): string | undefined {
-  const entries = [...new URLSearchParams(text)];
-  if (!entries.some(isSecretEntry)) return undefined;
-  return new URLSearchParams(
-    entries.map(([name, value]): [string, string] => [
-      name,
-      isSecretEntry([name, value]) ? REDACTED : value,
-    ]),
-  ).toString();
+  let changed = false;
+  const pieces = (text.startsWith("?") ? text.slice(1) : text).split("&").map((piece) => {
+    const [entry] = new URLSearchParams(piece);
+    if (entry === undefined || !piece.includes("=") || !isSecretEntry(entry)) return piece;
+    changed = true;
+    return `${piece.slice(0, piece.indexOf("="))}=${REDACTED}`;
+  });
+  return changed ? pieces.join("&") : undefined;
 }
 
 /** Plain anchors (`#section`) stay; `#a=b` and hash routes (`#/pair?a=b`) hold params. */
@@ -171,16 +175,16 @@ function isPreviewTool(toolName: string): boolean {
 
 /** A preview `url` input can be schemeless, such as `localhost:5173/pair#token=…`. */
 function redactPreviewUrl(value: string): string {
-  const redacted = redactUrlSecrets(value);
-  if (redacted !== value || value.includes("://")) return redacted;
+  if (value.includes("://")) return redactUrlSecrets(value);
+  // Normalize first: `alice:pass@host` would otherwise parse with `alice:` as its scheme.
   let normalized: string;
   try {
     normalized = normalizePreviewUrl(value);
   } catch {
-    return value;
+    return redactUrlSecrets(value);
   }
-  const redactedNormalized = redactUrlSecrets(normalized);
-  return redactedNormalized === normalized ? value : redactedNormalized;
+  const redacted = redactUrlSecrets(normalized);
+  return redacted === normalized ? value : redacted;
 }
 
 /** Walks JSON-like data. Returns the same reference when nothing changed. */
@@ -217,6 +221,25 @@ const redactOutputText = (text: string, key: string | undefined) =>
     ? redactPreviewUrl(text)
     : redactUrlSecretsInText(text);
 
+/** Claude asks with `<tool name>: <input JSON>` when no SDK title is set. */
+function redactApprovalPrompt(prompt: string): string {
+  const separator = prompt.indexOf(": ");
+  if (separator < 0 || !isPreviewTool(prompt.slice(0, separator))) return prompt;
+  const toolName = prompt.slice(0, separator);
+  let input: unknown;
+  try {
+    input = JSON.parse(prompt.slice(separator + 2));
+  } catch {
+    // Claude cuts a long input, so its JSON does not parse. The scan finds URLs with a scheme.
+    return redactUrlSecretsInText(prompt);
+  }
+  const redacted = redactStrings(input, redactInputUrl);
+  // The scan also covers URLs outside the URL fields, as in a `preview_evaluate` expression.
+  return redactUrlSecretsInText(
+    redacted === input ? prompt : `${toolName}: ${JSON.stringify(redacted)}`,
+  );
+}
+
 /**
  * Hides URL secrets of preview tool calls before the item is stored or sent to clients, as when
  * an agent opens a pairing URL in a preview tab. The tab itself still opens the real URL.
@@ -234,11 +257,8 @@ export function redactTurnItemUrlSecrets(item: OrchestrationV2TurnItem): Orchest
           : { output: redactStrings(item.output, redactOutputText) }),
       };
     case "approval_request": {
-      // Claude asks with `<tool name>: <input JSON>` when no SDK title is set.
-      const toolName = item.prompt?.split(": ", 1)[0];
-      return item.prompt === undefined || toolName === undefined || !isPreviewTool(toolName)
-        ? item
-        : { ...item, prompt: redactUrlSecretsInText(item.prompt) };
+      const prompt = item.prompt === undefined ? undefined : redactApprovalPrompt(item.prompt);
+      return prompt === item.prompt ? item : { ...item, prompt };
     }
     default:
       return item;
