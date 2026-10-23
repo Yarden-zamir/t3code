@@ -142,6 +142,9 @@ const migrationEntries = [
   [66, "RepairClientSettlementTimestamps", Migration0066],
   [67, "WebhookDedupe", Migration0067],
   [68, "ShellStopRequestIndex", Migration0068],
+  // Fork: the adopted upstream link PRs add the migrations PeerLinks and PeerLinkFence. The fork
+  // drops them until upstream main has them; its links come from the machine map arrows instead.
+  // See docs/fork/operations.md "Migrations".
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

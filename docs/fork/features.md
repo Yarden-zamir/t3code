@@ -88,20 +88,31 @@ Use the machine map name as the server environment name. A name change in the po
 
 ### Portal views
 
-The portal has the views Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients (MM-1102). Each view and each selected item has its own link. Agents use the `machines_*`, `machine_tool_call` and `machine_exec` tools for machine operations. Client approvals, invites and the resume after an emergency pause stay with the owner.
+The portal has the views Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients (MM-1102). Each view and each selected item has its own link. Agents use the `machines_*` and `machine_exec` tools for machine operations, and the T3 tools with `environmentId` for work on other machines. Client approvals, invites and the resume after an emergency pause stay with the owner.
 
-The map role never raises a thread's limits. Map writes need a live full-access/default caller, even with `edit`. `machine_tool_call` also needs all tool capabilities that the target grants: orchestration, worktree and pull requests. It refuses restricted callers, including reads. A restricted caller reads a thread on another machine with `t3_thread_read` and `environmentId`, see [Thread mentions across machines](#thread-mentions-across-machines). An allowed call still needs the arrow with agent tools and stays within its level. These checks run on the server for agents started from web, desktop and mobile.
+The map role never raises a thread's limits. Map writes need a live full-access/default caller, even with `edit`. These checks run on the server for agents started from web, desktop and mobile.
 
-Delegation with wake-up, the full list of arrow capabilities and secret copy are specified in MM-1910 to MM-1918. They are not available through these tools yet.
+The full list of arrow capabilities and secret copy are specified in MM-1915 to MM-1918. They are not available yet.
+
+### Work on other machines
+
+An arrow with agent tools makes the target machine a linked environment of the source (MM-1921). Agents on the source pass its `environmentId` to the T3 tools, for example `t3_thread_list`, `t3_thread_launch` or `delegate_task` with `target.environmentId`. `t3_environment_links` lists the linked machines. A delegated task runs on the other machine and wakes the parent thread when it ends (MM-1910).
+
+- **Setting:** an arrow with agent tools and a level above `none`, from the machine that runs the agent to the other machine. Set it in the portal.
+- **Access:** `read` gives read-only access. `standard` gives `auto`, and it changes only the threads that its own link started: not the projects, settings or threads of the other machine. `admin` gives full access (MM-302).
+- **Thread limits:** each call carries the limits of the calling thread, and the other machine applies the narrower of those and the level. A thread in plan or approval-required mode can work on another machine within its own mode (MM-1902).
+- **Pause and removal:** while the owner's emergency pause is on, work on other machines waits and tries again after Resume. Removing the arrow or its agent tools fails that work with the reason (MM-1914).
+- **Manual links:** `t3 environment link`, `t3 environment unlink` and Link and Forget in Settings > Connections refuse. Set the arrow in the portal instead.
+- **Limits:** a link reaches the other machine through its tunnel hostname. A machine that never answered since this server started is not listed.
 
 ### Commands on other machines
 
 An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908).
 
 - **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Table and the arrow panel show an "exec" sticker.
-- **Who can:** a live full-access/default thread, like `machine_tool_call`. Restricted threads are refused. The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
+- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
 - **Stop:** the emergency pause, a removed arrow or exec turned off stops a running command at once (MM-1916).
-- **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`.
+- **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`.
 - **Limits:** a run lasts at most 90 seconds, because the answer goes through Cloudflare. Start long work in the background and check it later. stdout and stderr keep 50,000 bytes each. A timeout loses the output. A command that reads stdin waits for the timeout. A machine that is offline from the portal still runs commands and sends the History entry when it connects, unless it restarts first.
 
 ### Thread mentions across machines
@@ -111,7 +122,7 @@ The `@` menu lists the threads of this machine and of the machines that it reads
 - **Setting:** an arrow with agent tools and a level above `none`, from the machine that runs the agent to the machine of the thread. Set it in the portal.
 - **Works on:** web, desktop and mobile, through local, relay and tunnel connections. The client lists the threads of a machine only when it also connects to that machine.
 - A send stops when the target machine cannot read an attached thread. Remove the thread, or switch to a machine that can read it.
-- Agents in plan, approval-required or auto mode can read these threads. The other machine gives the read a read-only session and refuses every write.
+- Agents in every mode can read these threads. The read carries the limits of the agent's thread, so the other machine refuses what that thread may not do.
 - **Limits:** a machine asks each peer once for its environment id. An offline peer is not listed until it answers. Right after a page load, a send with a thread of another machine waits until the list of readable machines arrives.
 
 ### Join and install

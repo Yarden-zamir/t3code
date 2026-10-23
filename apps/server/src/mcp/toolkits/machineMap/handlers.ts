@@ -5,14 +5,13 @@ import { isMachineRequestNamespace } from "../../../fork/machineMap/machineAcces
 import { historyCaller } from "../../../fork/machineMap/machineCallerAccess.ts";
 import * as MachineExec from "../../../fork/machineMap/MachineExec.ts";
 import * as MachineMap from "../../../fork/machineMap/MachineMap.ts";
-import * as MachinePeers from "../../../fork/machineMap/MachinePeers.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { MachineMapToolkit } from "./tools.ts";
 
 /**
- * An agent on another machine reaches these tools only through `machine_tool_call`. It must not
- * use the map role or the arrows of this machine, so a machine session gets none of them.
+ * An agent on another machine reaches this server through its arrow link. It must not use the map
+ * role or the arrows of this machine, so a machine session gets none of these tools.
  */
 const refuseMachineCaller = McpInvocationContext.McpInvocationContext.pipe(
   Effect.flatMap((scope) =>
@@ -82,20 +81,15 @@ export const layer = McpToolAccess.toLayer(MachineMapToolkit, {
       return yield* machineMap.join(input).pipe(Effect.mapError(toFailure));
     }),
   ),
-  machine_tool_call: McpToolAccess.writes((input) =>
-    Effect.gen(function* () {
-      yield* refuseMachineCaller;
-      const peers = yield* MachinePeers.MachinePeers;
-      return yield* peers
-        .callTool({ machine: input.machine, tool: input.tool, input: input.input ?? {} })
-        .pipe(Effect.mapError(toFailure));
-    }),
-  ),
-  // MM-1908: the one map tool that a machine session may call. The service checks the arrow.
-  machine_exec: McpToolAccess.writesEnvironment((input) =>
-    MachineExec.MachineExec.pipe(
-      Effect.flatMap((machineExec) => machineExec.exec(input)),
-      Effect.catchTags({ MachinePeerError: (error) => Effect.fail(toFailure(error)) }),
-    ),
+  // MM-1908: the one map tool that a machine session may call. The service checks the arrow:
+  // here it needs a live full-access/default caller, and a machine session needs the exec arrow.
+  // The link access of the level does not limit it, so linked callers pass this declaration.
+  machine_exec: McpToolAccess.writes(
+    (input) =>
+      MachineExec.MachineExec.pipe(
+        Effect.flatMap((machineExec) => machineExec.exec(input)),
+        Effect.catchTags({ MachinePeerError: (error) => Effect.fail(toFailure(error)) }),
+      ),
+    { linkedCallers: "allowed" },
   ),
 });

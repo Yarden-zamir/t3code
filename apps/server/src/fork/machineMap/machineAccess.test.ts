@@ -137,41 +137,41 @@ describe("browserGrantFor (MM-917, MM-918)", () => {
   });
 });
 
-describe("machineMcpAccessFor (MM-1307)", () => {
-  const session = {
-    subject: `machine:${PEER}`,
-    scopes: ["orchestration:read", "orchestration:operate"] as const,
-  };
+describe("machineMcpAccessFor (MM-1307, MM-302)", () => {
+  const session = { subject: `machine:${PEER}`, scopes: MACHINE_LEVEL_SCOPES.admin };
+  const accessAt = (level: "read" | "standard" | "admin", agentTools = true) =>
+    machineMcpAccessFor(
+      desiredState({ arrowsIn: [arrow(PEER, SELF, level, { agentTools })] }),
+      session,
+      NOW,
+    )?.access;
 
   it("admits a machine session only when its arrow has agent tools", () => {
-    expect(
-      machineMcpAccessFor(desiredState({ arrowsIn: [arrow(PEER, SELF, "admin")] }), session, NOW),
-    ).toBeUndefined();
+    expect(accessAt("admin", false)).toBeUndefined();
     expect(
       machineMcpAccessFor(
-        desiredState({ arrowsIn: [arrow(PEER, SELF, "standard", { agentTools: true })] }),
-        session,
+        desiredState({ arrowsIn: [arrow(PEER, SELF, "admin", { agentTools: true })] }),
+        { ...session, subject: "one-time-token" },
         NOW,
-      )?.access,
-    ).toBe("full-access");
-  });
-
-  it("keeps a read arrow read-only, and ignores other subjects", () => {
-    const desired = desiredState({
-      arrowsIn: [arrow(PEER, SELF, "read", { agentTools: true })],
-    });
-    expect(machineMcpAccessFor(desired, session, NOW)?.access).toBe("read-only");
-    expect(
-      machineMcpAccessFor(desired, { ...session, subject: "one-time-token" }, NOW),
+      ),
     ).toBeUndefined();
   });
 
-  it("keeps a session paired without operate read-only on an admin arrow (MM-1902)", () => {
-    const desired = desiredState({
-      arrowsIn: [arrow(PEER, SELF, "admin", { agentTools: true })],
-    });
+  it("gives read read-only, standard fenced auto and admin full access", () => {
+    expect([accessAt("read"), accessAt("standard"), accessAt("admin")]).toEqual([
+      "read-only",
+      "auto",
+      "full-access",
+    ]);
+  });
+
+  it("keeps a session paired without operate read-only on an admin arrow", () => {
     expect(
-      machineMcpAccessFor(desired, { ...session, scopes: ["orchestration:read"] }, NOW)?.access,
+      machineMcpAccessFor(
+        desiredState({ arrowsIn: [arrow(PEER, SELF, "admin", { agentTools: true })] }),
+        { ...session, scopes: ["orchestration:read"] },
+        NOW,
+      )?.access,
     ).toBe("read-only");
   });
 });

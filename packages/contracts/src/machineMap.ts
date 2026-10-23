@@ -648,7 +648,7 @@ export const ClientEnrollResponse = Schema.Struct({
 });
 export type ClientEnrollResponse = typeof ClientEnrollResponse.Type;
 
-/** Agent tools that run through the portal (MM-801). `machine_tool_call` goes machine to machine. */
+/** Agent tools that run through the portal (MM-801). `machine_exec` goes machine to machine. */
 export const MapToolName = Schema.Literals([
   "machines_read",
   "machines_set_access",
@@ -661,8 +661,17 @@ export const MapToolName = Schema.Literals([
 ]);
 export type MapToolName = typeof MapToolName.Type;
 
-/** MM-1908: the outcome of one `machine_exec` run. `stopped`: a pause or an arrow change ended it. */
-export const MachineExecOutcome = Schema.Literals(["exited", "timedOut", "stopped", "failed"]);
+/**
+ * MM-1908: the outcome of one `machine_exec` run. `stopped`: a pause or an arrow change ended it.
+ * `refused`: the arrow or the caller limits did not allow the call, so nothing ran.
+ */
+export const MachineExecOutcome = Schema.Literals([
+  "exited",
+  "timedOut",
+  "stopped",
+  "failed",
+  "refused",
+]);
 export type MachineExecOutcome = typeof MachineExecOutcome.Type;
 
 /** MM-1908: one `machine_exec` run, as the machine that ran it reports it. No output of the command. */
@@ -679,6 +688,13 @@ export const MachineExecReport = Schema.Struct({
   outcome: MachineExecOutcome,
   exitCode: Schema.NullOr(Schema.Int),
   durationMs: NonNegativeInt,
+  /** Why the call was refused. Only with the outcome `refused`. */
+  reason: Schema.optionalKey(Schema.String),
+  /**
+   * The machine that the command was for, when the calling machine reports its own refusal. The
+   * portal accepts it only from `from`. Absent: the reporting machine.
+   */
+  target: Schema.optionalKey(MachineId),
 });
 export type MachineExecReport = typeof MachineExecReport.Type;
 
@@ -799,7 +815,7 @@ export const MapToolInputs = {
     agentTools: Schema.optionalKey(
       Schema.Boolean.annotate({
         description:
-          "True lets agents on `from` call T3 tools on `to` with machine_tool_call. Omit to keep the current value. False also turns exec off.",
+          "True makes `to` a linked environment of `from`: agents on `from` call T3 tools there with environmentId. Omit to keep the current value. False also turns exec off.",
       }),
     ),
     exec: Schema.optionalKey(

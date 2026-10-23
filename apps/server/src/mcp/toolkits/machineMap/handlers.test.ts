@@ -85,17 +85,7 @@ const toolsWith = (
         callMapTool,
       }),
     ),
-    Layer.provide(
-      Layer.mock(MachinePeers.MachinePeers)({
-        callTool: () =>
-          Effect.fail(
-            new MachinePeers.MachinePeerError({
-              reason: "no-agent-tools",
-              detail: "The arrow from this machine to VPS does not allow agent tools.",
-            }),
-          ),
-      }),
-    ),
+    Layer.provide(Layer.mock(MachinePeers.MachinePeers)({})),
     Layer.provide(Layer.mock(MachineExec.MachineExec)({})),
   );
 
@@ -109,22 +99,11 @@ it.effect("a map tool without a portal connection says so", () =>
   }).pipe(Effect.provide(layerTools)),
 );
 
-it.effect("machine_tool_call explains a missing agent tools arrow", () =>
-  Effect.gen(function* () {
-    const result = yield* callTool(threadCaller, "machine_tool_call", {
-      machine: "vps",
-      tool: "t3_thread_list",
-    });
-    expect(result.isError).toBe(true);
-    expect(resultText(result)).toContain("does not allow agent tools");
-  }).pipe(Effect.provide(layerTools)),
-);
-
 it.effect("another machine cannot use the map tools of this machine", () =>
   Effect.gen(function* () {
     for (const [name, args] of [
       ["machines_read", {}],
-      ["machine_tool_call", { machine: "mac", tool: "t3_thread_list" }],
+      ["machines_resources", { machineId: "mac" }],
     ] as const) {
       const result = yield* callTool(machineCaller, name, args);
       expect(result.isError).toBe(true);

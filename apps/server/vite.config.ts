@@ -7,6 +7,7 @@ import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import rootPackageJson from "../../package.json" with { type: "json" };
 import packageJson from "./package.json" with { type: "json" };
 import { WeightedShardSequencer } from "./src/testUtils/weightedShardSequencer.ts";
+import { FORK_EXCLUDED_UPSTREAM_TESTS } from "./src/fork/excludedUpstreamTests.ts";
 
 // NSIS install time tracks file count, not bytes.
 import {
@@ -141,6 +142,8 @@ export default mergeConfig(
       sequence: { sequencer: WeightedShardSequencer },
       // Appended to the root setup, which mergeConfig concatenates.
       setupFiles: ["./src/testUtils/gitConfig.setup.ts"],
+      // Fork: appended to the root excludes, like the setup files.
+      exclude: FORK_EXCLUDED_UPSTREAM_TESTS,
       hookTimeout: 120_000,
       testTimeout: 120_000,
     },

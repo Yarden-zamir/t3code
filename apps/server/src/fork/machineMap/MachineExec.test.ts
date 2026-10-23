@@ -194,35 +194,68 @@ it.live("stops a command at its timeout", () =>
   }),
 );
 
-it.effect("refuses a peer whose arrow lacks exec, and a call meant for another machine", () =>
-  Effect.gen(function* () {
-    const runs: Array<string> = [];
-    const processRunner = Layer.mock(ProcessRunner.ProcessRunner)({
-      run: (input) =>
-        Effect.sync(() => void runs.push(input.command)).pipe(Effect.andThen(Effect.never)),
-    });
-    for (const arrowIn of [
-      arrow(PEER, SELF, "standard", { agentTools: true }),
-      arrow(PEER, SELF, "read", { agentTools: true, exec: true }),
-      arrow(PEER, SELF, "admin", { exec: true }),
-    ]) {
-      const { exec, reports } = yield* harness({
-        desired: desiredState({ arrowsIn: [arrowIn] }),
+it.effect(
+  "refuses a peer whose arrow lacks exec, and a call meant for another machine, in History",
+  () =>
+    Effect.gen(function* () {
+      const runs: Array<string> = [];
+      const processRunner = Layer.mock(ProcessRunner.ProcessRunner)({
+        run: (input) =>
+          Effect.sync(() => void runs.push(input.command)).pipe(Effect.andThen(Effect.never)),
+      });
+      for (const arrowIn of [
+        arrow(PEER, SELF, "standard", { agentTools: true }),
+        arrow(PEER, SELF, "read", { agentTools: true, exec: true }),
+        arrow(PEER, SELF, "admin", { exec: true }),
+      ]) {
+        const { exec, reports } = yield* harness({
+          desired: desiredState({ arrowsIn: [arrowIn] }),
+          processRunner,
+        });
+        const error = yield* exec(peerSession, { machine: SELF, command: "true" }).pipe(
+          Effect.flip,
+        );
+        expect(error.message).toContain("does not allow exec");
+        // MM-1908: nothing ran, so the refusal has no exit code; this machine is the target.
+        expect(reports).toMatchObject([{ from: PEER, outcome: "refused", exitCode: null }]);
+        expect(reports[0]?.reason).toContain("does not allow exec");
+        expect(reports[0]).not.toHaveProperty("target");
+      }
+      const { exec } = yield* harness({
+        desired: desiredState({ arrowsIn: [execArrowIn] }),
         processRunner,
       });
-      const error = yield* exec(peerSession, { machine: SELF, command: "true" }).pipe(Effect.flip);
-      expect(error.message).toContain("does not allow exec");
-      expect(reports).toEqual([]);
-    }
-    const { exec } = yield* harness({
+      const onward = yield* exec(peerSession, { machine: "other", command: "true" }).pipe(
+        Effect.flip,
+      );
+      expect(onward.message).toContain("runs only on the machine it calls");
+      expect(runs).toEqual([]);
+    }),
+);
+
+it.effect("refuses a call that its machine narrowed below full-access/default (MM-1902)", () =>
+  Effect.gen(function* () {
+    const runs: Array<string> = [];
+    const { exec, reports } = yield* harness({
       desired: desiredState({ arrowsIn: [execArrowIn] }),
-      processRunner,
+      processRunner: Layer.mock(ProcessRunner.ProcessRunner)({
+        run: (input) =>
+          Effect.sync(() => void runs.push(input.command)).pipe(Effect.andThen(Effect.never)),
+      }),
     });
-    const onward = yield* exec(peerSession, { machine: "other", command: "true" }).pipe(
-      Effect.flip,
-    );
-    expect(onward.message).toContain("runs only on the machine it calls");
+    for (const narrowedTo of [
+      { runtimeMode: "auto", interactionMode: "default" },
+      { runtimeMode: "full-access", interactionMode: "plan" },
+    ] as const) {
+      const narrowed: McpInvocationContext.McpInvocationScope = {
+        ...peerSession,
+        client: { sessionId: "session-1", label: "machine VPS", access: "auto", narrowedTo },
+      };
+      const error = yield* exec(narrowed, { machine: SELF, command: "true" }).pipe(Effect.flip);
+      expect(error.message).toContain("full-access/default");
+    }
     expect(runs).toEqual([]);
+    expect(reports).toMatchObject([{ outcome: "refused" }, { outcome: "refused" }]);
   }),
 );
 
@@ -245,6 +278,12 @@ it.effect("refuses restricted callers and missing exec before sending anything",
       .pipe(Effect.flip);
     expect(error.message).toContain("does not allow exec");
     expect(withoutExec.requests).toEqual([]);
+    // A refusal on this side never reaches the other machine, so this machine reports it.
+    expect([...allowed.reports, ...withoutExec.reports]).toMatchObject([
+      { from: SELF, target: PEER, outcome: "refused" },
+      { from: SELF, target: PEER, outcome: "refused" },
+      { from: SELF, target: PEER, outcome: "refused" },
+    ]);
   }),
 );
 

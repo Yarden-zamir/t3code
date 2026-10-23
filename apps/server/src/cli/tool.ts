@@ -137,6 +137,7 @@ export const callOnServer = Effect.fn("callToolOnServer")(function* (
         label: "CLI (local user)",
         // The CLI already holds the local auth store, so it gets the widest ceiling.
         access: "full-access",
+        peerLink: false,
         client: { deviceType: "bot" },
       }),
       (issued) =>
@@ -201,8 +202,9 @@ const toolCallCommand = Command.make("call", {
   Command.withExamples([
     { command: "t3 tool call t3_thread_list", description: "Call a tool without input." },
     {
-      command: `t3 tool call machine_tool_call --input '{"machine":"VPS","tool":"t3_thread_list"}'`,
-      description: "Call a tool on another machine of the machine map.",
+      command: `t3 tool call t3_thread_list --input '{"environmentId":"<environmentId>"}'`,
+      description:
+        "Call a tool on another machine of the machine map. t3_environment_links lists their environment ids.",
     },
     {
       command: "t3 tool call t3_thread_read --thread <threadId>",

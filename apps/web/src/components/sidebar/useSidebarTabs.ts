@@ -149,6 +149,8 @@ function buildSidebarTabItems(input: {
 export function useSidebarTabs(input: {
   /** Every thread shell, before any filter. */
   readonly threads: ReadonlyArray<SidebarThreadSummary>;
+  /** Tasks linked environments run for a listed thread; they show under it. */
+  readonly delegatedUnderParent: ReadonlySet<string>;
   readonly ownerVisibleProjectKeys: ReadonlySet<string> | null;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
   readonly projects: ReadonlyArray<EnvironmentProject>;
@@ -177,10 +179,15 @@ export function useSidebarTabs(input: {
 
   const projects = buildSidebarTabProjectFacts(input.projects);
   // Non-archived sidebar threads: what the tabs hold and what an assignment can name.
-  const liveThreads = filterSidebarV2VisibleThreads(input.threads, null);
+  const liveThreads = filterSidebarV2VisibleThreads(
+    input.threads,
+    null,
+    input.delegatedUnderParent,
+  );
   const threads = filterSidebarV2VisibleThreads(
     filterSidebarThreadsByOwner(input.threads, input.ownerVisibleProjectKeys),
     input.scopedProjectKeys,
+    input.delegatedUnderParent,
   );
 
   // Known rules and view flags, once per change of the tabs, not once per thread.

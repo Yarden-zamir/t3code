@@ -752,7 +752,15 @@ export class MachineMapObject extends DurableObject<Env> {
 
   /** MM-1908: the machine that ran the command reports it, so `to` is that machine. */
   #recordExec(machine: MachineRecord, report: MachineExecReport): void {
-    const record: MachineExecRecord = { ...report, to: machine.id };
+    // A caller reports only its own refusals; any other run is reported by the machine that ran it.
+    if (
+      report.target !== undefined &&
+      (report.from !== machine.id || report.outcome !== "refused")
+    ) {
+      console.error("dropped an exec report with a foreign target", machine.id);
+      return;
+    }
+    const record: MachineExecRecord = { ...report, to: report.target ?? machine.id };
     this.#sql(
       "INSERT OR IGNORE INTO exec_log (id, at, data) VALUES (?, ?, ?)",
       record.id,

@@ -333,6 +333,9 @@ export function summarizeT3ToolCalls(
     case "environment-update":
       label = phrase("Updated", "update", `environment preferences ${times}`);
       break;
+    case "environment-links":
+      label = phrase("Listed", "list", `linked environments ${times}`);
+      break;
     case "attachment-prepare":
       label = phrase(
         "Prepared",
@@ -442,13 +445,6 @@ export function summarizeT3ToolCalls(
       break;
     case "machine-map":
       label = phrase("Used", "use", `the machine map ${times}`);
-      break;
-    case "machine-tool-call":
-      label = phrase(
-        "Called",
-        "call",
-        quantity(selected.length, "tool on another machine", "tools on other machines"),
-      );
       break;
   }
   return { label, failedCount };

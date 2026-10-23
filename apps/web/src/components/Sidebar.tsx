@@ -124,6 +124,7 @@ import {
 import {
   readThreadShell,
   useAllEnvironmentProjectSnapshotsReady,
+  useDelegatedUnderParent,
   useProjects,
   useServerConfigs,
   useQuietThreadShells,
@@ -396,6 +397,7 @@ function useSidebarThreads(input: {
             ),
           ),
         );
+  const delegatedUnderParent = useDelegatedUnderParent();
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
   const nowMinute = useNowMinute();
   // Snooze wake times are second-precise, so classifying with the quantized
@@ -409,6 +411,7 @@ function useSidebarThreads(input: {
   // Fork: sidebar tabs. The list shows the threads of the open tab.
   const sidebarTabs = ForkSidebar.useSidebarTabs({
     threads,
+    delegatedUnderParent,
     ownerVisibleProjectKeys: input.fork.ownerVisibleProjectKeys,
     scopedProjectKeys,
     projects: input.fork.projects,
@@ -552,6 +555,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     workingShelfEnabled,
   } = input;
   const preciseNow = new Date().toISOString();
+
   inboxReturns.observe(workingShelfEnabled ? threads : null);
   const pinned: EnvironmentThreadShell[] = [];
   const active: EnvironmentThreadShell[] = [];
@@ -1146,6 +1150,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // scope hides or the list has scrolled away. A remount starts the list at
   // the top, so each mount also scrolls to the open thread once, without
   // widening the scope.
+  const delegatedUnderParent = useDelegatedUnderParent();
   const mountRevealOwed = useRef(true);
   const revealRouteRow = useStableCallback(() => {
     const pendingKey = pendingSidebarRouteReveal(routeReveal, routeRowThreadKey);
@@ -1158,8 +1163,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (
       pendingKey !== null &&
       scopedProjectKeys !== null &&
-      filterSidebarV2VisibleThreads([thread], scopedProjectKeys).length === 0 &&
-      filterSidebarV2VisibleThreads([thread], null).length === 1
+      filterSidebarV2VisibleThreads([thread], scopedProjectKeys, delegatedUnderParent).length ===
+        0 &&
+      filterSidebarV2VisibleThreads([thread], null, delegatedUnderParent).length === 1
     ) {
       // The row renders under the widened scope; scroll on that pass.
       setProjectScopeKey(null);

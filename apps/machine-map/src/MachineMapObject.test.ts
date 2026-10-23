@@ -398,6 +398,38 @@ it("records a run that a machine reports for History, once per run", async () =>
   });
 });
 
+it("records a refusal that the calling machine reports, and only its own", async () => {
+  const { object, db, send } = portal(true);
+  const socket = {
+    deserializeAttachment: () => ({ kind: "machine", machineId: MAC }),
+  } as WebSocket;
+  const refusal = {
+    id: "refused-1",
+    at: NOW,
+    from: MAC,
+    threadId: "thread-1",
+    threadTitle: "Fix the build",
+    command: "make test",
+    cwd: "~",
+    outcome: "refused",
+    exitCode: null,
+    durationMs: 0,
+    reason: "The arrow does not allow exec.",
+    target: "vps",
+  };
+  await object.webSocketMessage(socket, JSON.stringify({ _tag: "execRan", report: refusal }));
+  // MAC cannot report a refusal in the name of another caller.
+  await object.webSocketMessage(
+    socket,
+    JSON.stringify({ _tag: "execRan", report: { ...refusal, id: "refused-2", from: "vps" } }),
+  );
+  expect(db.prepare("SELECT id FROM exec_log").all()).toEqual([{ id: "refused-1" }]);
+  expect(send.mock.calls.map(([text]) => JSON.parse(text)).at(-1)).toEqual({
+    _tag: "execs",
+    execs: [{ ...refusal, to: "vps" }],
+  });
+});
+
 it("moves the shared sidebar group settings of the map to the tab keys once", () => {
   const { db, ctx, env } = portal(true);
   const map = readMap(db);
