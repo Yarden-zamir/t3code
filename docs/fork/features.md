@@ -106,9 +106,9 @@ Use the machine map name as the server environment name. A name change in the po
 
 When the owner changes an arrow or a client arrow, open clients get the new access without a reload. A notice names the change, for example "Access to VPS changed: You can now send messages." A change of an arrow with agent tools names what the agents of the server can now do on the other machine.
 
-- **Setting:** server setting `accessChangeNotices` (on by default). Settings > General > "Access change notices", and Settings > Fork in the mobile app.
-- **Works on:** web, desktop (a toast) and mobile (a popup).
-- **How it works:** the portal sends the new desired state to the target machine at once. A changed level ends the sessions of that machine or client (MM-305, MM-912, MM-917), and the client pairs again with the new scopes. The desktop app pairs again at most once in 30 seconds per machine (MM-306), so a second change soon after can take up to 30 seconds. A link of agents follows the map state that the server sends to its clients on each change.
+- **Setting:** server setting `accessChangeNotices` (off by default). Settings > General > "Access change notices", and Settings > Fork in the mobile app. A shared value in the portal turns it on for every machine.
+- **Works on:** web, desktop (a toast) and mobile (a popup). The mobile app shows the notices of one update in one popup.
+- **How it works:** the portal sends the new desired state to the target machine at once. A changed level ends the sessions of that machine or client (MM-305, MM-912, MM-917), and the client pairs again with the new scopes. The desktop app pairs again at most once in 30 seconds per machine (MM-306), so a second change soon after can take up to 30 seconds. A link of agents follows the map state that the server sends to its clients on each change. Clients subscribe to that state only while the setting is on.
 - **Limits:** a launch or a reload shows no notice, because there is no earlier access to compare. A removed arrow shows "Access to <machine> ended" when the desktop app removes the machine or the mobile app turns it off.
 
 ### Portal views

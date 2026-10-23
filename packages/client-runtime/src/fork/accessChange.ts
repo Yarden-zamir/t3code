@@ -5,8 +5,8 @@
  * - Session access (MM-305, MM-912, MM-917). A changed arrow or client arrow ends the sessions on
  *   the target, and the client pairs again with the new scopes. The session state then holds the
  *   new scopes.
- * - Agent links (MM-1921). The server pushes its whole map state again on each change, and its
- *   arrows out with agent tools are the links of its agents.
+ * - Agent links (MM-1921). The server pushes its whole map state again on each change. Its
+ *   `reachable` machines with agent tools are the links of its agents, as the server works them out.
  *
  * This module only compares each new value with the last one and words the difference.
  */
@@ -14,9 +14,8 @@ import {
   AuthEnvironmentScope,
   type AuthMcpClientAccess,
   type AuthSessionState,
-  effectiveArrowLevel,
   MACHINE_LEVEL_LINK_ACCESS,
-  type MachineDesiredState,
+  type MachineMapClientState,
   sessionGrantsScope,
 } from "@t3tools/contracts";
 
@@ -31,6 +30,9 @@ const SCOPE_ABILITIES: ReadonlyArray<readonly [AuthEnvironmentScope, string]> = 
   ["orchestration:operate", "send messages"],
   ["terminal:operate", "use terminals"],
   ["settings:write", "change settings"],
+  // The scopes that only `admin` adds to `standard` (MM-302).
+  ["access:write", "manage access"],
+  ["relay:write", "manage T3 Connect"],
 ];
 
 const LINK_ABILITIES: Readonly<Record<AuthMcpClientAccess, string>> = {
@@ -87,20 +89,27 @@ function describeScopeChange(
   };
 }
 
-/** The link access of the agents of this machine to each machine, by machine id (MM-1921). */
+interface LinkAccess {
+  readonly name: string;
+  readonly access: AuthMcpClientAccess;
+}
+
+/** The link access of the agents of a server to each machine, by machine id (MM-1921). */
 function linkAccessByMachine(
-  desired: MachineDesiredState,
-  nowMs: number,
-): ReadonlyMap<string, { readonly name: string; readonly access: AuthMcpClientAccess }> {
-  const links = new Map<string, { readonly name: string; readonly access: AuthMcpClientAccess }>();
-  for (const arrow of desired.arrowsOut) {
-    if (arrow.from !== desired.self.id || !arrow.agentTools) continue;
-    const level = effectiveArrowLevel(arrow, nowMs);
-    const peer = desired.peers.find((candidate) => candidate.id === arrow.to);
-    if (level === "none" || peer === undefined) continue;
-    links.set(arrow.to, { name: peer.name, access: MACHINE_LEVEL_LINK_ACCESS[level] });
-  }
-  return links;
+  reachable: MachineMapClientState["reachable"],
+): ReadonlyMap<string, LinkAccess> {
+  return new Map(
+    reachable.flatMap((peer) =>
+      peer.agentTools && peer.level !== "none"
+        ? [
+            [
+              peer.machine.id,
+              { name: peer.machine.name, access: MACHINE_LEVEL_LINK_ACCESS[peer.level] },
+            ] as const,
+          ]
+        : [],
+    ),
+  );
 }
 
 function describeLinkChange(
@@ -125,7 +134,7 @@ function describeLinkChange(
  */
 export function createAccessChangeTracker() {
   const scopes = new Map<string, ReadonlySet<AuthEnvironmentScope>>();
-  const links = new Map<string, ReadonlyMap<string, AuthMcpClientAccess>>();
+  const links = new Map<string, ReadonlyMap<string, LinkAccess>>();
 
   return {
     /**
@@ -153,28 +162,36 @@ export function createAccessChangeTracker() {
         : { title: `Access to ${label} ended`, description: ARROW_HINT };
     },
 
-    /** A new map state of the server of an environment. */
+    /**
+     * A new map state of the server of an environment. A state without a desired state has no
+     * links to compare yet, so it is skipped.
+     */
     observeLinks(
       environmentId: string,
-      desired: MachineDesiredState,
-      nowMs: number,
+      state: Pick<MachineMapClientState, "desired" | "reachable">,
     ): ReadonlyArray<AccessChangeNotice> {
-      const after = new Map(
-        [...linkAccessByMachine(desired, nowMs)].map(([id, link]) => [id, link.access] as const),
-      );
+      if (state.desired === null) return [];
+      const selfName = state.desired.self.name;
+      const after = linkAccessByMachine(state.reachable);
       const before = links.get(environmentId);
       links.set(environmentId, after);
       if (before === undefined) return [];
-      const names = new Map(desired.peers.map((peer) => [peer.id as string, peer.name] as const));
       return [...new Set([...before.keys(), ...after.keys()])].flatMap((machineId) => {
+        const old = before.get(machineId);
+        const next = after.get(machineId);
         const notice = describeLinkChange(
-          desired.self.name,
-          names.get(machineId) ?? machineId,
-          before.get(machineId) ?? null,
-          after.get(machineId) ?? null,
+          selfName,
+          next?.name ?? old?.name ?? machineId,
+          old?.access ?? null,
+          next?.access ?? null,
         );
         return notice === null ? [] : [notice];
       });
+    },
+
+    /** Notices are off, so the next map state is a new start, not a change. */
+    forgetLinks(environmentId: string) {
+      links.delete(environmentId);
     },
   };
 }

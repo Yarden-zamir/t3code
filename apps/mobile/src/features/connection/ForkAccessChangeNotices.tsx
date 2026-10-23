@@ -1,32 +1,46 @@
 import { useAtomValue } from "@effect/atom-react";
 import { createEnvironmentRpcSubscriptionAtomFamily } from "@t3tools/client-runtime/state/runtime";
-import type { AccessChangeNotice } from "@t3tools/client-runtime/fork/accessChange";
 import { type EnvironmentId, WS_METHODS } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect } from "react";
 
+import * as Dialog from "../../components/ui/Dialog";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useEnvironments } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { environmentSession } from "../../state/session";
-import * as Dialog from "../../components/ui/Dialog";
 import {
   accessChangeEnvironments,
   accessChangeTracker,
-  setAccessChangeNoticeHandler,
+  setAccessChangeNoticePresenter,
+  showAccessChangeNotices,
 } from "./forkAccessChangeTracker";
 
-function showAccessChangeNotice(notice: AccessChangeNotice) {
-  Dialog.alert(notice.title, notice.description, [{ text: "OK" }]);
-}
-
-setAccessChangeNoticeHandler(showAccessChangeNotice);
+setAccessChangeNoticePresenter((notice) =>
+  Dialog.alert(notice.title, notice.description, [{ text: "OK" }]),
+);
 
 const machineMapState = createEnvironmentRpcSubscriptionAtomFamily(connectionAtomRuntime, {
   label: "mobile:fork-access-change:machine-map-state",
   tag: WS_METHODS.machineMapSubscribe,
 });
+
+/** Only while notices are on: the map subscription sends the whole state on each change. */
+function EnvironmentLinkWatcher(props: { readonly environmentId: EnvironmentId }) {
+  const { environmentId } = props;
+  const result = useAtomValue(machineMapState({ environmentId, input: {} }));
+  const state = Option.getOrNull(AsyncResult.value(result));
+
+  useEffect(() => {
+    if (state === null) return;
+    showAccessChangeNotices(accessChangeTracker.observeLinks(environmentId, state));
+  }, [environmentId, state]);
+
+  useEffect(() => () => accessChangeTracker.forgetLinks(environmentId), [environmentId]);
+
+  return null;
+}
 
 function EnvironmentAccessWatcher(props: {
   readonly environmentId: EnvironmentId;
@@ -34,31 +48,22 @@ function EnvironmentAccessWatcher(props: {
 }) {
   const { environmentId, label } = props;
   const session = useAtomValue(environmentSession.sessionStateAtom(environmentId));
-  const mapState = useAtomValue(machineMapState({ environmentId, input: {} }));
-  const desired = Option.getOrNull(AsyncResult.value(mapState))?.desired ?? null;
-  // Unknown settings count as the default, on.
+  // Unknown settings count as the default, off.
   const enabled =
-    useAtomValue(serverEnvironment.settingsValueAtom(environmentId))?.accessChangeNotices !== false;
+    useAtomValue(serverEnvironment.settingsValueAtom(environmentId))?.accessChangeNotices === true;
 
   useEffect(() => {
     accessChangeEnvironments.set(environmentId, { label, enabled });
   }, [enabled, environmentId, label]);
 
-  // The tracker sees every value, also with notices off, so turning them on starts from now.
+  // The session state is loaded anyway, so the tracker sees every value, also with notices off.
   useEffect(() => {
     if (session._tag !== "Success" || session.waiting) return;
     const notice = accessChangeTracker.observeSession(environmentId, label, session.value);
-    if (notice !== null && enabled) showAccessChangeNotice(notice);
+    if (notice !== null && enabled) showAccessChangeNotices([notice]);
   }, [enabled, environmentId, label, session]);
 
-  useEffect(() => {
-    if (desired === null) return;
-    for (const notice of accessChangeTracker.observeLinks(environmentId, desired, Date.now())) {
-      if (enabled) showAccessChangeNotice(notice);
-    }
-  }, [desired, enabled, environmentId]);
-
-  return null;
+  return enabled ? <EnvironmentLinkWatcher environmentId={environmentId} /> : null;
 }
 
 /** Fork: `accessChangeNotices`. A popup when the machine map changes access, without a reload. */

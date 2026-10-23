@@ -11,12 +11,12 @@ import {
   clientSessionSubject,
   type DesiredBrowserClient,
   type DesiredClient,
-  effectiveArrowLevel,
   MACHINE_LEVEL_LINK_ACCESS,
   type AuthMcpClientAccess,
   MACHINE_LEVEL_SCOPES,
   type MachineDesiredState,
   MachineId,
+  type MachineLevel,
   type PeerMachine,
   machineSessionSubject,
 } from "@t3tools/contracts";
@@ -31,6 +31,18 @@ export interface MachineGrant {
   readonly label: string;
 }
 
+/**
+ * The level of an arrow at `nowMs`. An arrow past its expiry has its revert level, so a machine
+ * that missed the expiry revision of the portal (MM-304) still enforces it.
+ */
+const effectiveLevel = (
+  arrow: Pick<ArrowRecord, "level" | "expiresAt" | "revertLevel">,
+  nowMs: number,
+): MachineLevel =>
+  arrow.expiresAt !== null && Date.parse(arrow.expiresAt) <= nowMs
+    ? (arrow.revertLevel ?? "none")
+    : arrow.level;
+
 const arrowFrom = (desired: MachineDesiredState, from: MachineId) =>
   desired.arrowsIn.find((arrow) => arrow.from === from && arrow.to === desired.self.id);
 
@@ -44,7 +56,7 @@ export const machineGrantFor = (
   if (peer === undefined || peer.id === desired.self.id) return undefined;
   const arrow = arrowFrom(desired, peer.id);
   if (arrow === undefined) return undefined;
-  const level = effectiveArrowLevel(arrow, nowMs);
+  const level = effectiveLevel(arrow, nowMs);
   if (level === "none") return undefined;
   return {
     subject: machineSessionSubject(peer.id),
@@ -64,7 +76,7 @@ export const clientGrantFor = (
 ): MachineGrant | undefined => {
   const client = desired.clients?.find((candidate) => candidate.tokenClientId === tokenClientId);
   if (client === undefined) return undefined;
-  const level = effectiveArrowLevel(client, nowMs);
+  const level = effectiveLevel(client, nowMs);
   if (level === "none") return undefined;
   return {
     subject: clientSessionSubject(client.id),
@@ -114,7 +126,7 @@ export const browserGrantFor = (
     candidate.thumbprints.includes(thumbprint),
   );
   if (client === undefined) return undefined;
-  const level = effectiveArrowLevel(client, nowMs);
+  const level = effectiveLevel(client, nowMs);
   if (level === "none") return undefined;
   return {
     subject: clientSessionSubject(client.id),
@@ -186,7 +198,7 @@ export const machineMcpAccessFor = (
   if (peer === undefined) return undefined;
   const arrow = arrowFrom(desired, peer.id);
   if (arrow === undefined || !arrow.agentTools) return undefined;
-  const level = effectiveArrowLevel(arrow, nowMs);
+  const level = effectiveLevel(arrow, nowMs);
   if (level === "none") return undefined;
   return {
     peer,
@@ -264,7 +276,7 @@ export const machineOfRequestNamespace = (requestNamespace: string): MachineId |
  * target, and only at `standard` or `admin`, because a command can do what the user can do.
  */
 export const arrowAllowsExec = (arrow: ArrowRecord, nowMs: number): boolean => {
-  const level = effectiveArrowLevel(arrow, nowMs);
+  const level = effectiveLevel(arrow, nowMs);
   return arrow.agentTools && arrow.exec && (level === "standard" || level === "admin");
 };
 
@@ -302,12 +314,12 @@ const sourcesWithChangedLevel = <K>(
       ([source, arrow]) =>
         [
           source,
-          previousAtMs === null ? arrow.level : effectiveArrowLevel(arrow, previousAtMs),
+          previousAtMs === null ? arrow.level : effectiveLevel(arrow, previousAtMs),
         ] as const,
     ),
   );
   const after = new Map(
-    next.map(([source, arrow]) => [source, effectiveArrowLevel(arrow, nowMs)] as const),
+    next.map(([source, arrow]) => [source, effectiveLevel(arrow, nowMs)] as const),
   );
   return [...new Set([...before.keys(), ...after.keys()])].filter(
     (source) => (before.get(source) ?? "none") !== (after.get(source) ?? "none"),
@@ -359,7 +371,7 @@ export const nextExpiry = (
 export const reachablePeers = (desired: MachineDesiredState | null, nowMs: number) =>
   (desired?.arrowsOut ?? []).flatMap((arrow) => {
     if (arrow.from !== desired?.self.id) return [];
-    const level = effectiveArrowLevel(arrow, nowMs);
+    const level = effectiveLevel(arrow, nowMs);
     const machine = desired.peers.find((peer) => peer.id === arrow.to);
     if (level === "none" || machine === undefined || machine.hostname === null) return [];
     return [

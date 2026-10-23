@@ -16,7 +16,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 - **[Portal](docs/fork/features.md#machine-map):** one portal at `t3.yarden-zamir.com` maps every T3 machine, adds phones with an app invite, and sets access between them.
 - **[Environment name from machine map](docs/fork/features.md#environment-name-from-machine-map):** an optional setting keeps environment names equal to machine map names, also after a name change.
-- **[Access change notices](docs/fork/features.md#access-change-notices):** a notice names what an arrow change allows now, without a reload.
+- **[Access change notices](docs/fork/features.md#access-change-notices):** a notice names what an arrow change allows now, without a reload (off by default).
 - **[Portal views](docs/fork/features.md#portal-views):** Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients.
 - **[Work on other machines](docs/fork/features.md#work-on-other-machines):** an arrow with agent tools makes the other machine a linked environment, where agents delegate tasks within their own limits. Each arrow lists what it allows, only the owner raises it, and History lists each forwarded call.
 - **[Join and install](docs/fork/features.md#join-and-install):** "Add machine" shows one command per system that installs the fork and joins.

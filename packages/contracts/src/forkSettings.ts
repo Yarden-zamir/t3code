@@ -346,9 +346,10 @@ export const ForkServerSettingsFields = {
   /**
    * Fork: a notice when the machine map changes the access of a client to this server, or the
    * access of the agents of this server to another machine. A server setting, so the mobile app
-   * reads it.
+   * reads it, and the machine map turns it on for every machine. Off by default, like every fork
+   * behavior that changes what clients show.
    */
-  accessChangeNotices: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  accessChangeNotices: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Fork: machine map connection. See `MachineMapSettings`. */
   machineMap: MachineMapSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /** Fork: how a Cloudflare Access sign-in of a browser meets the clients of the map. See `ClientAccessMode`. */

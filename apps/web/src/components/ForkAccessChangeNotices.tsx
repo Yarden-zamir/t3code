@@ -20,9 +20,9 @@ function showNotice(notice: AccessChangeNotice) {
   toastManager.add({ type: "info", title: notice.title, description: notice.description });
 }
 
-/** `accessChangeNotices` of an environment. Unknown settings count as the default, on. */
+/** `accessChangeNotices` of an environment. Unknown settings count as the default, off. */
 const noticesEnabled = (settings: { readonly accessChangeNotices: boolean } | null) =>
-  settings?.accessChangeNotices !== false;
+  settings?.accessChangeNotices === true;
 
 /** Fork: MM-1401. The desktop app removed a machine because its arrow is gone. */
 export function noticeAccessEnded(environmentId: EnvironmentId, label: string) {
@@ -33,30 +33,37 @@ export function noticeAccessEnded(environmentId: EnvironmentId, label: string) {
   }
 }
 
+/** Only while notices are on: the map subscription sends the whole state on each change. */
+function EnvironmentLinkWatcher(props: { readonly environmentId: EnvironmentId }) {
+  const { environmentId } = props;
+  const state = useMachineMapState(environmentId).state;
+
+  useEffect(() => {
+    if (state === null) return;
+    for (const notice of tracker.observeLinks(environmentId, state)) showNotice(notice);
+  }, [environmentId, state]);
+
+  useEffect(() => () => tracker.forgetLinks(environmentId), [environmentId]);
+
+  return null;
+}
+
 function EnvironmentAccessWatcher(props: {
   readonly environmentId: EnvironmentId;
   readonly label: string;
 }) {
   const { environmentId, label } = props;
   const session = useAtomValue(environmentSession.sessionStateAtom(environmentId));
-  const desired = useMachineMapState(environmentId).state?.desired ?? null;
   const enabled = noticesEnabled(useAtomValue(serverEnvironment.settingsValueAtom(environmentId)));
 
-  // The tracker sees every value, also with notices off, so turning them on starts from now.
+  // The session state is loaded anyway, so the tracker sees every value, also with notices off.
   useEffect(() => {
     if (session._tag !== "Success" || session.waiting) return;
     const notice = tracker.observeSession(environmentId, label, session.value);
     if (notice !== null && enabled) showNotice(notice);
   }, [enabled, environmentId, label, session]);
 
-  useEffect(() => {
-    if (desired === null) return;
-    for (const notice of tracker.observeLinks(environmentId, desired, Date.now())) {
-      if (enabled) showNotice(notice);
-    }
-  }, [desired, enabled, environmentId]);
-
-  return null;
+  return enabled ? <EnvironmentLinkWatcher environmentId={environmentId} /> : null;
 }
 
 /** Fork: `accessChangeNotices`. A toast when the machine map changes access, without a reload. */
