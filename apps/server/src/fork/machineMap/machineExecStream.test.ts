@@ -181,6 +181,7 @@ const layerExec = (reports: Array<MachineExecReport>, http: Layer.Layer<HttpClie
 
 const setup = Effect.gen(function* () {
   const vpsReports: Array<MachineExecReport> = [];
+  let pairings = 0;
   const macReports: Array<MachineExecReport> = [];
   const vpsState = yield* SubscriptionRef.make(localState(vpsDesired({ arrowIn: execArrow })));
   const macState = yield* SubscriptionRef.make(
@@ -215,6 +216,7 @@ const setup = Effect.gen(function* () {
             );
           }
           if (url.pathname === "/oauth/token") {
+            pairings += 1;
             const issued = yield* vpsPeer.auth.issueSession({
               subject: machineSessionSubject(SELF),
               scopes: MACHINE_LEVEL_SCOPES.standard,
@@ -297,7 +299,7 @@ const setup = Effect.gen(function* () {
       return { ...result, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) };
     }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
 
-  return { cli, vpsPeer, vpsState, vpsReports, macReports };
+  return { cli, vpsPeer, vpsState, vpsReports, macReports, pairings: () => pairings };
 });
 
 const text = (value: string) => new TextEncoder().encode(value);
@@ -369,7 +371,7 @@ it.live("a background job of a command that exits 0 outlives the run, as with ss
     const env = yield* setup;
     const started = yield* env.cli({
       token: "token-full",
-      start: { machine: "VPS", command: "nohup sleep 300 > /dev/null 2>&1 & echo $!" },
+      start: { machine: "VPS", command: "nohup sleep 60 > /dev/null 2>&1 & echo $!" },
     });
     expect(started.exitCode).toBe(0);
     const pid = started.stdout.toString().trim();
@@ -378,6 +380,28 @@ it.live("a background job of a command that exits 0 outlives the run, as with ss
       start: { machine: "VPS", command: `kill -0 ${pid} && kill ${pid} && echo alive` },
     });
     expect(alive.stdout.toString()).toBe("alive\n");
+  }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.live("a session that B ended pairs again once, and the stream goes through", () =>
+  Effect.gen(function* () {
+    const env = yield* setup;
+    const first = yield* env.cli({
+      token: "token-full",
+      start: { machine: "VPS", command: "true" },
+    });
+    expect(first.exitCode).toBe(0);
+    expect(env.pairings()).toBe(1);
+    // MM-1306: a level change on B ends every session of A there, so B refuses the upgrade.
+    for (const session of yield* env.vpsPeer.auth.listSessions().pipe(Effect.orDie)) {
+      yield* env.vpsPeer.auth.revokeSession(session.sessionId).pipe(Effect.orDie);
+    }
+    const again = yield* env.cli({
+      token: "token-full",
+      start: { machine: "VPS", command: "true" },
+    });
+    expect(again.exitCode).toBe(0);
+    expect(env.pairings()).toBe(2);
   }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
 );
 

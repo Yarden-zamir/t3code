@@ -319,9 +319,9 @@ const make = Effect.gen(function* () {
               // The spawner fails `exitCode` for a command that a signal ended. It ran, so it
               // ends as `exited` without a code, never as a command that did not start.
               Effect.orElseSucceed(() => null),
-              // Like ssh, a background job of a command that exits 0 outlives the run: an unref
-              // child skips the process group kill when the scope closes. The spawner still ends
-              // the group of a command that exits with another code.
+              // Like ssh, a background job of a command that exits 0 or ends by a signal outlives
+              // the run: an unref child skips the process group kill when the scope closes. The
+              // spawner still ends the group of a command that exits with another code.
               Effect.tap(() => child.unref),
             ),
           ),
