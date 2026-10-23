@@ -193,7 +193,9 @@ export function leaveMissingRoute(fallback: () => void): void {
 /** Fork hook for the thread route: `shown` is true while the thread or draft shows its view. */
 export function useSettleNavigationTraverse(shown: boolean): void {
   // No dependency list: a move between two shown threads keeps `shown` true, and each such
-  // arrival must settle too. The call is a cheap assignment.
+  // arrival must settle too. The call is a cheap assignment. Limit: a render of the previous,
+  // shown thread before the router commits the move also settles, and that missing entry then
+  // gets the upstream redirect. Revisit if users see a skip that does not happen.
   useEffect(() => {
     if (shown) windowSkipper.settle();
   });
