@@ -12,6 +12,7 @@ import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/proje
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { memo, useEffect, useState } from "react";
 import { useComposerDraftStore } from "../composerDraftStore";
+import { useDraftTerminalShell } from "../forkDraftTerminalStore";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type { TerminalContextSelection } from "../lib/terminalContext";
 import { cn } from "~/lib/utils";
@@ -110,6 +111,8 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   const terminalActions = useThreadTerminalActions(threadRef);
   const serverThread = useQuietThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
+  const draftId = useComposerDraftStore((store) => store.getDraftIdByRef(threadRef));
+  const draftInTerminalMode = useDraftTerminalShell(draftId) !== undefined;
   const projectRef = serverThread
     ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
     : draftThread
@@ -130,9 +133,12 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   const panelTerminalIds = new Set(
     panelSurfaces.flatMap((surface) => (surface.kind === "terminal" ? surface.terminalIds : [])),
   );
-  // Fork: the main terminal of a terminal thread is the thread view, not a drawer tab.
+  // Fork: the main terminal of a terminal thread, or of a draft in Terminal mode, is the thread
+  // view, not a drawer tab.
   const mainTerminalOfTerminalThread =
-    serverThread !== null && isTerminalThread(serverThread) ? DEFAULT_TERMINAL_ID : null;
+    (serverThread !== null && isTerminalThread(serverThread)) || draftInTerminalMode
+      ? DEFAULT_TERMINAL_ID
+      : null;
   const drawerTerminalSessions =
     knownTerminalSessions?.filter(
       (session) =>

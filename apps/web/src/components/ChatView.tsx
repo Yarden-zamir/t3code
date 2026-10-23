@@ -2595,9 +2595,11 @@ export default function ChatView(props: ChatViewProps) {
     forkDraftTerminalShell !== undefined
       ? { draftId, draft: draftThread, shell: forkDraftTerminalShell }
       : null;
+  // Fork: a terminal draft keeps its workspace controls after a worktree setup card appears,
+  // because its shell can still move until the draft becomes a thread.
   const mountComposerContextStrip = shouldShowComposerContextStrip({
     isDraftHeroState,
-    persistInActiveThreads: settings.persistComposerContextStrip,
+    persistInActiveThreads: settings.persistComposerContextStrip || forkDraftTerminal !== null,
     hasActiveProject: activeProject !== null && !showProviderSubagentBar,
     isGitRepo,
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
@@ -2605,7 +2607,7 @@ export default function ChatView(props: ChatViewProps) {
   });
   const showComposerContextStrip = shouldShowComposerContextStrip({
     isDraftHeroState,
-    persistInActiveThreads: settings.persistComposerContextStrip,
+    persistInActiveThreads: settings.persistComposerContextStrip || forkDraftTerminal !== null,
     hasActiveProject: activeProject !== null && !showProviderSubagentBar,
     isGitRepo,
     showEnvironmentIndicator: showComposerEnvironmentIndicator,

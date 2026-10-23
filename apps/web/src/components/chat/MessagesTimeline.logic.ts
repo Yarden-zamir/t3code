@@ -1820,9 +1820,12 @@ export function deriveMessagesTimelineRows(input: {
     input.worktreeSetup !== undefined &&
     worktreeSetupAgentStarted(input.worktreeSetup) &&
     input.latestRun?.startedAt != null;
+  // Fork: a finished setup without an agent stage (a terminal draft) has no agent to wait for.
   const setupOwnsWorkingSlot =
     !setupHandedOff &&
-    (input.worktreeSetup?.phase === "running" || input.worktreeSetup?.phase === "done");
+    (input.worktreeSetup?.phase === "running" ||
+      (input.worktreeSetup?.phase === "done" &&
+        input.worktreeSetup.stages.some((stage) => stage.id === "agent")));
   if (input.worktreeSetup && (!setupHandedOff || input.worktreeSetup.phase !== "running")) {
     const setupRow = {
       kind: "worktree-setup",
