@@ -1,4 +1,5 @@
 import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
+import { mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
 
 // Always on, no setting: a stored secret leaks to every client and copy of the thread.
 // `token` is also the fragment key of the T3 pairing URL (packages/shared/src/remote.ts).
@@ -20,18 +21,8 @@ const SECRET_KEYS: ReadonlySet<string> = new Set([
 
 const REDACTED = "REDACTED";
 
-// Ends a URL that sits inside free text, JSON text or Markdown.
-const URL_TERMINATORS: ReadonlySet<string> = new Set([
-  '"',
-  "'",
-  "`",
-  "<",
-  ">",
-  "\\",
-  ")",
-  "]",
-  "}",
-]);
+// Free text and JSON text put these characters around a URL.
+const URL_TERMINATORS: ReadonlySet<string> = new Set(['"', "'", "`", "<", ">", "\\"]);
 
 const isSchemeChar = (char: string) =>
   (char >= "a" && char <= "z") ||
@@ -45,6 +36,21 @@ const isUrlEnd = (char: string) => char.trim() === "" || URL_TERMINATORS.has(cha
 
 // Sentence punctuation after a URL in prose belongs to the sentence.
 const TRAILING_PUNCTUATION: ReadonlySet<string> = new Set([".", ",", ";", ":", "!", "?"]);
+// A closing bracket belongs to the URL only when the URL opened it, as in `http://[::1]/`.
+const BRACKET_PAIRS: ReadonlyMap<string, string> = new Map([
+  [")", "("],
+  ["]", "["],
+  ["}", "{"],
+]);
+
+const count = (text: string, char: string) => text.split(char).length - 1;
+
+function belongsToSurroundingText(candidate: string): boolean {
+  const last = candidate.at(-1)!;
+  if (TRAILING_PUNCTUATION.has(last)) return true;
+  const opener = BRACKET_PAIRS.get(last);
+  return opener !== undefined && count(candidate, last) > count(candidate, opener);
+}
 
 const isSecretEntry = ([name, value]: [string, string]) =>
   value !== REDACTED && SECRET_KEYS.has(name.toLowerCase());
@@ -64,11 +70,12 @@ function redactParams(text: string): string | undefined {
 /** Plain anchors (`#section`) stay; `#a=b` and hash routes (`#/pair?a=b`) hold params. */
 function redactFragment(fragment: string): string | undefined {
   const queryStart = fragment.indexOf("?");
-  if (queryStart >= 0) {
-    const params = redactParams(fragment.slice(queryStart + 1));
-    return params && `${fragment.slice(0, queryStart)}?${params}`;
-  }
-  return fragment.includes("=") ? redactParams(fragment) : undefined;
+  const route = queryStart >= 0 ? fragment.slice(0, queryStart) : fragment;
+  // `#token=a&next=/p?x=1` is all params: the `?` sits inside a value.
+  if (route.includes("=")) return redactParams(fragment);
+  if (queryStart < 0) return undefined;
+  const params = redactParams(fragment.slice(queryStart + 1));
+  return params && `${route}?${params}`;
 }
 
 /** Hides credentials and secret query or fragment values. A string that is not a URL stays. */
@@ -112,7 +119,7 @@ export function redactUrlSecretsInText(text: string): string {
     while (start > copiedUpTo && isSchemeChar(text[start - 1]!)) start -= 1;
     let end = marker + 3;
     while (end < text.length && !isUrlEnd(text[end]!)) end += 1;
-    while (end > marker + 3 && TRAILING_PUNCTUATION.has(text[end - 1]!)) end -= 1;
+    while (end > marker + 3 && belongsToSurroundingText(text.slice(start, end))) end -= 1;
     if (start < marker) {
       const candidate = text.slice(start, end);
       const redacted = redactUrlSecrets(candidate);
@@ -154,6 +161,8 @@ export function redactUrlSecretsDeep(value: unknown): unknown {
 export function redactTurnItemUrlSecrets(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   switch (item.type) {
     case "dynamic_tool":
+      // An MCP app gets its call's stored input and output as live data, so keep them intact.
+      if (mcpAppFromToolItem(item) !== undefined) return item;
       return {
         ...item,
         title: item.title === null ? null : redactUrlSecretsInText(item.title),

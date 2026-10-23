@@ -1,6 +1,9 @@
 import { assert, describe, it } from "@effect/vitest";
+import { ThreadId, TurnItemId, type OrchestrationV2TurnItem } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 
 import {
+  redactTurnItemUrlSecrets,
   redactUrlSecrets,
   redactUrlSecretsDeep,
   redactUrlSecretsInText,
@@ -23,6 +26,11 @@ describe("redactUrlSecrets", () => {
     assert.strictEqual(
       redactUrlSecrets("https://app.example.test/#/pair?key=fake&tab=1"),
       "https://app.example.test/#/pair?key=REDACTED&tab=1",
+    );
+    // The `?` sits inside a fragment value, not after a hash route.
+    assert.notInclude(
+      redactUrlSecrets("https://example.test/#token=fake&next=/page?tab=1"),
+      "fake",
     );
   });
 
@@ -56,6 +64,18 @@ describe("redactUrlSecrets", () => {
 });
 
 describe("redactUrlSecretsInText", () => {
+  it("keeps brackets and credential characters that belong to the URL", () => {
+    assert.strictEqual(
+      redactUrlSecretsInText("http://[::1]:5733/pair#token=fake"),
+      "http://[::1]:5733/pair#token=REDACTED",
+    );
+    assert.notInclude(redactUrlSecretsInText("https://alice:fake)pass@example.test/"), "fake");
+    assert.strictEqual(
+      redactUrlSecretsInText("[pair](http://localhost/pair#token=fake)"),
+      "[pair](http://localhost/pair#token=REDACTED)",
+    );
+  });
+
   it("hides URLs inside prose and JSON text and keeps the text around them", () => {
     assert.strictEqual(
       redactUrlSecretsInText("Opened http://localhost:5733/pair#token=fake. Done"),
@@ -72,5 +92,43 @@ describe("redactUrlSecretsDeep", () => {
   it("returns the same reference when nothing changes", () => {
     const value = { url: "https://example.test/?page=1", list: ["plain"] };
     assert.strictEqual(redactUrlSecretsDeep(value), value);
+  });
+});
+
+describe("redactTurnItemUrlSecrets", () => {
+  const toolItem = (toolName: string, output: unknown): OrchestrationV2TurnItem => {
+    const now = DateTime.makeUnsafe("2026-10-23T12:00:00.000Z");
+    return {
+      id: TurnItemId.make("item:tool"),
+      threadId: ThreadId.make("thread:tool"),
+      runId: null,
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 0,
+      status: "completed",
+      title: null,
+      startedAt: now,
+      completedAt: now,
+      updatedAt: now,
+      type: "dynamic_tool",
+      toolName,
+      input: { url: "https://example.test/?token=fake" },
+      output,
+    };
+  };
+
+  it("keeps the data of an MCP app call, which the app gets as live input", () => {
+    const item = toolItem("weather.get_weather", {
+      t3McpApp: {
+        attachmentId: "thread-1-abc-html",
+        server: "weather",
+        tool: "get_weather",
+        resourceUri: "ui://weather/dashboard",
+      },
+    });
+    assert.strictEqual(redactTurnItemUrlSecrets(item), item);
   });
 });
