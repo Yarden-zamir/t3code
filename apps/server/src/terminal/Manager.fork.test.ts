@@ -227,6 +227,37 @@ it.layer(
     }).pipe(Effect.provideService(SpawnExecutableResolution, uvOnPath)),
   );
 
+  it.effect("adds the new shell line only when a new shell starts", () =>
+    Effect.gen(function* () {
+      const customShells = yield* Ref.make<ReadonlyArray<TerminalCustomShell>>([
+        { name: "python", executable: "uv", args: ["run", "python"] },
+      ]);
+      const { manager, pty } = yield* createManager({ customShells });
+      yield* manager.open(threadScreen("python"));
+      const printed = yield* Deferred.make<void>();
+      const stop = yield* manager.subscribe((event) =>
+        event.type === "output" ? Deferred.succeed(printed, undefined).pipe(Effect.asVoid) : Effect.void,
+      );
+      pty.processes[0]?.emit(">>> 1\r\n");
+      yield* Deferred.await(printed);
+      stop();
+      pty.processes[0]?.kill();
+      yield* TestClock.adjust("1 second");
+      yield* Ref.set(customShells, []);
+
+      const failed = yield* manager.open(threadScreen("python"));
+
+      expect(failed.status).toBe("error");
+      expect(failed.history).not.toContain("new shell");
+
+      yield* Ref.set(customShells, [{ name: "python", executable: "uv", args: [] }]);
+      const started = yield* manager.open(threadScreen("python"));
+
+      expect(started.status).toBe("running");
+      expect(started.history.split("new shell")).toHaveLength(2);
+    }).pipe(Effect.provideService(SpawnExecutableResolution, uvOnPath)),
+  );
+
   it.effect("lists only the shells that can start when a shell is not defined", () =>
     Effect.gen(function* () {
       const customShells = yield* Ref.make<ReadonlyArray<TerminalCustomShell>>([

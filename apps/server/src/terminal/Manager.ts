@@ -2448,6 +2448,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               session.pid = processPid;
               session.status = "running";
               session.customShell = shellLaunch.custom;
+              // Fork: only a shell that starts gets the line, so a failed start adds none.
+              if (isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv)) {
+                markNewShellBelowOutput(session);
+              }
               // Fork: a shell with integration reports its state from its first prompt on.
               if (spawnResult.integrated) {
                 session.shell = "starting";
@@ -2857,10 +2861,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         runtimeEnv: normalizedRuntimeEnv(input.env),
       };
 
-      // Fork: after a server restart, the shell of a terminal thread starts below its saved output.
-      if (isTerminalThreadMainTerminal(terminalId, session.runtimeEnv)) {
-        markNewShellBelowOutput(session);
-      }
       const createdSession = session;
       yield* modifyManagerState((state) => {
         const sessions = new Map(state.sessions);
@@ -2908,9 +2908,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       liveSession.shellName = nextShellName;
       // Fork: the output is the content of a terminal thread, so a new shell starts below it, as
       // after an exit. A client with another folder, env or shell must not wipe it.
-      if (isTerminalThreadMainTerminal(liveSession.terminalId, liveSession.runtimeEnv)) {
-        markNewShellBelowOutput(liveSession);
-      } else {
+      if (!isTerminalThreadMainTerminal(liveSession.terminalId, liveSession.runtimeEnv)) {
         liveSession.history.clear();
       }
       liveSession.pendingHistoryControlSequence = "";
@@ -2924,9 +2922,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       liveSession.shellName = nextShellName;
       // Fork: a terminal thread keeps the output of the shell that ended above the new one, so
       // the screen still shows why it ended.
-      if (isTerminalThreadMainTerminal(liveSession.terminalId, liveSession.runtimeEnv)) {
-        markNewShellBelowOutput(liveSession);
-      } else {
+      if (!isTerminalThreadMainTerminal(liveSession.terminalId, liveSession.runtimeEnv)) {
         liveSession.history.clear();
       }
       liveSession.pendingHistoryControlSequence = "";
