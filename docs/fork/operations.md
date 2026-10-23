@@ -158,6 +158,20 @@ vp run migrate-dev-db
 
 Then start the worktree dev server. Use its own UI or API, not the live-server tool CLI.
 
+```sh
+node scripts/fork-dev-server.ts start              # add `-- --share` to share on the tailnet
+node scripts/fork-dev-server.ts status
+node scripts/fork-dev-server.ts stop
+node scripts/fork-dev-server.ts orphans            # reports leftover dev processes, never kills
+```
+
+`start` runs `vp run dev` in a new process group, writes the log to `.t3/dev-server.log` and prints the ports and the `pairingUrl`.
+`stop` stops the whole group, so that no `node --watch` process stays alive.
+It refuses a group that does not run in this worktree.
+`orphans` lists dev process groups with a deleted folder, or under PID 1 without a record.
+It prints a `kill` command for each group. Only the owner runs it, after a check. Agents report the groups.
+The helper works on macOS and Linux, not on Windows.
+
 ### Tool blockers
 
 Check the intended tool first each session: Device panel, browser preview or MCP tool.

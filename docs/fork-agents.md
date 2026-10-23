@@ -9,6 +9,7 @@ This guide maps owner tasks to the fork tools. It is for agents that operate the
 - Prefer upstream code and generic solutions. Isolate fork code with one-line upstream hooks; see [Change the fork](fork/operations.md#change-the-fork).
 - Never open or suggest PRs or issues on `pingdotgg/t3code`. Fork fixes stay in `Yarden-zamir/t3code`.
 - Never kill a process that you found by a name, a path or a pattern. Kill only a PID that you started.
+- Start and stop a worktree dev server with `node scripts/fork-dev-server.ts start` and `stop`, not with a bare `vp run dev`. A stop of the dev-runner PID alone leaves `node --watch` alive. See [Harmless verification](fork/operations.md#harmless-verification).
 - Never write to `~/.t3/userdata` on a machine. It is the live install. Read it or copy from it only.
 - Stage files by path only. Never use `git add -A` or `git add .`. Worktrees hold links to private files from `_shared/`.
 - Before you open a pull request, review the change with the `review-loop` skill (`.agents/skills/review-loop`). Fill the "Review" section of the pull request template.
