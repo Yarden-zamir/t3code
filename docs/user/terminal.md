@@ -110,7 +110,8 @@ shows that the shell exited, also after a reload. Start a new shell, or press En
 continue; a message to the thread also starts one. To use another shell, choose it next to
 Start a new shell first. The new shell starts below the output of the one that ended, under a
 "new shell" line. Archiving the thread deletes that
-output. Settling the thread keeps its shell open. A server restart ends the programs in the
+output. While a program runs, Archive waits until you stop it. Delete ends the program, and its
+confirm says so. Settling the thread keeps its shell open. A server restart ends the programs in the
 terminal, and the output stays.
 
 ## Settings
