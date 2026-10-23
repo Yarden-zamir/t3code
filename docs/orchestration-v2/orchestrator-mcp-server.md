@@ -355,7 +355,8 @@ With the fork setting Terminal threads on, `modelSelection` of
 `{"instanceId":"terminal","model":"terminal"}` launches a terminal thread: a live
 shell with no model. `message` is typed into the terminal followed by Enter. At an
 idle shell the run answers with the exit code and the output. With a program in
-front, the message goes to that program and the run ends at once. The message
+front, the message goes to that program and the run ends at once. A message that
+arrives while an earlier command runs is typed into that command. The message
 runs in the shell itself, so `cd` and `export` stay, and the thread needs full
 access mode. `schedule_task` accepts the same `modelSelection` with
 `bindToCurrentThread:false`. A webhook task is refused, because the sender controls

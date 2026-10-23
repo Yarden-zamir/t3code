@@ -69,7 +69,7 @@ export const TerminalProviderCapabilities = {
     emitsTurnStarted: true,
     emitsTurnCompleted: true,
     supportsInterrupt: true,
-    supportsActiveSteering: false,
+    supportsActiveSteering: true,
     supportsSteeringByInterruptRestart: false,
     supportsQueuedMessages: true,
     terminalStatusQuality: "strong",
@@ -518,12 +518,29 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
               })),
             ),
           startTurn,
+          // A message that arrives while a command runs is input for that command: the run
+          // queue would hold it until the command ends. It is typed raw, like a message to a
+          // program that the user started.
           steerTurn: (turnInput) =>
-            Effect.fail(
-              new ProviderAdapter.ProviderAdapterSteerRunUnsupportedError({
-                driver: TERMINAL_DRIVER,
-                providerThreadId: turnInput.providerThread.id,
-              }),
+            Effect.gen(function* () {
+              const active = yield* Ref.get(activeTurn);
+              if (active === null || active.providerTurnId !== turnInput.providerTurnId) {
+                return yield* unsupported("The command ended before the message was typed.");
+              }
+              yield* port.write({
+                threadId: String(turnInput.threadId),
+                terminalId,
+                data: `${turnInput.message.text}\r`,
+              });
+            }).pipe(
+              Effect.catch((error) =>
+                Effect.fail(
+                  new ProviderAdapter.ProviderAdapterProtocolError({
+                    driver: TERMINAL_DRIVER,
+                    detail: error instanceof Error ? error.message : String(error),
+                  }),
+                ),
+              ),
             ),
           interruptTurn: (interruptInput) =>
             Effect.gen(function* () {

@@ -30,7 +30,9 @@ terminal thread in the command palette. All three ask for a project.
 A message to a terminal thread is typed into its terminal, followed by Enter. This
 covers messages from a scheduled task, a webhook or an agent. When the shell is idle,
 the run ends with the exit code and the output of the command. When a program runs
-in the terminal, the message goes to that program and the run ends at once. The
+in the terminal, the message goes to that program and the run ends at once. A message that
+arrives while a command from an earlier message still runs is typed into that command, for
+example to answer a prompt. The
 message runs in the shell itself, so `cd` and `export` stay for the next message. A
 scheduled task with a webhook cannot use a terminal thread.
 
