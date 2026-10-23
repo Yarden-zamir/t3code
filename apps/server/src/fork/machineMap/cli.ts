@@ -138,7 +138,7 @@ const execCommand = Command.make("exec", {
   ),
 }).pipe(
   Command.withDescription(
-    "Run a command on another machine of the machine map, like ssh. Stdin goes to the command, stdout and stderr come back as they are written, and the exit code is the command's. A timeout exits 124. A refusal, a lost connection, or an arrow that stops allowing exec exits 255. In an agent's shell it acts as the agent's thread, with the limits of that thread. It needs an arrow with exec to that machine.",
+    "Run a command on another machine of the machine map, like ssh. Stdin goes to the command, stdout and stderr come back as they are written, and the exit code is the command's. A timeout exits 124. A refusal, a lost connection, or an arrow that stops allowing exec exits 255. In an agent's shell it acts as the agent's thread, with the limits of that thread; without a thread credential it is refused. It needs an arrow with exec to that machine.",
   ),
   Command.withExamples([
     { command: "t3 machine exec vps -- uname -a", description: "Run one command." },

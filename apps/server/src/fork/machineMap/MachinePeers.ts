@@ -53,6 +53,8 @@ import {
   type ArrowLinkTarget,
   arrowAllowsExec,
   arrowLinkTargets,
+  CLI_LOCAL_USER_REFUSAL,
+  isCliLocalUser,
   isMachineRequestNamespace,
   MANUAL_LINK_REFUSAL,
 } from "./machineAccess.ts";
@@ -371,6 +373,10 @@ const make = Effect.gen(function* () {
           "incompatible",
           "Work from another machine cannot use the arrows of this machine.",
         );
+      }
+      // MM-1920: the local-user session of the CLI has no thread limits to send along.
+      if (Option.isSome(scope) && isCliLocalUser(scope.value)) {
+        return yield* linkError("incompatible", CLI_LOCAL_USER_REFUSAL);
       }
       const local = yield* onMap;
       if (local === undefined) {

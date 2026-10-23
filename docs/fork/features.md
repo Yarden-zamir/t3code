@@ -111,7 +111,7 @@ An arrow with agent tools makes the target machine a linked environment of the s
 An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908). In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's (MM-1919).
 
 - **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Table and the arrow panel show an "exec" sticker.
-- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Elsewhere it acts as the local user, as `t3 tool` does. The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
+- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Without a thread credential it is refused (MM-1920). The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
 - **Stop:** the emergency pause, a removed arrow or exec turned off stops a running command at once (MM-1916).
 - **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`. A `t3 machine exec` run gives one entry when it ends.
 - **In a shell:** in a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
@@ -688,7 +688,8 @@ The fork desktop app, its notifications and the bundled web page use the Tick3d 
 - **Works on:** server.
 - In an agent's shell, the command uses the credential of the agent's thread, so the limits of that thread apply. See [MM-1920](../../apps/machine-map/SPEC.md#19-cross-machine-work). `t3 machine exec` uses the same credential; see [Commands on other machines](#commands-on-other-machines).
 - Elsewhere, also in a T3 terminal, it calls the running server of its T3 home with a short full-access session. Machine map History names that caller "CLI (local user)".
-- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session.
+- To call a dev server from an agent shell, unset `T3_ACP_MCP_ENDPOINT` and `T3_ACP_MCP_AUTHORIZATION`. The CLI refuses a `--base-dir` that does not match the shell's thread credential.
+- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session. That session works on this machine only: `machine_exec`, `t3 machine exec`, and tools or delegation with the `environmentId` of another machine refuse it. Use a thread, or the portal.
 
 ### Open workspace with a checkout
 

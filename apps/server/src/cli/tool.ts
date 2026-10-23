@@ -16,6 +16,7 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerConfig from "../config.ts";
 import { callAcpMcpTool } from "../mcp/AcpMcpStdioBridge.ts";
 import { listMcpTools, type McpToolEntry } from "../mcp/toolkits/registry.ts";
+import { CLI_LOCAL_USER_LABEL } from "../fork/machineMap/machineAccess.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { T3_TERMINAL_THREAD_ID_ENV } from "../terminal/terminalEnv.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
@@ -102,10 +103,24 @@ const readArguments = Effect.fn("readToolArguments")(function* (flags: {
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const printJson = (value: unknown) => Console.log(encodeJson(value));
 
+/** Host names that reach the same server on this machine. */
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/** Whether two URLs reach the same server: the same port, and the same host or both loopback. */
+export const sameServer = (left: string, right: string) => {
+  const host = (url: URL) => (LOOPBACK_HOSTS.has(url.hostname) ? "loopback" : url.hostname);
+  const [a, b] = [new URL(left), new URL(right)];
+  return a.port === b.port && host(a) === host(b);
+};
+
 /**
  * Calls one tool on the running server. An agent shell reuses its thread
  * credential (MM-1920); otherwise the CLI issues a short-lived MCP client
  * session from the local auth store and revokes it after the call.
+ *
+ * An explicit `--base-dir` is never ignored: with a thread credential, it must
+ * name the server of that credential, so a call meant for a dev server never
+ * reaches the live server as the agent's thread.
  */
 export const callOnServer = Effect.fn("callToolOnServer")(function* <A, R>(
   flags: { readonly baseDir: Option.Option<string> },
@@ -116,32 +131,51 @@ export const callOnServer = Effect.fn("callToolOnServer")(function* <A, R>(
   }) => Effect.Effect<A, ToolCliError, R>,
 ) {
   const environment = yield* toolEnvironment;
-  if (Option.isSome(environment.endpoint) && Option.isSome(environment.authorization)) {
-    return yield* run({
-      endpoint: environment.endpoint.value,
-      authorization: environment.authorization.value,
-      hasThreadCredential: true,
-    });
+  const endpoint = Option.getOrUndefined(environment.endpoint);
+  const authorization = Option.getOrUndefined(environment.authorization);
+  if ((endpoint === undefined) !== (authorization === undefined)) {
+    return yield* fail(
+      `Only one of ${THREAD_CREDENTIAL_ENDPOINT_ENV} and ${THREAD_CREDENTIAL_AUTHORIZATION_ENV} is set. Set both, or unset both.`,
+    );
   }
+  const credential =
+    endpoint !== undefined && authorization !== undefined
+      ? { endpoint, authorization, hasThreadCredential: true }
+      : undefined;
+  if (credential !== undefined && Option.isNone(flags.baseDir)) return yield* run(credential);
   const config = yield* resolveCliAuthConfig(flags, yield* GlobalFlag.LogLevel);
   const runtimeState = yield* readPersistedServerRuntimeState(config.serverRuntimeStatePath);
+  if (credential !== undefined && Option.isSome(flags.baseDir)) {
+    const target = Option.getOrUndefined(runtimeState)?.origin;
+    if (target === undefined || !sameServer(target, credential.endpoint)) {
+      return yield* fail(
+        `--base-dir ${flags.baseDir.value} targets ${target ?? "no running T3 server"}, but this shell's thread credential targets ${new URL(credential.endpoint).origin}. Unset ${THREAD_CREDENTIAL_ENDPOINT_ENV} and ${THREAD_CREDENTIAL_AUTHORIZATION_ENV} to call a dev server.`,
+      );
+    }
+    return yield* run(credential);
+  }
   if (Option.isNone(runtimeState)) {
     return yield* fail("T3 Code server is not running. Start it, then run this again.");
   }
-  const endpoint = new URL("/mcp", runtimeState.value.origin).toString();
+  const localEndpoint = new URL("/mcp", runtimeState.value.origin).toString();
   return yield* Effect.gen(function* () {
     const auth = yield* EnvironmentAuth.EnvironmentAuth;
     return yield* Effect.acquireUseRelease(
       auth.issueMcpClientSession({
-        // The History of the machine map names a caller without a thread by this label.
-        label: "CLI (local user)",
+        // The History of the machine map names a caller without a thread by this label, and
+        // cross-machine calls refuse it (MM-1920).
+        label: CLI_LOCAL_USER_LABEL,
         // The CLI already holds the local auth store, so it gets the widest ceiling.
         access: "full-access",
         peerLink: false,
         client: { deviceType: "bot" },
       }),
       (issued) =>
-        run({ endpoint, authorization: `Bearer ${issued.token}`, hasThreadCredential: false }),
+        run({
+          endpoint: localEndpoint,
+          authorization: `Bearer ${issued.token}`,
+          hasThreadCredential: false,
+        }),
       (issued) => auth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true })),
     );
   }).pipe(
@@ -197,7 +231,7 @@ const toolCallCommand = Command.make("call", {
   ),
 }).pipe(
   Command.withDescription(
-    "Call a tool on the running T3 Code server and print its result as JSON. The tool has its normal side effects. In an agent's shell the call acts as the agent's thread, with the limits of that thread. Elsewhere, also in a T3 Code terminal, it uses a short full-access session that ends after the call.",
+    "Call a tool on the running T3 Code server and print its result as JSON. The tool has its normal side effects. In an agent's shell the call acts as the agent's thread, with the limits of that thread. Elsewhere, also in a T3 Code terminal, it uses a short full-access session that ends after the call and reaches no other machine. With a thread credential, --base-dir must name the server of that credential.",
   ),
   Command.withExamples([
     { command: "t3 tool call t3_thread_list", description: "Call a tool without input." },

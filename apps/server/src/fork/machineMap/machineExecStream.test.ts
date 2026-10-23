@@ -38,13 +38,19 @@ import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServer from "effect/http/HttpServer";
 import * as Socket from "effect/socket/Socket";
 
+import * as McpHttpServer from "../../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import { descriptorOf, servePeer } from "../../peer/PeerLinks.testkit.ts";
 import * as ProcessRunner from "../../processRunner.ts";
-import { MACHINE_MCP_CAPABILITIES, machineMcpClientFor } from "./machineAccess.ts";
+import {
+  CLI_LOCAL_USER_LABEL,
+  CLI_LOCAL_USER_REFUSAL,
+  MACHINE_MCP_CAPABILITIES,
+  machineMcpClientFor,
+} from "./machineAccess.ts";
 import {
   EXIT_FAILED,
   makeLiveness,
@@ -70,6 +76,15 @@ const restrictedThread = ThreadId.make("thread:mac-restricted");
 const shellTokens: Record<string, ThreadId> = {
   "token-full": fullThread,
   "token-restricted": restrictedThread,
+};
+/** What `t3 machine exec` presents without a thread credential: the local user's session. */
+const cliLocalUser: McpInvocationContext.McpInvocationScope = {
+  environmentId: EnvironmentId.make("environment-mac"),
+  requestNamespace: "client:cli-session",
+  thread: undefined,
+  client: { sessionId: "cli-session", label: CLI_LOCAL_USER_LABEL, access: "full-access" },
+  capabilities: new Set(MACHINE_MCP_CAPABILITIES),
+  issuedAt: 0,
 };
 
 /** B's desired state: A is its peer, with `arrowIn` from A into B. */
@@ -262,6 +277,14 @@ const setup = Effect.gen(function* () {
             const threadId = shellTokens[token];
             return Effect.succeed(threadId === undefined ? undefined : shellScope(threadId));
           },
+        }),
+      ),
+      Layer.provide(
+        Layer.succeed(McpHttpServer.McpClientAuthenticator, {
+          authenticate: (request) =>
+            Effect.succeed(
+              request.headers.authorization === "Bearer token-cli" ? cliLocalUser : undefined,
+            ),
         }),
       ),
       Layer.provide(threads),
@@ -463,6 +486,19 @@ it.live("a restricted thread is refused, and nothing reaches the other machine",
     expect(env.vpsReports).toEqual([]);
     expect(yield* Ref.get(env.vpsPeer.bearers)).toEqual([]);
     expect(yield* Ref.get(env.vpsPeer.probes)).toBe(0);
+  }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.live("the local-user session of the CLI is refused, and nothing reaches the other machine", () =>
+  Effect.gen(function* () {
+    const env = yield* setup;
+    const result = yield* env.cli({
+      token: "token-cli",
+      start: { machine: "VPS", command: "true" },
+    });
+    expect(result).toMatchObject({ exitCode: EXIT_FAILED, message: CLI_LOCAL_USER_REFUSAL });
+    expect(env.vpsReports).toEqual([]);
+    expect(yield* Ref.get(env.vpsPeer.bearers)).toEqual([]);
   }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
 );
 

@@ -76,7 +76,12 @@ import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as SourceControlRepositoryService from "../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
-import { machineMcpClientFor, MANUAL_LINK_REFUSAL } from "./machineAccess.ts";
+import {
+  CLI_LOCAL_USER_LABEL,
+  CLI_LOCAL_USER_REFUSAL,
+  machineMcpClientFor,
+  MANUAL_LINK_REFUSAL,
+} from "./machineAccess.ts";
 import * as MachineCallHistory from "./MachineCallHistory.ts";
 import * as MachineMap from "./MachineMap.ts";
 import { arrow, desiredState, PEER, SELF } from "./MachineMap.testkit.ts";
@@ -832,6 +837,30 @@ it.effect("a session that B ended pairs again once, and the call goes through", 
       });
       expect(again.isError, JSON.stringify(again.content)).toBe(false);
       expect((yield* Ref.get(env.wire)).pairings).toBe(2);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("the local-user session of the CLI reaches no other machine (MM-1920)", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
+      const refused = yield* env.links.resolve(vps.environmentId).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          environmentId: mac.environmentId,
+          requestNamespace: "client:cli-session",
+          thread: undefined,
+          client: { sessionId: "cli-session", label: CLI_LOCAL_USER_LABEL, access: "full-access" },
+          capabilities: new Set<McpInvocationContext.McpCapability>(["orchestration"]),
+          issuedAt: 1,
+        }),
+        Effect.flip,
+      );
+      expect(refused.message).toBe(CLI_LOCAL_USER_REFUSAL);
+      expect((yield* Ref.get(env.wire)).pairings).toBe(0);
+      // The list of links stays readable: it is local.
+      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
+      expect(listed.isError).toBe(false);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

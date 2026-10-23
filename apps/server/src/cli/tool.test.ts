@@ -7,10 +7,12 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import { Tool } from "effect/ai";
 import { GlobalFlag } from "effect/cli";
 
 import { McpToolkits } from "../mcp/toolkits/registry.ts";
+import { resolveCliAuthConfig } from "./config.ts";
 import { applyCallerThread, callOnServer, findMcpTool } from "./tool.ts";
 
 const registryToolNames = () =>
@@ -85,32 +87,94 @@ it.effect("lets a thread credential omit the thread", () =>
   }),
 );
 
-it.effect("an agent shell calls as its thread, not with the full-access fallback (MM-1920)", () =>
+/** Calls `callOnServer` with `env` as the shell environment, and returns the connections it used. */
+const callWith = (env: NodeJS.ProcessEnv, baseDir: Option.Option<string>) => {
+  const connections: Array<unknown> = [];
+  return callOnServer({ baseDir }, (connection) =>
+    Effect.sync(() => void connections.push(connection)),
+  ).pipe(
+    Effect.as(connections),
+    Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord(env))),
+    Effect.provideService(GlobalFlag.LogLevel, Option.none()),
+  );
+};
+
+/** A T3 home whose server runs at `origin`, as its runtime state file says. */
+const homeServedAt = Effect.fn("homeServedAt")(function* (origin: string | undefined) {
+  const fs = yield* FileSystem.FileSystem;
+  const baseDir = yield* fs.makeTempDirectoryScoped();
+  if (origin === undefined) return baseDir;
+  const config = yield* resolveCliAuthConfig({ baseDir: Option.some(baseDir) }, Option.none());
+  const path = yield* Path.Path;
+  yield* fs.makeDirectory(path.dirname(config.serverRuntimeStatePath), { recursive: true });
+  yield* fs.writeFileString(
+    config.serverRuntimeStatePath,
+    JSON.stringify({
+      version: 1,
+      pid: 1,
+      port: Number(new URL(origin).port),
+      origin,
+      startedAt: "2026-10-23T00:00:00.000Z",
+    }),
+  );
+  return baseDir;
+});
+
+const liveShell = withThreadCredential(
+  {},
+  { endpoint: "http://127.0.0.1:43123/mcp", authorizationHeader: "Bearer thread-a" },
+);
+const asThread = {
+  endpoint: "http://127.0.0.1:43123/mcp",
+  authorization: "Bearer thread-a",
+  hasThreadCredential: true,
+};
+
+it.effect("an agent shell calls as its thread when no --base-dir is given (MM-1920)", () =>
   Effect.gen(function* () {
-    // A T3 home with no running server, so the full-access fallback would fail here.
-    const baseDir = Option.some(yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped());
-    const record = (env: NodeJS.ProcessEnv) => {
-      const connections: Array<unknown> = [];
-      return callOnServer({ baseDir }, (connection) =>
-        Effect.sync(() => void connections.push(connection)),
-      ).pipe(
-        Effect.as(connections),
-        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord(env))),
-        Effect.provideService(GlobalFlag.LogLevel, Option.none()),
-      );
-    };
-    const shell = withThreadCredential(
-      {},
-      { endpoint: "http://127.0.0.1:43123/mcp", authorizationHeader: "Bearer thread-a" },
+    expect(yield* callWith(liveShell, Option.none())).toEqual([asThread]);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+);
+
+it.effect("a thread credential with a --base-dir of another server fails loudly", () =>
+  Effect.gen(function* () {
+    // The incident: a dev server's home, called from a shell of a thread of the live server.
+    const devHome = yield* homeServedAt("http://127.0.0.1:5735");
+    const toDev = yield* Effect.flip(callWith(liveShell, Option.some(devHome)));
+    expect(toDev.message).toContain(`--base-dir ${devHome} targets http://127.0.0.1:5735`);
+    expect(toDev.message).toContain("thread credential targets http://127.0.0.1:43123");
+    expect(toDev.message).toContain("Unset T3_ACP_MCP_ENDPOINT and T3_ACP_MCP_AUTHORIZATION");
+    const stopped = yield* Effect.flip(
+      callWith(liveShell, Option.some(yield* homeServedAt(undefined))),
     );
-    expect(yield* record(shell)).toEqual([
-      {
-        endpoint: "http://127.0.0.1:43123/mcp",
-        authorization: "Bearer thread-a",
-        hasThreadCredential: true,
-      },
-    ]);
-    const fallback = yield* Effect.flip(record({}));
-    expect(fallback.message).toContain("server is not running");
+    expect(stopped.message).toContain("targets no running T3 server");
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+);
+
+it.effect("a thread credential with a --base-dir of its own server calls as the thread", () =>
+  Effect.gen(function* () {
+    // `localhost` and `127.0.0.1` name the same server.
+    const ownHome = yield* homeServedAt("http://localhost:43123");
+    expect(yield* callWith(liveShell, Option.some(ownHome))).toEqual([asThread]);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+);
+
+it.effect("without a thread credential, --base-dir picks that home's server", () =>
+  Effect.gen(function* () {
+    const devHome = yield* homeServedAt("http://127.0.0.1:5735");
+    const [connection] = yield* callWith({}, Option.some(devHome));
+    expect(connection).toMatchObject({
+      endpoint: "http://127.0.0.1:5735/mcp",
+      hasThreadCredential: false,
+    });
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+);
+
+it.effect("half a thread credential fails instead of falling back", () =>
+  Effect.gen(function* () {
+    const error = yield* Effect.flip(
+      callWith({ T3_ACP_MCP_ENDPOINT: "http://127.0.0.1:43123/mcp" }, Option.none()),
+    );
+    expect(error.message).toContain("Only one of T3_ACP_MCP_ENDPOINT");
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
 );
