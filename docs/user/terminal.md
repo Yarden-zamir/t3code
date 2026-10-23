@@ -20,34 +20,49 @@ Jump to latest in the context menu returns to the current output.
 
 # Terminal threads
 
-A terminal thread is a thread whose view is a terminal. Use it for an editor, a
+A terminal thread is a thread whose screen is a terminal. Use it for an editor, a
 CLI agent or a dev server that you want next to your other threads.
 
-Turn on Settings > Fork > Terminal threads on the server. Then start one with the
-terminal button next to New thread in the sidebar, with `mod+alt+t`, or with New
-terminal thread in the command palette. All three ask for a project.
+Turn on Settings > Fork > Terminal threads on the server. Then start one like a normal
+thread: the terminal button next to New thread in the sidebar, `mod+alt+t`
+(`chat.newTerminal`), or New terminal thread in the command palette. These follow the
+same rules as the New thread button, including the project chooser and Shift. The command
+`chat.newTerminalLocal` (`mod+alt+shift+n`) starts in the focused project at once. The new
+terminal takes focus and its shell starts while the thread opens.
 
-A message to a terminal thread is typed into its terminal, followed by Enter. This
-covers messages from a scheduled task, a webhook or an agent. When the shell is idle,
-the run ends with the exit code and the output of the command. When a program runs
-in the terminal, the message goes to that program and the run ends at once. A message that
-arrives while a command from an earlier message still runs is typed into that command, for
-example to answer a prompt. The
-message runs in the shell itself, so `cd` and `export` stay for the next message. A
-scheduled task with a webhook cannot use a terminal thread.
+The screen is the header of a normal thread above the terminal. `mod+j` opens the drawer
+for more terminals of the thread.
 
-The thread has no timeline and no composer. A server restart ends the programs in its
-terminal unless the server runs terminal threads in tmux (Settings > Fork > Terminal
-threads in tmux). Terminal key mappings (Settings > Fork) send fixed bytes for a key,
-for example Cmd+Z as the Kitty sequence that a shell binds.
+## Messages
 
-`mod+=`, `mod+-` and `mod+0` change the font size of every terminal, in a terminal
-thread and in the terminal drawer, within the limits in Settings > Fork.
+A message to a terminal thread, from a scheduled task, an agent or the MCP tools, is typed
+into its terminal, followed by Enter. The terminal shows exactly what the message said.
 
-When the shell of a terminal thread exits or is killed, the session closes. The
-view offers Start a new session. A message to the thread also starts a new session.
+- At a prompt, the run ends with the exit code and the output of the command. The message
+  runs in the shell itself, so `cd` and `export` stay for the next message.
+- While a command runs, a new message is typed into that command, for example to answer a
+  prompt.
+- The reply needs the shell integration of the thread. It works with bash 4.4 or newer and
+  zsh. With another shell the message is only typed, and the reply says that no result is
+  captured.
+- A scheduled task with a webhook cannot use a terminal thread.
 
-The sidebar shows the state of a terminal thread. A bell or an app notification from
-a program shows Awaiting Input. A program that ends in the shell shows Completed.
-Both stay until you visit the thread. A session that fails shows Error. A program
-that runs shows the terminal icon of the row and no pill.
+## Sidebar
+
+The sidebar shows the state of a terminal thread until you visit it:
+
+- A bell or an app notification from a program shows Input.
+- A program that ends shows Done, or Failed when its exit code is not zero.
+- A program that runs shows the terminal icon of the row.
+
+## Shell exit
+
+When the shell of a terminal thread exits or is killed, the session closes. The screen
+offers Start a new session, and a message to the thread also starts one. A server restart
+ends the programs in the terminal.
+
+## Zoom and keys
+
+`mod+=`, `mod+-` and `mod+0` change the font size of every terminal, within the limits in
+Settings > Fork. Terminal key mappings (Settings > Fork) send fixed bytes for a key, for
+example Cmd+Z as the Kitty sequence that a shell binds.

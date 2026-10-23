@@ -446,25 +446,26 @@ Control tooltips show the keys of the control as chips, such as "Stash ⌘S", fo
 
 ### Terminal threads
 
-A thread whose view is a live terminal, next to the other threads of a project. A schedule, a webhook or an agent can type into it.
+A thread whose screen is a live terminal, next to the other threads of a project. A schedule, a webhook or an agent can type into it.
 
-- **Setting:** server settings `terminalThreads` (off by default) and `terminalThreadsTmux` (off by default); client settings `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax` (8 and 24), the zoom limits of every terminal (`mod+=`, `mod+-`, `mod+0` work in a terminal thread and in the drawer). Settings > Fork. Keybinding command `chat.newTerminal` (`mod+alt+t`).
+- **Setting:** server setting `terminalThreads` (off by default); client settings `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax` (8 and 24), the zoom limits of every terminal (`mod+=`, `mod+-`, `mod+0`). Settings > Fork. Keybinding commands `chat.newTerminal` (`mod+alt+t`) and `chat.newTerminalLocal` (`mod+alt+shift+n`).
 - **Works on:** web and desktop create and use them. The mobile app opens one on its native terminal screen and cannot create one. Remote environments work the same, because the terminal runs on the server of the thread.
-- A terminal thread is a normal thread with the provider `terminal` (constants in `packages/contracts/src/forkTerminalThreads.ts`). The `terminal` driver types a message and Enter into the terminal `term-1`. At an idle shell it waits for a marker that carries the exit code, then answers with the exit code and the output. With a program in front it answers at once. The adapter supports active steering, so a message that arrives while a command runs is typed into that command.
-- Start one from the sidebar button next to New thread, from `chat.newTerminal`, or from the command palette ("New terminal thread in..."). The MCP tools `t3_thread_launch` and `schedule_task` start one with the model selection `{"instanceId":"terminal","model":"terminal"}`.
-- Server auto-update waits while a terminal thread without tmux runs a program.
-- A shell that exits or is killed closes the session of the main terminal (the server closes it and deletes its history). The view shows "Start a new session", and the next message opens a fresh shell.
-- Sidebar state: the terminal summary carries `attention` (`bell` for a bell or OSC 9, OSC 99 and OSC 777 notifications, `finished` for a program that ended). Unseen `bell` shows Awaiting Input, unseen `finished` shows Completed, a session in `starting` shows Connecting and `error` shows Error. Message runs keep their own Working and Completed. A running program shows only the terminal icon.
-- With `terminalThreadsTmux`, the terminal runs inside a tmux session on its own socket, named from a hash of the state folder (the socket file is in `/tmp/tmux-<uid>/`). Programs survive a server restart, and the next open attaches again. tmux search needs the tmux search keys of [Terminal key mappings](#terminal-key-mappings).
-- **Limits:** a bell that arrives split across two output chunks is missed, and `finished` comes from the subprocess poll, so a command shorter than one poll shows no pill. A terminal thread has no timeline, so the messages that a schedule sent show only in the terminal. Without tmux a restart ends the programs, and a program that never ends blocks auto-update. The mobile app has no create button. Find in thread works only with tmux. Revisit when these block daily use.
+- **Thread:** a normal thread with the provider `terminal` (constants in `packages/contracts/src/forkTerminalThreads.ts`). `ThreadRouteView` renders `ForkTerminalThreadScreen` for it, not `ChatView`: the thread header above the main terminal `term-1`, with the drawer for the other terminals.
+- **Creation:** the same code as a chat thread. `startNewThreadFromContext` and the palette intent `new-thread-in` take a kind (`chat` or `terminal`), so the project rules of the New thread button apply. `useCreateTerminalThread` creates the thread and starts the shell in parallel. `useGrabTerminalFocus` keeps focus on the new terminal for two seconds, because the palette gives focus back to its trigger.
+- **Shell integration:** the server starts the shell of the main terminal with a hook that prints OSC 133 marks for the prompt, the start of a command and its end with the exit code (`apps/server/src/fork/shellIntegration.ts`; bash 4.4 or newer and zsh). `shellMarks.ts` reads the marks and the bell, and `terminalShellState.ts` keeps `shell`, `hasRunningSubprocess` and `attention` on the terminal summary. A shell without the hook reports no state.
+- **Messages:** the `terminal` driver types the message and Enter. With `shell` at `prompt` it reads the exit code and the output between the marks and answers with them. With `running` it types the message into the program and answers at once. The adapter supports active steering, so a message that arrives while a command runs is typed into that command. The driver refuses a run outside full access mode.
+- **Sidebar state:** an unseen bell shows Input. An unseen finished program shows Done, or Failed with a non-zero exit code. A thread that nobody opened counts everything as unseen. `summary.shell` and `hasRunningSubprocess` give the running icon.
+- **Shell exit:** a shell that exits or is killed closes the session of the main terminal. The screen shows "Start a new session", and the next message opens a fresh shell.
+- **Guards:** a webhook task cannot run in a terminal thread, and `schedule_task` with the terminal model must pass `bindToCurrentThread:false` unless the caller is a terminal thread.
+- **Limits:** a terminal thread has no timeline, so the messages that a schedule sent show only in the terminal. A server restart ends the programs; a multiplexer would keep them, and find in thread would need its own search. A multi-line message reports the first command that ends. Terminals other than the main terminal of a terminal thread have no shell integration. The mobile app has no create button. The group tabs of the sidebar do not show the states. Revisit when these block daily use.
 
 ### Terminal key mappings
 
 Keys that every terminal sends as fixed bytes.
 
-- **Setting:** client setting `terminalKeyMappings` (empty by default). Settings > Fork > Terminal key mappings, with presets for zsh editor keys on macOS and for tmux search.
+- **Setting:** client setting `terminalKeyMappings` (empty by default). Settings > Fork > Terminal key mappings, with a preset for zsh editor keys on macOS.
 - **Works on:** web, desktop.
-- An entry has `key` (for example `cmd+z`), `send` (escapes `\e`, `\xNN`, `\uNNNN`, `\r`, `\n`, `\t`) and `passthrough`. With `passthrough`, a terminal in tmux receives the bytes unchanged through `tmux send-keys`; without tmux it is a plain write. A mapped key replaces the encoding of the key, except copy while text is selected. App shortcuts, zoom and the built-in Cmd+arrow, Cmd+Backspace, Cmd+K and Ctrl+L keys act first, so a mapping on one of them never fires.
+- An entry has `key` (for example `cmd+z`), `send` (escapes `\e`, `\xNN`, `\uNNNN`, `\r`, `\n`, `\t`). A mapped key replaces the encoding of the key, except copy while text is selected. App shortcuts, zoom and the built-in Cmd+arrow, Cmd+Backspace, Cmd+K and Ctrl+L keys act first, so a mapping on one of them never fires.
 - **Limits:** the mobile app ignores the mappings. Revisit when a mobile keyboard needs them.
 
 ### Terminal history
@@ -473,7 +474,7 @@ Each terminal keeps up to 5,000 lines and 8 MiB of output on the server.
 
 - **Setting:** server settings `terminalHistoryLines` (5000) and `terminalHistoryMegabytes` (8). Settings > Fork > Terminal history.
 - **Works on:** server.
-- **Limits:** a change applies after a server restart. In tmux the line limit sets the tmux scrollback, and a tmux session keeps the value of the moment it started. Revisit if live terminals must resize their history.
+- **Limits:** a change applies after a server restart. Revisit if live terminals must resize their history.
 
 ### Terminal settings
 

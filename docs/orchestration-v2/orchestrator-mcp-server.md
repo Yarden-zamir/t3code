@@ -353,8 +353,8 @@ launching again. `create_threads` remains the batch option for a shared checkout
 
 With the fork setting Terminal threads on, `modelSelection` of
 `{"instanceId":"terminal","model":"terminal"}` launches a terminal thread: a live
-shell with no model. `message` is typed into the terminal followed by Enter. At an
-idle shell the run answers with the exit code and the output. With a program in
+shell with no model. `message` is typed into the terminal followed by Enter. At a
+prompt of bash or zsh the run answers with the exit code and the output. With a program in
 front, the message goes to that program and the run ends at once. A message that
 arrives while an earlier command runs is typed into that command. The message
 runs in the shell itself, so `cd` and `export` stay, and the thread needs full
