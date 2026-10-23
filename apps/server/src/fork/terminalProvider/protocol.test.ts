@@ -61,7 +61,9 @@ describe("makeCommandCapture", () => {
 });
 
 describe("pastedCommand", () => {
-  it("cannot end the paste early", () => {
-    expect(pastedCommand("echo a\u001b[201~; rm x\n")).toBe("\u001b[200~echo a; rm x\u001b[201~\r");
+  it("clears the prompt line and cannot end the paste early", () => {
+    expect(pastedCommand("echo a\u001b[201~; rm x\n")).toBe(
+      "\u0005\u0015\u001b[200~echo a; rm x\u001b[201~\r",
+    );
   });
 });

@@ -57,6 +57,7 @@ import { focusLevel } from "../focusLevels/focusLevels";
 import { Button } from "../ui/button";
 import { Select, SelectGroup, SelectGroupLabel, SelectItem, SelectPopup } from "../ui/select";
 import { Spinner } from "../ui/spinner";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerControl, ComposerSelectControl } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
@@ -485,6 +486,15 @@ export function ForkDraftTerminalComposer(props: {
     if (created._tag === "Failure") {
       // The next command tries again.
       promotion.current = "idle";
+      if (isAtomCommandInterrupted(created)) return;
+      const error = squashAtomCommandFailure(created);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not open the terminal thread",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
       return;
     }
     promotion.current = "promoted";

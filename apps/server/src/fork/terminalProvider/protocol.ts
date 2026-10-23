@@ -25,11 +25,17 @@ const PASTE_START = "\u001b[200~";
 const PASTE_END = "\u001b[201~";
 
 /**
+ * Ctrl+E then Ctrl+U: clears text that the user left on the prompt line, so the message does not
+ * run joined to it. Both bash and zsh keep the cleared text, and Ctrl+Y puts it back.
+ */
+const CLEAR_PROMPT_LINE = "\u0005\u0015";
+
+/**
  * The input for a shell at its prompt. A bracketed paste puts all lines on one command line, so
  * the shell reports one end for the whole message, with the exit code of its last command.
  */
 export function pastedCommand(text: string): string {
-  return `${PASTE_START}${text.replaceAll(PASTE_END, "").trimEnd()}${PASTE_END}\r`;
+  return `${CLEAR_PROMPT_LINE}${PASTE_START}${text.replaceAll(PASTE_END, "").trimEnd()}${PASTE_END}\r`;
 }
 
 /**

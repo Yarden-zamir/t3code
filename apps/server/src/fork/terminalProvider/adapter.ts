@@ -357,9 +357,9 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
         ) =>
           Effect.gen(function* () {
             const settled = yield* Deferred.make<void>();
-            // A fresh shell shows its prompt before its line editor reads input. A paste that
-            // arrives in between is echoed as raw text, so it waits until the editor turns on
-            // bracketed paste.
+            // A shell shows its prompt before its line editor reads input, both when it starts and
+            // after a program ends. A paste that arrives in between is echoed as raw text, so it
+            // waits until the editor turns on bracketed paste.
             const pasteReady = yield* Deferred.make<void>();
             let promptSeen = false;
             const parser = makeShellMarkParser();
@@ -386,7 +386,7 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
               if (known !== busy) return known;
               yield* Deferred.await(settled).pipe(Effect.timeoutOption(timeoutMs));
               const after = yield* port.shellState(ids);
-              if (busy === "starting" && after === "prompt") {
+              if (after === "prompt") {
                 yield* Deferred.await(pasteReady).pipe(
                   Effect.timeoutOption(PASTE_READY_TIMEOUT_MS),
                 );

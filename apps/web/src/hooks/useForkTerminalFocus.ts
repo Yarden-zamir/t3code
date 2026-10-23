@@ -11,23 +11,23 @@ const OPEN_LAYER_SELECTOR =
  * Fork: gives keyboard focus to the terminal inside `containerRef` once, as soon as its surface
  * exists (the surface loads after mount). It takes focus from the button that opened the terminal
  * (a sidebar button, or the trigger that a closing palette focuses again), but not from a text
- * field, a dialog or a menu that the user moved to in the meantime.
+ * field that the user moved to in the meantime. While a dialog or a menu has focus, it waits: the
+ * project picker that opened the terminal is often still closing when the surface appears.
  */
 export function useGrabTerminalFocus(containerRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const deadline = Date.now() + SURFACE_WAIT_MS;
     const timer = window.setInterval(() => {
       const input = containerRef.current?.querySelector("textarea");
-      if (!input) {
+      const active = document.activeElement;
+      const inOpenLayer = active?.closest(OPEN_LAYER_SELECTOR) != null;
+      if (!input || inOpenLayer) {
         if (Date.now() >= deadline) window.clearInterval(timer);
         return;
       }
       window.clearInterval(timer);
-      const active = document.activeElement;
-      const userMovedOn =
-        active !== input &&
-        (isEditableFocused(active) || active?.closest(OPEN_LAYER_SELECTOR) != null);
-      if (!userMovedOn) input.focus();
+      if (active !== input && isEditableFocused(active)) return;
+      input.focus();
     }, SURFACE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [containerRef]);

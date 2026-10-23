@@ -24,6 +24,8 @@ import type { TerminalPort, TerminalPortEvent } from "./port.ts";
 import { BUSY_SHELL_MESSAGE, pastedCommand, TERMINAL_RUN_TIMEOUT_MS } from "./protocol.ts";
 
 const PROMPT = "\u001b]133;A\u0007";
+// The line editor turns bracketed paste on after it draws the prompt.
+const PASTE_ON = "\u001b[?2004h";
 const threadId = ThreadId.make("thread:terminal-adapter");
 const runId = RunId.make("run:terminal-adapter");
 const attemptId = RunAttemptId.make("attempt:terminal-adapter");
@@ -158,7 +160,7 @@ const startRun = (fake: Effect.Success<typeof makeFakePort>, text: string) =>
 
 const completeAtPrompt = (fake: Effect.Success<typeof makeFakePort>, text: string) =>
   Effect.gen(function* () {
-    yield* fake.print(PROMPT, "prompt");
+    yield* fake.print(`${PROMPT}${PASTE_ON}`, "prompt");
     assert.equal(yield* Queue.take(fake.writes), pastedCommand(text));
     yield* fake.print("\u001b]133;C\u0007done\r\n\u001b]133;D;0\u0007", "prompt");
   });
@@ -201,5 +203,20 @@ it.effect("a program that holds the shell for the whole run fails the run", () =
     assert.equal(terminal?.status, "failed");
     assert.equal(terminal?.failure?.message, BUSY_SHELL_MESSAGE);
     assert.equal(yield* Queue.size(fake.writes), 0);
+  }).pipe(Effect.scoped, Effect.provide(IdAllocator.layer)),
+);
+
+it.effect("a message waits for the line editor after a program ends", () =>
+  Effect.gen(function* () {
+    const fake = yield* makeFakePort;
+    const run = yield* startRun(fake, "ls");
+
+    yield* fake.print(PROMPT, "prompt");
+    assert.equal(yield* Queue.size(fake.writes), 0);
+
+    yield* fake.print(PASTE_ON, "prompt");
+    assert.equal(yield* Queue.take(fake.writes), pastedCommand("ls"));
+    yield* fake.print("\u001b]133;C\u0007done\r\n\u001b]133;D;0\u0007", "prompt");
+    assert.equal((yield* run.outcome).terminal?.status, "completed");
   }).pipe(Effect.scoped, Effect.provide(IdAllocator.layer)),
 );
