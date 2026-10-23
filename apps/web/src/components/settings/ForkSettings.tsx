@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 
 import { Button } from "../ui/button";
 import { RestoreWorktreesSettingsRow, WorktreeArtifactSettingsRows } from "./ForkWorktreeSettings";
+import { AccessChangeNoticesSettingsRow } from "./AccessChangeNoticesSettingsRow";
 import { EnvironmentLabelSettingsRow } from "./EnvironmentLabelSettingsRow";
 import { AppToggleShortcutsSettingsRow } from "./AppToggleShortcutsSettingsRow";
 import {
@@ -75,6 +76,7 @@ const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>> = {
   "environment-label-from-machine-map": EnvironmentLabelSettingsRow,
   "tunnel-pairing": TunnelPairingSettingsRow,
   "restart-reconnect-warning-grace": RestartReconnectWarningGraceSettingsRow,
+  "access-change-notices": AccessChangeNoticesSettingsRow,
   "installed-app": InstalledAppSettingsRow,
   "web-push": WebPushSettingsRow,
   "update-track": AboutVersionSection,

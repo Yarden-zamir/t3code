@@ -1,4 +1,5 @@
 import { PermissionUpdateNotice } from "./features/connection/PermissionUpdateNotice";
+import { ForkAccessChangeNotices } from "./features/connection/ForkAccessChangeNotices";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
@@ -101,6 +102,7 @@ function AppContent() {
       <SplashScreenCoordinator />
       <SubscriptionUsageCoordinator />
       <PermissionUpdateNotice />
+      <ForkAccessChangeNotices />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>

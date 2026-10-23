@@ -3,6 +3,7 @@
  * per place, so the upstream file keeps one line per hook.
  */
 import { isElectron } from "../../env";
+import { AccessChangeNoticesSettingsRow } from "./AccessChangeNoticesSettingsRow";
 import { AppToggleShortcutsSettingsRow } from "./AppToggleShortcutsSettingsRow";
 import {
   FocusLevelHighlightSettingsRow,
@@ -89,6 +90,8 @@ export function BehaviorRows() {
       <BackgroundWorkDetailsSettingsRow />
 
       <RestartReconnectWarningGraceSettingsRow />
+
+      <AccessChangeNoticesSettingsRow />
     </>
   );
 }

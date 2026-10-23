@@ -11,11 +11,12 @@ import {
   clientSessionSubject,
   type DesiredBrowserClient,
   type DesiredClient,
+  effectiveArrowLevel,
+  MACHINE_LEVEL_LINK_ACCESS,
   type AuthMcpClientAccess,
   MACHINE_LEVEL_SCOPES,
   type MachineDesiredState,
   MachineId,
-  type MachineLevel,
   type PeerMachine,
   machineSessionSubject,
 } from "@t3tools/contracts";
@@ -30,18 +31,6 @@ export interface MachineGrant {
   readonly label: string;
 }
 
-/**
- * The level of an arrow at `nowMs`. An arrow past its expiry has its revert level, so a machine
- * that missed the expiry revision of the portal (MM-304) still enforces it.
- */
-const effectiveLevel = (
-  arrow: Pick<ArrowRecord, "level" | "expiresAt" | "revertLevel">,
-  nowMs: number,
-): MachineLevel =>
-  arrow.expiresAt !== null && Date.parse(arrow.expiresAt) <= nowMs
-    ? (arrow.revertLevel ?? "none")
-    : arrow.level;
-
 const arrowFrom = (desired: MachineDesiredState, from: MachineId) =>
   desired.arrowsIn.find((arrow) => arrow.from === from && arrow.to === desired.self.id);
 
@@ -55,7 +44,7 @@ export const machineGrantFor = (
   if (peer === undefined || peer.id === desired.self.id) return undefined;
   const arrow = arrowFrom(desired, peer.id);
   if (arrow === undefined) return undefined;
-  const level = effectiveLevel(arrow, nowMs);
+  const level = effectiveArrowLevel(arrow, nowMs);
   if (level === "none") return undefined;
   return {
     subject: machineSessionSubject(peer.id),
@@ -75,7 +64,7 @@ export const clientGrantFor = (
 ): MachineGrant | undefined => {
   const client = desired.clients?.find((candidate) => candidate.tokenClientId === tokenClientId);
   if (client === undefined) return undefined;
-  const level = effectiveLevel(client, nowMs);
+  const level = effectiveArrowLevel(client, nowMs);
   if (level === "none") return undefined;
   return {
     subject: clientSessionSubject(client.id),
@@ -125,7 +114,7 @@ export const browserGrantFor = (
     candidate.thumbprints.includes(thumbprint),
   );
   if (client === undefined) return undefined;
-  const level = effectiveLevel(client, nowMs);
+  const level = effectiveArrowLevel(client, nowMs);
   if (level === "none") return undefined;
   return {
     subject: clientSessionSubject(client.id),
@@ -183,16 +172,6 @@ export const isMapSubject = (subject: string) =>
   isMachineSubject(subject) || subject.startsWith(CLIENT_SUBJECT_PREFIX);
 
 /**
- * MM-302: the linked-environment access of each level above `none`. `standard` work is fenced to
- * the threads its link started (upstream `linkOrigin.ts`); only `admin` is not fenced.
- */
-const LEVEL_LINK_ACCESS = {
-  read: "read-only",
-  standard: "auto",
-  admin: "full-access",
-} as const satisfies Record<Exclude<MachineLevel, "none">, AuthMcpClientAccess>;
-
-/**
  * MM-1307: the MCP access of a machine session, or undefined when its arrow has no agent tools.
  * The source sends the limits of its calling thread in `T3-Mode-Limit`, and this machine narrows
  * the access to them (MM-1902). A session without `orchestration:operate`, as an older source
@@ -207,12 +186,12 @@ export const machineMcpAccessFor = (
   if (peer === undefined) return undefined;
   const arrow = arrowFrom(desired, peer.id);
   if (arrow === undefined || !arrow.agentTools) return undefined;
-  const level = effectiveLevel(arrow, nowMs);
+  const level = effectiveArrowLevel(arrow, nowMs);
   if (level === "none") return undefined;
   return {
     peer,
     access: session.scopes.includes(AuthOrchestrationOperateScope)
-      ? LEVEL_LINK_ACCESS[level]
+      ? MACHINE_LEVEL_LINK_ACCESS[level]
       : "read-only",
   };
 };
@@ -285,7 +264,7 @@ export const machineOfRequestNamespace = (requestNamespace: string): MachineId |
  * target, and only at `standard` or `admin`, because a command can do what the user can do.
  */
 export const arrowAllowsExec = (arrow: ArrowRecord, nowMs: number): boolean => {
-  const level = effectiveLevel(arrow, nowMs);
+  const level = effectiveArrowLevel(arrow, nowMs);
   return arrow.agentTools && arrow.exec && (level === "standard" || level === "admin");
 };
 
@@ -323,12 +302,12 @@ const sourcesWithChangedLevel = <K>(
       ([source, arrow]) =>
         [
           source,
-          previousAtMs === null ? arrow.level : effectiveLevel(arrow, previousAtMs),
+          previousAtMs === null ? arrow.level : effectiveArrowLevel(arrow, previousAtMs),
         ] as const,
     ),
   );
   const after = new Map(
-    next.map(([source, arrow]) => [source, effectiveLevel(arrow, nowMs)] as const),
+    next.map(([source, arrow]) => [source, effectiveArrowLevel(arrow, nowMs)] as const),
   );
   return [...new Set([...before.keys(), ...after.keys()])].filter(
     (source) => (before.get(source) ?? "none") !== (after.get(source) ?? "none"),
@@ -380,7 +359,7 @@ export const nextExpiry = (
 export const reachablePeers = (desired: MachineDesiredState | null, nowMs: number) =>
   (desired?.arrowsOut ?? []).flatMap((arrow) => {
     if (arrow.from !== desired?.self.id) return [];
-    const level = effectiveLevel(arrow, nowMs);
+    const level = effectiveArrowLevel(arrow, nowMs);
     const machine = desired.peers.find((peer) => peer.id === arrow.to);
     if (level === "none" || machine === undefined || machine.hostname === null) return [];
     return [
@@ -419,7 +398,7 @@ export const arrowLinkTargets = (
       {
         machine: peer.machine,
         origin: peer.origin,
-        access: LEVEL_LINK_ACCESS[peer.level],
+        access: MACHINE_LEVEL_LINK_ACCESS[peer.level],
         endsAtMs: endsAtMs !== null && Number.isFinite(endsAtMs) ? endsAtMs : null,
       },
     ];

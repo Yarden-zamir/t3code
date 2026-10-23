@@ -254,6 +254,13 @@ export const BEHAVIOR_ITEMS = [
     searchTerms: ["monitor background command agent task output file popover markdown links"],
   },
   {
+    id: "access-change-notices",
+    title: "Access change notices",
+    to: "/settings/general",
+    searchTerms: ["machine map arrow permissions scopes access changed toast notice popup"],
+    environmentOnly: true,
+  },
+  {
     id: "restart-reconnect-warning-grace",
     title: "Quiet reconnect after restart",
     to: "/settings/general",
