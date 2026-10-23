@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { TerminalAttention } from "./forkTerminalThreads.ts";
+import { TerminalAttention, TerminalShellState } from "./forkTerminalThreads.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const DEFAULT_TERMINAL_ID = "term-1";
@@ -62,12 +62,6 @@ export type TerminalObserveInput = Schema.Codec.Encoded<typeof TerminalObserveIn
 export const TerminalWriteInput = Schema.Struct({
   ...TerminalSessionInput.fields,
   data: Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(65_536)),
-  /**
-   * Fork: deliver `data` to the application unchanged. A terminal that runs inside a multiplexer
-   * would otherwise read the bytes as keys and change them. Without a multiplexer it is a plain
-   * write.
-   */
-  passthrough: Schema.optionalKey(Schema.Boolean),
 });
 export type TerminalWriteInput = Schema.Codec.Encoded<typeof TerminalWriteInput>;
 
@@ -132,6 +126,7 @@ export const TerminalSummary = Schema.Struct({
   updatedAt: Schema.String,
   /** Fork: set on the main terminal of a terminal thread. */
   attention: Schema.optionalKey(TerminalAttention),
+  shell: Schema.optionalKey(TerminalShellState),
 });
 export type TerminalSummary = typeof TerminalSummary.Type;
 

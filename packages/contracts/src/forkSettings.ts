@@ -73,13 +73,11 @@ export const MAX_TERMINAL_KEY_MAPPINGS = 64;
  * Fork: a key that a terminal sends as the bytes in `send`, in place of its own encoding. `key`
  * uses the keybinding syntax, such as `cmd+z`. `send` uses escape notation: `\e`, `\xNN`,
  * `\uNNNN`, `\r`, `\n`, `\t` and `\\`. `\xNN` is the character U+00NN, which the terminal sends
- * as UTF-8, so a value from 0x80 up becomes two bytes. A mapping applies in every terminal. `passthrough` skips the multiplexer, so the application
- * gets the bytes unchanged.
+ * as UTF-8, so a value from 0x80 up becomes two bytes. A mapping applies in every terminal.
  */
 export const TerminalKeyMapping = Schema.Struct({
   key: TrimmedNonEmptyString.check(Schema.isMaxLength(32)),
   send: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(64)),
-  passthrough: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 export type TerminalKeyMapping = typeof TerminalKeyMapping.Type;
 
@@ -415,17 +413,10 @@ export const ForkServerSettingsFields = {
   /** Fork: the home thread list of the mobile app shows the `sidebarGroups` tabs. */
   mobileSidebarGroups: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
-   * Fork: terminal threads (`forkTerminalThreads.ts`). A thread whose main view is a terminal that
-   * runs inside a tmux session, so its apps outlive a server restart. A server setting, because
-   * this server starts tmux.
+   * Fork: terminal threads (`forkTerminalThreads.ts`). A thread whose screen is a terminal. A
+   * server setting, because the server starts the shell and writes the shell integration.
    */
   terminalThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /**
-   * Fork: a terminal thread runs inside a tmux session, so its apps outlive a server restart and
-   * tmux search works. Needs tmux on the server machine; without it the thread runs a plain
-   * shell. Applies to terminals that open after the change.
-   */
-  terminalThreadsTmux: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Fork: how many lines of output the server keeps for each terminal. */
   terminalHistoryLines: TerminalHistoryLines.pipe(Schema.withDecodingDefault(Effect.succeed(5000))),
   /** Fork: how many megabytes of output the server keeps for each terminal. */
@@ -459,7 +450,6 @@ export const ForkServerSettingsPatchFields = {
   mobileComposerCamera: Schema.optionalKey(Schema.Boolean),
   mobileSidebarGroups: Schema.optionalKey(Schema.Boolean),
   terminalThreads: Schema.optionalKey(Schema.Boolean),
-  terminalThreadsTmux: Schema.optionalKey(Schema.Boolean),
   terminalHistoryLines: Schema.optionalKey(TerminalHistoryLines),
   terminalHistoryMegabytes: Schema.optionalKey(TerminalHistoryMegabytes),
   /** Replaces the saved groups whole: a merge would keep deleted groups and assignments. */

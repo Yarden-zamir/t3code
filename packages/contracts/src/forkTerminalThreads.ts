@@ -1,9 +1,8 @@
 /**
  * Fork: terminal threads, behind the server setting `terminalThreads`. A terminal thread is an
- * ordinary thread whose provider instance is `TERMINAL_THREAD_INSTANCE_ID`. Its main view is the
- * thread terminal `DEFAULT_TERMINAL_ID`. A message to the thread is typed into that terminal
- * (the `terminal` provider driver). With the server setting `terminalThreadsTmux`, the terminal
- * runs inside a tmux session, so its apps outlive a server restart.
+ * ordinary thread whose provider instance is `TERMINAL_THREAD_INSTANCE_ID`. Its screen is the
+ * thread terminal `DEFAULT_TERMINAL_ID`. A message to the thread is typed into that terminal (the
+ * `terminal` provider driver).
  */
 import * as Schema from "effect/Schema";
 
@@ -20,12 +19,6 @@ export const TERMINAL_THREAD_MODEL_SELECTION: ModelSelection = {
 /** The client opens the main terminal of a terminal thread with this variable set to "1". */
 export const TERMINAL_THREAD_ENV = "T3CODE_TERMINAL_THREAD";
 
-/**
- * The bytes that open the tmux search prompt. The tmux config of the server binds them as a user
- * key, so they never reach the app. A key mapping sends them (`TMUX_KEY_PRESET`).
- */
-export const TERMINAL_THREAD_FIND_SEQUENCE = "\u001b[1999~";
-
 export function isTerminalThread(thread: { readonly providerInstanceId: string }): boolean {
   return thread.providerInstanceId === TERMINAL_THREAD_INSTANCE_ID;
 }
@@ -38,5 +31,14 @@ export function isTerminalThread(thread: { readonly providerInstanceId: string }
 export const TerminalAttention = Schema.Struct({
   kind: Schema.Literals(["bell", "finished"]),
   at: Schema.String,
+  /** The exit code of the program that ended. Only `finished` carries it. */
+  exitCode: Schema.optionalKey(Schema.NullOr(Schema.Int)),
 });
 export type TerminalAttention = typeof TerminalAttention.Type;
+
+/**
+ * Where the shell of a terminal thread stands, as its shell integration reports it. `prompt` waits
+ * for a command and `running` runs one. A terminal without shell integration has no state.
+ */
+export const TerminalShellState = Schema.Literals(["prompt", "running"]);
+export type TerminalShellState = typeof TerminalShellState.Type;
