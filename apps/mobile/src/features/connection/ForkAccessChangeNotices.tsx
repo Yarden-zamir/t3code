@@ -24,6 +24,8 @@ setAccessChangeNoticePresenter((notice) =>
 const machineMapState = createEnvironmentRpcSubscriptionAtomFamily(connectionAtomRuntime, {
   label: "mobile:fork-access-change:machine-map-state",
   tag: WS_METHODS.machineMapSubscribe,
+  // Notices turned off end the stream at once, not after the idle time.
+  idleTtlMs: 0,
 });
 
 /** Only while notices are on: the map subscription sends the whole state on each change. */
