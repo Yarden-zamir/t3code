@@ -238,6 +238,11 @@ function steps(): ReadonlyArray<Step> {
       detail: "registry against upstream/main",
       command: ["node", NodePath.join(import.meta.dirname, "fork-check-migrations.ts")],
     },
+    {
+      name: "adopted PRs",
+      detail: "list against HEAD",
+      command: ["node", NodePath.join(import.meta.dirname, "fork-adopted-prs.ts"), "check"],
+    },
   ];
 }
 

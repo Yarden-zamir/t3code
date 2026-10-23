@@ -1,0 +1,55 @@
+[
+  {
+    "number": 16653,
+    "title": "feat(server): /mcp narrows a client's modes from T3-Mode-Limit",
+    "headRef": "t3code/peer/mode-limit-header",
+    "mergedHead": "d868b6296c8a24bbc150ebb4d96d264316206099",
+    "reason": "Base of the linked environments stack. Cross-machine calls carry the limits of the calling thread in T3-Mode-Limit (MM-1902)."
+  },
+  {
+    "number": 16654,
+    "title": "feat(server): t3_thread_launch takes clientRequestId",
+    "headRef": "t3code/peer/launch-request-key",
+    "mergedHead": "071e6616495613844a1ff062446e41b4fc586d22",
+    "reason": "Linked environments stack. A retried t3_thread_launch on another machine starts no second thread."
+  },
+  {
+    "number": 16655,
+    "title": "feat(server): link to another environment",
+    "headRef": "t3code/peer/links",
+    "mergedHead": "197930788c33a086de927374a30e02da4c6336c4",
+    "reason": "Linked environments stack. The machine map arrows are the links (MM-1921).",
+    "forkRules": "Migration 068_PeerLinks stays out of Migrations.ts until upstream main has it. See docs/fork/operations.md \"Migrations\". Fork runs skip PeerLinks.test.ts until upstream main has the migration. See apps/server/src/fork/excludedUpstreamTests.ts. The fork has no manual links: MachinePeers gives the arrows to PeerLinks. Keep the refusal layer in cli/environment.ts and the peer link RPC handlers in fork/forkWs.ts."
+  },
+  {
+    "number": 16684,
+    "title": "feat(server): agents use linked environments through any T3 tool",
+    "headRef": "t3code/peer/forwarding",
+    "mergedHead": "641ee467aa5ceb9126f7c52e2b8b002bf258e0a4",
+    "reason": "Linked environments stack. Agents call T3 tools on another machine with its environmentId (MM-1921).",
+    "forkRules": "Fork runs skip PeerForwarding.test.ts until upstream main has the link migrations. See apps/server/src/fork/excludedUpstreamTests.ts. Keep the provide of PeerForwarding.layer in server.ts."
+  },
+  {
+    "number": 16695,
+    "title": "feat(server): work a linked environment starts stays within its link",
+    "headRef": "t3code/peer/link-origin",
+    "mergedHead": "e7be3191310fe8c8ee8493338a2e98665a999d4d",
+    "reason": "Linked environments stack. Work that another machine starts stays within the access of its arrow (MM-1921).",
+    "forkRules": "Migration 069_PeerLinkFence stays out of Migrations.ts until upstream main has it. See docs/fork/operations.md \"Migrations\"."
+  },
+  {
+    "number": 16698,
+    "title": "feat(web,mobile): linked environments in Connections",
+    "headRef": "t3code/peer/links-ui",
+    "mergedHead": "f580fefde9a4e31cfd5ff263ea43b0d392601b31",
+    "reason": "Linked environments stack. Settings > Connections shows the arrow links read-only (MM-1921)."
+  },
+  {
+    "number": 16719,
+    "title": "feat(server): delegate_task to a linked environment",
+    "headRef": "t3code/peer/remote-delegate",
+    "mergedHead": "70a2a7bdd25d1c3729a864517727914fc3b01d2b",
+    "reason": "Top of the linked environments stack. delegate_task with target.environmentId runs on another machine (MM-1910).",
+    "forkRules": "Fork runs skip RemoteDelegation.test.ts until upstream main has the link migrations. See apps/server/src/fork/excludedUpstreamTests.ts."
+  }
+]
