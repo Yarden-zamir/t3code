@@ -22,6 +22,8 @@ repository root, retain its terminal session, and read the actual backend port
 from the dev-runner output. Use the worktree's ignored `.t3` state. Never run
 against `~/.t3/userdata`. The Browser panel is not required for this workflow.
 
+Fork: start and stop it with `node scripts/fork-dev-server.ts` ([docs/fork/operations.md](../../../docs/fork/operations.md#harmless-verification)).
+
 Test with meaningful project and thread data. Read the shared
 [SQLite fixture reference](../test-t3-app/references/sqlite-fixtures.md) only
 when inspecting or seeding SQLite. Stop the test server before fixture writes.
