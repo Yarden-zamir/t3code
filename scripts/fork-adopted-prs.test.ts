@@ -7,7 +7,7 @@ import {
   serializeAdoptedList,
   type SyncIo,
   syncAdoptedPullRequests,
-  type UpstreamState,
+  type UpstreamPullRequest,
 } from "./fork-adopted-prs.ts";
 
 const commit = (digit: string) => digit.repeat(40);
@@ -23,13 +23,13 @@ const entry = (number: number, mergedHead: string): AdoptedPullRequest => ({
 const stack = [entry(1, commit("a")), entry(2, commit("b")), entry(3, commit("c"))] as const;
 
 interface FakeUpstream {
-  readonly states?: Readonly<Record<number, UpstreamState>>;
+  readonly states?: Readonly<Record<number, Partial<UpstreamPullRequest>>>;
   readonly heads?: Readonly<Record<number, string>>;
   readonly inHead?: ReadonlyArray<string>;
   readonly conflicts?: Readonly<Record<string, ReadonlyArray<string>>>;
 }
 
-/** Records the merges and the list commits. Unlisted pull requests are open at their listed head. */
+/** Records the merges and the list commits. By default a pull request is open at its listed head. */
 function fakeIo(upstream: FakeUpstream) {
   const merges: Array<{
     readonly commit: string;
@@ -37,7 +37,12 @@ function fakeIo(upstream: FakeUpstream) {
   }> = [];
   const listCommits: Array<ReadonlyArray<AdoptedPullRequest>> = [];
   const io: SyncIo = {
-    upstreamState: (number) => upstream.states?.[number] ?? { state: "OPEN" },
+    upstreamPullRequest: (number) => ({
+      state: "OPEN",
+      headOwner: "pingdotgg",
+      headRef: `stack/${number}`,
+      ...upstream.states?.[number],
+    }),
     fetchHead: (number) =>
       upstream.heads?.[number] ??
       stack.find((candidate) => candidate.number === number)!.mergedHead,
@@ -97,25 +102,20 @@ it("only updates the listed head when HEAD already has the new head", () => {
   );
 });
 
-it("drops a pull request that upstream main in HEAD merged, and keeps one merged elsewhere", () => {
+it("drops merged pull requests in one list commit", () => {
   const { io, merges, listCommits } = fakeIo({
-    states: {
-      1: { state: "MERGED", mergeCommit: commit("1") },
-      2: { state: "MERGED", mergeCommit: commit("2") },
-    },
-    inHead: [commit("1")],
+    states: { 1: { state: "MERGED" }, 2: { state: "MERGED" } },
   });
   const result = syncAdoptedPullRequests(stack, io);
   assert.deepStrictEqual(merges, []);
-  assert.deepStrictEqual(listCommits, [[stack[1], stack[2]]]);
-  assert.deepStrictEqual(result, { _tag: "Done", list: [stack[1], stack[2]] });
+  assert.deepStrictEqual(listCommits, [[stack[2]]]);
+  assert.deepStrictEqual(result, { _tag: "Done", list: [stack[2]] });
 });
 
 it("writes a drop into the next merge commit instead of a separate commit", () => {
   const { io, merges, listCommits } = fakeIo({
-    states: { 1: { state: "MERGED", mergeCommit: commit("1") } },
+    states: { 1: { state: "MERGED" } },
     heads: { 2: commit("d") },
-    inHead: [commit("1")],
   });
   syncAdoptedPullRequests(stack, io);
   assert.deepStrictEqual(
@@ -131,6 +131,16 @@ it("stops at a pull request that upstream closed without a merge", () => {
   assert.strictEqual(result._tag, "Stopped");
   if (result._tag === "Stopped") assert.include(result.reason, "#2");
   assert.deepStrictEqual(merges, []);
+});
+
+it("stops at an open pull request whose head left the upstream branch", () => {
+  for (const moved of [{ headOwner: "someone" }, { headRef: "stack/other" }]) {
+    const { io, merges } = fakeIo({ states: { 2: moved }, heads: { 2: commit("d") } });
+    const result = syncAdoptedPullRequests(stack, io);
+    assert.strictEqual(result._tag, "Stopped");
+    if (result._tag === "Stopped") assert.include(result.reason, "#2");
+    assert.deepStrictEqual(merges, []);
+  }
 });
 
 it("stops at a conflict and names the pull request and the paths", () => {

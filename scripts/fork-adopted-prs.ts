@@ -13,13 +13,17 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 
 export const LIST_PATH = "scripts/fork-adopted-upstream-prs.json";
-const UPSTREAM_REPOSITORY = "pingdotgg/t3code";
+const UPSTREAM_OWNER = "pingdotgg";
+const UPSTREAM_REPOSITORY = `${UPSTREAM_OWNER}/t3code`;
 const HEX_DIGITS = "0123456789abcdef";
 
 export interface AdoptedPullRequest {
   readonly number: number;
   readonly title: string;
-  /** The upstream branch of the pull request. Fork Sync follows `refs/pull/<number>/head`. */
+  /**
+   * The branch of the pull request in the upstream repository. Fork Sync follows
+   * `refs/pull/<number>/head`, and stops when the pull request moves to another branch.
+   */
   readonly headRef: string;
   /** The full commit of the head that fork main holds. */
   readonly mergedHead: string;
@@ -87,14 +91,16 @@ export function serializeAdoptedList(list: ReadonlyArray<AdoptedPullRequest>): s
   return `${JSON.stringify(list, null, 2)}\n`;
 }
 
-export type UpstreamState =
-  | { readonly state: "OPEN" }
-  | { readonly state: "MERGED"; readonly mergeCommit: string }
-  | { readonly state: "CLOSED" };
+export interface UpstreamPullRequest {
+  readonly state: "OPEN" | "MERGED" | "CLOSED";
+  /** The owner of the repository that holds the head branch. */
+  readonly headOwner: string;
+  readonly headRef: string;
+}
 
 /** The git and GitHub calls of `syncAdoptedPullRequests`. The tests replace them. */
 export interface SyncIo {
-  readonly upstreamState: (number: number) => UpstreamState;
+  readonly upstreamPullRequest: (number: number) => UpstreamPullRequest;
   /** Fetches `refs/pull/<number>/head` from upstream and returns its commit. */
   readonly fetchHead: (number: number) => string;
   readonly isAncestorOfHead: (commit: string) => boolean;
@@ -112,9 +118,9 @@ export type SyncResult =
   | { readonly _tag: "Stopped"; readonly reason: string; readonly details: string };
 
 /**
- * Runs after the upstream main merge. In list order, which is the stack order, it drops each pull
- * request that upstream main in HEAD merged, merges the new head of each open one, and stops at a
- * pull request that upstream closed without a merge or whose head conflicts.
+ * Runs after the upstream main merge. In list order, which is the stack order, it drops each merged
+ * pull request, merges the new head of each open one, and stops at a pull request that upstream
+ * closed without a merge, whose head left the upstream branch, or whose head conflicts.
  */
 export function syncAdoptedPullRequests(
   list: ReadonlyArray<AdoptedPullRequest>,
@@ -124,7 +130,7 @@ export function syncAdoptedPullRequests(
   let committedText = serializeAdoptedList(list);
   for (const entry of list) {
     const name = `${UPSTREAM_REPOSITORY}#${entry.number} "${entry.title}"`;
-    const upstream = io.upstreamState(entry.number);
+    const upstream = io.upstreamPullRequest(entry.number);
     switch (upstream.state) {
       case "CLOSED":
         return {
@@ -133,18 +139,23 @@ export function syncAdoptedPullRequests(
           details: `${name} is closed and not merged. Fork main still holds its head ${entry.mergedHead}. Decide whether the fork keeps that code. Fork rules: ${entry.forkRules ?? "none"}`,
         };
       case "MERGED":
-        // Stacked pull requests can merge into the branch below them first. Their code reaches
-        // upstream main later, and the pull requests above them still carry it until then.
-        if (!io.isAncestorOfHead(upstream.mergeCommit)) {
-          io.log(`${name}: merged, but upstream main in HEAD does not have it yet. Kept.`);
-          continue;
-        }
+        // A merged pull request gets no new heads. Upstream main brings it, or, when it merged into
+        // the branch below it in the stack, the listed pull request of that branch does.
         current = current.filter((candidate) => candidate.number !== entry.number);
         io.log(
-          `${name}: upstream main has it, dropped from the list. Undo its fork rules where upstream main now covers them: ${entry.forkRules ?? "none"}`,
+          `${name}: merged upstream, dropped from the list. Undo its fork rules where upstream main covers them: ${entry.forkRules ?? "none"}`,
         );
         continue;
       case "OPEN": {
+        // Fork Sync pushes the head to main, which deploys itself. A head from another repository
+        // would let its owner ship code to the fork.
+        if (upstream.headOwner !== UPSTREAM_OWNER || upstream.headRef !== entry.headRef) {
+          return {
+            _tag: "Stopped",
+            reason: `adopted pull request #${entry.number} moved to another branch`,
+            details: `${name} now has its head on ${upstream.headOwner}:${upstream.headRef}, not ${UPSTREAM_OWNER}:${entry.headRef}. Check the new branch, then update "headRef".`,
+          };
+        }
         const head = io.fetchHead(entry.number);
         if (head === entry.mergedHead) {
           io.log(`${name}: unchanged at ${head}.`);
@@ -218,7 +229,7 @@ function writeList(listText: string): void {
 }
 
 const realIo: SyncIo = {
-  upstreamState: (number) => {
+  upstreamPullRequest: (number) => {
     const json = JSON.parse(
       NodeChildProcess.execFileSync(
         "gh",
@@ -229,15 +240,22 @@ const realIo: SyncIo = {
           "--repo",
           UPSTREAM_REPOSITORY,
           "--json",
-          "state,mergeCommit",
+          "state,headRepositoryOwner,headRefName",
         ],
         { encoding: "utf8" },
       ),
-    ) as { readonly state?: unknown; readonly mergeCommit?: { readonly oid?: unknown } | null };
-    if (json.state === "OPEN" || json.state === "CLOSED") return { state: json.state };
-    const mergeCommit = json.mergeCommit?.oid;
-    if (json.state === "MERGED" && typeof mergeCommit === "string") {
-      return { state: "MERGED", mergeCommit };
+    ) as {
+      readonly state?: unknown;
+      readonly headRepositoryOwner?: { readonly login?: unknown } | null;
+      readonly headRefName?: unknown;
+    };
+    const headOwner = json.headRepositoryOwner?.login;
+    if (
+      (json.state === "OPEN" || json.state === "MERGED" || json.state === "CLOSED") &&
+      typeof headOwner === "string" &&
+      typeof json.headRefName === "string"
+    ) {
+      return { state: json.state, headOwner, headRef: json.headRefName };
     }
     throw new Error(
       `Unexpected state of ${UPSTREAM_REPOSITORY}#${number}: ${JSON.stringify(json)}`,
@@ -261,9 +279,11 @@ const realIo: SyncIo = {
     });
     if (result.status !== 0) {
       const conflicts = git("diff", "--name-only", "--diff-filter=U");
-      git("merge", "--abort");
-      if (conflicts === "")
+      // A merge that fails before it starts, for example on untracked files, has nothing to abort.
+      if (conflicts === "") {
         throw new Error(`git merge ${commit} failed:\n${result.stdout}${result.stderr}`);
+      }
+      git("merge", "--abort");
       return conflicts.split("\n");
     }
     writeList(listText);
@@ -311,15 +331,17 @@ function check(): void {
   }
   // Offline: it reads only local commits. A shallow clone lacks them, so Fork CI fetches them first.
   if (git("rev-parse", "--is-shallow-repository") === "true") {
-    console.log(`Shallow clone: checked only the schema of ${LIST_PATH}.`);
-  } else {
-    for (const entry of list) {
-      if (!gitSucceeds("merge-base", "--is-ancestor", entry.mergedHead, "HEAD")) {
-        problems.push(`#${entry.number}: HEAD does not hold its head ${entry.mergedHead}.`);
-      }
-    }
-    problems.push(...mergedUpstreamProblems(list, git("log", "--format=%s", "HEAD").split("\n")));
+    console.error(
+      `Shallow clone. Fetch the history of HEAD first: git fetch --no-tags --filter=tree:0 --unshallow origin "$(git rev-parse HEAD)"`,
+    );
+    process.exit(2);
   }
+  for (const entry of list) {
+    if (!gitSucceeds("merge-base", "--is-ancestor", entry.mergedHead, "HEAD")) {
+      problems.push(`#${entry.number}: HEAD does not hold its head ${entry.mergedHead}.`);
+    }
+  }
+  problems.push(...mergedUpstreamProblems(list, git("log", "--format=%s", "HEAD").split("\n")));
   if (problems.length > 0) {
     console.error(`${LIST_PATH}:`);
     for (const problem of problems) console.error(`- ${problem}`);
