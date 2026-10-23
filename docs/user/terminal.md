@@ -1,7 +1,7 @@
 # Terminal history
 
 Each terminal keeps up to 5,000 lines and 8 MiB of scrollback on its environment
-server. Settings > Fork > Terminal history changes both limits, after a server
+server. Settings > Terminal > Terminal history changes both limits, after a server
 restart. T3 Code removes the oldest output when either limit is reached. A long
 line can be shortened at the start. New terminal output is not truncated.
 
@@ -23,7 +23,7 @@ Jump to latest in the context menu returns to the current output.
 A terminal thread is a thread whose screen is a terminal. Use it for an editor, a
 CLI agent or a dev server that you want next to your other threads.
 
-Turn on Settings > Fork > Terminal threads on the server. Then start one like a normal
+Turn on Settings > Terminal > Terminal threads on the server. Then start one like a normal
 thread: the terminal button next to New thread in the sidebar (not in the legacy sidebar), `mod+alt+t`
 (`chat.newTerminal`), or New terminal thread in the command palette. These follow the
 same rules as the New thread button, including the project chooser and Shift. The command
@@ -31,7 +31,7 @@ same rules as the New thread button, including the project chooser and Shift. Th
 
 A new terminal starts as a new thread in Terminal mode: the composer box holds a live
 shell, and the Terminal button in the composer is on. The footer shows the folder of the shell. Pick the shell (zsh, bash and
-so on) in place of the model. The first command that ends, or that runs for a second (an
+so on, or a custom shell) in place of the model. The first command that ends, or that runs for a second (an
 editor, a dev server), makes it a terminal thread with the same shell, named after the
 command. The enlarge button next to the hint makes it a terminal thread at once. Until then:
 
@@ -49,7 +49,10 @@ command. The enlarge button next to the hint makes it a terminal thread at once.
   project folder instead.
 
 The screen is the header of a normal thread above the terminal. `mod+j` opens the drawer
-for more terminals of the thread. On Linux and Windows, Ctrl+W, Ctrl+D, Ctrl+N and Ctrl+J
+for more terminals of the thread. The Move to a terminal thread button of the drawer, in a
+chat thread or a terminal thread, makes its terminal a new terminal thread. The shell goes on
+running there with its output. That shell has no shell integration, so the thread shows
+Done or Failed only when the shell exits, and a message to it is only typed. On Linux and Windows, Ctrl+W, Ctrl+D, Ctrl+N and Ctrl+J
 in the main terminal go to the shell, so open the drawer from the header there.
 
 The right panel (`mod+alt+b`) and the thread details (`mod+shift+b`, with the focus outside
@@ -76,9 +79,10 @@ into its terminal. The terminal shows exactly what the message said.
   not typed.
 - A message that you send while a run waits or runs is typed into the program, for example to
   answer a prompt.
-- The reply needs the shell integration of the thread. It works with bash 4.4 or newer and
-  zsh. With another shell, or after `exec` replaced the shell, the message is only typed,
-  and the reply says that no result is captured.
+- The reply needs the shell integration of the thread. It works with bash 4.4 or newer
+  (also Git Bash on Windows) and zsh. With another shell (fish, PowerShell, cmd or a custom
+  shell), or after `exec` replaced the shell, the message is only typed, and the reply says
+  that no result is captured.
 - A message outside full access mode fails.
 - A scheduled task with a webhook never types into a terminal thread. Its run fails, also
   when the task or the project default model points to a terminal thread.
@@ -101,12 +105,23 @@ that ends (Program done or Program failed).
 When the shell of a terminal thread exits or is killed, the thread keeps its output and
 shows that the shell exited, also after a reload. Start a new shell, or press Enter, to
 continue; a message to the thread also starts one. The new shell starts below the output of
-the one that ended. Archiving the thread deletes that
+the one that ended, under a "new shell" line. Archiving the thread deletes that
 output. Settling the thread keeps its shell open. A server restart ends the programs in the
-terminal.
+terminal, and the output stays.
+
+## Settings
+
+Settings > Terminal holds the settings of every terminal (font, zoom limits, key mappings,
+app shortcuts, close confirmation and history) and of terminal threads. The terminal font
+follows the monospace font of Appearance until you choose a separate font.
+
+Shells lists the shells that the server found, and your custom shells. A custom shell is any
+program with arguments, for example `uv` with `run python`. A program name without a folder
+runs from the PATH of the terminal. A shell that cannot start shows its error in the terminal;
+T3 Code never starts another shell in its place.
 
 ## Zoom and keys
 
-On macOS, Cmd+=, Cmd+- and Cmd+0 change the font size of every terminal, within the limits
-in Settings > Fork. Linux and Windows have no zoom keys, because Ctrl+- is undo in shells. Terminal key mappings (Settings > Fork) send fixed bytes for a key, for
+On macOS, Cmd+=, Cmd+- and Cmd+0 change the font size of every terminal, within the zoom limits
+in Settings > Terminal. Linux and Windows have no zoom keys, because Ctrl+- is undo in shells. Terminal key mappings (Settings > Terminal) send fixed bytes for a key, for
 example Cmd+Z as the Kitty sequence that a shell binds.
