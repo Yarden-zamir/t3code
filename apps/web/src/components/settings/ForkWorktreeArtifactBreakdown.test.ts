@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { StorageCleanupReport } from "@t3tools/contracts";
-import { forkArtifactReclamationSummary } from "./ForkWorktreeArtifactBreakdown";
+import {
+  forkArtifactBreakdownText,
+  forkArtifactReclamationSummary,
+} from "./ForkWorktreeArtifactBreakdown";
 
 const report: StorageCleanupReport = {
   trigger: "manual",
@@ -40,5 +43,19 @@ describe("artifact reclamation summary", () => {
   });
   it("keeps the existing summary for reports without artifact eviction", () => {
     expect(forkArtifactReclamationSummary({ ...report, bytesFreed: 42 })).toBe("42 B recovered.");
+  });
+  it("separates the breakdown from the reason with one period", () => {
+    const breakdown = [{ folderType: "node_modules" as const, logicalBytes: 5, folders: 1 }];
+    expect(
+      forkArtifactBreakdownText("Artifacts removed; checkout kept", breakdown)?.startsWith(
+        ". Logical bytes removed: ",
+      ),
+    ).toBe(true);
+    expect(
+      forkArtifactBreakdownText("No rules apply.", breakdown)?.startsWith(
+        " Logical bytes removed: ",
+      ),
+    ).toBe(true);
+    expect(forkArtifactBreakdownText("Artifacts removed", [])).toBeNull();
   });
 });

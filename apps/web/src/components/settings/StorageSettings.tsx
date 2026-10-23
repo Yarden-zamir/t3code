@@ -218,7 +218,10 @@ function CleanupResults({
               <span className="block space-y-2 wrap-anywhere select-text">
                 <span className={`block ${entry.outcome === "failed" ? "text-destructive" : ""}`}>
                   {entry.reason}
-                  <ForkWorktreeArtifactBreakdown breakdown={entry.artifactBreakdown} />
+                  <ForkWorktreeArtifactBreakdown
+                    reason={entry.reason}
+                    breakdown={entry.artifactBreakdown}
+                  />
                 </span>
                 <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-l border-border/60 pl-3">
                   <span>Machine</span>

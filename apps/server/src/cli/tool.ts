@@ -107,13 +107,13 @@ const printJson = (value: unknown) => Console.log(encodeJson(value));
  * credential (MM-1920); otherwise the CLI issues a short-lived MCP client
  * session from the local auth store and revokes it after the call.
  */
-export const callOnServer = Effect.fn("callToolOnServer")(function* (
+export const callOnServer = Effect.fn("callToolOnServer")(function* <A, R>(
   flags: { readonly baseDir: Option.Option<string> },
   run: (connection: {
     readonly endpoint: string;
     readonly authorization: string;
     readonly hasThreadCredential: boolean;
-  }) => Effect.Effect<void, ToolCliError, FileSystem.FileSystem>,
+  }) => Effect.Effect<A, ToolCliError, R>,
 ) {
   const environment = yield* toolEnvironment;
   if (Option.isSome(environment.endpoint) && Option.isSome(environment.authorization)) {
@@ -131,7 +131,7 @@ export const callOnServer = Effect.fn("callToolOnServer")(function* (
   const endpoint = new URL("/mcp", runtimeState.value.origin).toString();
   return yield* Effect.gen(function* () {
     const auth = yield* EnvironmentAuth.EnvironmentAuth;
-    yield* Effect.acquireUseRelease(
+    return yield* Effect.acquireUseRelease(
       auth.issueMcpClientSession({
         // The History of the machine map names a caller without a thread by this label.
         label: "CLI (local user)",

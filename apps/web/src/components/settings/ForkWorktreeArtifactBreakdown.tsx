@@ -21,23 +21,28 @@ export function forkArtifactReclamationSummary(report: StorageCleanupReport) {
   return `${formatBytes(report.bytesFreed)} recovered.`;
 }
 
+/** The sentence that follows a cleanup reason, which may or may not end with a period. */
+export function forkArtifactBreakdownText(
+  reason: string,
+  breakdown: StorageCleanupReportEntry["artifactBreakdown"],
+): string | null {
+  if (!breakdown?.length) return null;
+  const folders = breakdown
+    .map(
+      (entry) =>
+        `${labels[entry.folderType]}: ${formatBytes(entry.logicalBytes)} (${entry.folders} ${entry.folders === 1 ? "folder" : "folders"})`,
+    )
+    .join("; ");
+  return `${reason.trimEnd().endsWith(".") ? " " : ". "}Logical bytes removed: ${folders}. Shared filesystem blocks can make physical space reclaimed much smaller.`;
+}
+
 export function ForkWorktreeArtifactBreakdown({
+  reason,
   breakdown,
 }: {
+  reason: string;
   breakdown: StorageCleanupReportEntry["artifactBreakdown"];
 }) {
-  if (!breakdown?.length) return null;
-  return (
-    <span>
-      {" "}
-      Logical bytes removed:{" "}
-      {breakdown
-        .map(
-          (entry) =>
-            `${labels[entry.folderType]}: ${formatBytes(entry.logicalBytes)} (${entry.folders} ${entry.folders === 1 ? "folder" : "folders"})`,
-        )
-        .join("; ")}
-      . Shared filesystem blocks can make physical space reclaimed much smaller.
-    </span>
-  );
+  const text = forkArtifactBreakdownText(reason, breakdown);
+  return text === null ? null : <span>{text}</span>;
 }
