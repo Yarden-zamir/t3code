@@ -76,10 +76,9 @@ const make = Effect.gen(function* () {
     Effect.mapError((error) => new ForkUpdateError({ reason: error.message })),
   );
 
-  // Terminals that run a program. The restart kills a program in a terminal thread without
-  // tmux, and nothing wakes it again. Limit: a CLI agent left open in a terminal thread blocks
-  // auto-update until it ends. Revisit when updates stall, or run terminal threads in tmux
-  // (`terminalThreadsTmux`), where the program survives the restart.
+  // Terminals that run a program. The restart kills a program in a terminal thread, and nothing
+  // wakes it again. Limit: a CLI agent left open in a terminal thread blocks auto-update until
+  // it ends. Revisit when updates stall; a multiplexer would keep the program through a restart.
   const busyTerminals = yield* Ref.make<ReadonlyMap<string, TerminalSummary>>(new Map());
   const keyOf = (terminal: { threadId: string; terminalId: string }) =>
     `${terminal.threadId}\u0000${terminal.terminalId}`;

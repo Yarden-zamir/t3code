@@ -7,6 +7,7 @@ import {
   type TerminalMetadataStreamEvent,
   type TerminalOpenInput,
   type TerminalRestartInput,
+  type TerminalSummary,
   ProviderDriverKind,
   ProviderInstanceId,
   ServerSettingsError,
@@ -518,6 +519,43 @@ it.layer(
       );
       const types = (yield* getEvents).map((event) => event.type);
       expect(types.indexOf("exited")).toBeLessThan(types.indexOf("closed"));
+    }),
+  );
+
+  it.effect("reports the shell state of a terminal thread from the marks of its shell", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      const summaries = yield* Ref.make<ReadonlyArray<TerminalSummary>>([]);
+      const unsubscribe = yield* manager.subscribeMetadata((event) =>
+        event.type === "upsert"
+          ? Ref.update(summaries, (current) => [...current, event.terminal])
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      yield* manager.open(openInput({ env: { T3CODE_TERMINAL_THREAD: "1" } }));
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      process.emitData("\u001b]133;A\u0007");
+      process.emitData("\u001b]133;C\u0007out\r\n");
+      process.emitData("\u001b]133;D;3\u0007\u001b]133;A\u0007");
+      yield* waitFor(
+        Effect.map(Ref.get(summaries), (list) =>
+          list.some((summary) => summary.attention?.kind === "finished"),
+        ),
+        "1200 millis",
+      );
+
+      const list = yield* Ref.get(summaries);
+      expect(
+        list.some((summary) => summary.shell === "running" && summary.hasRunningSubprocess),
+      ).toBe(true);
+      const last = list.at(-1);
+      expect(last?.shell).toBe("prompt");
+      expect(last?.hasRunningSubprocess).toBe(false);
+      expect(last?.attention).toMatchObject({ kind: "finished", exitCode: 3 });
     }),
   );
 

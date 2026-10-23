@@ -3,7 +3,12 @@
  * this module and not `terminal/Manager.ts`, because the manager imports the provider hydration,
  * which imports the built-in drivers.
  */
-import type { ProjectId, TerminalOpenInput, TerminalWriteInput } from "@t3tools/contracts";
+import type {
+  ProjectId,
+  TerminalOpenInput,
+  TerminalShellState,
+  TerminalWriteInput,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -29,11 +34,11 @@ export class TerminalPort extends Context.Service<
       readonly threadId: string;
       readonly terminalId: string;
     }) => Effect.Effect<boolean>;
-    /** A program runs in the terminal, in front of the shell. */
-    readonly hasRunningProgram: (input: {
+    /** The state that the shell integration reports, or undefined while it reports none. */
+    readonly shellState: (input: {
       readonly threadId: string;
       readonly terminalId: string;
-    }) => Effect.Effect<boolean>;
+    }) => Effect.Effect<TerminalShellState | undefined>;
     /** The workspace root of a project, or null when it is unknown. */
     readonly workspaceRootOf: (projectId: ProjectId) => Effect.Effect<string | null>;
     readonly open: (input: TerminalOpenInput) => Effect.Effect<void, TerminalPortError>;
@@ -52,7 +57,7 @@ export class TerminalPort extends Context.Service<
  */
 export const unavailableTerminalPort: TerminalPort["Service"] = {
   isRunning: () => Effect.succeed(false),
-  hasRunningProgram: () => Effect.succeed(false),
+  shellState: () => Effect.succeed(undefined),
   workspaceRootOf: () => Effect.succeed(null),
   open: () =>
     Effect.fail(

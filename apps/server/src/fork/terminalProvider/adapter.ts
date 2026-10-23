@@ -15,7 +15,6 @@ import {
 } from "@t3tools/contracts";
 import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import * as Cause from "effect/Cause";
-import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -26,26 +25,20 @@ import * as Stream from "effect/Stream";
 import type * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
+import { makeShellMarkParser } from "../shellMarks.ts";
 import {
-  resolveCompletionShell,
-  wrapCommandForCompletion,
-} from "../../project/ProjectSetupScriptRunner.ts";
-import {
-  completionSentinel,
   formatCompletedRun,
   formatTimedOutRun,
-  makeCompletionCollector,
-  TERMINAL_RUN_TIMEOUT_MS,
+  makeCommandCapture,
   SHELL_ENDED_MESSAGE,
+  SHELL_READY_TIMEOUT_MS,
+  TERMINAL_RUN_TIMEOUT_MS,
   TYPED_INTO_PROGRAM_MESSAGE,
+  TYPED_WITHOUT_RESULT_MESSAGE,
 } from "./protocol.ts";
 import { TerminalPort } from "./port.ts";
 
 export const TERMINAL_DRIVER = ProviderDriverKind.make("terminal");
-
-const AFTER_MARKER_WINDOW_MS = 5_000;
-const IDLE_CHECK_INTERVAL_MS = 150;
-const IDLE_CHECK_ATTEMPTS = 20;
 
 export const TerminalProviderCapabilities = {
   sessions: {
@@ -150,8 +143,6 @@ export interface TerminalAdapterOptions {
   readonly workspaceRootOf: (
     projectId: ProviderAdapter.ProviderAdapterV2TurnInput["appThread"]["projectId"],
   ) => Effect.Effect<string | null>;
-  readonly shell: ReturnType<typeof resolveCompletionShell>;
-  readonly newToken: Effect.Effect<string>;
 }
 
 function makeProviderThread(input: {
@@ -223,9 +214,6 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
           readonly providerTurnId: OrchestrationV2ProviderTurn["id"];
           readonly interrupted: Deferred.Deferred<void>;
         } | null>(null);
-        // When the last run ended at its marker. The manager learns that the command ended up to
-        // one poll later, so a run that follows at once waits for the flag to clear.
-        const lastMarkerAtMs = yield* Ref.make(0);
         const now = yield* DateTime.now;
         const providerSession: OrchestrationV2ProviderSession = {
           id: input.providerSessionId,
@@ -249,75 +237,85 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
             if (turn.runtimePolicy.runtimeMode !== "full-access") {
               return "A terminal thread runs commands without approval. Use full access mode.";
             }
-            const threadId = String(turn.threadId);
-            const workspaceRoot = yield* options.workspaceRootOf(turn.appThread.projectId);
+            const ids = { threadId: String(turn.threadId), terminalId };
             const launch = terminalThreadLaunch({
-              workspaceRoot: workspaceRoot ?? turn.runtimePolicy.cwd ?? ".",
+              workspaceRoot:
+                (yield* options.workspaceRootOf(turn.appThread.projectId)) ??
+                turn.runtimePolicy.cwd ??
+                ".",
               worktreePath: turn.appThread.worktreePath,
             });
             // `terminal.open` restarts a terminal whose cwd or env differ, so a running terminal
             // is never opened again.
-            if (!(yield* port.isRunning({ threadId, terminalId }))) {
+            if (!(yield* port.isRunning(ids))) {
               yield* port.open({
-                threadId,
-                terminalId,
+                ...ids,
                 cwd: launch.cwd,
                 worktreePath: launch.worktreePath,
                 env: { ...launch.env },
               });
             }
-            const text = turn.message.text;
-            const sinceMarkerMs =
-              (yield* Clock.currentTimeMillis) - (yield* Ref.get(lastMarkerAtMs));
-            if (sinceMarkerMs < AFTER_MARKER_WINDOW_MS) {
-              for (let attempt = 0; attempt < IDLE_CHECK_ATTEMPTS; attempt += 1) {
-                if (!(yield* port.hasRunningProgram({ threadId, terminalId }))) break;
-                yield* Effect.sleep(IDLE_CHECK_INTERVAL_MS);
-              }
+            const typed = `${turn.message.text}\r`;
+            const state = yield* waitForShellState(ids);
+            if (state === undefined) {
+              yield* port.write({ ...ids, data: typed });
+              return TYPED_WITHOUT_RESULT_MESSAGE;
             }
-            if (yield* port.hasRunningProgram({ threadId, terminalId })) {
-              yield* port.write({ threadId, terminalId, data: `${text}\r` });
+            if (state === "running") {
+              yield* port.write({ ...ids, data: typed });
               return TYPED_INTO_PROGRAM_MESSAGE;
             }
-            const sentinel = completionSentinel(yield* options.newToken);
-            const wrapped = wrapCommandForCompletion(text, options.shell, sentinel, "current");
-            const collector = makeCompletionCollector({
-              sentinel,
-              echoedWrapperLines: wrapped.split("\r").filter((line) => line.length > 0),
-            });
+
+            const capture = makeCommandCapture();
+            const parser = makeShellMarkParser();
             const finished = yield* Deferred.make<void>();
             const shellEnded = yield* Ref.make(false);
-            // Subscribe before writing, so the marker cannot pass the listener.
-            const unsubscribe = yield* port.subscribe({ threadId, terminalId }, (event) =>
+            // Subscribe before writing, so no mark passes the listener.
+            const unsubscribe = yield* port.subscribe(ids, (event) =>
               event.type === "ended"
                 ? Ref.set(shellEnded, true).pipe(
                     Effect.andThen(Deferred.succeed(finished, undefined)),
                     Effect.asVoid,
                   )
-                : collector.push(event.data)
+                : capture.push(parser.push(event.data))
                   ? Deferred.succeed(finished, undefined).pipe(Effect.asVoid)
                   : Effect.void,
             );
             return yield* Effect.gen(function* () {
-              // Ctrl+E, Ctrl+U clear what the user left half-typed at the prompt.
-              yield* port.write({ threadId, terminalId, data: `\u0005\u0015${wrapped}\r` });
+              yield* port.write({ ...ids, data: typed });
               const outcome = yield* Deferred.await(finished).pipe(
                 Effect.timeoutOption(TERMINAL_RUN_TIMEOUT_MS),
               );
               if (yield* Ref.get(shellEnded)) return SHELL_ENDED_MESSAGE;
-              const result = collector.result();
-              if (result.exitCode !== null) {
-                yield* Ref.set(lastMarkerAtMs, yield* Clock.currentTimeMillis);
-              }
               return Option.isSome(outcome)
-                ? formatCompletedRun(result)
-                : formatTimedOutRun(result);
+                ? formatCompletedRun(capture.result())
+                : formatTimedOutRun(capture.result());
             }).pipe(Effect.ensuring(Effect.sync(unsubscribe)));
           }).pipe(
             Effect.catch((error: { readonly message: string }) =>
               Effect.succeed(`The terminal could not run the message. ${error.message}`),
             ),
           );
+
+        // A shell that just started shows its prompt after its startup files ran. A shell
+        // without integration never reports a state, so the wait ends after a timeout.
+        const waitForShellState = (ids: { threadId: string; terminalId: string }) =>
+          Effect.gen(function* () {
+            const ready = yield* Deferred.make<void>();
+            const parser = makeShellMarkParser();
+            const unsubscribe = yield* port.subscribe(ids, (event) =>
+              event.type === "output" &&
+              parser.push(event.data).some((item) => item.type === "prompt")
+                ? Deferred.succeed(ready, undefined).pipe(Effect.asVoid)
+                : Effect.void,
+            );
+            return yield* Effect.gen(function* () {
+              const known = yield* port.shellState(ids);
+              if (known !== undefined) return known;
+              yield* Deferred.await(ready).pipe(Effect.timeoutOption(SHELL_READY_TIMEOUT_MS));
+              return yield* port.shellState(ids);
+            }).pipe(Effect.ensuring(Effect.sync(unsubscribe)));
+          });
 
         const runTurn = (
           turn: ProviderAdapter.ProviderAdapterV2TurnInput,
@@ -555,8 +553,6 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
                   data: "\u0003",
                 })
                 .pipe(Effect.ignore);
-              // The shell prompt returns, and the manager learns it up to one poll later.
-              yield* Ref.set(lastMarkerAtMs, yield* Clock.currentTimeMillis);
               yield* Deferred.succeed(active.interrupted, undefined);
             }),
           respondToRuntimeRequest: () => unsupported("A terminal thread has no runtime requests."),

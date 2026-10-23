@@ -3,8 +3,6 @@
  * model catalog and no text generation. The server setting `terminalThreads` turns it on.
  */
 import { type ServerProvider, type ServerSettings, TextGenerationError } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -25,7 +23,6 @@ import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapsh
 import { buildServerProvider } from "@t3tools/provider-core/server/snapshotProbe";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 
-import { resolveCompletionShell } from "../../project/ProjectSetupScriptRunner.ts";
 import { makeTerminalAdapter, TERMINAL_DRIVER } from "./adapter.ts";
 import { TerminalPort, unavailableTerminalPort } from "./port.ts";
 
@@ -35,10 +32,7 @@ const TerminalSettings = Schema.Struct({
 type TerminalSettings = typeof TerminalSettings.Type;
 const decodeTerminalSettings = Schema.decodeSync(TerminalSettings);
 
-export type TerminalDriverEnv =
-  | IdAllocator.IdAllocatorV2
-  | ProviderHost.ProviderHost
-  | Crypto.Crypto;
+export type TerminalDriverEnv = IdAllocator.IdAllocatorV2 | ProviderHost.ProviderHost;
 
 const noTextGeneration = (operation: string) => () =>
   Effect.fail(
@@ -69,9 +63,6 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
         () => unavailableTerminalPort,
       );
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const crypto = yield* Crypto.Crypto;
-      const platform = yield* HostProcess.Platform;
-      const environment = yield* HostProcess.Environment;
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: TERMINAL_DRIVER,
         instanceId,
@@ -131,11 +122,6 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
         instanceId,
         idAllocator,
         port,
-        shell: resolveCompletionShell(platform, environment),
-        newToken: crypto.randomUUIDv4().pipe(
-          Effect.map((token) => token.replaceAll("-", "")),
-          Effect.orDie,
-        ),
         workspaceRootOf: port.workspaceRootOf,
         ensureEnabled: host.settings.get.pipe(
           Effect.mapError((error) => error.message),

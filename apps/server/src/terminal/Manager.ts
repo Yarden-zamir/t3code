@@ -27,6 +27,7 @@ import {
   type TerminalSessionSnapshot,
   type TerminalSessionStatus,
   type TerminalAttention,
+  type TerminalShellState,
   type TerminalSummary,
   type TerminalWriteInput,
   ClaudeSettings,
@@ -75,12 +76,12 @@ import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClie
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import { T3_TERMINAL_THREAD_ID_ENV } from "./terminalEnv.ts";
 import {
-  detectTerminalAttention,
   isTerminalThreadMainTerminal,
-  makeTerminalThreadLaunch,
-  type TerminalLaunch,
-  type TerminalLaunchInput,
-} from "../fork/terminalThreads.ts";
+  makeShellIntegration,
+  type ShellIntegration,
+} from "../fork/shellIntegration.ts";
+import { makeShellMarkParser } from "../fork/shellMarks.ts";
+import { applyShellItems } from "../fork/terminalShellState.ts";
 
 export {
   TerminalCwdError,
@@ -265,6 +266,8 @@ interface TerminalSessionState {
   childCommandLabel: string | null;
   /** Fork: what the user is asked for in a terminal thread (`forkTerminalThreads.ts`). */
   attention: TerminalAttention | null;
+  shell: TerminalShellState | null;
+  shellMarks: ReturnType<typeof makeShellMarkParser> | null;
   runtimeEnv: Record<string, string> | null;
 }
 
@@ -286,7 +289,7 @@ type DrainProcessEventAction =
       sequence: number;
       history: BoundedTerminalHistory | null;
       data: string;
-      rangBell: boolean;
+      activitySequence: number | null;
     }
   | {
       type: "exit";
@@ -368,7 +371,17 @@ function summary(session: TerminalSessionState): TerminalSummary {
     label: terminalWireLabel(session),
     updatedAt: session.updatedAt,
     ...(session.attention === null ? {} : { attention: session.attention }),
+    ...(session.shell === null ? {} : { shell: session.shell }),
   };
+}
+
+function applyShellMarks(session: TerminalSessionState, data: string): boolean {
+  if (session.shellMarks === null) return false;
+  return applyShellItems(
+    session,
+    session.shellMarks.push(data),
+    DateTime.formatIso(DateTime.nowUnsafe()),
+  );
 }
 
 function shouldPublishTerminalMetadataEvent(event: TerminalEvent): boolean {
@@ -1338,8 +1351,8 @@ interface TerminalManagerOptions {
     Record<string, string>,
     TerminalProviderInstanceNotFoundError | TerminalProviderEnvironmentError
   >;
-  /** Fork: a command that runs in place of the shell, such as tmux for a terminal thread. */
-  forkLaunchCommand?: (input: TerminalLaunchInput) => Effect.Effect<TerminalLaunch | null>;
+  /** Fork: starts the shell of a terminal thread with its shell integration, or returns null. */
+  forkShellIntegration?: ShellIntegration;
 }
 
 export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
@@ -1423,7 +1436,7 @@ export const make = Effect.fn("TerminalManager.make")(function* () {
     registerTerminalProcesses: portDiscovery.registerTerminalProcesses,
     unregisterTerminal: portDiscovery.unregisterTerminal,
     resolveProviderInstanceEnvironment,
-    forkLaunchCommand: yield* makeTerminalThreadLaunch(),
+    forkShellIntegration: yield* makeShellIntegration(),
   });
 });
 
@@ -1523,11 +1536,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const processKillGraceMs = options.processKillGraceMs ?? DEFAULT_PROCESS_KILL_GRACE_MS;
   const maxRetainedInactiveSessions =
     options.maxRetainedInactiveSessions ?? DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS;
-  const passthroughWriteBySession = new WeakMap<
-    TerminalSessionState,
-    TerminalLaunch["passthroughWrite"]
-  >();
-  const shellPidBySession = new WeakMap<TerminalSessionState, TerminalLaunch["shellPid"]>();
   const registerTerminalProcesses = options.registerTerminalProcesses ?? (() => Effect.void);
   const unregisterTerminal = options.unregisterTerminal ?? (() => Effect.void);
 
@@ -1989,40 +1997,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     },
   );
 
-  // A bell storm raises one attention per second, so the sidebar does not repaint on each ring.
-  const ATTENTION_MIN_INTERVAL_MS = 1000;
-  const raiseAttention = Effect.fn("terminal.raiseAttention")(function* (
-    session: TerminalSessionState,
-    kind: TerminalAttention["kind"],
-  ) {
-    const at = yield* nowIso;
-    const event = yield* modifyManagerState((state) => {
-      const previous = session.attention;
-      if (
-        session.status !== "running" ||
-        (previous !== null &&
-          previous.kind === kind &&
-          Date.parse(at) - Date.parse(previous.at) < ATTENTION_MIN_INTERVAL_MS)
-      ) {
-        return [Option.none(), state] as const;
-      }
-      session.attention = { kind, at };
-      const eventStamp = advanceEventSequence(session);
-      return [
-        Option.some({
-          type: "activity" as const,
-          threadId: session.threadId,
-          terminalId: session.terminalId,
-          sequence: eventStamp.sequence,
-          hasRunningSubprocess: session.hasRunningSubprocess,
-          label: terminalWireLabel(session),
-        }),
-        state,
-      ] as const;
-    });
-    if (Option.isSome(event)) yield* publishEvent(event.value);
-  });
-
   const drainProcessEvents = Effect.fn("terminal.drainProcessEvents")(function* (
     session: TerminalSessionState,
     expectedPid: number,
@@ -2059,6 +2033,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           if (sanitized.visibleText.length > 0) {
             session.history.append(sanitized.visibleText);
           }
+          // The state change comes first, so it takes the lower sequence.
+          const activitySequence = applyShellMarks(session, nextEvent.data)
+            ? advanceEventSequence(session).sequence
+            : null;
           const eventStamp = advanceEventSequence(session);
 
           return {
@@ -2068,9 +2046,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             sequence: eventStamp.sequence,
             history: sanitized.visibleText.length > 0 ? session.history : null,
             data: nextEvent.data,
-            rangBell:
-              isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv) &&
-              detectTerminalAttention(nextEvent.data),
+            activitySequence,
           } as const;
         }
 
@@ -2114,6 +2090,17 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           yield* queuePersist(action.threadId, action.terminalId, action.history);
         }
 
+        // The state goes out first, so a listener that reads it on the output sees the new state.
+        if (action.activitySequence !== null) {
+          yield* publishEvent({
+            type: "activity",
+            threadId: action.threadId,
+            terminalId: action.terminalId,
+            sequence: action.activitySequence,
+            hasRunningSubprocess: session.hasRunningSubprocess,
+            label: terminalWireLabel(session),
+          });
+        }
         yield* publishEvent({
           type: "output",
           threadId: action.threadId,
@@ -2121,7 +2108,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           sequence: action.sequence,
           data: action.data,
         });
-        if (action.rangBell) yield* raiseAttention(session, "bell");
         continue;
       }
 
@@ -2188,6 +2174,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     shellCandidates: ReadonlyArray<ShellCandidate>,
     spawnEnv: NodeJS.ProcessEnv,
     session: TerminalSessionState,
+    integrate: ShellIntegration | undefined,
     index = 0,
     lastError: PtyAdapter.PtySpawnError | null = null,
   ): Effect.fn.Return<
@@ -2213,11 +2200,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       );
     }
 
+    const integrated = integrate?.(candidate, spawnEnv) ?? null;
+    const launchEnv = integrated?.env ?? spawnEnv;
     const launch = yield* agentScope.wrap({
       command: candidate.shell,
-      args: candidate.args ?? [],
+      args: integrated?.candidate.args ?? candidate.args ?? [],
       name: "terminal",
-      env: spawnEnv,
+      env: launchEnv,
       survivesRestart: true,
     });
     const attempt = yield* Effect.result(
@@ -2227,7 +2216,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         cwd: session.cwd,
         cols: session.cols,
         rows: session.rows,
-        env: spawnEnv,
+        env: launchEnv,
       }),
     );
 
@@ -2243,7 +2232,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       return yield* spawnError;
     }
 
-    return yield* trySpawn(shellCandidates, spawnEnv, session, index + 1, spawnError);
+    return yield* trySpawn(shellCandidates, spawnEnv, session, integrate, index + 1, spawnError);
   });
 
   const startSession = Effect.fn("terminal.startSession")(function* (
@@ -2270,6 +2259,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session.exitSignal = null;
       session.hasRunningSubprocess = false;
       session.childCommandLabel = null;
+      session.attention = null;
+      session.shell = null;
+      session.shellMarks = isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv)
+        ? makeShellMarkParser()
+        : null;
       session.pendingProcessEvents = [];
       session.pendingProcessEventIndex = 0;
       session.processEventDrainRunning = false;
@@ -2291,19 +2285,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               yield* HostProcess.HomeDirectory,
             );
             terminalEnv[T3_TERMINAL_THREAD_ID_ENV] = session.threadId;
-            const forkLaunch =
-              options.forkLaunchCommand === undefined
-                ? null
-                : yield* options.forkLaunchCommand({
-                    threadId: session.threadId,
-                    terminalId: session.terminalId,
-                    runtimeEnv: session.runtimeEnv,
-                    spawnEnv: terminalEnv,
-                  });
-            const shellCandidates = [
-              ...(forkLaunch === null ? [] : [forkLaunch.shell]),
-              ...resolveShellCandidates(shellResolver, platform, baseEnv),
-            ];
+            const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
             // Append (never prepend) managed ACP agent install directories so
             // `kimi login` and friends resolve by name without shadowing any
             // system or user tool of the same name.
@@ -2338,19 +2320,14 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
                 }
               }
             }
-            const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
-            // The launch only keeps its passthrough when its own command started, not a fallback
-            // shell.
-            if (
-              forkLaunch !== null &&
-              spawnResult.shellLabel === formatShellCandidate(forkLaunch.shell)
-            ) {
-              passthroughWriteBySession.set(session, forkLaunch.passthroughWrite);
-              shellPidBySession.set(session, forkLaunch.shellPid);
-            } else {
-              passthroughWriteBySession.delete(session);
-              shellPidBySession.delete(session);
-            }
+            const spawnResult = yield* trySpawn(
+              shellCandidates,
+              terminalEnv,
+              session,
+              isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv)
+                ? options.forkShellIntegration
+                : undefined,
+            );
             ptyProcess = spawnResult.process;
             startedShell = spawnResult.shellLabel;
 
@@ -2488,7 +2465,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const state = yield* readManagerState;
     const runningSessions = [...state.sessions.values()].filter(
       (session): session is TerminalSessionState & { pid: number } =>
-        session.status === "running" && Number.isInteger(session.pid),
+        session.status === "running" &&
+        Number.isInteger(session.pid) &&
+        // Fork: a shell with integration reports its own state.
+        session.shell === null,
     );
 
     if (runningSessions.length === 0) {
@@ -2521,9 +2501,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session: TerminalSessionState & { pid: number },
     ) {
       const terminalPid = session.pid;
-      // Fork: under tmux the programs are children of the pane shell, not of the terminal process.
-      const shellPid = yield* shellPidBySession.get(session) ?? Effect.succeed(null);
-      const inspectResult = yield* subprocessInspector(shellPid ?? terminalPid).pipe(
+      const inspectResult = yield* subprocessInspector(terminalPid).pipe(
         Effect.asSome,
         Effect.catch((reason) =>
           Effect.logWarning("failed to check terminal subprocess activity", {
@@ -2546,7 +2524,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         processIds: next.processIds,
       });
       const nextChildLabel = next.hasRunningSubprocess ? next.childCommand : null;
-      const checkedAt = yield* nowIso;
       const event = yield* modifyManagerState((state) => {
         const liveSession: Option.Option<TerminalSessionState> = Option.fromNullishOr(
           state.sessions.get(toSessionKey(session.threadId, session.terminalId)),
@@ -2561,13 +2538,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           return [Option.none(), state] as const;
         }
 
-        if (
-          liveSession.value.hasRunningSubprocess &&
-          !next.hasRunningSubprocess &&
-          isTerminalThreadMainTerminal(liveSession.value.terminalId, liveSession.value.runtimeEnv)
-        ) {
-          liveSession.value.attention = { kind: "finished", at: checkedAt };
-        }
         liveSession.value.hasRunningSubprocess = next.hasRunningSubprocess;
         liveSession.value.childCommandLabel = nextChildLabel;
         const eventStamp = advanceEventSequence(liveSession.value);
@@ -2694,6 +2664,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         hasRunningSubprocess: false,
         childCommandLabel: null,
         attention: null,
+        shell: null,
+        shellMarks: null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
       };
 
@@ -3045,9 +3017,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       });
     }
     session.inputCount += 1;
-    const passthroughWrite =
-      input.passthrough === true ? passthroughWriteBySession.get(session) : undefined;
-    if (passthroughWrite !== undefined) return yield* passthroughWrite(input.data);
     yield* Effect.try({
       try: () => process.write(input.data),
       catch: (cause) =>
@@ -3137,6 +3106,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           hasRunningSubprocess: false,
           childCommandLabel: null,
           attention: null,
+          shell: null,
+          shellMarks: null,
           runtimeEnv: normalizedRuntimeEnv(input.env),
         };
         const createdSession = session;

@@ -47,9 +47,9 @@ export const layer = Layer.effect(
         summaryOf(input).pipe(
           Effect.map((summary) => summary?.status === "running" || summary?.status === "starting"),
         ),
-      hasRunningProgram: (input) =>
+      shellState: (input) =>
         summaryOf(input).pipe(
-          Effect.map((summary) => summary?.status === "running" && summary.hasRunningSubprocess),
+          Effect.map((summary) => (summary?.status === "running" ? summary.shell : undefined)),
         ),
       open: (input) =>
         manager.open(input).pipe(

@@ -130,6 +130,7 @@ function completionSentinelPattern(token: string): RegExp {
   return new RegExp(`${COMPLETION_SENTINEL_PREFIX}_${token}:(-?\\d+)`);
 }
 
+/** @public Fork: the terminal provider reads command output with it. */
 export function stripTerminalControl(text: string): string {
   return (
     text
@@ -143,9 +144,9 @@ export function stripTerminalControl(text: string): string {
   );
 }
 
-export type CompletionShell = "posix" | "fish" | "powershell";
+type CompletionShell = "posix" | "fish" | "powershell";
 
-export function resolveCompletionShell(
+function resolveCompletionShell(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
 ): CompletionShell {
@@ -163,12 +164,10 @@ export function resolveCompletionShell(
  * block before running any of it, so a script that reads stdin cannot consume the sentinel line
  * either.
  */
-export function wrapCommandForCompletion(
+function wrapCommandForCompletion(
   command: string,
   shell: CompletionShell,
   sentinel: string,
-  /** `current` runs a posix command in the shell itself, so `cd` and `export` persist. */
-  scope: "subshell" | "current" = "subshell",
 ): string {
   const body = command.replace(/\r?\n/g, "\r");
   switch (shell) {
@@ -177,9 +176,7 @@ export function wrapCommandForCompletion(
     case "fish":
       return `begin\r${body}\rend; printf '\\n${sentinel}%s\\n' $status`;
     case "posix":
-      return scope === "current"
-        ? `{ ${body}\r}; printf '\\n${sentinel}%s\\n' "$?"`
-        : `( ${body}\r); printf '\\n${sentinel}%s\\n' "$?"`;
+      return `( ${body}\r); printf '\\n${sentinel}%s\\n' "$?"`;
   }
 }
 
