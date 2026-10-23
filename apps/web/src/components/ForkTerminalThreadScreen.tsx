@@ -4,6 +4,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { terminalThreadState } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -786,7 +787,8 @@ function MainTerminal(props: {
     environmentId: threadRef.environmentId,
     threadId: threadRef.threadId,
   })?.find((known) => known.target.terminalId === DEFAULT_TERMINAL_ID)?.state.summary;
-  const attentionAt = summary?.attention?.at;
+  // A failed start counts like attention. It is the last update of the session, so it is later.
+  const seenAt = (summary ? terminalThreadState(summary).failedAt : null) ?? summary?.attention?.at;
 
   // A thread that started without a command (the enlarge button) is named after its first one.
   const command = summary?.command?.trim();
@@ -802,18 +804,18 @@ function MainTerminal(props: {
     });
   }, [canRename, command, props.title, threadRef, updateMetadata]);
   useEffect(() => {
-    if (attentionAt === undefined) return;
+    if (seenAt === undefined) return;
     const markSeen = () => {
       if (document.visibilityState !== "visible") return;
       void visitThread({
         environmentId: threadRef.environmentId,
-        input: { threadId: threadRef.threadId, visitedAt: attentionAt },
+        input: { threadId: threadRef.threadId, visitedAt: seenAt },
       });
     };
     markSeen();
     document.addEventListener("visibilitychange", markSeen);
     return () => document.removeEventListener("visibilitychange", markSeen);
-  }, [attentionAt, threadRef, visitThread]);
+  }, [seenAt, threadRef, visitThread]);
 
   return (
     <ForkShellTerminal

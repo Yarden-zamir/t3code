@@ -27,6 +27,8 @@ export interface TerminalThreadState {
   readonly attention: TerminalAttention | null;
   /** A program runs in the foreground of the shell. A background job does not count. */
   readonly running: boolean;
+  /** When the shell failed to start (server time), so a visit after it clears Failed. */
+  readonly failedAt: string | null;
 }
 
 export function terminalThreadState(summary: TerminalSummary): TerminalThreadState {
@@ -34,6 +36,8 @@ export function terminalThreadState(summary: TerminalSummary): TerminalThreadSta
     status: summary.status,
     attention: summary.attention ?? null,
     running: summary.hasRunningSubprocess,
+    // A failed session changes no more, so its last update is the time of the failure.
+    failedAt: summary.status === "error" ? summary.updatedAt : null,
   };
 }
 
@@ -165,7 +169,9 @@ export function terminalThreadStatusLabel(
   lastVisitedAt: string | null | undefined,
 ): TerminalThreadStatusLabel | null {
   if (!terminal) return null;
-  if (terminal.status === "error") return "Error";
+  if (terminal.status === "error") {
+    return terminal.failedAt !== null && isUnseen(terminal.failedAt, lastVisitedAt) ? "Error" : null;
+  }
   if (terminal.status === "starting") return "Connecting";
   const { attention } = terminal;
   if (bellIsUnseen(attention, lastVisitedAt)) return "Awaiting Input";

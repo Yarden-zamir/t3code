@@ -28,19 +28,22 @@ describe("terminalThreadStatusLabel", () => {
   it("maps session failure and start before attention", () => {
     expect(
       terminalThreadStatusLabel(
-        { status: "error", attention: { kind: "bell", at: after }, running: false },
+        { status: "error", attention: { kind: "bell", at: after }, running: false, failedAt: after },
         visited,
       ),
     ).toBe("Error");
     expect(
-      terminalThreadStatusLabel({ status: "starting", attention: null, running: false }, visited),
+      terminalThreadStatusLabel(
+        { status: "starting", attention: null, running: false, failedAt: null },
+        visited,
+      ),
     ).toBe("Connecting");
   });
 
   it("maps unseen attention to a pill and seen attention to none", () => {
     const running = (kind: "bell" | "finished", at: string) =>
       terminalThreadStatusLabel(
-        { status: "running", attention: { kind, at }, running: false },
+        { status: "running", attention: { kind, at }, running: false, failedAt: null },
         visited,
       );
     expect(running("bell", after)).toBe("Awaiting Input");
@@ -55,6 +58,7 @@ describe("terminalThreadStatusLabel", () => {
           status: "running",
           attention: { kind: "finished", at, ...(exitCode === undefined ? {} : { exitCode }) },
           running: false,
+          failedAt: null,
         },
         visited,
       );
@@ -72,6 +76,7 @@ describe("terminalThreadStatusLabel", () => {
           status: "running",
           attention: { kind: "finished", at: before, exitCode: 5 },
           running: false,
+          failedAt: null,
         },
         null,
       ),
@@ -81,12 +86,24 @@ describe("terminalThreadStatusLabel", () => {
   it("shows a running program as Working, below a bell that asks for input", () => {
     const state = (running: boolean, kind: "bell" | "finished") =>
       terminalThreadStatusLabel(
-        { status: "running", attention: { kind, at: after, exitCode: 1 }, running },
+        { status: "running", attention: { kind, at: after, exitCode: 1 }, running, failedAt: null },
         visited,
       );
     expect(state(true, "finished")).toBe("Working");
     expect(state(true, "bell")).toBe("Awaiting Input");
     expect(state(false, "finished")).toBe("Error");
+  });
+
+  it("shows a failed start until the user visits the thread after it", () => {
+    const failed = (failedAt: string) =>
+      terminalThreadStatusLabel(
+        { status: "error", attention: null, running: false, failedAt },
+        visited,
+      );
+    expect(failed(after)).toBe("Error");
+    expect(failed(before)).toBeNull();
+    expect(statesOf(summary("shell", { status: "error", updatedAt: after })).values().next().value)
+      .toMatchObject({ failedAt: after });
   });
 
   it("shows nothing for a thread without terminal state", () => {
@@ -96,7 +113,7 @@ describe("terminalThreadStatusLabel", () => {
   it("orders the states: session error, start, unseen bell, running program, unseen end", () => {
     const label = (state: Partial<TerminalThreadState>) =>
       terminalThreadStatusLabel(
-        { status: "running", attention: null, running: false, ...state },
+        { status: "running", attention: null, running: false, failedAt: null, ...state },
         visited,
       );
     const bell: TerminalAttention = { kind: "bell", at: after };
@@ -107,7 +124,7 @@ describe("terminalThreadStatusLabel", () => {
       exitCode: 1,
       bellAt: after,
     };
-    expect(label({ status: "error", attention: bell })).toBe("Error");
+    expect(label({ status: "error", attention: bell, failedAt: after })).toBe("Error");
     expect(label({ status: "starting", attention: bell })).toBe("Connecting");
     expect(label({ attention: bell, running: true })).toBe("Awaiting Input");
     expect(label({ attention: failedAfterBell })).toBe("Awaiting Input");

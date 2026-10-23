@@ -98,6 +98,7 @@ The sidebar shows the state of a terminal thread until you visit it:
   after it ends.
 - A program that ends shows Done, or Failed when its exit code is not zero.
 - A program that runs in the shell shows Working. A background job does not.
+- A shell that cannot start shows Failed.
 
 With Web Push on, a phone also gets a notification for a bell (Input needed) and for a program
 that ends (Program done or Program failed).
