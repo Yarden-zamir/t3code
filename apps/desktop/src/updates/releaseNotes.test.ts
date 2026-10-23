@@ -193,4 +193,31 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
       "Feature (#1): it matters.",
     ]);
   });
+
+  it("shows the breaking changes warning of a fork daily release first", () => {
+    const result = normalizeDesktopUpdateReleaseNotes(
+      [
+        "## ⚠️ Breaking changes",
+        "",
+        "- [#295](https://github.com/Yarden-zamir/t3code/pull/295) **refactor(fork)!: sidebar groups become sidebar tabs**: keys move once.",
+        "",
+        "Daily release of fork main.",
+        "",
+        "## Fork changes and additions",
+        "",
+        "- **Tabs** ([#295](https://github.com/Yarden-zamir/t3code/pull/295)): groups become tabs.",
+        "",
+        '⚠️ Breaking changes: [#295](https://github.com/Yarden-zamir/t3code/pull/295). Read "Breaking changes" at the top before you update.',
+        "",
+        "## Full changelog",
+        "",
+        "- not shown",
+      ].join("\n"),
+      "0.1.3-nightly.20261023.1",
+      "nightly",
+    );
+    expect(result.releaseNotes[0]?.items[0]).toBe(
+      '⚠️ Breaking changes: #295. Read "Breaking changes" at the top before you update.',
+    );
+  });
 });

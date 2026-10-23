@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 
 import {
+  breakingSection,
   type FirstParentChange,
   type GitCommit,
   decodeReleaseImages,
@@ -9,6 +10,7 @@ import {
   type ForkChange,
   renderNotes,
   groupDailyChanges,
+  withPullRequestBreaking,
 } from "./fork-daily-release-data.ts";
 
 const commit = (
@@ -153,6 +155,8 @@ const pullRequest = (number: number, images = 0): ForkChange => ({
   title: `feat: change ${number}`,
   author: "Yarden",
   at: "2026-10-20T10:00:00Z",
+  breaking: false,
+  breakingNote: null,
 });
 
 const forkOnly = (fork: ReadonlyArray<ForkChange>) => ({ fork, upstream: [], integration: [] });
@@ -262,4 +266,97 @@ it("adds the images of release-images.json to the change that its ref names", ()
   assert.deepStrictEqual(withReleaseImages(withBody, releaseImages).images, withBody.images);
   assert.deepStrictEqual(withReleaseImages(pullRequest(2), releaseImages).images, []);
   assert.throws(() => decodeReleaseImages({ "#1": [{ url: "http://x" }] }), /needs a list/);
+});
+
+it("marks a change breaking from its title, a commit footer, a body section or a label", () => {
+  const grouped = groupDailyChanges(
+    [
+      {
+        commit: commit(
+          "m1",
+          "Merge pull request #1 from Yarden-zamir/a",
+          ["p", "b1"],
+          "feat(web)!: a\n",
+        ),
+        brought: [commit("b1", "feat(web)!: a")],
+        branchAuthor: "Yarden",
+      },
+      {
+        commit: commit("m2", "Merge pull request #2 from Yarden-zamir/b", ["p", "b2"], "fix: b\n"),
+        brought: [
+          commit(
+            "b2",
+            "fix: b",
+            ["p"],
+            "Body.\n\nBREAKING CHANGE: the old key is gone.\nMove it.\n",
+          ),
+        ],
+        branchAuthor: "Yarden",
+      },
+      { commit: commit("d3", "fix: c, no mark"), brought: [], branchAuthor: undefined },
+    ],
+    isUpstream,
+    false,
+  );
+  assert.deepStrictEqual(
+    grouped.fork.map((change) => [change.breaking, change.breakingNote]),
+    [
+      [true, null],
+      [true, "the old key is gone.\nMove it."],
+      [false, null],
+    ],
+  );
+
+  const body =
+    "Intro.\n\n## 🤖 Breaking changes\n\n- Key renamed. To do: update.\n\n## Checks\n\nAll pass.";
+  assert.strictEqual(breakingSection(body), "- Key renamed. To do: update.");
+  const plain = grouped.fork[2]!;
+  const fromBody = withPullRequestBreaking(plain, { title: "fix: c", body, labels: [] });
+  assert.deepStrictEqual(
+    [fromBody.breaking, fromBody.breakingNote],
+    [true, "- Key renamed. To do: update."],
+  );
+  const fromLabel = withPullRequestBreaking(plain, {
+    title: "fix: c",
+    body: "",
+    labels: ["breaking"],
+  });
+  assert.isTrue(fromLabel.breaking);
+  assert.isFalse(
+    withPullRequestBreaking(plain, { title: "fix: c", body: "", labels: [] }).breaking,
+  );
+});
+
+it("puts breaking changes at the top and fails when one has no line", () => {
+  const breakingChange: ForkChange = {
+    ...pullRequest(7),
+    breaking: true,
+    breakingNote: "Key renamed.",
+  };
+  const changes = forkOnly([pullRequest(1), breakingChange]);
+  const plan = (breaking: ReadonlyArray<{ section: "fork"; change: string; line: string }>) => ({
+    intro: "Intro.",
+    breaking,
+    fork: { clusters: [{ name: "All", sentence: "", changes: ["#7", "#1"] }] },
+    upstream: emptySection,
+    integration: emptySection,
+  });
+  const notes = renderNotes(
+    changes,
+    plan([{ section: "fork", change: "#7", line: "Key renamed. Update every machine." }]),
+  );
+  assert.isTrue(notes.startsWith("## ⚠️ Breaking changes"));
+  assert.isTrue(notes.indexOf("Key renamed. Update every machine.") < notes.indexOf("Intro."));
+  // The desktop update popover reads the last lines above "Full changelog".
+  const [aboveFull = ""] = notes.split("## Full changelog");
+  assert.isTrue(aboveFull.trimEnd().split("\n").at(-1)!.startsWith("⚠️ Breaking changes: [#7]"));
+
+  assert.throws(
+    () => renderNotes(changes, plan([])),
+    /"#7" \(feat: change 7\) is breaking and has no line/,
+  );
+  assert.throws(
+    () => renderNotes(changes, plan([{ section: "fork", change: "#1", line: "Not breaking." }])),
+    /"#1" names no breaking change/,
+  );
 });
