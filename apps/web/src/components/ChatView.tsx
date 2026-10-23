@@ -61,9 +61,7 @@ import {
   type ChatFileAttachment,
   CommandId,
   DEFAULT_MODEL,
-  DEFAULT_TERMINAL_ID,
   isProviderNativeSubagentThread,
-  isTerminalThread,
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
@@ -156,7 +154,6 @@ import { flushSync } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import { isMacPlatform } from "../lib/utils";
-import { ForkTerminalThreadView } from "./ForkTerminalThreadView";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -2906,7 +2903,6 @@ export default function ChatView(props: ChatViewProps) {
     resourceKey: `git-status:${activeThreadKey ?? ""}:${gitStatusCwd ?? ""}`,
   });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const activeTerminalThread = serverThread !== null && isTerminalThread(serverThread);
   const scriptKeybindings =
     useAtomValue(serverEnvironment.configValueAtom(environmentId))?.keybindings ??
     DEFAULT_RESOLVED_KEYBINDINGS;
@@ -3368,11 +3364,9 @@ export default function ChatView(props: ChatViewProps) {
     if (nextOpen && hasTerminalWriteAccess() && terminalUiState.terminalIds.length === 0) {
       // Server-created setup terminals exist before this client's drawer mounts.
       // Reuse them before allocating a shell from the still-empty UI state.
-      const isDrawerTerminal = (id: string) =>
-        !panelTerminalIds.has(id) && !(activeTerminalThread && id === DEFAULT_TERMINAL_ID);
       const existingTerminalId =
-        runningTerminalIds.find(isDrawerTerminal) ??
-        activeServerOrderedTerminalIds.find(isDrawerTerminal);
+        runningTerminalIds.find((id) => !panelTerminalIds.has(id)) ??
+        activeServerOrderedTerminalIds.find((id) => !panelTerminalIds.has(id));
       if (existingTerminalId !== undefined) {
         storeEnsureTerminal(activeThreadRef, existingTerminalId, { open: true, active: true });
         return;
@@ -5577,8 +5571,7 @@ export default function ChatView(props: ChatViewProps) {
         toggleTerminalVisibilityStable();
       },
       "chat.find": () => {
-        if (activeTerminalThread || !isServerThread || serverConfig?.threadFind !== true)
-          return false;
+        if (!isServerThread || serverConfig?.threadFind !== true) return false;
         openThreadFindStable();
       },
       "rightPanel.toggle": () => toggleRightPanelStable(),
@@ -7902,15 +7895,6 @@ export default function ChatView(props: ChatViewProps) {
         </header>
 
         <div className="relative flex min-h-0 min-w-0 flex-1">
-          {activeTerminalThread && activeThreadRef && activeProject ? (
-            <ForkTerminalThreadView
-              key={activeThreadKey}
-              threadRef={activeThreadRef}
-              workspaceRoot={activeProject.workspaceRoot}
-              worktreePath={activeThread.worktreePath}
-              keybindings={keybindings}
-            />
-          ) : null}
           <ThreadFindCanvas
             findOptions={{
               skills: timelineSkills,
@@ -8670,7 +8654,7 @@ function PreviewSessionSync(props: { readonly threadRef: ScopedThreadRef }) {
 // The visit watermark is the one part of the chat view that follows the
 // shell's updatedAt, which ticks while a run streams. Keeping it in a leaf lets
 // ChatView read the quiet shell.
-function ThreadVisitWatermark(props: { readonly threadRef: ScopedThreadRef }) {
+export function ThreadVisitWatermark(props: { readonly threadRef: ScopedThreadRef }) {
   const serverThread = useThreadShell(props.threadRef);
   const threadKey = scopedThreadKey(props.threadRef);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);

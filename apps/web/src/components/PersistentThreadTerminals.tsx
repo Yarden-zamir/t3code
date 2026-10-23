@@ -89,7 +89,8 @@ interface PersistentThreadTerminalDrawerProps {
   newShortcutLabel: string | undefined;
   closeShortcutLabel: string | undefined;
   keybindings: ResolvedKeybindingsConfig;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  /** Absent where no chat can take a terminal selection, such as a terminal thread. */
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
 }
 
 export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDrawer({
@@ -245,12 +246,14 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     bumpFocusRequestId();
   });
 
-  const handleAddTerminalContext = (selection: TerminalContextSelection) => {
-    if (!visible) {
-      return;
-    }
-    onAddTerminalContext(selection);
-  };
+  const handleAddTerminalContext = onAddTerminalContext
+    ? (selection: TerminalContextSelection) => {
+        if (!visible) {
+          return;
+        }
+        onAddTerminalContext(selection);
+      }
+    : undefined;
 
   if (!project || (!terminalUiState.terminalOpen && !active) || !cwd) {
     return null;

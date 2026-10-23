@@ -39,6 +39,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import { useCreateTerminalThread } from "./useForkTerminalThreads";
 import { useClientSettings } from "./useSettings";
 import { useThreadRouteTarget } from "./useThreadRouteTarget";
 
@@ -399,6 +400,7 @@ export function useHandleNewThread() {
   );
   const projects = useProjects();
   const handleNewThread = useNewThreadHandler();
+  const handleNewTerminalThread = useCreateTerminalThread();
   const [defaultProject] = orderItemsByPreferredIds({
     items: projects,
     preferredIds: projectOrder,
@@ -417,6 +419,7 @@ export function useHandleNewThread() {
     activeThread,
     defaultProjectRef,
     handleNewThread,
+    handleNewTerminalThread,
     routeDraftId,
     routeThreadRef,
   };

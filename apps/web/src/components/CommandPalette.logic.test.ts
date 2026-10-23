@@ -249,10 +249,12 @@ describe("reduceCommandPaletteUiState", () => {
       mode: "command",
       openIntent: { kind: "add-project" },
     });
-    expect(reduceCommandPaletteUiState(filesOpen, { _tag: "OpenNewThreadIn" })).toEqual({
+    expect(
+      reduceCommandPaletteUiState(filesOpen, { _tag: "OpenNewThreadIn", threadKind: "chat" }),
+    ).toEqual({
       open: true,
       mode: "command",
-      openIntent: { kind: "new-thread-in" },
+      openIntent: { kind: "new-thread-in", threadKind: "chat" },
     });
   });
 

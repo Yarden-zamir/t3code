@@ -33,6 +33,7 @@ function createContext(overrides: Partial<ChatThreadActionContext> = {}): ChatTh
     activeThread: undefined,
     defaultProjectRef: scopeProjectRef(ENVIRONMENT_ID, FALLBACK_PROJECT_ID),
     handleNewThread: async () => {},
+    handleNewTerminalThread: async () => {},
     ...overrides,
   };
 }
@@ -153,6 +154,28 @@ describe("chatThreadActions", () => {
 
     expect(didStart).toBe(true);
     expect(handleNewThread).toHaveBeenCalledWith(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID));
+  });
+
+  it("starts a terminal thread in the context project for the terminal kind", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
+    const handleNewTerminalThread = vi.fn<ChatThreadActionContext["handleNewTerminalThread"]>(
+      async () => {},
+    );
+
+    const didStart = await startNewThreadFromContext(
+      createContext({
+        activeThread: { environmentId: ENVIRONMENT_ID, projectId: PROJECT_ID },
+        handleNewThread,
+        handleNewTerminalThread,
+      }),
+      "terminal",
+    );
+
+    expect(didStart).toBe(true);
+    expect(handleNewTerminalThread).toHaveBeenCalledWith(
+      scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID),
+    );
+    expect(handleNewThread).not.toHaveBeenCalled();
   });
 
   it("does not start a thread when there is no project context", async () => {

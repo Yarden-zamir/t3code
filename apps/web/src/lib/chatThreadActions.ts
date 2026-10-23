@@ -34,6 +34,22 @@ export interface ChatThreadActionContext {
   readonly activeThread: ThreadContextLike | undefined;
   readonly defaultProjectRef: ScopedProjectRef | null;
   readonly handleNewThread: NewThreadHandler;
+  /** Fork: creates a terminal thread (`forkTerminalThreads.ts`) and opens it. */
+  readonly handleNewTerminalThread: (projectRef: ScopedProjectRef) => Promise<unknown>;
+}
+
+/** Fork: a normal chat thread or a terminal thread (`forkTerminalThreads.ts`). */
+export type NewThreadKind = "chat" | "terminal";
+
+/** Fork: starts a thread of `kind` in a project, the one place both kinds branch. */
+export function startNewThreadInProject(
+  context: Pick<ChatThreadActionContext, "handleNewThread" | "handleNewTerminalThread">,
+  projectRef: ScopedProjectRef,
+  kind: NewThreadKind,
+): Promise<unknown> {
+  return kind === "terminal"
+    ? context.handleNewTerminalThread(projectRef)
+    : context.handleNewThread(projectRef);
 }
 
 export function resolveNewDraftStartFromOrigin(input: {
@@ -84,12 +100,13 @@ export function resolveThreadActionProjectRef(
 
 export async function startNewThreadFromContext(
   context: ChatThreadActionContext,
+  kind: NewThreadKind = "chat",
 ): Promise<boolean> {
   const projectRef = resolveThreadActionProjectRef(context);
   if (!projectRef) {
     return false;
   }
 
-  await context.handleNewThread(projectRef);
+  await startNewThreadInProject(context, projectRef, kind);
   return true;
 }

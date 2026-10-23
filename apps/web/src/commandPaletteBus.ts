@@ -1,4 +1,5 @@
 import type { EnvironmentId, PullRequestLinkedThreadsResult } from "@t3tools/contracts";
+import type { NewThreadKind } from "./lib/chatThreadActions";
 
 export interface CommandPaletteLinkedThreads {
   readonly environmentId: EnvironmentId;
@@ -8,7 +9,9 @@ export interface CommandPaletteLinkedThreads {
 const COMMAND_PALETTE_OPEN_EVENT = "t3code:open-command-palette";
 
 export interface CommandPaletteOpenDetail {
-  readonly open?: "add-project" | "new-thread-in" | "new-terminal-thread-in";
+  readonly open?: "add-project" | "new-thread-in";
+  /** Fork: the kind of thread that "new-thread-in" starts. A chat thread when absent. */
+  readonly threadKind?: NewThreadKind;
   readonly query?: string;
   readonly linkedThreads?: CommandPaletteLinkedThreads;
 }

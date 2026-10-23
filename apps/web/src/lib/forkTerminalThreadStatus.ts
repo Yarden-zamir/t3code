@@ -8,8 +8,10 @@ export interface TerminalThreadState {
 
 export type TerminalThreadStatusLabel = "Connecting" | "Error" | "Awaiting Input" | "Completed";
 
+// A thread that nobody opened yet has no visit, so everything it reports is unseen: a schedule
+// or an agent can start a terminal thread that the user never looked at.
 function attentionIsUnseen(attention: TerminalAttention, lastVisitedAt: string | null | undefined) {
-  if (!lastVisitedAt) return false;
+  if (!lastVisitedAt) return true;
   const at = Date.parse(attention.at);
   const visited = Date.parse(lastVisitedAt);
   return !Number.isNaN(at) && (Number.isNaN(visited) || at > visited);
@@ -17,8 +19,9 @@ function attentionIsUnseen(attention: TerminalAttention, lastVisitedAt: string |
 
 /**
  * Fork: the status pill that a terminal thread adds to the pill of its message runs. A bell or an
- * app notification asks for input, a program that ended is completed work, both until the user
- * visits the thread. A program that runs shows no pill: it shows the terminal icon of the row.
+ * app notification asks for input. A program that ended is completed work, or an error when it
+ * exited with a non-zero code. Each shows until the user visits the thread. A program that runs
+ * shows no pill: it shows the terminal icon of the row.
  */
 export function terminalThreadStatusLabel(
   terminal: TerminalThreadState | undefined,
@@ -29,15 +32,17 @@ export function terminalThreadStatusLabel(
   if (terminal.status === "starting") return "Connecting";
   const { attention } = terminal;
   if (!attention || !attentionIsUnseen(attention, lastVisitedAt)) return null;
-  return attention.kind === "bell" ? "Awaiting Input" : "Completed";
+  if (attention.kind === "bell") return "Awaiting Input";
+  return (attention.exitCode ?? 0) === 0 ? "Completed" : "Error";
 }
 
 type RowStatus = "approval" | "input" | "working" | "waiting" | "failed" | "limited" | "ready";
 
 /**
  * Fork: the status of a terminal thread row in the main sidebar. Message runs keep their own
- * status, so the terminal only fills in an idle row. A bell shows Input, a failed session shows
- * Failed, and a starting session shows Working. `Completed` is the unread dot (`unread` below).
+ * status, so the terminal only fills in an idle row. A bell shows Input, a failed session or a
+ * program that exited with a non-zero code shows Failed, and a starting session shows Working.
+ * `Completed` is the unread dot.
  */
 export function terminalThreadRowStatus<Status extends RowStatus>(
   status: Status,

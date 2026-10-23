@@ -6,7 +6,6 @@ import {
 } from "@t3tools/contracts";
 import {
   compileTerminalKeyMappings,
-  TMUX_KEY_PRESET,
   ZLE_EDITOR_KEY_PRESET,
 } from "@t3tools/shared/terminalKeyMappings";
 import * as Option from "effect/Option";
@@ -78,7 +77,7 @@ export function TerminalKeyMappingsSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("terminal-key-mappings")}
-      description='Keys that every terminal sends as fixed bytes, in place of its own encoding. Each entry has "key" (such as cmd+z), "send" (the bytes, with escapes such as \e) and "passthrough" (true skips tmux, so the app gets the bytes unchanged). A mapped key replaces the encoding of the key, except copy while text is selected. App shortcuts, zoom and the built-in Cmd+arrow, Cmd+Backspace, Cmd+K and Ctrl+L keys act first.'
+      description='Keys that every terminal sends as fixed bytes, in place of its own encoding. Each entry has "key" (such as cmd+z), "send" (the bytes, with escapes such as \e). A mapped key replaces the encoding of the key, except copy while text is selected. App shortcuts, zoom and the built-in Cmd+arrow, Cmd+Backspace, Cmd+K and Ctrl+L keys act first.'
       status={error === null ? null : <span className="text-destructive-foreground">{error}</span>}
       resetAction={
         mappings.length > 0 ? (
@@ -106,9 +105,6 @@ export function TerminalKeyMappingsSettingsRow() {
         <div className="flex flex-wrap gap-2">
           <Button size="xs" variant="outline" onClick={() => addPreset(ZLE_EDITOR_KEY_PRESET)}>
             Add editor keys for zsh (macOS)
-          </Button>
-          <Button size="xs" variant="outline" onClick={() => addPreset(TMUX_KEY_PRESET)}>
-            Add tmux search keys
           </Button>
         </div>
       </div>

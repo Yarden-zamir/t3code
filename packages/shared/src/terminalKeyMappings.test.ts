@@ -30,9 +30,9 @@ describe("compileTerminalKeyMappings", () => {
   it("drops an entry with a key or sequence that does not parse", () => {
     expect(
       compileTerminalKeyMappings([
-        { key: "cmd+z", send: "\\e[122;9u", passthrough: true },
-        { key: "cmd++z+", send: "x", passthrough: false },
-        { key: "cmd+y", send: "\\q", passthrough: false },
+        { key: "cmd+z", send: "\\e[122;9u" },
+        { key: "cmd++z+", send: "x" },
+        { key: "cmd+y", send: "\\q" },
       ]).map((mapping) => mapping.data),
     ).toEqual(["\u001b[122;9u"]);
   });

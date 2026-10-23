@@ -9,7 +9,7 @@ import {
   useUpdateScopedSettings,
 } from "./useScopedSettings";
 
-/** Fork: `terminalThreads`, threads whose main view is a tmux terminal. */
+/** Fork: `terminalThreads`, threads whose main view is a terminal. */
 export function TerminalThreadsSettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -37,40 +37,6 @@ export function TerminalThreadsSettingsRow() {
           checked={settings.terminalThreads}
           onCheckedChange={(checked) => updateSettings({ terminalThreads: Boolean(checked) })}
           aria-label="Terminal threads"
-        />
-      }
-    />
-  );
-}
-
-/** Fork: `terminalThreadsTmux`, terminal threads run inside tmux. */
-export function TerminalThreadsTmuxSettingsRow() {
-  const settings = useScopedSettings();
-  const updateSettings = useUpdateScopedSettings();
-  const mixed = useScopedSettingsMixed(["terminalThreadsTmux"]);
-
-  return (
-    <SettingsRow
-      {...searchableSetting("terminal-threads-tmux")}
-      serverScoped
-      settingKeys={["terminalThreadsTmux"]}
-      description="A terminal thread runs inside tmux, so its apps keep running when the server restarts and tmux search works. Needs tmux on the server machine; without it the thread runs a plain shell. Applies to terminals that open after the change. Pair it with the tmux search keys in Terminal key mappings."
-      resetAction={
-        mixed || settings.terminalThreadsTmux !== DEFAULT_SERVER_SETTINGS.terminalThreadsTmux ? (
-          <SettingResetButton
-            label="terminal threads in tmux"
-            onClick={() =>
-              updateSettings({ terminalThreadsTmux: DEFAULT_SERVER_SETTINGS.terminalThreadsTmux })
-            }
-          />
-        ) : null
-      }
-      control={
-        <ScopedSwitch
-          settingKeys={["terminalThreadsTmux"]}
-          checked={settings.terminalThreadsTmux}
-          onCheckedChange={(checked) => updateSettings({ terminalThreadsTmux: Boolean(checked) })}
-          aria-label="Terminal threads in tmux"
         />
       }
     />

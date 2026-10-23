@@ -1,8 +1,4 @@
-import {
-  TERMINAL_THREAD_FIND_SEQUENCE,
-  type KeybindingShortcut,
-  type TerminalKeyMapping,
-} from "@t3tools/contracts";
+import type { KeybindingShortcut, TerminalKeyMapping } from "@t3tools/contracts";
 
 import { matchesKeybindingShortcut, parseKeybindingShortcut } from "./keybindings.ts";
 
@@ -53,7 +49,6 @@ export function decodeTerminalKeySequence(text: string): string | null {
 export interface CompiledTerminalKeyMapping {
   readonly shortcut: KeybindingShortcut;
   readonly data: string;
-  readonly passthrough: boolean;
 }
 
 /** Drops a mapping with a key or sequence that does not parse. */
@@ -63,9 +58,7 @@ export function compileTerminalKeyMappings(
   return mappings.flatMap((mapping) => {
     const shortcut = parseKeybindingShortcut(mapping.key);
     const data = decodeTerminalKeySequence(mapping.send);
-    return shortcut === null || data === null
-      ? []
-      : [{ shortcut, data, passthrough: mapping.passthrough }];
+    return shortcut === null || data === null ? [] : [{ shortcut, data }];
   });
 }
 
@@ -81,35 +74,16 @@ export function findTerminalKeyMapping(
 
 /**
  * The Command keys of an editor-like ZLE setup (select all, copy, cut, undo, redo and the line
- * and buffer jumps), as the Kitty keyboard protocol writes them. `passthrough` keeps a
- * multiplexer from reading them as Meta keys.
+ * and buffer jumps), as the Kitty keyboard protocol writes them.
  */
 export const ZLE_EDITOR_KEY_PRESET: ReadonlyArray<TerminalKeyMapping> = [
-  { key: "cmd+a", send: "\\e[97;9u", passthrough: true },
-  { key: "cmd+c", send: "\\e[99;9u", passthrough: true },
-  { key: "cmd+x", send: "\\e[120;9u", passthrough: true },
-  { key: "cmd+z", send: "\\e[122;9u", passthrough: true },
-  { key: "cmd+shift+z", send: "\\e[122;10u", passthrough: true },
-  { key: "cmd+arrowup", send: "\\e[1;9A", passthrough: true },
-  { key: "cmd+arrowdown", send: "\\e[1;9B", passthrough: true },
-  { key: "cmd+shift+arrowup", send: "\\e[1;10A", passthrough: true },
-  { key: "cmd+shift+arrowdown", send: "\\e[1;10B", passthrough: true },
+  { key: "cmd+a", send: "\\e[97;9u" },
+  { key: "cmd+c", send: "\\e[99;9u" },
+  { key: "cmd+x", send: "\\e[120;9u" },
+  { key: "cmd+z", send: "\\e[122;9u" },
+  { key: "cmd+shift+z", send: "\\e[122;10u" },
+  { key: "cmd+arrowup", send: "\\e[1;9A" },
+  { key: "cmd+arrowdown", send: "\\e[1;9B" },
+  { key: "cmd+shift+arrowup", send: "\\e[1;10A" },
+  { key: "cmd+shift+arrowdown", send: "\\e[1;10B" },
 ];
-
-/**
- * `cmd+f` on macOS and `ctrl+shift+f` elsewhere open tmux search (no passthrough: tmux reads it).
- * Limit: a mapping applies in every terminal, so these keys send junk to a terminal without tmux.
- * Revisit when a mapping needs a scope.
- */
-export const TMUX_KEY_PRESET: ReadonlyArray<TerminalKeyMapping> = [
-  { key: "cmd+f", send: encodeForMapping(TERMINAL_THREAD_FIND_SEQUENCE), passthrough: false },
-  {
-    key: "ctrl+shift+f",
-    send: encodeForMapping(TERMINAL_THREAD_FIND_SEQUENCE),
-    passthrough: false,
-  },
-];
-
-function encodeForMapping(sequence: string): string {
-  return sequence.replaceAll("\u001b", "\\e");
-}

@@ -169,7 +169,7 @@ import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { ForkNewTerminalThreadButton } from "./sidebar/ForkNewTerminalThreadButton";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import { type NewThreadKind, startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -4653,25 +4653,33 @@ export default function Sidebar() {
     updateThreadJumpHintsVisibility(shouldShowJumpHintsNow);
   }, [shouldShowJumpHintsNow, updateThreadJumpHintsVisibility]);
 
-  const handleNewThreadClick = (event?: ReactMouseEvent) => {
+  const handleNewThreadClick = (event?: ReactMouseEvent, kind: NewThreadKind = "chat") => {
     if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {
       if (isMobile) setOpenMobile(false);
-      void startNewThreadFromContext({
-        activeDraftThread: newThreadContext.activeDraftThread,
-        activeThread: newThreadContext.activeThread ?? undefined,
-        defaultProjectRef: newThreadContext.defaultProjectRef,
-        handleNewThread: newThreadContext.handleNewThread,
-      });
+      void startNewThreadFromContext(
+        {
+          activeDraftThread: newThreadContext.activeDraftThread,
+          activeThread: newThreadContext.activeThread ?? undefined,
+          defaultProjectRef: newThreadContext.defaultProjectRef,
+          handleNewThread: newThreadContext.handleNewThread,
+          handleNewTerminalThread: newThreadContext.handleNewTerminalThread,
+        },
+        kind,
+      );
       return;
     }
     if (isMobile) setOpenMobile(false);
-    openCommandPalette({ open: "new-thread-in" });
+    openCommandPalette({ open: "new-thread-in", threadKind: kind });
   };
 
   const newThreadCommand =
     shortcutLabelForCommand(keybindings, "chat.new") || projectGroups.length > 1
       ? "chat.new"
       : "chat.newLocal";
+  const newTerminalThreadCommand =
+    shortcutLabelForCommand(keybindings, "chat.newTerminal") || projectGroups.length > 1
+      ? "chat.newTerminal"
+      : "chat.newTerminalLocal";
   return (
     <>
       <ThreadContextDragGhost />
@@ -4684,7 +4692,14 @@ export default function Sidebar() {
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}
               ownerFilter={<ForkSidebar.OwnerFilterMenu owner={owner} />}
-              terminalThreadButton={<ForkNewTerminalThreadButton />}
+              terminalThreadButton={
+                <ForkNewTerminalThreadButton
+                  shortcutCommand={newTerminalThreadCommand}
+                  showNewThreadInProjectHint={projectGroups.length > 1}
+                  disabled={projects.length === 0}
+                  onClick={(event) => handleNewThreadClick(event, "terminal")}
+                />
+              }
               projectScope={
                 <Combobox
                   items={projectScopeItems}

@@ -206,6 +206,7 @@ export function SnapShotCoordinator() {
     activeThread,
     defaultProjectRef,
     handleNewThread,
+    handleNewTerminalThread,
     routeDraftId,
     routeThreadRef,
   } = useHandleNewThread();
@@ -262,6 +263,7 @@ export function SnapShotCoordinator() {
       activeThread: activeThread ?? undefined,
       defaultProjectRef,
       handleNewThread,
+      handleNewTerminalThread,
     });
     if (!projectRef) return null;
     const created = await handleNewThread(projectRef);

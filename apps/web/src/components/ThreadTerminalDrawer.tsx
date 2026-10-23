@@ -402,7 +402,7 @@ interface TerminalViewportProps {
   runtimeEnv?: Record<string, string>;
   providerInstanceId?: ProviderInstanceId;
   onSessionExited: () => void;
-  onAddTerminalContext?: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   focusRequestId: number;
   autoFocus: boolean;
   visible: boolean;
@@ -489,7 +489,7 @@ function TerminalSessionViewport({
       event,
       navigator.platform,
     );
-    return mapping === null ? null : { data: mapping.data, passthrough: mapping.passthrough };
+    return mapping?.data ?? null;
   });
   const handleSessionExited = useEffectEvent(() => {
     if (hasTerminalWriteAccess()) onSessionExited();
@@ -535,10 +535,10 @@ function TerminalSessionViewport({
   const canResizeTerminal =
     canOperateTerminal && terminalSession.version > 0 && terminalSession.status === "running";
   const resizeSessionGeneration = canResizeTerminal ? terminalSession.output.generation : null;
-  const writeTerminal = useEffectEvent((data: string, passthrough = false) =>
+  const writeTerminal = useEffectEvent((data: string) =>
     runTerminalWrite({
       environmentId,
-      input: { threadId, terminalId, data, ...(passthrough ? { passthrough } : {}) },
+      input: { threadId, terminalId, data },
     }),
   );
   const resizeTerminal = useEffectEvent((cols: number, rows: number) => {
@@ -642,7 +642,6 @@ function TerminalSessionViewport({
         onSelectionChange: () => handleSelectionChange(),
         beforeKey: (event) => handleBeforeKey(event),
         mapKey: (event) => readMappedKey(event),
-        onPassthroughData: (data) => handleData(data, true),
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
         canActivateLink: (text) => canActivateTerminalLink(text),
         // The surface listens from construction, so a right-click can land
@@ -991,10 +990,10 @@ function TerminalSessionViewport({
         })();
       }
 
-      function handleData(data: string, passthrough = false): void {
+      function handleData(data: string): void {
         if (!hasTerminalWriteAccess()) return;
         void (async () => {
-          const result = await writeTerminal(data, passthrough);
+          const result = await writeTerminal(data);
           if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
           const error = squashAtomCommandFailure(result);
           writeSystemMessage(
@@ -1176,7 +1175,7 @@ interface ThreadTerminalDrawerProps {
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string) => void;
   onHeightChange: (height: number) => void;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   keybindings: ResolvedKeybindingsConfig;
   terminalLabelsById?: ReadonlyMap<string, string>;
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
@@ -1264,7 +1263,7 @@ function TerminalSplitPanes({
   advancedTypography: boolean;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   focusRequestId: number;
   visible: boolean;
   resizeEpoch: number;

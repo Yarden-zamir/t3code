@@ -30,7 +30,6 @@ const FORK_RESTORED_SETTINGS = [
   ["mobileComposerCamera", "Camera on mobile"],
   ["mobileSidebarGroups", "Sidebar groups on mobile"],
   ["terminalThreads", "Terminal threads"],
-  ["terminalThreadsTmux", "Terminal threads in tmux"],
   ["terminalHistoryLines", "Terminal history lines"],
   ["terminalHistoryMegabytes", "Terminal history megabytes"],
   ["terminalKeyMappings", "Terminal key mappings"],

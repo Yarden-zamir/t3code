@@ -507,9 +507,7 @@ export interface GhosttyTerminalSurfaceOptions {
    * Fork: the bytes to send for a key in place of its own encoding, or null. A mapped key wins
    * over the terminal's own shortcuts, except copy while text is selected.
    */
-  readonly mapKey?: (event: KeyboardEvent) => GhosttyMappedKey | null;
-  /** Fork: receives the bytes of a mapped key with `passthrough`. */
-  readonly onPassthroughData?: (data: string) => void;
+  readonly mapKey?: (event: KeyboardEvent) => string | null;
   readonly onLinkActivate: (text: string, event: MouseEvent) => void;
   readonly canActivateLink?: (text: string) => boolean;
   /**
@@ -517,11 +515,6 @@ export interface GhosttyTerminalSurfaceOptions {
    * whose Paste entry can never reach a canvas terminal.
    */
   readonly onContextMenu?: (event: MouseEvent) => void;
-}
-
-export interface GhosttyMappedKey {
-  readonly data: string;
-  readonly passthrough: boolean;
 }
 
 export class GhosttyTerminalSurface {
@@ -1071,11 +1064,7 @@ export class GhosttyTerminalSurface {
       event.preventDefault();
       event.stopPropagation();
       this.suppressedKeyCodes.add(event.code);
-      if (mapped.passthrough && this.options.onPassthroughData) {
-        this.options.onPassthroughData(mapped.data);
-      } else {
-        this.options.onData(mapped.data);
-      }
+      this.options.onData(mapped);
       return;
     }
     const mac = isMacPlatform(navigator.platform);

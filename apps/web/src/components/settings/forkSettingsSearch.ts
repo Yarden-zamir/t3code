@@ -324,13 +324,6 @@ export const MACHINE_MAP_ITEMS = [
 
 export const PREVIEW_ITEMS = [
   {
-    id: "terminal-threads-tmux",
-    title: "Terminal threads in tmux",
-    to: "/settings/fork",
-    searchTerms: ["terminal thread tmux restart survive search multiplexer session"],
-    environmentOnly: true,
-  },
-  {
     id: "terminal-history",
     title: "Terminal history",
     to: "/settings/fork",
@@ -341,9 +334,7 @@ export const PREVIEW_ITEMS = [
     id: "terminal-key-mappings",
     title: "Terminal key mappings",
     to: "/settings/fork",
-    searchTerms: [
-      "terminal key mapping passthrough zle editor shortcut command cmd bytes escape send",
-    ],
+    searchTerms: ["terminal key mapping zle editor shortcut command cmd bytes escape send"],
   },
   {
     id: "terminal-thread-font-limits",
@@ -355,7 +346,7 @@ export const PREVIEW_ITEMS = [
     id: "terminal-threads",
     title: "Terminal threads",
     to: "/settings/fork",
-    searchTerms: ["terminal thread tmux shell interactive vim cli new terminal"],
+    searchTerms: ["terminal thread shell interactive vim cli new terminal"],
     environmentOnly: true,
   },
   {

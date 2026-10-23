@@ -27,6 +27,31 @@ describe("terminalThreadStatusLabel", () => {
     expect(running("bell", before)).toBeNull();
   });
 
+  it("maps an unseen program end to Error for a non-zero exit code and to Completed otherwise", () => {
+    const finished = (exitCode: number | null | undefined, at = after) =>
+      terminalThreadStatusLabel(
+        {
+          status: "running",
+          attention: { kind: "finished", at, ...(exitCode === undefined ? {} : { exitCode }) },
+        },
+        visited,
+      );
+    expect(finished(1)).toBe("Error");
+    expect(finished(0)).toBe("Completed");
+    expect(finished(null)).toBe("Completed");
+    expect(finished(undefined)).toBe("Completed");
+    expect(finished(1, before)).toBeNull();
+  });
+
+  it("treats everything as unseen for a thread that nobody opened", () => {
+    expect(
+      terminalThreadStatusLabel(
+        { status: "running", attention: { kind: "finished", at: before, exitCode: 5 } },
+        null,
+      ),
+    ).toBe("Error");
+  });
+
   it("shows nothing for a thread without terminal state", () => {
     expect(terminalThreadStatusLabel(undefined, visited)).toBeNull();
   });

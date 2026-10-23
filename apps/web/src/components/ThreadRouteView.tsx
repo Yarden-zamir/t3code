@@ -1,9 +1,10 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { isTerminalThread, type ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
+import { ForkTerminalThreadScreen } from "./ForkTerminalThreadScreen";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
 import { waitForDraftHeroTransition } from "./chat/draftHeroTransition";
 import { SidebarInset } from "./ui/sidebar";
@@ -162,6 +163,11 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
           forceExpandedMobileComposer
         />
       );
+    }
+  } else if (serverThreadShell !== null && isTerminalThread(serverThreadShell)) {
+    // Fork: a terminal thread has its own screen and never mounts ChatView.
+    if (renderState === "ready" || renderState === "loading") {
+      view = <ForkTerminalThreadScreen key={serverThreadKey} threadRef={target.threadRef} />;
     }
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
     view = (

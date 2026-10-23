@@ -1,11 +1,12 @@
-export type TerminalFocusOwner = "drawer" | "right-panel";
+// Fork: "terminal-thread" is the main terminal of a terminal thread (`forkTerminalThreads.ts`).
+export type TerminalFocusOwner = "drawer" | "right-panel" | "terminal-thread";
 
 export function getTerminalFocusOwner(): TerminalFocusOwner | null {
   const activeElement = document.activeElement;
   if (!(activeElement instanceof HTMLElement)) return null;
   if (!activeElement.isConnected) return null;
   const owner = activeElement.closest<HTMLElement>("[data-terminal-owner]")?.dataset.terminalOwner;
-  if (owner === "drawer" || owner === "right-panel") return owner;
+  if (owner === "drawer" || owner === "right-panel" || owner === "terminal-thread") return owner;
   return null;
 }
 
