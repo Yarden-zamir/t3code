@@ -10,6 +10,7 @@ import {
   AuthOrchestrationReadScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
+  AuthTerminalOperateScope,
   EnvironmentAuthorizationError,
 } from "./auth.ts";
 import {
@@ -22,6 +23,8 @@ import {
 } from "./forkChangelog.ts";
 import { ForkLocalListenerList } from "./forkPreview.ts";
 import {
+  ForkMoveTerminalToThreadError,
+  ForkMoveTerminalToThreadInput,
   ForkPrepareDraftWorktreeInput,
   ForkPrepareDraftWorktreeResult,
 } from "./forkTerminalThreads.ts";
@@ -69,6 +72,8 @@ export const FORK_WS_METHODS = {
 
   // Fork: the new worktree of a draft in Terminal mode (forkTerminalThreads.ts)
   vcsPrepareDraftWorktree: "vcs.prepareDraftWorktree",
+  // Fork: a drawer terminal becomes a terminal thread (forkTerminalThreads.ts)
+  terminalMoveToThread: "terminal.moveToThread",
 } as const;
 
 const forkChangelogError = Schema.Union([ForkChangelogError, EnvironmentAuthorizationError]);
@@ -173,6 +178,12 @@ const WsVcsPrepareDraftWorktreeRpc = Rpc.make(FORK_WS_METHODS.vcsPrepareDraftWor
   error: Schema.Union([OrchestrationV2ThreadLaunchError, EnvironmentAuthorizationError]),
 });
 
+const WsTerminalMoveToThreadRpc = Rpc.make(FORK_WS_METHODS.terminalMoveToThread, {
+  payload: ForkMoveTerminalToThreadInput,
+  success: Schema.Struct({}),
+  error: Schema.Union([ForkMoveTerminalToThreadError, EnvironmentAuthorizationError]),
+});
+
 export const ForkWsRpcGroup = RpcGroup.make(
   WsForkChangelogListReleasesRpc,
   WsForkChangelogReleaseChangesRpc,
@@ -190,6 +201,7 @@ export const ForkWsRpcGroup = RpcGroup.make(
   WsWebPushTestRpc,
   WsForkPreviewSubscribeLocalListenersRpc,
   WsVcsPrepareDraftWorktreeRpc,
+  WsTerminalMoveToThreadRpc,
 );
 
 /** The fork part of `CLIENT_GUARDED_RPC_SCOPES`. */
@@ -205,6 +217,8 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [FORK_WS_METHODS.machineMapReportDesktop]: AuthEnvironmentMaintainScope,
   // Fork: creates a worktree, as `vcs.createWorktree` does, and runs the project setup script.
   [FORK_WS_METHODS.vcsPrepareDraftWorktree]: AuthSourceControlWriteScope,
+  // Fork: takes over a running terminal, as `terminal.open` and `terminal.close` need.
+  [FORK_WS_METHODS.terminalMoveToThread]: AuthTerminalOperateScope,
 } as const;
 
 /** The fork RPCs that the server's `RPC_REQUIRED_SCOPES` adds to `CLIENT_GUARDED_RPC_SCOPES`. */

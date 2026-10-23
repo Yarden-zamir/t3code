@@ -26,6 +26,60 @@ export function terminalThreadShell(model: string): string | undefined {
   return model === TERMINAL_THREAD_MODEL_SELECTION.model ? undefined : model;
 }
 
+/** The shells that the server detects by these names (`fork/terminalShells.ts`). */
+export const TERMINAL_SHELL_NAMES = [
+  "zsh",
+  "bash",
+  "fish",
+  "sh",
+  "dash",
+  "ksh",
+  "tcsh",
+  "csh",
+  "nu",
+  "pwsh",
+  "powershell",
+  "cmd",
+] as const;
+export type TerminalShellName = (typeof TERMINAL_SHELL_NAMES)[number];
+
+/**
+ * Model names that a custom shell cannot take: every name that detection can find, also one that
+ * is not installed now, so a later install never changes what a thread runs.
+ */
+function isReservedTerminalShellName(name: string): boolean {
+  return (
+    name === TERMINAL_THREAD_MODEL_SELECTION.model ||
+    TERMINAL_SHELL_NAMES.some((reserved) => reserved === name.toLowerCase())
+  );
+}
+
+/**
+ * A shell that the user defines in the settings of the `terminal` provider: any executable with
+ * its arguments, such as `uv` with `run python`. Its name is its model slug.
+ */
+export const TerminalCustomShell = Schema.Struct({
+  name: TrimmedNonEmptyString.check(
+    Schema.makeFilter(
+      (name: string) =>
+        !isReservedTerminalShellName(name) ||
+        `"${name}" is the name of a detected shell. Choose another name.`,
+    ),
+  ),
+  /** A path, or a name that the server finds on the PATH of the terminal. */
+  executable: TrimmedNonEmptyString,
+  args: Schema.Array(Schema.String),
+});
+export type TerminalCustomShell = typeof TerminalCustomShell.Type;
+
+export const TerminalCustomShells = Schema.Array(TerminalCustomShell).check(
+  Schema.makeFilter(
+    (shells: ReadonlyArray<TerminalCustomShell>) =>
+      new Set(shells.map((shell) => shell.name)).size === shells.length ||
+      "Two custom shells have the same name.",
+  ),
+);
+
 /** `TerminalSummary.command` keeps at most this many characters of a command line. */
 export const TERMINAL_COMMAND_MAX_LENGTH = 200;
 
@@ -90,3 +144,24 @@ export const ForkPrepareDraftWorktreeResult = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
 });
 export type ForkPrepareDraftWorktreeResult = typeof ForkPrepareDraftWorktreeResult.Type;
+
+/**
+ * Moves a running terminal of a drawer, with its process and its output, into a new terminal
+ * thread in the same project and folder. The client reserves `newThreadId`, as a draft does, so
+ * it can open the thread when the call returns.
+ */
+export const ForkMoveTerminalToThreadInput = Schema.Struct({
+  threadId: ThreadId,
+  terminalId: TrimmedNonEmptyString,
+  newThreadId: ThreadId,
+});
+export type ForkMoveTerminalToThreadInput = typeof ForkMoveTerminalToThreadInput.Type;
+
+export class ForkMoveTerminalToThreadError extends Schema.TaggedError<ForkMoveTerminalToThreadError>()(
+  "ForkMoveTerminalToThreadError",
+  { detail: Schema.String },
+) {
+  override get message(): string {
+    return `The terminal did not move to a terminal thread. ${this.detail}`;
+  }
+}

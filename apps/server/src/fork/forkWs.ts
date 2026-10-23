@@ -27,6 +27,7 @@ import * as MachineMap from "./machineMap/MachineMap.ts";
 import { isLocalDesktopSubject, isMachineSubject } from "./machineMap/machineAccess.ts";
 import * as MachineMapState from "./machineMap/MachineMapState.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
+import * as TerminalThreadMove from "./TerminalThreadMove.ts";
 import * as WebPush from "./webPush/WebPush.ts";
 
 /** The fork RPC tags, which the upstream handler object in `ws.ts` omits. */
@@ -77,6 +78,7 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const previewServerGroups = yield* PreviewServerGroups.PreviewServerGroups;
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
+      const terminalThreadMove = yield* TerminalThreadMove.TerminalThreadMove;
       // Only the local desktop app gets the machine map token (MM-306, MM-1401).
       const machineMapClient = { desktop: isLocalDesktopSubject(currentSession.subject) };
       return ForkWsRpcGroup.of({
@@ -124,6 +126,8 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
                 }),
             ),
           ),
+        [FORK_WS_METHODS.terminalMoveToThread]: (input) =>
+          terminalThreadMove.moveToThread(input).pipe(Effect.as({})),
       });
     }),
   );

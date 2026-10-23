@@ -18,6 +18,7 @@ import {
   TERMINAL_COMMAND_MAX_LENGTH,
   TERMINAL_THREAD_ENV,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -113,6 +114,8 @@ export const makeShellIntegration = Effect.fn("makeShellIntegration")(function* 
   const { stateDir } = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  // Git Bash on Windows is `bash.exe`, so the name comes without the extension.
+  const shellPath = (yield* HostProcess.Platform) === "win32" ? NodePath.win32 : NodePath.posix;
   const root = path.join(stateDir, "shell-integration");
   const zshDir = path.join(root, "zsh");
   const bashRc = path.join(root, "bash.rc");
@@ -124,7 +127,7 @@ export const makeShellIntegration = Effect.fn("makeShellIntegration")(function* 
   yield* fileSystem.writeFileString(path.join(zshDir, ".zlogin"), zshForward(".zlogin"));
 
   const integrate: ShellIntegration = (candidate, env) => {
-    const shell = NodePath.basename(candidate.shell).toLowerCase();
+    const shell = shellPath.parse(candidate.shell).name.toLowerCase();
     if (shell === "bash") {
       return { candidate: { ...candidate, args: ["--rcfile", bashRc] }, env };
     }

@@ -8,6 +8,7 @@ import {
   type ServerProviderModel,
   type ServerSettings,
   TERMINAL_THREAD_MODEL_SELECTION,
+  type TerminalCustomShell,
   TextGenerationError,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -30,12 +31,13 @@ import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapsh
 import { buildServerProvider } from "@t3tools/provider-core/server/snapshotProbe";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 
-import { type TerminalShell, terminalShells } from "../terminalShells.ts";
+import { type TerminalShell, TerminalShellSettings, terminalShells } from "../terminalShells.ts";
 import { makeTerminalAdapter, TERMINAL_DRIVER } from "./adapter.ts";
 import { TerminalPort, unavailableTerminalPort } from "./port.ts";
 
 const TerminalSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  ...TerminalShellSettings.fields,
 });
 type TerminalSettings = typeof TerminalSettings.Type;
 const decodeTerminalSettings = Schema.decodeSync(TerminalSettings);
@@ -59,11 +61,13 @@ const textGeneration: ProviderTextGeneration = {
 };
 
 /**
- * One model for each shell, the default shell first. The path shows next to the name. The legacy
- * model `terminal` stays listed for the threads, schedules and agents that name it.
+ * One model for each shell, the default shell first and the custom shells after the detected
+ * ones. The path or the command line shows next to the name. The legacy model `terminal` stays
+ * listed for the threads, schedules and agents that name it.
  */
 function terminalShellModels(
   shells: ReadonlyArray<TerminalShell>,
+  customShells: ReadonlyArray<TerminalCustomShell>,
 ): ReadonlyArray<ServerProviderModel> {
   return [
     ...shells.map((shell, index) => ({
@@ -72,6 +76,13 @@ function terminalShellModels(
       subProvider: shell.path,
       isCustom: false,
       isDefault: index === 0,
+      capabilities: null,
+    })),
+    ...customShells.map((shell) => ({
+      slug: shell.name,
+      name: shell.name,
+      subProvider: [shell.executable, ...shell.args].join(" "),
+      isCustom: true,
       capabilities: null,
     })),
     {
@@ -89,7 +100,7 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
   metadata: { displayName: "Terminal", supportsMultipleInstances: false },
   configSchema: TerminalSettings,
   defaultConfig: () => decodeTerminalSettings({}),
-  create: ({ instanceId, displayName, accentColor, enabled }) =>
+  create: ({ instanceId, displayName, accentColor, enabled, config }) =>
     Effect.gen(function* () {
       const host = yield* ProviderHost.ProviderHost;
       const port = Option.getOrElse(
@@ -110,7 +121,7 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
       });
 
       // The instance shows as ready only while `terminalThreads` is on.
-      const models = terminalShellModels(yield* terminalShells);
+      const models = terminalShellModels(yield* terminalShells, config.customShells);
       const buildSnapshot = (settings: ServerSettings | null) =>
         DateTime.now.pipe(
           Effect.map((checkedAt) =>
@@ -161,7 +172,7 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
           Effect.mapError((error) => error.message),
           Effect.filterOrFail(
             (settings) => settings.terminalThreads,
-            () => "Terminal threads are off. Turn on Settings > Fork > Terminal threads.",
+            () => "Terminal threads are off. Turn on Settings > Terminal > Terminal threads.",
           ),
           Effect.asVoid,
         ),

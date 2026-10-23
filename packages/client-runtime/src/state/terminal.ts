@@ -36,6 +36,12 @@ export function createTerminalEnvironmentAtoms<R, E>(
     readonly input: { readonly threadId: string; readonly terminalId?: string | undefined };
   }) => JSON.stringify([environmentId, input.threadId, input.terminalId ?? null]);
   const lifecycleConcurrency = { mode: "serial" as const, key: terminalThreadKey };
+  const attachStream = (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>) =>
+    Stream.suspend(() =>
+      subscribe(WS_METHODS.terminalAttach, input).pipe(
+        Stream.scan(nextTerminalAttachSeedState, applyTerminalAttachStreamEvent),
+      ),
+    );
   return {
     observe: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:observe",
@@ -48,12 +54,18 @@ export function createTerminalEnvironmentAtoms<R, E>(
     }),
     attach: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:attach",
-      subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>) =>
-        Stream.suspend(() =>
-          subscribe(WS_METHODS.terminalAttach, input).pipe(
-            Stream.scan(nextTerminalAttachSeedState, applyTerminalAttachStreamEvent),
-          ),
-        ),
+      subscribe: attachStream,
+    }),
+    /**
+     * Fork: the attach stream of a draft shell in Terminal mode. The server discards a draft
+     * shell only while no attach stream holds it (`AbandonedTerminalDrafts.ts`), so a draft that
+     * the user leaves must detach soon, not after the 5 minutes of other streams. Other terminals
+     * keep the long stream, so a switch back does not replay their history.
+     */
+    attachDraft: createEnvironmentSubscriptionAtomFamily(runtime, {
+      label: "environment-data:terminal:attach-draft",
+      idleTtlMs: 5_000,
+      subscribe: attachStream,
     }),
     events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:events",
@@ -97,6 +109,13 @@ export function createTerminalEnvironmentAtoms<R, E>(
     close: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:terminal:close",
       tag: WS_METHODS.terminalClose,
+      scheduler: lifecycleScheduler,
+      concurrency: lifecycleConcurrency,
+    }),
+    // Fork: a drawer terminal becomes a terminal thread (forkTerminalThreads.ts).
+    moveToThread: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal:move-to-thread",
+      tag: WS_METHODS.terminalMoveToThread,
       scheduler: lifecycleScheduler,
       concurrency: lifecycleConcurrency,
     }),
