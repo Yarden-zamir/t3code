@@ -6,7 +6,8 @@
  * - `prompt`: the shell shows its prompt (OSC 133;A).
  * - `continuation`: the shell waits for the rest of an unfinished command (OSC 133;A;k=s, the
  *   secondary prompt mark of kitty).
- * - `commandStart`: the shell runs a command (OSC 133;C).
+ * - `commandStart`: the shell runs a command (OSC 133;C), optionally with its command line
+ *   (OSC 133;C;cmdline=<text>, as kitty names it).
  * - `commandEnd`: the command ended (OSC 133;D;<exit code>).
  * - `attention`: a bell, or an app notification (OSC 9, 99 or 777).
  *
@@ -16,7 +17,7 @@ export type ShellItem =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "prompt" }
   | { readonly type: "continuation" }
-  | { readonly type: "commandStart" }
+  | { readonly type: "commandStart"; readonly commandLine: string | null }
   | { readonly type: "commandEnd"; readonly exitCode: number | null }
   | { readonly type: "attention" };
 
@@ -24,13 +25,17 @@ const ESC = "\u001b";
 const BEL = "\u0007";
 const OSC_START = `${ESC}]`;
 const STRING_TERMINATOR = `${ESC}\\`;
+const COMMAND_LINE_PREFIX = "133;C;cmdline=";
 /** An unfinished sequence longer than this, such as an inline image, is dropped. */
 const MAX_PENDING_CHARS = 4_096;
 
 function itemOfOsc(body: string): ShellItem | null {
   if (body === "133;A") return { type: "prompt" };
   if (body === "133;A;k=s") return { type: "continuation" };
-  if (body === "133;C") return { type: "commandStart" };
+  if (body === "133;C") return { type: "commandStart", commandLine: null };
+  if (body.startsWith(COMMAND_LINE_PREFIX)) {
+    return { type: "commandStart", commandLine: body.slice(COMMAND_LINE_PREFIX.length) };
+  }
   if (body === "133;D" || body.startsWith("133;D;")) {
     const code = Number.parseInt(body.slice("133;D;".length), 10);
     return { type: "commandEnd", exitCode: Number.isInteger(code) ? code : null };

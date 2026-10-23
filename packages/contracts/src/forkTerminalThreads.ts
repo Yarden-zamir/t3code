@@ -11,10 +11,22 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const TERMINAL_THREAD_INSTANCE_ID = ProviderInstanceId.make("terminal");
 
+/**
+ * The model of a terminal thread is its shell: a shell slug such as `zsh`, from the models of the
+ * `terminal` provider. This legacy model `terminal` means the default shell of the server.
+ */
 export const TERMINAL_THREAD_MODEL_SELECTION: ModelSelection = {
   instanceId: TERMINAL_THREAD_INSTANCE_ID,
   model: "terminal",
 };
+
+/** The `shell` that opens the main terminal of a terminal thread; undefined for the default. */
+export function terminalThreadShell(model: string): string | undefined {
+  return model === TERMINAL_THREAD_MODEL_SELECTION.model ? undefined : model;
+}
+
+/** `TerminalSummary.command` keeps at most this many characters of a command line. */
+export const TERMINAL_COMMAND_MAX_LENGTH = 200;
 
 /** The client opens the main terminal of a terminal thread with this variable set to "1". */
 export const TERMINAL_THREAD_ENV = "T3CODE_TERMINAL_THREAD";

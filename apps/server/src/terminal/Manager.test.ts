@@ -260,6 +260,7 @@ interface CreateManagerOptions {
   forkShellIntegration?: Parameters<
     typeof TerminalManager.makeWithOptions
   >[0]["forkShellIntegration"];
+  forkShells?: Parameters<typeof TerminalManager.makeWithOptions>[0]["forkShells"];
 }
 
 interface ManagerFixture {
@@ -311,6 +312,7 @@ const createManager = (
         ...(options.forkShellIntegration === undefined
           ? {}
           : { forkShellIntegration: options.forkShellIntegration }),
+        ...(options.forkShells === undefined ? {} : { forkShells: options.forkShells }),
         ...(options.managedBinaryCacheDir === undefined
           ? {}
           : {
@@ -569,6 +571,73 @@ it.layer(
       expect(last?.shell).toBe("prompt");
       expect(last?.hasRunningSubprocess).toBe(false);
       expect(last?.attention).toMatchObject({ kind: "finished", exitCode: 3 });
+    }),
+  );
+
+  it.effect("reports the command line that the shell of a terminal thread started", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        forkShellIntegration: (candidate, env) => ({ candidate, env }),
+      });
+      const command = yield* Deferred.make<string>();
+      const unsubscribe = yield* manager.subscribeMetadata((event) =>
+        event.type === "upsert" && event.terminal.command !== undefined
+          ? Deferred.succeed(command, event.terminal.command).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      yield* manager.open(openInput({ env: { T3CODE_TERMINAL_THREAD: "1" } }));
+      const long = "x".repeat(300);
+      ptyAdapter.processes[0]?.emitData(
+        `\u001b]133;A\u0007\u001b]133;C;cmdline=\t echo ${long} \u0007`,
+      );
+
+      expect(yield* Deferred.await(command)).toBe(`echo ${long}`.slice(0, 200));
+    }),
+  );
+
+  it.effect("starts the chosen shell, restarts on another shell and rejects an unknown one", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        shellResolver: () => "/bin/default-shell",
+        forkShells: [{ name: "fish", path: "/opt/fish/bin/fish" }],
+      });
+
+      yield* manager.open(openInput({ shell: "fish" }));
+      yield* manager.open(openInput({ shell: "fish" }));
+      expect(ptyAdapter.spawnInputs.map((input) => input.shell)).toEqual(["/opt/fish/bin/fish"]);
+
+      yield* manager.open(openInput());
+      expect(ptyAdapter.spawnInputs.map((input) => input.shell)).toEqual([
+        "/opt/fish/bin/fish",
+        "/bin/default-shell",
+      ]);
+
+      const error = yield* Effect.flip(manager.open(openInput({ shell: "nu" })));
+      expect(error).toMatchObject({ _tag: "TerminalShellNotFoundError", shell: "nu" });
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+    }),
+  );
+
+  it.effect("lists a terminal thread screen as unattached only while no attach stream runs", () =>
+    Effect.gen(function* () {
+      const { manager } = yield* createManager();
+      const screen = openInput({ threadId: "draft-1", env: { T3CODE_TERMINAL_THREAD: "1" } });
+      yield* manager.open(screen);
+      yield* manager.open(openInput({ threadId: "plain-1" }));
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
+
+      const detach = yield* manager.attachStream(screen, () => Effect.void);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
+      // The stream stays on the terminal through a close and a new session.
+      yield* manager.close({ threadId: "draft-1", terminalId: DEFAULT_TERMINAL_ID });
+      yield* manager.open(screen);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
+
+      detach();
+      detach();
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
     }),
   );
 

@@ -2,9 +2,13 @@
  * Fork: the state of the shell of a terminal thread, from the marks that its shell integration
  * prints (`shellMarks.ts`). The manager keeps these fields on a terminal session and the summary
  * of the terminal reports them: the sidebar of a client reads `shell`, `hasRunningSubprocess` and
- * `attention` from there.
+ * `attention` from there, and a new terminal thread takes its title from `command`.
  */
-import type { TerminalAttention, TerminalShellState } from "@t3tools/contracts";
+import {
+  TERMINAL_COMMAND_MAX_LENGTH,
+  type TerminalAttention,
+  type TerminalShellState,
+} from "@t3tools/contracts";
 
 import type { ShellItem } from "./shellMarks.ts";
 
@@ -14,6 +18,8 @@ export interface ShellStateHolder {
   shellConfirmedAt: number;
   attention: TerminalAttention | null;
   hasRunningSubprocess: boolean;
+  /** The command line of the last command that started. */
+  command: string | null;
 }
 
 // A bell storm raises one attention per second, so the sidebar does not repaint on each ring.
@@ -67,10 +73,13 @@ export function applyShellItems(
         set("shell", "prompt");
         set("hasRunningSubprocess", false);
         break;
-      case "commandStart":
+      case "commandStart": {
         set("shell", "running");
         set("hasRunningSubprocess", true);
+        const command = item.commandLine?.trim().slice(0, TERMINAL_COMMAND_MAX_LENGTH);
+        if (command) set("command", command);
         break;
+      }
       case "commandEnd":
         // The first prompt of a shell reports an end without a command.
         if (session.shell === "running") {

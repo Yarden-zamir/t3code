@@ -168,6 +168,7 @@ import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAcco
 import * as CursorKeychain from "@t3tools/provider-cursor/server/CursorKeychain";
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as AbandonedTerminalDrafts from "./fork/AbandonedTerminalDrafts.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkPreviewServerGroups from "./fork/PreviewServerGroups.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
@@ -656,6 +657,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerMachineMap,
   // Fork: Web Push to the browsers that subscribed on this server.
   WebPush.layerWorker.pipe(Layer.provideMerge(WebPush.layer)),
+  // Fork: closes the shells of terminal thread drafts that their client left.
+  AbandonedTerminalDrafts.layer,
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),

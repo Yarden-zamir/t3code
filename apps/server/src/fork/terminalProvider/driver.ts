@@ -1,8 +1,15 @@
 /**
- * Fork: the `terminal` provider driver (default instance `terminal`). It has no CLI to probe, no
- * model catalog and no text generation. The server setting `terminalThreads` turns it on.
+ * Fork: the `terminal` provider driver (default instance `terminal`). It has no CLI to probe and
+ * no text generation, and its models are the shells of the server. The server setting
+ * `terminalThreads` turns it on.
  */
-import { type ServerProvider, type ServerSettings, TextGenerationError } from "@t3tools/contracts";
+import {
+  type ServerProvider,
+  type ServerProviderModel,
+  type ServerSettings,
+  TERMINAL_THREAD_MODEL_SELECTION,
+  TextGenerationError,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -23,6 +30,7 @@ import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapsh
 import { buildServerProvider } from "@t3tools/provider-core/server/snapshotProbe";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 
+import { type TerminalShell, terminalShells } from "../terminalShells.ts";
 import { makeTerminalAdapter, TERMINAL_DRIVER } from "./adapter.ts";
 import { TerminalPort, unavailableTerminalPort } from "./port.ts";
 
@@ -50,6 +58,32 @@ const textGeneration: ProviderTextGeneration = {
   generateReviewGuide: noTextGeneration("generateReviewGuide"),
 };
 
+/**
+ * One model for each shell, the default shell first. The path shows next to the name. The legacy
+ * model `terminal` stays listed for the threads, schedules and agents that name it.
+ */
+export function terminalShellModels(
+  shells: ReadonlyArray<TerminalShell>,
+): ReadonlyArray<ServerProviderModel> {
+  return [
+    ...shells.map((shell, index) => ({
+      slug: shell.name,
+      name: shell.name,
+      subProvider: shell.path,
+      isCustom: false,
+      isDefault: index === 0,
+      capabilities: null,
+    })),
+    {
+      slug: TERMINAL_THREAD_MODEL_SELECTION.model,
+      name: "Default shell",
+      isCustom: false,
+      isLegacy: true,
+      capabilities: null,
+    },
+  ];
+}
+
 export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv> = {
   driverKind: TERMINAL_DRIVER,
   metadata: { displayName: "Terminal", supportsMultipleInstances: false },
@@ -75,8 +109,8 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
         continuationGroupKey: continuationIdentity.continuationKey,
       });
 
-      // The instance shows as ready only while `terminalThreads` is on. It lists no model, so a
-      // model picker has nothing to offer, and it has no text generation.
+      // The instance shows as ready only while `terminalThreads` is on.
+      const models = terminalShellModels(yield* terminalShells);
       const buildSnapshot = (settings: ServerSettings | null) =>
         DateTime.now.pipe(
           Effect.map((checkedAt) =>
@@ -90,7 +124,7 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
                 },
                 enabled: enabled && settings?.terminalThreads === true,
                 checkedAt: DateTime.formatIso(checkedAt),
-                models: [],
+                models,
                 probe: {
                   installed: true,
                   version: null,

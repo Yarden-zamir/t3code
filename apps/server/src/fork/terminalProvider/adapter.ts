@@ -2,7 +2,8 @@
  * Fork: the `terminal` provider adapter. A turn types the message into the main terminal of the
  * thread (`term-1`), the same terminal that the thread view shows. See `protocol.ts` for what the
  * run answers. A message that arrives during a run is typed into the program that runs (a steer).
- * The adapter has no model, no tools and no approvals.
+ * The model of the thread is the shell that the terminal opens with. The adapter has no tools and
+ * no approvals.
  */
 import {
   DEFAULT_TERMINAL_ID,
@@ -13,6 +14,7 @@ import {
   type OrchestrationV2ProviderTurn,
   ProviderDriverKind,
   type ProviderInstanceId,
+  terminalThreadShell,
 } from "@t3tools/contracts";
 import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import * as Cause from "effect/Cause";
@@ -260,14 +262,16 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
                 ".",
               worktreePath: turn.appThread.worktreePath,
             });
-            // `terminal.open` restarts a terminal whose cwd or env differ, so a running terminal
-            // is never opened again.
+            // `terminal.open` restarts a terminal whose cwd, env or shell differ, so a running
+            // terminal is never opened again.
             if (!(yield* port.isRunning(ids))) {
+              const shell = terminalThreadShell(turn.modelSelection.model);
               yield* port.open({
                 ...ids,
                 cwd: launch.cwd,
                 worktreePath: launch.worktreePath,
                 env: { ...launch.env },
+                ...(shell === undefined ? {} : { shell }),
               });
             }
             const state = yield* waitForShellState(ids);

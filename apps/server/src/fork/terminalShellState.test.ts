@@ -12,6 +12,7 @@ const fresh = (): ShellStateHolder => ({
   shellConfirmedAt: 0,
   attention: null,
   hasRunningSubprocess: false,
+  command: null,
 });
 const t0 = "2026-10-23T10:00:00.000Z";
 const t1 = "2026-10-23T10:00:05.000Z";
@@ -22,7 +23,7 @@ describe("applyShellItems", () => {
     expect(applyShellItems(session, [{ type: "prompt" }], t0)).toBe(true);
     expect(session).toMatchObject({ shell: "prompt", hasRunningSubprocess: false });
 
-    applyShellItems(session, [{ type: "commandStart" }], t0);
+    applyShellItems(session, [{ type: "commandStart", commandLine: null }], t0);
     expect(session).toMatchObject({ shell: "running", hasRunningSubprocess: true });
 
     applyShellItems(session, [{ type: "commandEnd", exitCode: 2 }, { type: "prompt" }], t1);
@@ -53,7 +54,7 @@ describe("applyShellItems", () => {
 describe("forgetUnconfirmedShellState", () => {
   it("forgets a running state that no child process confirms for long enough", () => {
     const session = fresh();
-    applyShellItems(session, [{ type: "commandStart" }], t0);
+    applyShellItems(session, [{ type: "commandStart", commandLine: null }], t0);
     const startedAt = Date.parse(t0);
     expect(forgetUnconfirmedShellState(session, false, startedAt + 1_000)).toBe(false);
     // A child process confirms the state and starts the wait again.

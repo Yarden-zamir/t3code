@@ -13,7 +13,7 @@ describe("makeCommandCapture", () => {
     expect(capture.push([{ type: "text", text: "ls -l\r\n" }])).toBe(false);
     expect(
       capture.push([
-        { type: "commandStart" },
+        { type: "commandStart", commandLine: null },
         { type: "text", text: "\u001b[32ma\u001b[0m\r\nb\r\n" },
         { type: "commandEnd", exitCode: 1 },
         { type: "text", text: "later" },
@@ -33,9 +33,9 @@ describe("makeCommandCapture", () => {
   it("keeps the output of every command of a message with several lines", () => {
     const capture = makeCommandCapture();
     capture.push([
-      { type: "commandStart" },
+      { type: "commandStart", commandLine: null },
       { type: "text", text: "first\r\n" },
-      { type: "commandStart" },
+      { type: "commandStart", commandLine: null },
       { type: "commandEnd", exitCode: 1 },
     ]);
     expect(capture.result()).toEqual({ exitCode: 1, output: "first", truncated: false });
@@ -49,7 +49,10 @@ describe("makeCommandCapture", () => {
 
   it("keeps the tail of a long output", () => {
     const capture = makeCommandCapture();
-    capture.push([{ type: "commandStart" }, { type: "text", text: "x".repeat(30_000) }]);
+    capture.push([
+      { type: "commandStart", commandLine: null },
+      { type: "text", text: "x".repeat(30_000) },
+    ]);
     capture.push([{ type: "commandEnd", exitCode: 0 }]);
     const result = capture.result();
     expect(result.output).toHaveLength(TERMINAL_OUTPUT_MAX_CHARS);

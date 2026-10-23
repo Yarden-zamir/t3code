@@ -12,6 +12,7 @@ import {
   TerminalProviderEnvironmentError,
   TerminalResizeError,
   TerminalSessionLookupError,
+  TerminalShellNotFoundError,
   TerminalWriteError,
   type TerminalAttachInput,
   type TerminalAttachStreamEvent,
@@ -83,6 +84,7 @@ import {
 } from "../fork/shellIntegration.ts";
 import { makeShellMarkParser } from "../fork/shellMarks.ts";
 import { applyShellItems, forgetUnconfirmedShellState } from "../fork/terminalShellState.ts";
+import { type TerminalShell, terminalShells } from "../fork/terminalShells.ts";
 
 export {
   TerminalCwdError,
@@ -197,6 +199,9 @@ export class TerminalManager extends Context.Service<
     readonly subscribeMetadata: (
       listener: (event: TerminalMetadataStreamEvent) => Effect.Effect<void>,
     ) => Effect.Effect<() => void>;
+
+    /** Fork: the thread ids of running terminal thread screens that no client attaches to. */
+    readonly forkUnattachedThreadScreens: Effect.Effect<ReadonlyArray<string>>;
   }
 >()("t3/terminal/Manager/TerminalManager") {}
 
@@ -270,6 +275,9 @@ interface TerminalSessionState {
   shell: TerminalShellState | null;
   shellConfirmedAt: number;
   shellMarks: ReturnType<typeof makeShellMarkParser> | null;
+  command: string | null;
+  /** Fork: the `shell` that opened the session, null for the default shell. */
+  shellName: string | null;
   runtimeEnv: Record<string, string> | null;
 }
 
@@ -374,6 +382,7 @@ function summary(session: TerminalSessionState): TerminalSummary {
     updatedAt: session.updatedAt,
     ...(session.attention === null ? {} : { attention: session.attention }),
     ...(session.shell === null ? {} : { shell: session.shell }),
+    ...(session.command === null ? {} : { command: session.command }),
   };
 }
 
@@ -1355,6 +1364,8 @@ interface TerminalManagerOptions {
   >;
   /** Fork: starts the shell of a terminal thread with its shell integration, or returns null. */
   forkShellIntegration?: ShellIntegration;
+  /** Fork: the shells that `shell` can name (`fork/terminalShells.ts`). */
+  forkShells?: ReadonlyArray<TerminalShell>;
 }
 
 export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
@@ -1439,6 +1450,7 @@ export const make = Effect.fn("TerminalManager.make")(function* () {
     unregisterTerminal: portDiscovery.unregisterTerminal,
     resolveProviderInstanceEnvironment,
     forkShellIntegration: yield* makeShellIntegration(),
+    forkShells: yield* terminalShells,
   });
 });
 
@@ -1461,6 +1473,24 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   // things like PSModulePath, DISPLAY, proxies, and toolchain variables.
   const baseEnv = options.env ?? process.env;
   const shellResolver = options.shellResolver ?? (() => defaultShellResolver(platform, baseEnv));
+  const forkShells = options.forkShells ?? [];
+  // Fork: the chosen shell goes first, and the default shells stay as the fallback.
+  const shellCandidatesFor = (shellName: string | null) => {
+    const defaults = resolveShellCandidates(shellResolver, platform, baseEnv);
+    const chosen = forkShells.find((shell) => shell.name === shellName);
+    return chosen === undefined
+      ? defaults
+      : uniqueShellCandidates([shellCandidateFromCommand(chosen.path, platform), ...defaults]);
+  };
+  const assertKnownShell = (shellName: string | undefined) =>
+    shellName === undefined || forkShells.some((shell) => shell.name === shellName)
+      ? Effect.void
+      : Effect.fail(
+          new TerminalShellNotFoundError({
+            shell: shellName,
+            available: forkShells.map((shell) => shell.name),
+          }),
+        );
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const resolveLaunchInputEnvironment = Effect.fn("terminal.resolveLaunchInputEnvironment")(
     function* <Input extends TerminalOpenInput | TerminalAttachInput | TerminalRestartInput>(
@@ -2266,6 +2296,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session.childCommandLabel = null;
       session.attention = null;
       session.shell = null;
+      session.command = null;
       // Fork: the marks also carry the bell, which a shell without the hook still rings.
       session.shellMarks = isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv)
         ? makeShellMarkParser()
@@ -2291,7 +2322,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               yield* HostProcess.HomeDirectory,
             );
             terminalEnv[T3_TERMINAL_THREAD_ID_ENV] = session.threadId;
-            const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
+            const shellCandidates = shellCandidatesFor(session.shellName);
             // Append (never prepend) managed ACP agent install directories so
             // `kimi login` and friends resolve by name without shadowing any
             // system or user tool of the same name.
@@ -2658,6 +2689,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   ) {
     const terminalId = input.terminalId;
     yield* assertValidCwd(input.cwd);
+    yield* assertKnownShell(input.shell);
 
     const sessionKey = toSessionKey(input.threadId, terminalId);
     const existing = yield* getSession(input.threadId, terminalId);
@@ -2694,6 +2726,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         shell: null,
         shellConfirmedAt: 0,
         shellMarks: null,
+        command: null,
+        shellName: input.shell ?? null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
       };
 
@@ -2729,16 +2763,19 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const runtimeEnvChanged = !Equal.equals(currentRuntimeEnv, nextRuntimeEnv);
     const nextWorktreePath =
       input.worktreePath !== undefined ? (input.worktreePath ?? null) : liveSession.worktreePath;
+    const nextShellName = input.shell ?? null;
     const launchContextChanged =
       liveSession.cwd !== input.cwd ||
       runtimeEnvChanged ||
-      liveSession.worktreePath !== nextWorktreePath;
+      liveSession.worktreePath !== nextWorktreePath ||
+      liveSession.shellName !== nextShellName;
 
     if (launchContextChanged) {
       yield* stopProcess(liveSession);
       liveSession.cwd = input.cwd;
       liveSession.worktreePath = nextWorktreePath;
       liveSession.runtimeEnv = nextRuntimeEnv;
+      liveSession.shellName = nextShellName;
       liveSession.history.clear();
       liveSession.pendingHistoryControlSequence = "";
       liveSession.pendingProcessEvents = [];
@@ -2748,6 +2785,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     } else if (liveSession.status === "exited" || liveSession.status === "error") {
       liveSession.runtimeEnv = nextRuntimeEnv;
       liveSession.worktreePath = nextWorktreePath;
+      liveSession.shellName = nextShellName;
       liveSession.history.clear();
       liveSession.pendingHistoryControlSequence = "";
       liveSession.pendingProcessEvents = [];
@@ -2938,8 +2976,39 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     );
   };
 
+  // Fork: the open attach streams of each session key. A stream outlives a close and a new open
+  // of its terminal, so the count belongs to the key and not to the session.
+  const attachStreamCounts = new Map<string, number>();
   const attachStream: TerminalManager["Service"]["attachStream"] = (input, listener) =>
-    streamSession(input, openOrAttachForStream(input), listener);
+    streamSession(input, openOrAttachForStream(input), listener).pipe(
+      Effect.map((unsubscribe) => {
+        const key = toSessionKey(input.threadId, input.terminalId);
+        attachStreamCounts.set(key, (attachStreamCounts.get(key) ?? 0) + 1);
+        let attached = true;
+        return () => {
+          unsubscribe();
+          if (!attached) return;
+          attached = false;
+          const remaining = (attachStreamCounts.get(key) ?? 1) - 1;
+          if (remaining > 0) attachStreamCounts.set(key, remaining);
+          else attachStreamCounts.delete(key);
+        };
+      }),
+    );
+
+  const forkUnattachedThreadScreens: TerminalManager["Service"]["forkUnattachedThreadScreens"] =
+    readManagerState.pipe(
+      Effect.map((state) =>
+        [...state.sessions.entries()]
+          .filter(
+            ([key, session]) =>
+              session.status === "running" &&
+              !attachStreamCounts.has(key) &&
+              isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv),
+          )
+          .map(([, session]) => session.threadId),
+      ),
+    );
 
   const observeStream: TerminalManager["Service"]["observeStream"] = (input, listener) =>
     streamSession(
@@ -3137,6 +3206,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           shell: null,
           shellConfirmedAt: 0,
           shellMarks: null,
+          command: null,
+          shellName: null,
           runtimeEnv: normalizedRuntimeEnv(input.env),
         };
         const createdSession = session;
@@ -3268,6 +3339,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     closeIdle,
     subscribe,
     subscribeMetadata,
+    forkUnattachedThreadScreens,
   });
 });
 

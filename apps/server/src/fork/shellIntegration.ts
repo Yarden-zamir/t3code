@@ -13,7 +13,11 @@
  */
 import * as NodePath from "node:path";
 
-import { DEFAULT_TERMINAL_ID, TERMINAL_THREAD_ENV } from "@t3tools/contracts";
+import {
+  DEFAULT_TERMINAL_ID,
+  TERMINAL_COMMAND_MAX_LENGTH,
+  TERMINAL_THREAD_ENV,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -29,6 +33,9 @@ export function isTerminalThreadMainTerminal(
   return terminalId === DEFAULT_TERMINAL_ID && runtimeEnv?.[TERMINAL_THREAD_ENV] === "1";
 }
 
+/** The hook cuts a long command line, so its mark stays far below MAX_PENDING_CHARS. */
+const COMMAND_LINE_HOOK_LENGTH = TERMINAL_COMMAND_MAX_LENGTH + 20;
+
 const BASH_RC = `# Written by T3 Code: reports where the shell stands to the terminal thread.
 [ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"
 # PS0 needs bash 4.4.
@@ -43,7 +50,20 @@ if [[ \${BASH_VERSINFO[0]} -gt 4 || (\${BASH_VERSINFO[0]} -eq 4 && \${BASH_VERSI
   else
     PROMPT_COMMAND="__t3_prompt\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
   fi
-  PS0=$'\\e]133;C\\a'"\${PS0:-}"
+  # The start mark carries the command line from the history, without the control characters
+  # that would end the mark. A command that the history skips (HISTCONTROL=ignorespace) reports
+  # the command before it.
+  __t3_command_line() {
+    local line
+    line=$(builtin fc -ln -0 2>/dev/null)
+    line="\${line//[[:cntrl:]]/ }"
+    printf '\\e]133;C;cmdline=%s\\a' "\${line:0:${COMMAND_LINE_HOOK_LENGTH}}"
+  }
+  if shopt -q promptvars; then
+    PS0='$(__t3_command_line)'"\${PS0:-}"
+  else
+    PS0=$'\\e]133;C\\a'"\${PS0:-}"
+  fi
   # The continuation prompt shows a command that is not complete, such as an open quote.
   PS2='\\[\\e]133;A;k=s\\a\\]'"\${PS2-> }"
   # A message arrives as a paste, so all of its lines run as one command line.
@@ -71,7 +91,12 @@ ${ZSH_USER_ZDOTDIR}
 __t3_precmd() { local code=$?; print -rn -- $'\\e]133;D;'"$code"$'\\a\\e]133;A\\a'; return $code }
 # PROMPT_SP prints its end-of-line mark before precmd, so the mark would end up in the output of
 # the command. Themes such as powerlevel10k turn it on again, so it goes off before each command.
-__t3_preexec() { setopt no_prompt_sp; print -rn -- $'\\e]133;C\\a' }
+__t3_preexec() {
+  setopt no_prompt_sp
+  # The start mark carries the command line, without the control characters that would end it.
+  local line="\${1//[[:cntrl:]]/ }"
+  print -rn -- $'\\e]133;C;cmdline='"\${line[1,${COMMAND_LINE_HOOK_LENGTH}]}"$'\\a'
+}
 precmd_functions=(__t3_precmd $precmd_functions)
 preexec_functions+=(__t3_preexec)
 # The continuation prompt shows a command that is not complete, such as an open quote.

@@ -29,6 +29,16 @@ describe("makeShellMarkParser", () => {
     expect(textOf(items)).toBe("ls\r\na\r\nb\r\n");
   });
 
+  it("reads the command line of a start mark", () => {
+    const parser = makeShellMarkParser();
+    const items = parser.push(`${prompt}\u001b]133;C;cmdline=git commit -m "a;b"\u0007out`);
+    expect(items).toEqual([
+      { type: "prompt" },
+      { type: "commandStart", commandLine: 'git commit -m "a;b"' },
+      { type: "text", text: "out" },
+    ]);
+  });
+
   it("joins a mark that arrives in two chunks", () => {
     const parser = makeShellMarkParser();
     const first = parser.push("out\u001b]133;D;");
