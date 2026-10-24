@@ -125,16 +125,15 @@ const applier = (name: string) =>
       } as OrchestrationV2DomainEvent);
   });
 
-/** Ends a run with a provider failure and holds the message queued behind it, as turn end does. */
-const failWithHeldQueue = (threadId: ThreadId, name: string) =>
+/** Ends a run with a provider failure, as a provider error item and turn end record it. */
+const failRun = (threadId: ThreadId, runIndex: number, name: string) =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const apply = yield* applier(name);
     const now = yield* DateTime.now;
-    const [failed, queued] = (yield* orchestrator.getThreadProjection(threadId)).runs;
+    const failed = (yield* orchestrator.getThreadProjection(threadId)).runs[runIndex];
     assert.isDefined(failed);
-    assert.isDefined(queued);
-    if (failed === undefined || queued === undefined) return;
+    if (failed === undefined) return;
     yield* apply({
       type: "turn-item.updated",
       threadId,
@@ -149,7 +148,7 @@ const failWithHeldQueue = (threadId: ThreadId, name: string) =>
         providerTurnId: null,
         nativeItemRef: null,
         parentItemId: null,
-        ordinal: 100,
+        ordinal: 100 + runIndex,
         status: "failed",
         title: "Provider failure",
         startedAt: now,
@@ -169,12 +168,36 @@ const failWithHeldQueue = (threadId: ThreadId, name: string) =>
       occurredAt: now,
       payload: { ...failed, status: "failed", startedAt: now, completedAt: now },
     });
+  });
+
+const holdRun = (threadId: ThreadId, runIndex: number, name: string) =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const apply = yield* applier(name);
+    const now = yield* DateTime.now;
+    const queued = (yield* orchestrator.getThreadProjection(threadId)).runs[runIndex];
+    assert.equal(queued?.status, "queued");
+    if (queued === undefined) return;
     yield* apply({
       type: "run.updated",
       threadId,
       occurredAt: now,
       payload: { ...queued, queueHeld: true },
     });
+  });
+
+/** Ends the first run with a provider failure and holds the second, as turn end does. */
+const failWithHeldQueue = (threadId: ThreadId, name: string) =>
+  Effect.gen(function* () {
+    yield* failRun(threadId, 0, `${name}:fail`);
+    yield* holdRun(threadId, 1, `${name}:hold`);
+  });
+
+const agentSend = (threadId: ThreadId, text: string) =>
+  send(threadId, text, {
+    createdBy: "agent",
+    creationSource: "mcp",
+    dispatchMode: { type: "queue_after_active" },
   });
 
 it.effect.each([
@@ -254,6 +277,34 @@ it.effect("a message held after a usage limit stays held behind an agent message
     });
 
     assert.deepEqual(yield* runStates(threadId), ["failed", "queued:held", "starting"]);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("a Stop hold stays held when a wake that started ahead of it fails", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const threadId = ThreadId.make("thread:failure-hold:stop");
+    yield* createThread(threadId);
+    yield* userSend(threadId, "active");
+    yield* agentSend(threadId, "queued before the stop");
+    yield* orchestrator.dispatch({
+      type: "thread.stop",
+      commandId: CommandId.make("stop:failure-hold"),
+      threadId,
+    });
+    assert.deepEqual(yield* runStates(threadId), ["interrupted", "queued:held"]);
+    // Upstream: an agent's message starts on the stopped thread; the hold is the user's.
+    yield* agentSend(threadId, "wake");
+    yield* failRun(threadId, 2, "failure-hold:stop:wake");
+
+    yield* agentSend(threadId, "next wake");
+
+    assert.deepEqual(yield* runStates(threadId), [
+      "interrupted",
+      "queued:held",
+      "failed",
+      "starting",
+    ]);
   }).pipe(Effect.provide(layerTest)),
 );
 
@@ -460,20 +511,20 @@ it.effect.each(["a background command", "a nested delegated task"])(
 it.effect("a delegated child's own wake does not report to a parent that cancelled it", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
-    const { parentThreadId, childThreadId, originalId, apply, now } =
+    const { parentThreadId, childThreadId, originalId } =
       yield* delegatedChildWithResult("cancelled");
-    const original = (yield* orchestrator.getThreadProjection(parentThreadId)).subagents.find(
-      (task) => task.id === originalId,
-    )!;
-    yield* apply({
-      type: "subagent.updated",
-      threadId: parentThreadId,
-      occurredAt: now,
-      payload: {
-        ...original,
-        status: "cancelled",
-        completionDelivery: { state: "disposed", observedByRunId: null },
-      },
+    // What task_cancel dispatches.
+    yield* orchestrator.dispatch({
+      type: "delegated_task.completion-delivery.dispose",
+      commandId: CommandId.make("cancel:dispose"),
+      parentThreadId,
+      taskId: originalId,
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.stop",
+      commandId: CommandId.make("cancel:stop"),
+      threadId: childThreadId,
+      stopDelegatedTasks: false,
     });
 
     const wake = yield* send(childThreadId, "background command finished", {

@@ -5357,6 +5357,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.scheduledTaskId === undefined;
     const providerFailureRun = forkProviderFailureRunToQueueBehind({
       command,
+      providerInstanceId: modelSelection.instanceId,
       sentByUserFromClient,
       startsOrQueuesRun,
       blocked:
@@ -12240,8 +12241,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             command.type === "queued-run.start" ? { queuedRunId: command.runId } : undefined,
           ),
         );
-      } else if (forkCommandReleasedQueue(storedEvents, commandThreadId(command))) {
-        yield* mapDispatchError(command)(startNextQueuedRun(commandThreadId(command)));
+      } else if (
+        command.type === "message.dispatch" &&
+        forkCommandReleasedQueue(storedEvents, command.threadId)
+      ) {
+        yield* mapDispatchError(command)(startNextQueuedRun(command.threadId));
       }
       return {
         sequence: receipt.resultSequence,
@@ -12380,8 +12384,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.type === "queued-run.start" ? { queuedRunId: command.runId } : undefined,
         ),
       );
-    } else if (forkCommandReleasedQueue(committed.storedEvents, commandThreadId(command))) {
-      yield* mapDispatchError(command)(startNextQueuedRun(commandThreadId(command)));
+    } else if (
+      command.type === "message.dispatch" &&
+      forkCommandReleasedQueue(committed.storedEvents, command.threadId)
+    ) {
+      yield* mapDispatchError(command)(startNextQueuedRun(command.threadId));
     }
     if (command.type === "notification.delivery.accept") {
       yield* mapDispatchError(command)(offerDelegatedCompletionDeliveries(command.threadId));

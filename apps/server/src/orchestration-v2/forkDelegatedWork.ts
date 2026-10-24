@@ -12,7 +12,7 @@ type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message
 
 /**
  * The failed run that a new message queues behind, when the queue waits only
- * because its provider failed. Something that tries the provider again starts
+ * because its provider failed. A message to that provider tries it again: it starts
  * the held queue first and waits behind it, so the queue keeps its order. If
  * the provider fails again, the queue is held again with the new message in
  * it, so a retry costs one run, as the new message alone did before.
@@ -23,6 +23,7 @@ type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message
  */
 export function forkProviderFailureRunToQueueBehind(input: {
   readonly command: MessageDispatch;
+  readonly providerInstanceId: OrchestrationV2Run["providerInstanceId"];
   readonly sentByUserFromClient: boolean;
   readonly startsOrQueuesRun: boolean;
   readonly blocked: boolean;
@@ -37,8 +38,12 @@ export function forkProviderFailureRunToQueueBehind(input: {
     input.blocked ||
     input.command.restartContinuationOfRunId !== undefined ||
     latestRun === null ||
+    input.providerInstanceId !== latestRun.providerInstanceId ||
     nextQueuedRun?.queueHeld !== true ||
-    nextQueuedRun.providerInstanceId !== latestRun.providerInstanceId
+    nextQueuedRun.providerInstanceId !== latestRun.providerInstanceId ||
+    // Only messages queued behind the failed run wait on its failure. An older
+    // hold, such as a Stop that a wake started ahead of, stays the user's.
+    nextQueuedRun.ordinal < latestRun.ordinal
   )
     return undefined;
   const failureClass = latestRootProviderFailure(latestRun, input.turnItems)?.class;
@@ -50,9 +55,9 @@ export function forkProviderFailureRunToQueueBehind(input: {
 }
 
 /**
- * Whether a committed command released a held queue of the thread it locked.
- * Nothing else starts that queue when no run is active, so the orchestrator
- * starts it after the commit.
+ * Whether a committed message released a held queue of its thread. Nothing
+ * else starts that queue when no run is active, so the orchestrator starts it
+ * after the commit.
  */
 export function forkCommandReleasedQueue(
   events: ReadonlyArray<OrchestrationV2StoredEvent>,
@@ -70,9 +75,10 @@ export function forkCommandReleasedQueue(
 /**
  * Whether a message into a delegated child can become a follow-up task that
  * the parent hears back from. Besides a person or the parent writing to the
- * child, the child's own wakes count: a background command or a nested
- * delegated task that finished. Monitor updates report progress, not new
- * work. A child watches no pull request: its parent does.
+ * child, the child's own wakes count: a background command, a native
+ * subagent, a nested delegated task that finished or asked a question, and
+ * the restart notice of "Recover interrupted agents". Monitor updates report
+ * progress, not new work. A child watches no pull request: its parent does.
  *
  * Upstream: https://github.com/pingdotgg/t3code/pull/23542 "notify parents
  * after delegated background runs" covers notification wakes with the same
@@ -93,9 +99,10 @@ export function forkIsChildWake(command: MessageDispatch): boolean {
 }
 
 /**
- * The parent cancelled the newest task of this child, so the child's own
- * wakes no longer report to it. A message that the parent or the user sends
- * later starts a new task as before.
+ * The parent cancelled or stopped the newest task of this child, so the
+ * child's own wakes no longer report to it. `task_cancel` and Stop dispose the
+ * delivery; the task itself can end interrupted. A message that the parent or
+ * the user sends later starts a new task as before.
  */
 export function forkParentCancelledChild(
   subagents: ReadonlyArray<OrchestrationV2Subagent>,
@@ -108,5 +115,5 @@ export function forkParentCancelledChild(
     if (newest === undefined || DateTime.isGreaterThan(startedAt(task), startedAt(newest)))
       newest = task;
   }
-  return newest?.status === "cancelled";
+  return newest?.completionDelivery?.state === "disposed";
 }
