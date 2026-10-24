@@ -206,6 +206,8 @@ export function useComposerCommandMenu({
   readonly onUsageLimits?: () => void;
 }) {
   const [selection, setSelection] = useState(() => composerSelectionAtEnd(draftMessage));
+  // Thread mentions rank by recency as of when the composer mounted.
+  const [now] = useState(() => Date.now());
   const previousOwnerKeyRef = useRef(ownerKey);
   const onSelectionChange = (nextSelection: ComposerEditorSelection) => {
     setSelection(nextSelection);
@@ -504,6 +506,7 @@ export function useComposerCommandMenu({
         readable: readableThreadEnvironments,
         excludeThreadId: currentThreadId,
         query: trigger.query,
+        now,
       });
       return [
         ...threadItems,
