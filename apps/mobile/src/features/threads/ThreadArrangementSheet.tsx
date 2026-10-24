@@ -5,7 +5,6 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import {
   forkEffectiveSnoozed,
   forkInboxReturnAt,
-  terminalStateOf,
 } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import { sortInboxThreadsByReturn } from "@t3tools/client-runtime/state/thread-inbox";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -19,7 +18,6 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { environmentServerConfigsAtom } from "../../state/server";
-import { useTerminalThreadStates } from "../../state/forkTerminalThreads";
 import { environmentThreadShells } from "../../state/threads";
 import {
   pendingThreadOrderAtom,
@@ -161,7 +159,6 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
   const dropBusy = useAtomValue(threadDropBusyAtom);
   const { moveThread } = useThreadListActions();
   const { workingShelfEnabled } = useThreadListV2ShelfPreferences();
-  const terminalStates = useTerminalThreadStates(threads);
   const [now, setNow] = useState(() => new Date().toISOString());
   const [expanded, setExpanded] = useState({ snoozed: false, settled: false });
   useEffect(() => {
@@ -184,7 +181,6 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
       now,
       queuedThreadKeys,
       pendingOrder,
-      terminalStates,
       settlementEnvironmentIds: new Set(
         [...configs].flatMap(([id, config]) =>
           config.environment.capabilities.threadSettlement ? [id] : [],
@@ -202,20 +198,16 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
     const parked = threads.filter(
       (thread) => thread.archivedAt === null && !visible.has(keyOf(thread)),
     );
-    const isSnoozed = (thread: EnvironmentThreadShell) =>
-      forkEffectiveSnoozed(thread, { now }, terminalStateOf(terminalStates, thread));
+    const isSnoozed = (thread: EnvironmentThreadShell) => forkEffectiveSnoozed(thread, { now });
     return {
       pinned,
       active: workingShelfEnabled
-        ? sortInboxThreadsByReturn(
-            active,
-            forkInboxReturnAt(threadListInboxReturns.returnedAt, terminalStates),
-          )
+        ? sortInboxThreadsByReturn(active, forkInboxReturnAt(threadListInboxReturns.returnedAt))
         : active,
       snoozed: parked.filter(isSnoozed),
       settled: parked.filter((thread) => !isSnoozed(thread)),
     };
-  }, [threads, configs, now, queuedThreadKeys, pendingOrder, workingShelfEnabled, terminalStates]);
+  }, [threads, configs, now, queuedThreadKeys, pendingOrder, workingShelfEnabled]);
   const planners = useMemo(() => {
     const planner = (section: "pinned" | "active") =>
       createThreadMovePlanner({

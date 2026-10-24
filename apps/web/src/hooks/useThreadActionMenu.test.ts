@@ -37,7 +37,6 @@ function recordEffect(action: string) {
 vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn() }));
 vi.mock("./useForkTerminalThreadState", () => ({
   readForkThreadMenuState: () => ({
-    terminal: undefined,
     archiveBlock: null,
     titleRegeneration: true,
     markUnread: true,

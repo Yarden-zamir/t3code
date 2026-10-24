@@ -39,7 +39,6 @@ import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import { useTerminalThreadsEnabled } from "../hooks/useForkTerminalThreads";
-import { useTerminalThreadState } from "../hooks/useForkTerminalThreadState";
 import { useReturnFocusToTerminal } from "../hooks/useForkTerminalFocus";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -530,7 +529,6 @@ function TerminalThreadNotices(props: {
   const statusLine = useForkThreadStatusLine({
     threadRef,
     thread,
-    terminal: useTerminalThreadState(thread),
     latestRunCompletedAt: thread.latestRun?.completedAt ?? null,
     supportsSnooze: capabilities?.threadSnooze === true,
     supportsSettlement: capabilities?.threadSettlement === true,

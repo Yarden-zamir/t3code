@@ -1,8 +1,9 @@
 /**
  * Fork: the state of the shell of a terminal thread, from the marks that its shell integration
- * prints (`shellMarks.ts`). The manager keeps these fields on a terminal session and the summary
- * of the terminal reports them: the sidebar of a client reads `shell`, `hasRunningSubprocess` and
- * `attention` from there, and a new terminal thread takes its title from `command`.
+ * prints (`shellMarks.ts`). The manager keeps these fields in the `fork` object of a terminal
+ * session (`terminalSessionFork.ts`) and the summary of the terminal reports them: the sidebar of
+ * a client reads `shell`, `hasRunningSubprocess` and `attention` from there, and a new terminal
+ * thread takes its title from `command`.
  */
 import {
   TERMINAL_COMMAND_MAX_LENGTH,
@@ -13,16 +14,21 @@ import {
 
 import type { ShellItem } from "./shellMarks.ts";
 
-export interface ShellStateHolder {
+export interface ShellState {
   shell: TerminalShellState | null;
   /** Epoch milliseconds of the last change of `shell`, or of a poll that saw a child process. */
   shellConfirmedAt: number;
   attention: TerminalAttention | null;
-  hasRunningSubprocess: boolean;
   /** The program and subcommand of the last command that started (`terminalCommandTitle`). */
   command: string | null;
   /** Epoch milliseconds of the start of the last command. */
   commandStartedAt: number;
+}
+
+/** A terminal session: `hasRunningSubprocess` is an upstream field that the marks also set. */
+export interface ShellStateHolder {
+  hasRunningSubprocess: boolean;
+  readonly fork: ShellState;
 }
 
 // A bell storm raises one attention per second, so the sidebar does not repaint on each ring.
@@ -49,14 +55,15 @@ export function forgetUnconfirmedShellState(
   hasChildProcess: boolean,
   nowMs: number,
 ): boolean {
-  if (session.shell !== "starting" && session.shell !== "running") return false;
+  const state = session.fork;
+  if (state.shell !== "starting" && state.shell !== "running") return false;
   if (hasChildProcess) {
-    session.shellConfirmedAt = nowMs;
+    state.shellConfirmedAt = nowMs;
     return false;
   }
-  if (nowMs - session.shellConfirmedAt < UNCONFIRMED_SHELL_STATE_MS) return false;
-  session.shell = null;
-  session.shellConfirmedAt = nowMs;
+  if (nowMs - state.shellConfirmedAt < UNCONFIRMED_SHELL_STATE_MS) return false;
+  state.shell = null;
+  state.shellConfirmedAt = nowMs;
   session.hasRunningSubprocess = false;
   return true;
 }
@@ -67,12 +74,18 @@ export function applyShellItems(
   items: ReadonlyArray<ShellItem>,
   at: string,
 ): boolean {
+  const state = session.fork;
   let changed = false;
-  const set = <K extends keyof ShellStateHolder>(key: K, value: ShellStateHolder[K]) => {
-    if (session[key] === value) return;
-    session[key] = value;
-    if (key === "shell") session.shellConfirmedAt = Date.parse(at);
-    changed = true;
+  const setShell = (shell: TerminalShellState, programRuns: boolean) => {
+    if (state.shell !== shell) {
+      state.shell = shell;
+      state.shellConfirmedAt = Date.parse(at);
+      changed = true;
+    }
+    if (session.hasRunningSubprocess !== programRuns) {
+      session.hasRunningSubprocess = programRuns;
+      changed = true;
+    }
   };
   for (const item of items) {
     switch (item.type) {
@@ -80,26 +93,30 @@ export function applyShellItems(
       case "continuation":
         break;
       case "prompt":
-        set("shell", "prompt");
-        set("hasRunningSubprocess", false);
+        setShell("prompt", false);
         break;
       case "commandStart": {
-        set("shell", "running");
-        set("hasRunningSubprocess", true);
-        session.commandStartedAt = Date.parse(at);
-        const command = terminalCommandTitle(item.commandLine ?? undefined);
-        if (command !== undefined) set("command", command.slice(0, TERMINAL_COMMAND_MAX_LENGTH));
+        setShell("running", true);
+        state.commandStartedAt = Date.parse(at);
+        const command = terminalCommandTitle(item.commandLine ?? undefined)?.slice(
+          0,
+          TERMINAL_COMMAND_MAX_LENGTH,
+        );
+        if (command !== undefined && command !== state.command) {
+          state.command = command;
+          changed = true;
+        }
         break;
       }
       case "commandEnd":
         // The first prompt of a shell reports an end without a command.
         if (
-          session.shell === "running" &&
-          Date.parse(at) - session.commandStartedAt >= NOTIFIED_COMMAND_MIN_MS
+          state.shell === "running" &&
+          Date.parse(at) - state.commandStartedAt >= NOTIFIED_COMMAND_MIN_MS
         ) {
-          const previous = session.attention;
+          const previous = state.attention;
           const bellAt = previous?.kind === "bell" ? previous.at : previous?.bellAt;
-          session.attention = {
+          state.attention = {
             kind: "finished",
             at,
             exitCode: item.exitCode,
@@ -107,20 +124,19 @@ export function applyShellItems(
           };
           changed = true;
         }
-        set("shell", "prompt");
-        set("hasRunningSubprocess", false);
+        setShell("prompt", false);
         break;
       case "attention": {
         // A bell at the prompt is the line editor, such as a completion with no match.
-        if (session.shell === "prompt") break;
-        const previous = session.attention;
+        if (state.shell === "prompt") break;
+        const previous = state.attention;
         if (
           previous?.kind === "bell" &&
           Date.parse(at) - Date.parse(previous.at) < BELL_MIN_INTERVAL_MS
         ) {
           break;
         }
-        session.attention = { kind: "bell", at };
+        state.attention = { kind: "bell", at };
         changed = true;
         break;
       }

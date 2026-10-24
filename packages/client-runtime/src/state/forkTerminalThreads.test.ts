@@ -14,7 +14,7 @@ import {
   forkThreadIsWorking,
   forkThreadWokeAt,
   selectTerminalThreadStates,
-  terminalStateOf,
+  terminalThreadState,
   terminalThreadRowStatus,
   terminalThreadStatusLabel,
   type TerminalThreadState,
@@ -108,9 +108,7 @@ describe("terminalThreadStatusLabel", () => {
     expect(failed(after)).toBe("Error");
     expect(failed(before)).toBeNull();
     expect(
-      statesOf(summary("shell", { status: "error", updatedAt: after }))
-        .values()
-        .next().value,
+      terminalThreadState(summary("shell", { status: "error", updatedAt: after })),
     ).toMatchObject({ failedAt: after });
   });
 
@@ -194,29 +192,44 @@ function thread(id: string, kind: "terminal" | "agent" = "terminal") {
   };
 }
 
-const statesOf = (...summaries: TerminalSummary[]) =>
-  selectTerminalThreadStates([[environmentId, summaries]]);
+const withTerminal = (shell: ReturnType<typeof thread>, overrides: Partial<TerminalSummary>) => ({
+  ...shell,
+  terminal: terminalThreadState(summary(shell.id, overrides)),
+});
 
-describe("terminalStateOf", () => {
-  it("reads only the main terminal of a terminal thread", () => {
-    const states = statesOf(
-      summary("shell", { hasRunningSubprocess: true }),
-      summary("agent", { hasRunningSubprocess: true }),
-      summary("drawer", { terminalId: "term-2", hasRunningSubprocess: true }),
+describe("selectTerminalThreadStates", () => {
+  it("reads only main terminals, and keeps unchanged states and sets as the same objects", () => {
+    const first = selectTerminalThreadStates(
+      [
+        summary("shell", { hasRunningSubprocess: true }),
+        summary("other"),
+        summary("drawer", { terminalId: "term-2", hasRunningSubprocess: true }),
+      ],
+      new Map(),
     );
-    expect(terminalStateOf(states, thread("shell"))?.running).toBe(true);
-    expect(terminalStateOf(states, thread("agent", "agent"))).toBeUndefined();
-    expect(terminalStateOf(states, thread("drawer"))).toBeUndefined();
+    expect([...first.keys()]).toEqual(["shell", "other"]);
+    expect(first.get(ThreadId.make("shell"))?.running).toBe(true);
+
+    // A new summary with the same state, as after an event of another terminal.
+    const same = selectTerminalThreadStates(
+      [summary("shell", { hasRunningSubprocess: true, updatedAt: after }), summary("other")],
+      first,
+    );
+    expect(same).toBe(first);
+
+    const changed = selectTerminalThreadStates(
+      [summary("shell", { hasRunningSubprocess: false }), summary("other")],
+      first,
+    );
+    expect(changed).not.toBe(first);
+    expect(changed.get(ThreadId.make("other"))).toBe(first.get(ThreadId.make("other")));
   });
 });
 
 describe("forkThreadIsWorking", () => {
   it("puts a terminal thread on the Working shelf while a program runs, until a bell asks", () => {
     const working = (overrides: Partial<TerminalSummary>) =>
-      forkThreadIsWorking(
-        thread("shell"),
-        terminalStateOf(statesOf(summary("shell", overrides)), thread("shell")),
-      );
+      forkThreadIsWorking(withTerminal(thread("shell"), overrides));
     expect(working({ hasRunningSubprocess: true })).toBe(true);
     expect(working({ hasRunningSubprocess: false })).toBe(false);
     expect(working({ hasRunningSubprocess: true, attention: { kind: "bell", at: after } })).toBe(
@@ -227,21 +240,25 @@ describe("forkThreadIsWorking", () => {
 
 describe("forkInboxReturnAt", () => {
   it("returns a terminal thread to the top when it rings or its program ends", () => {
-    const states = statesOf(summary("shell", { attention: { kind: "finished", at: after } }));
-    const returnAt = forkInboxReturnAt(() => Date.parse(visited), states);
-    expect(returnAt(thread("shell"))).toBe(Date.parse(after));
-    expect(returnAt(thread("agent", "agent"))).toBe(Date.parse(visited));
-    expect(forkInboxReturnAt(undefined, states)(thread("other"))).toBeUndefined();
+    const shell = withTerminal(thread("shell"), { attention: { kind: "finished", at: after } });
+    const returnAt = forkInboxReturnAt(() => Date.parse(visited));
+    expect(returnAt(shell)).toBe(Date.parse(after));
+    // An agent thread carries no terminal state.
+    const agent: ReturnType<typeof thread> & { readonly terminal?: TerminalThreadState } = thread(
+      "agent",
+      "agent",
+    );
+    expect(returnAt(agent)).toBe(Date.parse(visited));
+    expect(forkInboxReturnAt(undefined)(agent)).toBeUndefined();
   });
 });
 
 describe("forkEffectiveSnoozed", () => {
   const snooze = (attention: TerminalAttention) => {
-    const shell = thread("shell");
-    const terminal = terminalStateOf(statesOf(summary("shell", { attention })), shell);
+    const shell = withTerminal(thread("shell"), { attention });
     return {
-      snoozed: forkEffectiveSnoozed(shell, { now: after }, terminal),
-      wokeAt: forkThreadWokeAt(shell, { now: after }, terminal),
+      snoozed: forkEffectiveSnoozed(shell, { now: after }),
+      wokeAt: forkThreadWokeAt(shell, { now: after }),
     };
   };
 

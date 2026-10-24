@@ -84,11 +84,11 @@ The portal is `https://t3.yarden-zamir.com`. Each machine is one T3 server, for 
 
 A terminal thread is a thread whose view is a live shell. See [Terminal threads](fork/features.md#terminal-threads). The server setting `terminalThreads` must be on. Change it with `machines_set_setting`. While it is on, the `terminal` entry of `orchestrator_capabilities` lists the shells as models and explains the use in `usage`.
 
-| Task                               | Do this                                                                                                                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Start a terminal thread            | `t3_thread_launch` with `modelSelection` `{"instanceId":"terminal","model":"terminal"}`. `message` is typed into the terminal. On another machine, use `machine_tool_call`. |
-| Run a command in one and read it   | `t3_thread_send` to the thread, then `t3_thread_wait` and `t3_thread_read`. At a prompt of bash or zsh the answer holds the exit code and the output.                       |
-| Run one on a schedule or a webhook | `schedule_task` with the same `modelSelection`. Pass `bindToCurrentThread:false`. A webhook cannot use it: its values are typed into a shell, so the server refuses it.     |
+| Task                               | Do this                                                                                                                                                                                                      |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Start a terminal thread            | `t3_thread_launch` with `modelSelection` `{"instanceId":"terminal","model":"terminal"}`. `message` is typed into the terminal. On another machine, pass its `environmentId`; the arrow needs exec (MM-1923). |
+| Run a command in one and read it   | `t3_thread_send` to the thread, then `t3_thread_wait` and `t3_thread_read`. At a prompt of bash or zsh the answer holds the exit code and the output.                                                        |
+| Run one on a schedule or a webhook | `schedule_task` with the same `modelSelection`. Pass `bindToCurrentThread:false`. A webhook cannot use it: its values are typed into a shell, so the server refuses it.                                      |
 
 ## Updates and deploys
 

@@ -262,7 +262,7 @@ A headless server that runs as the upstream background service (`t3 service inst
 - Ask the owner before migrating Oracle-VPS or VPS to another install path. Routine version-directory updates are not install-path migrations.
 - The user setting is [Server auto-update](features.md#server-auto-update). It checks the fork releases every 5 minutes.
 - A release is ready when it has `SHA256SUMS`. A version that rolled back or failed is not tried again. A newer release is tried.
-- The machine map command `installUpdate` works on such a server too (MM-505). Use `whenIdle: true`: it waits for no running agent turn or background shell, even with `forkAutoUpdate` off. `whenIdle: false` restarts immediately; do not use it for routine updates.
+- The machine map command `installUpdate` works on such a server too (MM-505). Use `whenIdle: true`: it waits for no running agent turn or background shell, even with `forkAutoUpdate` off. A program in a terminal thread holds it for at most 6 hours, then the update ends the program after a notice in its terminal. `whenIdle: false` restarts immediately; do not use it for routine updates.
 - A restart stops the running turns. "Continue threads after restarts" (`continueThreadsAfterServerUpdate`) and [Recover interrupted agents](features.md#recover-interrupted-agents) continue them.
 - "Update everything" and `t3 update` also install fork releases. A self-update request for a version without a fork release installs the newest fork release instead. The Play Store app checks upstream releases, so its "Check for updates" installs the newest fork release.
 

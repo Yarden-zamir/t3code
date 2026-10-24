@@ -8,8 +8,6 @@ import type { SidebarTab, SidebarTabRuleField, SidebarTabs } from "@t3tools/cont
 import {
   forkEffectiveSnoozed,
   forkThreadWokeAt,
-  terminalStateOf,
-  type TerminalThreadStates,
 } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import {
   isAtomCommandInterrupted,
@@ -20,7 +18,6 @@ import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { randomUUID } from "~/lib/utils";
-import { useTerminalThreadStates } from "../../hooks/useForkTerminalThreadState";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import {
   useClientSettings,
@@ -98,35 +95,25 @@ const NO_TABS: readonly SidebarTabItem[] = [];
 function buildSidebarTabItems(input: {
   readonly threads: ReadonlyArray<SidebarThreadSummary>;
   readonly localLastVisitedAt: ReadonlyArray<string | undefined>;
-  readonly terminalStates: TerminalThreadStates;
   readonly settings: SidebarTabs;
   readonly compiled: ReturnType<typeof compileSidebarTabs>;
   readonly showsThread: (tab: string, thread: SidebarThreadSummary) => boolean;
   readonly singleThreadOpens: boolean;
   readonly clockKey: number;
 }): readonly SidebarTabItem[] {
-  const {
-    threads,
-    localLastVisitedAt,
-    terminalStates,
-    settings,
-    compiled,
-    showsThread,
-    singleThreadOpens,
-  } = input;
+  const { threads, localLastVisitedAt, settings, compiled, showsThread, singleThreadOpens } = input;
   const now = new Date().toISOString();
   const states = threads.map((thread, index) => {
     const lastVisitedAt = resolveThreadLastVisitedAt(
       thread.lastVisitedAt,
       localLastVisitedAt[index],
     );
-    const terminal = terminalStateOf(terminalStates, thread);
-    const wokeAt = forkThreadWokeAt(thread, { now }, terminal);
+    const wokeAt = forkThreadWokeAt(thread, { now });
     const settled = thread.settledOverride === "settled";
     return {
       thread,
       settled,
-      asleep: settled || forkEffectiveSnoozed(thread, { now }, terminal),
+      asleep: settled || forkEffectiveSnoozed(thread, { now }),
       isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
       isWoke:
         wokeAt !== null &&
@@ -245,13 +232,11 @@ export function useSidebarTabs(input: {
         : [],
     ),
   );
-  const terminalStates = useTerminalThreadStates(threads);
 
   const tabs = enabled
     ? buildSidebarTabItems({
         threads,
         localLastVisitedAt,
-        terminalStates,
         settings,
         compiled,
         showsThread,

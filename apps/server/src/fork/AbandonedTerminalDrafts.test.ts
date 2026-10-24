@@ -10,7 +10,11 @@ import {
   collectAbandonedTerminalDrafts,
 } from "./AbandonedTerminalDrafts.ts";
 
-const start = (unattached: Ref.Ref<ReadonlyArray<string>>, closed: Array<string>) =>
+type Screen = { readonly threadId: string; readonly programRuns: boolean };
+const idle = (...threadIds: ReadonlyArray<string>): ReadonlyArray<Screen> =>
+  threadIds.map((threadId) => ({ threadId, programRuns: false }));
+
+const start = (unattached: Ref.Ref<ReadonlyArray<Screen>>, closed: Array<string>) =>
   collectAbandonedTerminalDrafts({
     unattachedScreens: Ref.get(unattached),
     threadExists: (threadId) => Effect.succeed(threadId === "thread"),
@@ -20,7 +24,7 @@ const start = (unattached: Ref.Ref<ReadonlyArray<string>>, closed: Array<string>
 it.effect("closes an abandoned draft after the grace time and never a terminal of a thread", () =>
   Effect.gen(function* () {
     const closed: Array<string> = [];
-    yield* start(yield* Ref.make<ReadonlyArray<string>>(["draft", "thread"]), closed);
+    yield* start(yield* Ref.make(idle("draft", "thread")), closed);
 
     yield* TestClock.adjust(CHECK_INTERVAL);
     expect(closed).toEqual([]);
@@ -33,19 +37,37 @@ it.effect("closes an abandoned draft after the grace time and never a terminal o
 it.effect("counts the grace time again after a client attached in between", () =>
   Effect.gen(function* () {
     const closed: Array<string> = [];
-    const unattached = yield* Ref.make<ReadonlyArray<string>>(["draft"]);
+    const unattached = yield* Ref.make(idle("draft"));
     yield* start(unattached, closed);
 
     const almost = Duration.subtract(ABANDONED_AFTER, CHECK_INTERVAL);
     yield* TestClock.adjust(almost);
     yield* Ref.set(unattached, []);
     yield* TestClock.adjust(CHECK_INTERVAL);
-    yield* Ref.set(unattached, ["draft"]);
+    yield* Ref.set(unattached, idle("draft"));
     yield* TestClock.adjust(CHECK_INTERVAL);
     // Without the attach in between, the draft would be closed by now.
     yield* TestClock.adjust(almost);
     expect(closed).toEqual([]);
     yield* TestClock.adjust(CHECK_INTERVAL);
+    expect(closed).toEqual(["draft"]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("keeps a draft whose shell runs a program, and counts the grace time after it ends", () =>
+  Effect.gen(function* () {
+    const closed: Array<string> = [];
+    const unattached = yield* Ref.make<ReadonlyArray<Screen>>([
+      { threadId: "draft", programRuns: true },
+    ]);
+    yield* start(unattached, closed);
+
+    yield* TestClock.adjust(Duration.sum(ABANDONED_AFTER, CHECK_INTERVAL));
+    expect(closed).toEqual([]);
+    yield* Ref.set(unattached, idle("draft"));
+    yield* TestClock.adjust(Duration.subtract(ABANDONED_AFTER, CHECK_INTERVAL));
+    expect(closed).toEqual([]);
+    yield* TestClock.adjust(Duration.sum(CHECK_INTERVAL, CHECK_INTERVAL));
     expect(closed).toEqual(["draft"]);
   }).pipe(Effect.scoped),
 );

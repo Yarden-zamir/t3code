@@ -31,7 +31,6 @@ vi.mock("./use-thread-outbox", async () => {
   const { Atom } = await import("effect/reactivity");
   return { queuedThreadKeysAtom: Atom.make(new Set<string>()).pipe(Atom.keepAlive) };
 });
-vi.mock("./forkTerminalThreads", () => ({ readTerminalThreadStates: () => new Map() }));
 
 const shellsAtom = environmentThreadShells.navigationThreadShellsAtom as Atom.Writable<
   readonly EnvironmentThreadShell[],

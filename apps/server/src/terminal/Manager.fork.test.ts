@@ -13,10 +13,12 @@ import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
 import { expect } from "vite-plus/test";
 
@@ -86,6 +88,7 @@ const makeFakePtyAdapter = () => {
 
 // Marks a spawn that got the hook, so a test can see that a shell ran without it.
 const markingIntegration: ShellIntegration = (candidate, env) => ({
+  type: "hooked",
   candidate: { ...candidate, args: ["--integrated"] },
   env: { ...env, T3_TEST_INTEGRATED: "1" },
 });
@@ -297,6 +300,31 @@ it.layer(
     }),
   );
 
+  it.effect("starts a shell without the hook and says why when the hook is not available", () =>
+    Effect.gen(function* () {
+      const { manager, pty } = yield* createManager({
+        forkShells: [{ name: "bash", path: "/bin/bash" }],
+        forkShellIntegration: () => ({ type: "failed", notice: "[terminal] no hook files\r\n" }),
+      });
+      const summaries: Array<TerminalSummary> = [];
+      const unsubscribe = yield* manager.subscribeMetadata((event) =>
+        Effect.sync(() => {
+          if (event.type === "upsert") summaries.push(event.terminal);
+        }),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      const snapshot = yield* manager.open(threadScreen("bash"));
+
+      expect(snapshot.status).toBe("running");
+      expect(pty.spawnInputs[0]?.args).toBeUndefined();
+      expect(snapshot.history).toContain("[terminal] no hook files");
+      // The shell reports no state, as a shell without support for the hook.
+      expect(summaries.at(-1)?.status).toBe("running");
+      expect(summaries.at(-1)?.shell).toBeUndefined();
+    }),
+  );
+
   it.effect("reports a program in a detected shell, not the child process of a custom shell", () =>
     Effect.gen(function* () {
       const customShells = yield* Ref.make<ReadonlyArray<TerminalCustomShell>>([
@@ -447,7 +475,9 @@ it.layer(
 
       expect((yield* events).some((event) => event.type === "closed")).toBe(false);
       // A client that comes back sees the dead shell, not a new one.
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["thread-1"]);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual([
+        { threadId: "thread-1", programRuns: false },
+      ]);
       expect(pty.spawnInputs).toHaveLength(1);
       // The open waits for the debounced history write of that output.
       yield* TestClock.adjust("1 second");
@@ -461,7 +491,7 @@ it.layer(
   it.effect("reports the shell state of a terminal thread from the marks of its shell", () =>
     Effect.gen(function* () {
       const { manager, pty } = yield* createManager({
-        forkShellIntegration: (candidate, env) => ({ candidate, env }),
+        forkShellIntegration: (candidate, env) => ({ type: "hooked", candidate, env }),
       });
       const summaries: Array<TerminalSummary> = [];
       // The end of the command is the prompt that follows a running state. A command this short
@@ -497,7 +527,7 @@ it.layer(
   it.effect("reports the program and subcommand that the shell of a terminal thread started", () =>
     Effect.gen(function* () {
       const { manager, pty } = yield* createManager({
-        forkShellIntegration: (candidate, env) => ({ candidate, env }),
+        forkShellIntegration: (candidate, env) => ({ type: "hooked", candidate, env }),
       });
       const command = yield* Deferred.make<string>();
       const unsubscribe = yield* manager.subscribeMetadata((event) =>
@@ -541,41 +571,27 @@ it.layer(
     }),
   );
 
-  it.effect("lists a terminal thread screen as unattached only while no attach stream runs", () =>
+  it.effect("lists a terminal thread screen as unattached only while a client holds it", () =>
     Effect.gen(function* () {
       const { manager } = yield* createManager({});
       const screen = { ...threadScreenWithoutShell, threadId: "draft-1" };
       const { env: _env, ...plain } = { ...threadScreenWithoutShell, threadId: "plain-1" };
       yield* manager.open(screen);
       yield* manager.open(plain);
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
+      const unattached = [{ threadId: "draft-1", programRuns: false }];
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual(unattached);
 
-      const detach = yield* manager.attachStream(screen, () => Effect.void);
+      const scope = yield* Scope.make();
+      yield* manager.forkRetainAttach(screen).pipe(Scope.provide(scope));
+      yield* manager.forkRetainAttach(screen).pipe(Scope.provide(scope));
       expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
-      // The stream stays on the terminal through a close and a new session.
+      // The hold stays on the terminal through a close and a new session.
       yield* manager.close({ threadId: "draft-1", terminalId: DEFAULT_TERMINAL_ID });
       yield* manager.open(screen);
       expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
 
-      detach();
-      detach();
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
-
-      // A WebSocket stream ends through the stop that it registers, also after a resync.
-      const stops: Array<() => void> = [];
-      yield* manager.attachStream(
-        screen,
-        () => Effect.void,
-        (stop) => stops.push(stop),
-      );
-      yield* manager.forkResyncAttachStream(
-        screen,
-        () => Effect.void,
-        (stop) => stops.push(stop),
-      );
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
-      for (const stop of stops) stop();
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
+      yield* Scope.close(scope, Exit.void);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual(unattached);
     }),
   );
 
@@ -611,6 +627,37 @@ it.layer(
       expect(events[0]?.type === "snapshot" && events[0].snapshot.history).toContain(
         "saved output",
       );
+    }),
+  );
+
+  it.effect("prints a notice into a running terminal after the output before it", () =>
+    Effect.gen(function* () {
+      const { manager, pty } = yield* createManager({});
+      yield* manager.open(threadScreenWithoutShell);
+      const printed = yield* Deferred.make<ReadonlyArray<string>>();
+      const outputs: Array<string> = [];
+      const stop = yield* manager.subscribe((event) => {
+        if (event.type !== "output") return Effect.void;
+        outputs.push(event.data);
+        return outputs.length === 2
+          ? Deferred.succeed(printed, outputs).pipe(Effect.asVoid)
+          : Effect.void;
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(stop));
+
+      pty.processes[0]?.emit("program output\r\n");
+      yield* manager.forkPrintNotice({
+        threadId: "thread-1",
+        terminalId: DEFAULT_TERMINAL_ID,
+        text: "[T3 Code] notice\r\n",
+      });
+
+      expect(yield* Deferred.await(printed)).toEqual([
+        "program output\r\n",
+        "[T3 Code] notice\r\n",
+      ]);
+      const reopened = yield* manager.open(threadScreenWithoutShell);
+      expect(reopened.history).toContain("[T3 Code] notice");
     }),
   );
 

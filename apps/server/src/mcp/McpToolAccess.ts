@@ -23,6 +23,7 @@ import {
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import { assertNotLinked, assertSameLink, callerLinkOrigin } from "./linkOrigin.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import { refuseTerminalThreadWithoutExec } from "../fork/machineMap/terminalThreadExec.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
 import {
   assertFullAccess,
@@ -199,6 +200,10 @@ export const writesThreads = <P, A, E, R>(
           if (target !== null && target.deletedAt === null) {
             yield* assertTargetWithinLimits(caller.limits, target);
             yield* assertSameLink(caller, target);
+            yield* refuseTerminalThreadWithoutExec(
+              caller.scope.requestNamespace,
+              target.modelSelection,
+            );
           }
         }
         // The target's user can raise its modes after the check above; the

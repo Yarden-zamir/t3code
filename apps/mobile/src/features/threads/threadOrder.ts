@@ -4,10 +4,7 @@ import {
   pinOrderKeyBetween,
   planPinnedReorder,
 } from "@t3tools/client-runtime/state/thread-sort";
-import {
-  forkEffectiveSnoozed,
-  type TerminalThreadState,
-} from "@t3tools/client-runtime/state/fork-terminal-threads";
+import { forkEffectiveSnoozed } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 export type ThreadMoveDestination =
@@ -286,15 +283,13 @@ export function threadDropLifecycle(
   thread: EnvironmentThreadShell,
   section: "pinned" | "active",
   now: string,
-  // Fork: the main terminal of a terminal thread, whose bell or ended program wakes it.
-  terminal?: TerminalThreadState,
 ) {
   if (section === "pinned") return { pin: true, unpin: false, unsettle: false, unsnooze: false };
   return {
     pin: false,
     unpin: thread.pinnedAt != null,
     unsettle: thread.settledOverride === "settled",
-    unsnooze: forkEffectiveSnoozed(thread, { now }, terminal),
+    unsnooze: forkEffectiveSnoozed(thread, { now }),
   };
 }
 

@@ -209,7 +209,7 @@ through the pages you have visited, like a browser's back and forward buttons.
 [new-thread defaults](./thread-sidebar.md#start-a-thread). `chat.newWithoutProject`
 (`mod+alt+n`) starts a thread [without a project](./thread-sidebar.md#start-without-a-project).
 `chat.newTerminal` (`mod+alt+t`) and `chat.newTerminalLocal` (`mod+alt+shift+n`) are the same
-two commands for a [terminal thread](./terminal.md#terminal-threads): the first may ask for a
+two commands for a [terminal thread](../fork/terminal-threads.md): the first may ask for a
 project, the second starts in the focused project. They do nothing until a server turns on
 Terminal threads.
 
