@@ -1327,14 +1327,12 @@ export const make = Effect.gen(function* () {
       if (Option.isSome(requestUrl)) {
         const websocketTicket = requestUrl.value.searchParams.get(WEBSOCKET_TICKET_QUERY_PARAM);
         if (websocketTicket && websocketTicket.trim().length > 0) {
-          const session = yield* sessions
-            .verifyWebSocketToken(websocketTicket)
-            .pipe(
-              mapSessionVerificationErrors,
-              Effect.flatMap(rejectMcpClientAudience),
-              // Fork: a machine that the machine map pauses refuses its sessions.
-              Effect.flatMap(rejectWhilePaused),
-            );
+          const session = yield* sessions.verifyWebSocketToken(websocketTicket).pipe(
+            mapSessionVerificationErrors,
+            Effect.flatMap(rejectMcpClientAudience),
+            // Fork: a machine that the machine map pauses refuses its sessions.
+            Effect.flatMap(rejectWhilePaused),
+          );
           if (session.audience !== undefined && session.audience !== use) {
             return yield* new ServerAuthInvalidCredentialError({
               diagnostic: `WebSocket ticket was issued for the ${session.audience} route.`,
