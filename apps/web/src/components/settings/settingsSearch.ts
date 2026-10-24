@@ -1184,23 +1184,31 @@ export function isSettingsSearchItemOnPlatform(item: SettingsSearchItem, platfor
   return true;
 }
 
+/** The settings that exist on this platform and app channel. */
+export function settingsForThisPlatform(
+  items: ReadonlyArray<SettingsSearchItem>,
+): ReadonlyArray<SettingsSearchItem> {
+  const platform = typeof navigator === "undefined" ? "" : navigator.platform;
+  // Fork: the check of the settings rows, which also hides `webOnly` rows on desktop.
+  return items.filter((item) => isSettingsSearchItemOnPlatform(item, platform));
+}
+
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
+  // Fork: the find box of one page skips the page label, which every item there shares.
+  { matchPageLabel = true }: { readonly matchPageLabel?: boolean } = {},
 ): ReadonlyArray<SettingsSearchItem> {
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
   const queryTokens = normalizedQuery.split(" ");
-  const platform = typeof navigator === "undefined" ? "" : navigator.platform;
 
-  return items
+  return settingsForThisPlatform(items)
     .flatMap((item, index) => {
-      if (!isSettingsSearchItemOnPlatform(item, platform)) return [];
-
       const title = normalizeSearchText(item.title);
       const fields = [
         title,
-        normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
+        ...(matchPageLabel ? [normalizeSearchText(SETTINGS_SECTION_LABELS[item.to])] : []),
         ...(item.searchTerms ?? []).map(normalizeSearchText),
       ];
       if (!queryTokens.every((token) => fields.some((field) => field.includes(token)))) return [];

@@ -10,12 +10,16 @@ import {
   PanelLeftIcon,
   PanelRightIcon,
   PencilIcon,
+  SearchIcon,
   SquareTerminalIcon,
   TextCursorInputIcon,
 } from "lucide-react";
 import type { CommandPaletteActionItem } from "../CommandPalette.logic";
 import { type FocusLevel, focusLevel } from "./focusLevels";
-import { runRegisteredFocusLevelCommand } from "./useFocusLevelShortcuts";
+import {
+  hasRegisteredFocusLevelCommand,
+  runRegisteredFocusLevelCommand,
+} from "./useFocusLevelShortcuts";
 
 const FOCUS_ITEMS: ReadonlyArray<[ForkKeybindingCommand, FocusLevel, string, LucideIcon]> = [
   ["focus.composer", "composer", "Focus composer", TextCursorInputIcon],
@@ -57,6 +61,22 @@ export function focusLevelPaletteItems(
   }: { readonly messageLinks?: boolean; readonly terminalThread?: boolean } = {},
 ): CommandPaletteActionItem[] {
   return [
+    // A Settings page with `settingsFind` on registers the command.
+    ...(hasRegisteredFocusLevelCommand("settings.find")
+      ? [
+          {
+            kind: "action" as const,
+            value: "action:settings.find",
+            searchTerms: ["find", "search", "filter", "settings", "page"],
+            title: "Find in settings",
+            description: "Filter the rows of this settings page",
+            icon: <SearchIcon className={iconClassName} />,
+            shortcutCommand: "settings.find" as const,
+            run: () =>
+              afterPaletteCloses(() => void runRegisteredFocusLevelCommand("settings.find")),
+          },
+        ]
+      : []),
     // A terminal thread has no timeline, so it has no message under a timeline cursor either.
     ...(messageLinks && !terminalThread
       ? [
