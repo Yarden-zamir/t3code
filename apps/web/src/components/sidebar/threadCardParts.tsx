@@ -60,10 +60,7 @@ export interface ThreadCardStatus {
 }
 
 /** The status label inside the `data-sidebar-status` element, for every status but Woke. */
-export function ThreadCardStatusBadge(props: {
-  status: ThreadCardStatus;
-  trailing?: ReactNode;
-}) {
+export function ThreadCardStatusBadge(props: { status: ThreadCardStatus; trailing?: ReactNode }) {
   const { status } = props;
   return (
     <span className={cn("inline-flex items-center gap-1 font-medium", status.className)}>
