@@ -8,6 +8,11 @@ line can be shortened at the start. New terminal output is not truncated.
 These limits apply when you reconnect and when T3 Code restores saved terminal
 history. A client can show less scrollback than the server keeps.
 
+When a terminal gets wider or narrower, a shell prompt that wraps onto more than one line
+can draw over the last line of output. This happens when a draft becomes a terminal thread and
+when the right panel opens or closes. The server history still holds the line. A shorter
+prompt avoids it.
+
 On web and desktop, use Shift+PageUp and Shift+PageDown to read scrollback
 without leaving terminal input. Ctrl+Shift+Home and Ctrl+Shift+End jump to the
 start and latest output; use Cmd instead of Ctrl on macOS. Full-screen terminal
