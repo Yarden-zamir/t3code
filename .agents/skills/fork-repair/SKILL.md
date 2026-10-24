@@ -40,7 +40,8 @@ options.
 - On the VPS, the `apps/server/` fork tests stop the agent session. There, run
   `--exclude apps/server/` and leave those files to Fork CI. A foreground command also stops
   after 10 minutes. If a run takes longer, run `--only apps/web/` and `--exclude apps/web/`
-  as two runs.
+  as two runs. If a run still stops, run it again with `--from-chunk <n>` at its first chunk
+  without a result.
 - `shared_files.py` and `checks.py` need `upstream/main`. Run
   `git fetch --no-tags upstream main` first.
 - The scripts call the existing `scripts/fork-*.ts` tools. They only run steps in order and

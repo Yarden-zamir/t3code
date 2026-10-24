@@ -434,7 +434,9 @@ it.layer(NodeServices.layer)("machine map pause lock (MM-718)", (it) => {
       expect(yield* pausedReason(auth.authenticateHttpRequest(bearerRequest(mobile.token)))).toBe(
         true,
       );
-      expect(yield* pausedReason(auth.authenticateWebSocketUpgrade(cookieRequest))).toBe(true);
+      expect(yield* pausedReason(auth.authenticateWebSocketUpgrade(cookieRequest, "rpc"))).toBe(
+        true,
+      );
       expect(yield* auth.getSessionState(cookieRequest)).toMatchObject({
         authenticated: false,
         machinePaused: true,
@@ -444,7 +446,9 @@ it.layer(NodeServices.layer)("machine map pause lock (MM-718)", (it) => {
       const ticketRequest = HttpServerRequest.fromWeb(
         new Request(`http://127.0.0.1/ws?wsTicket=${ticket.ticket}`),
       );
-      expect(yield* pausedReason(auth.authenticateWebSocketUpgrade(ticketRequest))).toBe(true);
+      expect(yield* pausedReason(auth.authenticateWebSocketUpgrade(ticketRequest, "rpc"))).toBe(
+        true,
+      );
       // MM-711 governs agents; the pause does not lock the MCP endpoint.
       expect((yield* auth.authenticateMcpClient(bearerRequest(mcp.token))).sessionId).toBe(
         mcp.sessionId,
