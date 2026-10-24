@@ -6,9 +6,14 @@ const isApiError = (value: unknown): value is ApiError =>
   "error" in value &&
   typeof value.error === "string";
 
-/** Dev only: `?fixture=1` shows a copied snapshot with in-memory writes (see `fixture.ts`). */
+/**
+ * Dev only: `?fixture=1` shows a copied snapshot with in-memory writes (see `fixture.ts`). Tests
+ * run in dev mode without a page, so there is no `location` to read.
+ */
 export const isFixturePage = (): boolean =>
-  import.meta.env.DEV && new URLSearchParams(location.search).has("fixture");
+  import.meta.env.DEV &&
+  typeof location !== "undefined" &&
+  new URLSearchParams(location.search).has("fixture");
 
 /** MM-1207: the passkey check is a Cloudflare page, not a browser prompt. */
 export const PASSKEY_STEP_TEXT =
