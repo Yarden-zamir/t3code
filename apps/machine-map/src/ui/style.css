@@ -81,6 +81,8 @@ body {
   background-image: radial-gradient(var(--dots) 1.2px, transparent 1.2px);
   background-size: 18px 18px;
   -webkit-tap-highlight-color: transparent;
+  /* A long key, hostname or email breaks only where it would run past its box. */
+  overflow-wrap: break-word;
 }
 h1,
 h2,
@@ -578,8 +580,10 @@ p.error-text {
   justify-content: center;
   margin-top: 16px;
 }
+/* minmax(0, 1fr): a long word wraps instead of widening the column past the card. */
 .stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 .stack.tight {
@@ -882,7 +886,7 @@ p.error-text {
 }
 .facts {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 4px 16px;
   margin: 0;
 }
@@ -1629,6 +1633,7 @@ td .stickers,
   margin: 0;
   padding: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 .item {
@@ -1884,6 +1889,8 @@ details.diff td {
   vertical-align: top;
   border: 0;
   background: none;
+  /* A table cell ignores break-word, so a long value would widen the table past the row. */
+  overflow-wrap: anywhere;
 }
 details.diff th {
   font-weight: 600;
@@ -1909,6 +1916,7 @@ details.diff .after {
 }
 .slider input {
   width: 100%;
+  margin: 0;
   min-height: 32px;
   padding: 0;
   border: 0;
@@ -2340,7 +2348,7 @@ dialog.palette .dialog-body {
 }
 .pause-info-effects li {
   display: grid;
-  grid-template-columns: 4.6rem 1fr;
+  grid-template-columns: 4.6rem minmax(0, 1fr);
   align-items: start;
   gap: 10px;
   line-height: 1.35;
@@ -2469,7 +2477,7 @@ dialog.palette .dialog-body {
     background: var(--select);
   }
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .panel {
     position: fixed;
@@ -2906,7 +2914,7 @@ ul.alerts li.ended {
 }
 @media (max-width: 760px) {
   .health-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 14px;
   }
 }
