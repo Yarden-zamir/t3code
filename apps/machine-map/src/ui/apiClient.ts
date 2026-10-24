@@ -6,6 +6,10 @@ const isApiError = (value: unknown): value is ApiError =>
   "error" in value &&
   typeof value.error === "string";
 
+/** Dev only: `?fixture=1` shows a copied snapshot with in-memory writes (see `fixture.ts`). */
+export const isFixturePage = (): boolean =>
+  import.meta.env.DEV && new URLSearchParams(location.search).has("fixture");
+
 /** MM-1207: the passkey check is a Cloudflare page, not a browser prompt. */
 export const PASSKEY_STEP_TEXT =
   "Select Confirm with passkey. Cloudflare opens a page that asks for your passkey, then brings you back here.";
@@ -28,6 +32,11 @@ export async function callApi<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
+  // Dev only: the fixture answers in memory and never reaches a portal (see `fixture.ts`).
+  if (import.meta.env.DEV && isFixturePage()) {
+    const { fixtureApi } = await import("./fixture.ts");
+    return (await fixtureApi(method, path, body)) as T;
+  }
   let response: Response;
   try {
     response = await fetch(path, {

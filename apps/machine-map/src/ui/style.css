@@ -1108,10 +1108,6 @@ details.more[open] summary {
     opacity 120ms,
     stroke 120ms;
 }
-.map path.empty {
-  stroke-dasharray: 7 7;
-  stroke-width: 2;
-}
 /* MM-717: while paused, a line that the pause cut stays as a red broken line. */
 .map path.cut,
 .map path.hot.cut {
@@ -1124,9 +1120,6 @@ details.more[open] summary {
 .map path.hot {
   stroke: var(--accent);
   stroke-width: 5;
-}
-.map path.hot.empty {
-  stroke-width: 3;
 }
 .map-empty {
   position: absolute;
@@ -1278,95 +1271,11 @@ details.more[open] summary {
   font-size: 0.66rem;
   padding: 1px 6px;
 }
-.pair {
-  position: absolute;
-  z-index: 1;
-  transform: translate(-50%, -50%);
-  padding: 5px;
-  display: grid;
-  gap: 2px;
-  box-shadow: 3px 3px 0 0 var(--shadow-ink);
-  transition: opacity 120ms;
-  /* MM-1108: the owner drags pair cards too. */
-  cursor: grab;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: none;
-}
-.pair.readonly {
-  cursor: auto;
-}
-.pair.dragging {
-  z-index: 5;
-  cursor: grabbing;
-  box-shadow: 6px 6px 0 0 var(--shadow-ink);
-}
-.dir {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 40px;
-  font-size: 0.98rem;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 2px;
-  cursor: pointer;
-  white-space: nowrap;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-family: inherit;
-  text-align: left;
-}
-.dir .who {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-/* MM-1103: where the target sits on the map. The text already says the direction. */
-.dir .toward {
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  line-height: 1;
-  padding: 2px 3px;
-  border: 1.5px solid currentColor;
-  border-radius: 3px;
-  opacity: 0.7;
-}
-.dir .actions {
-  flex-wrap: nowrap;
-  gap: 6px;
-}
-.dir .sticker.flat {
-  font-size: 0.66rem;
-  padding: 1px 6px;
-}
-.dir:hover {
-  background: var(--raised);
-}
-.dir.on {
-  background: var(--select);
-  color: var(--select-fg);
-}
-.dir:focus-visible {
-  outline-offset: -3px;
-}
 .clock {
   width: 18px;
   height: 18px;
   flex: none;
   color: var(--warning-fg);
-}
-.dir.on .clock {
-  color: inherit;
-}
-.pair-wait {
-  padding: 2px 10px 3px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--warning-fg);
-  white-space: nowrap;
 }
 /* Notes (MM-1109): sticky notes in four colours, each tilted a little. */
 .note {
@@ -1526,38 +1435,9 @@ details.more[open] summary {
   font-size: 0.6rem;
   padding: 0 4px;
 }
-.map.compact .pair {
-  padding: 3px;
-  gap: 0;
-}
-.map.compact .dir {
-  min-height: 44px;
-  font-size: 0.88rem;
-  padding: 2px 6px;
-  gap: 6px;
-}
-.map.compact .dir .sticker {
-  font-size: 0.62rem;
-  padding: 1px 5px;
-}
 .map.compact .clock {
   width: 15px;
   height: 15px;
-}
-.map.compact .pair-wait,
-.map.compact .dir .sticker.flat:not(.lvl-none) {
-  display: none;
-}
-.map.compact .dir .who {
-  gap: 3px;
-}
-.map.compact .dir .nm {
-  max-width: 4.5em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.map.compact .dir .verb {
-  font-size: 0.72rem;
 }
 .map.compact .note {
   width: 140px;
@@ -1592,18 +1472,9 @@ th {
   font-weight: 800;
   background: var(--raised);
 }
-th.corner,
 td.left,
 th.left {
   text-align: left;
-}
-th.corner {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-td.self {
-  background: repeating-linear-gradient(135deg, transparent 0 7px, var(--dots) 7px 9px);
 }
 td.cell {
   padding: 0;
@@ -2462,16 +2333,6 @@ dialog.palette .dialog-body {
   background: var(--panic);
   color: #ffffff;
 }
-/* MM-717: a pair card and an arrow row that the pause cut. */
-.pair.cut {
-  border-style: dashed;
-  border-color: var(--panic);
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--surface) 0 10px,
-    var(--error-surface) 10px 20px
-  );
-}
 .sticker.was {
   opacity: 0.55;
   text-decoration: line-through;
@@ -2953,20 +2814,10 @@ ul.alerts li.ended {
   }
 }
 
-/* MM-602: a wait under a pair card opens the Queue of its machine, in the warning colour. */
-.pair-wait a {
-  color: inherit;
-}
 /* MM-904: a client card is a browser, not a machine, so it is smaller and has a dashed border. */
 .node.client {
   width: 190px;
   border-style: dashed;
-}
-/* MM-309: a client arrow is a dotted line. The client card lists its levels. */
-.map path.client-line {
-  stroke-width: 2;
-  stroke-dasharray: 1 7;
-  stroke-linecap: round;
 }
 
 /* MM-913: the invite QR stays white in dark mode, so phone cameras read it. */
@@ -2979,4 +2830,700 @@ ul.alerts li.ended {
 }
 .break {
   overflow-wrap: anywhere;
+}
+
+/* ---------- Arrows: level pills, badges and the arrow editor (MM-1103, MM-1123) ---------- */
+
+/* The level as a flat pill: the one place that carries the level colour. */
+.lvl-pill {
+  display: inline-block;
+  padding: 0 7px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #000000;
+  border: var(--bw) solid var(--border);
+  border-radius: 999px;
+}
+.lvl-pill.lvl-admin {
+  color: #ffffff;
+}
+.lvl-pill.lvl-none {
+  color: #3d3d5c;
+}
+.lvl-pill.was {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.lvl-pill .short {
+  display: none;
+}
+.grant-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.glyph svg,
+.grant-editor svg,
+.chip svg,
+.port svg,
+.return-chip svg,
+.board .legend svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.glyph.timer {
+  padding: 0 4px;
+  color: #000000;
+  background: var(--warning);
+  border-radius: 999px;
+}
+.cut-word,
+.ask-word {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cut-word {
+  color: var(--panic);
+}
+.ask-word {
+  color: var(--accent);
+}
+.ask-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  color: #ffffff;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.grant-editor .grant-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.grant-editor .grant-title .end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.grant-editor .grant-title svg {
+  width: 22px;
+  height: 22px;
+}
+.grant-editor .callout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.ask-callout {
+  background: var(--info-surface);
+  border-style: dashed;
+}
+.expiry-callout svg {
+  vertical-align: -2px;
+}
+.ladder {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 6px 0 8px;
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.ladder .rung {
+  min-height: 44px;
+  padding: 0 4px;
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 0;
+  cursor: pointer;
+}
+.ladder .rung + .rung {
+  border-left: var(--bw) solid var(--border);
+}
+.ladder .rung[aria-pressed="true"] {
+  box-shadow: inset 0 -4px 0 0 var(--border);
+}
+.ladder .rung[aria-pressed="true"].lvl-none {
+  background: var(--none);
+  color: #3d3d5c;
+}
+.ladder .rung[aria-pressed="true"].lvl-read {
+  background: var(--info);
+  color: #000000;
+}
+.ladder .rung[aria-pressed="true"].lvl-standard {
+  background: var(--green);
+  color: #000000;
+}
+.ladder .rung[aria-pressed="true"].lvl-admin {
+  background: var(--accent);
+  color: #ffffff;
+}
+.ladder .rung:not([aria-pressed="true"]) {
+  background: var(--surface);
+}
+.ladder .rung:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.grant-editor .actions {
+  margin-top: 10px;
+}
+.grant-editor .actions .spacer {
+  flex: 1;
+}
+.lasts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.grant-editor .toggle-row .t {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.delivery {
+  margin-top: 12px;
+}
+
+/* ---------- Map wires (MM-1103): the line carries the arrow state ---------- */
+
+.map path.wire {
+  stroke: var(--ink);
+  stroke-linecap: round;
+}
+.map path.wire.lvl-none {
+  stroke-width: 2;
+  stroke-dasharray: 3 6;
+}
+.map path.wire.lvl-read {
+  stroke-width: 2.5;
+}
+.map path.wire.lvl-standard {
+  stroke-width: 4;
+}
+.map path.wire.lvl-admin {
+  stroke-width: 6;
+}
+/* MM-304: a temporary level is a broken orange line until it returns. */
+.map path.wire.temp {
+  stroke: var(--warning-fg);
+  stroke-dasharray: 10 7;
+}
+/* MM-804: an arrow that only a proposal asks for is a dotted purple line. */
+.map path.wire.ask {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-dasharray: 2 7;
+}
+.map path.wire.cut {
+  stroke: var(--panic);
+  stroke-dasharray: 2 12;
+}
+.map path.wire.on,
+.map path.wire.hot {
+  stroke: var(--accent);
+}
+.map path.wire.dim {
+  opacity: 0.18;
+}
+.map marker path {
+  fill: var(--ink);
+  fill: context-stroke;
+  stroke: none;
+}
+.wire-badge {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  font: inherit;
+  color: var(--ink);
+  white-space: nowrap;
+  background: var(--surface);
+  border: var(--bw) solid var(--border);
+  border-radius: 999px;
+  box-shadow: 2px 2px 0 0 var(--shadow-ink);
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+.wire-badge .lvl-pill {
+  font-size: 0.85rem;
+}
+.wire-badge .glyph svg {
+  width: 18px;
+  height: 18px;
+}
+.wire-badge.on {
+  background: var(--select);
+  color: var(--select-fg);
+}
+.wire-badge.dim {
+  opacity: 0.25;
+}
+.wire-badge.ask {
+  border-style: dashed;
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.wire-badge.cut {
+  border-color: var(--panic);
+}
+.wire-badge .clock {
+  width: 15px;
+  height: 15px;
+}
+/* MM-904: the clients that use a machine, as tags on its card. */
+.ports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: var(--bw) dashed var(--raised);
+}
+.port {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.6;
+  color: #000000;
+  border: var(--bw) dotted var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.port.role {
+  color: var(--ink);
+  background: var(--raised);
+  border-style: solid;
+  cursor: default;
+}
+.port.lvl-admin {
+  color: #ffffff;
+}
+.port.was {
+  text-decoration: line-through;
+  border-color: var(--panic);
+}
+.ports-note {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* ---------- Board (MM-1123): one lane per source, one column per level ---------- */
+
+.board {
+  padding: 20px;
+}
+.board-head {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.board .legend {
+  gap: 6px 16px;
+  align-items: center;
+}
+.board .legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ask-chip-sample {
+  padding: 0 6px;
+  border: var(--bw) dashed var(--accent);
+  border-radius: 999px;
+}
+.board-grid {
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius);
+}
+.board-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+}
+.board-row + .board-row {
+  border-top: var(--bw) solid var(--border);
+}
+.board-columns {
+  background: var(--raised);
+}
+.lane-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.column-head {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  align-content: start;
+  padding: 8px 10px;
+  border-left: var(--bw) solid var(--border);
+}
+.lane-title {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  justify-items: start;
+  min-width: 0;
+  padding: 10px;
+  font-weight: 800;
+}
+.lane-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.05rem;
+}
+.lane-name a {
+  color: inherit;
+}
+.lane-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+/* Each lane has its own colour: the swatch of its source, its rail and the tab of its chips. */
+.lane-c0 {
+  --lane: #ffe14d;
+}
+.lane-c1 {
+  --lane: #ff9eb0;
+}
+.lane-c2 {
+  --lane: #ffb347;
+}
+.lane-c3 {
+  --lane: #3dd6c6;
+}
+.lane-c4 {
+  --lane: #d9b48f;
+}
+.lane-c5 {
+  --lane: #a9b8cc;
+}
+.lane-swatch {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: #000000;
+  background: var(--lane);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius);
+}
+.lane-swatch svg {
+  width: 16px;
+  height: 16px;
+}
+/* The rail of a lane runs through all four columns; its chips sit on it. */
+.lane .lane-track::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 25px;
+  height: 6px;
+  background: var(--lane);
+  border-block: var(--bw) solid var(--border);
+  pointer-events: none;
+}
+.board-cell {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 10px 8px;
+  border-left: var(--bw) dashed var(--border);
+}
+.board-cell.col-none {
+  background: repeating-linear-gradient(-45deg, transparent 0 8px, var(--raised) 8px 16px);
+}
+/* While a chip moves, its lane shows its bounds and the column under the chip. */
+.lane.moving .lane-track {
+  outline: 3px solid var(--lane);
+  outline-offset: -3px;
+  z-index: 2;
+}
+.board-cell.over {
+  background: var(--select);
+}
+.board-cell.over::after {
+  content: attr(data-level);
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--select-fg);
+  pointer-events: none;
+}
+.chip {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  font-size: 0.85rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 2px 2px 0 0 var(--shadow-ink);
+  cursor: grab;
+  /* A sideways drag moves the chip; an up or down swipe still scrolls the page. */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chip.dragging {
+  z-index: 3;
+  cursor: grabbing;
+  box-shadow: 5px 5px 0 0 var(--shadow-ink);
+}
+.chip.off {
+  box-shadow: none;
+}
+.chip.off .chip-to {
+  opacity: 0.65;
+}
+.chip.on {
+  background: var(--select);
+  color: var(--select-fg);
+}
+.chip.cut {
+  border-color: var(--panic);
+  border-style: dashed;
+  cursor: default;
+}
+.chip-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 3px 6px 3px 0;
+  font: inherit;
+  font-weight: 800;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: inherit;
+}
+/* The tab in the lane colour says "this lane's arrow to …". */
+.chip-from {
+  align-self: stretch;
+  display: inline-grid;
+  place-items: center;
+  margin: -3px 0;
+  padding: 0 5px;
+  font-weight: 900;
+  color: #000000;
+  background: var(--lane, var(--raised));
+  border-right: var(--bw) solid var(--border);
+}
+.chip-to {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chip .step {
+  min-width: 28px;
+  min-height: 32px;
+  padding: 0 4px;
+  font: inherit;
+  font-weight: 900;
+  font-size: 1.05rem;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.chip .step:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.chip .step.yes {
+  color: #000000;
+  background: var(--green);
+  border-left: var(--bw) solid var(--border);
+}
+.chip .step.no {
+  color: #000000;
+  background: var(--pink);
+  border-left: var(--bw) solid var(--border);
+}
+.no-level .lvl-pill {
+  display: none;
+}
+.ask-chip {
+  border: var(--bw) dashed var(--accent);
+  box-shadow: none;
+  overflow: hidden;
+  cursor: default;
+}
+.ask-chip .chip-name {
+  cursor: pointer;
+}
+.return-chip {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface);
+  border: var(--bw) dotted var(--border);
+  border-radius: var(--radius);
+}
+
+/* A narrow window: the source name goes above its lane, and the four columns share the width. */
+@media (max-width: 900px) {
+  .board {
+    padding: 12px;
+  }
+  .board-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .board-columns .lane-title {
+    display: none;
+  }
+  .board-columns {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+  }
+  .lane .lane-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 8px 10px;
+    background: var(--raised);
+    border-bottom: var(--bw) solid var(--border);
+  }
+  .column-head:first-child,
+  .board-cell:first-child {
+    border-left: 0;
+  }
+  .column-head .small {
+    display: none;
+  }
+  .column-head {
+    padding: 6px 4px;
+  }
+}
+/* A phone: a chip puts its name above its ‹ and ›, so four columns fit in 360 pixels. */
+@media (max-width: 560px) {
+  .lvl-pill .long {
+    display: none;
+  }
+  .lvl-pill .short {
+    display: inline;
+  }
+  .board-cell {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 3px;
+    gap: 5px;
+  }
+  .lane .lane-track::before {
+    top: 22px;
+  }
+  .chip {
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+  }
+  .chip-name {
+    order: -1;
+    flex: 1 0 100%;
+    padding: 0 3px 3px;
+    gap: 3px;
+  }
+  /* The lane tab becomes a strip on top, so the name gets the whole width. */
+  .chip-from {
+    flex: 1 0 100%;
+    margin: 0 -3px;
+    padding: 0;
+    font-size: 0.7rem;
+    line-height: 1.3;
+    border-right: 0;
+    border-bottom: var(--bw) solid var(--border);
+  }
+  .chip-to {
+    overflow-wrap: normal;
+  }
+  .chip-to svg {
+    display: none;
+  }
+  .return-chip .long {
+    display: none;
+  }
+  .chip .step {
+    flex: 1 1 50%;
+    min-height: 32px;
+    border-top: var(--bw) solid var(--border);
+  }
+  .chip .step + .chip-name + .step,
+  .chip .step.no {
+    border-left: var(--bw) solid var(--border);
+  }
+  .return-chip {
+    flex-wrap: wrap;
+    font-size: 0.66rem;
+    overflow-wrap: normal;
+  }
 }

@@ -1,5 +1,3 @@
-import type { PairOffset } from "@t3tools/contracts/machineMap";
-
 /**
  * Pixel layout of the map (MM-1103). Saved positions can overlap, for example on a narrow phone
  * map or for machines that joined close together. The page shows them apart and does not save
@@ -61,141 +59,7 @@ export function separate(
   return out;
 }
 
-const overlapArea = (a: Box, b: Box): number => {
-  const x = Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2);
-  const y = Math.min(a.y + a.h / 2, b.y + b.h / 2) - Math.max(a.y - a.h / 2, b.y - b.h / 2);
-  return x > 0 && y > 0 ? x * y : 0;
-};
-
-/** Places along the line, from the middle out. */
-const ALONG = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74];
-/**
- * Then beside the line, in widths of the card across the line, so a short line between two
- * stacked machines still finds a spot next to them.
- */
-const ASIDE = [0, 0.5, -0.5, 1, -1, 1.5, -1.5];
-/** A pair card on a machine card costs more than a pair card on a pair card. */
-const MACHINE_WEIGHT = 4;
-
-/** The unit normal of the line from `a` to `b`. A line of no length points down. */
-function normal(a: Point, b: Point): Point {
-  const length = Math.hypot(b.x - a.x, b.y - a.y);
-  if (length === 0) return { x: 0, y: 1 };
-  return { x: -(b.y - a.y) / length, y: (b.x - a.x) / length };
-}
-
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
-
-/** MM-1108: the center of a pair card from its offset, in map pixels. */
-export function offsetPoint(a: Point, b: Point, offset: PairOffset): Point {
-  const n = normal(a, b);
-  return {
-    x: a.x + (b.x - a.x) * offset.along + n.x * offset.aside,
-    y: a.y + (b.y - a.y) * offset.along + n.y * offset.aside,
-  };
-}
-
-/** MM-1108: the offset of a pair card center, the inverse of `offsetPoint`, along the line kept in range. */
-export function pointOffset(a: Point, b: Point, p: Point): PairOffset {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lengthSquared = dx * dx + dy * dy;
-  const n = normal(a, b);
-  const along = lengthSquared === 0 ? 0.5 : ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared;
-  const aside = (p.x - a.x) * n.x + (p.y - a.y) * n.y;
-  // Four decimals is under a pixel on any screen, and keeps the map small.
-  const round = (value: number) => Math.round(value * 10_000) / 10_000;
-  return { along: round(clamp(along, 0, 1)), aside: round(aside) };
-}
-
-/**
- * Places each pair card on its line. A card with a `fixed` center (MM-1108) stays there, unless
- * it covers a machine card or a note, for example after a card grew. Then it moves the shortest way off them. Each other card takes the first spot that covers no
- * machine card, no note and no pair card placed before it. Without a free spot near the line, it
- * moves the least-covered spot off the machines and notes. Pair cards may still share space on a
- * crowded map; the owner can drag them apart.
- */
-export function placePairs(
-  pairs: ReadonlyArray<{
-    readonly a: Point;
-    readonly b: Point;
-    readonly w: number;
-    readonly h: number;
-    readonly fixed: Point | null;
-  }>,
-  machines: ReadonlyArray<Box>,
-  notes: ReadonlyArray<Box> = [],
-): Array<Point> {
-  const pad = (box: Box): Box => ({ ...box, w: box.w + GAP, h: box.h + GAP });
-  const padded = machines.map(pad);
-  const cards = [...machines, ...notes];
-  const keepOff = (box: Box): Box =>
-    separate([...cards, box], new Set(cards.keys()))[cards.length] ?? box;
-  // Cards that the owner placed go first, so automatic cards keep off them.
-  const fixedBoxes = pairs.map(({ fixed, w, h }) => (fixed ? keepOff({ ...fixed, w, h }) : null));
-  const placed: Array<Box> = [
-    ...notes.map(pad),
-    ...fixedBoxes.flatMap((box) => (box ? [pad(box)] : [])),
-  ];
-  return pairs.map(({ a, b, w, h }, i) => {
-    const fixedBox = fixedBoxes[i];
-    if (fixedBox) return { x: fixedBox.x, y: fixedBox.y };
-    const { x: nx, y: ny } = normal(a, b);
-    // How wide the card is along the normal.
-    const across = Math.abs(nx) * w + Math.abs(ny) * h;
-    let best: { box: Box; score: number } | null = null;
-    for (const aside of ASIDE) {
-      for (const t of ALONG) {
-        const box = {
-          x: a.x + (b.x - a.x) * t + nx * aside * across,
-          y: a.y + (b.y - a.y) * t + ny * aside * across,
-          w,
-          h,
-        };
-        const near = pad(box);
-        const score =
-          padded.reduce((sum, m) => sum + MACHINE_WEIGHT * overlapArea(near, m), 0) +
-          placed.reduce((sum, p) => sum + overlapArea(near, p), 0);
-        if (best === null || score < best.score) best = { box, score };
-        if (score === 0) break;
-      }
-      if (best?.score === 0) break;
-    }
-    const candidate = best?.box ?? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, w, h };
-    const box = best?.score === 0 ? candidate : keepOff(candidate);
-    placed.push(pad(box));
-    return { x: box.x, y: box.y };
-  });
-}
-
-/**
- * MM-1108: the line of a pair through its placed card, as two cubic curves A -> P -> B. The curve
- * passes P in the direction from A to B, so it bends smoothly through the card. The card covers
- * the middle, so the line shows to enter and leave at the card edges. P on the straight line gives
- * a straight curve. Returns A, two controls, P, two controls, B.
- */
-export function pairCurve(a: Point, b: Point, p: Point): ReadonlyArray<Point> {
-  const length = Math.hypot(b.x - a.x, b.y - a.y);
-  const u = length === 0 ? { x: 0, y: 0 } : { x: (b.x - a.x) / length, y: (b.y - a.y) / length };
-  const toP = Math.hypot(p.x - a.x, p.y - a.y) / 3;
-  const fromP = Math.hypot(b.x - p.x, b.y - p.y) / 3;
-  return [
-    a,
-    { x: a.x + (p.x - a.x) / 3, y: a.y + (p.y - a.y) / 3 },
-    { x: p.x - u.x * toP, y: p.y - u.y * toP },
-    p,
-    { x: p.x + u.x * fromP, y: p.y + u.y * fromP },
-    { x: b.x + (p.x - b.x) / 3, y: b.y + (p.y - b.y) / 3 },
-    b,
-  ];
-}
-
-/** MM-1108: the SVG path of a pair line. A card in its automatic place (`through` null) keeps it straight. */
-export function pairPath(a: Point, b: Point, through: Point | null): string {
-  if (through === null) return `M${a.x},${a.y}L${b.x},${b.y}`;
-  const [start, ...rest] = pairCurve(a, b, through).map((q) => `${q.x},${q.y}`);
-  return `M${start}C${rest.slice(0, 3).join(" ")}C${rest.slice(3).join(" ")}`;
-}
 
 /**
  * MM-1116: the view of the map on one device. The map layer moves by `x` and `y` screen pixels
@@ -276,13 +140,9 @@ export function anyInView(
   });
 }
 
-/**
- * MM-1121: a card that "Auto layout" places, by its center and size. A card with `between` is a
- * pair card: it stays in the middle of the line between those two cards.
- */
+/** MM-1121: a card that "Auto layout" places, by its center and size. */
 export interface LayoutCard extends Box {
   readonly id: string;
-  readonly between?: readonly [string, string];
 }
 
 /** MM-1121: an arrow between two cards and the length its line wants, center to center. */
@@ -357,30 +217,16 @@ function segmentHitsBox(a: Point, b: Point, box: Box): boolean {
   return true;
 }
 
-type Rider = readonly [card: number, a: number, b: number];
-
-const middleOf = (at: ReadonlyArray<Point>, i: number, j: number): Point => {
-  const a = at[i] ?? { x: 0, y: 0 };
-  const b = at[j] ?? a;
-  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-};
-
-/**
- * Moves the cards from `start` with the forces, then removes every overlap. A rider takes no
- * step of its own: the push on it goes half to each end, and it stays in the middle of its line.
- */
+/** Moves the cards from `start` with the forces, then removes every overlap. */
 function settle(
   cards: ReadonlyArray<LayoutCard>,
   links: ReadonlyArray<readonly [number, number, number]>,
-  riders: ReadonlyArray<Rider>,
   start: ReadonlyArray<Point>,
   shape: number,
 ): Array<Box> {
   const gravityX = LAYOUT_GRAVITY / shape;
   const gravityY = LAYOUT_GRAVITY * shape;
-  const riding = new Set(riders.map(([card]) => card));
   const at = [...start];
-  for (const [card, a, b] of riders) at[card] = middleOf(at, a, b);
   for (let round = 0; round < LAYOUT_ROUNDS; round++) {
     const step = LAYOUT_FIRST_STEP * (1 - round / LAYOUT_ROUNDS) + 1;
     const push = at.map(() => ({ x: 0, y: 0 }));
@@ -424,41 +270,24 @@ function settle(
       fb.x -= (dx / distance) * force;
       fb.y -= (dy / distance) * force;
     }
-    for (const [card, a, b] of riders) {
-      const f = push[card];
-      const fa = push[a];
-      const fb = push[b];
-      if (!f || !fa || !fb) continue;
-      fa.x += f.x / 2;
-      fa.y += f.y / 2;
-      fb.x += f.x / 2;
-      fb.y += f.y / 2;
-    }
     for (const [i, p] of at.entries()) {
       const f = push[i];
-      if (!f || riding.has(i)) continue;
+      if (!f) continue;
       const fx = f.x + (middle.x - p.x) * gravityX;
       const fy = f.y + (middle.y - p.y) * gravityY;
       const size = Math.hypot(fx, fy);
       const scale = size > step ? step / size : 1;
       at[i] = { x: p.x + fx * scale, y: p.y + fy * scale };
     }
-    for (const [card, a, b] of riders) at[card] = middleOf(at, a, b);
   }
   return separate(cards.map((card, i) => ({ ...card, ...(at[i] ?? card) })));
 }
 
-/**
- * Line crossings plus lines through a card that is neither an end nor the pair card of the line,
- * and the length of the lines.
- */
+/** Line crossings plus lines through a card that is not an end of the line, and the length of the lines. */
 function judge(
   boxes: ReadonlyArray<Box>,
   links: ReadonlyArray<readonly [number, number, number]>,
-  riders: ReadonlyArray<Rider>,
 ): { readonly faults: number; readonly length: number } {
-  const own = (k: number, i: number, j: number) =>
-    riders.some(([card, a, b]) => card === k && ((a === i && b === j) || (a === j && b === i)));
   let faults = 0;
   let length = 0;
   for (const [n, [i, j]] of links.entries()) {
@@ -467,7 +296,7 @@ function judge(
     if (!a || !b) continue;
     length += Math.hypot(b.x - a.x, b.y - a.y);
     for (const [k, box] of boxes.entries()) {
-      if (k !== i && k !== j && !own(k, i, j) && segmentHitsBox(a, b, box)) faults++;
+      if (k !== i && k !== j && segmentHitsBox(a, b, box)) faults++;
     }
     for (const [k, l] of links.slice(n + 1)) {
       const c = boxes[k];
@@ -482,8 +311,7 @@ function judge(
 /**
  * MM-1121 "Auto layout": a small force layout. Each line pulls its two cards toward its length,
  * two cards closer than their room push apart, and a pull toward the middle keeps the map
- * compact. `separate` then removes every overlap. A pair card rides in the middle of its line, so
- * the layout keeps that spot free for it. The layout runs from the current places and from a few
+ * compact. `separate` then removes every overlap. The layout runs from the current places and from a few
  * fixed pseudo-random starts. It keeps the result with the fewest line crossings and lines through
  * cards, then the shortest lines. The current places win a tie, so a map that reads well keeps its
  * shape. Notes link to nothing, so they go beside the cards, where they cover no line. The result
@@ -508,12 +336,6 @@ export function autoLayout(
     const j = index.get(link.b);
     return i === undefined || j === undefined || i === j ? [] : [[i, j, link.length]];
   });
-  const riders = cards.flatMap((card, i): Array<Rider> => {
-    if (!card.between) return [];
-    const a = index.get(card.between[0]);
-    const b = index.get(card.between[1]);
-    return a === undefined || b === undefined || a === b ? [] : [[i, a, b]];
-  });
   const random = sequence(1);
   const spreadX = 300 * Math.sqrt(cards.length * ratio);
   const spreadY = 300 * Math.sqrt(cards.length / ratio);
@@ -525,13 +347,9 @@ export function autoLayout(
     ),
   ];
   // The current places come first and win every tie, so a second click changes nothing.
-  const current = cards.map((card, i): Box => {
-    const rider = riders.find(([r]) => r === i);
-    return rider ? { ...card, ...middleOf(cards, rider[1], rider[2]) } : card;
-  });
   const candidates = [
-    separate(current),
-    ...starts.map((start) => settle(cards, pairs, riders, start, ratio)),
+    separate(cards),
+    ...starts.map((start) => settle(cards, pairs, start, ratio)),
   ];
   let best: {
     readonly boxes: Array<Box>;
@@ -539,7 +357,7 @@ export function autoLayout(
     readonly length: number;
   } | null = null;
   for (const boxes of candidates) {
-    const { faults, length } = judge(boxes, pairs, riders);
+    const { faults, length } = judge(boxes, pairs);
     if (
       !best ||
       faults < best.faults ||
@@ -572,4 +390,46 @@ export function autoLayout(
     (Math.min(...all.map((b) => b.y - b.h / 2)) + Math.max(...all.map((b) => b.y + b.h / 2))) / 2;
   const shift = (b: Box): Point => ({ x: b.x + center.x - middleX, y: b.y + center.y - middleY });
   return { cards: placed.map(shift), notes: noteBoxes.map(shift) };
+}
+
+/** Wires: how far a two-way pair bows its two curves apart, in map pixels. */
+const WIRE_BOW = 26;
+/** Room between a card edge and the arrowhead. */
+const WIRE_GAP = 6;
+
+/** Where the ray from the center of `box` toward `toward` leaves the box, plus a gap. */
+function boxExit(box: Box, toward: Point, gap: number): Point {
+  const dx = toward.x - box.x;
+  const dy = toward.y - box.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return box;
+  const scale = Math.min(
+    dx === 0 ? Infinity : box.w / 2 / Math.abs(dx),
+    dy === 0 ? Infinity : box.h / 2 / Math.abs(dy),
+  );
+  return {
+    x: box.x + dx * scale + (dx / length) * gap,
+    y: box.y + dy * scale + (dy / length) * gap,
+  };
+}
+
+/**
+ * MM-1103: one directed curve from card `a` to card `b`, from edge to edge. `bowed` bends it to
+ * the left of its direction, so the two arrows of a two-way pair never cover each other. The
+ * badge point sits before the middle, so the badges of a two-way pair sit apart.
+ */
+export function wireGeometry(a: Box, b: Box, bowed: boolean): { d: string; badge: Point } {
+  const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const n = { x: -(b.y - a.y) / length, y: (b.x - a.x) / length };
+  const bow = bowed ? WIRE_BOW * 2 : 0;
+  const control = { x: (a.x + b.x) / 2 + n.x * bow, y: (a.y + b.y) / 2 + n.y * bow };
+  const start = boxExit(a, control, 0);
+  const end = boxExit(b, control, WIRE_GAP);
+  const t = bowed ? 0.4 : 0.5;
+  const at = (p: number, q: number, r: number) =>
+    (1 - t) * (1 - t) * p + 2 * (1 - t) * t * q + t * t * r;
+  return {
+    d: `M${start.x},${start.y}Q${control.x},${control.y} ${end.x},${end.y}`,
+    badge: { x: at(start.x, control.x, end.x), y: at(start.y, control.y, end.y) },
+  };
 }

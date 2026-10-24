@@ -301,22 +301,6 @@ export const MapPreset = Schema.Struct({
 });
 export type MapPreset = typeof MapPreset.Type;
 
-/**
- * Where the owner put the card of a pair (MM-1108), relative to the line from machine `a` to
- * machine `b`, so the card follows when the machines move.
- */
-export const PairOffset = Schema.Struct({
-  /** 0 is the center of `a`, 1 the center of `b`. */
-  along: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
-  /** Distance beside the line, in map pixels. */
-  aside: MapPixels,
-});
-export type PairOffset = typeof PairOffset.Type;
-
-/** A stored pair placement. `a` sorts before `b`. */
-export const PairPlacement = Schema.Struct({ a: MachineId, b: MachineId, ...PairOffset.fields });
-export type PairPlacement = typeof PairPlacement.Type;
-
 export const NoteColor = Schema.Literals(["yellow", "pink", "blue", "green"]);
 export type NoteColor = typeof NoteColor.Type;
 
@@ -335,10 +319,7 @@ export const MachineMapDocument = Schema.Struct({
   arrows: Schema.Array(ArrowRecord),
   settings: MapSettings,
   presets: Schema.Array(MapPreset),
-  /** Display data (MM-1108, MM-1109): no machine applies it. Older maps decode with none. */
-  pairPlacements: Schema.Array(PairPlacement).pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed([])),
-  ),
+  /** Display data (MM-1109): no machine applies it. Older maps decode with none. */
   notes: Schema.Array(MapNote).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
   /** MM-904. Older maps decode with none. */
   clients: Schema.Array(ClientRecord).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
@@ -380,12 +361,6 @@ export const MapChange = Schema.Union([
   Schema.TaggedStruct("removeMachine", { machineId: MachineId }),
   Schema.TaggedStruct("putPreset", { preset: MapPreset }),
   Schema.TaggedStruct("removePreset", { name: TrimmedNonEmptyString }),
-  /** MM-1108: null returns the card of the pair to its automatic place. */
-  Schema.TaggedStruct("placePair", {
-    a: MachineId,
-    b: MachineId,
-    offset: Schema.NullOr(PairOffset),
-  }),
   Schema.TaggedStruct("putNote", { note: MapNote }),
   Schema.TaggedStruct("removeNote", { id: TrimmedNonEmptyString }),
   Schema.TaggedStruct("putClient", { client: ClientRecord }),

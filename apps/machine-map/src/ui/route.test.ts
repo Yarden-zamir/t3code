@@ -7,6 +7,7 @@ describe("routes (MM-1106)", () => {
     { view: "map", selection: { _tag: "none" } },
     { view: "map", selection: { _tag: "machine", id: "mac-1a2b" } },
     { view: "table", selection: { _tag: "arrow", from: "mac", to: "vps" } },
+    { view: "table", selection: { _tag: "clientArrow", client: "phone", to: "vps" } },
     { view: "history", selection: { _tag: "revision", revision: 42 } },
     { view: "inbox", selection: { _tag: "proposal", id: "p/1" } },
     { view: "settings", selection: { _tag: "setting", scope: "client", key: "theme name" } },

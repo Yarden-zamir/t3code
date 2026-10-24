@@ -516,6 +516,56 @@ it("an undo or a restore of a revision from before the tab keys sets the new key
   expect(server()).toEqual({ sidebarTabs: { tabs: [{ id: "a", name: "B", rules: [] }] } });
 });
 
+it("drops stored pair card places once, so old revisions and proposals still decode (MM-1108)", async () => {
+  const { object, db, ctx, env } = portal(true);
+  const note = { id: "n1", text: "Hi", color: "yellow", position: { x: 10, y: 20 } } as const;
+  expect(
+    (await object.changes(owner, { summary: "Note", changes: [{ _tag: "putNote", note }] })).ok,
+  ).toBe(true);
+  const revision = readMap(db).revision;
+  const placed = { _tag: "placePair", a: MAC, b: VPS, offset: { along: 0.5, aside: 20 } };
+  const withPlaces = (text: string) =>
+    JSON.stringify({
+      ...JSON.parse(text),
+      pairPlacements: [{ a: MAC, b: VPS, along: 0.5, aside: 20 }],
+    });
+  const row = db.prepare("SELECT data, map FROM revisions WHERE revision = ?").get(revision);
+  const data = JSON.parse(String(row?.data));
+  db.prepare("UPDATE revisions SET data = ?, map = ? WHERE revision = ?").run(
+    JSON.stringify({ ...data, changes: [...data.changes, placed], inverse: [placed] }),
+    withPlaces(String(row?.map)),
+    revision,
+  );
+  db.prepare("UPDATE meta SET value = ? WHERE key = 'map'").run(
+    withPlaces(String(db.prepare("SELECT value FROM meta WHERE key = 'map'").get()?.value)),
+  );
+  db.prepare("INSERT INTO proposals VALUES (?, ?)").run(
+    "p1",
+    JSON.stringify({
+      id: "p1",
+      at: NOW,
+      expiresAt: "2026-10-21T08:00:00.000Z",
+      actor: { _tag: "agent", machineId: MAC, threadId: null, threadTitle: null },
+      summary: "Move a card",
+      changes: [placed],
+      reason: "map-role",
+    }),
+  );
+  db.prepare("DELETE FROM meta WHERE key = 'dropped_pair_placements'").run();
+
+  const moved = new MachineMapObject(ctx, env);
+  expect(db.prepare("SELECT value FROM meta WHERE key = 'map'").get()?.value).not.toContain(
+    "pairPlacements",
+  );
+  const history = await moved.history(owner, null, 10);
+  expect(history.ok && history.value.revisions[0]?.changes).toEqual([{ _tag: "putNote", note }]);
+  expect(history.ok && history.value.revisions[0]?.inverse).toEqual([]);
+  expect((await moved.mapAt(owner, revision)).ok).toBe(true);
+  expect(
+    String(db.prepare("SELECT data FROM proposals WHERE id = 'p1'").get()?.data),
+  ).not.toContain("placePair");
+});
+
 describe("owner-only grants (MM-803)", () => {
   const macSocket = {
     deserializeAttachment: () => ({ kind: "machine", machineId: MAC }),

@@ -480,6 +480,7 @@ export class MachineMapObject extends DurableObject<Env> {
     `);
     this.ctx.storage.sql.exec(HEALTH_TABLES);
     this.#dropManageSetting();
+    this.#dropPairPlacements();
     this.#absolutePlaces();
     this.#sidebarTabKeys();
   }
@@ -591,6 +592,53 @@ export class MachineMapObject extends DurableObject<Env> {
         }
       }
       this.#sql("INSERT INTO meta (key, value) VALUES ('dropped_manage_setting', ?)", nowIso());
+    });
+  }
+
+  /**
+   * MM-1108 (removed): the map lost its pair cards, so their places go once. The map, each stored
+   * revision map, and the changes of revisions and proposals lose them, so all of it still
+   * decodes. A revision that only moved a card keeps its summary with no change.
+   */
+  #dropPairPlacements(): void {
+    if (this.#sql("SELECT key FROM meta WHERE key = 'dropped_pair_placements'").length > 0) return;
+    type Stored = {
+      readonly changes: Array<{ _tag: string }>;
+      readonly inverse?: Array<{ _tag: string }>;
+    };
+    const keep = (changes: Array<{ _tag: string }>) =>
+      changes.filter((change) => change._tag !== "placePair");
+    const changes = (text: string): string => {
+      const data = JSON.parse(text) as Stored;
+      return JSON.stringify({
+        ...data,
+        changes: keep(data.changes),
+        ...(data.inverse === undefined ? {} : { inverse: keep(data.inverse) }),
+      });
+    };
+    const map = (text: string): string => {
+      const { pairPlacements: _dropped, ...rest } = JSON.parse(text) as Record<string, unknown>;
+      return JSON.stringify(rest);
+    };
+    this.ctx.storage.transactionSync(() => {
+      const current = this.#sql<{ value: string }>("SELECT value FROM meta WHERE key = 'map'")[0];
+      if (current) this.#sql("UPDATE meta SET value = ? WHERE key = 'map'", map(current.value));
+      for (const row of this.#sql<{ revision: number; data: string; map: string }>(
+        "SELECT revision, data, map FROM revisions WHERE data LIKE '%\"placePair\"%' OR map LIKE '%\"pairPlacements\"%'",
+      )) {
+        this.#sql(
+          "UPDATE revisions SET data = ?, map = ? WHERE revision = ?",
+          changes(row.data),
+          map(row.map),
+          row.revision,
+        );
+      }
+      for (const row of this.#sql<{ id: string; data: string }>(
+        "SELECT id, data FROM proposals WHERE data LIKE '%\"placePair\"%'",
+      )) {
+        this.#sql("UPDATE proposals SET data = ? WHERE id = ?", changes(row.data), row.id);
+      }
+      this.#sql("INSERT INTO meta (key, value) VALUES ('dropped_pair_placements', ?)", nowIso());
     });
   }
 

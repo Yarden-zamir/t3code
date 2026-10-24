@@ -8,51 +8,38 @@ import {
   type PointerEvent,
 } from "react";
 import type {
-  ClientArrowRecord,
+  ArrowRecord,
   ClientRecord,
   MachineId,
+  MachineLevel,
   MachineMapDocument,
   MachineRecord,
   MapChange,
   MapNote,
   MapPosition,
-  PairOffset,
 } from "@t3tools/contracts/machineMap";
 
 import { usesText } from "../rules/access.ts";
-import { findArrow, findClientArrow, findNote, MAP_FRAME, pairOffset } from "../rules/map.ts";
-import { CapabilityStickers } from "./ArrowCapabilities.tsx";
-import { NO_SELECTION, type Route } from "./route.ts";
+import { findArrow, findClientArrow, findNote, MAP_FRAME } from "../rules/map.ts";
+import { GrantBadges, LEVEL_SHORT } from "./AccessEditor.tsx";
+import { NO_SELECTION } from "./route.ts";
 import { usePortalContext } from "./context.ts";
 import { buildStandings } from "./build.ts";
 import { BuildLabel, BuildSticker } from "./BuildLabel.tsx";
 import {
-  arrowEndRoute,
+  arrowAsks,
   arrowEndWait,
   arrowEnds,
   connectMachines,
   cutLevel,
-  pairCut,
-  pairShows,
+  type ArrowAsk,
 } from "./derive.ts";
-import {
-  LEVEL_LABEL,
-  PRESENCE_STICKER,
-  presenceState,
-  shortTime,
-  timeAgo,
-  TOWARD_TEXT,
-  towardGlyph,
-} from "./format.ts";
-import { ClientIcon, ClockIcon, KindIcon } from "./icons.tsx";
+import { LEVEL_LABEL, PRESENCE_STICKER, presenceState, shortTime, timeAgo } from "./format.ts";
+import { ClientIcon, ClockIcon, KindIcon, TimerIcon } from "./icons.tsx";
 import {
   anyInView,
   autoLayout,
   fitView,
-  offsetPoint,
-  pairPath,
-  placePairs,
-  pointOffset,
   separate,
   toMapPoint,
   toScreenPoint,
@@ -63,16 +50,17 @@ import {
   type LayoutLink,
   type MapViewport,
   type Point,
+  wireGeometry,
 } from "./layout.ts";
 import { NoteCard } from "./NoteCard.tsx";
 import { settleHeld, type Held } from "./store.ts";
 import { MachineStickers } from "./MachineStickers.tsx";
 import { CardMeters } from "./resources.tsx";
-import { RouteLink } from "./StickerLink.tsx";
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
-/** MM-1121: room on each side of the pair card of a line, in map pixels. */
-const LINK_ROOM = 40;
+/** MM-1121: room between two linked cards, in map pixels. A wire needs room for its badge. */
+const LINK_ROOM = 120;
+const WIRE_ROOM = 240;
 /**
  * MM-1121: "Auto layout" keeps a card that would move less than this. The overlap pass nudges
  * cards a little, so without it a second click would make a new revision of tiny moves.
@@ -86,8 +74,8 @@ const LONG_PRESS_MS = 550;
 const COMPACT_WIDTH = 640;
 /** Card sizes before the page measures them. The first paint already uses the measured sizes. */
 const ESTIMATE = {
-  wide: { node: { w: 224, h: 120 }, pair: { w: 330, h: 96 }, note: { w: 190, h: 80 } },
-  compact: { node: { w: 156, h: 100 }, pair: { w: 200, h: 84 }, note: { w: 140, h: 60 } },
+  wide: { node: { w: 224, h: 120 }, note: { w: 190, h: 80 } },
+  compact: { node: { w: 156, h: 100 }, note: { w: 140, h: 60 } },
 } as const;
 
 /** MM-1116: the zoom and pan of this device. Each device keeps its own; the map never holds it. */
@@ -137,11 +125,10 @@ interface Size {
   readonly h: number;
 }
 
-/** What a drag moves: a machine (MM-206), a client (MM-904), a pair card (MM-1108) or a note (MM-1109). */
+/** What a drag moves: a machine (MM-206), a client (MM-904) or a note (MM-1109). */
 type DragSubject =
   | { readonly _tag: "machine"; readonly machine: MachineRecord }
   | { readonly _tag: "client"; readonly client: ClientRecord }
-  | { readonly _tag: "pair"; readonly a: MachineRecord; readonly b: MachineRecord }
   | { readonly _tag: "note"; readonly note: MapNote }
   /** MM-1104: a line from a handle of a machine. Dropping it on another machine connects them. */
   | { readonly _tag: "connect"; readonly machine: MachineRecord };
@@ -172,11 +159,7 @@ interface Drag {
   target: MachineId | null;
 }
 
-const pairKey = (a: MachineRecord, b: MachineRecord) => `${a.id}>${b.id}`;
-const clientLineKey = (arrow: Pick<ClientArrowRecord, "client" | "to">) =>
-  `${arrow.client}>${arrow.to}`;
 const samePosition = (a: MapPosition, b: MapPosition) => a.x === b.x && a.y === b.y;
-const sameOffset = (a: PairOffset, b: PairOffset) => a.along === b.along && a.aside === b.aside;
 const sameSizes = (a: Record<string, Size>, b: Record<string, Size>) =>
   Object.keys(a).length === Object.keys(b).length &&
   Object.entries(b).every(([key, size]) => {
@@ -197,10 +180,18 @@ const onPressKey = (press: () => void) => (event: KeyboardEvent) => {
 const isEmptySpot = (target: EventTarget, map: EventTarget, world: EventTarget | null) =>
   target === map || target === world || (target instanceof Element && target.tagName === "svg");
 
-/** MM-602: one arrow end that did not apply the arrow, in words, and where it opens. */
-interface Wait {
-  readonly text: string;
-  readonly route: Route;
+/**
+ * MM-1103: one directed curve per arrow, with the arrow state on a badge on the curve. `was` is
+ * the level before the pause of an arrow that the pause cut (MM-717).
+ */
+interface Wire {
+  readonly key: string;
+  readonly from: MachineRecord;
+  readonly to: MachineRecord;
+  readonly arrow: ArrowRecord;
+  readonly asks: ReadonlyArray<ArrowAsk>;
+  readonly was: MachineLevel | null;
+  readonly bowed: boolean;
 }
 
 /** A note that the page shows: a saved one, or a new one that is not saved yet. */
@@ -269,7 +260,6 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
   // Each state keeps at most one entry per card. The save answer gives each entry its revision,
   // which the map then reaches, or removes the entry. So the page does not prune the state.
   const [heldPlaceState, setHeldPlaces] = useState<ReadonlyArray<Held<MapPosition>>>([]);
-  const [heldOffsetState, setHeldOffsets] = useState<ReadonlyArray<Held<PairOffset>>>([]);
 
   useLayoutEffect(() => {
     const element = ref.current;
@@ -318,17 +308,36 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
   const selection = route.selection;
   const focus = selection._tag === "machine" ? selection.id : null;
   const focusMachine = machines.find((m) => m.id === focus);
-  // MM-1103: a pair with no access either way has no line and no card. The Table view and the
-  // command palette still list its arrows. MM-717: while paused, a pair that the pause cut stays.
-  const pairs: Array<[MachineRecord, MachineRecord]> = [];
-  for (let i = 0; i < machines.length; i++) {
-    for (let j = i + 1; j < machines.length; j++) {
-      const a = machines[i];
-      const b = machines[j];
-      if (a && b && (pairShows(map, a.id, b.id) || pairCut(portal.pause, a.id, b.id)))
-        pairs.push([a, b]);
-    }
-  }
+  // MM-1103: one wire per stored arrow, per arrow that a waiting proposal asks for, and, while
+  // paused, per arrow that the pause cut (MM-717). An arrow at the default has no wire. The History
+  // map shows no proposals: they belong to now, not to that revision.
+  const wires: ReadonlyArray<Wire> = (() => {
+    const ids = new Map<string, readonly [MachineId, MachineId]>();
+    const add = (from: MachineId, to: MachineId) => ids.set(`${from}>${to}`, [from, to]);
+    for (const arrow of map.arrows) add(arrow.from, arrow.to);
+    const proposals = readOnly ? [] : snapshot.proposals;
+    for (const proposal of proposals)
+      for (const change of proposal.changes)
+        if (change._tag === "setArrow") add(change.arrow.from, change.arrow.to);
+    for (const cut of portal.pause?.cut ?? []) add(cut.from, cut.to);
+    return [...ids].flatMap(([key, [fromId, toId]]): Array<Wire> => {
+      const from = machines.find((m) => m.id === fromId);
+      const to = machines.find((m) => m.id === toId);
+      if (!from || !to) return [];
+      const arrow = findArrow(map, fromId, toId);
+      return [
+        {
+          key,
+          from,
+          to,
+          arrow,
+          asks: arrowAsks(proposals, fromId, toId),
+          was: arrow.level === "none" ? cutLevel(portal.pause, fromId, toId) : null,
+          bowed: ids.has(`${toId}>${fromId}`),
+        },
+      ];
+    });
+  })();
 
   // MM-1114: the map has no edges. Places are map pixels, so a card that grows or a new machine
   // never moves the other cards. Zoom and pan show any part of it (MM-1116, MM-1117).
@@ -336,7 +345,6 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
   const cardArea = [
     ...machines.map((m) => sizes[`node:${m.id}`] ?? estimate.node),
     ...map.clients.map((c) => sizes[`client:${c.id}`] ?? estimate.node),
-    ...pairs.map((pair) => sizes[`pair:${pairKey(...pair)}`] ?? estimate.pair),
     ...map.notes.map((note) => sizes[`note:${note.id}`] ?? estimate.note),
   ].reduce((sum, { w, h }) => sum + w * h, 0);
 
@@ -351,22 +359,9 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
       )?.position,
     samePosition,
   );
-  const heldOffsets = settleHeld(
-    heldOffsetState,
-    map.revision,
-    (key) => {
-      const pair = pairs.find((p) => pairKey(...p) === key);
-      if (!pair) return undefined;
-      // An automatic place differs from every held offset.
-      return pairOffset(map, pair[0].id, pair[1].id) ?? { along: -1, aside: 0 };
-    },
-    sameOffset,
-  );
 
   const heldPlace = (key: string) => heldPlaces.find((h) => h.key === key)?.value;
   const position = (m: MachineRecord): MapPosition => heldPlace(`machine:${m.id}`) ?? m.position;
-  const offsetOf = (a: MachineRecord, b: MachineRecord): PairOffset | null =>
-    heldOffsets.find((h) => h.key === pairKey(a, b))?.value ?? pairOffset(map, a.id, b.id);
   const toPixels = (p: MapPosition): Point => p;
   /** A map point as a place to save, in whole map pixels. */
   const toPosition = (p: Point): MapPosition => ({ x: Math.round(p.x), y: Math.round(p.y) });
@@ -402,7 +397,10 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
     noteBoxes[map.notes.findIndex((n) => n.id === note.id)] ?? savedNoteAt(note);
   const clientCenter = (c: ClientRecord): Point =>
     clientBoxes[clients.indexOf(c)] ?? toPixels(clientPlace(c));
-  /** MM-309, MM-717: client arrows above `none`, and while paused the ones the pause cut. */
+  /**
+   * MM-309, MM-717: client arrows above `none`, and while paused the ones the pause cut. They show
+   * as tags on the machine cards, not as lines.
+   */
   const clientLines = [
     ...map.clientArrows.map((arrow) => ({ arrow, cut: false })),
     ...(portal.pause?.cutClients ?? []).flatMap((cut) =>
@@ -416,67 +414,47 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
     return client && machine ? [{ arrow, cut, client, machine }] : [];
   });
 
-  /**
-   * Where each card goes. During a drag the dragged machine follows the pointer and the other
-   * machines stay. Automatic pair cards then move out of its way; placed ones follow their line.
-   */
-  const layout = (dragged: { readonly id: MachineId; readonly at: Point } | null) => {
-    const boxes = machines.map((m, i) => {
-      const settled = nodes[i] ?? nodeBox(m, toPixels(m.position));
-      return m.id === dragged?.id ? nodeBox(m, dragged.at) : settled;
-    });
-    const at = new Map(
-      machines.map((m, i) => [m.id, boxes[i] ?? nodeBox(m, toPixels(m.position))]),
+  /** Where each machine card goes. During a drag the dragged machine follows the pointer. */
+  const layout = (dragged: { readonly id: MachineId; readonly at: Point } | null) =>
+    new Map(
+      machines.map((m, i) => [
+        m.id,
+        m.id === dragged?.id
+          ? nodeBox(m, dragged.at)
+          : (nodes[i] ?? nodeBox(m, toPixels(m.position))),
+      ]),
     );
-    const spots = placePairs(
-      pairs.map(([a, b]) => {
-        const pa = at.get(a.id) ?? toPixels(a.position);
-        const pb = at.get(b.id) ?? toPixels(b.position);
-        const offset = offsetOf(a, b);
-        return {
-          a: pa,
-          b: pb,
-          ...(sizes[`pair:${pairKey(a, b)}`] ?? estimate.pair),
-          fixed: offset ? offsetPoint(pa, pb, offset) : null,
-        };
-      }),
-      [...boxes, ...clientBoxes],
-      noteBoxes,
-    );
-    return { at, spots };
-  };
   const shown = layout(null);
-  const centerOf = (m: MachineRecord): Point => shown.at.get(m.id) ?? toPixels(position(m));
+  const centerOf = (m: MachineRecord): Point => shown.get(m.id) ?? toPixels(position(m));
+  const wireAt = (wire: Wire, at: ReadonlyMap<MachineId, Box>) =>
+    wireGeometry(
+      at.get(wire.from.id) ?? nodeBox(wire.from, toPixels(position(wire.from))),
+      at.get(wire.to.id) ?? nodeBox(wire.to, toPixels(position(wire.to))),
+      wire.bowed,
+    );
 
   const moveElement = (element: HTMLElement, p: Point) => {
     element.style.left = `${p.x}px`;
     element.style.top = `${p.y}px`;
   };
 
-  /** MM-1108: redraws the line of a pair, through its card when the owner placed the card. */
-  const drawPair = (root: HTMLElement, key: string, a: Point, b: Point, through: Point | null) =>
-    root
-      .querySelector<SVGPathElement>(`path[data-pair="${CSS.escape(key)}"]`)
-      ?.setAttribute("d", pairPath(a, b, through));
-
-  /** MM-309: redraws the line of one client arrow. */
-  const drawClientLine = (root: HTMLElement, key: string, a: Point, b: Point) =>
-    root
-      .querySelector<SVGPathElement>(`path[data-client-line="${CSS.escape(key)}"]`)
-      ?.setAttribute("d", pairPath(a, b, null));
+  /** Redraws each wire of the dragged machine and moves its badge, from the boxes of the drag. */
+  const drawWires = (root: HTMLElement, id: MachineId, at: ReadonlyMap<MachineId, Box>) => {
+    for (const wire of wires) {
+      if (wire.from.id !== id && wire.to.id !== id) continue;
+      const { d, badge } = wireAt(wire, at);
+      root.querySelector(`path[data-wire="${CSS.escape(wire.key)}"]`)?.setAttribute("d", d);
+      const element = root.querySelector<HTMLElement>(
+        `.wire-badge[data-wire="${CSS.escape(wire.key)}"]`,
+      );
+      if (element) moveElement(element, badge);
+    }
+  };
 
   /** Writes the place of the dragged card straight to the page, with every line it moves. */
   const paint = (subject: DragSubject, p: Point, element: HTMLElement) => {
     const root = ref.current;
     if (!root) return;
-    if (subject._tag === "client") {
-      moveElement(element, p);
-      for (const line of clientLines) {
-        if (line.client.id === subject.client.id)
-          drawClientLine(root, clientLineKey(line.arrow), p, centerOf(line.machine));
-      }
-      return;
-    }
     if (subject._tag === "connect") {
       const line = root.querySelector<SVGLineElement>("line.live");
       const from = centerOf(subject.machine);
@@ -486,36 +464,9 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
       line?.setAttribute("y2", String(p.y));
       return;
     }
-    if (subject._tag === "pair") {
-      moveElement(element, p);
-      // A card that moves is a placed card, so its line bends through it.
-      drawPair(root, pairKey(subject.a, subject.b), centerOf(subject.a), centerOf(subject.b), p);
-      return;
-    }
-    if (subject._tag !== "machine") {
-      moveElement(element, p);
-      return;
-    }
-    const id = subject.machine.id;
-    const { at, spots } = layout({ id, at: p });
-    const q = at.get(id);
-    if (q) moveElement(element, q);
-    const spotByPair = new Map(pairs.map((pair, i) => [pairKey(...pair), spots[i]]));
-    for (const [a, b] of pairs) {
-      const pa = at.get(a.id);
-      const pb = at.get(b.id);
-      const spot = spotByPair.get(pairKey(a, b));
-      if (pa && pb) drawPair(root, pairKey(a, b), pa, pb, offsetOf(a, b) && spot ? spot : null);
-      const card = root.querySelector<HTMLElement>(
-        `.pair[data-pair="${CSS.escape(pairKey(a, b))}"]`,
-      );
-      if (card && spot) moveElement(card, spot);
-    }
-    for (const line of clientLines) {
-      const to = at.get(line.machine.id);
-      if (line.machine.id === id && to)
-        drawClientLine(root, clientLineKey(line.arrow), clientCenter(line.client), to);
-    }
+    moveElement(element, p);
+    if (subject._tag === "machine")
+      drawWires(root, subject.machine.id, layout({ id: subject.machine.id, at: p }));
   };
 
   /** A point on the screen in pixels of the map element, inside its border. */
@@ -627,14 +578,10 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
   /** Every card as a box in map pixels. */
   const cardBoxes = (): Array<Box> => [
     ...machines.flatMap((m) => {
-      const box = shown.at.get(m.id);
+      const box = shown.get(m.id);
       return box ? [box] : [];
     }),
     ...clientBoxes,
-    ...pairs.map((pair, i) => ({
-      ...(shown.spots[i] ?? { x: 0, y: 0 }),
-      ...(sizes[`pair:${pairKey(...pair)}`] ?? estimate.pair),
-    })),
     ...noteBoxes,
   ];
   /** MM-1116 "Fit": every card in view. An empty map shows its middle at 100%. */
@@ -685,10 +632,10 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
   });
 
   /**
-   * MM-1121 "Auto layout": places every machine, client and note with `autoLayout` and returns
-   * each placed pair card to its automatic spot on its line. It is one map change, so Undo in the
-   * notice or in History puts every card back. The layout keeps room for each pair card in the
-   * middle of its line; a client line has no card, so it is shorter.
+   * MM-1121 "Auto layout": places every machine, client and note with `autoLayout`. It is one map
+   * change, so Undo in the notice or in History puts every card back. A machine pair with a wire
+   * keeps room for the wire badges. A client links to each machine that it uses, so it sits near
+   * them, although it has no line.
    */
   const arrange = () => {
     const sizeOf = (key: string, fallback: Size): Size => sizes[key] ?? fallback;
@@ -702,22 +649,19 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
         id: `client:${c.id}`,
         ...(clientBoxes[i] ?? clientBox(c, toPixels(clientPlace(c)))),
       })),
-      // A pair card rides in the middle of its line, so the layout keeps that spot free.
-      ...pairs.map(([a, b], i) => ({
-        id: `pair:${pairKey(a, b)}`,
-        between: [`machine:${a.id}`, `machine:${b.id}`] as const,
-        ...(shown.spots[i] ?? { x: 0, y: 0 }),
-        ...sizeOf(`pair:${pairKey(a, b)}`, estimate.pair),
-      })),
     ];
+    // One link per machine pair, whichever way its wires run.
+    const pairs = new Map(
+      wires.map((wire) => {
+        const [a, b] = [wire.from, wire.to].toSorted((x, y) => (x.id < y.id ? -1 : 1));
+        return [`${a?.id}>${b?.id}`, [wire.from, wire.to] as const];
+      }),
+    );
     const links: Array<LayoutLink> = [
-      ...pairs.map(([a, b]) => ({
+      ...[...pairs.values()].map(([a, b]) => ({
         a: `machine:${a.id}`,
         b: `machine:${b.id}`,
-        length:
-          (nodeSize(a).w + nodeSize(b).w) / 2 +
-          sizeOf(`pair:${pairKey(a, b)}`, estimate.pair).w +
-          LINK_ROOM * 2,
+        length: (nodeSize(a).w + nodeSize(b).w) / 2 + WIRE_ROOM,
       })),
       ...clientLines.map(({ client, machine }) => ({
         a: `client:${client.id}`,
@@ -756,11 +700,6 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
           ? []
           : [{ _tag: "putNote", note: { ...note, position: next } }];
       }),
-      ...pairs.flatMap(([a, b]): Array<MapChange> =>
-        pairOffset(map, a.id, b.id) === null
-          ? []
-          : [{ _tag: "placePair", a: a.id, b: b.id, offset: null }],
-      ),
     ];
     if (changes.length === 0) {
       fit();
@@ -1024,19 +963,6 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
         });
         return;
       }
-      case "pair": {
-        const { a, b } = subject;
-        const offset = pointOffset(centerOf(a), centerOf(b), finished.at);
-        const current = offsetOf(a, b);
-        if (current && sameOffset(current, offset)) return;
-        save(setHeldOffsets, pairKey(a, b), offset, `Moved the card of ${a.name} and ${b.name}`, {
-          _tag: "placePair",
-          a: a.id,
-          b: b.id,
-          offset,
-        });
-        return;
-      }
       case "connect": {
         // A drop on empty map cancels.
         const to = machines.find((m) => m.id === finished.target);
@@ -1058,18 +984,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
 
   /** Puts a dragged card back where it was, for a cancelled drag. */
   const putBack = (finished: Drag) => {
-    if (!finished.moved) return;
-    paint(finished.subject, finished.from, finished.element);
-    const { subject } = finished;
-    // A card in its automatic place goes back to a straight line.
-    if (subject._tag === "pair" && offsetOf(subject.a, subject.b) === null && ref.current)
-      drawPair(
-        ref.current,
-        pairKey(subject.a, subject.b),
-        centerOf(subject.a),
-        centerOf(subject.b),
-        null,
-      );
+    if (finished.moved) paint(finished.subject, finished.from, finished.element);
   };
 
   const onPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
@@ -1226,55 +1141,14 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
     void portal.submit(saved ? "Edited a note" : "Added a note", [{ _tag: "putNote", note }]);
   };
 
-  /** The wait of each arrow end that did not apply the arrow (MM-602, MM-604). */
-  const waitOf = (from: MachineRecord, to: MachineRecord): Array<Wait> => {
+  /** MM-602, MM-604: the wait of each arrow end that did not apply the arrow, in words. */
+  const waitOf = (from: MachineRecord, to: MachineRecord): Array<string> => {
     if (readOnly) return [];
     const ends = arrowEnds(snapshot, from.id, to.id);
     return [[ends.from, from] as const, [ends.to, to] as const].flatMap(([end, machine]) => {
       const text = arrowEndWait(end, machine);
-      return text === null || end === "applied"
-        ? []
-        : [{ text, route: arrowEndRoute(end, machine.id) }];
+      return text === null || end === "applied" ? [] : [sentence(text)];
     });
-  };
-
-  /** MM-1103: "Mac uses Windows ↓": the text gives the direction, the glyph shows the map. */
-  const dirRow = (from: MachineRecord, to: MachineRecord, waits: ReadonlyArray<Wait>) => {
-    const arrow = findArrow(map, from.id, to.id);
-    const was = arrow.level === "none" ? cutLevel(portal.pause, from.id, to.id) : null;
-    const toward = towardGlyph(centerOf(from), centerOf(to));
-    const on = selection._tag === "arrow" && selection.from === from.id && selection.to === to.id;
-    const wait = waits.map((w) => sentence(w.text)).join(". ");
-    return (
-      <button
-        type="button"
-        className={`dir${on ? " on" : ""}`}
-        aria-label={`${usesText(from.name, to.name)}: ${was ? `cut by the pause, was ${LEVEL_LABEL[was]}` : LEVEL_LABEL[arrow.level]}${wait ? `. ${wait}` : ""}`}
-        onClick={() => portal.select({ _tag: "arrow", from: from.id, to: to.id })}
-      >
-        <span className="who">
-          <span className="nm">{from.name}</span>
-          <span className="verb">uses</span>
-          <span className="nm">{to.name}</span>
-          <span className="toward" data-tip={`${to.name} is ${TOWARD_TEXT[toward]}`}>
-            {toward}
-          </span>
-        </span>
-        <span className="actions">
-          {wait && <ClockIcon label={wait} />}
-          {arrow.expiresAt && <span className="sticker warn flat">temp</span>}
-          <CapabilityStickers arrow={arrow} />
-          {was ? (
-            <>
-              <span className={`sticker lvl-${was} was`}>{LEVEL_LABEL[was]}</span>
-              <span className="sticker cut-sticker">cut</span>
-            </>
-          ) : (
-            <span className={`sticker lvl-${arrow.level}`}>{LEVEL_LABEL[arrow.level]}</span>
-          )}
-        </span>
-      </button>
-    );
   };
 
   const notes: ReadonlyArray<EditingNote> = [
@@ -1341,40 +1215,45 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
       >
         <div className="map-world" ref={worldRef}>
           <svg aria-hidden>
-            {pairs.map(([a, b], i) => {
-              const pa = centerOf(a);
-              const pb = centerOf(b);
-              const spot = shown.spots[i];
-              const touches = focus === a.id || focus === b.id;
-              const empty =
-                findArrow(map, a.id, b.id).level === "none" &&
-                findArrow(map, b.id, a.id).level === "none";
-              const cut = empty && pairCut(portal.pause, a.id, b.id);
+            <defs>
+              <marker
+                id="wire-head"
+                viewBox="0 0 10 10"
+                refX="5"
+                refY="5"
+                markerWidth="3.2"
+                markerHeight="3.2"
+                orient="auto"
+              >
+                <path d="M0,0L10,5L0,10z" />
+              </marker>
+            </defs>
+            {wires.map((wire) => {
+              const on =
+                selection._tag === "arrow" &&
+                selection.from === wire.from.id &&
+                selection.to === wire.to.id;
+              const touches = focus === wire.from.id || focus === wire.to.id;
               return (
                 <path
-                  key={pairKey(a, b)}
-                  data-pair={pairKey(a, b)}
-                  d={pairPath(pa, pb, offsetOf(a, b) && spot ? spot : null)}
-                  className={[empty && "empty", cut && "cut", focus && (touches ? "hot" : "dim")]
+                  key={wire.key}
+                  data-wire={wire.key}
+                  d={wireAt(wire, shown).d}
+                  markerEnd="url(#wire-head)"
+                  className={[
+                    "wire",
+                    `lvl-${wire.was ?? wire.arrow.level}`,
+                    wire.arrow.expiresAt && "temp",
+                    wire.arrow.level === "none" && wire.asks.length > 0 && !wire.was && "ask",
+                    wire.was && "cut",
+                    on && "on",
+                    focus && (touches ? "hot" : "dim"),
+                  ]
                     .filter(Boolean)
                     .join(" ")}
                 />
               );
             })}
-            {clientLines.map(({ arrow, cut, machine, client }) => (
-              <path
-                key={clientLineKey(arrow)}
-                data-client-line={clientLineKey(arrow)}
-                d={pairPath(clientCenter(client), centerOf(machine), null)}
-                className={[
-                  "client-line",
-                  cut && "cut",
-                  focus && (focus === machine.id ? "hot" : "dim"),
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              />
-            ))}
             {linking !== null && <line className="live" />}
           </svg>
           {size.width > 0 &&
@@ -1397,37 +1276,56 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
               />
             ))}
           {size.width > 0 &&
-            pairs.map(([a, b], i) => {
-              const spot = shown.spots[i] ?? { x: 0, y: 0 };
-              const dim = focus !== null && focus !== a.id && focus !== b.id;
-              const placed = offsetOf(a, b) !== null;
-              const cut = pairCut(portal.pause, a.id, b.id);
-              const waitsAB = waitOf(a, b);
-              const waitsBA = waitOf(b, a);
-              // Each machine that did not apply a direction, named once under the rows.
-              const waits = [...new Map([...waitsAB, ...waitsBA].map((w) => [w.text, w])).values()];
+            wires.map((wire) => {
+              const { badge } = wireAt(wire, shown);
+              const on =
+                selection._tag === "arrow" &&
+                selection.from === wire.from.id &&
+                selection.to === wire.to.id;
+              const dim = focus !== null && focus !== wire.from.id && focus !== wire.to.id;
+              const waits = waitOf(wire.from, wire.to);
+              const ask = wire.asks[0]?.arrow;
+              // MM-804: an arrow that only a proposal asks for says what it asks.
+              const asking = wire.arrow.level === "none" && ask !== undefined && !wire.was;
+              const state = wire.was
+                ? `cut by the pause, was ${LEVEL_LABEL[wire.was]}`
+                : LEVEL_LABEL[wire.arrow.level];
               return (
-                <div
-                  key={`pair:${pairKey(a, b)}`}
-                  data-pair={pairKey(a, b)}
-                  data-size-key={`pair:${pairKey(a, b)}`}
-                  className={`card pair${dim ? " dim" : ""}${placed ? " placed" : ""}${cut ? " cut" : ""}${readOnly ? " readonly" : ""}`}
-                  style={{ left: spot.x, top: spot.y }}
-                  onPointerDown={(event) => startDrag(event, { _tag: "pair", a, b }, spot)}
+                <button
+                  key={wire.key}
+                  type="button"
+                  data-wire={wire.key}
+                  className={`wire-badge${on ? " on" : ""}${dim ? " dim" : ""}${asking ? " ask" : ""}${wire.was ? " cut" : ""}`}
+                  style={{ left: badge.x, top: badge.y }}
+                  aria-label={`${usesText(wire.from.name, wire.to.name)}: ${state}${ask ? `. Asks for ${LEVEL_LABEL[ask.level]}` : ""}${waits.length > 0 ? `. ${waits.join(". ")}` : ""}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() =>
+                    portal.select({ _tag: "arrow", from: wire.from.id, to: wire.to.id })
+                  }
                 >
-                  {dirRow(a, b, waitsAB)}
-                  {dirRow(b, a, waitsBA)}
-                  {waits.length > 0 && (
-                    <div className="pair-wait">
-                      {waits.map((w, i) => (
-                        <span key={w.text}>
-                          {i > 0 && " · "}
-                          <RouteLink route={w.route}>{sentence(w.text)}</RouteLink>
-                        </span>
-                      ))}
-                    </div>
+                  {wire.was ? (
+                    <>
+                      <span className={`lvl-pill lvl-${wire.was} was`}>
+                        {LEVEL_SHORT[wire.was]}
+                      </span>
+                      <span className="cut-word">cut</span>
+                    </>
+                  ) : asking ? (
+                    <span className="ask-word">asks {LEVEL_SHORT[ask.level]}</span>
+                  ) : (
+                    <GrantBadges
+                      grant={{ _tag: "machine", from: wire.from, to: wire.to, arrow: wire.arrow }}
+                      now={now}
+                      short
+                    />
                   )}
-                </div>
+                  {!asking && ask && (
+                    <span className="ask-dot" data-tip={`Asks for ${LEVEL_LABEL[ask.level]}`}>
+                      ?
+                    </span>
+                  )}
+                  {waits.length > 0 && <ClockIcon label={waits.join(". ")} />}
+                </button>
               );
             })}
           {size.width > 0 &&
@@ -1462,20 +1360,14 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
                       </span>
                     </span>
                   </div>
-                  {/* MM-309: the level on each machine sits on the card, so no card covers it. */}
-                  <div className="tags">
-                    {clientLines
-                      .filter((line) => line.client.id === client.id)
-                      .map(({ arrow, cut, machine }) => (
-                        <span
-                          key={machine.id}
-                          className={`sticker lvl-${arrow.level}${cut ? " was" : ""}`}
-                          data-tip={`${usesText(client.name, machine.name)}: ${cut ? `cut by the pause, was ${LEVEL_LABEL[arrow.level]}` : LEVEL_LABEL[arrow.level]}${arrow.expiresAt ? `, until ${shortTime(arrow.expiresAt)}` : ""}`}
-                        >
-                          {machine.name} · {LEVEL_LABEL[arrow.level]}
-                          {arrow.expiresAt && " · temp"}
-                        </span>
-                      ))}
+                  {/* MM-904: its levels show as tags on the machine cards it uses. */}
+                  <div className="sub ports-note">
+                    {(() => {
+                      const used = clientLines.filter((line) => line.client.id === client.id);
+                      return used.length === 0
+                        ? "Uses no machine yet."
+                        : `Uses ${used.map((line) => line.machine.name).join(", ")}.`;
+                    })()}
                   </div>
                 </div>
               );
@@ -1553,6 +1445,10 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
                     <BuildSticker standing={standings.get(machine.id)} />
                     {!readOnly && <MachineStickers machine={machine} />}
                   </div>
+                  <MachinePorts
+                    machine={machine}
+                    lines={clientLines.filter((line) => line.machine.id === machine.id)}
+                  />
                 </div>
               );
             })}
@@ -1689,6 +1585,56 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * MM-904: the clients that use a machine, as tags on its card, and its map role. A tag opens the
+ * client arrow. Clients get no lines, so a phone never crosses the machine wires.
+ */
+function MachinePorts({
+  machine,
+  lines,
+}: {
+  machine: MachineRecord;
+  lines: ReadonlyArray<{
+    readonly arrow: { readonly level: MachineLevel; readonly expiresAt: string | null };
+    readonly cut: boolean;
+    readonly client: ClientRecord;
+  }>;
+}) {
+  const portal = usePortalContext();
+  const role = machine.mapRole === "propose" || machine.mapRole === "edit" ? machine.mapRole : null;
+  if (role === null && lines.length === 0) return null;
+  return (
+    <div className="ports">
+      {role && (
+        <span
+          className="port role"
+          data-tip={`Agents here ${role === "edit" ? "change" : "propose changes to"} the map`}
+        >
+          map {role}
+        </span>
+      )}
+      {lines.map(({ arrow, cut, client }) => (
+        <button
+          key={client.id}
+          type="button"
+          className={`port lvl-${arrow.level}${cut ? " was" : ""}`}
+          data-tip={`${usesText(client.name, machine.name)}: ${cut ? `cut by the pause, was ${LEVEL_LABEL[arrow.level]}` : LEVEL_LABEL[arrow.level]}${arrow.expiresAt ? `, until ${shortTime(arrow.expiresAt)}` : ""}`}
+          aria-label={`${usesText(client.name, machine.name)}: ${cut ? `cut, was ${LEVEL_LABEL[arrow.level]}` : LEVEL_LABEL[arrow.level]}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            portal.select({ _tag: "clientArrow", client: client.id, to: machine.id });
+          }}
+        >
+          <ClientIcon />
+          {client.name} {LEVEL_SHORT[arrow.level]}
+          {arrow.expiresAt && <TimerIcon />}
+        </button>
+      ))}
     </div>
   );
 }

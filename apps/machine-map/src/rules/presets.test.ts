@@ -107,25 +107,19 @@ describe("restoreChanges (MM-704)", () => {
     expect(restoreChanges(restored, old)).toEqual([]);
   });
 
-  it("returns card places and notes to an older map", () => {
+  it("returns notes to an older map", () => {
     const note = {
       id: "n1",
       text: "hello",
       color: "pink" as const,
       position: { x: 0.2, y: 0.2 },
     };
-    const old = applyChanges(threeMachines(), [
-      { _tag: "placePair", a: MAC, b: VPS, offset: { along: 0.3, aside: 0 } },
-      { _tag: "putNote", note },
-    ]).map;
+    const old = applyChanges(threeMachines(), [{ _tag: "putNote", note }]).map;
     const now = applyChanges(old, [
-      { _tag: "placePair", a: MAC, b: VPS, offset: null },
-      { _tag: "placePair", a: VPS, b: WIN, offset: { along: 0.5, aside: 0.2 } },
       { _tag: "putNote", note: { ...note, text: "changed" } },
       { _tag: "putNote", note: { ...note, id: "n2" } },
     ]).map;
     const restored = applyChanges(now, restoreChanges(now, old)).map;
-    expect(restored.pairPlacements).toEqual(old.pairPlacements);
     expect(restored.notes).toEqual(old.notes);
   });
 
