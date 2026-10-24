@@ -83,7 +83,10 @@ const readQuestion = Effect.fn("mcp.readQuestion")(function* (input: {
 });
 const writesThread = <P extends { readonly threadId?: ThreadId | undefined }, A, E, R>(
   handle: (params: P) => Effect.Effect<A, E, R>,
-) => McpToolAccess.writesThreads((params: P) => [params.threadId], handle);
+  options?: Parameters<typeof McpToolAccess.writesThreads>[2],
+) => McpToolAccess.writesThreads((params: P) => [params.threadId], handle, options);
+// Fork (MM-1923): a cancel or a reorder sends nothing, unlike an edit or a promote.
+const metadataOnly = { metadataOnly: true } as const;
 
 export const layer = McpToolAccess.toLayer(ThreadToolkit, {
   run_scheduled_task_now: McpToolAccess.writesEnvironment((input) =>
@@ -275,20 +278,24 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       text: input.text,
     })),
   ),
-  t3_queue_cancel: writesThread((input) =>
-    dispatch(input.threadId, (common) => ({
-      ...common,
-      type: "queued-run.cancel",
-      runId: input.queuedRunId,
-    })),
+  t3_queue_cancel: writesThread(
+    (input) =>
+      dispatch(input.threadId, (common) => ({
+        ...common,
+        type: "queued-run.cancel",
+        runId: input.queuedRunId,
+      })),
+    metadataOnly,
   ),
-  t3_queue_reorder: writesThread((input) =>
-    dispatch(input.threadId, (common) => ({
-      ...common,
-      type: "queued-run.reorder",
-      runId: input.queuedRunId,
-      beforeRunId: input.beforeRunId,
-    })),
+  t3_queue_reorder: writesThread(
+    (input) =>
+      dispatch(input.threadId, (common) => ({
+        ...common,
+        type: "queued-run.reorder",
+        runId: input.queuedRunId,
+        beforeRunId: input.beforeRunId,
+      })),
+    metadataOnly,
   ),
   t3_queue_promote_to_steer: writesThread((input) =>
     dispatch(input.threadId, (common) => ({
@@ -298,38 +305,40 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       targetRunId: input.targetRunId,
     })),
   ),
-  t3_thread_organize: writesThread((input) =>
-    Effect.gen(function* () {
-      const { threads, projection, caller } = yield* readThread(input.threadId);
-      const common = { commandId: yield* newCommandId(), threadId: projection.thread.id };
-      if (input.action === "settle") {
-        return yield* threads
-          .settleThread({ ...common, byOwnAgent: caller?.id === projection.thread.id })
-          .pipe(Effect.mapError(dispatchFailure));
-      }
-      let command: OrchestrationV2Command;
-      switch (input.action) {
-        case "snooze":
-          if (input.snoozedUntil === undefined) {
-            return yield* new OrchestratorMcpFailure({
-              code: "invalid_request",
-              message: "snooze requires snoozedUntil.",
-            });
-          }
-          command = { ...common, type: "thread.snooze", snoozedUntil: input.snoozedUntil };
-          break;
-        case "unsnooze":
-        case "unsettle":
-          command = { ...common, type: `thread.${input.action}`, reason: "user" };
-          break;
-        case "mark_unread":
-          command = { ...common, type: "thread.mark-unread" };
-          break;
-        default:
-          command = { ...common, type: `thread.${input.action}` };
-      }
-      const result = yield* threads.dispatch(command).pipe(Effect.mapError(dispatchFailure));
-      return { sequence: result.sequence };
-    }),
+  t3_thread_organize: writesThread(
+    (input) =>
+      Effect.gen(function* () {
+        const { threads, projection, caller } = yield* readThread(input.threadId);
+        const common = { commandId: yield* newCommandId(), threadId: projection.thread.id };
+        if (input.action === "settle") {
+          return yield* threads
+            .settleThread({ ...common, byOwnAgent: caller?.id === projection.thread.id })
+            .pipe(Effect.mapError(dispatchFailure));
+        }
+        let command: OrchestrationV2Command;
+        switch (input.action) {
+          case "snooze":
+            if (input.snoozedUntil === undefined) {
+              return yield* new OrchestratorMcpFailure({
+                code: "invalid_request",
+                message: "snooze requires snoozedUntil.",
+              });
+            }
+            command = { ...common, type: "thread.snooze", snoozedUntil: input.snoozedUntil };
+            break;
+          case "unsnooze":
+          case "unsettle":
+            command = { ...common, type: `thread.${input.action}`, reason: "user" };
+            break;
+          case "mark_unread":
+            command = { ...common, type: "thread.mark-unread" };
+            break;
+          default:
+            command = { ...common, type: `thread.${input.action}` };
+        }
+        const result = yield* threads.dispatch(command).pipe(Effect.mapError(dispatchFailure));
+        return { sequence: result.sequence };
+      }),
+    metadataOnly,
   ),
 });
