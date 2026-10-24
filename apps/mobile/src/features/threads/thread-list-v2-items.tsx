@@ -32,7 +32,6 @@ import {
 } from "@t3tools/contracts";
 import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
 import {
-  terminalStateOf,
   terminalThreadRowStatus,
   terminalThreadStatusLabel,
 } from "@t3tools/client-runtime/state/fork-terminal-threads";
@@ -51,7 +50,6 @@ import { ProviderIcon, ProviderInstanceIcon } from "../../components/ProviderIco
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
-import { useTerminalThreadStates } from "../../state/forkTerminalThreads";
 import { useEnvironmentScope } from "../../state/session";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import {
@@ -642,11 +640,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected);
 
   // Fork: a terminal thread fills in an idle row from its main terminal.
-  const terminalStates = useTerminalThreadStates([thread]);
-  const terminalLabel = terminalThreadStatusLabel(
-    terminalStateOf(terminalStates, thread),
-    thread.lastVisitedAt,
-  );
+  const terminalLabel = terminalThreadStatusLabel(thread.terminal, thread.lastVisitedAt);
   const status = terminalThreadRowStatus(resolveThreadListV2Status(thread), terminalLabel);
   const isUnread =
     status === "ready" && (threadHasUnseenCompletion(thread) || terminalLabel === "Completed");

@@ -31,11 +31,7 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
-import {
-  readForkDeleteNotice,
-  readForkThreadMenuState,
-  readTerminalThreadState,
-} from "./useForkTerminalThreadState";
+import { readForkDeleteNotice, readForkThreadMenuState } from "./useForkTerminalThreadState";
 import { THREAD_ARCHIVE_BLOCK_REASON } from "../components/threadActionMenu.logic";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
@@ -370,7 +366,7 @@ export function useThreadActions() {
     if (!resolved) return AsyncResult.success(undefined);
     const { thread, threadRef } = resolved;
     // Fork: read before the archive, which closes the main terminal of a terminal thread.
-    const { terminal, archiveBlock } = readForkThreadMenuState(thread);
+    const { archiveBlock } = readForkThreadMenuState(thread);
     if (archiveBlock !== null) {
       return AsyncResult.failure(
         Cause.fail(
@@ -396,7 +392,7 @@ export function useThreadActions() {
       action.finish();
       return archiveResult;
     }
-    const wokeAt = forkThreadWokeAt(thread, { now: new Date().toISOString() }, terminal);
+    const wokeAt = forkThreadWokeAt(thread, { now: new Date().toISOString() });
     if (wokeAt !== null) {
       markThreadVisited(scopedThreadKey(threadRef), wokeAt);
     }
@@ -733,11 +729,7 @@ export function useThreadActions() {
     }
     const resolved = resolveThreadTarget(target);
     const wokeAt = resolved
-      ? forkThreadWokeAt(
-          resolved.thread,
-          { now: new Date().toISOString() },
-          readTerminalThreadState(resolved.thread),
-        )
+      ? forkThreadWokeAt(resolved.thread, { now: new Date().toISOString() })
       : null;
     const undoPlan = ThreadUndo.planThreadUndo("settle", resolved?.thread);
     // An older unpin/snooze Undo would re-pin or re-snooze, and the server

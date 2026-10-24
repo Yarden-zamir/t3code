@@ -41,8 +41,6 @@ import {
   forkInboxReturnAt,
   forkThreadIsWorking,
   forkThreadWokeAt,
-  terminalStateOf,
-  type TerminalThreadStates,
 } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import {
   parseScopedThreadKey,
@@ -113,11 +111,7 @@ import {
   useAcknowledgeThreadWoke,
   useThreadActions,
 } from "../hooks/useThreadActions";
-import {
-  readForkDeleteNotice,
-  readForkThreadMenuState,
-  useTerminalThreadStates,
-} from "../hooks/useForkTerminalThreadState";
+import { readForkDeleteNotice, readForkThreadMenuState } from "../hooks/useForkTerminalThreadState";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useSidebarProjectGroupSnapshots } from "../hooks/useSidebarProjectGroups";
 import { useTerminalFocus } from "../hooks/useTerminalFocus";
@@ -324,8 +318,6 @@ interface SidebarThreadPartitionInput {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly workingShelfEnabled: boolean;
-  /** Fork: the main terminals of terminal threads. */
-  readonly terminalStates: TerminalThreadStates;
   // Snooze wakes and the queued-turn grace depend on the clock, so the minute
   // tick and the precise snooze-wake tick are inputs: a new key repartitions.
   readonly clockKey: string;
@@ -349,7 +341,6 @@ function resolveDraggedOrders(input: {
   readonly settledThreads: readonly EnvironmentThreadShell[];
   readonly activeThreads: readonly EnvironmentThreadShell[];
   readonly workingShelfEnabled: boolean;
-  readonly terminalStates: TerminalThreadStates;
 }): typeof NO_DRAGGED_ORDERS {
   const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled } = input;
   const thread = threadByKey.get(drag.activeKey);
@@ -364,7 +355,7 @@ function resolveDraggedOrders(input: {
     activeOrder: workingShelfEnabled
       ? sortInboxThreadsByReturn(
           [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
-          forkInboxReturnAt(inboxReturns.returnedAt, input.terminalStates),
+          forkInboxReturnAt(inboxReturns.returnedAt),
         ).map(threadShellKey)
       : undefined,
   };
@@ -415,7 +406,6 @@ function useSidebarThreads(input: {
         );
   const delegatedUnderParent = useDelegatedUnderParent();
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
-  const terminalStates = useTerminalThreadStates(threads);
   const nowMinute = useNowMinute();
   // Snooze wake times are second-precise, so classifying with the quantized
   // minute would hold a woken thread on the shelf for up to a minute.
@@ -474,7 +464,6 @@ function useSidebarThreads(input: {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
-    terminalStates,
     clockKey: `${nowMinute}:${snoozeWakeTick}`,
   });
   const partitionNextWakeAt = partition.snoozedThreads[0]?.snoozedUntil ?? null;
@@ -525,7 +514,6 @@ function useSidebarThreads(input: {
     threads,
     sidebarTabs,
     workingShelfEnabled,
-    terminalStates,
     searchableThreads: [
       ...pinnedThreads,
       ...activeThreads,
@@ -572,7 +560,6 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
-    terminalStates,
   } = input;
   const preciseNow = new Date().toISOString();
 
@@ -581,9 +568,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   const active: EnvironmentThreadShell[] = [];
   const working: EnvironmentThreadShell[] = [];
   const inbox = (thread: EnvironmentThreadShell) =>
-    workingShelfEnabled && forkThreadIsWorking(thread, terminalStateOf(terminalStates, thread))
-      ? working
-      : active;
+    workingShelfEnabled && forkThreadIsWorking(thread) ? working : active;
   const snoozed: EnvironmentThreadShell[] = [];
   const settled: EnvironmentThreadShell[] = [];
   const draggable = new Set<string>();
@@ -616,13 +601,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
       );
     } else {
       const section = resolveSidebarThreadSection({
-        snoozed:
-          supportsSnooze &&
-          forkEffectiveSnoozed(
-            thread,
-            { now: preciseNow },
-            terminalStateOf(terminalStates, thread),
-          ),
+        snoozed: supportsSnooze && forkEffectiveSnoozed(thread, { now: preciseNow }),
         settled: supportsSettlement && thread.settledOverride === "settled",
         pinned: thread.pinnedAt != null,
       });
@@ -641,7 +620,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   // web and mobile from the same data.
   const sortedPinned = sortPinnedThreadsForSidebar(pinned);
   const sortedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, forkInboxReturnAt(inboxReturns.returnedAt, terminalStates))
+    ? sortInboxThreadsByReturn(active, forkInboxReturnAt(inboxReturns.returnedAt))
     : sortThreadsForSidebar(active);
   return {
     pinnedThreads:
@@ -679,7 +658,6 @@ function isOptimisticDropReleased(input: {
   readonly pinnedKeys: readonly string[];
   readonly activeKeys: readonly string[];
   readonly now: string;
-  readonly terminalStates: TerminalThreadStates;
 }): boolean {
   const { optimisticDrop, threads, pinnedKeys, activeKeys, now } = input;
   const canonicalByKey = new Map(
@@ -692,11 +670,7 @@ function isOptimisticDropReleased(input: {
   if (thread === undefined || thread.archivedAt !== null) {
     return true;
   }
-  const canonicalSection = forkEffectiveSnoozed(
-    thread,
-    { now },
-    terminalStateOf(input.terminalStates, thread),
-  )
+  const canonicalSection = forkEffectiveSnoozed(thread, { now })
     ? "snoozed"
     : thread.settledOverride === "settled"
       ? "settled"
@@ -1140,7 +1114,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     snoozedThreads,
     settledThreads,
     snoozeNow,
-    terminalStates,
     searchableThreads,
     settledVisibleCount,
     hiddenSettledCount,
@@ -1674,7 +1647,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       pinnedKeys,
       activeKeys,
       now: snoozeNow,
-      terminalStates,
     })
   ) {
     setOptimisticDrop(null);
@@ -1843,7 +1815,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           settledThreads,
           activeThreads,
           workingShelfEnabled,
-          terminalStates,
         });
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
@@ -3115,11 +3086,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   })
                                 : null
                             }
-                            wokeAt={forkThreadWokeAt(
-                              thread,
-                              { now: snoozeNow },
-                              terminalStateOf(terminalStates, thread),
-                            )}
+                            wokeAt={forkThreadWokeAt(thread, { now: snoozeNow })}
                             isActive={routeRowThreadKey === threadKey}
                             isRouteThread={routeThreadKey === threadKey}
                             openPullRequestsInRightPanel={routeThreadRef !== null}

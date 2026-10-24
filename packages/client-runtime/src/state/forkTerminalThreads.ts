@@ -1,18 +1,19 @@
 /**
  * Fork: the live state of a terminal thread for the thread lists of web and mobile. A terminal
- * thread keeps its state in the metadata of its main terminal, not in the thread shell, so the
- * upstream list rules (Working shelf, inbox order, snooze wake) take it through these wrappers.
+ * thread keeps its state in the metadata of its main terminal, not in the thread shell. The thread
+ * shell atoms (`threadShell.ts`) put it on each terminal thread as `terminal`, and the upstream
+ * list rules (Working shelf, inbox order, snooze wake) read it through these wrappers.
  */
 import {
   AuthTerminalReadScope,
   DEFAULT_TERMINAL_ID,
-  isTerminalThread,
   sessionGrantsScope,
   type AuthSessionState,
   type EnvironmentId,
   type TerminalAttention,
   type TerminalSessionStatus,
   type TerminalSummary,
+  type ThreadId,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -41,30 +42,47 @@ export function terminalThreadState(summary: TerminalSummary): TerminalThreadSta
   };
 }
 
-/** The main terminals of terminal threads, keyed by `terminalThreadKey`. */
-export type TerminalThreadStates = ReadonlyMap<string, TerminalThreadState>;
+/** The main terminal states of the terminal threads of one environment, by thread id. */
+export type TerminalThreadStates = ReadonlyMap<ThreadId, TerminalThreadState>;
 
-type ThreadRef = Pick<EnvironmentThreadShell, "environmentId" | "id">;
+const EMPTY_TERMINAL_THREAD_STATES: TerminalThreadStates = new Map();
 
-const terminalThreadKey = (thread: { readonly environmentId: string; readonly id: string }) =>
-  `${thread.environmentId}:${thread.id}`;
+const sameAttention = (left: TerminalAttention | null, right: TerminalAttention | null) =>
+  left === right ||
+  (left !== null &&
+    right !== null &&
+    left.kind === right.kind &&
+    left.at === right.at &&
+    left.exitCode === right.exitCode &&
+    left.bellAt === right.bellAt);
 
+const sameTerminalThreadState = (left: TerminalThreadState, right: TerminalThreadState) =>
+  left.status === right.status &&
+  left.running === right.running &&
+  left.failedAt === right.failedAt &&
+  sameAttention(left.attention, right.attention);
+
+/**
+ * The states of the main terminals in `summaries`. A state that did not change keeps its object,
+ * and an unchanged set keeps `previous`, so a terminal event re-renders only the rows it changes.
+ */
 export function selectTerminalThreadStates(
-  metadataByEnvironment: ReadonlyArray<
-    readonly [EnvironmentId, ReadonlyArray<TerminalSummary> | null]
-  >,
+  summaries: ReadonlyArray<TerminalSummary>,
+  previous: TerminalThreadStates,
 ): TerminalThreadStates {
-  const states = new Map<string, TerminalThreadState>();
-  for (const [environmentId, summaries] of metadataByEnvironment) {
-    for (const summary of summaries ?? []) {
-      if (summary.terminalId !== DEFAULT_TERMINAL_ID) continue;
-      states.set(
-        terminalThreadKey({ environmentId, id: summary.threadId }),
-        terminalThreadState(summary),
-      );
-    }
+  const next = new Map<ThreadId, TerminalThreadState>();
+  for (const summary of summaries) {
+    if (summary.terminalId !== DEFAULT_TERMINAL_ID) continue;
+    const threadId = summary.threadId as ThreadId;
+    const state = terminalThreadState(summary);
+    const kept = previous.get(threadId);
+    next.set(threadId, kept !== undefined && sameTerminalThreadState(kept, state) ? kept : state);
   }
-  return states;
+  if (next.size === 0) return EMPTY_TERMINAL_THREAD_STATES;
+  return next.size === previous.size &&
+    [...next].every(([threadId, state]) => previous.get(threadId) === state)
+    ? previous
+    : next;
 }
 
 /** Why Archive refuses a terminal thread: archive ends the program that runs in it. */
@@ -81,12 +99,9 @@ export const TERMINAL_PROGRAMS_DELETE_NOTICE =
 
 /** The line that the Remove project confirm adds when programs run in its terminal threads. */
 export function projectRemovalProgramNotice(
-  threads: ReadonlyArray<ThreadRef & Pick<EnvironmentThreadShell, "providerInstanceId">>,
-  states: TerminalThreadStates,
+  threads: ReadonlyArray<Pick<EnvironmentThreadShell, "terminal">>,
 ): ReadonlyArray<string> {
-  const running = threads.filter(
-    (thread) => terminalStateOf(states, thread)?.running === true,
-  ).length;
+  const running = threads.filter((thread) => thread.terminal?.running === true).length;
   if (running === 0) return [];
   return [
     running === 1
@@ -96,18 +111,9 @@ export function projectRemovalProgramNotice(
 }
 
 /**
- * Agent threads have a `term-1` drawer terminal too, so only a terminal thread reads its state.
- */
-export function terminalStateOf(
-  states: TerminalThreadStates | undefined,
-  thread: ThreadRef & Pick<EnvironmentThreadShell, "providerInstanceId">,
-): TerminalThreadState | undefined {
-  return isTerminalThread(thread) ? states?.get(terminalThreadKey(thread)) : undefined;
-}
-
-/**
- * The terminal thread states of a list of environments, keyed by their ids joined with "\n".
- * An environment without terminal read access reports none.
+ * The terminal thread states of one environment. An environment without terminal read access
+ * reports none. The thread shell atoms read it only for an environment with terminal threads, so
+ * other environments never subscribe to terminal metadata.
  */
 export function createTerminalThreadStatesAtom(input: {
   readonly metadata: (target: {
@@ -118,34 +124,25 @@ export function createTerminalThreadStatesAtom(input: {
     environmentId: EnvironmentId,
   ) => Atom.Atom<AsyncResult.AsyncResult<AuthSessionState, unknown>>;
 }) {
-  return Atom.family((environmentIdsKey: string) =>
-    Atom.make((get): TerminalThreadStates => {
-      const environmentIds =
-        environmentIdsKey === "" ? [] : (environmentIdsKey.split("\n") as EnvironmentId[]);
-      return selectTerminalThreadStates(
-        environmentIds.map((environmentId) => {
-          const session = get(input.sessionState(environmentId));
-          const sessionValue = Option.getOrNull(AsyncResult.value(session));
-          const canRead =
-            session._tag !== "Failure" &&
-            sessionValue !== null &&
-            sessionGrantsScope(sessionValue, AuthTerminalReadScope);
-          if (!canRead) return [environmentId, null] as const;
-          const metadata = get(input.metadata({ environmentId, input: null }));
-          return [environmentId, Option.getOrNull(AsyncResult.value(metadata))] as const;
-        }),
-      );
-    }).pipe(Atom.withLabel(`fork-terminal-thread-states:${environmentIdsKey}`)),
-  );
-}
-
-/** The atom key of the environments that hold terminal threads. */
-export function terminalThreadEnvironmentsKey(
-  threads: ReadonlyArray<Pick<EnvironmentThreadShell, "environmentId" | "providerInstanceId">>,
-): string {
-  return [...new Set(threads.filter(isTerminalThread).map((thread) => thread.environmentId))]
-    .sort()
-    .join("\n");
+  return Atom.family((environmentId: EnvironmentId) => {
+    let previous = EMPTY_TERMINAL_THREAD_STATES;
+    return Atom.make((get): TerminalThreadStates => {
+      const session = get(input.sessionState(environmentId));
+      const sessionValue = Option.getOrNull(AsyncResult.value(session));
+      const canRead =
+        session._tag !== "Failure" &&
+        sessionValue !== null &&
+        sessionGrantsScope(sessionValue, AuthTerminalReadScope);
+      const summaries = canRead
+        ? Option.getOrElse(
+            AsyncResult.value(get(input.metadata({ environmentId, input: null }))),
+            () => [],
+          )
+        : [];
+      previous = selectTerminalThreadStates(summaries, previous);
+      return previous;
+    }).pipe(Atom.withLabel(`fork-terminal-thread-states:${environmentId}`));
+  });
 }
 
 export type TerminalThreadStatusLabel =
@@ -224,11 +221,11 @@ export function terminalThreadRowStatus<Status extends RowStatus>(
  * Working: a program runs in the shell, even a dev server that runs for days.
  */
 export function forkThreadIsWorking(
-  thread: Parameters<typeof isThreadWorking>[0] & Pick<EnvironmentThreadShell, "lastVisitedAt">,
-  terminal: TerminalThreadState | undefined,
+  thread: Parameters<typeof isThreadWorking>[0] &
+    Pick<EnvironmentThreadShell, "lastVisitedAt" | "terminal">,
 ): boolean {
   if (isThreadWorking(thread)) return true;
-  const label = terminalThreadStatusLabel(terminal, thread.lastVisitedAt);
+  const label = terminalThreadStatusLabel(thread.terminal, thread.lastVisitedAt);
   return label === "Working" || label === "Connecting";
 }
 
@@ -236,14 +233,11 @@ export function forkThreadIsWorking(
  * The inbox return time with the terminal: a terminal thread returns to the top of the inbox
  * when its program ends or it rings a bell, like an agent thread whose run finishes.
  */
-export function forkInboxReturnAt<
-  T extends ThreadRef & Pick<EnvironmentThreadShell, "providerInstanceId">,
->(
+export function forkInboxReturnAt<T>(
   returnedAt: ((thread: T) => number | undefined) | undefined,
-  states: TerminalThreadStates | undefined,
-): (thread: T) => number | undefined {
+): (thread: T & Pick<EnvironmentThreadShell, "terminal">) => number | undefined {
   return (thread) => {
-    const attentionAt = Date.parse(terminalStateOf(states, thread)?.attention?.at ?? "");
+    const attentionAt = Date.parse(thread.terminal?.attention?.at ?? "");
     const observed = returnedAt?.(thread);
     if (Number.isNaN(attentionAt)) return observed;
     return Math.max(observed ?? 0, attentionAt);
@@ -266,22 +260,21 @@ function terminalRaisedHandAt(
 
 /** `effectiveSnoozed` where a bell or an ended program of a terminal thread also wakes it. */
 export function forkEffectiveSnoozed(
-  shell: ThreadSnoozeShell,
+  shell: ThreadSnoozeShell & Pick<EnvironmentThreadShell, "terminal">,
   options: { readonly now: string },
-  terminal: TerminalThreadState | undefined,
 ): boolean {
   return (
-    effectiveSnoozed(shell, options) && terminalRaisedHandAt(terminal, shell.snoozedAt) === null
+    effectiveSnoozed(shell, options) &&
+    terminalRaisedHandAt(shell.terminal, shell.snoozedAt) === null
   );
 }
 
 /** `threadWokeAt` where a bell or an ended program of a terminal thread also wakes it. */
 export function forkThreadWokeAt(
-  shell: ThreadSnoozeShell,
+  shell: ThreadSnoozeShell & Pick<EnvironmentThreadShell, "terminal">,
   options: { readonly now: string },
-  terminal: TerminalThreadState | undefined,
 ): string | null {
   const wokeAt = threadWokeAt(shell, options);
   if (shell.snoozedUntil == null || Number.isNaN(Date.parse(shell.snoozedUntil))) return wokeAt;
-  return terminalRaisedHandAt(terminal, shell.snoozedAt) ?? wokeAt;
+  return terminalRaisedHandAt(shell.terminal, shell.snoozedAt) ?? wokeAt;
 }

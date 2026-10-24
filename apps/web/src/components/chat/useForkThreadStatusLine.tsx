@@ -2,7 +2,6 @@ import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   forkEffectiveSnoozed,
   forkThreadWokeAt,
-  type TerminalThreadState,
 } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import {
   isAtomCommandInterrupted,
@@ -34,15 +33,14 @@ import { ThreadStatusLine } from "./ThreadStatusLine";
  */
 export function useForkThreadStatusLine(input: {
   readonly threadRef: ScopedThreadRef | null;
+  /** A bell or an ended program of its main terminal (`terminal`) wakes it. */
   readonly thread: EnvironmentThreadShell | null;
-  // Fork: the main terminal of a terminal thread. A bell or an ended program wakes it.
-  readonly terminal: TerminalThreadState | undefined;
   readonly latestRunCompletedAt: string | null;
   readonly supportsSnooze: boolean;
   readonly supportsSettlement: boolean;
   readonly canOperate: boolean;
 }) {
-  const { threadRef, thread, terminal } = input;
+  const { threadRef, thread } = input;
   const threadKey = threadRef ? scopedThreadKey(threadRef) : null;
   // The compiler caches render results on their inputs, so a clock read in render
   // stays frozen until the shell changes. The clock is state: reset with the shell,
@@ -56,9 +54,7 @@ export function useForkThreadStatusLine(input: {
   }
   const snoozeClock = snoozeClockState.now;
   const snoozed =
-    thread !== null &&
-    input.supportsSnooze &&
-    forkEffectiveSnoozed(thread, { now: snoozeClock }, terminal);
+    thread !== null && input.supportsSnooze && forkEffectiveSnoozed(thread, { now: snoozeClock });
   useEffect(() => {
     if (!snoozed) return;
     const wakeAtMs = Date.parse(thread?.snoozedUntil ?? "");
@@ -71,9 +67,7 @@ export function useForkThreadStatusLine(input: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A clock that lands before the wake time (timer clamping, clock skew) re-arms the timer.
   }, [thread?.snoozedUntil, snoozed, snoozeClock]);
   const wokeAt =
-    thread !== null && input.supportsSnooze
-      ? forkThreadWokeAt(thread, { now: snoozeClock }, terminal)
-      : null;
+    thread !== null && input.supportsSnooze ? forkThreadWokeAt(thread, { now: snoozeClock }) : null;
   const acknowledgeThreadWoke = useAcknowledgeThreadWoke();
   const acknowledgeWoke = () => {
     if (threadRef === null || wokeAt === null) return;

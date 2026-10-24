@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   RuntimeRequestId,
+  TERMINAL_THREAD_INSTANCE_ID,
   ThreadId,
   type OrchestrationV2ShellSnapshot,
 } from "@t3tools/contracts";
@@ -9,6 +10,7 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
 import { PrimaryConnectionTarget } from "../connection/model.ts";
+import type { TerminalThreadStates } from "./forkTerminalThreads.ts";
 import { v2Now, v2ShellSnapshot, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 import { createEnvironmentThreadShellAtoms } from "./threadShell.ts";
 
@@ -123,5 +125,44 @@ describe("v2 thread shell lists", () => {
     disposeParent();
     disposeNavigation();
     registry.dispose();
+  });
+});
+
+describe("terminal thread state on thread shells", () => {
+  it("puts the main terminal state on terminal threads, and reads it only for them", () => {
+    const { registry, snapshotAtom, catalogValueAtom } = makeHarness();
+    const reads: Array<EnvironmentId> = [];
+    const states = Atom.make<TerminalThreadStates>(new Map());
+    const threads = createEnvironmentThreadShellAtoms({
+      catalogValueAtom,
+      snapshotAtom,
+      terminalThreadStatesAtom: (id) => {
+        reads.push(id);
+        return states;
+      },
+    });
+    const agent = v2ThreadShell;
+    registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [agent] });
+    expect(registry.get(threads.threadShellsAtom)[0]?.terminal).toBeUndefined();
+    // An environment without terminal threads never subscribes to terminal metadata.
+    expect(reads).toEqual([]);
+
+    const shell = {
+      ...v2ThreadShell,
+      id: ThreadId.make("shell"),
+      providerInstanceId: TERMINAL_THREAD_INSTANCE_ID,
+    };
+    const running = { status: "running", attention: null, running: true, failedAt: null } as const;
+    registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [agent, shell] });
+    registry.set(states, new Map([[shell.id, running]]));
+    const listed = registry.get(threads.threadShellsAtom);
+    expect(listed.map((thread) => thread.terminal)).toEqual([undefined, running]);
+    expect(registry.get(threads.threadShellAtom({ environmentId, threadId: shell.id }))).toBe(
+      listed[1],
+    );
+
+    // A new set with the same state object keeps the list, so no row re-renders.
+    registry.set(states, new Map([[shell.id, running]]));
+    expect(registry.get(threads.threadShellsAtom)).toBe(listed);
   });
 });

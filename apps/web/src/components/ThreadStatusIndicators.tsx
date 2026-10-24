@@ -52,7 +52,6 @@ import {
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { useTerminalThreadState } from "../hooks/useForkTerminalThreadState";
 import {
   PULL_REQUEST_STATE_PRESENTATION,
   PullRequestGlyph,
@@ -907,12 +906,10 @@ export function ThreadRowLeadingStatus({
   };
   const pr = resolveDisplayedThreadPr(displayedPrInput);
   const prStatus = prStatusIndicator(pr, resolveDisplayedThreadPrProvider(displayedPrInput));
-  const terminalThreadState = useTerminalThreadState(thread);
   const threadStatus = resolveThreadStatusPill({
     thread: {
       ...thread,
       lastVisitedAt,
-      terminal: terminalThreadState,
     },
   });
 

@@ -28,7 +28,6 @@ import {
 } from "../../sidebarProjectGrouping";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
-import { readTerminalThreadStates } from "../../hooks/useForkTerminalThreadState";
 import { projectEnvironment } from "../../state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Alert, AlertDescription } from "../ui/alert";
@@ -325,10 +324,7 @@ function ProjectDetail({
       displayName: group.displayName,
       threads,
     });
-    const programNotice = projectRemovalProgramNotice(
-      projectThreads,
-      readTerminalThreadStates(projectThreads),
-    );
+    const programNotice = projectRemovalProgramNotice(projectThreads);
     const confirmed = await settlePromise(() =>
       api.dialogs.confirm([confirmationMessage, ...programNotice].join("\n"), {
         variant: "destructive",

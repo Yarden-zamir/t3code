@@ -96,7 +96,7 @@ import {
   waitForProjectRemoval,
 } from "../state/entities";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
-import { readForkDeleteNotice, useTerminalThreadState } from "../hooks/useForkTerminalThreadState";
+import { readForkDeleteNotice } from "../hooks/useForkTerminalThreadState";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
 import { openDiscoveredPort } from "./preview/openDiscoveredPort";
@@ -454,12 +454,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ? (remoteEnvLabel ?? (isDesktopLocalThread ? "Local" : "Remote"))
     : null;
   const isThreadRunning = !threadRuntimeCanArchive(thread.runtime);
-  const terminalThreadState = useTerminalThreadState(thread);
   const threadStatus = resolveThreadStatusPill({
     thread: {
       ...thread,
       lastVisitedAt,
-      terminal: terminalThreadState,
     },
   });
   const linkedPullRequestStatus = useLinkedThreadPullRequest(

@@ -18,6 +18,7 @@ import type {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
+import type { TerminalThreadState } from "./forkTerminalThreads.ts";
 import { formatSubagentDisplayTitle } from "./subagentDisplay.ts";
 
 export interface EnvironmentProject extends OrchestrationProjectShell {
@@ -192,6 +193,8 @@ export interface EnvironmentThreadShell {
   readonly titleRegeneration?: { readonly requestId: string; readonly startedAt: string } | null;
   readonly deletedAt: string | null;
   readonly source: OrchestrationV2ThreadShell;
+  /** Fork: the main terminal of a terminal thread (`forkTerminalThreads.ts`), if the client reads it. */
+  readonly terminal?: TerminalThreadState;
 }
 
 function iso(value: DateTime.Utc): string {

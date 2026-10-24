@@ -19,7 +19,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { projectEnvironment } from "../../state/projects";
 import { useThreadShells } from "../../state/entities";
-import { readTerminalThreadStates } from "../../state/forkTerminalThreads";
 import { appAtomRegistry } from "../../state/atom-registry";
 import {
   clearComposerDraft,
@@ -176,13 +175,9 @@ function ProjectOverviewContent(props: {
     });
     Dialog.confirm({
       title: plan.targetKind === "checkout" ? "Remove checkout" : "Remove project",
-      message: [
-        plan.confirmationMessage,
-        ...projectRemovalProgramNotice(
-          plan.projectThreads,
-          readTerminalThreadStates(plan.projectThreads),
-        ),
-      ].join("\n"),
+      message: [plan.confirmationMessage, ...projectRemovalProgramNotice(plan.projectThreads)].join(
+        "\n",
+      ),
       confirmText: plan.targetKind === "checkout" ? "Remove checkout" : "Remove project",
       destructive: true,
       onCancel: finishRemoval,
