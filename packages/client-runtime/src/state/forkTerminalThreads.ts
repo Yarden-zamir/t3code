@@ -79,6 +79,22 @@ export const TERMINAL_PROGRAM_DELETE_NOTICE = "A program runs in its terminal. D
 export const TERMINAL_PROGRAMS_DELETE_NOTICE =
   "Programs run in some of these terminals. Delete ends them.";
 
+/** The line that the Remove project confirm adds when programs run in its terminal threads. */
+export function projectRemovalProgramNotice(
+  threads: ReadonlyArray<ThreadRef & Pick<EnvironmentThreadShell, "providerInstanceId">>,
+  states: TerminalThreadStates,
+): ReadonlyArray<string> {
+  const running = threads.filter(
+    (thread) => terminalStateOf(states, thread)?.running === true,
+  ).length;
+  if (running === 0) return [];
+  return [
+    running === 1
+      ? "A program runs in one of its terminal threads. Remove ends it."
+      : `Programs run in ${running} of its terminal threads. Remove ends them.`,
+  ];
+}
+
 /**
  * Agent threads have a `term-1` drawer terminal too, so only a terminal thread reads its state.
  */

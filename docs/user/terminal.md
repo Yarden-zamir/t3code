@@ -133,7 +133,8 @@ continue; a message to the thread also starts one. To use another shell, choose 
 Start a new shell first. The new shell starts below the output of the one that ended, under a
 "new shell" line. Archiving the thread deletes that
 output. While a program runs, Archive waits until you stop it. Delete ends the program, and its
-confirm says so. Settling the thread keeps its shell open. A server restart ends the programs in the
+confirm says so. Removing the project ends the programs of its terminal threads, and its confirm
+says so too. Settling the thread keeps its shell open. A server restart ends the programs in the
 terminal, and the output stays.
 
 ## Settings

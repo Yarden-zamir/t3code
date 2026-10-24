@@ -11,6 +11,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
+import { projectRemovalProgramNotice } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import { AsyncResult } from "effect/reactivity";
 import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -27,6 +28,7 @@ import {
 } from "../../sidebarProjectGrouping";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
+import { readTerminalThreadStates } from "../../hooks/useForkTerminalThreadState";
 import { projectEnvironment } from "../../state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Alert, AlertDescription } from "../ui/alert";
@@ -323,8 +325,14 @@ function ProjectDetail({
       displayName: group.displayName,
       threads,
     });
+    const programNotice = projectRemovalProgramNotice(
+      projectThreads,
+      readTerminalThreadStates(projectThreads),
+    );
     const confirmed = await settlePromise(() =>
-      api.dialogs.confirm(confirmationMessage, { variant: "destructive" }),
+      api.dialogs.confirm([confirmationMessage, ...programNotice].join("\n"), {
+        variant: "destructive",
+      }),
     );
     if (confirmed._tag === "Failure" || !confirmed.value) return;
     if (checkProjectAccess(members, "Failed to remove project")) return;

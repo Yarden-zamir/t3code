@@ -48,6 +48,13 @@ export function useTerminalThreadStates(
   return useAtomValue(terminalThreadStatesAtom(terminalThreadEnvironmentsKey(threads)));
 }
 
+/** Fork: `useTerminalThreadStates` at click time, for actions outside render. */
+export function readTerminalThreadStates(
+  threads: ReadonlyArray<Pick<EnvironmentThreadShell, "environmentId" | "providerInstanceId">>,
+): TerminalThreadStates {
+  return appAtomRegistry.get(terminalThreadStatesAtom(terminalThreadEnvironmentsKey(threads)));
+}
+
 /** Fork: the main terminal state of a terminal thread at click time, or undefined for any other. */
 export function readTerminalThreadState(
   thread: Pick<EnvironmentThreadShell, "environmentId" | "id" | "providerInstanceId">,
