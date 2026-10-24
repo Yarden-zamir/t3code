@@ -678,7 +678,7 @@ A phone gets thread notifications while the installed app is closed, from each s
 - **Setting:** client setting `webPushEnabled` (on by default). Settings > General > Behavior > "Web Push". It needs the installed app setting and system notifications. "Send a test" sends a test push.
 - Failed registration retries automatically with increasing delays, then stops. The failure appears separately from the enabled preference. Reconnect or reload to try again after retries stop.
 - **Works on:** web browsers, mainly the installed web app on a phone. The native mobile app has its own push, see [Android APK](#android-apk).
-- A server pushes when a thread starts to wait for approval or input, or when a running thread completes or fails. A terminal thread also pushes for a new attention on its main terminal: Input needed, Program done or Program failed, like the page notification.
+- A server pushes when a thread starts to wait for approval or input, or when a running thread completes or fails. A compaction that T3 Code starts on its own pushes only when it fails, like the page notification. A terminal thread also pushes for a new attention on its main terminal: Input needed, Program done or Program failed, like the page notification.
 - A push replaces the page notification of the same thread. No push shows when the window in front already shows that thread.
 
 ### Theme style
