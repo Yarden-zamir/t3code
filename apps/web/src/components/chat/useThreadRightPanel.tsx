@@ -1,9 +1,5 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import {
   AuthPreviewOperateScope,
   AuthTerminalOperateScope,
   type PreviewAnnotationPayload,
@@ -17,14 +13,19 @@ import {
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { type ComponentProps, type ReactNode, useEffect, useState } from "react";
+import {
+  type ComponentProps,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
-import { BrowserSettingsReadError } from "../../browser/openFileInPreview";
 import { previewRuntimeTabId } from "../../browser/previewRuntimeTabId";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
-import { useDiffPanelStore } from "../../diffPanelStore";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
-import { usePreviewPanelInlineSize } from "../../hooks/usePreviewPanelInlineSize";
 import { useRightPanelSurfaceClose } from "../../hooks/useRightPanelSurfaceClose";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import type { ShortcutMatchContext } from "../../keybindings";
@@ -32,16 +33,11 @@ import { confirmTerminalClose } from "../../lib/terminalCloseConfirm";
 import { cn } from "../../lib/utils";
 import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
 import {
-  browserMiniPlayerSource,
   previewMiniPlayerSourceKey,
   selectThreadPreviewMiniPlayer,
   usePreviewMiniPlayerStore,
 } from "../../previewMiniPlayerStore";
-import {
-  isPreviewSupportedInRuntime,
-  setActivePreviewTab,
-  useThreadPreviewState,
-} from "../../previewStateStore";
+import { isPreviewSupportedInRuntime, useThreadPreviewState } from "../../previewStateStore";
 import {
   RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
   type ThreadPanelPresentation,
@@ -51,28 +47,21 @@ import {
   selectActiveRightPanelSurface,
   selectThreadPanelOpen,
   selectThreadRightPanelState,
-  type RightPanelSurface,
   useRightPanelStore,
 } from "../../rightPanelStore";
 import { useDeviceState } from "../../state/device";
 import { useEnvironmentSupportsServerBrowser } from "../../state/entities";
-import { previewEnvironment } from "../../state/preview";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import { MAX_TERMINALS_PER_GROUP } from "../../types";
 import { shouldRenderPreviewMiniPlayer } from "../ChatView.logic";
-import { addBrowserSurface } from "../preview/addBrowserSurface";
-import { subscribePreviewAction } from "../preview/previewActionBus";
 import { ThreadPreviewMiniPlayer } from "../preview/ThreadPreviewMiniPlayer";
 import { useAgentOpenedPreviews } from "../preview/useAgentOpenedPreviews";
 import { usePreviewSession } from "../preview/usePreviewSession";
 import { threadPullRequestPanelTarget } from "../pullRequest/pullRequestDetail.logic";
-import { RightPanelSheet } from "../RightPanelSheet";
 import { RightPanelTabs } from "../RightPanelTabs";
 import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
-import { stackedThreadToast, toastManager } from "../ui/toast";
-import { DeviceSetupDialogHost, openDeviceSetupDialog } from "./ChatOverlayHosts";
+import { DeviceSetupDialogHost } from "./ChatOverlayHosts";
 import {
   PanelLayoutControls,
   type PanelLayoutControlsProps,
@@ -83,6 +72,8 @@ import {
   RightPanelSurfaceContent,
   type RightPanelTerminalProps,
 } from "./RightPanelSurfaceContent";
+import { ChatRightPanel } from "./ChatRightPanel";
+import { useRightPanelActions } from "./useRightPanelActions";
 
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 
@@ -108,7 +99,8 @@ export function useThreadRightPanel(input: {
   /** The element that holds the chat column and the inline panel; it sizes the panel. */
   readonly container: HTMLElement | null;
   readonly terminalLabelsById: ReadonlyMap<string, string>;
-  readonly requestTerminalFocus: () => void;
+  readonly gitCwd: string | null;
+  readonly setTerminalFocusRequestId: Dispatch<SetStateAction<number>>;
   readonly onDiffPanelOpen: (() => void) | undefined;
 }) {
   const {
@@ -120,7 +112,7 @@ export function useThreadRightPanel(input: {
     serverConfig,
     linkedPullRequest: linkedThreadPullRequest,
     terminalLabelsById: activeTerminalLabelsById,
-    requestTerminalFocus,
+    setTerminalFocusRequestId,
     onDiffPanelOpen,
   } = input;
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
@@ -132,16 +124,11 @@ export function useThreadRightPanel(input: {
   const hasTerminalWriteAccess = () =>
     activeThreadRef !== null &&
     readEnvironmentScope(activeThreadRef.environmentId, AuthTerminalOperateScope);
-  const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const activeEnvironmentServerBrowser = useEnvironmentSupportsServerBrowser(
     activeThreadRef?.environmentId ?? null,
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
-  const previewPanelInlineSize = usePreviewPanelInlineSize(undefined, {
-    container: input.container,
-    widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}`,
-  });
   const activeRightPanelKind = useRightPanelStore((state) =>
     selectActiveRightPanel(state.byThreadKey, activeThreadRef),
   );
@@ -256,43 +243,6 @@ export function useThreadRightPanel(input: {
     activeThreadRef?.environmentId ?? null,
     AuthPreviewOperateScope,
   );
-  const createBrowserSurface = (profileId?: string) => {
-    if (!activeThreadRef || !canOperatePreview) return;
-    void addBrowserSurface({
-      threadRef: activeThreadRef,
-      openPreview,
-      ...(profileId === undefined ? {} : { profileId }),
-    }).then((result) => {
-      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-      const error = squashAtomCommandFailure(result);
-      if (error instanceof BrowserSettingsReadError) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to open browser",
-            description: error.message,
-          }),
-        );
-      }
-    });
-  };
-  const createBrowserSurfaceStable = useStableCallback(createBrowserSurface);
-  const addDiffSurface = () => {
-    if (!activeThreadRef || !isServerThread || !isGitRepo) return;
-    useDiffPanelStore.getState().selectGitScope(activeThreadRef, "branch");
-    useRightPanelStore.getState().open(activeThreadRef, "diff");
-    onDiffPanelOpen?.();
-  };
-  const addDiffSurfaceStable = useStableCallback(addDiffSurface);
-  const openChangesFromThreadPanel = () => {
-    addDiffSurface();
-  };
-  const openChangesFromThreadPanelStable = useStableCallback(openChangesFromThreadPanel);
-  const addFilesSurface = () => {
-    if (!activeThreadRef || !activeProject) return;
-    useRightPanelStore.getState().open(activeThreadRef, "files");
-  };
-  const addFilesSurfaceStable = useStableCallback(addFilesSurface);
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
   const supportsThreadPullRequests =
@@ -301,11 +251,6 @@ export function useThreadRightPanel(input: {
   const visiblePullRequestCount = visiblePullRequests.length;
   const pullRequestsSurfaceAvailable =
     isServerThread && supportsThreadPullRequests && visiblePullRequestCount > 0;
-  const addPullRequestsSurface = () => {
-    if (!activeThreadRef || !pullRequestsSurfaceAvailable) return;
-    useRightPanelStore.getState().open(activeThreadRef, "pull-requests");
-  };
-  const addPullRequestsSurfaceStable = useStableCallback(addPullRequestsSurface);
   const pullRequestPanelTarget =
     input.projectId !== null
       ? threadPullRequestPanelTarget({
@@ -315,30 +260,10 @@ export function useThreadRightPanel(input: {
           branchPullRequest: input.branchPullRequest,
         })
       : null;
-  const addPullRequestSurface = () => {
-    if (!supportsPullRequests || activeThreadRef === null || pullRequestPanelTarget === null)
-      return;
-    useRightPanelStore.getState().openPullRequest(activeThreadRef, pullRequestPanelTarget);
-  };
-  const addPullRequestSurfaceStable = useStableCallback(addPullRequestSurface);
   const pullRequestSurfaceAvailable = supportsPullRequests && pullRequestPanelTarget !== null;
-  const addMachinesSurface = () => {
-    if (!activeThreadRef) return;
-    useRightPanelStore.getState().open(activeThreadRef, "machines");
-  };
-  const addMachinesSurfaceStable = useStableCallback(addMachinesSurface);
   const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(
     activeThreadRef?.environmentId ?? null,
   );
-  const addDeviceSurface = () => {
-    if (!activeThreadRef) return;
-    if (!deviceState.onboardingCompleted || deviceState.hostStatus === "disabled") {
-      openDeviceSetupDialog(scopedThreadKey(activeThreadRef));
-      return;
-    }
-    useRightPanelStore.getState().open(activeThreadRef, "device");
-  };
-  const addDeviceSurfaceStable = useStableCallback(addDeviceSurface);
   useAgentOpenedPreviews({
     threadRef: activeThreadRef,
     deviceState,
@@ -349,42 +274,45 @@ export function useThreadRightPanel(input: {
     miniPlayerSource: activePreviewMiniPlayer?.source ?? null,
     sheetLayout: shouldUsePlanSidebarSheet,
   });
-  const openFileSurface = (relativePath: string) => {
-    if (!activeThreadRef || !activeProject) return;
-    useRightPanelStore.getState().openFile(activeThreadRef, relativePath);
-  };
-  const openFileSurfaceStable = useStableCallback(openFileSurface);
-  const closePreviewPanel = () => {
-    if (activeThreadRef) {
-      if (activeRightPanelSurface?.kind === "preview" && activeRightPanelSurface.resourceId) {
-        usePreviewMiniPlayerStore
-          .getState()
-          .open(activeThreadRef, browserMiniPlayerSource(activeRightPanelSurface.resourceId));
-      } else if (activeRightPanelSurface?.kind === "device" && activeRightPanelSurface.target) {
-        usePreviewMiniPlayerStore
-          .getState()
-          .open(activeThreadRef, { kind: "device", ...activeRightPanelSurface.target });
-      }
-      useRightPanelStore.getState().setMaximized(activeThreadRef, false);
-      useRightPanelStore.getState().close(activeThreadRef);
-    }
-  };
-  const closePreviewPanelStable = useStableCallback(closePreviewPanel);
-  const togglePreviewPanel = () => {
-    if (!activeThreadRef || !browserAvailable) return;
-    if (previewPanelOpen) {
-      closePreviewPanel();
-      return;
-    }
-    if (!canOperatePreview) return;
-    const activeTabId = activePreviewState.activeTabId;
-    if (activeTabId) {
-      useRightPanelStore.getState().openBrowser(activeThreadRef, activeTabId);
-    } else {
-      createBrowserSurface();
-    }
-  };
-  const togglePreviewPanelStable = useStableCallback(togglePreviewPanel);
+  const {
+    closeSurface: closeRightPanelSurface,
+    closeOtherSurfaces: closeOtherRightPanelSurfacesStable,
+    closeSurfacesToRight: closeRightPanelSurfacesToRightStable,
+    closeAllSurfaces: closeAllRightPanelSurfacesStable,
+  } = useRightPanelSurfaceClose({
+    threadRef: activeThreadRef,
+    terminalLabelsById: activeTerminalLabelsById,
+  });
+  // A terminal thread has no turn diffs, so nothing opens the diff on the user's behalf.
+  const explicitDiffOpenRef = useRef<ScopedThreadRef | null>(null);
+  const actions = useRightPanelActions({
+    activeThreadRef,
+    activeProject,
+    activeRightPanelSurface,
+    activePreviewState,
+    deviceState,
+    pullRequestPanelTarget,
+    threadPanelPresentation,
+    isServerThread,
+    isGitRepo,
+    browserAvailable,
+    canOperatePreview,
+    diffOpen: activeRightPanelKind === "diff",
+    previewPanelOpen,
+    rightPanelOpen,
+    canMaximizeRightPanel,
+    rightPanelMaximized,
+    supportsPullRequests,
+    pullRequestsSurfaceAvailable,
+    gitCwd: input.gitCwd,
+    activeProjectCwd: activeProject?.workspaceRoot ?? null,
+    explicitDiffOpenRef,
+    setTerminalFocusRequestId,
+    onDiffPanelOpen,
+    closeRightPanelSurface,
+  });
+  const requestTerminalFocus = () => setTerminalFocusRequestId((value) => value + 1);
+  const { toggleRightPanelStable, toggleRightPanelMaximizedStable } = actions;
   const addTerminalSurface = () => {
     if (!activeThreadRef) return;
     const launched = terminalActions.launchTerminal({
@@ -453,99 +381,12 @@ export function useThreadRightPanel(input: {
     });
   };
   const requestClosePanelTerminalStable = useStableCallback(requestClosePanelTerminal);
-  const activateRightPanelSurface = (surface: RightPanelSurface) => {
-    if (!activeThreadRef) return;
-    useRightPanelStore.getState().activateSurface(activeThreadRef, surface.id);
-    if (surface.kind === "preview" && surface.resourceId) {
-      setActivePreviewTab(activeThreadRef, surface.resourceId);
-    }
-    if (surface.kind === "terminal") {
-      requestTerminalFocus();
-    }
-    if (surface.kind === "diff" && activeRightPanelKind !== "diff") {
-      onDiffPanelOpen?.();
-    }
-  };
-  const activateRightPanelSurfaceStable = useStableCallback(activateRightPanelSurface);
-  const toggleRightPanel = () => {
-    if (!activeThreadRef) return;
-    if (rightPanelOpen) {
-      closePreviewPanel();
-      return;
-    }
-    useRightPanelStore.getState().toggleVisibility(activeThreadRef);
-  };
-  const toggleRightPanelStable = useStableCallback(toggleRightPanel);
-  const toggleThreadPanel = () => {
-    if (!activeThreadRef) return;
-    useRightPanelStore.getState().toggleThreadPanel(activeThreadRef, threadPanelPresentation);
-  };
-  const toggleThreadPanelStable = useStableCallback(toggleThreadPanel);
   useEffect(() => {
     if (!canMaximizeRightPanel) return;
     if (useRightPanelStore.getState().consumeMaximizeRequest(routeThreadRef)) {
       useRightPanelStore.getState().setMaximized(routeThreadRef, true);
     }
   }, [canMaximizeRightPanel, routeThreadRef]);
-  const toggleRightPanelMaximized = () => {
-    if (!canMaximizeRightPanel || !activeThreadRef) return;
-    useRightPanelStore.getState().setMaximized(activeThreadRef, !rightPanelMaximized);
-  };
-  const toggleRightPanelMaximizedStable = useStableCallback(toggleRightPanelMaximized);
-  const {
-    closeSurface: closeRightPanelSurface,
-    closeOtherSurfaces: closeOtherRightPanelSurfacesStable,
-    closeSurfacesToRight: closeRightPanelSurfacesToRightStable,
-    closeAllSurfaces: closeAllRightPanelSurfacesStable,
-  } = useRightPanelSurfaceClose({
-    threadRef: activeThreadRef,
-    terminalLabelsById: activeTerminalLabelsById,
-  });
-  const closeRightPanelSurfaceStable = closeRightPanelSurface;
-  const moveRightPanelSurface = (surfaceId: string, toIndex: number) => {
-    if (activeThreadRef)
-      useRightPanelStore.getState().moveSurface(activeThreadRef, surfaceId, toIndex);
-  };
-  const moveRightPanelSurfaceStable = useStableCallback(moveRightPanelSurface);
-  const copyRightPanelFilePath = (relativePath: string) => {
-    if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to copy path",
-          description: "Clipboard API unavailable.",
-        }),
-      );
-      return;
-    }
-
-    void navigator.clipboard.writeText(relativePath).then(
-      () => {
-        toastManager.add({
-          type: "success",
-          title: "Path copied",
-          description: relativePath,
-        });
-      },
-      (error) => {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to copy path",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      },
-    );
-  };
-  const copyRightPanelFilePathStable = useStableCallback(copyRightPanelFilePath);
-  useEffect(
-    () =>
-      subscribePreviewAction((action) => {
-        if (action === "toggle-panel") togglePreviewPanelStable();
-      }),
-    [togglePreviewPanelStable],
-  );
   // A focused desktop browser page forwards these chords as menu actions.
   useEffect(() => {
     return window.desktopBridge?.onMenuAction((action) => {
@@ -565,7 +406,7 @@ export function useThreadRightPanel(input: {
     canOperatePreview,
     browserAvailable,
     activeEnvironmentServerBrowser,
-    previewPanelInlineSize,
+    container: input.container,
     shouldUsePlanSidebarSheet,
     panelAnimationsActive,
     panelAnimationDurationMs,
@@ -599,35 +440,18 @@ export function useThreadRightPanel(input: {
     pullRequestSurfaceAvailable,
     linkedPullRequest: linkedThreadPullRequest,
     branchPullRequest: input.branchPullRequest,
-    createBrowserSurface,
-    createBrowserSurfaceStable,
-    addDiffSurfaceStable,
-    openChangesFromThreadPanelStable,
-    addFilesSurfaceStable,
-    addPullRequestsSurfaceStable,
-    addPullRequestSurfaceStable,
-    addMachinesSurfaceStable,
-    addDeviceSurfaceStable,
-    openFileSurfaceStable,
-    closePreviewPanelStable,
-    togglePreviewPanelStable,
+    ...actions,
     addTerminalSurfaceStable,
     splitPanelTerminalStable,
     splitPanelTerminalVerticalStable,
     activatePanelTerminalStable,
     closePanelTerminalStable,
     requestClosePanelTerminalStable,
-    activateRightPanelSurfaceStable,
-    toggleRightPanelStable,
-    toggleThreadPanelStable,
-    toggleRightPanelMaximizedStable,
     closeRightPanelSurface,
-    closeRightPanelSurfaceStable,
+    closeRightPanelSurfaceStable: closeRightPanelSurface,
     closeOtherRightPanelSurfacesStable,
     closeRightPanelSurfacesToRightStable,
     closeAllRightPanelSurfacesStable,
-    moveRightPanelSurfaceStable,
-    copyRightPanelFilePathStable,
   };
 }
 
@@ -707,7 +531,6 @@ export function ThreadRightPanelView(props: {
     open: panel.rightPanelOpen,
     keybindings,
     getShortcutContext,
-    inlineSize: panel.previewPanelInlineSize,
     surfaces: panel.renderedRightPanelSurfaces,
     environmentId: threadRef.environmentId,
     activeSurfaceId: panel.renderedRightPanelSurface?.id ?? null,
@@ -743,32 +566,27 @@ export function ThreadRightPanelView(props: {
     pullRequestAvailable: panel.pullRequestSurfaceAvailable,
     pullRequestsAvailable: panel.pullRequestsSurfaceAvailable,
     deviceAvailable: true,
-  } satisfies Omit<ComponentProps<typeof RightPanelTabs>, "mode" | "children">;
-  if (!panel.shouldUsePlanSidebarSheet) {
-    return (
-      <RightPanelTabs {...tabsProps} mode="inline" maximized={panel.rightPanelMaximized}>
-        {content}
-      </RightPanelTabs>
-    );
-  }
+  } satisfies Omit<
+    ComponentProps<typeof RightPanelTabs>,
+    "mode" | "children" | "inlineSize" | "maximized"
+  >;
   return (
-    <RightPanelSheet
-      animationDurationMs={panel.panelAnimationsActive ? panel.panelAnimationDurationMs : 0}
-      open={panel.rightPanelOpen}
-      onClose={panel.closePreviewPanelStable}
+    <ChatRightPanel
+      {...tabsProps}
+      sheet={panel.shouldUsePlanSidebarSheet}
+      maximized={panel.rightPanelMaximized}
+      workspaceLayoutElement={panel.container}
+      widthStorageKey={`t3code:preview-panel-width:${panel.threadKey}`}
+      sheetAnimationDurationMs={panel.panelAnimationsActive ? panel.panelAnimationDurationMs : 0}
+      onCloseSheet={panel.closePreviewPanelStable}
+      layoutControls={
+        panel.rightPanelOpen ? (
+          <div className="mr-px flex items-center">{props.layoutControls}</div>
+        ) : null
+      }
     >
-      <RightPanelTabs
-        {...tabsProps}
-        mode="sheet"
-        layoutControls={
-          panel.rightPanelOpen ? (
-            <div className="mr-px flex items-center">{props.layoutControls}</div>
-          ) : null
-        }
-      >
-        {content}
-      </RightPanelTabs>
-    </RightPanelSheet>
+      {content}
+    </ChatRightPanel>
   );
 }
 

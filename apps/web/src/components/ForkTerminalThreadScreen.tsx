@@ -196,7 +196,8 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
     branchPullRequest: thread?.branchPullRequest,
     container: layoutElement,
     terminalLabelsById: workspace.terminalLabelsById,
-    requestTerminalFocus: () => setPanelFocusRequestId((value) => value + 1),
+    gitCwd: workspace.gitCwd,
+    setTerminalFocusRequestId: setPanelFocusRequestId,
     onDiffPanelOpen: undefined,
   });
   const threadShortcuts = useThreadShortcuts(threadRef, workspace.linkedPullRequest?.url ?? null);
