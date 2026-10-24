@@ -112,6 +112,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 ## Fork fixes
 
 - Themes: border width and radius flow through Tailwind tokens. Composer backdrop, outline and banners follow the theme radius. One theme shadow for nested surfaces and for split buttons.
+- Menus: a fallback context menu takes keyboard focus when it opens, also from a focused terminal. Arrow keys move over its items and submenus, and Escape closes it.
 - MCP: `schedule_task`, `t3_project_create` and `t3_project_update` read and write the project model, environment mode, auto-pull and actions through project settings.
 - Desktop updates: the updater never downgrades, so a local build stays installed. The server recovers when quit-and-install does not quit.
 - Worktree launch: a worktree request in Scratch runs in a thread folder. A worktree request outside a Git repository runs in the project folder and says so in the thread. A launch refuses a new worktree branch that already exists.
