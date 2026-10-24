@@ -456,6 +456,7 @@ Every thread link in chat shows as the chip of an attached thread, and opens the
 - An app link or a web address becomes a chip only when this client knows the environment. Copy keeps the link as written.
 - A `t3-thread://` link to a thread on another machine opens that thread when this client knows its environment.
 - A link that names a message shows a marker: `#` on web and desktop, a message icon on mobile. See [Message links](#message-links).
+- **Limits:** on mobile, the project icon of the thread replaces the message icon in chat messages (upstream pingdotgg/t3code#22585). Revisit if message links on mobile need their marker back.
 
 ### Message links
 

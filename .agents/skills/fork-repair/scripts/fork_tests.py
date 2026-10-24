@@ -33,6 +33,12 @@ def select_tests(changed: list[str]) -> list[str]:
     return sorted({file for file in changed if file.endswith(TEST_SUFFIXES)})
 
 
+def filter_prefixes(files: list[str], only: list[str], exclude: list[str]) -> list[str]:
+    """Keep files under one of `only` (all when empty), then drop files under one of `exclude`."""
+    kept = [file for file in files if not only or file.startswith(tuple(only))]
+    return [file for file in kept if not file.startswith(tuple(exclude))]
+
+
 def chunked(files: list[str], size: int) -> list[tuple[str, ...]]:
     if size < 1:
         raise ValueError("chunk size must be at least 1")
@@ -85,6 +91,12 @@ def main() -> None:
     parser.add_argument("--chunk", type=int, default=20, help="files per vp test run (default 20)")
     parser.add_argument("--base", help="base commit (default: git merge-base upstream/main HEAD)")
     parser.add_argument("--files", type=Path, help="run the files listed in this file, one per line, instead")
+    parser.add_argument(
+        "--only", action="append", default=[], metavar="PREFIX", help="run only files under this path prefix (repeatable)"
+    )
+    parser.add_argument(
+        "--exclude", action="append", default=[], metavar="PREFIX", help="skip files under this path prefix (repeatable)"
+    )
     parser.add_argument("--dry-run", action="store_true", help="print the files and chunks only")
     args = parser.parse_args()
     if args.chunk < 1:
@@ -100,6 +112,9 @@ def main() -> None:
         base = args.base or common.git("merge-base", "upstream/main", "HEAD", cwd=root)
         files = select_tests(changed_files(root, base))
         source = f"changed since {base[:12]}"
+    if args.only or args.exclude:
+        files = filter_prefixes(files, args.only, args.exclude)
+        source += f", only {args.only or 'all'}, without {args.exclude or 'none'}"
     missing = [file for file in files if not (root / file).exists()]
     if missing:
         common.fail(f"test files not found: {', '.join(missing)}")
