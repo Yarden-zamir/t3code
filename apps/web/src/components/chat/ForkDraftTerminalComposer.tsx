@@ -661,12 +661,16 @@ export function ForkDraftTerminalComposer(props: {
               </TooltipTrigger>
               <TooltipPopup>The shell runs in {launch.cwd}</TooltipPopup>
             </Tooltip>
-            {/* A narrow footer hides the hint first, so the folder keeps a readable width. Below
-            16rem only the controls fit, and the folder hides too. */}
-            <span className="grow basis-0 truncate text-end text-muted-foreground/70 text-xs @max-[28rem]/composer-surface:hidden">
-              {shellEnded
-                ? "Start a new shell, or pick another one"
-                : "Run a command to start the thread"}
+            {/* The hint shows whole or not at all: when it does not fit beside the spacer, it
+            wraps to a second line that the box clips. Its zero basis keeps the folder at a
+            readable width. Below 16rem only the controls fit, and the folder hides too. */}
+            <span className="flex h-4 grow basis-0 flex-wrap overflow-hidden text-muted-foreground/70 text-xs">
+              <span aria-hidden="true" className="h-4 grow" />
+              <span className="whitespace-nowrap">
+                {shellEnded
+                  ? "Start a new shell, or pick another one"
+                  : "Run a command to start the thread"}
+              </span>
             </span>
             <ComposerControl
               className="ms-auto"
