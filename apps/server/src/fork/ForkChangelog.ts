@@ -227,4 +227,8 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(ForkChangelog, make);
+// The GitHub driver builds its own `GitHubRest`, so the fork changelog builds one too. Limit: it
+// keeps its own view of the GitHub quota. Revisit if the changelog sends more than its cached reads.
+export const layer = Layer.effect(ForkChangelog, make).pipe(
+  Layer.provide(GitHubRest.layerWithDependencies),
+);

@@ -28,9 +28,9 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { projectScriptCwd } from "@t3tools/shared/projectScripts";
-import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
-import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
+import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
@@ -613,7 +613,7 @@ function useTerminalThreadWorkspace(
     environmentId,
     persisted: thread?.linkedPullRequest ?? null,
     projectId: project?.id ?? null,
-    projectRepository: sourceControlRepositorySelector(project?.repositoryIdentity),
+    projectRepository: sourceControlClients.repositorySelector(project?.repositoryIdentity),
     threadBranch: thread?.branch ?? null,
     gitStatus: gitStatusQuery.data ?? null,
   });
