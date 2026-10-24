@@ -1184,6 +1184,15 @@ export function isSettingsSearchItemOnPlatform(item: SettingsSearchItem, platfor
   return true;
 }
 
+/** The settings that exist on this platform and app channel. */
+export function settingsForThisPlatform(
+  items: ReadonlyArray<SettingsSearchItem>,
+): ReadonlyArray<SettingsSearchItem> {
+  const platform = typeof navigator === "undefined" ? "" : navigator.platform;
+  // Fork: the check of the settings rows, which also hides `webOnly` rows on desktop.
+  return items.filter((item) => isSettingsSearchItemOnPlatform(item, platform));
+}
+
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
@@ -1193,12 +1202,9 @@ export function searchSettings(
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
   const queryTokens = normalizedQuery.split(" ");
-  const platform = typeof navigator === "undefined" ? "" : navigator.platform;
 
-  return items
+  return settingsForThisPlatform(items)
     .flatMap((item, index) => {
-      if (!isSettingsSearchItemOnPlatform(item, platform)) return [];
-
       const title = normalizeSearchText(item.title);
       const fields = [
         title,

@@ -1,53 +1,55 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { expect, it } from "vite-plus/test";
 
-import { matchComposerThreadItems, readableThreadEnvironments } from "./composerThreadItems.ts";
+import {
+  matchComposerThreadItems,
+  readableThreadEnvironments,
+  type ComposerThreadCandidate,
+} from "./composerThreadItems.ts";
 
-const LOCAL = EnvironmentId.make("env-local");
-const PEER = EnvironmentId.make("env-peer");
-const OTHER = EnvironmentId.make("env-other");
+const environmentId = EnvironmentId.make("env-composer");
 
-const shell = (environmentId: EnvironmentId, id: string, updatedAt: string) => ({
-  environmentId,
-  id: ThreadId.make(id),
-  title: `Fix ${id}`,
-  updatedAt,
-  archivedAt: null,
-});
+function shell(
+  id: string,
+  title: string,
+  overrides: Partial<ComposerThreadCandidate> = {},
+): ComposerThreadCandidate {
+  return {
+    environmentId,
+    id: ThreadId.make(id),
+    title,
+    branch: null,
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+    latestUserMessageAt: null,
+    opens: null,
+    archivedAt: null,
+    lineage: { rootThreadId: ThreadId.make(id), parentThreadId: null, relationshipToParent: null },
+    ...overrides,
+  };
+}
 
-const shells = [
-  shell(LOCAL, "local", "2026-10-01T00:00:00.000Z"),
-  shell(PEER, "peer", "2026-10-02T00:00:00.000Z"),
-  shell(OTHER, "other", "2026-10-03T00:00:00.000Z"),
-];
-
-describe("matchComposerThreadItems", () => {
-  it("lists threads of readable machines and names each machine (MM-1907)", () => {
-    const readable = readableThreadEnvironments(LOCAL, [
-      { environmentId: LOCAL, name: "Mac" },
-      { environmentId: PEER, name: "VPS" },
-    ]);
-    const items = matchComposerThreadItems({
-      shells,
-      readable,
-      excludeThreadId: null,
-      query: "fix",
-    });
-    expect(items.map((item) => [item.thread.environmentId, item.description])).toEqual([
-      [PEER, "Thread · VPS"],
-      [LOCAL, "Thread · Mac"],
-    ]);
+it("ranks thread mentions like the palette and leaves out subagent threads", () => {
+  const items = matchComposerThreadItems({
+    shells: [
+      shell("newer-mid-word", "Remodel the settings page", {
+        updatedAt: "2026-10-20T00:00:00.000Z",
+      }),
+      shell("word", "Fix model picker"),
+      shell("subagent", "Model review", {
+        lineage: {
+          rootThreadId: ThreadId.make("word"),
+          parentThreadId: ThreadId.make("word"),
+          relationshipToParent: "subagent",
+        },
+      }),
+      shell("other-environment", "Model docs", { environmentId: EnvironmentId.make("env-other") }),
+    ],
+    // Fork: the composer reads the threads of the machines in `readable`.
+    readable: readableThreadEnvironments(environmentId, null),
+    excludeThreadId: null,
+    query: "model",
+    now: Date.parse("2026-10-23T00:00:00.000Z"),
   });
-
-  it("stays on the composer's machine when its server names no other machine", () => {
-    const items = matchComposerThreadItems({
-      shells,
-      readable: readableThreadEnvironments(LOCAL, null),
-      excludeThreadId: null,
-      query: "fix",
-    });
-    expect(items.map((item) => [item.thread.environmentId, item.description])).toEqual([
-      [LOCAL, "Thread"],
-    ]);
-  });
+  expect(items.map((item) => item.thread.threadId)).toEqual(["word", "newer-mid-word"]);
 });
