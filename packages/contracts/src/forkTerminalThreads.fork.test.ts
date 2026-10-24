@@ -27,7 +27,10 @@ describe("terminalCommandTitle", () => {
       joined("xoxb", "-123456789012-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"),
       joined("AKIA", "IOSFODNN7EXAMPLE"),
       joined("wJalrXUtnFEMI", "/K7MDENG/bPxRfiCYEXAMPLEKEY"),
-      joined("eyJhbGciOiJIUzI1NiJ9", ".eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"),
+      joined(
+        "eyJhbGciOiJIUzI1NiJ9",
+        ".eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+      ),
     ];
     for (const secret of secrets) {
       const commandLines = [
@@ -75,7 +78,7 @@ describe("terminalThreadTitle", () => {
   it("never names a thread after a secret in its command line", () => {
     expect(
       terminalThreadTitle({
-        command: "export GITHUB_TOKEN=ghp_16C7e42F292c6912E7710c838347Ae178B4a",
+        command: `export GITHUB_TOKEN=${joined("ghp", "_16C7e42F292c6912E7710c838347Ae178B4a")}`,
         shell: "zsh",
       }),
     ).toBe("export");
