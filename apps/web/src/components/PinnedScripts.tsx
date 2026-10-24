@@ -64,27 +64,25 @@ export function useThreadPinnedScripts(input: {
   readonly activeProject: { readonly id: ProjectId } | null | undefined;
   readonly activeProjectScripts: readonly ProjectScript[];
   readonly canOperateTerminal: boolean;
-  readonly runProjectScriptRef: {
-    readonly current: (
-      script: ProjectScript,
-      options?: {
-        readonly rememberAsLastInvoked?: boolean;
-        readonly previewPresentation?: "panel" | "floating";
-      },
-    ) => Promise<void>;
-  };
+  readonly runProjectScript: (
+    script: ProjectScript,
+    options?: {
+      readonly rememberAsLastInvoked?: boolean;
+      readonly previewPresentation?: "panel" | "floating";
+    },
+  ) => Promise<void>;
 }) {
   const { environmentId, activeProject, activeProjectScripts, canOperateTerminal } = input;
-  const { runProjectScriptRef } = input;
+  const { runProjectScript } = input;
   // A global script does not become the project's preferred script, since it is not one of them.
   const runPinnedProjectScript = (script: ProjectScript) => {
-    void runProjectScriptRef.current(script);
+    void runProjectScript(script);
   };
   const runPinnedProjectScriptStable = useStableCallback(runPinnedProjectScript);
   // A global script belongs to no project, so its preview floats over the thread as a popup
   // instead of taking the project's right panel.
   const runGlobalScript = (script: ProjectScript) => {
-    void runProjectScriptRef.current(script, {
+    void runProjectScript(script, {
       rememberAsLastInvoked: false,
       previewPresentation: "floating",
     });

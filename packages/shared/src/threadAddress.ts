@@ -3,6 +3,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { promptLinkAppPath } from "./promptLinks.ts";
+import { messageLinkFragmentId } from "./threadMessageLinks.ts";
 
 export interface ThreadAddress {
   readonly environmentId: EnvironmentId;
@@ -25,8 +26,8 @@ function decodeSegment(segment: string): string | null {
 /**
  * Fork: the thread that a link names with its environment: a web address of a T3 server,
  * `https://<host>/<environmentId>/<threadId>`, or the app link `t3code://threads/<environmentId>/<threadId>`.
- * Both may carry `?message=<messageId>`. The host does not matter: the environment id is the
- * identity, so a client checks it against the environments it knows. Any other query makes it
+ * Both may carry `?message=<messageId>` or `#<messageId>`. The host does not matter: the
+ * environment id is the identity, so a client checks it against the environments it knows. Any other query makes it
  * something else, such as a prompt link (`promptLinks.ts`), so it stays a normal link.
  */
 export function parseThreadAddress(href: string): ThreadAddress | null {
@@ -52,9 +53,15 @@ export function parseThreadAddress(href: string): ThreadAddress | null {
     }),
   );
   const message = inApp.searchParams.get("message");
-  if (thread === null || message === null) return thread;
-  const messageId = Option.getOrNull(decodeMessageId(message));
-  return messageId === null ? null : { ...thread, messageId };
+  if (thread === null) return null;
+  if (message !== null) {
+    const messageId = Option.getOrNull(decodeMessageId(message));
+    return messageId === null ? null : { ...thread, messageId };
+  }
+  // A fragment that names no message, such as app state, leaves a link to the thread.
+  const fragment = decodeSegment(url.hash.slice(1));
+  const messageId = fragment === null ? null : messageLinkFragmentId(fragment);
+  return messageId === null ? thread : { ...thread, messageId };
 }
 
 /**

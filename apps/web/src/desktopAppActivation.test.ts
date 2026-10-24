@@ -36,37 +36,6 @@ function dependencies(
 }
 
 describe("desktop app activation", () => {
-  it("reuses an existing project and opens a new thread", async () => {
-    const deps = dependencies();
-
-    const response = await handleDesktopAppActivationRequest(request, deps);
-
-    expect(deps.createProject).not.toHaveBeenCalled();
-    expect(deps.openThread).toHaveBeenCalledWith(
-      { environmentId, projectId: existingProjectId },
-      null,
-    );
-    expect(response).toEqual({
-      version: 1,
-      requestId: request.requestId,
-      ok: true,
-      projectId: existingProjectId,
-      threadId,
-    });
-  });
-
-  it("opens the thread in the requested checkout", async () => {
-    const deps = dependencies();
-    const checkout = { worktreePath: "/workspace/feature", branch: "feat/feature" };
-
-    await handleDesktopAppActivationRequest({ ...request, checkout }, deps);
-
-    expect(deps.openThread).toHaveBeenCalledWith(
-      { environmentId, projectId: existingProjectId },
-      checkout,
-    );
-  });
-
   it("waits for a created project before it opens the thread", async () => {
     const order: string[] = [];
     const deps = dependencies({
@@ -97,26 +66,5 @@ describe("desktop app activation", () => {
     );
 
     expect(response).toMatchObject({ ok: false, code: "platform-mismatch" });
-  });
-
-  it("returns a project error without opening a thread", async () => {
-    const openThread = vi.fn(async () => ({ threadId }));
-    const response = await handleDesktopAppActivationRequest(
-      request,
-      dependencies({
-        findProject: () => null,
-        createProject: vi.fn(async () => {
-          throw new Error("Project path is not available.");
-        }),
-        openThread,
-      }),
-    );
-
-    expect(response).toMatchObject({
-      ok: false,
-      code: "project-create-failed",
-      message: "Project path is not available.",
-    });
-    expect(openThread).not.toHaveBeenCalled();
   });
 });

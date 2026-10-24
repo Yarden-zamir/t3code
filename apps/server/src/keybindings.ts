@@ -5,6 +5,7 @@ import {
   KeybindingShortcut,
   KeybindingWhenNode,
   MAX_KEYBINDINGS_COUNT,
+  renameLegacySidebarTabCommands,
   ResolvedKeybindingRule,
   ResolvedKeybindingsConfig,
   type ServerRemoveKeybindingInput,
@@ -66,24 +67,23 @@ export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(
           Effect.map((resolved) => resolved),
         ),
 
-      encode: (resolved) =>
-        Effect.gen(function* () {
-          const key = encodeShortcut(resolved.shortcut);
-          if (!key) {
-            return yield* Effect.fail(
-              new SchemaIssue.InvalidValue({
-                message: "Resolved shortcut cannot be encoded to key string",
-              }),
-            );
-          }
+      encode: Effect.fn("keybindings.encode")(function* (resolved) {
+        const key = encodeShortcut(resolved.shortcut);
+        if (!key) {
+          return yield* Effect.fail(
+            new SchemaIssue.InvalidValue({
+              message: "Resolved shortcut cannot be encoded to key string",
+            }),
+          );
+        }
 
-          const when = resolved.whenAst ? encodeWhenAst(resolved.whenAst) : undefined;
-          return {
-            key,
-            command: resolved.command,
-            when,
-          };
-        }),
+        const when = resolved.whenAst ? encodeWhenAst(resolved.whenAst) : undefined;
+        return {
+          key,
+          command: resolved.command,
+          when,
+        };
+      }),
     }),
   ),
 );
@@ -182,6 +182,9 @@ const decodeKeybindingRuleExit = Schema.decodeUnknownExit(KeybindingRule);
 const decodeResolvedKeybindingFromConfigExit = Schema.decodeExit(ResolvedKeybindingFromConfig);
 const decodeRawKeybindingsEntriesExit = Schema.decodeUnknownExit(RawKeybindingsEntries);
 const encodeKeybindingsConfigPrettyJson = Schema.encodeEffect(KeybindingsConfigPrettyJson);
+const encodeRawKeybindingsPrettyJson = Schema.encodeEffect(
+  fromJsonStringPretty(Schema.Array(Schema.Unknown)),
+);
 
 export interface KeybindingsConfigState {
   readonly keybindings: ResolvedKeybindingsConfig;
@@ -227,6 +230,13 @@ export class Keybindings extends Context.Service<
     readonly getSnapshot: Effect.Effect<KeybindingsConfigState, KeybindingsConfigError>;
 
     readonly streamChanges: Stream.Stream<KeybindingsChangeEvent>;
+
+    /** Acquire before reading a snapshot to buffer changes until the stream starts. */
+    readonly subscribeChanges: Effect.Effect<
+      Stream.Stream<KeybindingsChangeEvent>,
+      never,
+      Scope.Scope
+    >;
 
     /**
      * Writes config atomically and enforces the max rule count by truncating
@@ -403,6 +413,29 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  // Fork: a file from before sidebar tabs were called groups gets the new command names once.
+  const renameLegacySidebarTabKeybindings = Effect.gen(function* () {
+    const entries = decodeRawKeybindingsEntriesExit(yield* readRawConfig);
+    if (entries._tag === "Failure") return;
+    const renamed = renameLegacySidebarTabCommands(entries.value);
+    if (renamed === null) return;
+    yield* encodeRawKeybindingsPrettyJson(renamed).pipe(
+      Effect.flatMap((encoded) =>
+        writeFileStringAtomically({ filePath: keybindingsConfigPath, contents: `${encoded}\n` }),
+      ),
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, path),
+      Effect.mapError(
+        (cause) =>
+          new KeybindingsConfigError({
+            configPath: keybindingsConfigPath,
+            detail: "failed to rename sidebar tab keybindings",
+            cause,
+          }),
+      ),
+    );
+  });
+
   const writeConfigAtomically = (rules: readonly KeybindingRule[]) => {
     return encodeKeybindingsConfigPrettyJson(rules).pipe(
       Effect.map((encoded) => `${encoded}\n`),
@@ -471,6 +504,7 @@ const make = Effect.gen(function* () {
         return;
       }
 
+      yield* renameLegacySidebarTabKeybindings;
       const runtimeConfig = yield* loadRuntimeCustomKeybindingsConfig();
       if (runtimeConfig.issues.length > 0) {
         yield* Effect.logWarning(
@@ -639,6 +673,9 @@ const make = Effect.gen(function* () {
     getSnapshot: loadConfigStateFromCacheOrDisk,
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);
+    },
+    get subscribeChanges() {
+      return PubSub.subscribe(changesPubSub).pipe(Effect.map(Stream.fromSubscription));
     },
     upsertKeybindingRule: (input) =>
       upsertSemaphore.withPermits(1)(

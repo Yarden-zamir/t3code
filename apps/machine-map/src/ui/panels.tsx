@@ -29,9 +29,12 @@ import {
   roleRank,
   sameValue,
 } from "../rules/map.ts";
-import { DEFAULT_COMMAND_MINUTES } from "../rules/queue.ts";
+import { DEFAULT_COMMAND_MINUTES, ROTATION_MINUTES } from "../rules/queue.ts";
+import { CapabilityList, CapabilityStickers } from "./ArrowCapabilities.tsx";
 import { callApi, StepUpNeeded } from "./apiClient.ts";
-import { ApprovalsSetup, confirmWithPasskey, PasskeyStepUp } from "./Approvals.tsx";
+import { ApprovalsSetup, PasskeyStepUp } from "./Approvals.tsx";
+import { captureApproval } from "../rules/approval.ts";
+import { pendingApproval, startApproval } from "./pendingApproval.ts";
 import { usePortalContext, type CommandOptions, type Portal } from "./context.ts";
 import { buildStandings } from "./build.ts";
 import { BuildLabel, BuildSticker } from "./BuildLabel.tsx";
@@ -58,6 +61,7 @@ import {
   PRESENCE_STICKER,
   presenceState,
   presenceText,
+  PROPOSAL_REASON,
   ROLE_TEXT,
   shortTime,
   timeAgo,
@@ -336,6 +340,41 @@ function ArrowPanel({ from, to }: { from: string; to: string }) {
           }
         />
       </label>
+      {/* MM-1908: machine_exec is an agent tool, so exec needs agent tools. */}
+      <label className="row toggle-row">
+        <span>
+          <span className="t">
+            Agents on {f} run commands on {t}
+          </span>
+          <span className="v">
+            {arrow.agentTools
+              ? levelRank(arrow.level) >= levelRank("standard")
+                ? `As ${t}'s T3 user, with machine_exec. History lists each run.`
+                : "Works only at Standard or Admin."
+              : "Turn on agent tools first."}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          className="switch"
+          checked={arrow.exec}
+          disabled={!arrow.exec && (!arrow.agentTools || portal.pause !== null)}
+          onChange={(e) =>
+            portal.submit(`${usesText(f, t)}: exec ${e.target.checked ? "on" : "off"}`, [
+              arrowChange(map, {
+                from: source.id,
+                to: target.id,
+                level: arrow.level,
+                exec: e.target.checked,
+                expiresAt: arrow.expiresAt,
+              }),
+            ])
+          }
+        />
+      </label>
+
+      <Section>What it can do</Section>
+      <CapabilityList arrow={arrow} from={f} to={t} />
 
       <Section>Delivery</Section>
       <p className="small">
@@ -565,6 +604,21 @@ function MachinePanel({ id }: { id: string }) {
         <MachineStickers machine={machine} />
       </div>
       <div className="actions spaced">
+        {portal.rotations.some((r) => r.machineId === machine.id && r.expired) && (
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() =>
+              portal.open({
+                _tag: "newJoinCode",
+                machineId: machine.id,
+                machineName: machine.name,
+              })
+            }
+          >
+            Join again with a new code
+          </button>
+        )}
         {machine.hostname ? (
           <a
             className="btn primary"
@@ -636,9 +690,9 @@ function MachineOverview({ machine }: { machine: MachineRecord }) {
           <dd>{Math.round(status.uptimeSeconds / 3600)} h</dd>
           <dt>Load</dt>
           <dd>
-            {status.cpuPercent === null ? "CPU —" : `CPU ${Math.round(status.cpuPercent)}%`} ·{" "}
+            {status.cpuPercent === null ? "CPU -" : `CPU ${Math.round(status.cpuPercent)}%`} ·{" "}
             {status.memoryPercent === null
-              ? "memory —"
+              ? "memory -"
               : `memory ${Math.round(status.memoryPercent)}%`}
           </dd>
           <dt>Tasks</dt>
@@ -829,7 +883,7 @@ function MachineAccess({ machine }: { machine: MachineRecord }) {
                 <span className="t">{usesText(from.name, to.name)}</span>
                 {arrow.expiresAt && <span className="v">Until {shortTime(arrow.expiresAt)}</span>}
               </RouteLink>
-              {arrow.agentTools && <span className="sticker accent flat">tools</span>}
+              <CapabilityStickers arrow={arrow} />
               {was ? (
                 <>
                   <span className={`sticker lvl-${was} was`}>{LEVEL_LABEL[was]}</span>
@@ -1004,21 +1058,35 @@ function MachineManage({ machine }: { machine: MachineRecord }) {
       </p>
       {queue.rotation && (
         <p className="hint">
-          A new secret waits for {machine.name}. It expires{" "}
-          {timeUntil(queue.rotation.expiresAt, now)}.
+          A new secret waits for {machine.name}. The old secret stops{" "}
+          {timeUntil(queue.rotation.expiresAt, now)}. If the machine does not confirm the new secret
+          by then, it must join again with a new code.
+        </p>
+      )}
+      {queue.rejoinRequired && (
+        <p className="hint">
+          The rotation deadline passed without confirmation. The old secret no longer works.
         </p>
       )}
       <div className="actions spaced">
         <button
           type="button"
           className="btn small"
+          disabled={queue.rejoinRequired}
           onClick={() =>
-            portal.call(async () => {
-              await callApi<{ delivered: boolean }>(
-                "POST",
-                `/api/machines/${encodeURIComponent(machine.id)}/rotate`,
-              );
-            }, `A new secret waits for ${machine.name}.`)
+            portal.open({
+              _tag: "confirm",
+              title: `Rotate token on ${machine.name}?`,
+              body: `${snapshot.presence[machine.id]?.online ? "" : `${machine.name} is offline. `}The old secret stops when the machine confirms the new one, or after ${ROTATION_MINUTES / 60} hours. If it does not confirm before that deadline, it must join again with a new code.`,
+              confirmLabel: "Rotate token",
+              action: () =>
+                portal.call(async () => {
+                  await callApi<{ delivered: boolean }>(
+                    "POST",
+                    `/api/machines/${encodeURIComponent(machine.id)}/rotate`,
+                  );
+                }, `A new secret waits for ${machine.name}.`),
+            })
           }
         >
           Rotate token
@@ -1366,18 +1434,75 @@ function PendingPanel({ thumbprint }: { thumbprint: string }) {
   return <PendingSignIn key={pending.thumbprint} pending={pending} />;
 }
 
-function PendingSignIn({ pending }: { pending: PendingClient }) {
+export function ClientAccessSummary({ clientId }: { clientId: ClientRecord["id"] }) {
+  const portal = usePortalContext();
+  const map = portal.snapshot.map;
+  const client = map.clients.find((c) => c.id === clientId);
+  if (!client)
+    return <p className="hint">This client is gone. Choose another client or make a new one.</p>;
+  return (
+    <>
+      <Section>Current access</Section>
+      {portal.draft !== null && (
+        <p className="hint">Current access of {client.name}. Held changes are not applied.</p>
+      )}
+      <ul className="list small break">
+        {map.machines.map((machine) => {
+          const arrow = findClientArrow(map, clientId, machine.id);
+          return (
+            <li key={machine.id}>
+              {machine.name}: {LEVEL_LABEL[arrow.level]}
+              {arrow.expiresAt && (
+                <>
+                  {" "}
+                  until {shortTime(arrow.expiresAt)}, then{" "}
+                  {LEVEL_LABEL[arrow.revertLevel ?? "none"]}
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
+export function PendingSignIn({
+  pending,
+  initialRequest,
+  done,
+}: {
+  pending: PendingClient;
+  initialRequest?: ApproveClientRequest;
+  done?: () => void;
+}) {
   const portal = usePortalContext();
   const { map, now } = portal;
   const thumbprint = pending.thumbprint;
   const [status, setStatus] = useState<ApprovalsStatus | null>(null);
   const [stepUp, setStepUp] = useState<StepUp>("checking");
   /** The client that the key joins: a new one, or an existing one by id. */
-  const [target, setTarget] = useState<ClientRecord["id"] | null>(null);
-  const [name, setName] = useState(pending.describedAs);
-  const [arrows, setArrows] = useState<Record<string, MachineLevel>>(() =>
-    startingArrows(map, pending),
+  const initialClient = initialRequest?.client;
+  const [target, setTarget] = useState<ClientRecord["id"] | null>(
+    initialClient?._tag === "existing" && map.clients.some((c) => c.id === initialClient.clientId)
+      ? initialClient.clientId
+      : null,
   );
+  const [name, setName] = useState(
+    initialClient?._tag === "new" ? initialClient.name : pending.describedAs,
+  );
+  const [arrows, setArrows] = useState<Record<string, MachineLevel>>(() =>
+    initialRequest
+      ? Object.fromEntries(
+          map.machines.map((m) => [
+            m.id,
+            initialRequest.arrows.find((a) => a.to === m.id)?.level ?? "none",
+          ]),
+        )
+      : startingArrows(map, pending),
+  );
+  const targetMissing =
+    target !== null && !portal.snapshot.map.clients.some((c) => c.id === target);
 
   useEffect(() => {
     let current = true;
@@ -1400,26 +1525,26 @@ function PendingSignIn({ pending }: { pending: PendingClient }) {
   }, []);
 
   const seenOn = findMachine(map, pending.seenOn);
+  const request = (): ApproveClientRequest => ({
+    thumbprint: pending.thumbprint,
+    client:
+      target === null ? { _tag: "new", name: name.trim() } : { _tag: "existing", clientId: target },
+    // MM-907: an existing client keeps its own arrows. Only a new client gets arrows here.
+    arrows:
+      target === null
+        ? map.machines.flatMap((machine) => {
+            const level = arrows[machine.id] ?? "none";
+            return level === "none" ? [] : [{ to: machine.id, level }];
+          })
+        : [],
+  });
   const approve = () => {
-    const request: ApproveClientRequest = {
-      thumbprint: pending.thumbprint,
-      client:
-        target === null
-          ? { _tag: "new", name: name.trim() }
-          : { _tag: "existing", clientId: target },
-      // MM-907: an existing client keeps its own arrows. Only a new client gets arrows here.
-      arrows:
-        target === null
-          ? map.machines.flatMap((machine) => {
-              const level = arrows[machine.id] ?? "none";
-              return level === "none" ? [] : [{ to: machine.id, level }];
-            })
-          : [],
-    };
+    const action = captureApproval({ _tag: "approve", request: request() }, portal);
     portal.call(async () => {
       try {
-        const result = await callApi<WriteResult>("POST", "/api/grant/approve", request);
+        const result = await callApi<WriteResult>("POST", "/api/grant/approve", action.request);
         portal.select(NO_SELECTION);
+        done?.();
         return result;
       } catch (error) {
         if (error instanceof StepUpNeeded) setStepUp("needed");
@@ -1546,9 +1671,20 @@ function PendingSignIn({ pending }: { pending: PendingClient }) {
             </>
           )}
 
+          {target !== null && <ClientAccessSummary clientId={target} />}
+
           <div className="actions spaced">
             {status?._tag === "ready" && stepUp === "needed" ? (
-              <button type="button" className="btn primary" onClick={confirmWithPasskey}>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={targetMissing || (target === null && name.trim() === "")}
+                onClick={() =>
+                  portal.call(async () =>
+                    startApproval(pendingApproval({ _tag: "approve", request: request() }, portal)),
+                  )
+                }
+              >
                 Confirm with passkey
               </button>
             ) : (
@@ -1557,6 +1693,7 @@ function PendingSignIn({ pending }: { pending: PendingClient }) {
                 className="btn primary"
                 disabled={
                   stepUp === "checking" ||
+                  targetMissing ||
                   status?._tag !== "ready" ||
                   (target === null && name.trim() === "")
                 }
@@ -1662,7 +1799,7 @@ function ProposalPanel({ id }: { id: string }) {
   const portal = usePortalContext();
   const proposal = portal.snapshot.proposals.find((p) => p.id === id);
   if (!proposal) return <Missing what="proposal" />;
-  const own = proposal.reason === "self-escalation";
+  const reason = PROPOSAL_REASON[proposal.reason];
   return (
     <>
       <h2>{proposal.summary}</h2>
@@ -1670,13 +1807,9 @@ function ProposalPanel({ id }: { id: string }) {
         {actorText(proposal.actor, portal.map)} · {timeAgo(proposal.at, portal.now)}
       </p>
       <div className="stickers-row">
-        <span className={`sticker ${own ? "" : "wait"}`}>{own ? "own access" : "proposal"}</span>
+        <span className={`sticker ${reason.look}`}>{reason.sticker}</span>
       </div>
-      <p className="desc">
-        {own
-          ? "The agent asks for more access for its own machine. That always needs you."
-          : "The machine has the map role propose, so its changes wait for you."}
-      </p>
+      <p className="desc">{reason.text}</p>
       <Section>Changes</Section>
       <ul className="changes small">
         {proposal.changes.map((change) => (

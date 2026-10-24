@@ -35,6 +35,7 @@ import {
   MachineMapShareSettingsResult,
   MachineMapJoinInput,
   MachineMapPanelState,
+  MachineMapReadableEnvironment,
   MachineMapRequestError,
 } from "./machineMapClient.ts";
 import { OrchestrationV2ThreadLaunchError } from "./orchestrationV2.ts";
@@ -61,6 +62,7 @@ export const FORK_WS_METHODS = {
   machineMapReportDesktop: "machineMap.reportDesktop",
   machineMapShareSettings: "machineMap.shareSettings",
   machineMapRead: "machineMap.read",
+  machineMapReadableEnvironments: "machineMap.readableEnvironments",
 
   // Fork: Web Push (webPush.ts)
   webPushPublicKey: "webPush.publicKey",
@@ -142,6 +144,16 @@ const WsMachineMapReadRpc = Rpc.make(FORK_WS_METHODS.machineMapRead, {
   error: machineMapError,
 });
 
+/** MM-1907: the environments whose threads the agents of this server can read. */
+const WsMachineMapReadableEnvironmentsRpc = Rpc.make(
+  FORK_WS_METHODS.machineMapReadableEnvironments,
+  {
+    payload: Schema.Struct({}),
+    success: Schema.Array(MachineMapReadableEnvironment),
+    error: machineMapError,
+  },
+);
+
 const webPushError = Schema.Union([WebPushError, EnvironmentAuthorizationError]);
 /** Fork: the key that a browser subscribes with, so that this server can push to it. */
 const WsWebPushPublicKeyRpc = Rpc.make(FORK_WS_METHODS.webPushPublicKey, {
@@ -196,6 +208,7 @@ export const ForkWsRpcGroup = RpcGroup.make(
   WsMachineMapReportDesktopRpc,
   WsMachineMapShareSettingsRpc,
   WsMachineMapReadRpc,
+  WsMachineMapReadableEnvironmentsRpc,
   WsWebPushPublicKeyRpc,
   WsWebPushSubscribeRpc,
   WsWebPushTestRpc,
@@ -231,6 +244,8 @@ export const FORK_RPC_READ_SCOPES = {
   [FORK_WS_METHODS.machineMapSubscribe]: AuthOrchestrationReadScope,
   // Fork: MM-1701. The same data that an agent with read access gets from `machines_read`.
   [FORK_WS_METHODS.machineMapRead]: AuthOrchestrationReadScope,
+  // Fork: MM-1907. Names the machines whose threads this server's agents can read.
+  [FORK_WS_METHODS.machineMapReadableEnvironments]: AuthOrchestrationReadScope,
   // Fork: a subscription receives the thread titles of this server, which reading allows already.
   [FORK_WS_METHODS.webPushPublicKey]: AuthOrchestrationReadScope,
   [FORK_WS_METHODS.webPushSubscribe]: AuthOrchestrationReadScope,

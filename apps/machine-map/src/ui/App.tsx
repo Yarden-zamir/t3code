@@ -12,7 +12,6 @@ import { touchesOwnerOnlySettings } from "../rules/access.ts";
 import { applyChanges } from "../rules/map.ts";
 import { DEFAULT_COMMAND_MINUTES } from "../rules/queue.ts";
 import { callApi, StepUpNeeded } from "./apiClient.ts";
-import { confirmWithPasskey, PasskeyStepUp } from "./Approvals.tsx";
 import {
   PortalContext,
   type CommandOptions,
@@ -39,6 +38,7 @@ import {
 } from "./route.ts";
 import { HealthView } from "./resources.tsx";
 import { usePortal, type Connection } from "./store.ts";
+import { pendingApproval, readPendingApproval } from "./pendingApproval.ts";
 import {
   ClientsView,
   HistoryView,
@@ -61,8 +61,6 @@ interface Notice {
   readonly text: string;
   /** The revision that Undo reverses (MM-703). */
   readonly undo?: number;
-  /** MM-919: the change needs a fresh passkey check first (MM-1207). */
-  readonly passkey?: true;
 }
 
 /** MM-919: owner-only settings go on the approval path, everything else on the plain one. */
@@ -74,8 +72,7 @@ const failedNotice = (error: unknown): Notice =>
   error instanceof StepUpNeeded
     ? {
         kind: "error",
-        text: "This change needs a fresh passkey check. Make it again after the check.",
-        passkey: true,
+        text: "This action needs a fresh passkey check. Confirm it in the open form.",
       }
     : { kind: "error", text: errorText(error) };
 
@@ -126,9 +123,19 @@ function useAppBadge(count: number) {
 /** MM-1806: an app shortcut opens a dialog with `?open=`, for example the big red button. */
 function takeLaunchDialog(): Dialog | null {
   const params = new URLSearchParams(location.search);
-  if (params.get("open") !== "emergency") return null;
-  history.replaceState(null, "", `${location.pathname}${location.hash}`);
-  return { _tag: "emergency" };
+  if (params.get("open") === "emergency") return { _tag: "emergency" };
+  const kind = params.get("resume");
+  const state = readPendingApproval();
+  const returned = kind === "invite" || kind === "approve" || kind === "changes";
+  if (returned || state._tag !== "missing") {
+    return {
+      _tag: "approval",
+      kind: "pending" in state ? state.pending.action._tag : returned ? kind : "invite",
+      state,
+      mode: returned ? "return" : "interrupted",
+    };
+  }
+  return null;
 }
 
 function Brand({ connection, revision }: { connection: Connection; revision: number | null }) {
@@ -159,7 +166,20 @@ export function App() {
   const [older, setOlder] = useState<ReadonlyArray<MapRevision>>([]);
 
   useEffect(() => {
+    const url = new URL(location.href);
+    if (url.searchParams.get("open") === "emergency") {
+      url.searchParams.delete("open");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
     const onHash = () => setRoute(parseRoute(location.hash));
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        const next = takeLaunchDialog();
+        setDialog((current) =>
+          next?._tag === "approval" || current?._tag === "approval" ? next : current,
+        );
+      }
+    };
     const clock = setInterval(() => setNow(Date.now()), CLOCK_MS);
     const onKey = (event: KeyboardEvent) => {
       // An open dialog handles its own keys: Escape closes it.
@@ -176,9 +196,11 @@ export function App() {
       }
     };
     addEventListener("hashchange", onHash);
+    addEventListener("pageshow", onPageShow);
     addEventListener("keydown", onKey);
     return () => {
       removeEventListener("hashchange", onHash);
+      removeEventListener("pageshow", onPageShow);
       removeEventListener("keydown", onKey);
       clearInterval(clock);
     };
@@ -269,35 +291,54 @@ export function App() {
     location.hash = formatRoute({ view: view ?? route.view, selection });
   };
 
-  const submit = async (
+  const sendChanges = async (
     summary: string,
     changes: ReadonlyArray<MapChange>,
     options?: { readonly quiet: boolean },
   ): Promise<SubmitOutcome> => {
-    if (draft) {
-      try {
-        applyChanges(map, changes);
-      } catch (error) {
-        setNotice({ kind: "error", text: errorText(error) });
-        return { _tag: "failed" };
-      }
-      setDraft([...draft, { summary, changes }]);
-      return { _tag: "held" };
-    }
+    const action = { _tag: "changes", request: { summary, changes } } as const;
+    let saved: ReturnType<typeof pendingApproval> | undefined;
     try {
-      const result = await callApi<WriteResult>("POST", changesPath(changes), {
-        summary,
-        changes,
-      });
+      if (touchesOwnerOnlySettings(changes))
+        saved = pendingApproval(action, { snapshot, pause: state.pause, pending: state.pending });
+      const result = await callApi<WriteResult>(
+        "POST",
+        changesPath(changes),
+        saved ? saved.action.request : action.request,
+      );
       if (result._tag === "proposed")
         setNotice({ kind: "ok", text: "The change waits in the Inbox." });
       else if (!options?.quiet)
         setNotice({ kind: "ok", text: `${summary}.`, undo: result.revision });
       return result;
     } catch (error) {
-      setNotice(failedNotice(error));
+      if (error instanceof StepUpNeeded && saved) {
+        setNotice(null);
+        setDialog({
+          _tag: "approval",
+          kind: "changes",
+          state: { _tag: "ready", pending: saved },
+          mode: "confirm",
+        });
+      } else setNotice(failedNotice(error));
       return { _tag: "failed" };
     }
+  };
+
+  const submit = async (
+    summary: string,
+    changes: ReadonlyArray<MapChange>,
+    options?: { readonly quiet: boolean },
+  ): Promise<SubmitOutcome> => {
+    if (!draft) return sendChanges(summary, changes, options);
+    try {
+      applyChanges(map, changes);
+    } catch (error) {
+      setNotice({ kind: "error", text: errorText(error) });
+      return { _tag: "failed" };
+    }
+    setDraft([...draft, { summary, changes }]);
+    return { _tag: "held" };
   };
 
   const command = (machineId: MachineId, input: MachineCommandInput, options?: CommandOptions) => {
@@ -345,6 +386,8 @@ export function App() {
     joins: state.joins,
     pending: state.pending,
     invites: state.invites,
+    execs: state.execs,
+    calls: state.calls,
     draft,
     now,
     route,
@@ -384,14 +427,9 @@ export function App() {
         ? (draft[0]?.summary ?? "Draft")
         : `${draft.length} changes: ${draft.map((d) => d.summary).join("; ")}`;
     const changes = draft.flatMap((d) => d.changes);
-    call(async () => {
-      const result = await callApi<WriteResult>("POST", changesPath(changes), {
-        summary,
-        changes,
-      });
-      setDraft(null);
-      return result;
-    }, "The draft is applied.");
+    void sendChanges(summary, changes).then((result) => {
+      if (result._tag !== "failed" && result._tag !== "held") setDraft(null);
+    });
   };
 
   const queued = map.machines.reduce(
@@ -484,6 +522,9 @@ export function App() {
           >
             Add machine
           </button>
+          <button type="button" className="btn" onClick={() => setDialog({ _tag: "addPhone" })}>
+            Add phone
+          </button>
           <button type="button" className="btn" aria-pressed={draft !== null} onClick={toggleHold}>
             {draft === null ? "Hold changes" : "Stop holding"}
           </button>
@@ -564,10 +605,7 @@ export function App() {
             role={notice.kind === "error" ? "alert" : "status"}
           >
             {notice.kind === "error" && <span className="sticker">error</span>}
-            <div className="text">
-              {notice.text}
-              {notice.passkey === true && <PasskeyStepUp />}
-            </div>
+            <div className="text">{notice.text}</div>
             {notice.undo !== undefined && (
               <button
                 type="button"
@@ -580,11 +618,6 @@ export function App() {
               >
                 <UndoIcon />
                 Undo
-              </button>
-            )}
-            {notice.passkey === true && (
-              <button type="button" className="btn small" onClick={confirmWithPasskey}>
-                Confirm with passkey
               </button>
             )}
             <button

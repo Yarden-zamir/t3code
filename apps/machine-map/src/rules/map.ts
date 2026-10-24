@@ -61,6 +61,7 @@ export const defaultArrow = (from: MachineId, to: MachineId): ArrowRecord => ({
   to,
   level: "none",
   agentTools: false,
+  exec: false,
   expiresAt: null,
   revertLevel: null,
 });
@@ -163,6 +164,7 @@ export const findNote = (map: MachineMapDocument, id: string): MapNote | undefin
 export const sameArrow = (a: ArrowRecord, b: ArrowRecord): boolean =>
   a.level === b.level &&
   a.agentTools === b.agentTools &&
+  a.exec === b.exec &&
   a.expiresAt === b.expiresAt &&
   a.revertLevel === b.revertLevel;
 

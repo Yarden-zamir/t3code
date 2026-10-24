@@ -50,6 +50,8 @@ export function activateCloudRelayAccount(
   });
 }
 
+let mountedBridges = 0;
+
 function CloudAuthBridge(props: { readonly children: ReactNode }) {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
   const removeRelayEnvironments = useAtomCommand(removeCloudEnvironments, {
@@ -174,17 +176,21 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
     };
   }, [getToken, isLoaded, isSignedIn, removeRelayEnvironments, userId]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedBridges += 1;
+    return () => {
+      mountedBridges -= 1;
       previousTokenProviderRef.current = null;
+      // Fork: the Android assistant panel mounts a second bridge. Its unmount must keep the
+      // app's session. Both bridges read the same signed-in Clerk account.
+      if (mountedBridges > 0) return;
       // Unmounting is not a sign-out: the user is usually still signed in, so
       // detach the provider without ending lock-screen activities or wiping the
       // persisted registration (a remount reuses both).
       releaseAgentAwarenessRelayTokenProvider();
       setManagedRelaySession(appAtomRegistry, null);
-    },
-    [],
-  );
+    };
+  }, []);
 
   return props.children;
 }

@@ -59,6 +59,7 @@ export interface SettingsSearchItem {
   readonly localEnvironmentOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
   readonly managedTunnelOnly?: boolean;
+  readonly peerLinksOnly?: boolean;
   readonly secondary?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
 }
@@ -73,6 +74,7 @@ export interface SettingsSearchAvailability {
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
   readonly managedTunnelActive?: boolean;
+  readonly hasPeerLinkHost?: boolean;
 }
 
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
@@ -167,7 +169,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment-defaults",
     searchTerms: ["worktree location folder directory path drive external disk"],
   },
-  ...ForkSearch.WORKTREE_PATH_TEMPLATE_ITEMS,
+  ...ForkSearch.WORKTREE_ITEMS,
   {
     id: "storage-artifacts",
     title: "Artifacts and logs",
@@ -243,6 +245,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Chat width",
     to: "/settings/appearance",
     searchTerms: ["wide full width column layout messages composer monitor"],
+  },
+  {
+    id: "math-rendering",
+    title: "Render math",
+    to: "/settings/appearance",
+    searchTerms: ["latex tex katex equations formulas markdown"],
   },
   {
     id: "panel-animations",
@@ -333,6 +341,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
   },
   {
+    id: "compact-idle-threads",
+    title: "Compact idle threads",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: ["claude context compaction idle cache tokens usage summary resume"],
+  },
+  {
     id: "auto-settle-merged-threads",
     title: "Auto-settle merged threads",
     to: "/settings/general",
@@ -349,6 +364,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresThreadAutoSettlement: true,
     scope: "project-defaults",
   },
+  ...ForkSearch.ORGANIZATION_ITEMS,
   {
     id: "thread-notifications",
     title: "Thread notifications",
@@ -436,7 +452,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["installed cli versions newer available codex claude cursor grok opencode"],
     scope: "environment-defaults",
   },
-  ...ForkSearch.RECOVER_INTERRUPTED_TURNS_ITEMS,
+  ...ForkSearch.BEHAVIOR_ITEMS,
   {
     id: "continue-threads-after-server-update",
     title: "Continue threads after restarts",
@@ -471,10 +487,10 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "start-from-origin",
-    title: "Start from origin",
+    title: "Start from remote",
     to: "/settings/general",
     scope: "project-defaults",
-    searchTerms: ["new worktrees latest matching remote branch local"],
+    searchTerms: ["new worktrees start remote origin latest fetched branch local"],
   },
   {
     id: "add-project-starts-in",
@@ -502,7 +518,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     searchTerms: ["ask before thread chat history"],
   },
-  ...ForkSearch.BEHAVIOR_ITEMS,
   {
     id: "quit-confirmation",
     title: "Quit shortcut",
@@ -516,6 +531,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: ["generated thread titles source control content default provider"],
+  },
+  {
+    id: "thread-title-instructions",
+    title: "Thread title instructions",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["generated thread titles prompt custom style naming rename regenerate"],
   },
   {
     id: "app-version",
@@ -594,6 +616,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["keyboard shortcuts hotkeys commands bindings json"],
   },
   ...KEYBINDING_SEARCH_ITEMS,
+  ...ForkSearch.KEYBOARD_ITEMS,
   {
     id: "snap-shot-enabled",
     title: "SnapShots",
@@ -753,6 +776,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["links default browser in-app browser external open"],
   },
   {
+    id: "browser-search-engine",
+    title: "Search engine",
+    to: "/settings/integrations",
+    searchTerms: ["address bar duckduckgo google bing brave kagi ecosia custom"],
+  },
+  {
     id: "pull-request-links-open-in-app",
     title: "Open pull requests in T3 Code",
     to: "/settings/integrations",
@@ -907,7 +936,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["expose backend remote pairing local machine interfaces host restart"],
     localBackendManagementOnly: true,
   },
-  ...ForkSearch.TUNNEL_PAIRING_ITEMS,
+  ...ForkSearch.CONNECTIONS_ITEMS,
   {
     id: "tailscale-https",
     title: "Tailscale HTTPS",
@@ -965,6 +994,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "connections server backend local remote access administrative permissions scope pairing links qr code authorized clients sessions revoke endpoint",
     ],
+  },
+  {
+    id: "linked-environments",
+    peerLinksOnly: true,
+    title: "Linked environments",
+    to: "/settings/connections",
+    targetId: "linked-environments",
+    searchTerms: ["link peer another machine vps agents work there handoff pairing code"],
   },
   {
     id: "remote-environments",
@@ -1126,7 +1163,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
-      (!item.managedTunnelOnly || availability.managedTunnelActive === true),
+      (!item.managedTunnelOnly || availability.managedTunnelActive === true) &&
+      (!item.peerLinksOnly || availability.hasPeerLinkHost === true),
   );
 }
 

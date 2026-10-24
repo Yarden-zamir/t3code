@@ -11,14 +11,55 @@ The fork disables every upstream workflow, because they need upstream's runners 
 
 ### Fork Sync
 
-`.github/workflows/fork-sync.yml` merges `pingdotgg/t3code` main into fork main every day.
+`.github/workflows/fork-sync.yml` merges `pingdotgg/t3code` main into fork main, then the new heads of the [adopted upstream pull requests](#adopted-upstream-pull-requests). The interval task "Fork Sync trigger" on the VPS T3 server starts it every 2 hours with `gh workflow run`. The workflow has no GitHub schedule, because GitHub delays and drops scheduled runs.
 
-- It typechecks the merge, runs the fork tests and pushes the merge as a fast-forward. If main moved during the run, it merges the new main and pushes again.
+- It runs the migration check, typechecks the merge, runs the fork tests and pushes the merge as a fast-forward. If main moved during the run, it merges the new main and pushes again.
 - The fork tests are the test files that the fork changed since `git merge-base upstream/main HEAD`. A diff against a newer upstream main also lists files that only upstream changed.
+- For a local sync repair, run `vp run typecheck` and those fork tests. The [fork-repair skill](../../.agents/skills/fork-repair/SKILL.md) runs both: `checks.py` and `fork_tests.py`. To run the tests by hand, use `vp test run <files>`, and run apps/web tests from `apps/web` with `vp test run --project unit --project browser <files>`; install Playwright Chromium first if needed. Do not run the changed-file checks over all upstream changes; wait for Fork CI on the repair pull request.
+- The apps/web fork tests run from `apps/web`, in its unit and browser projects. A browser test needs Playwright Chromium, so the job installs it first.
+- Before the other fork tests, the job installs the Electron binary for the desktop tests. When a fork test is in `apps/server`, it also installs Playwright Chromium for the server preview tests.
 - A conflict only in `README.md` resolves by itself. See [Change the fork](#change-the-fork).
-- If the merge conflicts, the typecheck fails or a fork test fails, the sync comments on the issue "Fork sync: upstream merge failed" and stops.
+- If a merge conflicts, upstream closes an adopted pull request without a merge, or a check fails, the sync comments on the issue "Fork sync: upstream merge failed" and stops. The comment and the call to the repair agent name the reason, for example the adopted pull request that conflicted.
 - After each sync, the job "Check upstream workflows" fails when another workflow is active. It prints the `gh workflow disable` command for that workflow.
-- GitHub can start the daily run hours after its 03:17 UTC schedule. Before you merge upstream by hand, read [Repair agent](../fork-agents.md#repair-agent).
+- To pause the automatic sync, disable the task "Fork Sync trigger" on the VPS. Before you merge upstream by hand, read [Repair agent](../fork-agents.md#repair-agent).
+
+### Migrations
+
+Fork main registers only the migration ids and names that `upstream/main` has. The fork has no migrations of its own.
+
+- The migrator skips every id up to the highest recorded id, whatever its name. So upstream's startup check (`assertV2MigrationsCanRun` in `apps/server/src/persistence/Migrations.ts`) refuses to start when the database recorded a migration of id 55 or higher under another name, or not at all. A fork-only id that upstream later gives to another migration thus stops every fork machine after the next Fork Sync.
+- Keep fork state outside the migration registry: in fork files, the secret store or existing tables.
+- To adopt an open upstream pull request that adds a migration, remove its entries from `Migrations.ts` and its migration files in the adoption commit. Its code must then work without that schema.
+- `scripts/fork-check-migrations.ts` enforces the rule. `vp run fork:check` and the Fork CI Lint job run it. It compares the registry of the working tree with `upstream/main`, and fails on each id that upstream main lacks or names differently.
+- When upstream merges a migration, Fork Sync merges its file and registry entry like any other upstream change, at upstream's final number. A migration that the fork removed at adoption comes back this way. The fork never recorded the number of the open pull request, so a new number is no problem.
+
+### Adopted upstream pull requests
+
+Fork main holds open `pingdotgg/t3code` pull requests that upstream did not merge yet. [`scripts/fork-adopted-upstream-prs.json`](../../scripts/fork-adopted-upstream-prs.json) lists them in stack order. Each entry has the number, the title, the upstream branch (`headRef`), the head that fork main holds (`mergedHead`), the reason, and the optional `forkRules`. Today the list holds the linked environments stack of Julius, #16653 to #16719, each pull request on the one before it.
+
+After the upstream main merge, Fork Sync runs `node scripts/fork-adopted-prs.ts sync`. For each entry, in list order, it reads the state of the pull request with `gh`:
+
+- Open with the listed head: nothing changes.
+- Open with a new head: it fetches `refs/pull/<number>/head` and merges it with a merge commit that also updates `mergedHead`. It never cherry-picks or rebases.
+- Open, but the head is not on the `pingdotgg` branch `headRef`: the sync stops, because main deploys what the sync pushes. Correct `headRef` if the list has it wrong. A pull request from another repository cannot be adopted: remove the entry.
+- Merged into main: it drops the entry, because upstream main brings the final version. The run summary shows its fork rules as a warning, so that you undo the rules that upstream main now covers.
+- Merged into the branch of another listed pull request: it drops the entry and appends its fork rules to that entry, which now carries its code.
+- Merged into another branch: the sync stops. The owner decides whether the fork follows that branch.
+- Closed without a merge: the sync stops. Fork main keeps the code. The owner decides whether the fork keeps it. To resume Fork Sync, remove the entry, and revert its code if the fork does not keep it.
+
+A conflict stops the sync like an upstream conflict. The migration check then runs, because a new head can bring back a migration that the fork removed at adoption.
+
+To repair a failed sync by hand, run the same script on the repair branch after the upstream merge. It stops at the first conflict. Resolve that merge by hand with `git merge --no-ff <head>`, set `mergedHead` of the entry in the merge commit, and run the script again. `node scripts/fork-adopted-prs.ts check` checks the list: its schema and format, that HEAD holds each `mergedHead`, and that HEAD holds no upstream squash commit of a listed pull request. `vp run fork:check` and the Fork CI Lint job run it.
+
+To adopt another open pull request, merge its head with `git merge --no-ff` on a new branch from `origin/main` and add its entry at its place in the stack order. Apply the [migration rule](#migrations).
+
+The rules of the linked environments stack:
+
+- The fork does not use upstream's manual links. `MachinePeers` gives `PeerLinks` and `PeerMcpClient` the machine map arrows (MM-1921).
+- The migrations `068_PeerLinks` and `069_PeerLinkFence` are not in the fork. See [Migrations](#migrations).
+- Fork runs skip the upstream tests that need their table. `apps/server/src/fork/excludedUpstreamTests.ts` lists them with the reason. `MachinePeers.test.ts` covers the same forwarding and delegation over arrow links. Remove those entries when upstream main has the migration.
+- The fork hooks in upstream files: the provide of `PeerForwarding.layer` in `server.ts`, the refusal layer in `cli/environment.ts`, and the peer link RPC handlers in `fork/forkWs.ts`. With those handlers in `ws.ts`, the handler object is too deep a type, and the server layers lose their types.
+- When an upstream merge conflicts in a file that only the stack touches, take upstream's version, then apply the fork hooks again.
 
 ### Fork Release
 
@@ -36,14 +77,36 @@ The fork disables every upstream workflow, because they need upstream's runners 
 
 The builds use the `nightly` update channel, the app id `com.t3tools.t3code` and the data directory `~/.t3`. They replace the upstream Nightly app and keep its data.
 
+### Daily release
+
+Each day at 09:00 Israel time, the VPS task "Fork daily release" promotes a nightly to a release. It builds nothing.
+
+- `node scripts/fork-daily-release-data.ts` picks the newest nightly on main that has `SHA256SUMS`. It prints JSON with the changes since the previous release: fork changes, upstream changes and integration. If no new nightly exists, it prints `skip`.
+- Integration is a merge that brings upstream commits: a Fork Sync merge or a sync pull request. Its fork commits are the conflict resolutions and fixes.
+- Without a previous release, the range starts where the fork began, and the upstream group holds only the last upstream merge.
+- An agent writes a notes plan from the JSON. The plan groups related changes into clusters, with a name and one sentence each, and orders clusters and changes by importance and cool factor. `--notes <plan.json>` prints the notes from it. The script fails and names each change that is missing, repeated or unknown.
+- The notes start with the top 5 clusters of each section, the highlights. The full changelog lists every cluster on one line, with its changes in a collapsed block below it. Then the agent runs `gh release edit <tag> --prerelease=false --latest --title "T3 Code Fork <Israel date> (<first 12 characters of the commit>)" --notes-file <file>`. The tag and the assets stay.
+- The title keeps the commit in brackets, because Fork Release and Fork Android find the release of a commit by its name.
+- Each pull request item carries the images of its body, without badges and videos. A cluster in the plan can pick its images with `"images": [<url>, ...]`, from the images of any of its changes. The agent looks at each image and keeps only images that show what the line says. An empty list shows none. The script fails for a URL that no change of the cluster has. Without `images`, the notes show up to 4 images of the first change that has any, and each change's own images in the fold. The script reads the bodies with one GraphQL call per 100 pull requests, for the fork and for upstream.
+- A change without a pull request body, such as a direct commit, gets its images from `docs/fork/release-images.json`. The file maps a ref (`#123` or the full commit) to a list of `{url, alt}`. The data script adds these images to the matching fork change. Add an image there through a pull request, so that it gets a review.
+- A release body holds at most 125000 characters. Over the budget of 120000 characters, the full changelog leaves out the screenshots of its last clusters first.
+- A change is breaking when its pull request title has `!` after the type, its body has a "Breaking changes" section, it has the `breaking` label, or a commit has a `BREAKING CHANGE:` footer. Upstream changes count the same way. The JSON marks it `breaking: true`, with `breakingNote` from that section or footer.
+- The plan gives each breaking change one line in `breaking`: `{section, change, line}`, with what changed, who is affected and what to do. The script fails when a breaking change has no line. The notes start with a "⚠️ Breaking changes" section, and a short warning sits right above "Full changelog", so the desktop update popover shows it first. The size budget never removes them.
+- `--release <tag>` writes the data of a given release again, for example to rewrite its notes.
+- Every updater picks a release by its tag, not by the prerelease flag. The tag keeps `-nightly.`, so nightly users get the next nightlies as before.
+- The desktop update popover shows the last 8 lines of the notes before "Full changelog". So the highlights come before that heading, and the full lists come after it. The popover leaves out `<details>` blocks. Desktop builds from before this change show a "Screenshots" line for each block in those 8 lines.
+
 ### Fork CI
 
 `.github/workflows/fork-ci.yml` runs the `ci.yml` commands on GitHub-hosted runners, for each push to main and each pull request to main. `ci.yml` needs upstream's Blacksmith runners, so it is disabled.
 
 - A newer push to main or to a pull request cancels the Fork CI run of the older push.
 - The job "Fork CI result" fails when any Fork CI job fails or is cancelled. Branch protection requires this one check.
-- Fork CI compares a push with the commit of the last green push run, and a pull request with its base. When only `docs`, `*.md` or `apps/machine-map` changed, only the Lint job runs, on the changed files. A change in `apps/machine-map` also runs the Machine map job. A manual run always runs every job.
+- Fork CI compares a push with the commit of the last green push run, and a pull request with its base. Upstream's `.github/scripts/ci-changes.cjs` maps the changed files to packages and their dependents. A pull request runs only the jobs that those packages need. When only `docs/` or Markdown files changed, only the Lint job runs, on the changed files. A code push to main and a manual run run every job.
+- Each job installs through upstream's `.github/actions/setup-ci-deps`. A cache hit makes no request to npm.
 - The Lint job also runs `scripts/fork-check-doc-links.ts`. It fails on a relative link or an anchor that does not resolve in `README.md`, `docs/fork*`, `docs/fork/` or `apps/machine-map/*.md`.
+- The Lint job also fetches upstream main and runs `scripts/fork-check-migrations.ts`. See [Migrations](#migrations).
+- The Lint job also fetches the commits of HEAD without their files and runs `node scripts/fork-adopted-prs.ts check`. See [Adopted upstream pull requests](#adopted-upstream-pull-requests).
 
 ### Repair agent
 
@@ -51,20 +114,74 @@ A failed Fork Sync, Fork Release or Fork CI run on main runs its `notify_agent` 
 
 - The script posts the run to `T3_AGENT_WEBHOOK_URL`, the webhook task "Fork repair" on the VPS T3 server (`yarden-zamir-vps-2`), project "t3code fork" (`/root/Github/t3code/main`).
 - The script retries once a minute for 15 minutes, so a server restart of the VPS does not lose the call. Each auto-update of the VPS restarts its server for about 20 seconds.
-- A manual run with `notify_agent=false` does not post. A failure right after a failure of the same workflow does not post either, when the first notify job succeeded and the first failure started less than 6 hours before.
+- A manual run with `notify_agent=false` does not post. A failure right after a failure of the same workflow does not post either, when the first notify job succeeded and the first failure started less than 90 minutes before. This window is shorter than the 2-hour sync interval, so the next scheduled failure can call again.
 - The repair agent ignores a cancelled run.
-- How the agent works, and how to stop it: [Repair agent](../fork-agents.md#repair-agent).
+- How the agent works, and how to stop it: [Repair agent](../fork-agents.md#repair-agent). Its repair steps use the scripts of the [fork-repair skill](../../.agents/skills/fork-repair/SKILL.md).
 
 ## Change the fork
 
-- Put every fork behavior behind a setting. A setting that only adds something starts on. A setting that changes existing behavior or layout, installs or restarts anything, changes access or needs setup starts off.
+Before a plan or status report, list recent merged fork PRs for the same topic:
+
+```sh
+gh pr list -R Yarden-zamir/t3code --state merged --search '<topic> sort:updated-desc'
+git log origin/main -- <files>
+```
+
+Name the fork PRs that the plan builds on. Check fork merges first, then upstream.
+
+- Prefer upstream scripts, CLI and docs. Explain why upstream alone does not meet the need.
+- Keep fork changes generic. Add no special code paths for one machine or cloud provider.
+- Put fork code in fork files: `forkSettings.ts`, `forkRpc.ts`, `fork/forkWs.ts`, `Fork*` components and `fork-*` scripts. Keep hooks in upstream files to one line.
+- The web thread card layout block in `Sidebar.tsx` is the known exception. Revisit it after upstream changes that block in two consecutive syncs. Also revisit it when upstream adds a card layout hook.
+- If an open upstream PR covers the feature, keep the fork version until upstream merges it. Add a code comment naming that PR and the replacement trigger. Do not open an upstream PR or issue.
+- Put every fork behavior behind a setting. A setting that only adds something without noticeable cost starts on. A setting that changes existing behavior or layout, installs or restarts anything, changes access or needs setup starts off.
 - Put the schema field of a fork setting in `packages/contracts/src/forkSettings.ts`, not in the upstream `settings.ts`.
-- Add a new fork setting to Settings > Fork: its entry in `FORK_SETTING_GROUPS` (`forkSettingsCatalog.ts`) and its row in `FORK_SETTING_ROWS` (`ForkSettings.tsx`). Add a fork preference to the reset list in `forkSettingsRestore.ts`.
-- `forkSettingsRegistration.test.ts` fails when a fork setting has no Fork page row or no Restore defaults rule. A setting without a row needs a reason in that test.
+- Put a new fork setting in the upstream settings section where a user looks for it. Add its entry with a `place` to `FORK_SETTING_GROUPS` (`forkSettingsCatalog.ts`), its row in `FORK_SETTING_ROWS` (`ForkSettingsSlot.tsx`), and its search item with the `to` of that place (`forkSettingsSearch.ts`). Settings > Fork lists it from the catalog. For a new place, add it to `FORK_SETTING_PLACES` and put one `<ForkSettingsSlot place=... />` line in the upstream page. Add a fork preference to the reset list in `forkSettingsRestore.ts`.
+- `forkSettingsRegistration.test.ts` fails when a fork setting has no Fork page row, no place outside the Fork page, no search result at its place, or no Restore defaults rule. It also fails when a place has no slot or two slots. A setting without a row needs a reason in that test.
 - The top of `README.md`, up to the first `---` line, lists the fork features and fixes. Keep one line per feature, with a link to its section in [features.md](features.md). A pull request that adds, removes or changes a fork feature updates its line and its section.
 - If a Fork Sync merge conflicts only in `README.md`, the sync keeps the fork section up to the first `---` line and takes the upstream README below it. A conflict in another file stops the sync.
 - If a sync conflicts on a tooltip line with a `ShortcutHint` (the key chips in upstream tooltips), take the upstream line, then add one `ShortcutHint` back. If the same file conflicts again, keep the upstream tooltip text in that file.
 - A merge without conflicts can still break a fork feature. Each fork feature that changes upstream behavior needs a test of that behavior, so that the fork tests catch the break.
+- Put fork tests in a fork test file next to the upstream test file: `foo.fork.test.ts` next to `foo.test.ts`, `Foo.fork.browser.test.tsx` next to `Foo.browser.test.tsx`. Do not add tests to an upstream test file. Change an upstream test only when a fork change breaks it, and keep that change small. Upstream changes its test files often, so fork tests in them cause sync conflicts.
+- Prefer automated setup over manual instructions when the permission cost is acceptable. Keep documentation for steps that code cannot do.
+- If setup lacks permission or an API refuses it, show the manual step, dashboard links and documentation links. Name the missing permission; never show the raw API error. Apply the portal's MM-1209 fallback rule to all fork automation.
+
+### Harmless verification
+
+Screenshots, T3 browser previews, read-only checks and worktree dev servers on copied data need no permission.
+This fork rule overrides the `AGENTS.md` permission default for browsers and its ban on subagent dev servers.
+Delegate slow verification to a low-cost subagent when suitable.
+Still ask before live-state changes outside the request, publishing outside the fork, or deleting work.
+Never write directly to live `~/.t3/userdata`.
+
+Seed copied data with the dev server stopped:
+
+```sh
+vp run migrate-dev-db
+```
+
+Then start the worktree dev server. Use its own UI or API, not the live-server tool CLI.
+
+```sh
+node scripts/fork-dev-server.ts start              # add `-- --share` to share on the tailnet
+node scripts/fork-dev-server.ts status
+node scripts/fork-dev-server.ts stop
+node scripts/fork-dev-server.ts orphans            # reports leftover dev processes, never kills
+```
+
+`start` runs `vp run dev` in a new process group, writes the log to `.t3/dev-server.log` and prints the ports and the `pairingUrl`.
+`stop` stops the whole group, so that no `node --watch` process stays alive.
+It refuses a group that does not run in this worktree.
+`orphans` lists dev process groups with a deleted folder, or under PID 1 without a record.
+It prints a `kill` command for each group. Only the owner runs it, after a check. Agents report the groups.
+The helper works on macOS and Linux, not on Windows.
+
+### Tool blockers
+
+Check the intended tool first each session: Device panel, browser preview or MCP tool.
+If it fails, stop and tell the owner before any workaround.
+Start the reply with a red blocker line. State the cause and exact fix commands.
+Ask: "Fix it now, or work around it?" Wait for the answer; do not silently switch tools.
 
 ## Check a change before you push
 
@@ -75,10 +192,14 @@ vp run fork:check
 ```
 
 - It runs the quick Fork CI checks on the files that changed since the merge base with `origin/main`. Uncommitted and untracked files count.
-- The steps are format and lint of the changed files, knip, typecheck of the changed packages, the tests of the changed files, and the doc link check. The tests are the changed test files, the tests next to changed source files, `forkSettingsRegistration.test.ts`, and the React Compiler coverage test of a changed web or mobile app.
+- On a branch with a merge whose second parent is not in `origin/main`, it prints one line and exits 0 without checks. This keeps sync repairs from checking every upstream change locally. Run `vp run typecheck` and the fork tests described in [Fork Sync](#fork-sync), then wait for Fork CI on the pull request.
+- The steps are format and lint of the changed files, knip, typecheck of the changed packages, the tests of the changed files, the doc link check, the migration check, the check of the adopted upstream pull requests, and the Python tests of the fork-repair skill when its scripts changed. The migration check reads the local `upstream/main`, so run `git fetch upstream main` first. The tests are the changed test files, the tests next to changed source files, `forkSettingsRegistration.test.ts`, the React Compiler coverage test of a changed web or mobile app, and the import cycle test (`dependency-graph.test.ts`) of a changed mobile app.
 - It prints one line per step: pass, fail or skipped with the reason. It exits with an error when a step fails.
 - Without Playwright Chromium, it skips the browser tests and prints the install command.
 - Fork CI still runs the full test suites, the typecheck of dependent packages, the desktop build and the Rust crates.
+- Keep `fork:check` fast. Time each proposed step before adding it; never add a slow step.
+- A few seconds is acceptable; tens of seconds is not. Weigh value against time without asking the owner.
+- Report the decision and measured time. Leave slow checks to CI.
 
 ## Versions
 
@@ -136,9 +257,12 @@ A local build is the fast way to test a change on this Mac. It does not replace 
 
 A headless server that runs as the upstream background service (`t3 service install`) updates from the fork releases. The install is the upstream self-update. It unpacks the release into `<T3 home>/runtime/versions/<version>`, and the service launcher starts it on trial. If the new version does not start, the launcher goes back to the old version.
 
+- Keep a release on each code push to main; never slow the update path. See [Fork Release](#fork-release) for docs-only and portal-only exceptions.
+- Servers install updates only when idle. Use `whenIdle: true` for manual machine map updates too.
+- Ask the owner before migrating Oracle-VPS or VPS to another install path. Routine version-directory updates are not install-path migrations.
 - The user setting is [Server auto-update](features.md#server-auto-update). It checks the fork releases every 5 minutes.
 - A release is ready when it has `SHA256SUMS`. A version that rolled back or failed is not tried again. A newer release is tried.
-- The machine map command `installUpdate` works on such a server too (MM-505). `whenIdle: false` installs the newest fork release now. `whenIdle: true` installs it at the first check with no running agent turn or background shell, also when `forkAutoUpdate` is off.
+- The machine map command `installUpdate` works on such a server too (MM-505). Use `whenIdle: true`: it waits for no running agent turn or background shell, even with `forkAutoUpdate` off. `whenIdle: false` restarts immediately; do not use it for routine updates.
 - A restart stops the running turns. "Continue threads after restarts" (`continueThreadsAfterServerUpdate`) and [Recover interrupted agents](features.md#recover-interrupted-agents) continue them.
 - "Update everything" and `t3 update` also install fork releases. A self-update request for a version without a fork release installs the newest fork release instead. The Play Store app checks upstream releases, so its "Check for updates" installs the newest fork release.
 
@@ -231,6 +355,25 @@ Use these steps only when the join dialog says "No tunnel", for example when the
    systemctl --user daemon-reload && systemctl --user restart t3code.service
    ```
 
+## Central build caches
+
+Set `T3_FORK_CENTRAL_BUILD_CACHE=1` before running Vite tools or Expo prebuild. It defaults off. Set `XDG_CACHE_HOME` to choose a base outside the checkout; otherwise the base is `~/.cache`.
+
+- Vite uses `t3-vite/<SHA-256 of canonical checkout path>/<app>`. All six owned Vite configs and Astro's embedded Vite config use the same helper; vendored reference configs are unchanged.
+- The Expo plugin links only `apps/mobile/android/app/build` to `t3-gradle/workspaces/<hash>/app/<generation>`. A clean prebuild removes the link and creates a fresh generation. It does not reuse the previous app outputs. Gradle's build cache can restore tasks (`org.gradle.caching=true` in `~/.gradle/gradle.properties`). Root `android/build`, dependency codegen and `.cxx` keep their original locations.
+- Existing physical `app/build` folders are refused, not migrated. Run `expo prebuild --clean --platform android` when opting in. Turning the variable off leaves existing links alone; a clean prebuild restores local outputs.
+
+```sh
+node scripts/fork-build-cache-prune.ts --dry-run
+node scripts/fork-build-cache-prune.ts --days 14
+```
+
+Prune removes whole central workspace folders for missing checkouts or expired last-use records, and Android generations that the current link no longer names. Current generations are kept until the workspace expires. A later Gradle build recreates an expired link target. The script reports allocated bytes removed (or planned); filesystem clones and compression can change the actual free-space gain. It never removes anything in a checkout, follows payload links, or removes unknown/unregistered folders. It does not clean legacy local outputs.
+
+Vite holds a PID lock for the tool process. Gradle holds one from app configuration through build completion. Live or unrecognized locks block removal; dead-PID locks do not. Builds and pruning share a short `.gate` directory lock. A concurrent setup fails safely: retry it. If a process dies inside that critical section, first confirm no cache operation is running, then remove only the central root's empty `.gate` directory. No background cleanup is installed.
+
+A later T3 storage-cleanup hook can spawn `node scripts/fork-build-cache-prune.ts --days 14` from the checkout, with the build user's `HOME` and `XDG_CACHE_HOME`. Pass `--dry-run` for its preview. Do not add checkout deletion to that hook.
+
 ## Android APK build
 
 `.github/workflows/fork-android.yml` ("Fork Android") adds `t3code-<version>-android.apk` to the release after each successful Fork Release of main. It is a local Gradle build with `scripts/fork-android-apk.sh`, so the fork needs no Expo or Google Play account. How users install it: [Android APK](features.md#android-apk).
@@ -245,6 +388,47 @@ Use these steps only when the join dialog says "No tunnel", for example when the
 - The Obtainium link in the portal "Invite an app" dialog is in `apps/machine-map/src/ui/obtainium.ts`.
 - Upstream's mobile workflows need Expo, Google Play or Blacksmith runners. They are disabled on the fork. After a sync that adds a `mobile-*` workflow, disable it with `gh workflow disable "<name>" -R Yarden-zamir/t3code`.
 
+## Android emulator on the Mac
+
+1. Use the T3 Device panel first: `device_list`, then `device_open`. Follow its returned AgentDevice command and target arguments.
+2. If it reports "Android unavailable", raise the [tool blocker](#tool-blockers) before any fallback. The app can lack `ANDROID_HOME`. Set it, then restart the T3 desktop app with the owner's approval:
+
+   ```sh
+   launchctl setenv ANDROID_HOME /opt/homebrew/share/android-commandlinetools
+   ```
+
+3. For Gradle and native-client builds, set both SDK variables. Put the worktree's `vp` folder on PATH:
+
+   ```sh
+   export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+   export ANDROID_SDK_ROOT="$ANDROID_HOME"
+   export PATH="$PWD/node_modules/.bin:$PATH"
+   ```
+
+4. Follow `test-t3-mobile` with copied backend data. The test AVD is `t3-android-app`, port `5590`, device `emulator-5590`.
+
+Use these raw-emulator steps only after the owner approves a workaround:
+
+- A failed snapshot can leave a black screen. Stop only the test emulator, then start without a snapshot:
+
+  ```sh
+  "$ANDROID_HOME/platform-tools/adb" -s emulator-5590 emu kill < /dev/null
+  setopt NO_BG_NICE
+  "$ANDROID_HOME/emulator/emulator" -avd t3-android-app -port 5590 -no-snapshot -no-window &
+  ```
+
+  `NO_BG_NICE` is a zsh option. It prevents macOS from throttling the background emulator until it freezes.
+
+- Turn off stylus handwriting before typing, or its tutorial can take the input:
+
+  ```sh
+  "$ANDROID_HOME/platform-tools/adb" -s emulator-5590 shell settings put secure stylus_handwriting_enabled 0 < /dev/null
+  ```
+
+- Close stdin on every `adb shell` command with `< /dev/null`; otherwise agent shells can hang.
+- `adb shell input text` drops long strings. Send text in parts of 12 characters.
+- Move the floating Expo dev menu button away before tapping a header check button that it covers.
+
 ## Secrets and variables
 
 | Name                                                                                    | Kind               | Use                                                                                                                                                                                       |
@@ -255,3 +439,4 @@ Use these steps only when the join dialog says "No tunnel", for example when the
 | `T3_AGENT_WEBHOOK_URL`, `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`                | secret, optional   | Webhook URL of the repair agent task, and the Cloudflare Access service token that the call needs. Without the URL, no agent is notified.                                                 |
 | `CLOUDFLARE_DEPLOY_TOKEN`                                                               | secret             | Deploy of the machine map portal. See [apps/machine-map/README.md](../../apps/machine-map/README.md#deploy).                                                                              |
 | `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_TEMPLATE`, `CLERK_CLI_OAUTH_CLIENT_ID`, `RELAY_URL` | variable, optional | T3 Connect config. Without them, the build has no T3 Connect.                                                                                                                             |
+| `T3_FORK_CENTRAL_BUILD_CACHE`, `XDG_CACHE_HOME`                                         | variable, optional | Opt in to [central build caches](#central-build-caches), and choose their base directory.                                                                                                 |

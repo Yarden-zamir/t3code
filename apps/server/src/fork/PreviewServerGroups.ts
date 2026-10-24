@@ -629,21 +629,22 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  const observe: PreviewServerGroups["Service"]["observe"] = (scan) =>
-    Effect.gen(function* () {
-      if ((yield* Ref.get(subscribersRef)) === 0) return;
-      if (!(yield* enabled)) return yield* clear;
-      // In the background, so the upstream list does not wait for the folder reads and checks.
-      // A scan that comes while a pass runs is skipped; the next scan is 3 seconds later.
-      yield* passSemaphore
-        .withPermitsIfAvailable(1)(pass(scan))
-        .pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("preview local server groups failed", Cause.pretty(cause)),
-          ),
-          Effect.forkIn(scope),
-        );
-    });
+  const observe: PreviewServerGroups["Service"]["observe"] = Effect.fn(
+    "PreviewServerGroups.observe",
+  )(function* (scan) {
+    if ((yield* Ref.get(subscribersRef)) === 0) return;
+    if (!(yield* enabled)) return yield* clear;
+    // In the background, so the upstream list does not wait for the folder reads and checks.
+    // A scan that comes while a pass runs is skipped; the next scan is 3 seconds later.
+    yield* passSemaphore
+      .withPermitsIfAvailable(1)(pass(scan))
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("preview local server groups failed", Cause.pretty(cause)),
+        ),
+        Effect.forkIn(scope),
+      );
+  });
 
   const listeners: PreviewServerGroups["Service"]["listeners"] = Stream.unwrap(
     Effect.acquireRelease(

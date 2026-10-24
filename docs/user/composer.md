@@ -55,12 +55,17 @@ On web and desktop, choose **Settings → General → Follow-up behavior** to qu
 new messages for a later turn or steer the running turn immediately. The setting
 applies to this client; already queued messages keep their place. Queued messages
 are saved on the server and can be edited, reordered, or removed above the composer.
-`Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses the opposite action:
-it steers when your default is Queue and queues when your default is Steer.
+When Enter sends, `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses
+the opposite action: it steers when your default is Queue and queues when your
+default is Steer.
+If your **Send shortcut** requires `Cmd+Enter` or `Ctrl+Enter`, that shortcut uses
+your default follow-up behavior; add **Shift** to use the opposite action. This
+applies only to multiline messages when you choose the multiline send option.
 
 Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send
 the oldest queued message as a steer. This leaves the current draft intact and
-requires an active turn that supports steering. Change
+requires an active turn that supports steering. If that shortcut sends the opposite
+action for your draft, move focus outside the composer to steer the queued message. Change
 `thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut.
 
 Press `Option+Up` on macOS or `Alt+Up` on Windows and Linux with the cursor at the
@@ -144,7 +149,8 @@ into a normal draft.
 
 On web and desktop, choose **Edit from here** beneath a sent message to rewind
 the conversation to before that message. Choose **Revert and keep changes** to
-leave workspace files as they are, or **Revert files too** to restore them as well.
+leave workspace files as they are, or **Revert files too** to put the workspace back
+to its checkpoint from before that message. That also undoes edits you made yourself.
 File restore is only offered for threads running in a worktree, and it is
 refused when another thread or agent session also uses that directory, a folder
 inside it, or a folder that contains it, since
@@ -189,21 +195,67 @@ microphone.
 Transcription runs on your device. T3 Code deletes the temporary audio after
 transcription or cancellation; only the message text is sent when you submit.
 
+## Android assistant
+
+On Android 10 or later, T3 Code can be your digital assistant. Press the assistant
+button in any app to start a thread about what is on the screen.
+
+1. Open **Settings → Voice** in the app and tap **Choose the digital assistant**.
+2. Pick T3 Code. To share the screen, turn on **Use text from screen** and
+   **Use screenshot** on the same page.
+3. Press the assistant button, or hold the home button.
+
+The panel opens over the current app. Type or tap the microphone, then tap the
+send button. To add the message to an existing thread or to pick another
+project, tap the title of the panel and search or pick from the list. With more
+than one machine, tap the machine icon to pick the machine first.
+
+To ask about something in another app, you can also share it: pick **Ask T3 Code**
+in the Android share sheet.
+
+Context pills above the text show what goes along: what you shared, the screenshot,
+the screen text, text you selected on screen, the page link, and the clipboard. In
+**Settings → Voice → Context pills** you can also turn on your newest photo and your
+location. Tap a pill to attach it or leave it out. Hold a pill to read and edit its
+text, or to draw on an image. The clipboard, the photo and the location are left out
+until you tap them, and password fields are never included.
+
+If you close the panel without sending, your text comes back when you open it
+again within a minute.
+
+**Settings → Voice** sets what the panel does: send to a new thread or to the
+thread you opened last, open with the keyboard or with the speech dialog, start
+the thread right after you speak, open the new thread, or stay open and read the
+first reply aloud. It also sets the project of new threads.
+T3 Code replaces your current assistant while it is selected. To go back, pick the
+other assistant on the same Android page.
+
+## Read replies aloud on mobile
+
+Tap the speaker next to a reply to hear it. Tap it again to stop. Hold the speaker
+to hear every new reply in that thread; hold it again to stop. A tinted speaker
+shows a thread that reads new replies. **Settings → Voice** sets the speech rate,
+hides the button, and stops all threads that read new replies.
+
+Replies are read only while the app is on screen.
+
 ## Queued messages
 
 On web and desktop, the composer shows **Interrupt** while the agent is working and the draft is
-empty. Adding text or attachments replaces it with a steer arrow. Click it to send a message into
-the active turn, or press `Enter` on desktop. Hold `Cmd` on macOS or `Ctrl` on Windows and Linux to
-switch the button to a queue icon. Click while holding that key, or press `Cmd+Enter` or
-`Ctrl+Enter` on desktop, to queue the message for after the active turn.
+empty. Adding text or attachments replaces it with a send button that shows your
+[Follow-up behavior](#send-while-the-agent-is-working): a queue icon for Queue or a steer arrow for
+Steer. Click it or press your send shortcut to use that action. Hold `Cmd` on macOS or `Ctrl` on
+Windows and Linux to switch the button to the opposite action, then click, or use the opposite-action
+shortcut described above.
 
 Queued messages appear above the composer. Rows show a thumbnail of any attached image alongside
 the text. Drag a row by its handle to reorder it, use the handle's arrow keys, promote the message
 to a steer, or remove it.
 
-If the server restarts, saved queued messages keep their order and are held. Press
-**Resume** in an empty composer on web or desktop, or **Resume queue** in the queue
-sheet on mobile, to continue. You can edit, reorder, or remove held messages without starting them.
+If you stop the agent or the server restarts, queued messages keep their order and are held.
+Press **Resume** in an empty composer on web and desktop, or **Resume queue** on mobile, to
+continue. Sending a new message also resumes the queue, unless it steers a turn that is already
+running. You can edit, reorder, or remove held messages without starting them.
 
 The pencil on a queued row opens that message in the composer for editing. The original message
 stays in the queue until you save, and its row is highlighted while you edit. The message's
@@ -231,6 +283,9 @@ Provider commands must start the message to run. T3 Code commands such as
 
 Send `/compact` in an existing conversation to reduce context usage when the
 provider supports it. Web and desktop also offer compaction from the context meter.
+
+Claude instances can also compact idle threads for you. See
+[compact long conversations](./providers-claude.md#compact-long-conversations).
 
 ## Goals
 

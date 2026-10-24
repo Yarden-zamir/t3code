@@ -38,7 +38,7 @@ export const THREAD_CARD_IDLE_CLASS =
 export const THREAD_CARD_CONTENT_CLASS =
   "relative z-10 px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)";
 export const THREAD_CARD_TITLE_CLASS =
-  "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none";
+  "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none";
 /** The element that carries `data-sidebar-status`; themes draw it as a sticker. */
 export const THREAD_CARD_STATUS_LABEL_CLASS =
   "flex items-center self-center justify-self-end tabular-nums text-secondary-label transition-opacity";
@@ -60,7 +60,12 @@ export interface ThreadCardStatus {
 }
 
 /** The status label inside the `data-sidebar-status` element, for every status but Woke. */
-export function ThreadCardStatusBadge(props: { status: ThreadCardStatus; trailing?: ReactNode }) {
+export function ThreadCardStatusBadge(props: {
+  status: ThreadCardStatus;
+  trailing?: ReactNode;
+  /** Off for the open thread, which announces its own status. */
+  announce?: boolean;
+}) {
   const { status } = props;
   return (
     <span className={cn("inline-flex items-center gap-1 font-medium", status.className)}>
@@ -69,7 +74,7 @@ export function ThreadCardStatusBadge(props: { status: ThreadCardStatus; trailin
       )}
       {/* The label alone is the live region: a role="status" wrapper around a
           ticking duration would make screen readers announce every second. */}
-      <span role="status">{status.label}</span>
+      <span role={props.announce === false ? undefined : "status"}>{status.label}</span>
       {props.trailing}
     </span>
   );

@@ -33,7 +33,7 @@ import {
   type DraftThreadState,
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
-  restoreFailedBackgroundDraftThread,
+  restoreFailedDraftThread,
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import { newThreadId } from "../../lib/utils";
@@ -468,7 +468,7 @@ export function ForkDraftTerminalComposer(props: {
   const releaseDraft = () => {
     const current = useComposerDraftStore.getState();
     if (composerDraftHasUserContent(current.getComposerDraft(draftId))) {
-      restoreFailedBackgroundDraftThread(draftId, draft, newThreadId());
+      restoreFailedDraftThread(draftId, draft, newThreadId());
     } else {
       finalizePromotedDraftThreadByRef(threadRef);
     }

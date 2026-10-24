@@ -210,17 +210,33 @@ export function createSidebarSortingStrategy(input: {
             ? fallback
             : (rect?.height ?? fallback);
     });
+    // A row dropped into a folded shelf leaves the projection. Its slot stays above the shelves,
+    // so they keep their place and the list does not get shorter. A shorter list would clamp the
+    // scroll position, move every row under the pointer and flip the target back and forth.
+    // An Active placeholder that the row's departure opens already fills part of the slot.
+    const hiddenSlot = projected.some((item) => item.kind === "thread" && item.key === active.key)
+      ? 0
+      : Math.max(
+          0,
+          (rects[activeIndex]?.height ?? cardHeight) +
+            1 -
+            (active.section === "active" && groups.active.length === 0 ? slimHeight + 1 : 0),
+        );
     const firstShelf = items.findIndex(isShelfHeader);
     const shelfRect = rects[firstShelf];
     const beforeShelf = rects[firstShelf - 1];
     const lastRect = rects.at(-1);
     let shelfSpace =
-      shelfRect && beforeShelf && lastRect && shelfRect.top > beforeShelf.bottom + 1
+      hiddenSlot +
+      (shelfRect && beforeShelf && lastRect && shelfRect.top > beforeShelf.bottom + 1
         ? Math.max(
             0,
-            lastRect.bottom - rects[0].top - heights.reduce((sum, height) => sum + height + 1, -1),
+            lastRect.bottom -
+              rects[0].top -
+              heights.reduce((sum, height) => sum + height + 1, -1) -
+              hiddenSlot,
           )
-        : 0;
+        : 0);
     const result = items.map(() => hidden);
     let top = rects[0].top;
     for (const [projectedIndex, item] of projected.entries()) {

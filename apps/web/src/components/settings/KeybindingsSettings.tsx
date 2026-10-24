@@ -40,7 +40,7 @@ import { formatShortcutLabel } from "../../keybindings";
 import { cn } from "../../lib/utils";
 import { serverEnvironment } from "../../state/server";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { KeybindingSyncSettingsRow } from "./KeybindingSyncSettingsRow";
+import { ForkSettingsSlot } from "./ForkSettingsSlot";
 import { useShareKeybindingsToMachineMap } from "../../machineMap/shareSettings";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -744,7 +744,9 @@ function useKeybindingRowEditor({
       setDraft({ keyDraft: row.key, isRecording: false });
       return;
     }
-    const next = keybindingFromKeyboardEvent(event.nativeEvent, navigator.platform);
+    const next = keybindingFromKeyboardEvent(event.nativeEvent, navigator.platform, {
+      layoutCharacter: true,
+    });
     if (!next) return;
     setDraft({ keyDraft: next, isRecording: false });
   };
@@ -1054,7 +1056,9 @@ function useNewKeybindingDraft({
       setDraft({ keyDraft: "", isRecording: false });
       return;
     }
-    const next = keybindingFromKeyboardEvent(event.nativeEvent, navigator.platform);
+    const next = keybindingFromKeyboardEvent(event.nativeEvent, navigator.platform, {
+      layoutCharacter: true,
+    });
     if (!next) return;
     setDraft({ keyDraft: next, isRecording: false });
   };
@@ -1516,9 +1520,8 @@ export function KeybindingsSettingsPanel() {
           </SettingsGroup>
         )}
       </div>
-      <SettingsSection title="Machine map">
-        <KeybindingSyncSettingsRow />
-      </SettingsSection>
+      <ForkSettingsSlot place="keybindings-keyboard" />
+      <ForkSettingsSlot place="keybindings-machine-map" />
     </SettingsPageContainer>
   );
 }

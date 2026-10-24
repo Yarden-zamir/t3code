@@ -49,24 +49,25 @@ export const joinedTunnelOrigin = (joined: JoinedTunnel): string => `https://${j
  * The joined tunnel, or undefined without one. A file that does not decode logs a warning and
  * counts as no tunnel, so it never stops the server.
  */
-export const readJoinedTunnel = (stateDir: string) =>
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const filePath = path.join(stateDir, JOINED_TUNNEL_FILE);
-    if (!(yield* fileSystem.exists(filePath).pipe(Effect.orElseSucceed(() => false)))) {
-      return undefined;
-    }
-    return yield* fileSystem.readFileString(filePath).pipe(
-      Effect.flatMap(decodeJoinedTunnel),
-      Effect.catch((cause) =>
-        Effect.logWarning("Machine map tunnel file is unreadable; join again.", {
-          path: filePath,
-          cause: String(cause),
-        }).pipe(Effect.as(undefined)),
-      ),
-    );
-  });
+export const readJoinedTunnel = Effect.fn("MachineTunnel.readJoinedTunnel")(function* (
+  stateDir: string,
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const filePath = path.join(stateDir, JOINED_TUNNEL_FILE);
+  if (!(yield* fileSystem.exists(filePath).pipe(Effect.orElseSucceed(() => false)))) {
+    return undefined;
+  }
+  return yield* fileSystem.readFileString(filePath).pipe(
+    Effect.flatMap(decodeJoinedTunnel),
+    Effect.catch((cause) =>
+      Effect.logWarning("Machine map tunnel file is unreadable; join again.", {
+        path: filePath,
+        cause: String(cause),
+      }).pipe(Effect.as(undefined)),
+    ),
+  );
+});
 
 const MachineMapEnabled = Schema.Struct({
   machineMap: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
@@ -77,15 +78,16 @@ const decodeMachineMapEnabled = Schema.decodeUnknownEffect(fromLenientJson(Machi
  * MM-1301: whether `settings.json` turns the machine map on. The config reads it at start, before
  * the settings service runs. A missing or unreadable file counts as off, like the default.
  */
-export const machineMapEnabledInSettings = (settingsPath: string) =>
-  Effect.gen(function* () {
+export const machineMapEnabledInSettings = Effect.fn("MachineTunnel.machineMapEnabledInSettings")(
+  function* (settingsPath: string) {
     const fileSystem = yield* FileSystem.FileSystem;
     return yield* fileSystem.readFileString(settingsPath).pipe(
       Effect.flatMap(decodeMachineMapEnabled),
       Effect.map((settings) => settings.machineMap?.enabled === true),
       Effect.orElseSucceed(() => false),
     );
-  });
+  },
+);
 
 /** What `adopt` did with the tunnel of a join. */
 export type AdoptResult =
@@ -209,33 +211,34 @@ const make = Effect.gen(function* () {
     );
   }
 
-  const adopt: MachineTunnel["Service"]["adopt"] = (grant) =>
-    Effect.gen(function* () {
-      const saved = yield* provide(readJoinedTunnel(config.stateDir));
-      // MM-1310: only a tunnel from the environment or the desktop settings is the server's own.
-      // A tunnel from an earlier join stays the map's, also after "Leave" deleted its file.
-      if (config.tunnelPairingUrl !== undefined && !startedWithJoined) {
-        yield* Effect.logInfo("Machine map join keeps the tunnel of this server.", {
-          tunnel: config.tunnelPairingUrl,
-        });
-        return "kept-own-tunnel" as const;
-      }
-      const next: JoinedTunnel = { hostname: grant.hostname, access: grant.access };
-      const contents = yield* encodeJoinedTunnel(next);
-      const savedToken = yield* readToken;
-      const unchanged =
-        saved !== undefined &&
-        config.tunnelPairingUrl === joinedTunnelOrigin(saved) &&
-        savedToken === grant.token &&
-        contents === (yield* encodeJoinedTunnel(saved));
-      if (unchanged) return "unchanged" as const;
-      yield* secrets.set(TOKEN_SECRET_NAME, new TextEncoder().encode(grant.token));
-      yield* provide(writeFileStringAtomically({ filePath, contents }));
-      yield* Effect.logInfo("Machine map tunnel saved. The server uses it after a restart.", {
-        hostname: grant.hostname,
+  const adopt: MachineTunnel["Service"]["adopt"] = Effect.fn("MachineTunnel.adopt")(function* (
+    grant,
+  ) {
+    const saved = yield* provide(readJoinedTunnel(config.stateDir));
+    // MM-1310: only a tunnel from the environment or the desktop settings is the server's own.
+    // A tunnel from an earlier join stays the map's, also after "Leave" deleted its file.
+    if (config.tunnelPairingUrl !== undefined && !startedWithJoined) {
+      yield* Effect.logInfo("Machine map join keeps the tunnel of this server.", {
+        tunnel: config.tunnelPairingUrl,
       });
-      return "restart" as const;
-    }).pipe(Effect.mapError(storageFailed));
+      return "kept-own-tunnel" as const;
+    }
+    const next: JoinedTunnel = { hostname: grant.hostname, access: grant.access };
+    const contents = yield* encodeJoinedTunnel(next);
+    const savedToken = yield* readToken;
+    const unchanged =
+      saved !== undefined &&
+      config.tunnelPairingUrl === joinedTunnelOrigin(saved) &&
+      savedToken === grant.token &&
+      contents === (yield* encodeJoinedTunnel(saved));
+    if (unchanged) return "unchanged" as const;
+    yield* secrets.set(TOKEN_SECRET_NAME, new TextEncoder().encode(grant.token));
+    yield* provide(writeFileStringAtomically({ filePath, contents }));
+    yield* Effect.logInfo("Machine map tunnel saved. The server uses it after a restart.", {
+      hostname: grant.hostname,
+    });
+    return "restart" as const;
+  }, Effect.mapError(storageFailed));
 
   const forget: MachineTunnel["Service"]["forget"] = Effect.gen(function* () {
     yield* secrets.remove(TOKEN_SECRET_NAME);

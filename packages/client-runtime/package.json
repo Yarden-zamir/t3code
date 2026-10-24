@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./workspace-basename-lookup": {
+      "types": "./src/workspaceBasenameLookup.ts",
+      "default": "./src/workspaceBasenameLookup.ts"
+    },
     "./composerThreadItems": {
       "types": "./src/composerThreadItems.ts",
       "default": "./src/composerThreadItems.ts"
@@ -123,6 +127,10 @@
       "types": "./src/relay/index.ts",
       "default": "./src/relay/index.ts"
     },
+    "./state/readableThreadEnvironments": {
+      "types": "./src/state/readableThreadEnvironments.ts",
+      "default": "./src/state/readableThreadEnvironments.ts"
+    },
     "./state/auth": {
       "types": "./src/state/auth.ts",
       "default": "./src/state/auth.ts"
@@ -198,6 +206,18 @@
     "./state/deviceHubAccess": {
       "types": "./src/state/deviceHubAccess.ts",
       "default": "./src/state/deviceHubAccess.ts"
+    },
+    "./state/peerLinks": {
+      "types": "./src/state/peerLinks.ts",
+      "default": "./src/state/peerLinks.ts"
+    },
+    "./fork/arrowLinks": {
+      "types": "./src/fork/arrowLinks.ts",
+      "default": "./src/fork/arrowLinks.ts"
+    },
+    "./fork/accessChange": {
+      "types": "./src/fork/accessChange.ts",
+      "default": "./src/fork/accessChange.ts"
     },
     "./state/preview": {
       "types": "./src/state/preview.ts",
@@ -319,9 +339,13 @@
       "types": "./src/state/threadSubagents.ts",
       "default": "./src/state/threadSubagents.ts"
     },
-    "./state/sidebarGroups": {
-      "types": "./src/state/sidebarGroups.ts",
-      "default": "./src/state/sidebarGroups.ts"
+    "./state/sidebarTabs": {
+      "types": "./src/state/sidebarTabs.ts",
+      "default": "./src/state/sidebarTabs.ts"
+    },
+    "./state/thread-undo": {
+      "types": "./src/state/threadUndo.ts",
+      "default": "./src/state/threadUndo.ts"
     },
     "./state/thread-settled": {
       "types": "./src/state/threadSettled.ts",
@@ -446,10 +470,14 @@
     "./pull-request-query": {
       "types": "./src/pullRequestQuery.ts",
       "default": "./src/pullRequestQuery.ts"
+    },
+    "./model-traits": {
+      "types": "./src/modelTraits.ts",
+      "default": "./src/modelTraits.ts"
     }
   },
   "scripts": {
-    "typecheck": "tsc-rs --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vp test run"
   },
   "dependencies": {

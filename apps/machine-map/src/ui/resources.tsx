@@ -303,7 +303,7 @@ function ProcessTable({
               <tr key={`${process.name}:${i}`}>
                 <td className="mono">{process.name}</td>
                 <td className="num">
-                  {process.cpuPercent === null ? "—" : `${Math.round(process.cpuPercent)}%`}
+                  {process.cpuPercent === null ? "-" : `${Math.round(process.cpuPercent)}%`}
                 </td>
                 <td className="num">{formatBytes(process.memoryBytes)}</td>
               </tr>
@@ -317,7 +317,7 @@ function ProcessTable({
 
 const usedOf = (used: number | null, total: number | null) =>
   used === null || total === null
-    ? "—"
+    ? "-"
     : `${formatBytes(used)} of ${formatBytes(total)} (${formatPercent(percentOf(used, total))})`;
 
 /**
@@ -337,7 +337,7 @@ function cpuWords(sample: ResourceSample): string {
   return parts.filter((part) => part !== null).join(" · ");
 }
 
-const perSecond = (bytes: number | null) => (bytes === null ? "—" : `${formatBytes(bytes)}/s`);
+const perSecond = (bytes: number | null) => (bytes === null ? "-" : `${formatBytes(bytes)}/s`);
 
 /** MM-1504: the thresholds of one machine. An empty field turns a check off. */
 function ThresholdsForm({ machine }: { machine: MachineRecord }) {
@@ -582,7 +582,7 @@ export function ResourcesSection({ machine }: { machine: MachineRecord }) {
           />
           <Chart
             title="Agent processes"
-            value={String(lastValue(history.agents) ?? "—")}
+            value={String(lastValue(history.agents) ?? "-")}
             history={history}
             lines={[{ values: history.agents, className: "line" }]}
             max={countMax(history.agents)}
@@ -602,7 +602,7 @@ export function ResourcesSection({ machine }: { machine: MachineRecord }) {
           </dd>
           <dt>Load</dt>
           <dd>
-            {lastSample.load === null ? "—" : lastSample.load.join(" · ")}
+            {lastSample.load === null ? "-" : lastSample.load.join(" · ")}
             {lastSample.cpuCount !== null && ` on ${lastSample.cpuCount} cores`}
           </dd>
           <dt>CPU</dt>
@@ -631,13 +631,13 @@ export function ResourcesSection({ machine }: { machine: MachineRecord }) {
           <dt>T3 server</dt>
           <dd>
             {lastSample.t3 === null
-              ? "—"
+              ? "-"
               : `${formatPercent(lastSample.t3.cpuPercent)} CPU · ${formatBytes(lastSample.t3.memoryBytes)}`}
           </dd>
           <dt>Agents</dt>
           <dd>
             {lastSample.agents === null
-              ? "—"
+              ? "-"
               : `${lastSample.agents.count} processes · ${formatPercent(lastSample.agents.cpuPercent)} CPU · ${formatBytes(lastSample.agents.memoryBytes)}`}
           </dd>
         </dl>
@@ -784,7 +784,7 @@ function HealthCard({ machine }: { machine: MachineRecord }) {
             <BatteryMeter sample={sample} limit={limits.batteryPercent} />
           </span>
           <span className="health-facts small">
-            <span>Load {sample.load === null ? "—" : sample.load[0]}</span>
+            <span>Load {sample.load === null ? "-" : sample.load[0]}</span>
             {batteryShown(sample.battery) && <span>Battery {batteryText(sample.battery)}</span>}
             {sample.cpuPressurePercent !== null && (
               <span>Waits for CPU {formatPercent(sample.cpuPressurePercent)}</span>
@@ -793,7 +793,7 @@ function HealthCard({ machine }: { machine: MachineRecord }) {
               <span>Steal {formatPercent(sample.cpuStealPercent)}</span>
             )}
             <span>
-              Agents {sample.agents === null ? "—" : sample.agents.count}
+              Agents {sample.agents === null ? "-" : sample.agents.count}
               {sample.agents !== null && ` · ${formatPercent(sample.agents.cpuPercent)}`}
             </span>
             <span>Net {perSecond(sample.netInBytesPerSecond)} in</span>

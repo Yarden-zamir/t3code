@@ -18,6 +18,7 @@ export interface ProjectScriptInput {
   readonly autoOpenPreview: boolean;
   readonly previewOverlay: boolean;
   readonly runInBackground: boolean;
+  readonly globalShortcut?: string | null;
 }
 
 export function buildProjectScript(id: string, input: ProjectScriptInput): ProjectScript {
@@ -37,6 +38,7 @@ export function buildProjectScript(id: string, input: ProjectScriptInput): Proje
           ...(input.previewOverlay ? { previewOverlay: true } : {}),
         }),
     ...(input.runInBackground ? { runInBackground: true } : {}),
+    ...(input.globalShortcut ? { globalShortcut: input.globalShortcut } : {}),
   };
 }
 

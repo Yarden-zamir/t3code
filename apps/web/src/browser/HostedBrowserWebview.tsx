@@ -1,5 +1,3 @@
-"use client";
-
 import type {
   DesktopPreviewColorScheme,
   PreviewViewportSetting,
@@ -25,6 +23,8 @@ import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
 import { acquireDesktopTab, type AcquiredDesktopTab, withDesktopTab } from "./desktopTabLifetime";
 import { resolveHostedBrowserWebviewWrapperStyle } from "./hostedBrowserWebviewStyle";
 import { usePreviewWebviewConfig } from "./previewWebviewConfigState";
+import { useBrowserLayoutZoomFactor } from "./useBrowserLayoutZoomFactor";
+import { useForkBrowserCapture } from "./useForkBrowserCapture";
 import { useBrowserViewportResize } from "./useBrowserViewportResize";
 import {
   INITIAL_WEBVIEW_CRASH_RECOVERY_STATE,
@@ -103,6 +103,14 @@ export function HostedBrowserWebview(props: {
   const backgroundActivity = useBrowserSurfaceStore(
     (state) => (state.activityByTabId[runtimeTabId] ?? 0) > 0,
   );
+  const reportPresentation = useForkBrowserCapture(
+    threadRef.threadId,
+    tabId,
+    runtimeTabId,
+    serverDriven,
+    presentation.visible && presentation.rect !== null,
+    wrapperRef,
+  ); // Fork: native visibility and paintable capture leases.
   const recordingActive = useActiveBrowserRecordingTabIds().has(runtimeTabId);
   usePreviewBridge({ threadRef, tabId, runtimeTabId, serverDriven });
 
@@ -164,6 +172,7 @@ export function HostedBrowserWebview(props: {
           const webContentsId = webview.getWebContentsId();
           if (Number.isInteger(webContentsId) && webContentsId > 0) {
             await bridge.registerWebview(runtimeTabId, webContentsId);
+            if (!disposed && serverDriven) await reportPresentation(); // Fork: registration may finish after the visibility effect.
           }
         } catch {}
       })();
@@ -203,13 +212,15 @@ export function HostedBrowserWebview(props: {
     clientSettingsHydrated,
     config,
     runtimeTabId,
+    serverDriven,
+    reportPresentation,
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A crash recovery remounts the webview under a new key, so the listeners attach to the new element.
     webviewGeneration,
   ]);
 
   const active = presentation.visible && presentation.rect !== null;
   const lastRect = presentation.rect;
-  const normalizedZoomFactor = Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
+  const layoutZoomFactor = useBrowserLayoutZoomFactor(zoomFactor);
   const viewportWidth = viewport._tag === "fill" ? null : viewport.width;
   const viewportHeight = viewport._tag === "fill" ? null : viewport.height;
   const viewportAspectRatio =
@@ -222,13 +233,13 @@ export function HostedBrowserWebview(props: {
   const content = presentation.content;
   const hiddenWidth =
     viewport._tag !== "fill"
-      ? viewport.width * normalizedZoomFactor
+      ? viewport.width * layoutZoomFactor
       : content
         ? content.width / content.scale
         : (lastRect?.width ?? 1280);
   const hiddenHeight =
     viewport._tag !== "fill"
-      ? viewport.height * normalizedZoomFactor
+      ? viewport.height * layoutZoomFactor
       : content
         ? content.height / content.scale
         : (lastRect?.height ?? 800);
@@ -247,22 +258,18 @@ export function HostedBrowserWebview(props: {
   } = useBrowserViewportResize({
     tabId: runtimeTabId,
     viewport,
-    zoomFactor,
+    zoomFactor: layoutZoomFactor,
     containerSize,
     deviceToolbarVisible,
     aspectRatio: lockedAspectRatio,
   });
   const fittedSourceViewport =
     presentation.fitSourceContent && lastRect
-      ? resolveFittedBrowserViewport(
-          viewport,
-          presentation.fittedSourceContent,
-          normalizedZoomFactor,
-        )
+      ? resolveFittedBrowserViewport(viewport, presentation.fittedSourceContent, layoutZoomFactor)
       : null;
   const layout =
     fittedSourceViewport && lastRect
-      ? resolveBrowserViewportLayout(lastRect, fittedSourceViewport, normalizedZoomFactor)
+      ? resolveBrowserViewportLayout(lastRect, fittedSourceViewport, layoutZoomFactor)
       : viewportLayout;
 
   const syncContentPresentation = () => {
@@ -350,14 +357,14 @@ export function HostedBrowserWebview(props: {
             fittedSourceViewport
               ? fittedSourceViewport.width
               : effectiveViewport._tag === "fill"
-                ? Math.max(1, Math.round(layout.viewportWidth / normalizedZoomFactor))
+                ? Math.max(1, Math.round(layout.viewportWidth / layoutZoomFactor))
                 : effectiveViewport.width
           }
           data-preview-css-height={
             fittedSourceViewport
               ? fittedSourceViewport.height
               : effectiveViewport._tag === "fill"
-                ? Math.max(1, Math.round(layout.viewportHeight / normalizedZoomFactor))
+                ? Math.max(1, Math.round(layout.viewportHeight / layoutZoomFactor))
                 : effectiveViewport.height
           }
           aria-hidden={active ? undefined : true}

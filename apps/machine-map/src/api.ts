@@ -9,6 +9,9 @@ import {
   ClientId,
   CommandDelivery,
   MachineCommandInput,
+  type ArrowCapability,
+  MachineCallRecord,
+  MachineExecRecord,
   MachineId,
   MachineKind,
   MachineLevel,
@@ -38,6 +41,7 @@ const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 export const ChangesRequest = Schema.Struct({
   summary: Text,
   changes: Schema.Array(MapChange).check(Schema.isMinLength(1)),
+  expectedState: Schema.optionalKey(Schema.String),
 });
 export type ChangesRequest = typeof ChangesRequest.Type;
 
@@ -166,11 +170,13 @@ export interface RotationResponse {
   readonly delivered: boolean;
 }
 
-/** A token rotation that waits for its machine (MM-207). The secret never leaves the portal. */
+/** A token rotation awaiting confirmation, or its expired recovery marker (MM-207). */
 export interface PendingRotation {
   readonly machineId: MachineId;
   readonly createdAt: string;
   readonly expiresAt: string;
+  /** The deadline passed without confirmation. Only a rejoin marker remains, never a secret. */
+  readonly expired?: boolean;
 }
 
 /**
@@ -241,6 +247,21 @@ export const ResourceSampleEvent = Schema.TaggedStruct("resourceSample", {
 });
 export type ResourceSampleEvent = typeof ResourceSampleEvent.Type;
 
+/** MM-1908: page event with the newest `machine_exec` runs, on connection and on each run. */
+export const ExecsEvent = Schema.TaggedStruct("execs", { execs: Schema.Array(MachineExecRecord) });
+export type ExecsEvent = typeof ExecsEvent.Type;
+
+/** MM-1922: page event with the newest forwarded calls, on connection and on each call. */
+export const CallsEvent = Schema.TaggedStruct("calls", { calls: Schema.Array(MachineCallRecord) });
+export type CallsEvent = typeof CallsEvent.Type;
+
+/** MM-1915: what agents on `from` can do on `to`, for each arrow that gives anything. */
+export interface ArrowCapabilities {
+  readonly from: MachineId;
+  readonly to: MachineId;
+  readonly can: ReadonlyArray<ArrowCapability>;
+}
+
 /** MM-212: page event when a machine used its join code. It holds no part of the code. */
 export const EnrolledEvent = Schema.TaggedStruct("enrolled", { machineId: MachineId });
 export type EnrolledEvent = typeof EnrolledEvent.Type;
@@ -275,6 +296,7 @@ export const ApproveClientRequest = Schema.Struct({
     Schema.TaggedStruct("existing", { clientId: ClientId }),
   ]),
   arrows: Schema.Array(Schema.Struct({ to: MachineId, level: MachineLevel })),
+  expectedState: Schema.optionalKey(Schema.String),
 });
 export type ApproveClientRequest = typeof ApproveClientRequest.Type;
 
@@ -283,8 +305,12 @@ export type ApproveClientRequest = typeof ApproveClientRequest.Type;
  * arrows or into an existing client with its own arrows. A new invite ends the older ones.
  */
 export const InviteRequest = Schema.Struct({
-  client: ApproveClientRequest.fields.client,
+  client: Schema.Union([
+    Schema.TaggedStruct("new", { name: Text, position: Schema.optionalKey(MapPosition) }),
+    Schema.TaggedStruct("existing", { clientId: ClientId }),
+  ]),
   arrows: ApproveClientRequest.fields.arrows,
+  expectedState: Schema.optionalKey(Schema.String),
 });
 export type InviteRequest = typeof InviteRequest.Type;
 
@@ -357,6 +383,12 @@ export type MapToolResult =
       readonly proposals: ReadonlyArray<MapProposal>;
       /** MM-1507: the latest samples, the thresholds and the active alerts. */
       readonly resources: ResourcesOverview;
+      /** MM-1908: the newest 50 `machine_exec` runs, without their output. */
+      readonly execs: ReadonlyArray<MachineExecRecord>;
+      /** MM-1922: the newest 50 calls forwarded over arrow links, without arguments or output. */
+      readonly calls: ReadonlyArray<MachineCallRecord>;
+      /** MM-1915: "what can A do on B" for each arrow that gives anything. */
+      readonly capabilities: ReadonlyArray<ArrowCapabilities>;
     }
   | {
       readonly _tag: "resources";
@@ -388,7 +420,7 @@ export const PushSubscribeRequest = Schema.Struct({
 });
 export type PushSubscribeRequest = typeof PushSubscribeRequest.Type;
 
-/** POST /api/push/unsubscribe and POST /api/push/test: one subscription of this device. */
+/** POST /api/push/status, /api/push/unsubscribe and /api/push/test: one device subscription. */
 export const PushEndpointRequest = Schema.Struct({
   endpoint: PushSubscribeRequest.fields.endpoint,
 });
@@ -397,6 +429,11 @@ export type PushEndpointRequest = typeof PushEndpointRequest.Type;
 /** GET /api/push: null when the portal has no `VAPID_JWK` secret. */
 export interface PushKeyResponse {
   readonly publicKey: string | null;
+}
+
+/** POST /api/push/status: reads registration without turning notifications on. */
+export interface PushStatusResponse {
+  readonly subscribed: boolean;
 }
 
 /** The encrypted body of one push message. The service worker shows it (MM-1808). */

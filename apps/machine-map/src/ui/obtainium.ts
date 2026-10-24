@@ -1,6 +1,6 @@
 /**
  * The fork Android app in Obtainium, with the release settings of docs/fork/features.md "Android APK".
- * Fork releases are prereleases, and most have no APK, so Obtainium falls back to older ones.
+ * Most fork releases are nightly prereleases, and most have no APK, so Obtainium falls back to older ones.
  */
 const FORK_ANDROID_APP = {
   id: "com.yardenzamir.t3code",

@@ -1,6 +1,6 @@
 /**
  * The newest nightly of the fork for the install step of the join dialog (MM-211). Fork Release
- * publishes only pre-releases, and GitHub `releases/latest` skips them, so this reads the list.
+ * publishes pre-releases, and GitHub `releases/latest` skips them, so this reads the list.
  * Fork Release uploads `SHA256SUMS` last, so a release with it has every installer, like the
  * releases that a server installs (apps/server/src/fork/forkReleases.ts).
  */

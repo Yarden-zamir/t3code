@@ -1,50 +1,53 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { matchComposerThreadItems } from "./composerThreadItems.ts";
+import { matchComposerThreadItems, readableThreadEnvironments } from "./composerThreadItems.ts";
 
-const env = EnvironmentId.make("env-1");
-const otherEnv = EnvironmentId.make("env-2");
-const shell = (
-  id: string,
-  title: string,
-  overrides: Partial<Parameters<typeof matchComposerThreadItems>[0]["shells"][number]> = {},
-) => ({
-  environmentId: env,
+const LOCAL = EnvironmentId.make("env-local");
+const PEER = EnvironmentId.make("env-peer");
+const OTHER = EnvironmentId.make("env-other");
+
+const shell = (environmentId: EnvironmentId, id: string, updatedAt: string) => ({
+  environmentId,
   id: ThreadId.make(id),
-  title,
-  updatedAt: "2026-01-01T00:00:00.000Z",
+  title: `Fix ${id}`,
+  updatedAt,
   archivedAt: null,
-  ...overrides,
 });
 
+const shells = [
+  shell(LOCAL, "local", "2026-10-01T00:00:00.000Z"),
+  shell(PEER, "peer", "2026-10-02T00:00:00.000Z"),
+  shell(OTHER, "other", "2026-10-03T00:00:00.000Z"),
+];
+
 describe("matchComposerThreadItems", () => {
-  it("offers nothing for a bare @ so the picker stays a file picker", () => {
-    expect(
-      matchComposerThreadItems({
-        shells: [shell("t1", "Fix login")],
-        environmentId: env,
-        excludeThreadId: null,
-        query: "  ",
-      }),
-    ).toEqual([]);
+  it("lists threads of readable machines and names each machine (MM-1907)", () => {
+    const readable = readableThreadEnvironments(LOCAL, [
+      { environmentId: LOCAL, name: "Mac" },
+      { environmentId: PEER, name: "VPS" },
+    ]);
+    const items = matchComposerThreadItems({
+      shells,
+      readable,
+      excludeThreadId: null,
+      query: "fix",
+    });
+    expect(items.map((item) => [item.thread.environmentId, item.description])).toEqual([
+      [PEER, "Thread · VPS"],
+      [LOCAL, "Thread · Mac"],
+    ]);
   });
 
-  it("matches titles within the environment, newest first, skipping self and archived", () => {
+  it("stays on the composer's machine when its server names no other machine", () => {
     const items = matchComposerThreadItems({
-      shells: [
-        shell("old", "Login flow", { updatedAt: "2026-01-01T00:00:00.000Z" }),
-        shell("new", "Login redesign", { updatedAt: "2026-02-01T00:00:00.000Z" }),
-        shell("self", "Login self"),
-        shell("gone", "Login archived", { archivedAt: "2026-01-02T00:00:00.000Z" }),
-        shell("foreign", "Login elsewhere", { environmentId: otherEnv }),
-        shell("nope", "Unrelated"),
-      ],
-      environmentId: env,
-      excludeThreadId: ThreadId.make("self"),
-      query: "LOGIN",
+      shells,
+      readable: readableThreadEnvironments(LOCAL, null),
+      excludeThreadId: null,
+      query: "fix",
     });
-    expect(items.map((item) => item.thread.threadId)).toEqual(["new", "old"]);
-    expect(items[0]).toMatchObject({ type: "thread", label: "Login redesign" });
+    expect(items.map((item) => [item.thread.environmentId, item.description])).toEqual([
+      [LOCAL, "Thread"],
+    ]);
   });
 });

@@ -13,6 +13,8 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import { hasUnmergedSync } from "./lib/fork-check-sync.ts";
+
 /** Fork CI checks that this command does not run. Keep in sync with .github/workflows/fork-ci.yml. */
 const NOT_COVERED = [
   "the full test suites of the Test, Test Web and Test Server jobs (only the tests below run)",
@@ -21,13 +23,25 @@ const NOT_COVERED = [
   "the .github/scripts tests and Fork Android, Fork Release and Fork Sync",
 ];
 const SCRIPT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
-const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.test.ts", ".browser.test.tsx"];
+const REPAIR_SKILL_SCRIPTS = ".agents/skills/fork-repair/scripts/";
+const BASE_TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.test.ts", ".browser.test.tsx"];
+/** Fork tests of an upstream file live next to it as `foo.fork.test.ts`, see docs/fork/operations.md. */
+const TEST_SUFFIXES = [
+  ...BASE_TEST_SUFFIXES,
+  ...BASE_TEST_SUFFIXES.map((suffix) => `.fork${suffix}`),
+];
 /** Tests that run on every check. */
 const ALWAYS_TESTS = ["apps/web/src/components/settings/forkSettingsRegistration.test.ts"];
-/** React Compiler coverage fails on a bailout anywhere in its app, so it runs on any change there. */
-const COMPILER_COVERAGE_TESTS = {
-  "apps/web/": "apps/web/src/reactCompilerCoverage.test.ts",
-  "apps/mobile/": "apps/mobile/src/reactCompilerCoverage.test.ts",
+/**
+ * Tests that fail on a change anywhere in their app, so they run on any change there: React
+ * Compiler coverage, and the mobile import cycle check (about 1.5 s).
+ */
+const APP_WIDE_TESTS = {
+  "apps/web/": ["apps/web/src/reactCompilerCoverage.test.ts"],
+  "apps/mobile/": [
+    "apps/mobile/src/reactCompilerCoverage.test.ts",
+    "apps/mobile/src/dependency-graph.test.ts",
+  ],
 };
 
 interface WorkspacePackage {
@@ -64,6 +78,13 @@ try {
 } catch {
   console.error("No merge base with origin/main. Run `git fetch origin main` and try again.");
   process.exit(2);
+}
+
+if (hasUnmergedSync(repoRoot)) {
+  console.log(
+    "Fork CI checks sync branches. Locally, run `vp run typecheck` and the fork tests in docs/fork/operations.md (Fork Sync).",
+  );
+  process.exit(0);
 }
 
 const changed = [
@@ -106,7 +127,7 @@ function stripExtension(file: string): string {
   return file.slice(0, file.length - NodePath.extname(file).length);
 }
 
-/** Tests next to a changed source file: `foo.ts` has `foo.test.ts` and the other suffixes. */
+/** Tests next to a changed source file: `foo.ts` has `foo.test.ts`, `foo.fork.test.ts` and the other suffixes. */
 function testsFor(file: string): ReadonlyArray<string> {
   if (TEST_SUFFIXES.some((suffix) => file.endsWith(suffix))) return [file];
   if (!SCRIPT_EXTENSIONS.has(NodePath.extname(file))) return [];
@@ -141,8 +162,9 @@ function testSteps(): ReadonlyArray<Step> {
     ...ALWAYS_TESTS.filter((test) => NodeFS.existsSync(test)),
     ...changed.flatMap(testsFor),
   ]);
-  for (const [prefix, test] of Object.entries(COMPILER_COVERAGE_TESTS)) {
-    if (changed.some((file) => file.startsWith(prefix))) tests.add(test);
+  for (const [prefix, appTests] of Object.entries(APP_WIDE_TESTS)) {
+    if (changed.some((file) => file.startsWith(prefix)))
+      for (const test of appTests) tests.add(test);
   }
   const browserTests = [...tests].filter((test) => test.includes(".browser.test."));
   const steps: Array<Step> = [];
@@ -175,11 +197,36 @@ function testSteps(): ReadonlyArray<Step> {
   return steps;
 }
 
+/** The Python tests of the fork repair skill. Fork CI does not run them: its runners have no uv. */
+function repairSkillStep(): Step {
+  const name = "fork-repair skill tests";
+  if (!changed.some((file) => file.startsWith(REPAIR_SKILL_SCRIPTS))) {
+    return { name, skipped: "no changed fork-repair script" };
+  }
+  if (NodeChildProcess.spawnSync("uv", ["--version"]).status !== 0) {
+    return { name, skipped: "no uv. Install it: https://docs.astral.sh/uv/" };
+  }
+  return {
+    name,
+    detail: REPAIR_SKILL_SCRIPTS,
+    command: [
+      "uv",
+      "run",
+      "--no-project",
+      "--with",
+      "pytest==9.1.1",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      REPAIR_SKILL_SCRIPTS,
+    ],
+  };
+}
+
 function steps(): ReadonlyArray<Step> {
   const scripts = changed.filter((file) => SCRIPT_EXTENSIONS.has(NodePath.extname(file)));
-  const codeChanged = changed.some(
-    (file) => !isDocFile(file) && !file.startsWith("apps/machine-map/"),
-  );
+  const codeChanged = changed.some((file) => !isDocFile(file));
   const typecheckPackages = [...new Set(changed.flatMap((file) => packageOf(file) ?? []))].filter(
     (workspace) => workspace.scripts.typecheck !== undefined,
   );
@@ -200,7 +247,7 @@ function steps(): ReadonlyArray<Step> {
         },
     codeChanged
       ? { name: "knip", detail: "whole repository", command: ["vp", "run", "knip:check"] }
-      : { name: "knip", skipped: "only docs, markdown or apps/machine-map changed, as in Fork CI" },
+      : { name: "knip", skipped: "only docs or markdown changed, as in Fork CI" },
     typecheckPackages.length === 0
       ? { name: "typecheck", skipped: "no changed package" }
       : {
@@ -214,10 +261,21 @@ function steps(): ReadonlyArray<Step> {
           ],
         },
     ...testSteps(),
+    repairSkillStep(),
     {
       name: "doc links",
       detail: "fork docs",
       command: ["node", NodePath.join(import.meta.dirname, "fork-check-doc-links.ts")],
+    },
+    {
+      name: "migrations",
+      detail: "registry against upstream/main",
+      command: ["node", NodePath.join(import.meta.dirname, "fork-check-migrations.ts")],
+    },
+    {
+      name: "adopted PRs",
+      detail: "list against HEAD",
+      command: ["node", NodePath.join(import.meta.dirname, "fork-adopted-prs.ts"), "check"],
     },
   ];
 }

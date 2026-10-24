@@ -10,7 +10,11 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 
-import { appendClientConnectionParams } from "../authorization/remote.ts";
+import {
+  appendClientConnectionParams,
+  type ClientOwnerParams,
+  readClientOwnerParams,
+} from "../authorization/remote.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import {
@@ -74,12 +78,13 @@ const isBearerCredential = Schema.is(BearerConnectionCredential);
 function primarySocketUrl(
   target: PrimaryConnectionTarget,
   clientMetadata: AuthClientPresentationMetadata | undefined,
+  owners: ClientOwnerParams,
 ): string {
   const url = new URL(target.wsBaseUrl);
   if (url.pathname === "" || url.pathname === "/") {
     url.pathname = "/ws";
   }
-  appendClientConnectionParams(url, clientMetadata, "direct");
+  appendClientConnectionParams(url, clientMetadata, "direct", owners);
   return url.toString();
 }
 
@@ -97,19 +102,35 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
         environmentId: target.environmentId,
         label: target.label,
         httpBaseUrl: target.httpBaseUrl,
-        socketUrl: primarySocketUrl(target, presentation.metadata),
+        socketUrl: primarySocketUrl(target, presentation.metadata, yield* readClientOwnerParams),
         httpAuthorization: null,
         target,
       } satisfies PreparedConnection;
     }
 
-    const authorized = yield* remote.authorizeBearer({
-      expectedEnvironmentId: target.environmentId,
-      httpBaseUrl: target.httpBaseUrl,
-      wsBaseUrl: target.wsBaseUrl,
-      bearerToken: bearerToken.value,
-      connectionMethod: "direct",
-    });
+    const authorize = (token: string) =>
+      remote.authorizeBearer({
+        expectedEnvironmentId: target.environmentId,
+        httpBaseUrl: target.httpBaseUrl,
+        wsBaseUrl: target.wsBaseUrl,
+        bearerToken: token,
+        connectionMethod: "direct",
+      });
+    const authorized = yield* authorize(bearerToken.value).pipe(
+      Effect.catch((error) =>
+        Effect.gen(function* () {
+          if (
+            error._tag !== "ConnectionBlockedError" ||
+            error.reason !== "authentication" ||
+            !auth.refreshBearerToken
+          )
+            return yield* error;
+          const refreshed = yield* auth.refreshBearerToken(bearerToken.value);
+          if (Option.isNone(refreshed)) return yield* error;
+          return yield* authorize(refreshed.value);
+        }),
+      ),
+    );
     return {
       ...authorized,
       target,

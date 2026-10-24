@@ -40,6 +40,7 @@ import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import { forkPreviewCaptureTimeout } from "./forkPreviewCaptureError.ts";
 
 const HOST_RESPONSE_GRACE_MS = 1_000;
 
@@ -166,8 +167,13 @@ const selectorDiagnosticsFromInput = (
   return {};
 };
 
+/**
+ * One agent: a provider session on one thread. Codex and OpenCode run every
+ * thread of a provider instance in one session, so the session alone would
+ * share one current tab, tab budget, and tab ownership across chats.
+ */
 const hostAssignmentKey = (scope: McpInvocationContext.McpThreadInvocationScope): string =>
-  `${scope.environmentId}\u0000${scope.thread.providerSessionId}`;
+  `${scope.environmentId}\u0000${scope.thread.providerSessionId}\u0000${scope.thread.threadId}`;
 
 const isPreviewTabId = Schema.is(PreviewTabId);
 const decodeControlReason = Schema.decodeUnknownOption(PreviewAutomationControlReason);
@@ -252,6 +258,7 @@ const classifyResponseError = (
       return new PreviewAutomationTimeoutError({
         ...context,
         ...remoteDiagnostics,
+        ...forkPreviewCaptureTimeout(error.detail), // Fork: preserve the inner capture deadline and reason.
       });
     case "PreviewAutomationControlInterruptedError": {
       const reason = decodeControlReason(error.detail);

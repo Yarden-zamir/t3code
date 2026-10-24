@@ -7,7 +7,6 @@
  * It depends on no auth service, because `EnvironmentAuth` reads it.
  */
 import {
-  type AuthMcpClientAccess,
   ClientAccessMode,
   DEFAULT_MACHINE_MAP_PORTAL_URL,
   type MachineToPortal,
@@ -40,7 +39,7 @@ import {
   isLocalDesktopSubject,
   clientGrantFor,
   machineGrantFor,
-  machineMcpAccessFor,
+  machineMcpClientFor,
 } from "./machineAccess.ts";
 
 /** The secret store entry of the machine token. Never `settings.json` (MM-1302). */
@@ -176,15 +175,10 @@ export class MachineMapState extends Context.Service<
     }) => Effect.Effect<MachineGrant | undefined>;
     /** MM-906: browser keys that wait to reach the portal. `MachineMap` sends them. */
     readonly clientSeen: Queue.Dequeue<Extract<MachineToPortal, { _tag: "clientSeen" }>>;
-    /** MM-1307: the MCP client of a machine session whose arrow has agent tools. */
-    readonly mcpClient: (session: {
-      readonly sessionId: string;
-      readonly subject: string;
-      readonly method: string;
-    }) => Effect.Effect<
-      | { readonly sessionId: string; readonly label: string; readonly access: AuthMcpClientAccess }
-      | undefined
-    >;
+    /** MM-1307, MM-1921: `machineMcpClientFor` with the desired state of now. */
+    readonly mcpClient: (
+      session: Parameters<typeof machineMcpClientFor>[1],
+    ) => Effect.Effect<ReturnType<typeof machineMcpClientFor>>;
   }
 >()("t3/fork/machineMap/MachineMapState") {}
 
@@ -338,28 +332,29 @@ const make = Effect.gen(function* () {
   const lastReported = new Map<string, number>();
   const modeOf = (local: LocalState): ClientAccessMode =>
     local.enabled ? local.clientAccess : "off";
-  const browserGrant: MachineMapState["Service"]["browserGrant"] = (input) =>
-    Effect.gen(function* () {
-      const local = yield* SubscriptionRef.get(state);
-      const mode = modeOf(local);
-      const desired = local.saved.desired;
-      // Without a readable desired state, `enforce` lets no browser in (MM-918).
-      if (mode === "off" || desired === null) return undefined;
-      const nowMs = yield* Clock.currentTimeMillis;
-      const grant = browserGrantFor(desired, input.thumbprint, nowMs, mode);
-      if (grant !== undefined) return grant;
-      if (nowMs - (lastReported.get(input.thumbprint) ?? 0) >= 60_000) {
-        if (lastReported.size >= 1000) lastReported.clear();
-        lastReported.set(input.thumbprint, nowMs);
-        yield* Queue.offer(clientSeen, {
-          _tag: "clientSeen",
-          thumbprint: input.thumbprint,
-          describedAs: input.describedAs.slice(0, 200),
-          email: input.subject,
-        });
-      }
-      return undefined;
-    });
+  const browserGrant: MachineMapState["Service"]["browserGrant"] = Effect.fn(
+    "MachineMapState.browserGrant",
+  )(function* (input) {
+    const local = yield* SubscriptionRef.get(state);
+    const mode = modeOf(local);
+    const desired = local.saved.desired;
+    // Without a readable desired state, `enforce` lets no browser in (MM-918).
+    if (mode === "off" || desired === null) return undefined;
+    const nowMs = yield* Clock.currentTimeMillis;
+    const grant = browserGrantFor(desired, input.thumbprint, nowMs, mode);
+    if (grant !== undefined) return grant;
+    if (nowMs - (lastReported.get(input.thumbprint) ?? 0) >= 60_000) {
+      if (lastReported.size >= 1000) lastReported.clear();
+      lastReported.set(input.thumbprint, nowMs);
+      yield* Queue.offer(clientSeen, {
+        _tag: "clientSeen",
+        thumbprint: input.thumbprint,
+        describedAs: input.describedAs.slice(0, 200),
+        email: input.subject,
+      });
+    }
+    return undefined;
+  });
 
   return MachineMapState.of({
     snapshot: SubscriptionRef.get(state),
@@ -395,18 +390,9 @@ const make = Effect.gen(function* () {
       ),
     mcpClient: (session) =>
       Effect.all([activeDesired, Clock.currentTimeMillis]).pipe(
-        Effect.map(([desired, nowMs]) => {
-          // Only a bearer token, as an MCP client presents it. Never a cookie.
-          if (desired === null || session.method !== "bearer-access-token") return undefined;
-          const granted = machineMcpAccessFor(desired, session.subject, nowMs);
-          return granted === undefined
-            ? undefined
-            : {
-                sessionId: session.sessionId,
-                label: `machine ${granted.peer.name}`,
-                access: granted.access,
-              };
-        }),
+        Effect.map(([desired, nowMs]) =>
+          desired === null ? undefined : machineMcpClientFor(desired, session, nowMs),
+        ),
       ),
   });
 });

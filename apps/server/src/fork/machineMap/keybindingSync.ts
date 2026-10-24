@@ -13,6 +13,7 @@
 import {
   KEYBINDINGS_SETTING_KEY,
   MAX_KEYBINDINGS_COUNT,
+  renameLegacySidebarTabCommands,
   type ServerSettings,
 } from "@t3tools/contracts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
@@ -48,28 +49,30 @@ const encodeKeybindingsFile = Schema.encodeEffect(fromJsonStringPretty(SyncedKey
 const syncOn = (values: Readonly<Record<string, unknown>>) => values[SYNC_SETTING_KEY] === true;
 
 /** Entries that are not rules stay out, like the keybindings loader skips them. */
-const readKeybindingsFile = (fs: FileSystem.FileSystem, keybindingsPath: string) =>
-  Effect.gen(function* () {
-    if (!(yield* fs.exists(keybindingsPath))) return { _tag: "Missing" } as const;
-    const entries = decodeFileEntries(yield* fs.readFileString(keybindingsPath));
-    if (entries._tag === "Failure") return { _tag: "NotAnArray" } as const;
-    const rules = entries.value.flatMap((entry) => {
-      const rule = decodeRule(entry);
-      return rule._tag === "Success" ? [rule.value] : [];
-    });
-    return { _tag: "Rules", rules } as const;
+const readKeybindingsFile = Effect.fn("MachineMap.readKeybindingsFile")(function* (
+  fs: FileSystem.FileSystem,
+  keybindingsPath: string,
+) {
+  if (!(yield* fs.exists(keybindingsPath))) return { _tag: "Missing" } as const;
+  const entries = decodeFileEntries(yield* fs.readFileString(keybindingsPath));
+  if (entries._tag === "Failure") return { _tag: "NotAnArray" } as const;
+  const rules = entries.value.flatMap((entry) => {
+    const rule = decodeRule(entry);
+    return rule._tag === "Success" ? [rule.value] : [];
   });
+  return { _tag: "Rules", rules } as const;
+});
 
 /**
  * The reported server settings with the rules of the file as `keybindings`, while the sync is
  * on. A file that is not a JSON array reports no value, so a broken edit is no local change.
  */
-export const withSyncedKeybindings = (
-  fs: FileSystem.FileSystem,
-  keybindingsPath: string,
-  reported: Readonly<Record<string, unknown>>,
-): Effect.Effect<Readonly<Record<string, unknown>>> =>
-  Effect.gen(function* () {
+export const withSyncedKeybindings = Effect.fn("MachineMap.withSyncedKeybindings")(
+  function* (
+    fs: FileSystem.FileSystem,
+    keybindingsPath: string,
+    reported: Readonly<Record<string, unknown>>,
+  ) {
     if (!syncOn(reported)) return reported;
     const file = yield* readKeybindingsFile(fs, keybindingsPath);
     switch (file._tag) {
@@ -81,13 +84,16 @@ export const withSyncedKeybindings = (
       case "NotAnArray":
         return reported;
     }
-  }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.logWarning("Machine map could not read the keybindings file.", {
-        cause: Cause.pretty(cause),
-      }).pipe(Effect.as(reported)),
+  },
+  (effect, _fs, _keybindingsPath, reported) =>
+    effect.pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Machine map could not read the keybindings file.", {
+          cause: Cause.pretty(cause),
+        }).pipe(Effect.as(reported)),
+      ),
     ),
-  );
+);
 
 /** The sync state of a desired state: its own `keybindingSync` value, or else the local one. */
 const syncOnFor = (
@@ -118,7 +124,9 @@ export const applyKeybindingSettings = Effect.fn(function* (input: {
   if (!syncOnFor(input.values, input.current)) {
     return yield* Effect.logWarning("Machine map skipped keybindings: keybindingSync is off.");
   }
-  const value = input.values[KEYBINDINGS_SETTING_KEY];
+  const stored = input.values[KEYBINDINGS_SETTING_KEY];
+  // A value shared before sidebar tabs were called groups gets the new command names.
+  const value = Array.isArray(stored) ? (renameLegacySidebarTabCommands(stored) ?? stored) : stored;
   const previous = input.previous;
   if (
     previous !== null &&

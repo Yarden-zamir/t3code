@@ -5,7 +5,7 @@ import {
   MIN_TERMINAL_THREAD_FONT_LIMIT,
 } from "@t3tools/contracts";
 
-import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { BoundedIntegerInput } from "./BoundedIntegerInput";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -21,7 +21,6 @@ const selectLimits = (settings: ClientSettings) => ({
  */
 export function TerminalThreadFontLimitsSettingsRow() {
   const limits = useClientSettings(selectLimits);
-  const updateSettings = useUpdateClientSettings();
   return (
     <SettingsRow
       {...searchableSetting("terminal-thread-font-limits")}
@@ -32,7 +31,7 @@ export function TerminalThreadFontLimitsSettingsRow() {
           <SettingResetButton
             label="terminal zoom limits"
             onClick={() =>
-              void updateSettings({
+              void updateClientSettings({
                 terminalThreadFontSizeMin: DEFAULT_CLIENT_SETTINGS.terminalThreadFontSizeMin,
                 terminalThreadFontSizeMax: DEFAULT_CLIENT_SETTINGS.terminalThreadFontSizeMax,
               })
@@ -46,7 +45,7 @@ export function TerminalThreadFontLimitsSettingsRow() {
             value={limits.min}
             min={MIN_TERMINAL_THREAD_FONT_LIMIT}
             max={Math.min(limits.max, MAX_TERMINAL_THREAD_FONT_LIMIT)}
-            onCommit={(value) => void updateSettings({ terminalThreadFontSizeMin: value })}
+            onCommit={(value) => void updateClientSettings({ terminalThreadFontSizeMin: value })}
             aria-label="Smallest terminal font size"
           />
           <span aria-hidden="true">to</span>
@@ -54,7 +53,7 @@ export function TerminalThreadFontLimitsSettingsRow() {
             value={limits.max}
             min={Math.max(limits.min, MIN_TERMINAL_THREAD_FONT_LIMIT)}
             max={MAX_TERMINAL_THREAD_FONT_LIMIT}
-            onCommit={(value) => void updateSettings({ terminalThreadFontSizeMax: value })}
+            onCommit={(value) => void updateClientSettings({ terminalThreadFontSizeMax: value })}
             aria-label="Largest terminal font size"
           />
         </div>

@@ -3,6 +3,7 @@ import {
   ArchiveIcon,
   ClockIcon,
   KeyboardIcon,
+  LinkIcon,
   type LucideIcon,
   MailOpenIcon,
   MessageSquareTextIcon,
@@ -50,12 +51,32 @@ function afterPaletteCloses(run: () => void): Promise<void> {
  */
 export function focusLevelPaletteItems(
   iconClassName: string,
-  options: { readonly terminalThread: boolean } = { terminalThread: false },
+  {
+    messageLinks = false,
+    terminalThread = false,
+  }: { readonly messageLinks?: boolean; readonly terminalThread?: boolean } = {},
 ): CommandPaletteActionItem[] {
   return [
-    ...FOCUS_ITEMS.filter(([, level]) => !(options.terminalThread && level === "timeline")).map(
+    // A terminal thread has no timeline, so it has no message under a timeline cursor either.
+    ...(messageLinks && !terminalThread
+      ? [
+          {
+            kind: "action" as const,
+            value: "action:timeline.copyMessageLink",
+            searchTerms: ["copy", "message", "link", "cursor"],
+            title: "Copy message link",
+            description: "Copy the message under the timeline cursor",
+            icon: <LinkIcon className={iconClassName} />,
+            shortcutCommand: "timeline.copyMessageLink" as const,
+            run: async () => {
+              runRegisteredFocusLevelCommand("timeline.copyMessageLink");
+            },
+          },
+        ]
+      : []),
+    ...FOCUS_ITEMS.filter(([, level]) => !(terminalThread && level === "timeline")).map(
       ([command, level, chatTitle, ChatIcon]) => {
-        const terminal = options.terminalThread && level === "composer";
+        const terminal = terminalThread && level === "composer";
         const title = terminal ? "Focus terminal" : chatTitle;
         const Icon = terminal ? SquareTerminalIcon : ChatIcon;
         return {
@@ -69,16 +90,16 @@ export function focusLevelPaletteItems(
         };
       },
     ),
-    ...THREAD_ITEMS.filter(
-      ([command]) => !(options.terminalThread && command === "thread.markUnread"),
-    ).map(([command, title, Icon]) => ({
-      kind: "action" as const,
-      value: `action:${command}`,
-      searchTerms: ["thread", title],
-      title,
-      icon: <Icon className={iconClassName} />,
-      shortcutCommand: command,
-      run: () => afterPaletteCloses(() => void runRegisteredFocusLevelCommand(command)),
-    })),
+    ...THREAD_ITEMS.filter(([command]) => !(terminalThread && command === "thread.markUnread")).map(
+      ([command, title, Icon]) => ({
+        kind: "action" as const,
+        value: `action:${command}`,
+        searchTerms: ["thread", title],
+        title,
+        icon: <Icon className={iconClassName} />,
+        shortcutCommand: command,
+        run: () => afterPaletteCloses(() => void runRegisteredFocusLevelCommand(command)),
+      }),
+    ),
   ];
 }

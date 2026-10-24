@@ -84,20 +84,14 @@ export const make = Effect.gen(function* () {
     path: string,
     decode: (body: string) => Effect.Effect<A, Schema.SchemaError>,
   ): Effect.Effect<A, ForkChangelogError> =>
-    Effect.gen(function* () {
-      const response = yield* github.rest({
-        host: HOST,
-        operation: `ForkChangelog.${operation}`,
-        path,
-      });
-      if (response.truncated) {
-        return yield* new ForkChangelogError({
-          operation,
-          detail: "GitHub answered with too much data.",
-        });
-      }
-      return yield* decode(response.body);
-    }).pipe(
+    github.rest({ host: HOST, operation: `ForkChangelog.${operation}`, path }).pipe(
+      Effect.flatMap((response): Effect.Effect<A, ForkChangelogError | Schema.SchemaError> =>
+        response.truncated
+          ? Effect.fail(
+              new ForkChangelogError({ operation, detail: "GitHub answered with too much data." }),
+            )
+          : decode(response.body),
+      ),
       Effect.mapError((error) =>
         error._tag === "ForkChangelogError"
           ? error

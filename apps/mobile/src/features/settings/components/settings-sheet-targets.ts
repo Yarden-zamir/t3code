@@ -21,6 +21,8 @@ export type SettingsSheetTarget =
   | "SettingsDiagnostics"
   | "SettingsOpenSourceLicenses"
   | "SettingsUsage"
-  | "SettingsFork";
+  | "SettingsFork"
+  | "SettingsVoice"
+  | "SettingsVoiceProject";
 
 export type SettingsLegalDocumentTarget = "SettingsLegal";

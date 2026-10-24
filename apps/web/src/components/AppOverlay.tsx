@@ -189,7 +189,17 @@ async function runAppOverlayAction(
       useAppOverlayStore.getState().toggle(url, title);
       return;
     }
-    if (start === undefined) return;
+    if (start === undefined) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: `Open a thread to start ${title}`,
+          description:
+            "The page is down. Open a thread with terminal access, then run this action again.",
+        }),
+      );
+      return;
+    }
     await start();
     // A hidden overlay can still hold the page of a server that stopped, for example after an
     // upgrade. Load it again so the page matches the server that just started.

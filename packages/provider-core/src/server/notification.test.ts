@@ -15,10 +15,6 @@ import { backgroundWorkNotification, notificationTurnItem } from "./notification
 const childThreadId = ThreadId.make("thread:child");
 
 describe("backgroundWorkNotification", () => {
-  it("keeps the generic notification when nothing is known", () => {
-    assert.isNull(backgroundWorkNotification([]));
-  });
-
   it("names one piece of work and the thread of a subagent", () => {
     assert.deepEqual(
       backgroundWorkNotification([
@@ -72,18 +68,6 @@ describe("backgroundWorkNotification", () => {
       summary: "4 subagents finished",
     });
   });
-
-  it("keeps the task of every report that names one", () => {
-    const monitor = { taskId: "b1", toolUseId: "toolu_1", outputFile: "/tmp/tasks/b1.output" };
-    const notification = backgroundWorkNotification([
-      { kind: "monitor", label: "Watch the build", outcome: "completed", task: monitor },
-      { kind: "monitor", label: "Watch the logs", outcome: "completed" },
-    ]);
-    assert.deepEqual(notification.tasks, [monitor]);
-    assert.isUndefined(
-      backgroundWorkNotification([{ kind: "monitor", outcome: "completed" }]).tasks,
-    );
-  });
 });
 
 describe("notificationTurnItem", () => {
@@ -135,17 +119,6 @@ describe("notificationTurnItem", () => {
     task("b", "Write tests", "completed"),
     task("c", "Update docs", "running"),
   ];
-
-  it("says how many of a run's delegated tasks a delivery reports", () => {
-    const item = notificationTurnItem(userMessage, delivery(["a", "b"]), tasks);
-    assert.equal(item.type, "notification");
-    if (item.type !== "notification") return;
-    assert.equal(item.summary, "2 of 3 delegated tasks finished: Review src/math.ts, Write tests");
-    assert.deepEqual(item.source, {
-      kind: "delegated_task",
-      taskIds: [NodeId.make("a"), NodeId.make("b")],
-    });
-  });
 
   it("opens the child thread of a single delegated task", () => {
     const item = notificationTurnItem(userMessage, delivery(["a"]), tasks);

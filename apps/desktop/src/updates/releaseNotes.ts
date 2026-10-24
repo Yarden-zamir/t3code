@@ -59,6 +59,8 @@ function decodeHtmlEntities(input: string): string {
 function stripMarkup(input: string): string {
   return decodeHtmlEntities(
     input
+      // Fork: a collapsed block (release note screenshots, scripts/fork-daily-release-data.ts) is not a change.
+      .replace(/<details\b[\s\S]*?<\/details>/gi, "")
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<li\b[^>]*>/gi, "\n- ")
       .replace(/<h([1-6])\b[^>]*>/gi, (_, level: string) => `\n${"#".repeat(Number(level))} `)

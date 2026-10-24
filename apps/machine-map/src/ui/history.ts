@@ -5,7 +5,9 @@
 import type {
   ArrowRecord,
   ClientArrowRecord,
+  MachineCallRecord,
   MachineCommand,
+  MachineExecRecord,
   MachineId,
   MachineMapDocument,
   MapActor,
@@ -47,7 +49,9 @@ export type HistoryKind =
   | "preset"
   | "other"
   | "command"
-  | "alert";
+  | "alert"
+  | "exec"
+  | "call";
 
 /** Each kind: the filter label, the sticker (one or two words) and whether it is important. */
 export const HISTORY_KIND: Record<
@@ -70,6 +74,8 @@ export const HISTORY_KIND: Record<
   other: { label: "Other changes", sticker: "change", important: false },
   command: { label: "Commands", sticker: "command", important: false },
   alert: { label: "Health alerts", sticker: "alert", important: false },
+  exec: { label: "Commands run by agents", sticker: "exec", important: false },
+  call: { label: "Tools called on other machines", sticker: "call", important: false },
 };
 
 export const HISTORY_KINDS = Object.keys(HISTORY_KIND).filter(
@@ -213,13 +219,29 @@ export type HistoryEntry =
       readonly kind: "alert";
       readonly alert: HealthAlert;
       readonly ended: boolean;
+    }
+  | {
+      /** MM-1908: one `machine_exec` run, a portal event and not a revision. */
+      readonly _tag: "exec";
+      readonly at: string;
+      readonly kind: "exec";
+      readonly exec: MachineExecRecord;
+    }
+  | {
+      /** MM-1922: one T3 tool call over an arrow link, a portal event and not a revision. */
+      readonly _tag: "call";
+      readonly at: string;
+      readonly kind: "call";
+      readonly call: MachineCallRecord;
     };
 
-/** Revisions, commands, and alert starts and ends, newest first. */
+/** Revisions, commands, alert starts and ends, exec runs and forwarded calls, newest first. */
 export function historyEntries(
   revisions: ReadonlyArray<MapRevision>,
   commands: ReadonlyArray<MachineCommand>,
   alerts: ReadonlyArray<HealthAlert>,
+  execs: ReadonlyArray<MachineExecRecord>,
+  calls: ReadonlyArray<MachineCallRecord>,
 ): Array<HistoryEntry> {
   return [
     ...revisions.map((revision): HistoryEntry => ({
@@ -240,6 +262,8 @@ export function historyEntries(
         ? []
         : [{ _tag: "alert", at: alert.endedAt, kind: "alert", alert, ended: true } as const]),
     ]),
+    ...execs.map((exec): HistoryEntry => ({ _tag: "exec", at: exec.at, kind: "exec", exec })),
+    ...calls.map((call): HistoryEntry => ({ _tag: "call", at: call.at, kind: "call", call })),
   ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
 
@@ -252,6 +276,10 @@ export function entryKey(entry: HistoryEntry): string {
       return entry.command.id;
     case "alert":
       return `${entry.alert.id}:${entry.ended ? "end" : "start"}`;
+    case "exec":
+      return `exec:${entry.exec.id}`;
+    case "call":
+      return `call:${entry.call.id}`;
   }
 }
 
@@ -265,6 +293,20 @@ export function entryActor(entry: HistoryEntry): MapActor {
       return entry.command.actor;
     case "alert":
       return HEALTH_ACTOR;
+    case "exec":
+      return {
+        _tag: "agent",
+        machineId: entry.exec.from,
+        threadId: entry.exec.threadId,
+        threadTitle: entry.exec.threadTitle,
+      };
+    case "call":
+      return {
+        _tag: "agent",
+        machineId: entry.call.from,
+        threadId: entry.call.threadId,
+        threadTitle: entry.call.threadTitle,
+      };
   }
 }
 
@@ -294,6 +336,8 @@ export function actorLabel(actor: MapActor, map: MachineMapDocument): string {
 /** The machines that an entry names. A shared setting names none. */
 function entryMachines(entry: HistoryEntry): ReadonlySet<string> {
   if (entry._tag === "alert") return new Set([entry.alert.machineId]);
+  if (entry._tag === "exec") return new Set([entry.exec.from, entry.exec.to]);
+  if (entry._tag === "call") return new Set([entry.call.from, entry.call.to]);
   if (entry._tag === "command") {
     const { input, machineId } = entry.command;
     return new Set(input._tag === "testArrow" ? [machineId, input.to] : [machineId]);
@@ -471,7 +515,7 @@ export interface DiffRow {
   readonly after: string;
 }
 
-const NOTHING = "—";
+const NOTHING = "-";
 
 const clientLink = (map: MachineMapDocument, id: string): Pick<DiffRow, "link"> =>
   map.clients.some((client) => client.id === id) ? { link: { _tag: "client", id } } : {};
@@ -479,6 +523,7 @@ const clientLink = (map: MachineMapDocument, id: string): Pick<DiffRow, "link"> 
 function arrowText(arrow: ArrowRecord): string {
   const parts = [LEVEL_LABEL[arrow.level]];
   if (arrow.agentTools) parts.push("agent tools");
+  if (arrow.exec) parts.push("exec");
   if (arrow.expiresAt) parts.push(`until ${shortTime(arrow.expiresAt)}`);
   return parts.join(", ");
 }

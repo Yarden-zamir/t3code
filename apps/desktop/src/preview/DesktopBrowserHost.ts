@@ -19,6 +19,7 @@ import * as Stream from "effect/Stream";
 
 import { createCdpRelayConnection, type CdpRelayConnection } from "./CdpRelay.ts";
 import { sendPageCommand } from "./GuestInput.ts";
+import { makeForkBrowserCapture } from "./ForkBrowserCapture.ts";
 
 const encodeEvent = Schema.encodeSync(Schema.fromJsonString(DesktopBrowserEvent));
 const decodeCommand = Schema.decodeUnknownOption(Schema.fromJsonString(DesktopBrowserCommand));
@@ -43,6 +44,8 @@ interface AttachedTab {
   readonly key: DesktopBrowserTabKey;
   readonly debuggee: DesktopBrowserTabDebugger;
   relay: CdpRelayConnection | null;
+  screenshotTurn: object | null;
+  readonly waitingScreenshots: Array<() => void>;
   downloadDirectory: string | null;
   pendingDownloadGuid: string | null;
   agentInputAt: number;
@@ -52,12 +55,14 @@ interface AttachedTab {
     params: unknown,
     sessionId: string,
   ) => void;
+  readonly onNewDocument: () => void;
 }
 
 export class DesktopBrowserHost extends Context.Service<
   DesktopBrowserHost,
   {
     readonly events: Stream.Stream<Uint8Array>;
+    readonly forkCapture: ReturnType<typeof makeForkBrowserCapture>; // Fork: native surface reports.
     readonly handleCommandLine: (line: string) => Effect.Effect<void>;
     readonly attach: (key: DesktopBrowserTabKey, debuggee: DesktopBrowserTabDebugger) => void;
     readonly detach: (key: DesktopBrowserTabKey) => void;
@@ -83,16 +88,56 @@ export const make = Effect.gen(function* () {
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const tabs = new Map<string, AttachedTab>();
   const emit = (event: DesktopBrowserEventType) => runFork(PubSub.publish(outbox, event));
+  const forkCapture = makeForkBrowserCapture(emit, (key) => tabs.get(keyOf(key))?.debuggee); // Fork: native rendering leases.
+
+  const nextScreenshot = (tab: AttachedTab) => {
+    tab.screenshotTurn = null;
+    tab.waitingScreenshots.shift()?.();
+  };
+
+  /**
+   * Chromium below 157 crashes the whole app when a guest's renderer exits with a
+   * screenshot copy in flight (crbug.com/567321049). Overlapping screenshots make that
+   * far likelier, and one the server gave up on stays pending in Chromium, so each guest
+   * gets one at a time. One queued by a relay released since then is dropped unsent.
+   */
+  const takeScreenshot = (
+    tab: AttachedTab,
+    relay: CdpRelayConnection,
+    capture: () => Promise<unknown>,
+  ) =>
+    new Promise<unknown>((resolve, reject) => {
+      const start = () => {
+        if (tab.relay !== relay) {
+          reject(new Error("The preview connection that asked for this screenshot closed."));
+          nextScreenshot(tab);
+          return;
+        }
+        const turn = {};
+        tab.screenshotTurn = turn;
+        capture()
+          .finally(() => {
+            if (tab.screenshotTurn === turn) nextScreenshot(tab);
+          })
+          .then(resolve, reject);
+      };
+      if (tab.screenshotTurn === null) start();
+      else tab.waitingScreenshots.push(start);
+    });
 
   const relayFor = (tab: AttachedTab) => {
     if (tab.relay) return tab.relay;
     const { webContents, debugger: debuggee } = tab.debuggee;
+    const send = (method: string, params: Record<string, unknown>, sessionId?: string) =>
+      sessionId === undefined
+        ? sendPageCommand(webContents, debuggee, method, params)
+        : debuggee.sendCommand(method, params, sessionId);
     const relay: CdpRelayConnection = createCdpRelayConnection(
       {
         send: (method, params, sessionId) =>
-          sessionId === undefined
-            ? sendPageCommand(webContents, debuggee, method, params)
-            : debuggee.sendCommand(method, params, sessionId),
+          method === "Page.captureScreenshot"
+            ? takeScreenshot(tab, relay, () => send(method, params, sessionId))
+            : send(method, params, sessionId),
         targetId: () =>
           debuggee
             .sendCommand("Target.getTargetInfo")
@@ -133,7 +178,10 @@ export const make = Effect.gen(function* () {
     const tab = tabs.get(id);
     if (!tab) return;
     tabs.delete(id);
+    forkCapture.detach(key); // Fork: a replacement guest starts with no native presentation.
+    tab.relay = null;
     tab.debuggee.debugger.off("message", tab.onMessage);
+    tab.debuggee.webContents.off("did-navigate", tab.onNewDocument);
     emit({ type: "detached", ...key });
   };
 
@@ -145,6 +193,8 @@ export const make = Effect.gen(function* () {
       key,
       debuggee,
       relay: null,
+      screenshotTurn: null,
+      waitingScreenshots: [],
       downloadDirectory: null,
       pendingDownloadGuid: null,
       agentInputAt: Number.NEGATIVE_INFINITY,
@@ -155,9 +205,15 @@ export const make = Effect.gen(function* () {
         }
         tab.relay?.event(method, params, sessionId);
       },
+      // A screenshot pending when the page loads a new document, a reload included, can
+      // stay unanswered. A crashed page lands here once it reloads, well after its renderer died.
+      onNewDocument: () => {
+        if (tab.screenshotTurn !== null) nextScreenshot(tab);
+      },
     };
     tabs.set(id, tab);
     debuggee.debugger.on("message", tab.onMessage);
+    debuggee.webContents.on("did-navigate", tab.onNewDocument);
     emit({ type: "attached", ...key });
   };
 
@@ -167,6 +223,7 @@ export const make = Effect.gen(function* () {
       if (Option.isNone(command)) return;
       const tab = tabs.get(keyOf(command.value));
       if (!tab) return;
+      if (command.value.type === "capture") return forkCapture.command(command.value); // Fork: place the guest before CDP capture.
       if (command.value.type === "pointer") {
         const { threadId, tabId, phase, x, y } = command.value;
         runFork(PubSub.publish(pointers, { key: { threadId, tabId }, phase, x, y }));
@@ -190,6 +247,7 @@ export const make = Effect.gen(function* () {
       [...tabs.values()],
       (tab) => {
         tab.relay = null;
+        forkCapture.announce(tab.key); // Fork: replay native presentation after a server restart.
         return PubSub.publish(outbox, { type: "attached", ...tab.key });
       },
       { discard: true },
@@ -197,6 +255,7 @@ export const make = Effect.gen(function* () {
   );
 
   return DesktopBrowserHost.of({
+    forkCapture, // Fork: renderer IPC reports presentation and capture readiness.
     pointers: Stream.fromPubSub(pointers),
     // Subscribes before announcing, so no attach falls between the two.
     events: Stream.unwrap(

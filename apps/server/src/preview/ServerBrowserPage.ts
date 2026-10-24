@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalTimers:off - Playwright callbacks run outside the Effect runtime.
 
 import {
+  type BrowserRecordingFrameRate,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   type PreviewAutomationClickInput,
   type PreviewAutomationConsoleEntry,
@@ -18,9 +19,10 @@ import {
   type PreviewAutomationWaitForInput,
 } from "@t3tools/contracts";
 import { constVoid } from "effect/Function";
-import type { CDPSession, Frame, Locator, Page } from "playwright-core";
+import type { CDPSession, ConsoleMessage, Frame, Locator, Page } from "playwright-core";
 import * as NodeCrypto from "node:crypto";
 import { BrowserControlInterrupted } from "./SessionControl.ts";
+import { makeForkSnapshotProgress } from "./ForkSnapshotProgress.ts";
 
 const MAX_EVALUATION_BYTES = 64_000;
 const MAX_VISIBLE_TEXT_LENGTH = 20_000;
@@ -149,6 +151,54 @@ const SNAPSHOT_SCRIPT = `(() => {
 })()`;
 
 const MASKED_VALUE = "••••••••";
+
+/**
+ * A `data:` URL carries its content, which can be a whole file, and URLs and diagnostics
+ * reach tool results and provider logs. Keeps only the media type: the payload can hold any
+ * character and parameters are page-chosen too.
+ */
+export const withoutDataPayload = (url: string) => {
+  // Read the scheme as a browser would: it ignores leading controls and spaces, and tabs and
+  // newlines anywhere. A snapshot's YAML value may be quoted and escaped; an escape that isn't a
+  // tab or newline still decodes to something that can't start a scheme.
+  const value = url
+    .replace(/^["']/, "")
+    .replace(/\\(x[\da-f]{2}|u[\da-f]{4}|.)/gi, (_escape, code: string) =>
+      code.length > 1
+        ? String.fromCharCode(Number.parseInt(code.slice(1), 16))
+        : ({ t: "\t", n: "\n", r: "\r", '"': '"', "\\": "\\" }[code] ?? "\u0001"),
+    )
+    .replace(/[\t\n\r]/g, "")
+    // eslint-disable-next-line no-control-regex -- URL parsing ignores these controls.
+    .replace(/^[\u0000-\u0020]+/, "");
+  const parsed = /^data:([^,;]*)/i.exec(value);
+  if (!parsed) return url;
+  const type = parsed[1]!.trim();
+  const mediaType = /^[\w.+-]{1,64}\/[\w.+-]{1,64}$/.test(type) ? type : "";
+  return `data:${mediaType},…`;
+};
+
+/**
+ * Chromium's own console messages, which carry no arguments, quote `data:` URLs whole, as in a
+ * blocked navigation or a CSP violation. Everything after the first one goes, since Chromium
+ * accepts any type and a payload can hold any character. What a page logs itself is its own
+ * text, like anything else it shows, so it stays.
+ */
+export const consoleText = (message: ConsoleMessage) =>
+  message.args().length > 0
+    ? message.text()
+    : message.text().replace(/(?<![a-z\d])data:[^,;]*[,;][\s\S]*/i, withoutDataPayload);
+
+// Split on LF alone: a value keeps any U+2028 that a multiline regex would treat as a line end.
+const withoutTreeDataPayloads = (tree: string) =>
+  tree
+    .split("\n")
+    .map((line) => {
+      const url = /^(\s*- \/url: )(.*)$/s.exec(line);
+      return url ? url[1] + withoutDataPayload(url[2]!) : line;
+    })
+    .join("\n");
+
 // The broker waits 15s for the host; a snapshot, retry included, answers well before.
 const SNAPSHOT_TIMEOUT_MS = 10_000;
 // How long a frame in another process gets to answer; one that crashed never does.
@@ -178,12 +228,6 @@ const pageChanged = () =>
   new ServerBrowserOperationError(
     "PreviewAutomationExecutionError",
     "The page changed while capturing its snapshot. Take another snapshot.",
-  );
-
-const tooBusy = () =>
-  new ServerBrowserOperationError(
-    "PreviewAutomationTimeoutError",
-    "The page was too busy to capture a snapshot in time. Wait for it to settle and take another snapshot.",
   );
 
 const VALUE_TOO_LONG = "A password field holds a value too long to hide, so no snapshot was taken.";
@@ -373,19 +417,77 @@ const maskTree = (tree: string, dotted: RegExp) =>
     })
     .join("\n");
 
+/** Chromium sizes the capture, so the reported size is read from the PNG header. */
+const pngSize = (base64: string) => {
+  const header = Buffer.from(base64.slice(0, 32), "base64");
+  return { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
+};
+
+type Viewport = { readonly width: number; readonly height: number };
+
+/**
+ * A page's display ratio and CSS viewport, read in an isolated world since page script can
+ * reassign `devicePixelRatio`, `innerWidth`, and `innerHeight` in its own, and its page zoom.
+ */
+const readPageMetrics = async (cdp: CDPSession) => {
+  const { frameTree } = await cdp.send("Page.getFrameTree");
+  const { executionContextId } = await cdp.send("Page.createIsolatedWorld", {
+    frameId: frameTree.frame.id,
+    worldName: "t3-preview-metrics",
+  });
+  let { cssVisualViewport } = await cdp.send("Page.getLayoutMetrics");
+  // Desktop zoom applies asynchronously; bracket the CSS metrics to reject a torn read.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const zoom = cssVisualViewport.zoom ?? 1;
+    const { result } = await cdp.send("Runtime.evaluate", {
+      expression: "({ ratio: devicePixelRatio, width: innerWidth, height: innerHeight })",
+      contextId: executionContextId,
+      returnByValue: true,
+    });
+    ({ cssVisualViewport } = await cdp.send("Page.getLayoutMetrics"));
+    if ((cssVisualViewport.zoom ?? 1) === zoom) {
+      const { ratio, width, height } = result.value as {
+        readonly ratio: number;
+        readonly width: number;
+        readonly height: number;
+      };
+      return {
+        ratio,
+        width,
+        height,
+        zoom,
+        offset: { x: cssVisualViewport.pageX * zoom, y: cssVisualViewport.pageY * zoom },
+      };
+    }
+  }
+  throw new Error(
+    "The page's zoom kept changing while the snapshot read its size. Try the snapshot again.",
+  );
+};
+
 // Scaled captures repaint live screencasts, so callers pause them. Clips use document offsets.
 export const captureViewport = async (
   page: Page,
   cdp: CDPSession,
-  options: { readonly format: "png" | "jpeg"; readonly quality?: number; readonly scale: number },
+  options: {
+    readonly format: "png" | "jpeg";
+    readonly quality?: number;
+    readonly scale: number;
+    readonly viewport?: Viewport;
+    readonly offset?: { readonly x: number; readonly y: number } | undefined;
+  },
 ) => {
   let clip;
   if (options.scale < 1) {
-    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
-    const { cssVisualViewport } = await cdp.send("Page.getLayoutMetrics");
+    const viewport = options.viewport ?? page.viewportSize() ?? { width: 1280, height: 800 };
+    let offset = options.offset;
+    if (!offset) {
+      const { cssVisualViewport } = await cdp.send("Page.getLayoutMetrics");
+      const zoom = cssVisualViewport.zoom ?? 1;
+      offset = { x: cssVisualViewport.pageX * zoom, y: cssVisualViewport.pageY * zoom };
+    }
     clip = {
-      x: cssVisualViewport.pageX,
-      y: cssVisualViewport.pageY,
+      ...offset,
       ...viewport,
       scale: options.scale,
     };
@@ -401,18 +503,42 @@ export const captureViewport = async (
 type SnapshotInput = {
   readonly page: Page;
   readonly cdp: CDPSession;
-  readonly renderScale: number;
+  /** Headless pages render at the scale the server set; a desktop page at its display's. */
+  readonly renderScale: number | "display";
   readonly consoleEntries: ReadonlyArray<PreviewAutomationConsoleEntry>;
   readonly networkEntries: ReadonlyArray<PreviewAutomationNetworkEntry>;
   readonly actionTimeline: PreviewAutomationSnapshot["actionTimeline"];
 };
 
+/** The scale a page renders at and its viewport in device-independent pixels, a clip's units. */
+const renderingOf = async (input: SnapshotInput) => {
+  if (input.renderScale !== "display") {
+    const viewport = input.page.viewportSize() ?? { width: 1280, height: 800 };
+    return { renderScale: input.renderScale, viewport, offset: undefined };
+  }
+  // The display ratio a desktop page reports includes its page zoom, and its sizes are CSS pixels.
+  const page = await readPageMetrics(input.cdp);
+  return {
+    renderScale: page.ratio / page.zoom,
+    offset: page.offset,
+    viewport: {
+      width: Math.round(page.width * page.zoom),
+      height: Math.round(page.height * page.zoom),
+    },
+  };
+};
+
 const capture = async (
   input: SnapshotInput,
   deadline: number,
+  progress: ReturnType<typeof makeForkSnapshotProgress>, // Fork: identify a stalled capture stage.
 ): Promise<PreviewAutomationSnapshot> => {
-  const viewport = input.page.viewportSize() ?? { width: 1280, height: 800 };
-  const scale = Math.min(1, MAX_SCREENSHOT_WIDTH / (viewport.width * input.renderScale));
+  const { renderScale, viewport, offset } = await progress.track("metrics", () =>
+    renderingOf(input),
+  ); // Fork: native metrics can stall independently of capture.
+  // A late metrics reply must not begin a capture after viewers have resumed.
+  if (Date.now() >= deadline) throw progress.timeout("metrics"); // Fork: retain the inner deadline even when metrics reply late.
+  const scale = Math.min(1, MAX_SCREENSHOT_WIDTH / (viewport.width * renderScale));
   const state = refsFor(input.page);
   invalidateRefs(input.page);
   const generation = state.generation;
@@ -421,21 +547,30 @@ const capture = async (
   // Taken between the reads, so a value that changes during either fails the comparison.
   // Awaited after the tree: a capture that fails has finished its tree before a retry starts.
   const pageAndScreenshot = Promise.all([
-    input.page.evaluate(SNAPSHOT_SCRIPT) as Promise<
-      Pick<
-        PreviewAutomationSnapshot,
-        "url" | "title" | "loading" | "visibleText" | "interactiveElements"
-      >
-    >,
-    captureViewport(input.page, input.cdp, { format: "png", scale }),
+    progress.track(
+      "page text",
+      () =>
+        input.page.evaluate(SNAPSHOT_SCRIPT) as Promise<
+          Pick<
+            PreviewAutomationSnapshot,
+            "url" | "title" | "loading" | "visibleText" | "interactiveElements"
+          >
+        >,
+    ),
+    progress.track("screenshot", () =>
+      captureViewport(input.page, input.cdp, { format: "png", scale, viewport, offset }),
+    ), // Fork: retain the failed capture stage.
   ]);
   void pageAndScreenshot.catch(constVoid);
   // Leaves time for the second read; a frame that never loads holds the tree until then.
-  const tree = await input.page.ariaSnapshot({
-    mode: "ai",
-    boxes: true,
-    timeout: Math.max(1, deadline - Date.now() - 2_000),
-  });
+  const tree = await progress.track("accessibility tree", () =>
+    input.page.ariaSnapshot({
+      // Fork: tree collection has its own deadline.
+      mode: "ai",
+      boxes: true,
+      timeout: Math.max(1, deadline - Date.now() - 2_000),
+    }),
+  );
   const after = await read(before);
   // A value that changed meanwhile may be in the tree under neither reading.
   if (after.some((values, i) => values && JSON.stringify(values) !== JSON.stringify(before[i])))
@@ -450,12 +585,15 @@ const capture = async (
     if (!iframe) throw pageChanged();
     const frame = await iframe.contentFrame();
     void iframe.dispose().catch(constVoid);
-    if (frame && unread.includes(frame)) throw tooBusy();
+    if (frame && unread.includes(frame)) throw progress.timeout("password fields"); // Fork: identify unread password fields rather than the broker deadline.
   }
   const [page, data] = await pageAndScreenshot;
   if (state.generation !== generation) throw pageChanged();
   const mask = (text: string) => (dotted ? text.replace(dotted, MASKED_VALUE) : text);
-  const accessibilityTree = (dotted ? maskTree(tree, dotted) : tree)
+  // Redacted before the cut, so a payload crossing it can't leave its start showing, and before
+  // masking, which could hide the `data:` scheme behind a password value's dots.
+  const redacted = withoutTreeDataPayloads(tree);
+  const accessibilityTree = (dotted ? maskTree(redacted, dotted) : redacted)
     .slice(0, MAX_VISIBLE_TEXT_LENGTH)
     .replace(/\[ref=((?:f\d+)?e\d+)\]/g, (_match, nativeRef: string) => {
       const ref = `t3-${generation}-${nativeRef}`;
@@ -474,8 +612,7 @@ const capture = async (
     screenshot: {
       mimeType: "image/png",
       data,
-      width: Math.round(viewport.width * input.renderScale * scale),
-      height: Math.round(viewport.height * input.renderScale * scale),
+      ...pngSize(data),
     },
   };
 };
@@ -484,27 +621,28 @@ const capture = async (
 const snapshotTurns = new WeakMap<Page, number>();
 
 export const snapshot = async (input: SnapshotInput): Promise<PreviewAutomationSnapshot> => {
+  const progress = makeForkSnapshotProgress(SNAPSHOT_TIMEOUT_MS, ServerBrowserOperationError); // Fork: preserve the inner deadline and stage.
   const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(tooBusy()), SNAPSHOT_TIMEOUT_MS);
+    timer = setTimeout(() => reject(progress.timeout()), SNAPSHOT_TIMEOUT_MS); // Fork: report pending metrics, pixels, or tree.
   });
   const turn = (snapshotTurns.get(input.page) ?? 0) + 1;
   snapshotTurns.set(input.page, turn);
   // A page that changed mid-capture, like one rotating ads, has usually settled by a second
   // try. None starts late or after another snapshot began, since it would revoke the refs of
   // whichever snapshot came next.
-  const captured = capture(input, deadline).catch((cause: unknown) =>
+  const captured = capture(input, deadline, progress).catch((cause: unknown) =>
     Date.now() < deadline &&
     snapshotTurns.get(input.page) === turn &&
     !(cause instanceof Error && cause.message === VALUE_TOO_LONG)
-      ? capture(input, deadline)
+      ? capture(input, deadline, progress)
       : Promise.reject(cause),
   );
   try {
     return await Promise.race([captured, expired]);
   } catch (cause) {
-    throw cause instanceof Error && cause.name === "TimeoutError" ? tooBusy() : cause;
+    throw cause instanceof Error && cause.name === "TimeoutError" ? progress.timeout() : cause; // Fork: do not replace an inner timeout with the outer budget.
   } finally {
     clearTimeout(timer);
   }
@@ -793,7 +931,7 @@ export const parseNetError = (errorText: string) => {
   return { description, code: NET_ERROR_CODES[description] ?? -2 };
 };
 
-export const RECORDING_ENCODER_SCRIPT = `(() => {
+export const recordingEncoderScript = (frameRate: BrowserRecordingFrameRate) => `(() => {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
   const chunks = [];
@@ -862,8 +1000,8 @@ export const RECORDING_ENCODER_SCRIPT = `(() => {
         canvas.width = bitmap.width;
         canvas.height = bitmap.height;
         const mimeType = ["video/mp4;codecs=avc1.640033", "video/webm;codecs=vp9", "video/webm"].find((type) => MediaRecorder.isTypeSupported(type));
-        const bitsPerSecond = Math.min(50e6, Math.max(2.5e6, bitmap.width * bitmap.height * 30 * 0.05));
-        recorder = new MediaRecorder(canvas.captureStream(30), { mimeType, videoBitsPerSecond: bitsPerSecond });
+        const bitsPerSecond = Math.min(50e6, Math.max(2.5e6, bitmap.width * bitmap.height * ${frameRate} * 0.05));
+        recorder = new MediaRecorder(canvas.captureStream(${frameRate}), { mimeType, videoBitsPerSecond: bitsPerSecond });
         started = new Promise((resolve, reject) => {
           recorder.onstart = resolve;
           recorder.onerror = (event) => reject(event.error);

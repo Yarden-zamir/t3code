@@ -3,9 +3,9 @@ import {
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
-  ThreadId,
-  type OrchestrationV2ThreadShell,
   type Project as ProjectRecord,
+  type ModelSelection,
+  type RuntimeMode,
 } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -23,429 +23,40 @@ import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
-import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as ProjectHandlers from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
 
-it.effect("attributes a launched thread's first message to the calling thread", () =>
-  Effect.gen(function* () {
-    const sourceThreadId = ThreadId.make("source-thread");
-    const projectId = ProjectId.make("project");
-    const providerInstanceId = ProviderInstanceId.make("codex");
-    const modelSelection = { instanceId: providerInstanceId, model: "gpt-5" };
-    const caller = {
-      id: sourceThreadId,
-      projectId,
-      providerInstanceId,
-      modelSelection,
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      activeRunId: "active-run",
-      archivedAt: null,
-      deletedAt: null,
-    } as OrchestrationV2ThreadShell;
-    let launchedSender: ThreadId | undefined;
-    const layerDependencies = Layer.mergeAll(
-      NodeCrypto.layer,
-      Layer.succeed(McpInvocationContext.McpInvocationContext, {
-        environmentId: EnvironmentId.make("environment"),
-        requestNamespace: "session",
-        thread: {
-          threadId: sourceThreadId,
-          providerSessionId: "session",
-          providerInstanceId,
-        },
-        client: undefined,
-        issuedAt: 0,
-        capabilities: new Set(["orchestration" as const]),
-      }),
-      Layer.mock(ThreadManagement.ThreadManagementService)({
-        getThreadShell: () => Effect.succeed(caller),
-      }),
-      Layer.mock(ThreadLaunch.ThreadLaunchService)({
-        launch: (input) => {
-          launchedSender = input.initialMessage?.senderThreadId;
-          return Effect.succeed({
-            threadId: input.threadId,
-            projection: {
-              thread: { id: input.threadId, projectId, modelSelection },
-              runs: [],
-            },
-            resumed: false,
-          } as unknown as ThreadLaunch.ThreadLaunchResult);
-        },
-      }),
-      Layer.mock(Project.ProjectService)({}),
-      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
-      Layer.mock(GitVcsDriver.GitVcsDriver)({}),
-      ServerSettings.layerTest(),
-      NodeServices.layer,
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-link-" }).pipe(
-        Layer.provide(NodeServices.layer),
-      ),
-    );
-    const toolkit = yield* ProjectToolkit.pipe(
-      Effect.provide(
-        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
-          Layer.provide(layerDependencies),
-        ),
-      ),
-    );
-    const result = yield* toolkit
-      .handle("t3_thread_launch", { title: "Audit", message: "Review the change" })
-      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
-    expect(result.at(-1)?.result).toMatchObject({ projectId, modelSelection });
-    expect(launchedSender).toBe(sourceThreadId);
-  }),
-);
-
-it.effect("launches a scratch thread into the Scratch project", () =>
-  Effect.gen(function* () {
-    const sourceThreadId = ThreadId.make("source-thread");
-    const scratchProjectId = ProjectId.make("project:scratch");
-    const providerInstanceId = ProviderInstanceId.make("codex");
-    const modelSelection = { instanceId: providerInstanceId, model: "gpt-5" };
-    const caller = {
-      id: sourceThreadId,
-      projectId: ProjectId.make("project:caller"),
-      providerInstanceId,
-      modelSelection,
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      activeRunId: "active-run",
-      archivedAt: null,
-      deletedAt: null,
-    } as OrchestrationV2ThreadShell;
-    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
-    const layerDependencies = Layer.mergeAll(
-      NodeCrypto.layer,
-      Layer.succeed(McpInvocationContext.McpInvocationContext, {
-        environmentId: EnvironmentId.make("environment"),
-        requestNamespace: "session",
-        thread: {
-          threadId: sourceThreadId,
-          providerSessionId: "session",
-          providerInstanceId,
-        },
-        client: undefined,
-        issuedAt: 0,
-        capabilities: new Set(["orchestration" as const]),
-      }),
-      Layer.mock(ThreadManagement.ThreadManagementService)({
-        getThreadShell: () => Effect.succeed(caller),
-      }),
-      Layer.mock(ThreadLaunch.ThreadLaunchService)({
-        launch: (input) => {
-          launched.push(input);
-          return Effect.succeed({
-            threadId: input.threadId,
-            projection: {
-              thread: { id: input.threadId, projectId: input.projectId, modelSelection },
-              runs: [],
-            },
-            resumed: false,
-          } as unknown as ThreadLaunch.ThreadLaunchResult);
-        },
-      }),
-      Layer.mock(Project.ProjectService)({}),
-      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-        namedProjectsRoot: "/projects",
-        ensureScratchProject: Effect.succeed({ projectId: scratchProjectId }),
-      }),
-      Layer.mock(GitVcsDriver.GitVcsDriver)({}),
-      ServerSettings.layerTest(),
-      NodeServices.layer,
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-scratch-launch-" }).pipe(
-        Layer.provide(NodeServices.layer),
-      ),
-    );
-    const toolkit = yield* ProjectToolkit.pipe(
-      Effect.provide(
-        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
-          Layer.provide(layerDependencies),
-        ),
-      ),
-    );
-    const handle = (params: Parameters<typeof toolkit.handle<"t3_thread_launch">>[1]) =>
-      toolkit
-        .handle("t3_thread_launch", params)
-        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
-
-    const result = yield* handle({ title: "Notes", scratch: true, message: "Draft a list" });
-    expect(result.at(-1)?.result).toMatchObject({ projectId: scratchProjectId });
-    expect(launched.map((input) => [input.projectId, input.workspaceStrategy])).toEqual([
-      [scratchProjectId, { type: "root" }],
-    ]);
-
-    const rejected = yield* handle({
-      title: "Notes",
-      scratch: true,
-      projectId: caller.projectId,
-    });
-    expect(rejected.at(-1)?.result).toMatchObject({ code: "invalid_request" });
-    expect(launched).toHaveLength(1);
-  }),
-);
-
-it.effect("starts a project from just a title when workspaceRoot is omitted", () =>
-  Effect.gen(function* () {
-    const sourceThreadId = ThreadId.make("source-thread");
-    const createdProjectId = ProjectId.make("project:named");
-    const providerInstanceId = ProviderInstanceId.make("codex");
-    const caller = {
-      id: sourceThreadId,
-      projectId: ProjectId.make("project:caller"),
-      providerInstanceId,
-      modelSelection: { instanceId: providerInstanceId, model: "gpt-5" },
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      activeRunId: "active-run",
-      archivedAt: null,
-      deletedAt: null,
-    } as OrchestrationV2ThreadShell;
-    const named: Array<string> = [];
-    const registered: Array<string> = [];
-    const createdProject = {
-      id: createdProjectId,
-      title: "Pinball Stats",
-      workspaceRoot: "/projects/pinball-stats",
-      defaultModelSelection: null,
-      scripts: [],
-      createdAt: "2026-10-01T00:00:00.000Z",
-      updatedAt: "2026-10-01T00:00:00.000Z",
-      deletedAt: null,
-    };
-    const layerDependencies = Layer.mergeAll(
-      NodeCrypto.layer,
-      Layer.succeed(McpInvocationContext.McpInvocationContext, {
-        environmentId: EnvironmentId.make("environment"),
-        requestNamespace: "session",
-        thread: {
-          threadId: sourceThreadId,
-          providerSessionId: "session",
-          providerInstanceId,
-        },
-        client: undefined,
-        issuedAt: 0,
-        capabilities: new Set(["orchestration" as const]),
-      }),
-      Layer.mock(ThreadManagement.ThreadManagementService)({
-        getThreadShell: () => Effect.succeed(caller),
-      }),
-      Layer.mock(ThreadLaunch.ThreadLaunchService)({}),
-      Layer.mock(Project.ProjectService)({
-        create: (input) =>
-          Effect.sync(() => {
-            registered.push(input.workspaceRoot);
-            return { ...createdProject, id: input.projectId, workspaceRoot: input.workspaceRoot };
-          }),
-        getById: (projectId) =>
-          Effect.succeed(
-            projectId === createdProjectId ? Option.some(createdProject) : Option.none(),
-          ),
-      }),
-      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-        namedProjectsRoot: "/projects",
-        createNamedProject: (input) =>
-          Effect.sync(() => {
-            named.push(input.name);
-            return {
-              projectId: createdProjectId,
-              workspaceRoot: createdProject.workspaceRoot,
-              commitError: "Git has no name or email on this machine.",
-            };
-          }),
-      }),
-      Layer.mock(GitVcsDriver.GitVcsDriver)({}),
-      ServerSettings.layerTest(),
-      NodeServices.layer,
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-named-project-" }).pipe(
-        Layer.provide(NodeServices.layer),
-      ),
-    );
-    const toolkit = yield* ProjectToolkit.pipe(
-      Effect.provide(
-        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
-          Layer.provide(layerDependencies),
-        ),
-      ),
-    );
-    const handle = (params: Parameters<typeof toolkit.handle<"t3_project_create">>[1]) =>
-      toolkit
-        .handle("t3_project_create", params)
-        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
-
-    const result = yield* handle({ title: "Pinball Stats" });
-    expect(result.at(-1)?.result).toMatchObject({
-      id: createdProjectId,
-      workspaceRoot: "/projects/pinball-stats",
-      commitError: "Git has no name or email on this machine.",
-    });
-    expect(named).toEqual(["Pinball Stats"]);
-
-    yield* handle({ title: "Existing", workspaceRoot: "/work/existing" });
-    expect(registered).toEqual(["/work/existing"]);
-
-    // A path keeps the model default, which lives in project settings.
-    const configured = yield* handle({
-      title: "Configured path",
-      workspaceRoot: "/work/configured",
-      defaultModelSelection: { instanceId: providerInstanceId, model: "gpt-5" },
-    });
-    expect(configured.at(-1)?.result).toMatchObject({
-      defaultModelSelection: { instanceId: providerInstanceId, model: "gpt-5" },
-    });
-
-    for (const extra of [
-      { scripts: [] },
-      { defaultModelSelection: { instanceId: providerInstanceId, model: "gpt-5" } },
-    ]) {
-      const rejected = yield* handle({ title: "Configured", ...extra });
-      expect(rejected.at(-1)?.result).toMatchObject({ code: "invalid_request" });
-    }
-    expect(named).toEqual(["Pinball Stats"]);
-  }),
-);
-
-it.effect("project settings written by t3_project_update are the ones the app resolves", () =>
-  Effect.gen(function* () {
-    const projectId = ProjectId.make("project:actions");
-    const project = {
-      id: projectId,
-      title: "Actions",
-      workspaceRoot: "/projects/actions",
-      defaultModelSelection: null,
-      scripts: [],
-      createdAt: "2026-10-01T00:00:00.000Z",
-      updatedAt: "2026-10-01T00:00:00.000Z",
-      deletedAt: null,
-    } as unknown as ProjectRecord;
-    // One instance, so every handler call below shares the same settings.
-    const settingsService = yield* ServerSettings.ServerSettingsService.pipe(
-      // Folded: the aggregate's scripts no longer count, as on a migrated server.
-      Effect.provide(ServerSettings.layerTest({ projectSettingsFolded: true })),
-    );
-    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
-    const aggregateUpdates: Array<Parameters<Project.ProjectService["Service"]["update"]>[0]> = [];
-    const layerDependencies = Layer.mergeAll(
-      NodeCrypto.layer,
-      Layer.succeed(McpInvocationContext.McpInvocationContext, {
-        environmentId: EnvironmentId.make("environment"),
-        requestNamespace: "client:session-1",
-        thread: undefined,
-        client: { sessionId: "session-1", label: "Claude Code", access: "full-access" },
-        issuedAt: 0,
-        capabilities: new Set(["orchestration" as const]),
-      }),
-      Layer.mock(ThreadManagement.ThreadManagementService)({}),
-      Layer.mock(ThreadLaunch.ThreadLaunchService)({
-        launch: (launch) => {
-          launched.push(launch);
-          return Effect.succeed({
-            threadId: launch.threadId,
-            projection: {
-              thread: {
-                id: launch.threadId,
-                projectId: launch.projectId,
-                modelSelection: launch.modelSelection,
-              },
-              runs: [],
-            },
-            resumed: false,
-          } as unknown as ThreadLaunch.ThreadLaunchResult);
-        },
-      }),
-      Layer.mock(Project.ProjectService)({
-        update: (input) =>
-          Effect.sync(() => {
-            aggregateUpdates.push(input);
-            return project;
-          }),
-        getById: (id) => Effect.succeed(id === projectId ? Option.some(project) : Option.none()),
-      }),
-      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
-      Layer.mock(GitVcsDriver.GitVcsDriver)({}),
-      Layer.succeed(ServerSettings.ServerSettingsService, settingsService),
-      NodeServices.layer,
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-project-actions-" }).pipe(
-        Layer.provide(NodeServices.layer),
-      ),
-    );
-    const toolkit = yield* ProjectToolkit.pipe(
-      Effect.provide(
-        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
-          Layer.provide(layerDependencies),
-        ),
-      ),
-    );
-    const run = <Name extends "t3_project_update" | "t3_project_read" | "t3_thread_launch">(
-      name: Name,
-      params: Parameters<typeof toolkit.handle<Name>>[1],
-    ) =>
-      toolkit
-        .handle(name, params)
-        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
-    const scripts = [
-      { id: "test", name: "Test", command: "pnpm test", icon: "test", runOnWorktreeCreate: false },
-    ] as const;
-
-    const model = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" };
-    const written = {
-      scripts,
-      defaultModelSelection: model,
-      defaultThreadEnvMode: "worktree",
-      autoPull: true,
-    } as const;
-
-    const updated = yield* run("t3_project_update", { projectId, ...written });
-    expect(updated.at(-1)?.result).toMatchObject({ id: projectId, ...written });
-    for (const key of Object.keys(written)) expect(aggregateUpdates.at(-1)).not.toHaveProperty(key);
-
-    const settings = yield* settingsService.getSettings;
-    expect(resolveProjectScripts(settings, project)).toEqual(scripts);
-    expect(resolveProjectSettings(settings, projectId, project).settings).toMatchObject({
-      defaultModelSelection: model,
-      defaultThreadEnvMode: "worktree",
-      defaultAutoPull: true,
-    });
-
-    const read = yield* run("t3_project_read", { projectId });
-    expect(read.at(-1)?.result).toMatchObject(written);
-
-    // A launch without a model takes the project's default through the resolver.
-    const launch = yield* run("t3_thread_launch", { title: "Fix", projectId });
-    expect(launch.at(-1)?.result).toMatchObject({ modelSelection: model });
-    expect(launched[0]?.modelSelection).toEqual(model);
-
-    // null removes the override; the project inherits the environment again.
-    yield* run("t3_project_update", {
-      projectId,
-      defaultModelSelection: null,
-      defaultThreadEnvMode: null,
-    });
-    const cleared = (yield* settingsService.getSettings).projectSettingsOverrides[projectId];
-    expect(cleared).toEqual({ defaultProjectScripts: scripts, defaultAutoPull: true });
-    const reread = yield* run("t3_project_read", { projectId });
-    expect(reread.at(-1)?.result).toMatchObject({
-      defaultModelSelection: null,
-      defaultThreadEnvMode: null,
-    });
-  }),
-);
-
 const clientLaunchHarness = (input: {
-  readonly runtimeModeCeiling: "approval-required" | "auto-accept-edits" | "auto" | "full-access";
+  readonly runtimeModeCeiling: RuntimeMode;
+  readonly defaultRuntimeMode?: RuntimeMode;
+  /** Where Settings saves a project's model; the legacy project field stays null. */
+  readonly overrideModel?: ModelSelection;
   readonly launched: Array<ThreadLaunch.ThreadLaunchInput>;
   readonly workspaceRoot?: string;
   readonly checkWorktreeBase?: ThreadLaunch.ThreadLaunchService["Service"]["checkWorktreeBase"];
 }) => {
   const projectId = ProjectId.make("project:client-target");
-  const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" };
+  const modelSelection = {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    model: "claude-opus",
+  };
   const layerDependencies = Layer.mergeAll(
+    ServerSettings.layerTest({
+      ...(input.defaultRuntimeMode === undefined
+        ? {}
+        : { defaultRuntimeMode: input.defaultRuntimeMode }),
+      ...(input.overrideModel === undefined
+        ? {}
+        : {
+            projectSettingsFolded: true,
+            projectSettingsOverrides: {
+              [projectId]: { defaultModelSelection: input.overrideModel },
+            },
+          }),
+    }),
     NodeCrypto.layer,
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
@@ -485,17 +96,12 @@ const clientLaunchHarness = (input: {
             ? Option.some({
                 id,
                 workspaceRoot: input.workspaceRoot ?? "/projects/client-target",
-                defaultModelSelection: null,
+                defaultModelSelection: input.overrideModel === undefined ? modelSelection : null,
               } as unknown as ProjectRecord)
             : Option.none(),
         ),
     }),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
-    // The default model lives in the project's settings override, where the app reads it.
-    ServerSettings.layerTest({
-      projectSettingsFolded: true,
-      projectSettingsOverrides: { [projectId]: { defaultModelSelection: modelSelection } },
-    }),
     NodeServices.layer,
   ).pipe(
     Layer.provideMerge(GitVcsDriver.layer),
@@ -510,35 +116,85 @@ const clientLaunchHarness = (input: {
   return { projectId, modelSelection, dependencies: layerDependencies };
 };
 
-it.effect("a client launches at its ceiling with the project's default model", () =>
-  Effect.gen(function* () {
-    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
-    const { projectId, modelSelection, dependencies } = clientLaunchHarness({
-      runtimeModeCeiling: "auto-accept-edits",
-      launched,
-    });
-    const toolkit = yield* ProjectToolkit.pipe(
-      Effect.provide(
-        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
-      ),
-    );
-    const handle = (params: Parameters<typeof toolkit.handle<"t3_thread_launch">>[1]) =>
-      toolkit
-        .handle("t3_thread_launch", params)
-        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+it.effect(
+  "a client launches with the project's default model and mode, capped at its ceiling",
+  () =>
+    Effect.gen(function* () {
+      const launchWith = Effect.fn("test.launchWith")(function* (
+        runtimeModeCeiling: RuntimeMode,
+        defaultRuntimeMode: RuntimeMode,
+        params: {
+          readonly title: string;
+          readonly message?: string;
+          readonly runtimeMode?: RuntimeMode;
+          readonly targeted?: false;
+          readonly overrideModel?: ModelSelection;
+        },
+      ) {
+        const { targeted, overrideModel, ...input } = params;
+        const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+        const { projectId, modelSelection, dependencies } = clientLaunchHarness({
+          runtimeModeCeiling,
+          defaultRuntimeMode,
+          launched,
+          ...(overrideModel === undefined ? {} : { overrideModel }),
+        });
+        const toolkit = yield* ProjectToolkit.pipe(
+          Effect.provide(
+            McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+              Layer.provide(dependencies),
+            ),
+          ),
+        );
+        const result = yield* toolkit
+          .handle("t3_thread_launch", targeted === false ? input : { ...input, projectId })
+          .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+        return { result: result.at(-1)?.result, launched, projectId, modelSelection };
+      });
 
-    const result = yield* handle({ title: "Fix", projectId, message: "Fix the bug" });
-    expect(result.at(-1)?.result).toMatchObject({ projectId, modelSelection });
-    expect(launched[0]?.runtimeMode).toBe("auto-accept-edits");
-    expect(launched[0]?.initialMessage?.senderThreadId).toBeUndefined();
+      const belowCeiling = yield* launchWith("full-access", "approval-required", {
+        title: "Fix",
+        message: "Fix the bug",
+      });
+      expect(belowCeiling.result).toMatchObject({
+        projectId: belowCeiling.projectId,
+        modelSelection: belowCeiling.modelSelection,
+      });
+      expect(belowCeiling.launched[0]?.runtimeMode).toBe("approval-required");
+      expect(belowCeiling.launched[0]?.initialMessage?.senderThreadId).toBeUndefined();
 
-    const escalated = yield* handle({ title: "Fix", projectId, runtimeMode: "full-access" });
-    expect(escalated.at(-1)?.result).toMatchObject({ code: "runtime_mode_escalation_denied" });
+      const aboveCeiling = yield* launchWith("auto-accept-edits", "full-access", { title: "Fix" });
+      expect(aboveCeiling.launched[0]?.runtimeMode).toBe("auto-accept-edits");
 
-    const untargeted = yield* handle({ title: "Fix" });
-    expect(untargeted.at(-1)?.result).toMatchObject({ code: "target_required" });
-    expect(launched).toHaveLength(1);
-  }),
+      const requested = yield* launchWith("full-access", "approval-required", {
+        title: "Fix",
+        runtimeMode: "auto",
+      });
+      expect(requested.launched[0]?.runtimeMode).toBe("auto");
+
+      const escalated = yield* launchWith("auto-accept-edits", "auto-accept-edits", {
+        title: "Fix",
+        runtimeMode: "full-access",
+      });
+      expect(escalated.result).toMatchObject({ code: "runtime_mode_escalation_denied" });
+      expect(escalated.launched).toHaveLength(0);
+
+      const untargeted = yield* launchWith("full-access", "full-access", {
+        title: "Fix",
+        targeted: false,
+      });
+      expect(untargeted.result).toMatchObject({ code: "target_required" });
+
+      const overrideModel = {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-settings",
+      };
+      const fromSettings = yield* launchWith("full-access", "full-access", {
+        title: "Fix",
+        overrideModel,
+      });
+      expect(fromSettings.launched[0]?.modelSelection).toEqual(overrideModel);
+    }),
 );
 
 it.effect("a launch binds only an existing checkout that is one of the project's worktrees", () =>

@@ -25,11 +25,6 @@ const PermissionLine = ({ step }: { step: CloudflareStep }) => (
   </p>
 );
 
-/** Goes to the approval path. Cloudflare asks for the passkey there and returns to this route. */
-export const confirmWithPasskey = (): void => {
-  location.href = `/api/grant/start?then=${encodeURIComponent(location.hash)}`;
-};
-
 let enrollUrlRequest: Promise<string> | null = null;
 
 /** The passkey enrollment page of the Zero Trust organization. Null until the portal answers. */

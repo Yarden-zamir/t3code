@@ -38,6 +38,7 @@ export interface MachineQueue {
   readonly revisions: ReadonlyArray<MapRevision>;
   readonly commands: ReadonlyArray<MachineCommand>;
   readonly rotation: PendingRotation | undefined;
+  readonly rejoinRequired: boolean;
   /** MM-602: the machine never connected. Its work waits for it to join and is not counted. */
   readonly waitingToJoin: boolean;
   readonly count: number;
@@ -54,12 +55,13 @@ export function machineQueue(
   const commands = snapshot.commands.filter(
     (c) => c.machineId === machineId && c.status === "queued",
   );
-  const rotation = rotations.find((r) => r.machineId === machineId);
+  const rotation = rotations.find((r) => r.machineId === machineId && !r.expired);
   const waitingToJoin = !hasJoined(presence);
   return {
     revisions,
     commands,
     rotation,
+    rejoinRequired: rotations.some((r) => r.machineId === machineId && r.expired),
     waitingToJoin,
     count: waitingToJoin ? 0 : revisions.length + commands.length + (rotation ? 1 : 0),
   };
@@ -178,6 +180,7 @@ export function describeChange(change: MapChange, map: MachineMapDocument): stri
       const a = change.arrow;
       const parts = [`${usesText(name(a.from), name(a.to))}: ${LEVEL_LABEL[a.level]}`];
       if (a.agentTools) parts.push("with agent tools");
+      if (a.exec) parts.push("with exec");
       if (a.expiresAt && a.revertLevel)
         parts.push(`until ${shortTime(a.expiresAt)}, then ${LEVEL_LABEL[a.revertLevel]}`);
       return parts.join(", ");

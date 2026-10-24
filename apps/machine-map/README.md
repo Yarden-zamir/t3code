@@ -117,7 +117,7 @@ MM-1401 and MM-1402 hold the rules. The desktop app acts only while its own serv
 
 - `src/worker.ts`: routes, Cloudflare Access checks, request decoding.
 - `src/MachineMapObject.ts`: the Durable Object. It stores the map in SQLite, keeps the sockets, runs the alarms and calls Cloudflare.
-- `src/rules/`: pure rules with tests: changes and their inverse, desired state, map roles, self-escalation, queue, presets and the changes of the emergency pause.
+- `src/rules/`: pure rules with tests: changes and their inverse, desired state, map roles, owner-only raises, arrow capabilities, queue, presets and the changes of the emergency pause.
 - `src/api.ts`: request and response shapes of the HTTP API, shared by the Worker and the page.
 - `src/ui/`: the React page.
 - `src/sw/sw.ts`: the service worker of the installed app (MM-1801 to MM-1808). `vite.config.ts` builds it to `dist/sw.js` and writes the file list of the build into it.

@@ -12,10 +12,14 @@ import {
   type ClientEnrollResponse,
   type ClientMachine,
   isOwnerOnlySetting,
+  KEYBINDINGS_SETTING_KEY,
   MACHINE_MAP_PROTOCOL,
   clientSessionSubject,
   machineSessionSubject,
   MachineCommand,
+  MachineCallRecord,
+  type MachineCallReport,
+  MachineExecRecord,
   MachineId,
   MachineMapDocument,
   MachinePresence,
@@ -28,6 +32,7 @@ import {
   type ClientRecord,
   type CommandDelivery,
   type MachineCommandInput,
+  type MachineExecReport,
   type MachineRecord,
   type MapActor,
   type MapChange,
@@ -59,6 +64,8 @@ import type {
   DevicesResponse,
   EnrolledEvent,
   EnrollResponse,
+  CallsEvent,
+  ExecsEvent,
   JoinCodeRequest,
   JoinCodeResponse,
   MapToolResult,
@@ -70,6 +77,7 @@ import type {
   PortalSignIn,
   PushEndpointRequest,
   PushKeyResponse,
+  PushStatusResponse,
   PushMessage,
   PushSubscribeRequest,
   RemoveMachineResponse,
@@ -86,6 +94,10 @@ import type {
 import { CLOUDFLARE_STEP_PERMISSION, PauseState } from "./api.ts";
 import { configured, ownerEmails } from "./access.ts";
 import { HEALTH_TABLES, HealthStore } from "./healthStore.ts";
+import {
+  moveLegacySidebarTabKeys,
+  renameLegacySidebarTabCommands,
+} from "@t3tools/contracts/sidebarTabs";
 import { sendPush, vapidKey, type PushTarget, type VapidKey } from "@t3tools/shared/webPush";
 import {
   approvalsAppProblem,
@@ -102,6 +114,7 @@ import type { Env } from "./env.ts";
 import {
   arrowChange,
   clientArrowChange,
+  arrowCapabilityList,
   decideAgentWrite,
   gateTool,
   raisesAnyAccess,
@@ -169,6 +182,7 @@ import {
   supportsCommand,
 } from "./rules/queue.ts";
 import { newJoinCode, normalizeJoinCode, seal, sha256Hex, unseal } from "./sealedSecret.ts";
+import { APPROVAL_CHANGED, approvalMatches, type ApprovalAction } from "./rules/approval.ts";
 
 /** The owner behind an API call, as the Worker saw it. */
 export interface OwnerContext {
@@ -225,6 +239,8 @@ const decodeCommand = decodeJson(MachineCommand);
 const decodeProposal = decodeJson(MapProposal);
 const decodePresence = decodeJson(MachinePresence);
 const decodeSettings = decodeJson(ScopedSettingValues);
+const decodeExecRecord = decodeJson(MachineExecRecord);
+const decodeCallRecord = decodeJson(MachineCallRecord);
 /** MM-1502: resource samples ride next to the base protocol. */
 const MachineMessage = Schema.Union([MachineToPortal, MachineResourcesMessage]);
 type MachineMessage = typeof MachineMessage.Type;
@@ -291,6 +307,11 @@ const PENDING_WINDOW_MS = 10 * MINUTE_MS;
 const PENDING_KEEP_MS = 14 * 24 * HOUR_MS;
 /** MM-1501: the portal asks a machine for a sample at most this often. */
 const SAMPLE_REQUEST_GAP_MS = 10_000;
+/** MM-1908: pages get this many exec runs, and the portal keeps this many. */
+const PAGE_EXECS = 100;
+const KEPT_EXECS = 500;
+const PAGE_CALLS = 100;
+const KEPT_CALLS = 500;
 /** MM-1506: pages get the active alerts and this many ended ones. */
 const PAGE_ENDED_ALERTS = 50;
 /** MM-1503: the alarm prunes old resource points and alerts this often. */
@@ -306,6 +327,41 @@ const ALERT_PUSH: Record<HealthAlertKind, { readonly title: string; readonly uni
 };
 
 const nowIso = () => new Date().toISOString();
+
+type ScopedValues = { server?: Record<string, unknown>; client?: Record<string, unknown> };
+
+/**
+ * MM-415: setting values with the old sidebar group keys moved to the sidebar tab keys, and the old
+ * command names of a shared `keybindings` value renamed. The portal moves its map once, and an undo
+ * or a restore of a revision from before the move moves the same way.
+ */
+const currentSidebarTabValues = <Values extends ScopedValues>(values: Values): Values => {
+  const server =
+    values.server && (moveLegacySidebarTabKeys("server", values.server) ?? values.server);
+  const keybindings = server?.[KEYBINDINGS_SETTING_KEY];
+  const renamed = Array.isArray(keybindings) ? renameLegacySidebarTabCommands(keybindings) : null;
+  return {
+    ...values,
+    ...(server === undefined
+      ? {}
+      : { server: renamed === null ? server : { ...server, [KEYBINDINGS_SETTING_KEY]: renamed } }),
+    ...(values.client === undefined
+      ? {}
+      : { client: moveLegacySidebarTabKeys("client", values.client) ?? values.client }),
+  };
+};
+
+/** MM-415: one setting change of an old revision, on the sidebar tab keys. */
+const currentSidebarTabChange = (change: MapChange): MapChange => {
+  if (change._tag !== "setSetting") return change;
+  const moved = currentSidebarTabValues({ [change.scope]: { [change.key]: change.value } })[
+    change.scope
+  ];
+  const [entry] = Object.entries(moved ?? {});
+  return entry === undefined || (entry[0] === change.key && entry[1] === change.value)
+    ? change
+    : { ...change, key: entry[0], value: entry[1] };
+};
 
 const slug = (name: string): string => {
   let out = "";
@@ -419,10 +475,54 @@ export class MachineMapObject extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS client_app_tokens (token_id TEXT PRIMARY KEY, client_id TEXT NOT NULL, token_client_id TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS pending_clients (thumbprint TEXT PRIMARY KEY, described_as TEXT NOT NULL, email TEXT, seen_on TEXT NOT NULL, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, state TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, sign_in_id TEXT NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS exec_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS call_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
     `);
     this.ctx.storage.sql.exec(HEALTH_TABLES);
     this.#dropManageSetting();
     this.#absolutePlaces();
+    this.#sidebarTabKeys();
+  }
+
+  /**
+   * Fork (MM-415): sidebar groups became sidebar tabs. The shared values and the overrides of the
+   * map move once to the new keys, and a shared `keybindings` value gets the new command names. A machine
+   * on an older version keeps the old keys, so it does not sync tabs with a newer one.
+   */
+  #sidebarTabKeys(): void {
+    if (this.#sql("SELECT key FROM meta WHERE key = 'sidebar_tab_keys'").length > 0) return;
+    this.ctx.storage.transactionSync(() => {
+      const current = this.#sql<{ value: string }>("SELECT value FROM meta WHERE key = 'map'")[0];
+      if (current) {
+        const map = JSON.parse(current.value) as {
+          settings?: { shared?: ScopedValues; overrides?: Record<string, ScopedValues> };
+        };
+        const settings = map.settings;
+        if (settings !== undefined) {
+          const next = {
+            ...map,
+            settings: {
+              ...settings,
+              ...(settings.shared === undefined
+                ? {}
+                : { shared: currentSidebarTabValues(settings.shared) }),
+              ...(settings.overrides === undefined
+                ? {}
+                : {
+                    overrides: Object.fromEntries(
+                      Object.entries(settings.overrides).map(([id, values]) => [
+                        id,
+                        currentSidebarTabValues(values),
+                      ]),
+                    ),
+                  }),
+            },
+          };
+          this.#sql("UPDATE meta SET value = ? WHERE key = 'map'", JSON.stringify(next));
+        }
+      }
+      this.#sql("INSERT INTO meta (key, value) VALUES ('sidebar_tab_keys', ?)", nowIso());
+    });
   }
 
   /**
@@ -583,12 +683,18 @@ export class MachineMapObject extends DurableObject<Env> {
   }
 
   #pendingRotations(): Array<PendingRotation> {
-    return this.#sql<{ machine_id: string; created_at: string; expires_at: string }>(
-      "SELECT machine_id, created_at, expires_at FROM rotations ORDER BY created_at",
+    return this.#sql<{
+      machine_id: string;
+      created_at: string;
+      expires_at: string;
+      expired: number;
+    }>(
+      "SELECT machine_id, created_at, expires_at, sealed_secret = '' AS expired FROM rotations ORDER BY created_at",
     ).map((row) => ({
       machineId: MachineId.make(row.machine_id),
       createdAt: row.created_at,
       expiresAt: row.expires_at,
+      expired: row.expired === 1,
     }));
   }
 
@@ -653,6 +759,74 @@ export class MachineMapObject extends DurableObject<Env> {
         "SELECT client_id, expires_at FROM client_invites ORDER BY expires_at",
       ).map((row) => ({ clientId: ClientId.make(row.client_id), expiresAt: row.expires_at })),
     };
+  }
+
+  // Exec
+
+  /** MM-1908: the newest `machine_exec` runs, newest first. */
+  #execs(limit: number): Array<MachineExecRecord> {
+    return this.#sql<{ data: string }>(
+      "SELECT data FROM exec_log ORDER BY at DESC LIMIT ?",
+      limit,
+    ).map((row) => decodeExecRecord(row.data));
+  }
+
+  #execsEvent(): ExecsEvent {
+    return { _tag: "execs", execs: this.#execs(PAGE_EXECS) };
+  }
+
+  /** MM-1908: the machine that ran the command reports it, so `to` is that machine. */
+  #recordExec(machine: MachineRecord, report: MachineExecReport): void {
+    // A caller reports only its own refusals; any other run is reported by the machine that ran it.
+    if (
+      report.target !== undefined &&
+      (report.from !== machine.id || report.outcome !== "refused")
+    ) {
+      console.error("dropped an exec report with a foreign target", machine.id);
+      return;
+    }
+    const record: MachineExecRecord = { ...report, to: report.target ?? machine.id };
+    this.#sql(
+      "INSERT OR IGNORE INTO exec_log (id, at, data) VALUES (?, ?, ?)",
+      record.id,
+      record.at,
+      JSON.stringify(record),
+    );
+    this.#sql(
+      "DELETE FROM exec_log WHERE id NOT IN (SELECT id FROM exec_log ORDER BY at DESC LIMIT ?)",
+      KEPT_EXECS,
+    );
+    this.#broadcast(this.#execsEvent());
+  }
+
+  // Forwarded calls
+
+  /** MM-1922: the newest T3 tool calls that machines forwarded over arrow links, newest first. */
+  #calls(limit: number): Array<MachineCallRecord> {
+    return this.#sql<{ data: string }>(
+      "SELECT data FROM call_log ORDER BY at DESC LIMIT ?",
+      limit,
+    ).map((row) => decodeCallRecord(row.data));
+  }
+
+  #callsEvent(): CallsEvent {
+    return { _tag: "calls", calls: this.#calls(PAGE_CALLS) };
+  }
+
+  /** MM-1922: the machine that forwarded the call reports it, so `from` is that machine. */
+  #recordCall(machine: MachineRecord, report: MachineCallReport): void {
+    const record: MachineCallRecord = { ...report, from: machine.id };
+    this.#sql(
+      "INSERT OR IGNORE INTO call_log (id, at, data) VALUES (?, ?, ?)",
+      record.id,
+      record.at,
+      JSON.stringify(record),
+    );
+    this.#sql(
+      "DELETE FROM call_log WHERE id NOT IN (SELECT id FROM call_log ORDER BY at DESC LIMIT ?)",
+      KEPT_CALLS,
+    );
+    this.#broadcast(this.#callsEvent());
   }
 
   #pendingEvent(): PendingClientsEvent {
@@ -783,7 +957,9 @@ export class MachineMapObject extends DurableObject<Env> {
       | ResourceSampleEvent
       | EnrolledEvent
       | PendingClientsEvent
-      | ClientInvitesEvent,
+      | ClientInvitesEvent
+      | ExecsEvent
+      | CallsEvent,
   ): void {
     const text = JSON.stringify(event);
     for (const ws of this.ctx.getWebSockets(PAGE_TAG)) {
@@ -854,6 +1030,8 @@ export class MachineMapObject extends DurableObject<Env> {
       server.send(JSON.stringify(this.#healthEvent()));
       server.send(JSON.stringify(this.#pendingEvent()));
       server.send(JSON.stringify(this.#invitesEvent()));
+      server.send(JSON.stringify(this.#execsEvent()));
+      server.send(JSON.stringify(this.#callsEvent()));
       return new Response(null, { status: 101, webSocket: client });
     }
     if (pathname === "/connect") {
@@ -1040,6 +1218,14 @@ export class MachineMapObject extends DurableObject<Env> {
         this.#recordClientSeen(machine, message);
         return;
       }
+      case "execRan": {
+        this.#recordExec(machine, message.report);
+        return;
+      }
+      case "callForwarded": {
+        this.#recordCall(machine, message.report);
+        return;
+      }
       case "rotated": {
         const row = this.#sql<{ token_client_id: string }>(
           "SELECT token_client_id FROM rotations WHERE machine_id = ?",
@@ -1113,8 +1299,9 @@ export class MachineMapObject extends DurableObject<Env> {
 
   async #sendRotation(machineId: MachineId): Promise<boolean> {
     const row = this.#sql<{ token_client_id: string; sealed_secret: string }>(
-      "SELECT token_client_id, sealed_secret FROM rotations WHERE machine_id = ?",
+      "SELECT token_client_id, sealed_secret FROM rotations WHERE machine_id = ? AND sealed_secret != '' AND expires_at > ?",
       machineId,
+      nowIso(),
     )[0];
     if (!row) return false;
     const tokenSecret = await unseal(this.env.SECRET_KEY, row.sealed_secret);
@@ -1475,7 +1662,8 @@ export class MachineMapObject extends DurableObject<Env> {
   #undoChanges(revisionNumber: number): { summary: string; changes: ReadonlyArray<MapChange> } {
     const revision = this.#revision(revisionNumber);
     if (!revision) throw new PortalError(404, `Unknown revision ${revisionNumber}.`);
-    const changes = undoChanges(this.#map, revision.inverse);
+    // MM-415: an undo of a revision from before the sidebar tab keys sets the new keys.
+    const changes = undoChanges(this.#map, revision.inverse).map(currentSidebarTabChange);
     checkEditableChanges(this.#map, changes);
     return { summary: `Undo rev ${revision.revision}: ${revision.summary}`, changes };
   }
@@ -1525,6 +1713,9 @@ export class MachineMapObject extends DurableObject<Env> {
           history: this.#history(null, 50),
           proposals: snapshot.proposals,
           resources: this.#overview("active"),
+          execs: this.#execs(50),
+          calls: this.#calls(50),
+          capabilities: arrowCapabilityList(snapshot.map),
         };
       }
       case "machines_resources": {
@@ -1547,6 +1738,7 @@ export class MachineMapObject extends DurableObject<Env> {
           to: args.to,
           level: args.level,
           ...(args.agentTools === undefined ? {} : { agentTools: args.agentTools }),
+          ...(args.exec === undefined ? {} : { exec: args.exec }),
           expiresAt:
             args.expiresInMinutes === undefined
               ? null
@@ -1669,6 +1861,13 @@ export class MachineMapObject extends DurableObject<Env> {
         sealedTunnel,
       );
     });
+    // A join code supersedes a queued rotation; never send the superseded secret on reconnect.
+    const superseded = this.#sql(
+      "UPDATE rotations SET sealed_secret = '', expires_at = MIN(expires_at, ?) WHERE machine_id = ? AND sealed_secret != '' RETURNING machine_id",
+      nowIso(),
+      machineId,
+    );
+    if (superseded.length > 0) this.#broadcast(this.#rotationsEvent());
     return { machineId, code, expiresAt, tunnel: tunnel.setup };
   }
 
@@ -1837,9 +2036,9 @@ export class MachineMapObject extends DurableObject<Env> {
       ...this.#sql<{ expires_at: string }>("SELECT expires_at FROM join_codes").map(
         (r) => r.expires_at,
       ),
-      ...this.#sql<{ expires_at: string }>("SELECT expires_at FROM rotations").map(
-        (r) => r.expires_at,
-      ),
+      ...this.#sql<{ expires_at: string }>(
+        "SELECT expires_at FROM rotations WHERE sealed_secret != ''",
+      ).map((r) => r.expires_at),
       ...this.#healthAlarmTimes(),
     ];
     const at = earliest(times);
@@ -1947,15 +2146,12 @@ export class MachineMapObject extends DurableObject<Env> {
       if (isDue(row.expires_at, now))
         this.#sql("DELETE FROM join_codes WHERE code_hash = ?", row.code_hash);
     }
-    let rotationsChanged = false;
-    for (const row of this.#sql<{ machine_id: string; expires_at: string }>(
-      "SELECT machine_id, expires_at FROM rotations",
-    )) {
-      if (!isDue(row.expires_at, now)) continue;
-      this.#sql("DELETE FROM rotations WHERE machine_id = ?", row.machine_id);
-      rotationsChanged = true;
-    }
-    if (rotationsChanged) this.#broadcast(this.#rotationsEvent());
+    // Keep the recovery marker after deleting the secret, so a later page can explain the lockout.
+    const expiredRotations = this.#sql(
+      "UPDATE rotations SET sealed_secret = '' WHERE expires_at <= ? AND sealed_secret != '' RETURNING machine_id",
+      new Date(now).toISOString(),
+    );
+    if (expiredRotations.length > 0) this.#broadcast(this.#rotationsEvent());
     this.#sql("DELETE FROM enroll_attempts WHERE window_start < ?", now - ENROLL_WINDOW_MS);
     for (const machine of this.#map.machines) this.#checkOffline(machine.id, now);
     if (now >= this.#prunedAt() + PRUNE_EVERY_MS) this.#pruneResources(now);
@@ -1963,6 +2159,18 @@ export class MachineMapObject extends DurableObject<Env> {
   }
 
   // RPC
+
+  #checkApproval(action: ApprovalAction): void {
+    if (
+      action.request.expectedState !== undefined &&
+      !approvalMatches(action, {
+        snapshot: { map: this.#map },
+        pause: this.#pauseEvent().pause,
+        pending: action._tag === "approve" ? this.#pendingClients() : [],
+      })
+    )
+      throw new PortalError(409, APPROVAL_CHANGED);
+  }
 
   async #run<T>(owner: OwnerContext | null, work: () => T | Promise<T>): Promise<Outcome<T>> {
     if (owner) this.#recordSignIn(owner);
@@ -2011,6 +2219,7 @@ export class MachineMapObject extends DurableObject<Env> {
   /** `approved`: the request came on the approval path of MM-1207, so it may change MM-919. */
   changes(owner: OwnerContext, request: ChangesRequest, approved = false) {
     return this.#run(owner, (): WriteResult => {
+      this.#checkApproval({ _tag: "changes", request });
       // MM-909: a held draft or an open panel can send an older client record. It keeps the keys.
       const changes = keepClientKeys(this.#map, request.changes);
       checkEditableChanges(this.#map, changes);
@@ -2052,7 +2261,20 @@ export class MachineMapObject extends DurableObject<Env> {
   /** MM-704: a new revision that returns the map to an older revision. */
   restore(owner: OwnerContext, revision: number) {
     return this.#run(owner, (): WriteResult => {
-      const target = this.#mapAt(revision);
+      const old = this.#mapAt(revision);
+      // MM-415: a revision from before the sidebar tab keys comes back on the new keys.
+      const target: MachineMapDocument = {
+        ...old,
+        settings: {
+          shared: currentSidebarTabValues(old.settings.shared),
+          overrides: Object.fromEntries(
+            Object.entries(old.settings.overrides).map(([id, values]) => [
+              id,
+              currentSidebarTabValues(values),
+            ]),
+          ),
+        },
+      };
       const changes = restoreChanges(this.#map, target);
       if (changes.length === 0)
         throw new PortalError(409, `The map already matches rev ${revision}.`);
@@ -2243,6 +2465,14 @@ export class MachineMapObject extends DurableObject<Env> {
       if (!this.env.SECRET_KEY) throw new PortalError(503, "Set the SECRET_KEY secret first.");
       const machine = findMachine(this.#map, machineId);
       if (!machine) throw new PortalError(404, `Unknown machine ${machineId}.`);
+      if (
+        this.#sql(
+          "SELECT machine_id FROM rotations WHERE machine_id = ? AND (sealed_secret = '' OR expires_at <= ?)",
+          machineId,
+          nowIso(),
+        ).length > 0
+      )
+        throw new PortalError(409, "Join again with a new code before rotating this token.");
       const api = this.#cloudflare();
       if (!api) throw new PortalError(400, "Token rotation needs the CF_API_TOKEN secret.");
       const tokenId = await this.#tokenId(api, machine);
@@ -2390,6 +2620,14 @@ export class MachineMapObject extends DurableObject<Env> {
       });
       return { publicKey: key?.publicKey ?? null };
     });
+  }
+
+  pushStatus(owner: OwnerContext, request: PushEndpointRequest) {
+    return this.#run(owner, (): PushStatusResponse => ({
+      subscribed:
+        this.#sql("SELECT endpoint FROM push_subscriptions WHERE endpoint = ?", request.endpoint)
+          .length > 0,
+    }));
   }
 
   /** MM-1807: one subscription per device. A new subscription of the same endpoint replaces it. */
@@ -2605,6 +2843,7 @@ export class MachineMapObject extends DurableObject<Env> {
     return this.#run(owner, async (): Promise<WriteResult> => {
       const problem = await this.#approvalsProblem(host);
       if (problem) throw new PortalError(409, approvalsProblemText(problem));
+      this.#checkApproval({ _tag: "approve", request });
       const pending = this.#pendingClient(request.thumbprint);
       if (pending.state === "rejected") throw new PortalError(409, "Unblock this sign-in first.");
       const holder = clientWithKey(this.#map, pending.thumbprint);
@@ -2703,6 +2942,11 @@ export class MachineMapObject extends DurableObject<Env> {
     return this.#run(owner, async (): Promise<InviteResponse> => {
       const problem = await this.#approvalsProblem(host);
       if (problem) throw new PortalError(409, approvalsProblemText(problem));
+      // Hash before checking the saved state, so no await separates that check from the writes.
+      const code = randomHex(16);
+      const expiresAt = addMinutes(Date.now(), INVITE_MINUTES);
+      const codeHash = await sha256Hex(code);
+      this.#checkApproval({ _tag: "invite", request });
       let clientId: ClientId;
       if (request.client._tag === "existing") {
         const existing = findClient(this.#map, request.client.clientId);
@@ -2727,10 +2971,12 @@ export class MachineMapObject extends DurableObject<Env> {
           email: null,
           keys: [],
           serviceToken: null,
-          position: freePosition([
-            ...this.#map.machines.map((m) => m.position),
-            ...this.#map.clients.map((c) => c.position),
-          ]),
+          position:
+            request.client.position ??
+            freePosition([
+              ...this.#map.machines.map((m) => m.position),
+              ...this.#map.clients.map((c) => c.position),
+            ]),
           createdAt: nowIso(),
         };
         const arrows = request.arrows
@@ -2751,10 +2997,6 @@ export class MachineMapObject extends DurableObject<Env> {
         ]);
         clientId = client.id;
       }
-      // A 128-bit code: it travels in a QR or a link, never typed.
-      const code = randomHex(16);
-      const expiresAt = addMinutes(Date.now(), INVITE_MINUTES);
-      const codeHash = await sha256Hex(code);
       this.#sql("DELETE FROM client_invites WHERE client_id = ?", clientId);
       this.#sql(
         "INSERT INTO client_invites (code_hash, client_id, expires_at) VALUES (?, ?, ?)",
@@ -3052,8 +3294,7 @@ export class MachineMapObject extends DurableObject<Env> {
       if (!row || !machine || isDue(row.expires_at, now)) {
         throw new PortalError(404, "Unknown, used or expired join code.");
       }
-      this.#broadcast({ _tag: "enrolled", machineId: machine.id });
-      return {
+      const result: EnrollResponse = {
         machineId: machine.id,
         name: machine.name,
         kind: machine.kind,
@@ -3064,6 +3305,10 @@ export class MachineMapObject extends DurableObject<Env> {
             ? null
             : decodeTunnelGrant(await unseal(this.env.SECRET_KEY, row.sealed_tunnel)),
       };
+      this.#sql("DELETE FROM rotations WHERE machine_id = ?", machine.id);
+      this.#broadcast(this.#rotationsEvent());
+      this.#broadcast({ _tag: "enrolled", machineId: machine.id });
+      return result;
     });
   }
 }

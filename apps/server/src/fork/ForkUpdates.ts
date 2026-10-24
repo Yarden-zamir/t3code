@@ -168,27 +168,28 @@ const make = Effect.gen(function* () {
     yield* check.pipe(Effect.repeat(Schedule.spaced(CHECK_INTERVAL)), Effect.forkScoped);
   }
 
-  const install: ForkUpdates["Service"]["install"] = ({ whenIdle }) =>
-    Effect.gen(function* () {
-      if (!available) {
-        return yield* new ForkUpdateError({
-          reason: "This server does not run as the T3 Code background service.",
-        });
-      }
-      const version = yield* newerRelease;
-      if (version === undefined) {
-        return yield* new ForkUpdateError({
-          reason: `No fork release is newer than ${packageJson.version}.`,
-        });
-      }
-      if (whenIdle) {
-        yield* Ref.set(installWhenIdle, true);
-      } else {
-        // Reply first: the update ends this process.
-        yield* runUpdate(version).pipe(Effect.forkIn(scope));
-      }
-      return { version, whenIdle };
-    });
+  const install: ForkUpdates["Service"]["install"] = Effect.fn("ForkUpdates.install")(function* ({
+    whenIdle,
+  }) {
+    if (!available) {
+      return yield* new ForkUpdateError({
+        reason: "This server does not run as the T3 Code background service.",
+      });
+    }
+    const version = yield* newerRelease;
+    if (version === undefined) {
+      return yield* new ForkUpdateError({
+        reason: `No fork release is newer than ${packageJson.version}.`,
+      });
+    }
+    if (whenIdle) {
+      yield* Ref.set(installWhenIdle, true);
+    } else {
+      // Reply first: the update ends this process.
+      yield* runUpdate(version).pipe(Effect.forkIn(scope));
+    }
+    return { version, whenIdle };
+  });
 
   return ForkUpdates.of({ available, install });
 });

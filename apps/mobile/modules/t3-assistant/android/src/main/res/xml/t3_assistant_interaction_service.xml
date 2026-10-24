@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The lock screen launch stays off: anyone holding the phone could start agent work. -->
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+  android:recognitionService="expo.modules.t3assistant.AssistantRecognitionService"
+  android:sessionService="expo.modules.t3assistant.AssistantSessionService"
+  android:supportsAssist="true"
+  android:supportsLaunchVoiceAssistFromKeyguard="false" />

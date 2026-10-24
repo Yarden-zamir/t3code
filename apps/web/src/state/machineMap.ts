@@ -1,11 +1,16 @@
+import { useAtomValue } from "@effect/atom-react";
+import type { ReadableThreadEnvironment } from "@t3tools/client-runtime/composerThreadItems";
+import { createReadableThreadEnvironmentAtoms } from "@t3tools/client-runtime/state/readableThreadEnvironments";
 import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "@t3tools/client-runtime/state/runtime";
 import { type EnvironmentId, type MachineMapClientState, WS_METHODS } from "@t3tools/contracts";
+import { Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useEnvironmentQuery } from "./query";
 
 /**
@@ -15,6 +20,9 @@ import { useEnvironmentQuery } from "./query";
 const machineMapState = createEnvironmentRpcSubscriptionAtomFamily(connectionAtomRuntime, {
   label: "environment-data:machine-map:state",
   tag: WS_METHODS.machineMapSubscribe,
+  // The last reader that unmounts ends the stream at once, for example access change notices that
+  // were turned off. The server sends the whole state again on the next subscribe.
+  idleTtlMs: 0,
 });
 
 export const joinMachineMap = createEnvironmentRpcCommand(connectionAtomRuntime, {
@@ -62,3 +70,31 @@ export const machinesRead = createEnvironmentRpcQueryAtomFamily(connectionAtomRu
   staleTimeMs: 15_000,
   idleTtlMs: 30_000,
 });
+
+const readableThreadEnvironmentAtoms = createReadableThreadEnvironmentAtoms(connectionAtomRuntime);
+
+const NO_READABLE_ENVIRONMENTS = Atom.make<ReadonlyArray<ReadableThreadEnvironment>>([]);
+
+/** MM-1907: the composer's environment first, then the machines that its agent reads. */
+export function useReadableThreadEnvironments(
+  environmentId: EnvironmentId | null,
+): ReadonlyArray<ReadableThreadEnvironment> {
+  return useAtomValue(
+    environmentId === null
+      ? NO_READABLE_ENVIRONMENTS
+      : readableThreadEnvironmentAtoms.readable(environmentId),
+  );
+}
+
+/** MM-1906: the readable environment ids of each environment in `environmentIds`. */
+export function useReadableEnvironmentIdsByEnvironment(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyMap<EnvironmentId, ReadonlyArray<EnvironmentId>> {
+  return useAtomValue(
+    readableThreadEnvironmentAtoms.readableIdsByEnvironment(environmentIds.join("\u0000")),
+  );
+}
+
+/** MM-1906: the readable environment ids of `environmentId` once its server answered. */
+export const loadReadableThreadEnvironmentIds = (environmentId: EnvironmentId) =>
+  readableThreadEnvironmentAtoms.loadReadableIds(appAtomRegistry, environmentId);

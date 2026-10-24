@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import { environmentThemeDefinition } from "./hooks/useEnvironmentTheme";
 import {
@@ -33,14 +33,19 @@ function userCss(): string | null {
   return document.getElementById(THEME_USER_CSS_ELEMENT_ID)?.textContent ?? null;
 }
 
-afterEach(() => {
-  setEnvironmentThemes([]);
-  applyThemePalette("system");
-});
+function withEnvironmentThemes(themes: Parameters<typeof setEnvironmentThemes>[0]): Disposable {
+  setEnvironmentThemes(themes);
+  return {
+    [Symbol.dispose]() {
+      setEnvironmentThemes([]);
+      applyThemePalette("system");
+    },
+  };
+}
 
 describe("theme style fields", () => {
   it("leaves the root untouched for a theme without style fields", () => {
-    setEnvironmentThemes([environmentThemeDefinition(PLAIN_THEME)]);
+    using _themes = withEnvironmentThemes([environmentThemeDefinition(PLAIN_THEME)]);
     applyThemePalette("plain");
 
     const root = document.documentElement;
@@ -55,7 +60,7 @@ describe("theme style fields", () => {
   });
 
   it("applies the fields and user CSS of the active theme only", () => {
-    setEnvironmentThemes([
+    using _themes = withEnvironmentThemes([
       environmentThemeDefinition(PLAIN_THEME),
       environmentThemeDefinition(STYLED_THEME),
     ]);

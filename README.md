@@ -10,12 +10,15 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Request headers per environment](docs/fork/features.md#request-headers-per-environment):** a saved environment sends its own headers, for example a Cloudflare Access service token.
 - **[Tunnel pairing](docs/fork/features.md#tunnel-pairing):** a desktop server on loopback makes pairing links with its tunnel URL.
 - **[Trusted sibling environments](docs/fork/features.md#trusted-sibling-environments):** one browser page pairs with and reaches the other hosts.
+- **[Quiet reconnect after restart](docs/fork/features.md#quiet-reconnect-after-restart):** right after the app starts, the composer waits before it warns that a server is reconnecting (off by default).
 
 **Machine map** (all lines need `machineMap`, which a join to a map turns on)
 
-- **[Portal](docs/fork/features.md#machine-map):** one portal at `t3.yarden-zamir.com` maps every T3 machine and sets what each machine can do on the others.
+- **[Portal](docs/fork/features.md#machine-map):** one portal at `t3.yarden-zamir.com` maps every T3 machine, adds phones with an app invite, and sets access between them.
 - **[Environment name from machine map](docs/fork/features.md#environment-name-from-machine-map):** an optional setting keeps environment names equal to machine map names, also after a name change.
+- **[Access change notices](docs/fork/features.md#access-change-notices):** a notice names what an arrow change allows now, without a reload (off by default).
 - **[Portal views](docs/fork/features.md#portal-views):** Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients.
+- **[Work on other machines](docs/fork/features.md#work-on-other-machines):** an arrow with agent tools makes the other machine a linked environment, where agents delegate tasks within their own limits. Each arrow lists what it allows, only the owner raises it, and History lists each forwarded call.
 - **[Join and install](docs/fork/features.md#join-and-install):** "Add machine" shows one command per system that installs the fork and joins.
 - **[Join feedback](docs/fork/features.md#join-and-install):** the open join dialog shows when a machine uses the code, and whether it connected.
 - **[Emergency pause](docs/fork/features.md#emergency-pause):** a big red button stops all agents and sets all access to none.
@@ -27,8 +30,8 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Desktop app on the map](docs/fork/features.md#desktop-app-on-the-map):** the desktop app adds each reachable machine as an environment.
 - **[Zoom and pan](docs/fork/features.md#zoom-and-pan):** the map zooms, pans and fits all cards, with "Auto layout".
 - **[Approved clients](docs/fork/features.md#approved-clients):** a new browser waits until the owner approves it.
-- **[Client access](docs/fork/features.md#client-access):** each machine decides which browsers get in through Cloudflare Access.
-- **[Owner-only access changes](docs/fork/features.md#owner-only-access-changes):** only the owner changes `clientAccess` and `machineMap`.
+- **[Client access](docs/fork/features.md#client-access):** each machine decides which browsers get in through Cloudflare Access; an open browser waits for approval when its access changes.
+- **[Owner-only access changes](docs/fork/features.md#owner-only-access-changes):** only the owner changes `clientAccess` and `machineMap`, and only the owner raises access between machines.
 - **[Sibling client sessions](docs/fork/features.md#sibling-client-sessions):** a browser client session lasts 1 day, also on sibling machines.
 - **[App invites and app tokens](docs/fork/features.md#app-invites-and-app-tokens):** "Invite an app" shows a QR code that a native app uses once.
 - **[Machines panel](docs/fork/features.md#machines-panel):** a read-only map in the right panel of a thread.
@@ -36,6 +39,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 **Updates and releases**
 
 - **[Fork releases](docs/fork/features.md#fork-releases):** nightly desktop builds and Linux server archives from fork main.
+- **[Daily release](docs/fork/operations.md#daily-release):** each morning a VPS task promotes the newest nightly to a release with highlighted notes.
 - **[Android APK](docs/fork/features.md#android-apk):** a signed APK of fork main that installs next to the store app.
 - **[Fork installers](docs/fork/features.md#fork-installers):** one command installs the fork and joins the machine map.
 - **[Install when idle](docs/fork/features.md#install-when-idle):** while agents run, the update offers "Install when idle".
@@ -44,9 +48,10 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Changelog](docs/fork/features.md#changelog):** a timeline of fork releases, upstream commits and Fork Sync runs.
 - **[Local deploy](docs/fork/operations.md#deploy-a-local-build):** `scripts/fork-deploy-local.sh <ssh-host>` deploys this checkout to a headless Linux server.
 - **[Local Mac build](docs/fork/operations.md#local-mac-build):** `scripts/fork-desktop-mac.sh` builds and signs the Mac app from this checkout.
-- **[Fork Sync](docs/fork/operations.md#fork-sync):** a daily workflow merges upstream main into fork main.
+- **[Central build caches](docs/fork/features.md#central-build-caches):** opt-in Vite caches and Android app outputs outside checkouts, with central-only pruning.
+- **[Fork Sync](docs/fork/operations.md#fork-sync):** a workflow merges upstream main into fork main; a T3 task on the VPS starts it every 2 hours.
 - **[Fork CI](docs/fork/operations.md#fork-ci):** runs on each push and pull request to main; branch protection requires "Fork CI result".
-- **[Repair agent](docs/fork/operations.md#repair-agent):** a failed Fork Sync, Fork Release or Fork CI run on main calls an agent on the VPS.
+- **[Repair agent](docs/fork/operations.md#repair-agent):** a failed Fork Sync, Fork Release or Fork CI run on main calls an agent on the VPS, which repairs it with the scripts of the [fork-repair skill](.agents/skills/fork-repair/SKILL.md).
 
 **Agents**
 
@@ -59,13 +64,18 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 **Threads**
 
-- **[Sidebar groups](docs/fork/features.md#sidebar-groups):** thread groups as tabs above the sidebar list, filled by drag or by rules. Mobile shows and edits them too.
+- **[Restore worktrees on resume](docs/fork/features.md#restore-worktrees-on-resume):** recover a missing checkout at its saved path, recreate a deleted branch from the origin default branch, and run project setup before continuing (off by default).
+- **[Artifact-only worktree cleanup](docs/fork/features.md#artifact-only-worktree-cleanup):** evict ignored build outputs before dependencies, keep checkouts and branches, and report logical bytes per folder type (off by default; no orphan cleanup).
+- **[Sidebar tabs](docs/fork/features.md#sidebar-tabs):** tabs above the sidebar list that hold threads, filled by drag or by rules. Mobile shows and edits them too.
 - **[Snooze quick options](docs/fork/features.md#snooze-quick-options):** edit the choices of the snooze menus.
 - **[Worktree path template](docs/fork/features.md#worktree-path-template):** a template decides where new worktrees go.
 - **[Thread link chips](docs/fork/features.md#thread-link-chips):** every thread link in chat shows as an attached-thread chip.
+- **[Message links](docs/fork/features.md#message-links):** copy a link from each message to open the thread at that message.
 - **[Thread addresses open the desktop app](docs/fork/features.md#thread-addresses-open-the-desktop-app):** a thread address from Slack or GitHub opens the desktop app.
 - **[New thread on mobile](docs/fork/features.md#new-thread-on-mobile):** New thread in the mobile app opens the project list, the last project, or no project.
 - **[Camera in the mobile composer](docs/fork/features.md#camera-in-the-mobile-composer):** the plus button of the mobile composer can take a photo.
+- **[Android assistant panel](docs/fork/features.md#android-assistant-panel):** the Android assistant button starts a thread with the screen.
+- **[Read aloud on mobile](docs/fork/features.md#read-aloud-on-mobile):** hear a reply, or every new reply of a thread.
 
 **Filters**
 
@@ -74,7 +84,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 **Scripts and terminal**
 
-- **[Global scripts](docs/fork/features.md#global-scripts):** scripts for every project, pinned buttons, floating previews and app overlays.
+- **[Global scripts](docs/fork/features.md#global-scripts):** scripts for every project, pinned buttons, desktop global shortcuts, floating previews and app overlays.
 - **[App toggle shortcuts](docs/fork/features.md#app-toggle-shortcuts):** global keys that show and hide the desktop app.
 - **[Keyboard focus levels](docs/fork/features.md#keyboard-focus-levels):** Escape moves focus between composer, timeline and sidebar; arrow keys move a cursor.
 - **[Shortcuts in tooltips](docs/fork/features.md#shortcuts-in-tooltips):** control tooltips show the keys of the control as chips.
@@ -87,7 +97,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 **Web app and look**
 
 - **[Installed web app](docs/fork/features.md#installed-web-app):** each server web app installs as an app, with an offline page and an app badge.
-- **[Web Push](docs/fork/features.md#web-push):** a phone gets thread notifications while the app is closed.
+- **[Web Push](docs/fork/features.md#web-push):** a phone gets thread notifications while the app is closed, with registration retries and a separate failure status.
 - **[Thread card layouts](docs/fork/features.md#thread-card-layouts):** build the thread card from its elements, for desktop and for mobile.
 - **[Local server groups](docs/fork/features.md#local-server-groups):** the browser Local servers list also shows servers that no T3 terminal started.
 - **[Theme style](docs/fork/features.md#theme-style):** published themes set shape, fonts, a canvas pattern and user CSS.
@@ -95,6 +105,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Themes on mobile](docs/fork/features.md#themes-on-mobile):** the mobile app uses the published themes of its servers, with their fonts, shape and canvas pattern.
 - **[Fork settings on mobile](docs/fork/features.md#fork-settings-on-mobile):** a Fork page in the mobile Settings.
 - **[Lightning icon](docs/fork/features.md#lightning-icon):** the fork app and the Android APK use their own icon.
+- **[Back and forward](docs/fork/features.md#back-and-forward):** back and forward buttons in the title bar, and a desktop back history that stays after a restart.
 
 **Command line and MCP**
 
@@ -107,7 +118,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - MCP: `schedule_task`, `t3_project_create` and `t3_project_update` read and write the project model, environment mode, auto-pull and actions through project settings.
 - Desktop updates: the updater never downgrades, so a local build stays installed. The server recovers when quit-and-install does not quit.
 - Worktree launch: a worktree request in Scratch runs in a thread folder. A worktree request outside a Git repository runs in the project folder and says so in the thread. A launch refuses a new worktree branch that already exists.
-- Queue: a resumed queued turn shows after the turns that ran before it. A paused queue shows while a turn runs. Resume waits for an edit and for a usage limit.
+- Queue: a resumed queued turn shows after the turns that ran before it. A paused queue shows while a turn runs. Resume waits for an edit and for a usage limit. Send now on a stopped thread also waits for a usage limit.
 - Machine map: an expired machine arrow ends the sessions that it granted.
 - Device panel: a Homebrew Android SDK (`android-commandlinetools`) works without `ANDROID_HOME`, also when the `adb` on `PATH` has no emulator.
 

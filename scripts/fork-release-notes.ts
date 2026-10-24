@@ -106,7 +106,7 @@ function formatUtc(iso: string): string {
 }
 
 /** Keeps a `<tag>` in a title as text: GitHub would read it as HTML. Code spans stay as they are. */
-function escapeText(text: string): string {
+export function escapeText(text: string): string {
   return text
     .split("`")
     .map((part, index) =>

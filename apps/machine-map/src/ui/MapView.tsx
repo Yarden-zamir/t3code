@@ -21,6 +21,7 @@ import type {
 
 import { usesText } from "../rules/access.ts";
 import { findArrow, findClientArrow, findNote, MAP_FRAME, pairOffset } from "../rules/map.ts";
+import { CapabilityStickers } from "./ArrowCapabilities.tsx";
 import { NO_SELECTION, type Route } from "./route.ts";
 import { usePortalContext } from "./context.ts";
 import { buildStandings } from "./build.ts";
@@ -1262,7 +1263,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
         <span className="actions">
           {wait && <ClockIcon label={wait} />}
           {arrow.expiresAt && <span className="sticker warn flat">temp</span>}
-          {arrow.agentTools && <span className="sticker accent flat">tools</span>}
+          <CapabilityStickers arrow={arrow} />
           {was ? (
             <>
               <span className={`sticker lvl-${was} was`}>{LEVEL_LABEL[was]}</span>
@@ -1563,7 +1564,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
             aria-label="Add here"
             style={{
               left: clamp(menu.screen.x, 8, Math.max(8, size.width - 220)),
-              top: clamp(menu.screen.y, 8, Math.max(8, size.height - 130)),
+              top: clamp(menu.screen.y, 8, Math.max(8, size.height - 180)),
             }}
           >
             <button
@@ -1577,6 +1578,17 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
               }}
             >
               Add machine here
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="btn small"
+              onClick={() => {
+                setMenu(null);
+                portal.open({ _tag: "addPhone", position: toPosition(menu.at) });
+              }}
+            >
+              Add phone here
             </button>
             <button
               type="button"
@@ -1606,13 +1618,22 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
             <h2>No machines yet</h2>
             <p>Add the first machine. It joins with a one-time code and shows here.</p>
             {!readOnly && (
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => portal.open({ _tag: "addMachine" })}
-              >
-                Add machine
-              </button>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => portal.open({ _tag: "addMachine" })}
+                >
+                  Add machine
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => portal.open({ _tag: "addPhone" })}
+                >
+                  Add phone
+                </button>
+              </div>
             )}
           </div>
         )}

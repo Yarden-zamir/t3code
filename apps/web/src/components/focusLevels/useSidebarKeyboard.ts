@@ -3,7 +3,7 @@ import {
   type ForkKeybindingCommand,
   type LocalApi,
   type ScopedThreadRef,
-  SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS,
+  SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type RefObject, useEffect, useLayoutEffect, useRef } from "react";
@@ -14,7 +14,7 @@ import {
   registerFocusLevelCommands,
 } from "./useFocusLevelShortcuts";
 
-const GROUP_TAB_SELECTOR = '[data-sidebar-group-tabs] [role="tab"]';
+const SIDEBAR_TAB_SELECTOR = '[data-sidebar-tabs] [role="tab"]';
 
 /** The thread menu items that a thread action key picks, in order of preference. */
 const THREAD_ACTION_PRESETS = {
@@ -65,9 +65,9 @@ function sidebarRows(): HTMLElement[] {
   );
 }
 
-function groupTabs(): HTMLElement[] {
+function sidebarTabButtons(): HTMLElement[] {
   return Array.from(
-    focusLevelElement("sidebar")?.querySelectorAll<HTMLElement>(GROUP_TAB_SELECTOR) ?? [],
+    focusLevelElement("sidebar")?.querySelectorAll<HTMLElement>(SIDEBAR_TAB_SELECTOR) ?? [],
   );
 }
 
@@ -101,8 +101,8 @@ function afterPaint(run: () => void) {
   requestAnimationFrame(() => requestAnimationFrame(run));
 }
 
-function selectGroup(index: number): boolean {
-  const tabs = groupTabs();
+function selectTab(index: number): boolean {
+  const tabs = sidebarTabButtons();
   const tab = tabs[index];
   if (!tab) return false;
   const tabHadFocus =
@@ -115,16 +115,16 @@ function selectGroup(index: number): boolean {
   return true;
 }
 
-function stepGroup(direction: 1 | -1): boolean {
-  const tabs = groupTabs();
+function stepTab(direction: 1 | -1): boolean {
+  const tabs = sidebarTabButtons();
   if (tabs.length < 2) return false;
   const selected = tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true");
-  return selectGroup((selected + direction + tabs.length) % tabs.length);
+  return selectTab((selected + direction + tabs.length) % tabs.length);
 }
 
 /**
  * Fork: keyboard control of the sidebar. Up and Down move between thread rows, and Up from the
- * first row reaches the group tabs. Thread action keys act on the focused row in the sidebar, and
+ * first row reaches the sidebar tabs. Thread action keys act on the focused row in the sidebar, and
  * on the open thread elsewhere.
  */
 export function useSidebarKeyboard(input: {
@@ -147,7 +147,7 @@ export function useSidebarKeyboard(input: {
       () => {
         const rows = sidebarRows();
         const row = focusedRow();
-        const tabs = groupTabs();
+        const tabs = sidebarTabButtons();
         const onTab =
           document.activeElement instanceof HTMLElement && tabs.includes(document.activeElement);
         if (row === null)
@@ -181,10 +181,10 @@ export function useSidebarKeyboard(input: {
         );
         return true;
       };
-    const groupJumps = Object.fromEntries(
-      SIDEBAR_GROUP_JUMP_KEYBINDING_COMMANDS.map((command, index) => [
+    const tabJumps = Object.fromEntries(
+      SIDEBAR_TAB_JUMP_KEYBINDING_COMMANDS.map((command, index) => [
         command,
-        (() => selectGroup(index)) satisfies FocusLevelCommandHandler,
+        (() => selectTab(index)) satisfies FocusLevelCommandHandler,
       ]),
     );
     return registerFocusLevelCommands({
@@ -197,15 +197,15 @@ export function useSidebarKeyboard(input: {
         afterPaint(() => focusLevel("timeline"));
         return true;
       },
-      "sidebar.previousGroup": () => stepGroup(-1),
-      "sidebar.nextGroup": () => stepGroup(1),
+      "sidebar.previousTab": () => stepTab(-1),
+      "sidebar.nextTab": () => stepTab(1),
       "sidebar.search": () => {
         const field = latest.current.searchFieldRef.current?.querySelector<HTMLElement>("input");
         if (!field) return false;
         field.focus();
         return true;
       },
-      ...groupJumps,
+      ...tabJumps,
       "thread.archive": threadAction("thread.archive"),
       "thread.snooze": threadAction("thread.snooze"),
       "thread.rename": threadAction("thread.rename"),

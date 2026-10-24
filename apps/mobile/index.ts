@@ -2,10 +2,11 @@
 import "./src/features/development/render-counter-entry";
 import { registerRootComponent } from "expo";
 import "react-native-gesture-handler";
-import { LogBox } from "react-native";
+import { AppRegistry, LogBox } from "react-native";
 import { featureFlags } from "react-native-screens";
 
 import App from "./src/App";
+import { AssistantPanelRoot } from "./src/features/assistant/AssistantPanel";
 
 // Required for react-native-screens' iOS FormSheet sizing fix when a nested
 // native stack is rendered inside a non-fitToContents formSheet.
@@ -16,3 +17,5 @@ if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
 }
 
 registerRootComponent(App);
+// Fork: the Android assistant panel root, which modules/t3-assistant opens.
+AppRegistry.registerComponent("T3Assistant", () => AssistantPanelRoot);

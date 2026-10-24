@@ -111,8 +111,8 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
   metadata: { displayName: "Terminal", supportsMultipleInstances: false },
   configSchema: TerminalSettings,
   defaultConfig: () => decodeTerminalSettings({}),
-  create: ({ instanceId, displayName, accentColor, enabled, config }) =>
-    Effect.gen(function* () {
+  create: Effect.fn("TerminalProviderDriver.create")(
+    function* ({ instanceId, displayName, accentColor, enabled, config }) {
       const host = yield* ProviderHost.ProviderHost;
       const port = Option.getOrElse(
         yield* Effect.serviceOption(TerminalPort),
@@ -209,15 +209,18 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
         orchestrationAdapter,
         textGeneration,
       } satisfies ProviderInstance;
-    }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ProviderDriverError({
-            driver: TERMINAL_DRIVER,
-            instanceId,
-            detail: "Failed to build the terminal provider.",
-            cause,
-          }),
+    },
+    (effect, { instanceId }) =>
+      effect.pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: TERMINAL_DRIVER,
+              instanceId,
+              detail: "Failed to build the terminal provider.",
+              cause,
+            }),
+        ),
       ),
-    ),
+  ),
 };

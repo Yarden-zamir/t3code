@@ -1,20 +1,24 @@
 /**
  * Fork: machine map agent tools (`apps/machine-map/SPEC.md`, MM-801). The `machines_*` tools run
  * through the portal connection of this machine, and the portal checks the map role of this
- * machine on every call (MM-802, MM-805). `machine_tool_call` goes to the other machine directly.
+ * machine on every call (MM-802, MM-805). `machine_exec` goes to the other machine directly. Other
+ * T3 tools reach another machine with `environmentId`, through the arrow links (MM-303).
  */
 import {
+  MACHINE_EXEC_MAX_OUTPUT_BYTES,
+  MachineExecInput,
+  MachineExecResult,
   MachineMapClientState,
   MachineMapJoinInput,
   MapToolInputs,
   type MapToolName,
   OrchestratorMcpFailure,
-  TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Tool from "effect/ai/Tool";
 import * as Toolkit from "effect/ai/Toolkit";
 
+import * as MachineExec from "../../../fork/machineMap/MachineExec.ts";
 import * as MachineMap from "../../../fork/machineMap/MachineMap.ts";
 import * as MachinePeers from "../../../fork/machineMap/MachinePeers.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -28,6 +32,7 @@ const shared = {
     ThreadManagementService.ThreadManagementService,
     MachineMap.MachineMap,
     MachinePeers.MachinePeers,
+    MachineExec.MachineExec,
   ],
 };
 
@@ -37,7 +42,7 @@ const PORTAL_NOTE =
 
 /** Appended to every map change. */
 const MAP_WRITE_NOTE =
-  'With the map role `edit`, the change applies at once and the result is {"_tag":"applied","revision":n}. With the role `propose`, or when the change raises access of this machine, the change waits in the portal Inbox and the result is {"_tag":"proposed","proposalId":"...","reason":"map-role"|"self-escalation"}. The owner approves or rejects a proposal; it expires after 24 hours. Each applied change is a revision that machines_undo can reverse. An offline machine applies the change when it connects.';
+  'With the map role `edit`, a change that raises no access applies at once and the result is {"_tag":"applied","revision":n}. Only the owner raises access: a change that raises a level, turns on agent tools or exec, or raises a map role, for any machine, waits in the portal Inbox, and so does every change with the role `propose`. Then the result is {"_tag":"proposed","proposalId":"...","reason":"map-role"|"self-escalation"|"owner-only"}. The owner approves or rejects a proposal; it expires after 24 hours. Each applied change is a revision that machines_undo can reverse. An offline machine applies the change when it connects.';
 
 const mapTool = <const Name extends Exclude<MapToolName, "machines_read" | "machines_resources">>(
   name: Name,
@@ -45,7 +50,7 @@ const mapTool = <const Name extends Exclude<MapToolName, "machines_read" | "mach
 ) =>
   Tool.make(name, {
     ...shared,
-    description: `${description} ${PORTAL_NOTE}`,
+    description: `${description} Needs a live full-access/default calling thread or a full-access client; the map role never raises a caller's limits. ${PORTAL_NOTE}`,
     parameters: MapToolInputs[name],
     success: Schema.Unknown,
   });
@@ -53,7 +58,7 @@ const mapTool = <const Name extends Exclude<MapToolName, "machines_read" | "mach
 // MCP needs an object root for parameters, so the tool without inputs declares none.
 const MachinesReadTool = Tool.make("machines_read", {
   ...shared,
-  description: `Read the machine map. Call it first to find machine ids, map roles, revision numbers and command ids. Needs the map role \`read\`. Changes nothing. The result is {"_tag":"read", map, presence, commands, history, proposals, resources}: map holds the machines, arrows, shared settings with the overrides of each machine, and presets, and the owner's display data: notes (sticky notes with text and a place) and pairPlacements (where the owner put pair cards), which no machine applies; presence.<machineId> holds online, lastSeenAt and status (build, running turns, supported commands, clients); resources holds latest.<machineId> (the newest resource sample), thresholds.<machineId> (health thresholds) and alerts (the active health alerts); history holds the newest 50 revisions and makes most of the size, often more than 50,000 characters. ${PORTAL_NOTE}`,
+  description: `Read the machine map. Call it first to find machine ids, map roles, revision numbers and command ids. Needs the map role \`read\`. Changes nothing. The result is {"_tag":"read", map, presence, commands, history, proposals, resources, capabilities, execs, calls}: map holds the machines, arrows, shared settings with the overrides of each machine, and presets, and the owner's display data: notes (sticky notes with text and a place) and pairPlacements (where the owner put pair cards), which no machine applies; presence.<machineId> holds online, lastSeenAt and status (build, running turns, supported commands, clients); resources holds latest.<machineId> (the newest resource sample), thresholds.<machineId> (health thresholds) and alerts (the active health alerts); capabilities lists for each arrow with any what agents on \`from\` can do on \`to\` (readThreads, launch, exec, settings); execs and calls list the newest machine_exec runs and T3 tool calls forwarded to other machines, without their output; history holds the newest 50 revisions and makes most of the size, often more than 50,000 characters. ${PORTAL_NOTE}`,
   success: Schema.Unknown,
 })
   .annotate(Tool.Readonly, true)
@@ -70,7 +75,7 @@ const MachinesResourcesTool = Tool.make("machines_resources", {
 
 const MachinesSetAccessTool = mapTool(
   "machines_set_access",
-  `Set the arrow from machine \`from\` to machine \`to\`: its access level, whether agents on \`from\` can call tools on \`to\`, and an optional expiry. \`from\` and \`to\` are machine ids from machines_read. Use it to give or remove access between two machines. A lower level ends the sessions of \`from\` on \`to\` at once. The owner keeps full access to every machine whatever the arrows say. Needs the map role \`propose\` or \`edit\`. ${MAP_WRITE_NOTE}`,
+  `Set the arrow from machine \`from\` to machine \`to\`: its access level, whether agents on \`from\` can call tools on \`to\`, and an optional expiry. \`from\` and \`to\` are machine ids from machines_read. Use it to remove or lower access between two machines, or to propose more access to the owner. A lower level ends the sessions of \`from\` on \`to\` at once. The owner keeps full access to every machine whatever the arrows say. Needs the map role \`propose\` or \`edit\`. ${MAP_WRITE_NOTE}`,
 ).annotate(Tool.Destructive, true);
 
 const MachinesSetSettingTool = mapTool(
@@ -101,30 +106,16 @@ const MachinesPresetTool = mapTool(
 const MachinesJoinTool = Tool.make("machines_join", {
   ...shared,
   description:
-    "Join this machine to the machine map with a one-time join code, for example K7QM-2XPA, that the owner makes in the portal (Add machine). portalUrl is the portal origin, for example https://t3.yarden-zamir.com; omit it to keep the portal of the machineMap setting. Use it once per machine, only with a code that the owner gave you. It saves the machine token in the server secret store, turns on the machineMap setting, saves the portal URL and connects. A used, expired or wrong code fails, and nothing changes. Needs a full-access caller; it does not need a map role. To leave the map, the owner uses Settings > Machines > Leave. The result is the machine map state of this machine: enabled, joined, connection and the machines it can reach. The connection comes up a moment after the call.",
+    "Join this machine to the machine map with a one-time join code from Add machine in the portal. Agents cannot join (MM-919). On a headless machine, the owner runs t3 machine-map join <code>; on desktop, use Settings > Machines. A joined machine with the map on refuses another join. To leave, the owner uses Settings > Machines > Leave.",
   parameters: MachineMapJoinInput,
   success: MachineMapClientState,
 }).annotate(Tool.Destructive, true);
 
-const MachineToolCallTool = Tool.make("machine_tool_call", {
+const MachineExecTool = Tool.make("machine_exec", {
   ...shared,
-  description:
-    "Call a T3 Code MCP tool on another machine of the map, as this machine. `machine` is the id or name of that machine (names ignore case); `tool` is a tool name, for example t3_thread_list or t3_thread_launch; `input` is its JSON input. The tool runs on the other machine, with its side effects there. It needs an arrow from this machine to that machine with agent tools on and a level other than none; the level limits what the tool can do there (read allows only read tools). It does not need the portal: it uses the last map that this machine saved. Thread-bound tools need the threadId of a thread on the other machine. The machines_* tools and machine_tool_call do not work through it. The result is the result of the tool on the other machine.",
-  parameters: Schema.Struct({
-    machine: TrimmedNonEmptyString.annotate({
-      description: "Id or name of the other machine, as machines_read lists it. Names ignore case.",
-    }),
-    tool: TrimmedNonEmptyString.annotate({
-      description:
-        "T3 Code MCP tool name on the other machine, for example t3_thread_list. `t3 tool list` prints the names.",
-    }),
-    input: Schema.optionalKey(
-      Schema.Record(Schema.String, Schema.Unknown).annotate({
-        description: "Input of that tool as a JSON object. Omit for a tool without input.",
-      }),
-    ),
-  }),
-  success: Schema.Unknown,
+  description: `Run a shell command on another machine of the map, through the T3 server of that machine, as its user. Use it for work that needs that machine: logs, builds, git, services. It needs an arrow from this machine to that machine with exec and agent tools on and the level standard or admin, and a live full-access/default caller with orchestration, worktree and pull-requests tool capabilities. Restricted callers are refused. The other machine checks the arrow again, and an emergency pause, a removed arrow or exec turned off stops a running command at once. It does not need the portal. The portal History records the machine, the calling thread, the command, the exit code and the time, never the output. The call waits for the command, at most the timeout. Background jobs of the command end with it, also with nohup: start long work as a service and poll it. With a shell, \`t3 machine exec <machine> -- <command>\` runs the same command with stdin, streamed and binary output, its exit code and no time limit, and a background job of a command that exits 0 keeps running. The result is {machine, cwd, shell, outcome ("exited" or "timedOut"), exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, durationMs}. stdout and stderr keep at most ${MACHINE_EXEC_MAX_OUTPUT_BYTES} bytes each and then end with a truncation marker. A timeout loses the output.`,
+  parameters: MachineExecInput,
+  success: MachineExecResult,
 }).annotate(Tool.Destructive, true);
 
 export const MachineMapToolkit = Toolkit.make(
@@ -137,5 +128,5 @@ export const MachineMapToolkit = Toolkit.make(
   MachinesUndoTool,
   MachinesPresetTool,
   MachinesJoinTool,
-  MachineToolCallTool,
+  MachineExecTool,
 );

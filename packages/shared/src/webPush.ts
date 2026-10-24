@@ -21,6 +21,26 @@ export interface VapidKey {
   readonly publicKey: string;
 }
 
+const TAG_HASH_OFFSET_BASIS = 0xcbf29ce484222325n;
+const TAG_HASH_PRIME = 0x100000001b3n;
+const TAG_HASH_MASK = 0xffffffffffffffffn;
+
+/**
+ * The tag of a thread push. It must equal upstream `threadNotificationTag` in
+ * `apps/web/src/threadNotifications.ts`, so that a push replaces the page notification of the
+ * same thread. The server cannot import the web app, so this is a copy;
+ * `apps/web/src/forkPushNotificationTag.test.ts` fails when the two differ.
+ */
+export function pushThreadNotificationTag(environmentId: string, threadId: string): string {
+  const key = `${environmentId}:${threadId}`;
+  let hash = TAG_HASH_OFFSET_BASIS;
+  for (let index = 0; index < key.length; index += 1) {
+    hash ^= BigInt(key.charCodeAt(index));
+    hash = (hash * TAG_HASH_PRIME) & TAG_HASH_MASK;
+  }
+  return hash.toString(16).padStart(16, "0");
+}
+
 /** `delivered`, or `gone` when the push service no longer knows the subscription. */
 export type PushResult = "delivered" | "gone";
 

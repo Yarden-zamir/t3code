@@ -92,8 +92,12 @@ done
 trap restore_versions EXIT
 
 # `--build-sea` needs an official Node build; Homebrew builds Node without it. Use the Node that
-# the executable embeds (SEA_NODE_VERSION), as the release workflow does.
-sea_node_version="$(sed -n 's/^const SEA_NODE_VERSION = "\(.*\)";$/\1/p' apps/server/vite.config.ts)"
+# the executable embeds (the exact engines.node version), as the release workflow does.
+sea_node_version="$(node -p 'require("./package.json").engines.node')"
+[[ "$sea_node_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+  echo "package.json engines.node must be an exact version, got '$sea_node_version'." >&2
+  exit 1
+}
 host_arch="$(uname -m)"
 [[ "$host_arch" == x86_64 ]] && host_arch=x64
 node_name="node-v$sea_node_version-$(uname -s | tr '[:upper:]' '[:lower:]')-$host_arch"

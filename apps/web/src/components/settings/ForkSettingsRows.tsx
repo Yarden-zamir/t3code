@@ -11,6 +11,7 @@ import { BoundedIntegerInput } from "./BoundedIntegerInput";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { useSettingsScope } from "./SettingsScopeContext";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
@@ -18,7 +19,7 @@ import {
 } from "./useScopedSettings";
 
 /**
- * Fork: setting rows that the General page and the Fork page both render.
+ * Fork: setting rows that their place and the Fork page both render.
  * Each row edits the same value in both places.
  */
 
@@ -186,6 +187,40 @@ export function BackgroundWorkDetailsSettingsRow() {
   );
 }
 
+/** Fork: `restartReconnectWarningGrace` (forkReconnectWarningGrace.ts). */
+export function RestartReconnectWarningGraceSettingsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("restart-reconnect-warning-grace")}
+      description="For the first 45 seconds after T3 Code starts, do not warn in the composer that a server is reconnecting. A refused sign-in or an offline device still shows at once."
+      resetAction={
+        settings.restartReconnectWarningGrace !==
+        DEFAULT_UNIFIED_SETTINGS.restartReconnectWarningGrace ? (
+          <SettingResetButton
+            label="quiet reconnect after restart"
+            onClick={() =>
+              updateSettings({
+                restartReconnectWarningGrace: DEFAULT_UNIFIED_SETTINGS.restartReconnectWarningGrace,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.restartReconnectWarningGrace}
+          onCheckedChange={(checked) =>
+            updateSettings({ restartReconnectWarningGrace: Boolean(checked) })
+          }
+          aria-label="Quiet reconnect after restart"
+        />
+      }
+    />
+  );
+}
+
 /** Fork: `checkNewerBeforeUpdateInstall`. Only the desktop app installs downloaded updates. */
 export function CheckNewerBeforeUpdateInstallSettingsRow() {
   const settings = useScopedSettings();
@@ -193,7 +228,7 @@ export function CheckNewerBeforeUpdateInstallSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("check-newer-before-update-install")}
-      description="Desktop app: before it installs a downloaded update, check for a newer release and offer to download that one instead. Install when idle and the machine map take the newer release."
+      description="Desktop app: before it installs a downloaded update, look for a newer release and offer it. Install when idle and the machine map take the newer release."
       resetAction={
         settings.checkNewerBeforeUpdateInstall !==
         DEFAULT_UNIFIED_SETTINGS.checkNewerBeforeUpdateInstall ? (
@@ -248,6 +283,54 @@ export function ForkAutoUpdateSettingsRow() {
           checked={settings.forkAutoUpdate}
           onCheckedChange={(checked) => updateSettings({ forkAutoUpdate: Boolean(checked) })}
           aria-label="Server auto-update"
+        />
+      }
+    />
+  );
+}
+
+/** Fork: `autoSettleWaitsForBackgroundCommands`. */
+export function AutoSettleWaitsForBackgroundCommandsSettingsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["autoSettleWaitsForBackgroundCommands"]);
+  const { connectedEnvironments } = useSettingsScope();
+  // Like the upstream auto-settle rows beside it.
+  const supportsAutoSettlement =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every(
+      (target) => target.serverConfig?.environment.capabilities.threadAutoSettlement === true,
+    );
+  if (!supportsAutoSettlement) return null;
+  return (
+    <SettingsRow
+      {...searchableSetting("auto-settle-waits-for-background-commands")}
+      serverScoped
+      settingKeys={["autoSettleWaitsForBackgroundCommands"]}
+      resetAction={
+        mixed ||
+        settings.autoSettleWaitsForBackgroundCommands !==
+          DEFAULT_UNIFIED_SETTINGS.autoSettleWaitsForBackgroundCommands ? (
+          <SettingResetButton
+            label="auto-settle waits for background commands"
+            onClick={() =>
+              updateSettings({
+                autoSettleWaitsForBackgroundCommands:
+                  DEFAULT_UNIFIED_SETTINGS.autoSettleWaitsForBackgroundCommands,
+              })
+            }
+          />
+        ) : null
+      }
+      description="Auto-settle skips a thread while its agent runs a background command, so the command can finish and wake the agent. A command that keeps running, such as a dev server, holds the thread until the session releases idle work."
+      control={
+        <ScopedSwitch
+          settingKeys={["autoSettleWaitsForBackgroundCommands"]}
+          checked={settings.autoSettleWaitsForBackgroundCommands}
+          onCheckedChange={(checked) =>
+            updateSettings({ autoSettleWaitsForBackgroundCommands: Boolean(checked) })
+          }
+          aria-label="Auto-settle waits for background commands"
         />
       }
     />

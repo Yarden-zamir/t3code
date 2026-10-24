@@ -12,7 +12,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { useState } from "react";
 
-import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
@@ -34,7 +34,6 @@ function mergePreset(
 /** Fork: `terminalKeyMappings`, keys that every terminal sends as fixed bytes. */
 export function TerminalKeyMappingsSettingsRow() {
   const mappings = useClientSettings(selectMappings);
-  const updateSettings = useUpdateClientSettings();
   const saved = JSON.stringify(mappings, null, 2);
   // The field keeps what the user typed until it saves, so a rejected entry stays visible.
   const [draft, setDraft] = useState<string | null>(null);
@@ -65,13 +64,13 @@ export function TerminalKeyMappingsSettingsRow() {
     }
     setError(null);
     setDraft(null);
-    void updateSettings({ terminalKeyMappings: decoded.value });
+    void updateClientSettings({ terminalKeyMappings: decoded.value });
   };
 
   const addPreset = (preset: ReadonlyArray<TerminalKeyMapping>) => {
     setError(null);
     setDraft(null);
-    void updateSettings({ terminalKeyMappings: mergePreset(mappings, preset) });
+    void updateClientSettings({ terminalKeyMappings: mergePreset(mappings, preset) });
   };
 
   return (
@@ -86,7 +85,7 @@ export function TerminalKeyMappingsSettingsRow() {
             onClick={() => {
               setDraft(null);
               setError(null);
-              void updateSettings({
+              void updateClientSettings({
                 terminalKeyMappings: DEFAULT_CLIENT_SETTINGS.terminalKeyMappings,
               });
             }}

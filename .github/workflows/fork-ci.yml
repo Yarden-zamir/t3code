@@ -5,9 +5,10 @@ name: Fork CI
 # Limit: this file copies the ci.yml commands by hand. When upstream changes
 # them, update this file. A failure on main calls the repair agent. See docs/fork/operations.md "Fork CI".
 #
-# The heavy jobs run only when the push or pull request changes code. The changes job
-# compares a push with the last green run, so a cancelled or failed run never hides a
-# change. It compares a pull request with its base.
+# The changes job runs upstream's .github/scripts/ci-changes.cjs, which maps the
+# changed files to the jobs they can affect. It compares a push with the last green
+# run, so a cancelled or failed run never hides a change. It compares a pull request
+# with its base.
 
 on:
   push:
@@ -40,10 +41,25 @@ jobs:
       actions: read
       contents: read
     outputs:
-      code: ${{ steps.classify.outputs.code }}
+      code: ${{ steps.classify.outputs.typecheck }}
       files: ${{ steps.classify.outputs.files }}
-      machine_map: ${{ steps.classify.outputs.machine_map }}
+      build: ${{ steps.classify.outputs.build }}
+      test: ${{ steps.classify.outputs.test }}
+      test_packages: ${{ steps.classify.outputs.test_packages }}
+      test_web: ${{ steps.classify.outputs.test_web }}
+      test_server: ${{ steps.classify.outputs.test_server }}
+      rust: ${{ steps.classify.outputs.rust }}
     steps:
+      # Only the files ci-changes.cjs reads to build the package graph.
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /pnpm-workspace.yaml
+            /.github/scripts/ci-changes.cjs
+            /*/package.json
+            /*/*/package.json
+            !/.repos/
+          sparse-checkout-cone-mode: false
       - name: Classify the changed files
         id: classify
         env:
@@ -52,58 +68,37 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          code() { echo "code=true" >>"$GITHUB_OUTPUT"; echo "$1: the heavy jobs run."; exit 0; }
+          # Without a list of changed files, ci-changes.cjs runs every job.
+          everything() { echo "$1: every job runs."; node .github/scripts/ci-changes.cjs | tee -a "$GITHUB_OUTPUT"; exit 0; }
           head="$GITHUB_SHA"
           case "$GITHUB_EVENT_NAME" in
             push)
               base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow fork-ci.yml --branch "$GITHUB_REF_NAME" \
                 --event push --status success --limit 1 --json headSha --jq '.[0].headSha // empty')"
-              [[ -n "$base" ]] || code "No green run to compare with"
+              [[ -n "$base" ]] || everything "No green run to compare with"
               ;;
             pull_request)
               base="$PR_BASE_SHA"
               head="$PR_HEAD_SHA"
               ;;
-            *) code "Manual run" ;;
+            *) everything "Manual run" ;;
           esac
-          # The compare API lists at most 300 files. A longer list counts as code.
-          files="$(gh api "repos/$GITHUB_REPOSITORY/compare/$base...$head" --jq '.files[].filename')" ||
-            code "The compare with $base failed"
-          (($(wc -l <<<"$files") < 300)) || code "300 or more changed files"
-          while IFS= read -r file; do
-            [[ -n "$file" ]] || continue
-            case "$file" in
-              docs/* | *.md) ;;
-              apps/machine-map/*) echo "machine_map=true" >>"$GITHUB_OUTPUT" ;;
-              *) code "$file changed since $base" ;;
-            esac
-          done <<<"$files"
-          echo "code=false" >>"$GITHUB_OUTPUT"
+          # The compare API lists at most 300 files. A longer list runs every job.
+          # A rename lists the old path too: moving a file out of a package changes that package.
+          files="$(gh api "repos/$GITHUB_REPOSITORY/compare/$base...$head" \
+            --jq '.files[] | .filename, (.previous_filename // empty)')" ||
+            everything "The compare with $base failed"
+          (($(wc -l <<<"$files") < 300)) || everything "300 or more changed files"
           { echo "files<<EOF"; echo "$files"; echo "EOF"; } >>"$GITHUB_OUTPUT"
-          echo "Only docs, markdown or apps/machine-map changed since $base: only lint and the machine map job run."
-
-  # The heavy jobs also cover apps/machine-map. This job checks it alone when nothing else changed.
-  machine_map:
-    name: Machine map
-    needs: changes
-    if: needs.changes.outputs.code == 'false' && needs.changes.outputs.machine_map == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            - args: ["--filter", "@t3tools/machine-map...", "--filter", "@t3tools/monorepo"]
-      - run: vp run --filter @t3tools/machine-map typecheck
-      - run: vp run --filter @t3tools/machine-map test
+          # Fork: Markdown is docs anywhere. ci-changes.cjs treats only root *.md as docs.
+          grep -v '\.md$' <<<"$files" >"$RUNNER_TEMP/changed-paths" || true
+          decision="$(node .github/scripts/ci-changes.cjs --paths "$RUNNER_TEMP/changed-paths")"
+          # As upstream: a code push to main runs every job, the backstop for a
+          # dependency the script misses. A docs-only push still skips them.
+          if [[ "$GITHUB_EVENT_NAME" == push ]] && grep -qx 'typecheck=true' <<<"$decision"; then
+            decision="$(node .github/scripts/ci-changes.cjs --paths "$RUNNER_TEMP/changed-paths" --full)"
+          fi
+          tee -a "$GITHUB_OUTPUT" <<<"$decision"
 
   lint:
     name: Lint
@@ -117,11 +112,7 @@ jobs:
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
+      - uses: ./.github/actions/setup-ci-deps
       - if: needs.changes.outputs.code == 'true'
         run: vp run --filter @t3tools/desktop ensure:electron
       - if: needs.changes.outputs.code == 'true'
@@ -146,6 +137,17 @@ jobs:
       # On both paths, because a code change can rename a file that a doc links to.
       - name: Check the links of the fork docs
         run: node scripts/fork-check-doc-links.ts
+      # See docs/fork/operations.md "Migrations".
+      - name: Check the migration registry against upstream main
+        run: |
+          git fetch --depth=1 --no-tags https://github.com/pingdotgg/t3code.git main:refs/remotes/upstream/main
+          node scripts/fork-check-migrations.ts
+      # See docs/fork/operations.md "Adopted upstream pull requests". The check walks the commits
+      # of HEAD, so it fetches them without their trees and files (a few seconds).
+      - name: Check the adopted upstream pull requests
+        run: |
+          git fetch --no-tags --filter=tree:0 --unshallow origin "$(git rev-parse HEAD)"
+          node scripts/fork-adopted-prs.ts check
 
   typecheck:
     name: Typecheck
@@ -160,18 +162,14 @@ jobs:
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
+      - uses: ./.github/actions/setup-ci-deps
       - run: vp run --filter @t3tools/desktop ensure:electron
       - run: vpr typecheck
 
   build:
     name: Build
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -182,11 +180,7 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
       - run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
+      - uses: ./.github/actions/setup-ci-deps
       - run: vp run --filter @t3tools/desktop ensure:electron
       - run: vp run build:desktop
       - run: node apps/desktop/scripts/verify-preload-bundle.mjs
@@ -194,20 +188,14 @@ jobs:
   test:
     name: Test ${{ matrix.group }}
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.test == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Two runners: on one runner, the slowest packages wait for each other.
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - group: apps
-            filters: --filter @t3tools/mobile --filter @t3tools/desktop --filter @t3tools/oxlint-plugin-t3code
-          - group: packages
-            filters: >-
-              --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web'
-              --filter '!@t3tools/mobile' --filter '!@t3tools/desktop' --filter '!@t3tools/oxlint-plugin-t3code'
+        group: [apps, packages]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -216,22 +204,42 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libsecret-1-dev pkg-config
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
+      - uses: ./.github/actions/setup-ci-deps
       - run: vp run --filter @t3tools/desktop ensure:electron
       - if: matrix.group == 'packages'
         run: python3 -B .github/scripts/stage-preview-bundle.test.py
       - if: matrix.group == 'packages'
         run: node --test .github/scripts/check-nightly-release.test.cjs
-      - run: vp run --parallel --concurrency-limit 4 ${{ matrix.filters }} test
+      # TEST_PACKAGES lists the affected packages, or nothing when all of them are.
+      # t3 and @t3tools/web have their own jobs.
+      - name: Test
+        env:
+          GROUP: ${{ matrix.group }}
+          TEST_PACKAGES: ${{ needs.changes.outputs.test_packages }}
+        run: |
+          apps=(@t3tools/mobile @t3tools/desktop @t3tools/oxlint-plugin-t3code)
+          filters=()
+          if [[ -z "$TEST_PACKAGES" ]]; then
+            if [[ "$GROUP" == apps ]]; then
+              for package in "${apps[@]}"; do filters+=(--filter "$package"); done
+            else
+              filters=(--filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web')
+              for package in "${apps[@]}"; do filters+=(--filter "!$package"); done
+            fi
+          else
+            for package in $TEST_PACKAGES; do
+              group=packages
+              case " ${apps[*]} " in *" $package "*) group=apps ;; esac
+              if [[ "$group" == "$GROUP" ]]; then filters+=(--filter "$package"); fi
+            done
+          fi
+          if ((${#filters[@]} == 0)); then echo "No affected package in the $GROUP group."; exit 0; fi
+          vp run --parallel --concurrency-limit 4 "${filters[@]}" test
 
   test_web:
     name: Test Web
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.test_web == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -241,11 +249,7 @@ jobs:
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
+      - uses: ./.github/actions/setup-ci-deps
       # The browser project runs React tests in headless Chromium.
       - run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
       - run: vp run --filter @t3tools/web test
@@ -253,7 +257,7 @@ jobs:
   test_server:
     name: Test Server ${{ matrix.shard }}
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.test_server == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -267,18 +271,14 @@ jobs:
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
+      - uses: ./.github/actions/setup-ci-deps
       - run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
       - run: vp run --filter t3 test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
   rust:
     name: Rust
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -302,7 +302,7 @@ jobs:
   # so the docs-only path passes too. A cancelled job counts as failed.
   result:
     name: Fork CI result
-    needs: [changes, lint, machine_map, typecheck, build, test, test_web, test_server, rust]
+    needs: [changes, lint, typecheck, build, test, test_web, test_server, rust]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -320,7 +320,7 @@ jobs:
   # A pull request never calls it: its author sees the failed check.
   notify_agent:
     name: Notify repair agent
-    needs: [changes, lint, machine_map, typecheck, build, test, test_web, test_server, rust]
+    needs: [changes, lint, typecheck, build, test, test_web, test_server, rust]
     if: failure() && github.event_name != 'pull_request' && github.event.inputs.notify_agent != 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 20

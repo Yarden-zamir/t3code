@@ -11,6 +11,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { isElectronAccelerator } from "@t3tools/shared/electronAccelerator";
 import {
   BugIcon,
   FlaskConicalIcon,
@@ -99,6 +100,7 @@ export interface NewProjectScriptInput {
   previewOverlay: boolean;
   /** When true, run without opening or focusing the terminal drawer. */
   runInBackground: boolean;
+  globalShortcut?: string | null;
 }
 
 export type ProjectScriptActionResult = AtomCommandResult<void, unknown>;
@@ -141,6 +143,7 @@ export function editorRequestForScript(
       autoOpenPreview: script.autoOpenPreview ?? false,
       previewOverlay: script.previewOverlay ?? false,
       runInBackground: script.runInBackground ?? false,
+      globalShortcut: script.globalShortcut ?? null,
     },
   };
 }
@@ -157,9 +160,8 @@ export function ProjectScriptEditorDialog({
 }: {
   environmentId: EnvironmentId;
   /**
-   * A global script runs only on demand: no shortcut, no setup or settle
-   * role. Shortcut commands are keyed by script id, which a global script
-   * could share with a project script.
+   * Global scripts use desktop global accelerators, not project keybinding commands, since
+   * a global script can share its id with a project script. Lifecycle roles stay off.
    */
   global?: boolean;
   editScope?: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
@@ -291,6 +293,7 @@ function ProjectScriptEditorForm({
   const [autoOpenPreview, setAutoOpenPreview] = useState(false);
   const [previewOverlay, setPreviewOverlay] = useState(false);
   const [runInBackground, setRunInBackground] = useState(false);
+  const [globalShortcut, setGlobalShortcut] = useState("");
   const [savingRequest, setSavingRequest] = useState<ProjectScriptEditorRequest | null>(null);
   const pendingSubmissionRef = useRef<{ request: ProjectScriptEditorRequest } | null>(null);
 
@@ -322,6 +325,7 @@ function ProjectScriptEditorForm({
       setAutoOpenPreview(request.initial.autoOpenPreview);
       setPreviewOverlay(request.initial.previewOverlay);
       setRunInBackground(request.initial.runInBackground);
+      setGlobalShortcut(request.initial.globalShortcut ?? "");
       setSavingRequest(null);
     }
   }
@@ -362,6 +366,10 @@ function ProjectScriptEditorForm({
       return;
     }
     const trimmedName = name.trim();
+    if (global && globalShortcut.trim() && !isElectronAccelerator(globalShortcut.trim())) {
+      setValidationError("Use an Electron accelerator, for example F18 or CommandOrControl+Alt+N.");
+      return;
+    }
     const trimmedCommand = command.trim();
     if (trimmedName.length === 0) {
       setValidationError("Name is required.");
@@ -400,6 +408,9 @@ function ProjectScriptEditorForm({
         autoOpenPreview: trimmedPreviewUrl.length > 0 ? autoOpenPreview : false,
         previewOverlay: trimmedPreviewUrl.length > 0 ? previewOverlay : false,
         runInBackground,
+        globalShortcut: global
+          ? globalShortcut.trim() || null
+          : (request.initial.globalShortcut ?? null),
       } satisfies NewProjectScriptInput;
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : "Failed to save action.");
@@ -497,7 +508,23 @@ function ProjectScriptEditorForm({
                 />
               </div>
             </div>
-            {global ? null : (
+            {global ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="script-global-shortcut">
+                  Global shortcut (optional, desktop only)
+                </Label>
+                <Input
+                  id="script-global-shortcut"
+                  placeholder="CommandOrControl+Alt+N"
+                  value={globalShortcut}
+                  onChange={(event) => setGlobalShortcut(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Works from any app while T3 Code runs. Uses the open thread, like a pinned script.
+                  Clear this field to remove the shortcut. App-toggle keys take priority.
+                </p>
+              </div>
+            ) : (
               <div className="space-y-1.5">
                 <Label htmlFor="script-keybinding">Keybinding</Label>
                 <Input

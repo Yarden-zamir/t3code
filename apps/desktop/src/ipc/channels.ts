@@ -9,6 +9,7 @@ export const OPEN_SYSTEM_SETTINGS_CHANNEL = "desktop:open-system-settings";
 export const PROBE_REMOTE_EDITORS_CHANNEL = "desktop:probe-remote-editors";
 export const MENU_ACTION_CHANNEL = "desktop:menu-action";
 export const PASTE_AS_TEXT_CHANNEL = "desktop:paste-as-text";
+export const REVEAL_WINDOW_CHANNEL = "desktop:reveal-window";
 export const SNAP_SHOT_EVENT_CHANNEL = "desktop:snap-shot-event";
 export const WEB_LINK_OPEN_CHANNEL = "desktop:web-link-open";
 export const WEB_LINK_READY_CHANNEL = "desktop:web-link-ready";
@@ -30,6 +31,7 @@ export const CLI_COMMAND_GET_STATE_CHANNEL = "desktop:cli-command-get-state";
 export const CLI_COMMAND_INSTALL_CHANNEL = "desktop:cli-command-install";
 export const CLI_COMMAND_UNINSTALL_CHANNEL = "desktop:cli-command-uninstall";
 export const GET_APP_BRANDING_CHANNEL = "desktop:get-app-branding";
+export const GET_RELAY_TELEMETRY_ENABLED_CHANNEL = "desktop:get-relay-telemetry-enabled";
 export const GET_SYSTEM_LOCALE_CHANNEL = "desktop:get-system-locale";
 export const GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL = "desktop:get-local-environment-bootstraps";
 export const GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:get-local-environment-enabled";
@@ -126,3 +128,8 @@ export const RECEIVE_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:receive-provider-
 export const CANCEL_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:cancel-provider-auth-callback";
 export const TAKE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:take-legacy-local-storage";
 export const COMPLETE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:complete-legacy-local-storage";
+export const CONFIGURE_GLOBAL_SCRIPT_SHORTCUTS_CHANNEL =
+  "desktop:configure-global-script-shortcuts";
+// Fork: browser capture leases. Here, not in contracts, because the sandboxed preload cannot load packages.
+export const FORK_BROWSER_CAPTURE_CHANNEL = "fork:browser-capture";
+export const FORK_BROWSER_CAPTURE_REPORT_CHANNEL = "fork:browser-capture-report";

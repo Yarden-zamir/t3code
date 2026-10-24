@@ -25,6 +25,8 @@ import {
   ClientAccessMode,
   type MachineMapShareSettingsInput,
   type MachineMapShareSettingsResult,
+  type MachineCallReport,
+  type MachineExecReport,
   MachinesReadResult,
   MachineMapRequestError,
   type MachineStatus,
@@ -201,6 +203,14 @@ export class MachineMap extends Context.Service<
     readonly shareSettings: (
       input: MachineMapShareSettingsInput,
     ) => Effect.Effect<MachineMapShareSettingsResult>;
+    /**
+     * MM-1908: tells the portal about a `machine_exec` run on this machine. The outbox keeps it
+     * while the portal is unreachable. Known limit: the outbox lives in memory, so a restart before
+     * the next connection loses it. Revisit when the History must survive that.
+     */
+    readonly reportExec: (report: MachineExecReport) => Effect.Effect<void>;
+    /** MM-1922: tells the portal about a T3 tool call forwarded over an arrow link, like `reportExec`. */
+    readonly reportCall: (report: MachineCallReport) => Effect.Effect<void>;
   }
 >()("t3/fork/machineMap/MachineMap") {}
 
@@ -252,19 +262,18 @@ const make = Effect.gen(function* () {
   /** MM-919: whether the portal received the saved `pendingClientAccess`. */
   const pendingClientAccessSeen = yield* Ref.make(false);
 
-  const sendOrQueue = (message: MachineToPortal) =>
-    Effect.gen(function* () {
-      const send = yield* Ref.get(currentSend);
-      const sent =
-        send === null
-          ? false
-          : yield* send(message).pipe(
-              Effect.as(true),
-              Effect.orElseSucceed(() => false),
-            );
-      if (!sent) yield* Ref.update(outbox, (queued) => [...queued, message]);
-      return sent;
-    });
+  const sendOrQueue = Effect.fn("MachineMap.sendOrQueue")(function* (message: MachineToPortal) {
+    const send = yield* Ref.get(currentSend);
+    const sent =
+      send === null
+        ? false
+        : yield* send(message).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          );
+    if (!sent) yield* Ref.update(outbox, (queued) => [...queued, message]);
+    return sent;
+  });
 
   const statusInput = Effect.gen(function* () {
     const report = yield* Ref.get(desktopReport);
@@ -281,92 +290,93 @@ const make = Effect.gen(function* () {
    * The settings as the portal sees them: encoded, secrets redacted, without the machine-local
    * keys (MM-406), with the published themes (MM-408) and the synced keybindings.
    */
-  const reportedServerSettings = (current: typeof ServerSettingsSchema.Type) =>
-    Effect.gen(function* () {
-      const encoded = yield* encodeServerSettings(
-        ServerSettings.redactServerSettingsForClient(current),
-      );
-      return yield* withSyncedKeybindings(
-        fileSystem,
-        config.keybindingsConfigPath,
-        withSharedThemes(
-          withoutMachineLocalSettings("server", encoded as Record<string, unknown>),
-          yield* environmentThemes.current,
-        ),
-      );
-    });
+  const reportedServerSettings = Effect.fn("MachineMap.reportedServerSettings")(function* (
+    current: typeof ServerSettingsSchema.Type,
+  ) {
+    const encoded = yield* encodeServerSettings(
+      ServerSettings.redactServerSettingsForClient(current),
+    );
+    return yield* withSyncedKeybindings(
+      fileSystem,
+      config.keybindingsConfigPath,
+      withSharedThemes(
+        withoutMachineLocalSettings("server", encoded as Record<string, unknown>),
+        yield* environmentThemes.current,
+      ),
+    );
+  });
 
   // MM-402: apply the server settings of a desired state
 
   /** `previous`: the server settings of the desired state before; at start, `values` itself. */
-  const applyServerSettings = (values: SettingValues, previous: SettingValues | null) =>
-    Effect.gen(function* () {
-      const current = yield* reportedServerSettings(yield* settings.getSettings);
-      const changed: Record<string, unknown> = {};
-      const changedThemeSettings: Record<string, unknown> = {};
-      const skipped: Array<string> = [];
-      for (const [key, value] of Object.entries(values)) {
-        if (key === KEYBINDINGS_SETTING_KEY) continue;
-        if (THEME_SETTING_KEYS.has(key)) {
-          if (stableStringify(current[key]) !== stableStringify(value)) {
-            changedThemeSettings[key] = value;
-          }
-          continue;
+  const applyServerSettings = Effect.fn("MachineMap.applyServerSettings")(function* (
+    values: SettingValues,
+    previous: SettingValues | null,
+  ) {
+    const current = yield* reportedServerSettings(yield* settings.getSettings);
+    const changed: Record<string, unknown> = {};
+    const changedThemeSettings: Record<string, unknown> = {};
+    const skipped: Array<string> = [];
+    for (const [key, value] of Object.entries(values)) {
+      if (key === KEYBINDINGS_SETTING_KEY) continue;
+      if (THEME_SETTING_KEYS.has(key)) {
+        if (stableStringify(current[key]) !== stableStringify(value)) {
+          changedThemeSettings[key] = value;
         }
-        if (
-          isMachineLocalSetting("server", key) ||
-          !Object.hasOwn(ServerSettingsPatch.fields, key)
-        ) {
-          skipped.push(key);
-          continue;
-        }
-        if (stableStringify(current[key]) === stableStringify(value)) continue;
-        // One bad value must not block the others.
-        const valid = yield* decodePatch({ [key]: value }).pipe(Effect.isSuccess);
-        if (valid) changed[key] = value;
-        else skipped.push(key);
+        continue;
       }
-      if (skipped.length > 0) {
-        yield* Effect.logWarning("Machine map skipped settings that do not apply here.", {
-          keys: skipped,
-        });
+      if (isMachineLocalSetting("server", key) || !Object.hasOwn(ServerSettingsPatch.fields, key)) {
+        skipped.push(key);
+        continue;
       }
-      yield* applyKeybindingSettings({
-        keybindingsPath: config.keybindingsConfigPath,
-        values,
-        previous,
-        current,
+      if (stableStringify(current[key]) === stableStringify(value)) continue;
+      // One bad value must not block the others.
+      const valid = yield* decodePatch({ [key]: value }).pipe(Effect.isSuccess);
+      if (valid) changed[key] = value;
+      else skipped.push(key);
+    }
+    if (skipped.length > 0) {
+      yield* Effect.logWarning("Machine map skipped settings that do not apply here.", {
+        keys: skipped,
       });
-      if (Object.keys(changed).length > 0) {
-        yield* settings.updateSettings(yield* decodePatch(changed));
-      }
-      // After the patch: `t3 theme set` merges into the settings file that the patch wrote.
-      yield* applyThemeSettings({
-        settingsPath: config.settingsPath,
-        themesDir: config.environmentThemesDir,
-        changed: changedThemeSettings,
-        current,
-      });
+    }
+    yield* applyKeybindingSettings({
+      keybindingsPath: config.keybindingsConfigPath,
+      values,
+      previous,
+      current,
     });
+    if (Object.keys(changed).length > 0) {
+      yield* settings.updateSettings(yield* decodePatch(changed));
+    }
+    // After the patch: `t3 theme set` merges into the settings file that the patch wrote.
+    yield* applyThemeSettings({
+      settingsPath: config.settingsPath,
+      themesDir: config.environmentThemesDir,
+      changed: changedThemeSettings,
+      current,
+    });
+  });
 
   // MM-1306: end the sessions of peers whose level changed
 
-  const revokeSessions = (matches: (subject: string) => boolean) =>
-    Effect.gen(function* () {
-      const sessions = yield* auth.listSessions();
-      yield* Effect.forEach(
-        sessions.filter((session) => matches(session.subject)),
-        (session) => auth.revokeSession(session.sessionId),
-        { discard: true },
-      );
-      // A pairing credential issued under the old level must not become a session either.
-      const links = yield* auth.listPairingLinks({ excludeSubjects: [] });
-      yield* Effect.forEach(
-        links.filter((link) => matches(link.subject)),
-        (link) => auth.revokePairingLink(link.id),
-        { discard: true },
-      );
-    });
+  const revokeSessions = Effect.fn("MachineMap.revokeSessions")(function* (
+    matches: (subject: string) => boolean,
+  ) {
+    const sessions = yield* auth.listSessions();
+    yield* Effect.forEach(
+      sessions.filter((session) => matches(session.subject)),
+      (session) => auth.revokeSession(session.sessionId),
+      { discard: true },
+    );
+    // A pairing credential issued under the old level must not become a session either.
+    const links = yield* auth.listPairingLinks({ excludeSubjects: [] });
+    yield* Effect.forEach(
+      links.filter((link) => matches(link.subject)),
+      (link) => auth.revokePairingLink(link.id),
+      { discard: true },
+    );
+  });
 
   // One revocation pass at a time. Without it, a pass could clear a subject that a later desired
   // state added again after the pass ended its sessions, and a session at the old level stays.
@@ -415,46 +425,47 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const applyDesired = (desired: MachineDesiredState) =>
-    Effect.gen(function* () {
-      const nowMs = yield* Clock.currentTimeMillis;
-      const { desired: before, desiredAtMs: beforeAtMs } = (yield* state.snapshot).saved;
-      const changed = [
-        ...peersWithChangedLevel(before, beforeAtMs, desired, nowMs).map((peer) =>
-          machineSessionSubject(peer),
-        ),
-        // MM-912: a client whose level changed pairs again with its app token, or not at all.
-        ...clientsWithChangedLevel(before, beforeAtMs, desired, nowMs).map((id) =>
-          clientSessionSubject(id),
-        ),
-      ];
-      // Save first: the auth hooks read the saved state, so the new levels hold before any
-      // session of a changed peer ends and it pairs again. The subjects to end are saved in the
-      // same write, so a failed revocation is not lost.
-      yield* revokeLock.withPermits(1)(
-        Effect.gen(function* () {
-          // MM-919: once the portal saw a local clientAccess value, its desired state decides.
-          const clientAccessSeen = yield* Ref.getAndSet(pendingClientAccessSeen, false);
-          yield* state.updateSaved((saved) => ({
-            ...saved,
-            desired,
-            desiredAtMs: nowMs,
-            pendingRevokes: [...new Set([...saved.pendingRevokes, ...changed])],
-            ...(clientAccessSeen ? { pendingClientAccess: null } : {}),
-          }));
-          // A stuck revocation must not hold back the settings; the retry loop runs it again.
-          yield* revokePendingUnlocked.pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Machine map could not end sessions; it tries again.", {
-                cause: Cause.pretty(cause),
-              }),
-            ),
-          );
-        }),
-      );
-      yield* applyServerSettings(desired.settings.server, before?.settings.server ?? null);
-      // Client settings reach the desktop app through the client stream (MM-403).
-    });
+  const applyDesired = Effect.fn("MachineMap.applyDesired")(function* (
+    desired: MachineDesiredState,
+  ) {
+    const nowMs = yield* Clock.currentTimeMillis;
+    const { desired: before, desiredAtMs: beforeAtMs } = (yield* state.snapshot).saved;
+    const changed = [
+      ...peersWithChangedLevel(before, beforeAtMs, desired, nowMs).map((peer) =>
+        machineSessionSubject(peer),
+      ),
+      // MM-912: a client whose level changed pairs again with its app token, or not at all.
+      ...clientsWithChangedLevel(before, beforeAtMs, desired, nowMs).map((id) =>
+        clientSessionSubject(id),
+      ),
+    ];
+    // Save first: the auth hooks read the saved state, so the new levels hold before any
+    // session of a changed peer ends and it pairs again. The subjects to end are saved in the
+    // same write, so a failed revocation is not lost.
+    yield* revokeLock.withPermits(1)(
+      Effect.gen(function* () {
+        // MM-919: once the portal saw a local clientAccess value, its desired state decides.
+        const clientAccessSeen = yield* Ref.getAndSet(pendingClientAccessSeen, false);
+        yield* state.updateSaved((saved) => ({
+          ...saved,
+          desired,
+          desiredAtMs: nowMs,
+          pendingRevokes: [...new Set([...saved.pendingRevokes, ...changed])],
+          ...(clientAccessSeen ? { pendingClientAccess: null } : {}),
+        }));
+        // A stuck revocation must not hold back the settings; the retry loop runs it again.
+        yield* revokePendingUnlocked.pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Machine map could not end sessions; it tries again.", {
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        );
+      }),
+    );
+    yield* applyServerSettings(desired.settings.server, before?.settings.server ?? null);
+    // Client settings reach the desktop app through the client stream (MM-403).
+  });
 
   // Commands
 
@@ -483,8 +494,8 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const handleCommand = (command: MachineCommand) =>
-    Effect.gen(function* () {
+  const handleCommand = Effect.fn("MachineMap.handleCommand")(
+    function* (command: MachineCommand) {
       const local = yield* state.snapshot;
       if (local.saved.handledCommandIds.includes(command.id)) return;
       if (host.isDesktopCommand(command.input._tag)) {
@@ -515,33 +526,34 @@ const make = Effect.gen(function* () {
         yield* host.restartProcess;
       }
       yield* markStatusDirty;
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("Machine map command failed.", {
-          commandId: command.id,
-          kind: command.input._tag,
-          cause: Cause.pretty(cause),
-        }),
+    },
+    (effect, command) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Machine map command failed.", {
+            commandId: command.id,
+            kind: command.input._tag,
+            cause: Cause.pretty(cause),
+          }),
+        ),
       ),
-    );
+  );
 
   // MM-1501: resource samples
 
   // A sample that does not go out is not queued: the next one comes within a minute.
-  const sendResources = (send: SendToPortal) =>
-    Effect.gen(function* () {
-      const sample = yield* resources.sample;
-      yield* Ref.set(lastResourceSampleAt, yield* Clock.currentTimeMillis);
-      yield* send({ _tag: "resources", sample }).pipe(Effect.ignore);
-    });
+  const sendResources = Effect.fn("MachineMap.sendResources")(function* (send: SendToPortal) {
+    const sample = yield* resources.sample;
+    yield* Ref.set(lastResourceSampleAt, yield* Clock.currentTimeMillis);
+    yield* send({ _tag: "resources", sample }).pipe(Effect.ignore);
+  });
 
-  const resourceLoop = (send: SendToPortal) =>
-    Effect.gen(function* () {
-      while (true) {
-        yield* sendResources(send);
-        yield* Effect.sleep(RESOURCE_INTERVAL);
-      }
-    });
+  const resourceLoop = Effect.fn("MachineMap.resourceLoop")(function* (send: SendToPortal) {
+    while (true) {
+      yield* sendResources(send);
+      yield* Effect.sleep(RESOURCE_INTERVAL);
+    }
+  });
 
   const onPortalMessage = (send: SendToPortal) => (message: PortalMessage) =>
     Effect.gen(function* () {
@@ -592,8 +604,8 @@ const make = Effect.gen(function* () {
       }
     });
 
-  const onPortalOpen = (send: SendToPortal) =>
-    Effect.gen(function* () {
+  const onPortalOpen = Effect.fn("MachineMap.onPortalOpen")(
+    function* (send: SendToPortal) {
       const local = yield* state.snapshot;
       const status = yield* host.status(yield* statusInput);
       const report = yield* Ref.get(desktopReport);
@@ -629,13 +641,13 @@ const make = Effect.gen(function* () {
       // Status triggers live as long as this session, so a server off the map does no work.
       yield* Effect.forkScoped(statusTriggers);
       yield* Effect.forkScoped(resourceLoop(send));
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("Machine map could not greet the portal.", {
-          cause: Cause.pretty(cause),
-        }),
-      ),
-    );
+    },
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Machine map could not greet the portal.", {
+        cause: Cause.pretty(cause),
+      }),
+    ),
+  );
 
   const failPendingToolCalls = Effect.gen(function* () {
     for (const [requestId, deferred] of pendingToolCalls) {
@@ -673,83 +685,82 @@ const make = Effect.gen(function* () {
   });
 
   /** Sessions with the portal until the key changes. Each failure waits longer, up to a minute. */
-  const runConnection = (portalUrl: string) =>
-    Effect.gen(function* () {
-      let failures = 0;
-      while (true) {
-        const token = (yield* state.snapshot).token;
-        if (token === null) return;
-        const openedAtMs = yield* Ref.make<number | null>(null);
-        const ended = yield* runPortalSession({
-          portalUrl,
-          token,
-          onOpen: (send) =>
-            Clock.currentTimeMillis.pipe(
-              Effect.flatMap((nowMs) => Ref.set(openedAtMs, nowMs)),
-              Effect.andThen(onPortalOpen(send)),
-            ),
-          onMessage: (message, send) => onPortalMessage(send)(message),
-        }).pipe(
-          Effect.flip,
-          // Only an interrupt (a new key, or shutdown) ends the loop; anything else retries.
+  const runConnection = Effect.fn("MachineMap.runConnection")(function* (portalUrl: string) {
+    let failures = 0;
+    while (true) {
+      const token = (yield* state.snapshot).token;
+      if (token === null) return;
+      const openedAtMs = yield* Ref.make<number | null>(null);
+      const ended = yield* runPortalSession({
+        portalUrl,
+        token,
+        onOpen: (send) =>
+          Clock.currentTimeMillis.pipe(
+            Effect.flatMap((nowMs) => Ref.set(openedAtMs, nowMs)),
+            Effect.andThen(onPortalOpen(send)),
+          ),
+        onMessage: (message, send) => onPortalMessage(send)(message),
+      }).pipe(
+        Effect.flip,
+        // Only an interrupt (a new key, or shutdown) ends the loop; anything else retries.
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.succeed({
+                reason: "failed",
+                message: Cause.pretty(cause).slice(0, 300),
+                closeCode: null,
+              }),
+        ),
+      );
+      yield* markOffline;
+      const nowMs = yield* Clock.currentTimeMillis;
+      const openedAt = yield* Ref.get(openedAtMs);
+      // A connection that the portal drops at once counts as a failure too. So does a
+      // replacement: two servers with one token must not take turns every second.
+      failures =
+        openedAt !== null &&
+        nowMs - openedAt >= HEALTHY_CONNECTION_MS &&
+        ended.closeCode !== PORTAL_CLOSE_CODES.replaced
+          ? 0
+          : failures + 1;
+      yield* SubscriptionRef.set(connection, {
+        online: false,
+        since: DateTime.formatIso(yield* DateTime.now),
+        lastError:
+          ended.closeCode === PORTAL_CLOSE_CODES.removed
+            ? "The portal removed this machine from the map. Join again with a new code."
+            : ended.message,
+        failedAttempts: failures,
+      });
+      yield* Effect.logInfo("Machine map portal connection ended.", {
+        reason: ended.reason,
+        closeCode: ended.closeCode,
+        failures,
+      });
+      if (ended.closeCode === PORTAL_CLOSE_CODES.removed) {
+        // MM-208: the old token never connects again, so retrying only adds noise.
+        yield* forgetMap.pipe(
           Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.failCause(cause)
-              : Effect.succeed({
-                  reason: "failed",
-                  message: Cause.pretty(cause).slice(0, 300),
-                  closeCode: null,
-                }),
+            Effect.logWarning("Machine map could not forget a removed machine.", {
+              cause: Cause.pretty(cause),
+            }),
           ),
         );
-        yield* markOffline;
-        const nowMs = yield* Clock.currentTimeMillis;
-        const openedAt = yield* Ref.get(openedAtMs);
-        // A connection that the portal drops at once counts as a failure too. So does a
-        // replacement: two servers with one token must not take turns every second.
-        failures =
-          openedAt !== null &&
-          nowMs - openedAt >= HEALTHY_CONNECTION_MS &&
-          ended.closeCode !== PORTAL_CLOSE_CODES.replaced
-            ? 0
-            : failures + 1;
-        yield* SubscriptionRef.set(connection, {
-          online: false,
-          since: DateTime.formatIso(yield* DateTime.now),
-          lastError:
-            ended.closeCode === PORTAL_CLOSE_CODES.removed
-              ? "The portal removed this machine from the map. Join again with a new code."
-              : ended.message,
-          failedAttempts: failures,
-        });
-        yield* Effect.logInfo("Machine map portal connection ended.", {
-          reason: ended.reason,
-          closeCode: ended.closeCode,
-          failures,
-        });
-        if (ended.closeCode === PORTAL_CLOSE_CODES.removed) {
-          // MM-208: the old token never connects again, so retrying only adds noise.
-          yield* forgetMap.pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Machine map could not forget a removed machine.", {
-                cause: Cause.pretty(cause),
-              }),
-            ),
-          );
-          return;
-        }
-        const base = Math.min(MAX_BACKOFF_MS, 1_000 * 2 ** Math.min(failures, 6));
-        const jitter = yield* Random.nextIntBetween(0, Math.floor(base / 4) + 1);
-        // Another protocol version stays another version until this server updates.
-        const delayMs =
-          ended.closeCode === PORTAL_CLOSE_CODES.protocol
-            ? MAX_BACKOFF_MS
-            : failures === 0
-              ? 1_000
-              : base + jitter;
-        yield* Effect.sleep(Duration.millis(delayMs));
+        return;
       }
-    }).pipe(Effect.ensuring(markOffline));
+      const base = Math.min(MAX_BACKOFF_MS, 1_000 * 2 ** Math.min(failures, 6));
+      const jitter = yield* Random.nextIntBetween(0, Math.floor(base / 4) + 1);
+      // Another protocol version stays another version until this server updates.
+      const delayMs =
+        ended.closeCode === PORTAL_CLOSE_CODES.protocol
+          ? MAX_BACKOFF_MS
+          : failures === 0
+            ? 1_000
+            : base + jitter;
+      yield* Effect.sleep(Duration.millis(delayMs));
+    }
+  }, Effect.ensuring(markOffline));
 
   /** One connection per portal and token: a join with another token or URL starts over. */
   const connectionKey = (local: MachineMapState.LocalState) =>
@@ -979,37 +990,36 @@ const make = Effect.gen(function* () {
 
   // Client stream
 
-  const clientState = (desktop: boolean) =>
-    Effect.gen(function* () {
-      const local = yield* state.snapshot;
-      const current = yield* SubscriptionRef.get(connection);
-      const nowMs = yield* Clock.currentTimeMillis;
-      const active = local.enabled && local.token !== null;
-      return {
-        enabled: local.enabled,
-        portalUrl: local.portalUrl,
-        joined: local.token !== null,
-        connection: {
-          status: !local.enabled
-            ? "off"
-            : local.token === null
-              ? "not-joined"
-              : current.online
-                ? "online"
-                : "connecting",
-          since: current.since,
-          lastError: local.enabled ? current.lastError : null,
-          failedAttempts: active ? current.failedAttempts : 0,
-        },
-        desired: local.saved.desired,
-        reachable: local.enabled ? reachablePeers(local.saved.desired, nowMs) : [],
-        tokenHeaders:
-          desktop && local.enabled && local.token !== null
-            ? MachineMapState.tokenHeaders(local.token)
-            : null,
-        desktopCommands: desktop ? local.saved.desktopCommands : [],
-      } satisfies MachineMapClientState;
-    });
+  const clientState = Effect.fn("MachineMap.clientState")(function* (desktop: boolean) {
+    const local = yield* state.snapshot;
+    const current = yield* SubscriptionRef.get(connection);
+    const nowMs = yield* Clock.currentTimeMillis;
+    const active = local.enabled && local.token !== null;
+    return {
+      enabled: local.enabled,
+      portalUrl: local.portalUrl,
+      joined: local.token !== null,
+      connection: {
+        status: !local.enabled
+          ? "off"
+          : local.token === null
+            ? "not-joined"
+            : current.online
+              ? "online"
+              : "connecting",
+        since: current.since,
+        lastError: local.enabled ? current.lastError : null,
+        failedAttempts: active ? current.failedAttempts : 0,
+      },
+      desired: local.saved.desired,
+      reachable: local.enabled ? reachablePeers(local.saved.desired, nowMs) : [],
+      tokenHeaders:
+        desktop && local.enabled && local.token !== null
+          ? MachineMapState.tokenHeaders(local.token)
+          : null,
+      desktopCommands: desktop ? local.saved.desktopCommands : [],
+    } satisfies MachineMapClientState;
+  });
 
   const clientStates: MachineMap["Service"]["clientStates"] = ({ desktop }) => {
     const states = Stream.merge(
@@ -1028,68 +1038,69 @@ const make = Effect.gen(function* () {
       : states;
   };
 
-  const reportDesktop: MachineMap["Service"]["reportDesktop"] = (report, client) =>
-    Effect.gen(function* () {
-      if (!client.desktop) {
-        return yield* new MachineMapRequestError({
-          reason: "desktop-only",
-          detail: "Only the desktop app of this machine reports to it.",
-        });
-      }
-      const previous = yield* Ref.get(desktopReport);
-      yield* Ref.set(desktopReport, {
-        updateWaiting:
-          report.updateWaiting === undefined ? previous.updateWaiting : report.updateWaiting,
-        build: report.build === undefined ? previous.build : report.build,
-        clientSettings: report.clientSettings ?? previous.clientSettings,
+  const reportDesktop: MachineMap["Service"]["reportDesktop"] = Effect.fn(
+    "MachineMap.reportDesktop",
+  )(function* (report, client) {
+    if (!client.desktop) {
+      return yield* new MachineMapRequestError({
+        reason: "desktop-only",
+        detail: "Only the desktop app of this machine reports to it.",
       });
-      // MM-605: a command that the expiry check removed is already reported as expired.
-      const queued =
-        report.commandResult !== undefined &&
-        (yield* state.snapshot).saved.desktopCommands.some(
-          (command) => command.id === report.commandResult?.commandId,
-        );
-      if (report.commandResult !== undefined && queued) {
-        const result = report.commandResult;
-        yield* state
-          .updateSaved((saved) => ({
-            ...saved,
-            desktopCommands: saved.desktopCommands.filter(
-              (command) => command.id !== result.commandId,
-            ),
-          }))
-          .pipe(
-            Effect.mapError(
-              () =>
-                new MachineMapRequestError({
-                  reason: "storage-failed",
-                  detail: "Could not save the machine map state.",
-                }),
-            ),
-          );
-        yield* sendOrQueue({ _tag: "commandResult", ...result });
-      }
-      // MM-404 for client settings. Values equal to the desired ones are the map's own writes.
-      if (report.clientSettings !== undefined && previous.clientSettings !== null) {
-        const desired = (yield* state.snapshot).saved.desired?.settings.client ?? {};
-        const changed: Record<string, unknown> = {};
-        const current = withoutMachineLocalSettings("client", report.clientSettings);
-        for (const [key, value] of Object.entries(current)) {
-          if (stableStringify(previous.clientSettings[key]) === stableStringify(value)) continue;
-          if (
-            Object.hasOwn(desired, key) &&
-            stableStringify(desired[key]) === stableStringify(value)
-          ) {
-            continue;
-          }
-          changed[key] = value;
-        }
-        if (Object.keys(changed).length > 0) {
-          yield* sendOrQueue({ _tag: "localSettings", scope: "client", values: changed });
-        }
-      }
-      yield* markStatusDirty;
+    }
+    const previous = yield* Ref.get(desktopReport);
+    yield* Ref.set(desktopReport, {
+      updateWaiting:
+        report.updateWaiting === undefined ? previous.updateWaiting : report.updateWaiting,
+      build: report.build === undefined ? previous.build : report.build,
+      clientSettings: report.clientSettings ?? previous.clientSettings,
     });
+    // MM-605: a command that the expiry check removed is already reported as expired.
+    const queued =
+      report.commandResult !== undefined &&
+      (yield* state.snapshot).saved.desktopCommands.some(
+        (command) => command.id === report.commandResult?.commandId,
+      );
+    if (report.commandResult !== undefined && queued) {
+      const result = report.commandResult;
+      yield* state
+        .updateSaved((saved) => ({
+          ...saved,
+          desktopCommands: saved.desktopCommands.filter(
+            (command) => command.id !== result.commandId,
+          ),
+        }))
+        .pipe(
+          Effect.mapError(
+            () =>
+              new MachineMapRequestError({
+                reason: "storage-failed",
+                detail: "Could not save the machine map state.",
+              }),
+          ),
+        );
+      yield* sendOrQueue({ _tag: "commandResult", ...result });
+    }
+    // MM-404 for client settings. Values equal to the desired ones are the map's own writes.
+    if (report.clientSettings !== undefined && previous.clientSettings !== null) {
+      const desired = (yield* state.snapshot).saved.desired?.settings.client ?? {};
+      const changed: Record<string, unknown> = {};
+      const current = withoutMachineLocalSettings("client", report.clientSettings);
+      for (const [key, value] of Object.entries(current)) {
+        if (stableStringify(previous.clientSettings[key]) === stableStringify(value)) continue;
+        if (
+          Object.hasOwn(desired, key) &&
+          stableStringify(desired[key]) === stableStringify(value)
+        ) {
+          continue;
+        }
+        changed[key] = value;
+      }
+      if (Object.keys(changed).length > 0) {
+        yield* sendOrQueue({ _tag: "localSettings", scope: "client", values: changed });
+      }
+    }
+    yield* markStatusDirty;
+  });
 
   // Join and leave
 
@@ -1104,89 +1115,88 @@ const make = Effect.gen(function* () {
       detail: "Could not save the machineMap setting.",
     });
 
-  const join: MachineMap["Service"]["join"] = (input) =>
-    Effect.gen(function* () {
-      const local = yield* state.snapshot;
-      // MM-919: a joined machine with the map on joins again only after "Leave", which only its
-      // desktop app does, so no other caller can point it at another portal.
-      if (local.enabled && local.token !== null) {
-        return yield* new MachineMapRequestError({
-          reason: "join-refused",
-          detail: "This machine is on the map already. Leave the map first.",
-        });
-      }
-      const portalUrl = input.portalUrl ?? local.portalUrl;
-      const enrollUrl = yield* Effect.try({
-        try: () => {
-          const url = new URL("/enroll", portalUrl);
-          if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("protocol");
-          return url.toString();
-        },
-        catch: () =>
+  const join: MachineMap["Service"]["join"] = Effect.fn("MachineMap.join")(function* (input) {
+    const local = yield* state.snapshot;
+    // MM-919: a joined machine with the map on joins again only after "Leave", which only its
+    // desktop app does, so no other caller can point it at another portal.
+    if (local.enabled && local.token !== null) {
+      return yield* new MachineMapRequestError({
+        reason: "join-refused",
+        detail: "This machine is on the map already. Leave the map first.",
+      });
+    }
+    const portalUrl = input.portalUrl ?? local.portalUrl;
+    const enrollUrl = yield* Effect.try({
+      try: () => {
+        const url = new URL("/enroll", portalUrl);
+        if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("protocol");
+        return url.toString();
+      },
+      catch: () =>
+        new MachineMapRequestError({
+          reason: "portal-unreachable",
+          detail: `"${portalUrl}" is not an http or https URL.`,
+        }),
+    });
+    const response = yield* HttpClientRequest.post(enrollUrl).pipe(
+      HttpClientRequest.bodyJson({ code: input.code }),
+      Effect.flatMap(httpClient.execute),
+      Effect.timeout(ENROLL_TIMEOUT),
+      Effect.mapError(
+        () =>
           new MachineMapRequestError({
             reason: "portal-unreachable",
-            detail: `"${portalUrl}" is not an http or https URL.`,
+            detail: `Could not reach ${new URL(enrollUrl).host}.`,
           }),
-      });
-      const response = yield* HttpClientRequest.post(enrollUrl).pipe(
-        HttpClientRequest.bodyJson({ code: input.code }),
-        Effect.flatMap(httpClient.execute),
-        Effect.timeout(ENROLL_TIMEOUT),
-        Effect.mapError(
-          () =>
-            new MachineMapRequestError({
-              reason: "portal-unreachable",
-              detail: `Could not reach ${new URL(enrollUrl).host}.`,
-            }),
-        ),
+      ),
+    );
+    if (response.status < 200 || response.status >= 300) {
+      const refusal = yield* HttpClientResponse.schemaBodyJson(EnrollRefusal)(response).pipe(
+        Effect.map((body) => body.error),
+        Effect.orElseSucceed(() => undefined),
       );
-      if (response.status < 200 || response.status >= 300) {
-        const refusal = yield* HttpClientResponse.schemaBodyJson(EnrollRefusal)(response).pipe(
-          Effect.map((body) => body.error),
-          Effect.orElseSucceed(() => undefined),
-        );
-        return yield* new MachineMapRequestError({
-          reason: "join-refused",
-          detail: (refusal ?? `The portal answered HTTP ${response.status}.`).slice(0, 300),
-        });
-      }
-      const enrolled = yield* HttpClientResponse.schemaBodyJson(EnrollResponse)(response).pipe(
-        Effect.mapError(
-          () =>
-            new MachineMapRequestError({
-              reason: "join-refused",
-              detail: "The portal answer holds no machine token.",
-            }),
-        ),
-      );
-      // The error of an old connection does not apply to the new token. This goes first,
-      // because the saved token starts the new connection.
-      yield* SubscriptionRef.set(connection, {
-        online: false,
-        since: DateTime.formatIso(yield* DateTime.now),
-        lastError: null,
-        failedAttempts: 0,
+      return yield* new MachineMapRequestError({
+        reason: "join-refused",
+        detail: (refusal ?? `The portal answered HTTP ${response.status}.`).slice(0, 300),
       });
-      yield* state
-        .setToken({ clientId: enrolled.tokenClientId, secret: enrolled.tokenSecret })
-        .pipe(Effect.mapError(storageFailed));
-      yield* settings
-        .updateSettings({ machineMap: { enabled: true, portalUrl } })
-        .pipe(Effect.mapError(settingsFailed));
-      yield* Effect.logInfo("Machine map joined.", { portal: new URL(portalUrl).host });
-      // MM-1309: the config reads the tunnel at start, so a new tunnel needs a restart.
-      if (enrolled.tunnel && (yield* tunnel.adopt(enrolled.tunnel)) === "restart") {
-        if (host.supervised) {
-          yield* Effect.sleep(TUNNEL_RESTART_DELAY).pipe(
-            Effect.andThen(host.restartProcess),
-            Effect.forkIn(scope),
-          );
-        } else {
-          yield* Effect.logWarning("Restart the T3 server to start the machine map tunnel.");
-        }
-      }
-      return yield* clientState(false);
+    }
+    const enrolled = yield* HttpClientResponse.schemaBodyJson(EnrollResponse)(response).pipe(
+      Effect.mapError(
+        () =>
+          new MachineMapRequestError({
+            reason: "join-refused",
+            detail: "The portal answer holds no machine token.",
+          }),
+      ),
+    );
+    // The error of an old connection does not apply to the new token. This goes first,
+    // because the saved token starts the new connection.
+    yield* SubscriptionRef.set(connection, {
+      online: false,
+      since: DateTime.formatIso(yield* DateTime.now),
+      lastError: null,
+      failedAttempts: 0,
     });
+    yield* state
+      .setToken({ clientId: enrolled.tokenClientId, secret: enrolled.tokenSecret })
+      .pipe(Effect.mapError(storageFailed));
+    yield* settings
+      .updateSettings({ machineMap: { enabled: true, portalUrl } })
+      .pipe(Effect.mapError(settingsFailed));
+    yield* Effect.logInfo("Machine map joined.", { portal: new URL(portalUrl).host });
+    // MM-1309: the config reads the tunnel at start, so a new tunnel needs a restart.
+    if (enrolled.tunnel && (yield* tunnel.adopt(enrolled.tunnel)) === "restart") {
+      if (host.supervised) {
+        yield* Effect.sleep(TUNNEL_RESTART_DELAY).pipe(
+          Effect.andThen(host.restartProcess),
+          Effect.forkIn(scope),
+        );
+      } else {
+        yield* Effect.logWarning("Restart the T3 server to start the machine map tunnel.");
+      }
+    }
+    return yield* clientState(false);
+  });
 
   const leave: MachineMap["Service"]["leave"] = Effect.gen(function* () {
     yield* settings
@@ -1206,8 +1216,8 @@ const make = Effect.gen(function* () {
 
   // Map tools
 
-  const callMapTool: MachineMap["Service"]["callMapTool"] = (input) =>
-    Effect.gen(function* () {
+  const callMapTool: MachineMap["Service"]["callMapTool"] = Effect.fn("MachineMap.callMapTool")(
+    function* (input) {
       const send = yield* Ref.get(currentSend);
       if (send === null) {
         return yield* new MachineMapToolError({
@@ -1254,7 +1264,8 @@ const make = Effect.gen(function* () {
         });
       }
       return result.result;
-    });
+    },
+  );
 
   const unavailable = (
     reason: Extract<MachineMapPanelState, { readonly _tag: "unavailable" }>["reason"],
@@ -1292,8 +1303,10 @@ const make = Effect.gen(function* () {
    * MM-411: only while connected. A queued share could arrive after a newer shared value, so a
    * change made offline stays the bulk edit of T3 Settings.
    */
-  const shareSettings: MachineMap["Service"]["shareSettings"] = (input) =>
-    Effect.gen(function* () {
+  const shareSettings: MachineMap["Service"]["shareSettings"] = Effect.fn(
+    "MachineMap.shareSettings",
+  )(
+    function* (input) {
       const local = yield* state.snapshot;
       const send = yield* Ref.get(currentSend);
       if (!local.enabled || local.saved.desired === null || send === null) return { shared: false };
@@ -1312,13 +1325,13 @@ const make = Effect.gen(function* () {
       if (messages.length === 0) return { shared: false };
       for (const message of messages) yield* send(message);
       return { shared: true };
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("Machine map could not share settings.", {
-          cause: Cause.pretty(cause),
-        }).pipe(Effect.as({ shared: false })),
-      ),
-    );
+    },
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Machine map could not share settings.", {
+        cause: Cause.pretty(cause),
+      }).pipe(Effect.as({ shared: false })),
+    ),
+  );
 
   /**
    * MM-211: joins with the code that the installer left. The file goes first, so a bad or used
@@ -1403,6 +1416,8 @@ const make = Effect.gen(function* () {
     callMapTool,
     readPanel,
     shareSettings,
+    reportExec: (report) => sendOrQueue({ _tag: "execRan", report }).pipe(Effect.asVoid),
+    reportCall: (report) => sendOrQueue({ _tag: "callForwarded", report }).pipe(Effect.asVoid),
   });
 });
 

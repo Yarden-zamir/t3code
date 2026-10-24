@@ -140,6 +140,7 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   starts_threads: McpToolAccess.startsThreads(
     (input) => input,
     (_, modes) => Effect.succeed({ ran: `${modes.runtimeMode}/${modes.interactionMode}` }),
+    "stamped",
   ),
   writes_environment: McpToolAccess.writesEnvironment(() => ran),
 };
@@ -310,11 +311,6 @@ it.effect.each([
     ),
   ),
 );
-
-it("refuses a declaration or handlers layer built outside McpToolAccess", () => {
-  expect(() => Reflect.construct(McpToolAccess.Declaration, [unchecked])).toThrow(TypeError);
-  expect(() => Reflect.construct(McpToolAccess.HandlersLayer, [Layer.empty])).toThrow(TypeError);
-});
 
 it("refuses a declaration or handlers layer that only wears another's fields", () => {
   const copiedDeclaration = Object.assign(

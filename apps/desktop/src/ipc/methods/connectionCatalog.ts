@@ -9,15 +9,16 @@ import * as DesktopIpc from "../DesktopIpc.ts";
 
 // The catalog holds the per-origin request headers, so every read or write
 // refreshes the headers the main process adds to requests.
-const applyRequestHeaders = (catalog: string | null) =>
-  Effect.gen(function* () {
+const applyRequestHeaders = Effect.fn("desktop.ipc.connectionCatalog.applyRequestHeaders")(
+  function* (catalog: string | null) {
     const skipped = ElectronRequestHeaders.applyConnectionCatalog(catalog);
     if (skipped.length > 0) {
       yield* Effect.logWarning("Skipped invalid request headers in the connection catalog.", {
         origins: skipped,
       });
     }
-  });
+  },
+);
 
 export const getConnectionCatalog = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.GET_CONNECTION_CATALOG_CHANNEL,

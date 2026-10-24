@@ -7,6 +7,7 @@ import { useClientSettings } from "~/hooks/useSettings";
 import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { desktopWslStateAtom } from "~/state/desktopWslState";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
+import { usePeerLinkHosts } from "~/state/peerLinks";
 import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentScope } from "~/state/session";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
@@ -17,7 +18,7 @@ import {
   getThreadAutoSettlementSearchAvailability,
 } from "./settingsSearch";
 
-const selectSidebarGroupsEnabled = (settings: ClientSettings) => settings.sidebarGroupsEnabled;
+const selectSidebarTabsEnabled = (settings: ClientSettings) => settings.sidebarTabsEnabled;
 
 export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch = {}) {
   const { environments } = useEnvironments();
@@ -48,6 +49,7 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const canMaintain = useEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope);
+  const hasPeerLinkHost = usePeerLinkHosts().length > 0;
   const cloudLinkState = usePrimaryCloudLinkState().data;
   // Same fallback as the Connections row: older servers imply a tunnel from `linked`.
   const managedTunnelActive =
@@ -61,7 +63,7 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
   const cloudPublicConfig = hasCloudPublicConfig() === true;
   const wslSettingsRowVisible =
     isWslSettingsRowVisible({ state: desktopWsl.data, error: desktopWsl.error }) === true;
-  const sidebarGroupsEnabled = useClientSettings(selectSidebarGroupsEnabled) === true;
+  const sidebarTabsEnabled = useClientSettings(selectSidebarTabsEnabled) === true;
 
   const items = filterAvailableSettingsSearchItems({
     localEnvironmentDisabled,
@@ -73,9 +75,10 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     isWslSettingsRowVisible: wslSettingsRowVisible,
     hasThreadAutoSettlement,
     managedTunnelActive,
+    hasPeerLinkHost,
   });
-  // Fork: the "Single-thread tabs" row renders only while sidebar groups are on.
-  return sidebarGroupsEnabled
+  // Fork: the "Single-thread tabs" row renders only while sidebar tabs are on.
+  return sidebarTabsEnabled
     ? items
-    : items.filter((item) => item.id !== "sidebar-group-single-thread");
+    : items.filter((item) => item.id !== "sidebar-tab-single-thread");
 }

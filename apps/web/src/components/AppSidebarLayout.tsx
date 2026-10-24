@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -9,7 +10,13 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
+import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { isElectron } from "../env";
+import {
+  releaseThreadUndoShortcut,
+  threadUndoClaimsShortcut,
+  undoLatestThreadAction,
+} from "../hooks/showThreadUndoNotice";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
 import { isRichTextBoldShortcut, resolveShortcutCommand } from "../keybindings";
 import { isEditableFocused } from "../lib/editableFocus";
@@ -34,6 +41,7 @@ import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
+import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
 import {
@@ -55,6 +63,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ShortcutHint } from "./focusLevels/ShortcutHint";
 import { TitlebarPinnedScripts, usePinnedScriptsTargetStore } from "./PinnedScripts";
+import { NavigationHistoryButtons, NavigationHistoryRecorder } from "./ForkNavigationHistory";
 import { useThreadRouteRef } from "../hooks/useThreadRouteTarget";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
@@ -120,8 +129,10 @@ function readInitialThreadSidebarWidth(): number {
 
 function SidebarControl({
   onPinnedScriptsWidthChange,
+  onNavigationButtonsWidthChange,
 }: {
   onPinnedScriptsWidthChange: (width: number) => void;
+  onNavigationButtonsWidthChange: (width: number) => void;
 }) {
   const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -143,12 +154,12 @@ function SidebarControl({
         return;
       }
       if (
-        isRichTextBoldShortcut(event) &&
+        isRichTextBoldShortcut(event, window.getSelection()) &&
         event.target instanceof HTMLElement &&
         event.target.closest('[data-composer-rich-text="true"]')
       ) {
-        // The rich-text composer claims Mod+B for bold; the toggle stays
-        // available everywhere else, including the plain-text composer.
+        // The rich-text composer claims Mod+B only to bold selected text;
+        // the toggle stays available everywhere else.
         return;
       }
       if (
@@ -192,6 +203,12 @@ function SidebarControl({
       </TooltipPopup>
     </Tooltip>
   );
+  const controls = (
+    <>
+      {trigger}
+      <NavigationHistoryButtons onWidthChange={onNavigationButtonsWidthChange} />
+    </>
+  );
 
   return (
     <div
@@ -206,16 +223,30 @@ function SidebarControl({
           target={pinnedScriptsTarget}
           onWidthChange={onPinnedScriptsWidthChange}
         >
-          {trigger}
+          {controls}
         </TitlebarPinnedScripts>
       ) : (
-        trigger
+        controls
       )}
     </div>
   );
 }
 
-function NavigationHistoryShortcuts() {
+function routePanelsOpen(routeThreadRef: ReturnType<typeof useThreadRouteRef>) {
+  if (!routeThreadRef) return { terminalOpen: false, previewOpen: false };
+  return {
+    terminalOpen: selectThreadTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+      routeThreadRef,
+    ).terminalOpen,
+    previewOpen:
+      selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, routeThreadRef) ===
+      "preview",
+  };
+}
+
+export function NavigationHistoryShortcuts() {
+  const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const routeThreadRef = useThreadRouteRef();
 
@@ -231,19 +262,11 @@ function NavigationHistoryShortcuts() {
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
           terminalFocus: isTerminalFocused(event),
-          terminalOpen: routeThreadRef
-            ? selectThreadTerminalUiState(
-                useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
-                routeThreadRef,
-              ).terminalOpen
-            : false,
           previewFocus: isPreviewFocused(),
-          previewOpen: routeThreadRef
-            ? selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, routeThreadRef) ===
-              "preview"
-            : false,
+          ...routePanelsOpen(routeThreadRef),
           editableFocus: isEditableFocused(event.target),
           modelPickerOpen: isModelPickerOpen(),
+          usagePageOpen,
         },
       });
       if (command !== "navigation.back" && command !== "navigation.forward") return;
@@ -256,7 +279,68 @@ function NavigationHistoryShortcuts() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keybindings, routeThreadRef]);
+  }, [keybindings, routeThreadRef, usagePageOpen]);
+
+  return null;
+}
+
+const MODIFIER_KEYS = new Set(["Alt", "Control", "Meta", "Shift"]);
+
+// Undoes the thread actions in the sidebar's notice. Mounted wherever the
+// thread sidebar can show; Settings replaces it. Listens in the capture phase
+// so mod+z reaches it before the composer's own undo handler consumes the key.
+function ThreadUndoShortcut() {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const routeThreadRef = useThreadRouteRef();
+  // A collapsed sidebar hides the notice, so text fields keep their own undo.
+  const noticeVisible = useSidebarVisibility();
+  // Outlives the effect: undoing an archive navigates, which re-runs it mid-hold.
+  const heldUndoKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      // A held key undoes once. Cancel its repeats so they cannot fall through
+      // to the editor's own undo, even after the last notice is gone.
+      if (event.repeat) {
+        if (event.code === heldUndoKey.current) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
+      // A modifier tapped mid-hold leaves the held key repeating.
+      if (!MODIFIER_KEYS.has(event.key)) heldUndoKey.current = null;
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: {
+          terminalFocus: isTerminalFocused(),
+          previewFocus: isPreviewFocused(),
+          ...routePanelsOpen(routeThreadRef),
+          editableFocus:
+            isEditableFocused(event.target) && !(noticeVisible && threadUndoClaimsShortcut()),
+          modelPickerOpen: isModelPickerOpen(),
+        },
+      });
+      if (command !== "thread.undo") {
+        if (!MODIFIER_KEYS.has(event.key)) releaseThreadUndoShortcut();
+        return;
+      }
+      if (isCommandPaletteOpen() || isModelPickerOpen()) return;
+      if (undoLatestThreadAction()) {
+        heldUndoKey.current = event.code;
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    // Pastes from a menu, dictation and drops edit text without a keypress.
+    const onInput = () => releaseThreadUndoShortcut();
+
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("input", onInput, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("input", onInput, true);
+    };
+  }, [keybindings, noticeVisible, routeThreadRef]);
 
   return null;
 }
@@ -272,6 +356,10 @@ function ProjectProjectionRetention() {
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
+  const [sidebarRouteReveal] = useState<SidebarRouteReveal>(() => ({
+    observedKey: null,
+    pendingKey: null,
+  }));
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   useThreadVisitedMigration();
@@ -288,6 +376,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
   const [brandWidth, setBrandWidth] = useState(0);
   const [pinnedScriptsWidth, setPinnedScriptsWidth] = useState(0);
+  const [navigationButtonsWidth, setNavigationButtonsWidth] = useState(0);
+  const titlebarExtrasWidth = pinnedScriptsWidth + navigationButtonsWidth;
   const sidebarMinimumWidth = resolveThreadSidebarMinimumWidth(brandWidth);
   const sidebarMaximumWidth = resolveThreadSidebarMaximumWidth(viewportWidth, sidebarMinimumWidth);
   const resetSidebarWidth = () => {
@@ -311,10 +401,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     "--sidebar-width": `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
     ...windowControlsInsetStyle,
-    // Title bar pins sit right of the sidebar toggle, so content starts after them.
-    ...(pinnedScriptsWidth > 0
+    // Title bar pins and back and forward buttons sit right of the sidebar toggle, so content starts after them.
+    ...(titlebarExtrasWidth > 0
       ? {
-          "--workspace-titlebar-content-left": `calc(var(--workspace-controls-left) + var(--workspace-titlebar-control-size) + var(--workspace-titlebar-control-gap) + ${pinnedScriptsWidth}px)`,
+          "--workspace-titlebar-content-left": `calc(var(--workspace-controls-left) + var(--workspace-titlebar-control-size) + var(--workspace-titlebar-control-gap) + ${titlebarExtrasWidth}px)`,
         }
       : {}),
   } as CSSProperties;
@@ -373,15 +463,20 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
               <SettingsSidebarNav pathname={pathname} />
             </>
           ) : legacySidebarEnabled ? (
-            <LegacyThreadSidebar />
+            <LegacyThreadSidebar routeReveal={sidebarRouteReveal} />
           ) : (
-            <ThreadSidebar />
+            <ThreadSidebar routeReveal={sidebarRouteReveal} />
           )}
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
         {children}
-        <SidebarControl onPinnedScriptsWidthChange={setPinnedScriptsWidth} />
+        <SidebarControl
+          onPinnedScriptsWidthChange={setPinnedScriptsWidth}
+          onNavigationButtonsWidthChange={setNavigationButtonsWidth}
+        />
         <NavigationHistoryShortcuts />
+        <NavigationHistoryRecorder />
+        {isOnSettings ? null : <ThreadUndoShortcut />}
         <MainAppLocationTracker />
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>

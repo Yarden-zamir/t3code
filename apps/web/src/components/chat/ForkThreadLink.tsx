@@ -1,8 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, MessageId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { parseKnownThreadAddress, type ThreadAddress } from "@t3tools/shared/threadAddress";
-import { formatThreadLink, percentDecodedThreadLinkId } from "@t3tools/shared/threadLinks";
+import {
+  formatThreadLink,
+  percentDecodedThreadLinkId,
+  resolveThreadLinkRef,
+} from "@t3tools/shared/threadLinks";
+import { threadLinkMessageId } from "@t3tools/shared/threadMessageLinks";
 import {
   linkThreadMarkers,
   threadMarkerTargets,
@@ -11,11 +16,12 @@ import {
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 
-import { useThreadShell } from "../../state/entities";
+import { useThreadRefs, useThreadShell } from "../../state/entities";
 import { environmentSummaries } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { environmentThreadDetails } from "../../state/threads";
 import { ThreadContextChip } from "../ThreadContextChip";
+import { useForkMessageLinks } from "./ForkMessageLinkTarget";
 import { MarkdownThreadLink } from "./MarkdownThreadLink";
 
 /**
@@ -43,15 +49,24 @@ export function ForkThreadLink(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly label: string;
+  readonly href: string;
 }) {
   const chips = useAtomValue(threadLinkChipsAtom(props.environmentId));
-  return chips ? <ThreadLinkChip {...props} /> : <MarkdownThreadLink {...props} />;
+  const messageLinks = useForkMessageLinks(props.environmentId);
+  const link = {
+    environmentId: props.environmentId,
+    threadId: props.threadId,
+    label: props.label,
+    messageId: messageLinks ? threadLinkMessageId(props.href) : null,
+  };
+  return chips ? <ThreadLinkChip {...link} /> : <MarkdownThreadLink {...link} />;
 }
 
 function ThreadLinkChip(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly label: string;
+  readonly messageId: MessageId | null;
 }) {
   // Like MarkdownThreadLink: the percent-decoded id stands in when the id as written names no thread.
   const decodedId = percentDecodedThreadLinkId(props.threadId);
@@ -59,13 +74,23 @@ function ThreadLinkChip(props: {
   const decoded = useThreadShell(
     written === null && decodedId !== null ? scopeThreadRef(props.environmentId, decodedId) : null,
   );
-  const thread = written ?? decoded;
+  const local = written ?? decoded;
+  // MM-1907: a link to a thread on another machine resolves like MarkdownThreadLink does.
+  const refs = useThreadRefs(local === null);
+  const remote = useThreadShell(
+    local === null
+      ? resolveThreadLinkRef(scopeThreadRef(props.environmentId, props.threadId), refs)
+      : null,
+  );
+  const thread = local ?? remote;
+  const environmentId = thread?.environmentId ?? props.environmentId;
   const threadId = thread?.id ?? props.threadId;
   const title = thread?.title.trim() || props.label;
   return (
     <ThreadContextChip
-      record={{ environmentId: props.environmentId, threadId, title }}
-      copyMarkdown={formatThreadLink(threadId, title)}
+      record={{ environmentId, threadId, title }}
+      copyMarkdown={formatThreadLink(threadId, title, props.messageId ?? undefined)}
+      messageId={props.messageId}
     />
   );
 }
@@ -105,12 +130,14 @@ export function ForkThreadAddressChip(props: {
   readonly label: string;
 }) {
   const shell = useThreadShell(scopeThreadRef(props.address.environmentId, props.address.threadId));
+  const messageLinks = useForkMessageLinks(props.address.environmentId);
   // A bare address is its own label; the chip then needs a word, not the address.
   const label = URL.canParse(props.label) ? "Thread" : props.label;
   const title = shell?.title.trim() || label;
   return (
     <ThreadContextChip
       record={{ ...props.address, title }}
+      messageId={messageLinks ? (props.address.messageId ?? null) : null}
       // Copied text keeps the web address, so it still works outside T3.
       copyMarkdown={`[${title.replace(/[[\]\\\r\n]/g, " ")}](${props.href})`}
     />

@@ -38,6 +38,18 @@ that truncates and a right group that keeps its size. Drag an element to move it
 dot and the last error. The title and the status always stay on the card. Every server you
 connect to gets the same layout. To return to the built-in card, turn the switch off.
 
+## Math
+
+Turn on **Render math** in **Settings → Appearance** to typeset LaTeX in messages and Markdown
+previews on web, desktop, and mobile. It reads `$…$`, `$$…$$`, `\(…\)`, and `\[…\]`, outside of code.
+Fenced `math` blocks also render. Formulas work in tables, including absolute-value bars.
+Dollar amounts such as `$5 and $10` stay text; write `\$` to keep any other dollar sign literal.
+Wide formulas scroll horizontally while the surrounding text wraps. Copying a formula or
+exporting a table preserves the TeX.
+
+The composer keeps TeX source editable, including when rich text is enabled. The Render math
+preference is saved separately on each device.
+
 ## Motion
 
 The main sidebar, right panel, and terminal drawer open and close immediately by default. Move the

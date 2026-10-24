@@ -3,7 +3,11 @@ import * as Effect from "effect/Effect";
 import { receiveProviderAuthCallback, cancelProviderAuthCallback } from "./methods/providerAuth.ts";
 import * as DesktopIpc from "./DesktopIpc.ts";
 import { installNotificationBadge } from "./methods/notificationBadge.ts";
-import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
+import {
+  configureGlobalScriptShortcuts,
+  getClientSettings,
+  setClientSettings,
+} from "./methods/clientSettings.ts";
 import {
   clearConnectionCatalog,
   getConnectionCatalog,
@@ -40,10 +44,12 @@ import {
   setUpdateChannel,
 } from "./methods/updates.ts";
 import { checkBeforeUpdateInstall } from "./methods/forkUpdates.ts";
+import { reportBrowserCapture } from "./methods/forkBrowserCapture.ts";
 import {
   getAppBranding,
   getLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
+  getRelayTelemetryEnabled,
   getSystemLocale,
   getWindowFullscreenState,
   openExternal,
@@ -51,6 +57,7 @@ import {
   checkSystemPermission,
   pasteAsText,
   probeRemoteEditors,
+  revealWindow,
   pickFolder,
   pickProjectFavicon,
   pickThemeFiles,
@@ -97,6 +104,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(takeLegacyLocalStorage);
   yield* ipc.handle(completeLegacyLocalStorage);
   yield* ipc.handleSync(getAppBranding);
+  yield* ipc.handleSync(getRelayTelemetryEnabled);
   yield* ipc.handleSync(getSystemLocale);
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
@@ -106,6 +114,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
 
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);
+  yield* ipc.handle(configureGlobalScriptShortcuts);
   yield* ipc.handle(getConnectionCatalog);
   yield* ipc.handle(getSnapShotState);
   yield* ipc.handle(setupSnapShot);
@@ -155,6 +164,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(openSystemSettings);
   yield* ipc.handle(checkSystemPermission);
   yield* ipc.handle(pasteAsText);
+  yield* ipc.handle(revealWindow);
   yield* ipc.handle(probeRemoteEditors);
   yield* ipc.handle(getUpdateState);
   yield* ipc.handle(setUpdateChannel);
@@ -162,11 +172,16 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(installUpdate);
   yield* ipc.handle(checkForUpdate);
   yield* ipc.handle(checkBeforeUpdateInstall);
+  yield* ipc.handle(reportBrowserCapture); // Fork: native presentation and capture placement acknowledgements.
   yield* ipc.handle(getCliCommandState);
   yield* ipc.handle(installCliCommand);
   yield* ipc.handle(uninstallCliCommand);
   for (const previewMethod of PreviewIpc.methods) {
-    yield* ipc.handle(previewMethod);
+    // Explicit types preserve the error/service union of these heterogeneous preview methods.
+    yield* ipc.handle<
+      Effect.Error<ReturnType<(typeof PreviewIpc.methods)[number]["handler"]>>,
+      Effect.Services<ReturnType<(typeof PreviewIpc.methods)[number]["handler"]>>
+    >(previewMethod);
   }
   yield* ipc.handle(PreviewIpc.listBrowserImportSources);
   yield* ipc.handle(PreviewIpc.importBrowserCookies);

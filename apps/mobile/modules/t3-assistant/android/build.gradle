@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.t3tools.assistant'
+version = '0.0.0'
+
+android {
+  namespace 'expo.modules.t3assistant'
+  defaultConfig {
+    versionCode 1
+    versionName '0.0.0'
+  }
+}
+
+dependencies {
+  // The app's React Native version wins; react-android also brings AppCompat for the panel theme.
+  implementation 'com.facebook.react:react-android'
+}

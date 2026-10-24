@@ -12,6 +12,7 @@ import {
   type RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
+import { deriveProviderSubagentStatus } from "@t3tools/client-runtime/state/thread-execution";
 import {
   deriveThreadRelationshipGraph,
   immediateThreadRelationships,
@@ -27,10 +28,14 @@ import {
   resolveLatestMergeBackRun,
 } from "@t3tools/client-runtime/state/thread-workflows";
 import {
+  isOrchestrationV2WorkActive,
+  isProviderNativeSubagentThread,
   NodeId,
   type EnvironmentId,
+  type OrchestrationV2RemoteTaskChild,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadShell,
+  type ServerProvider,
   type ThreadId,
 } from "@t3tools/contracts";
 import { deriveSubagentElapsedMs } from "@t3tools/shared/orchestrationTiming";
@@ -57,7 +62,7 @@ import {
   useThreadProjection,
   useThreadRelationshipShells,
 } from "../../state/entities";
-import { useEnvironmentProviders } from "../../state/environments";
+import { useEnvironment, useEnvironmentProviders } from "../../state/environments";
 import { threadEnvironment } from "../../state/threads";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -77,7 +82,7 @@ import {
 const THREAD_LINEAGE_INITIAL_COUNT = 6;
 const THREAD_LINEAGE_PAGE_COUNT = 12;
 
-export function resolveThreadLineageWindow<Row>(
+function resolveThreadLineageWindow<Row>(
   rows: ReadonlyArray<Row>,
   visibleCount: number,
 ): { readonly visibleRows: ReadonlyArray<Row>; readonly hiddenCount: number } {
@@ -177,9 +182,9 @@ function currentSubagent<Agent extends RuntimeSubagent>(
   agent: Agent | undefined,
   childThread: OrchestrationV2ThreadShell | null | undefined,
 ): Agent | undefined {
+  if (!agent || !childThread || isOrchestrationV2WorkActive(agent.status)) return agent;
   const liveStatus =
-    childThread?.activityRunStatus ?? (childThread?.status === "queued" ? "queued" : null);
-  if (!agent || !childThread) return agent;
+    childThread.activityRunStatus ?? (childThread.status === "queued" ? "queued" : null);
   const newerRun =
     childThread.latestRunRequestedAt &&
     DateTime.toEpochMillis(childThread.latestRunRequestedAt) >
@@ -204,6 +209,74 @@ function currentSubagent<Agent extends RuntimeSubagent>(
   };
 }
 
+/**
+ * A task delegated to a linked environment. It has no thread here, so it opens
+ * the thread there, when this client is connected to that environment.
+ */
+function RemoteSubagentRow(props: {
+  readonly agent: OrchestrationV2Subagent & {
+    readonly remoteChild: OrchestrationV2RemoteTaskChild;
+  };
+  readonly provider: ServerProvider | undefined;
+}) {
+  const navigate = useNavigate();
+  const environment = useEnvironment(props.agent.remoteChild.environmentId);
+  const { remoteChild } = props.agent;
+  const status = props.agent.status;
+  const failed = status === "failed";
+  const title = relationshipThreadTitle({
+    title: props.agent.title ?? "Subagent",
+    isSubagent: true,
+  });
+  return (
+    <li className="group relative flex h-8 items-center rounded-lg">
+      <Tooltip>
+        <TooltipTrigger
+          delay={200}
+          render={
+            <ThreadDetailsControl
+              size="sm"
+              variant="ghost"
+              part="row"
+              disabled={environment === null}
+              onClick={() =>
+                void navigate({
+                  to: "/$environmentId/$threadId",
+                  params: buildThreadRouteParams(
+                    scopeThreadRef(remoteChild.environmentId, remoteChild.threadId),
+                  ),
+                })
+              }
+            />
+          }
+        >
+          <ThreadRelationshipIcon
+            driver={props.agent.driver}
+            provider={props.provider}
+            fallbackIcon={BotIcon}
+            status={status}
+          />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/85">
+              {title}
+            </span>
+          </span>
+          <span
+            className={`shrink-0 text-2xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            on {remoteChild.label} · {threadRelationshipStatusLabel(status)}
+          </span>
+        </TooltipTrigger>
+        <TooltipPopup side="left">
+          {environment === null
+            ? `Runs on ${remoteChild.label}. Connect to it to open the thread there.`
+            : `Open on ${remoteChild.label}`}
+        </TooltipPopup>
+      </Tooltip>
+    </li>
+  );
+}
+
 export function ThreadRelationshipsPanel(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -214,6 +287,26 @@ export function ThreadRelationshipsPanel(props: {
   const relationshipShells = useThreadRelationshipShells(ref);
   const allProjects = useProjects();
   const archived = useArchivedThreadSnapshots([props.environmentId]);
+  const archivedShells = archived.snapshots.find(
+    (entry) => entry.environmentId === props.environmentId,
+  )?.snapshot.threads;
+  const currentThread =
+    projection?.thread ??
+    relationshipShells.find((thread) => thread.id === props.threadId) ??
+    archivedShells?.find((thread) => thread.id === props.threadId);
+  const parentThreadId =
+    currentThread?.forkedFrom?.type === "run"
+      ? currentThread.forkedFrom.threadId
+      : currentThread?.lineage.parentThreadId;
+  const parentShell = parentThreadId
+    ? (relationshipShells.find((thread) => thread.id === parentThreadId) ??
+      archivedShells?.find((thread) => thread.id === parentThreadId))
+    : undefined;
+  const parentRef =
+    parentShell && isProviderNativeSubagentThread(parentShell)
+      ? scopeThreadRef(props.environmentId, parentShell.id)
+      : null;
+  const parentProjection = useThreadProjection(parentRef)?.projection;
   const navigate = useNavigate();
   const mergeBack = useAtomCommand(threadEnvironment.mergeBack);
   const stopSession = useAtomCommand(threadEnvironment.stopSession);
@@ -228,9 +321,9 @@ export function ThreadRelationshipsPanel(props: {
   // the panel's hooks where the compiler can cache them.
   const providers = providersByEnvironment.get(props.environmentId);
   const projects = allProjects.filter((project) => project.environmentId === props.environmentId);
-  const archivedShells = archived.snapshots.find(
-    (entry) => entry.environmentId === props.environmentId,
-  )?.snapshot.threads;
+  const parentNativeStatus = parentProjection
+    ? deriveProviderSubagentStatus(parentProjection)?.status
+    : undefined;
   const projected = projection?.subagents ?? [];
   const runtimeSubagents = projectedSubagentsToRuntime(projected);
   const byId = new Map(runtimeSubagents.map((agent) => [agent.id, agent]));
@@ -261,7 +354,6 @@ export function ThreadRelationshipsPanel(props: {
     ...(archivedShells ?? []),
   ];
   const graph = deriveThreadRelationshipGraph({ threads: shells, projection });
-  const currentThread = projection?.thread ?? graph.nodes.get(props.threadId)?.thread;
   const currentProject = projects.find((project) => project.id === currentThread?.projectId);
   const latestMergeBackRun = projection === null ? null : resolveLatestMergeBackRun(projection);
   const mergeTargetThreadId = resolveMergeBackTargetThreadId(projection);
@@ -301,12 +393,17 @@ export function ThreadRelationshipsPanel(props: {
     { id: "active", label: null, rows: active, expanded: true },
     { id: "previous", label: "Previous agents", rows: previous, expanded: false },
   ];
+  // Tasks running in a linked environment have no thread here; they get their own rows.
+  const remoteSubagents = (projection?.subagents ?? []).filter(
+    (agent): agent is OrchestrationV2Subagent & { remoteChild: OrchestrationV2RemoteTaskChild } =>
+      agent.remoteChild !== undefined,
+  );
   const runningCount =
     (projection?.subagents.filter(
       (agent) => agent.childThreadId === null && agent.status === "running",
     ).length ?? 0) + active.filter(({ edge }) => edge.status === "running").length;
 
-  if (relationshipRows.length === 0 && runningCount === 0) {
+  if (relationshipRows.length === 0 && runningCount === 0 && remoteSubagents.length === 0) {
     return null;
   }
 
@@ -344,16 +441,13 @@ export function ThreadRelationshipsPanel(props: {
 
   const stopSubagent = async (
     childThreadId: ThreadId,
-    agent: Pick<OrchestrationV2Subagent, "id" | "origin" | "threadId">,
+    agent: Pick<OrchestrationV2Subagent, "id" | "threadId">,
   ) => {
     if (stoppingId !== null) return;
     setStoppingId(childThreadId);
     const result = await interruptTurn({
       environmentId: props.environmentId,
-      input:
-        agent.origin === "provider_native"
-          ? { threadId: agent.threadId, subagentId: agent.id }
-          : { threadId: childThreadId },
+      input: { threadId: agent.threadId, subagentId: agent.id },
     });
     setStoppingId(null);
     if (result._tag === "Failure") {
@@ -418,7 +512,10 @@ export function ThreadRelationshipsPanel(props: {
               const isSubagent = edge.kind === "subagent";
               const isMergeTarget = threadId === mergeTargetThreadId;
               const isParent = isParentThreadRelationship(edge, props.threadId);
-              const rowStatus = threadRelationshipRowStatus(graph, { threadId, edge });
+              const rowStatus =
+                (isParent && threadId === parentRef?.threadId
+                  ? (node?.thread?.activityRunStatus ?? parentNativeStatus)
+                  : undefined) ?? threadRelationshipRowStatus(graph, { threadId, edge });
               const RelationshipIcon = isParent
                 ? CornerLeftUpIcon
                 : isSubagent
@@ -667,6 +764,20 @@ export function ThreadRelationshipsPanel(props: {
           }
         </ThreadLineageGroup>
       ))}
+      {remoteSubagents.length > 0 ? (
+        <ThreadLineageRowList hiddenCount={0} onShowMore={() => {}}>
+          {remoteSubagents.map((agent) => (
+            <RemoteSubagentRow
+              key={agent.id}
+              agent={agent}
+              // Its provider instance belongs to the environment it runs in.
+              provider={providersByEnvironment
+                .get(agent.remoteChild.environmentId)
+                ?.find((entry) => entry.instanceId === agent.providerInstanceId)}
+            />
+          ))}
+        </ThreadLineageRowList>
+      ) : null}
     </ThreadDetailsSection>
   );
 }

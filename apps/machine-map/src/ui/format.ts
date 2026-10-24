@@ -1,5 +1,8 @@
 import type {
+  ArrowCapability,
   CommandStatus,
+  MachineCallOutcome,
+  MachineExecOutcome,
   MachineCommandInput,
   MachineLevel,
   MachineMapDocument,
@@ -7,6 +10,7 @@ import type {
   MachinePresence,
   MapActor,
   MapPosition,
+  MapProposal,
 } from "@t3tools/contracts/machineMap";
 import type { BatteryReading, HealthAlertKind } from "@t3tools/contracts/machineMapResources";
 
@@ -30,7 +34,52 @@ export const ROLE_TEXT: Record<MachineMapRole, string> = {
   none: "Agents on this machine cannot use the map.",
   read: "Agents read the map.",
   propose: "Agents propose changes. You approve them in the Inbox.",
-  edit: "Agents change the map at once, except their own access.",
+  edit: "Agents change settings and lower access at once. Raised access waits for you in the Inbox.",
+};
+
+/** MM-1915: the sticker of each arrow capability. */
+export const CAPABILITY_LABEL: Record<ArrowCapability, string> = {
+  readThreads: "threads",
+  launch: "launch",
+  exec: "exec",
+  settings: "settings",
+};
+
+/** MM-1915: what each arrow capability lets agents on the source do on the target. */
+export const CAPABILITY_TEXT: Record<ArrowCapability, string> = {
+  readThreads: "Read threads and projects",
+  launch: "Launch threads and delegate tasks, and change the threads they started",
+  exec: "Run shell commands with machine_exec",
+  settings: "Change projects, settings and every thread",
+};
+
+/** MM-803, MM-804: the sticker, its look and the sentence of each reason why a proposal waits. */
+export const PROPOSAL_REASON: Record<
+  MapProposal["reason"],
+  { readonly sticker: string; readonly look: string; readonly text: string }
+> = {
+  "map-role": {
+    sticker: "proposal",
+    look: "wait",
+    text: "The machine has the map role propose, so its changes wait for you.",
+  },
+  "self-escalation": {
+    sticker: "own access",
+    look: "",
+    text: "The agent asks for more access for its own machine. That always needs you.",
+  },
+  "owner-only": {
+    sticker: "owner only",
+    look: "",
+    text: "The change raises access between machines. Only you raise access, also when the machine has the map role edit.",
+  },
+};
+
+/** MM-1922: the sticker look of each outcome of a forwarded call. */
+export const CALL_STICKER: Record<MachineCallOutcome, string> = {
+  succeeded: "ok",
+  refused: "warn",
+  failed: "",
 };
 
 export const COMMAND_LABEL: Record<MachineCommandInput["_tag"], string> = {
@@ -122,6 +171,14 @@ export const COMMAND_STICKER: Record<CommandStatus, string> = {
   expired: "none",
   cancelled: "none",
 };
+/** MM-1908: the sticker look of each exec outcome. */
+export const EXEC_STICKER: Record<MachineExecOutcome, string> = {
+  exited: "ok",
+  timedOut: "warn",
+  stopped: "none",
+  failed: "",
+  refused: "warn",
+};
 
 /** MM-205, MM-601: presence as plain text, with the time since the last connection. */
 export function presenceText(presence: MachinePresence | undefined, now: number): string {
@@ -157,7 +214,7 @@ export function towardGlyph(from: MapPosition, to: MapPosition): Toward {
 
 /** A short text of any setting value for tables. */
 export function valueText(value: unknown): string {
-  if (value === undefined) return "—";
+  if (value === undefined) return "-";
   if (typeof value === "boolean") return value ? "On" : "Off";
   if (typeof value === "string") return value.length > 0 ? value : '""';
   const text = JSON.stringify(value);
@@ -195,7 +252,7 @@ const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
 /** Bytes in binary units with up to 3 digits, for example `1.5 GB` or `640 MB`. */
 export function formatBytes(bytes: number | null): string {
-  if (bytes === null) return "—";
+  if (bytes === null) return "-";
   let value = bytes;
   let unit = 0;
   while (value >= 1024 && unit < BYTE_UNITS.length - 1) {
@@ -207,7 +264,7 @@ export function formatBytes(bytes: number | null): string {
 }
 
 export const formatPercent = (value: number | null): string =>
-  value === null ? "—" : `${Math.round(value)}%`;
+  value === null ? "-" : `${Math.round(value)}%`;
 
 /** A span of time between two moments, for example `12 min` or `3 h 5 min`. */
 export function duration(fromIso: string, toMs: number): string {

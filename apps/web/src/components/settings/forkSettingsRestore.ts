@@ -7,11 +7,15 @@ import type { ScopedSettingsPatch } from "./scopedSettings";
  * Fork: the fork settings that Restore defaults resets, with the label that its confirmation
  * names. Like upstream, Restore defaults resets preferences, and user data and access stay. That
  * keep list is deliberate: `globalScripts` and the pin lists (like project scripts),
- * `sidebarGroups` and `threadCardLayouts` (content that the user built, like keybindings),
+ * `sidebarTabs` and `threadCardLayouts` (content that the user built, like keybindings),
  * `machineMap` and `clientAccess` (a reset leaves the map or changes access), and tunnel pairing
  * (desktop connection settings). A new fork preference goes in this list.
  */
 const FORK_RESTORED_SETTINGS = [
+  ["restoreWorktreesOnResume", "Restore worktrees on resume"],
+  ["autoSettleWaitsForBackgroundCommands", "Auto-settle waits for background commands"],
+  ["worktreeArtifactEviction", "Evict worktree artifacts"],
+  ["worktreeArtifactEvictionDays", "Artifact eviction inactivity days"],
   ["installedAppEnabled", "Installed app"],
   ["webPushEnabled", "Web Push"],
   ["forkAutoUpdate", "Server auto-update"],
@@ -24,11 +28,12 @@ const FORK_RESTORED_SETTINGS = [
   ["preferOriginRemote", "Prefer origin remote"],
   ["threadLinkChips", "Thread link chips"],
   ["threadLinksOpenDesktopApp", "Thread addresses open the desktop app"],
+  ["messageLinks", "Message links"],
   ["previewLocalServerGroups", "All local servers in the browser"],
   ["mobilePublishedThemes", "Published themes on mobile"],
   ["mobileNewThreadProject", "New thread on mobile"],
   ["mobileComposerCamera", "Camera on mobile"],
-  ["mobileSidebarGroups", "Sidebar groups on mobile"],
+  ["mobileSidebarTabs", "Sidebar tabs on mobile"],
   ["terminalThreads", "Terminal threads"],
   ["terminalHistoryLines", "Terminal history lines"],
   ["terminalHistoryMegabytes", "Terminal history megabytes"],
@@ -40,8 +45,8 @@ const FORK_RESTORED_SETTINGS = [
   ["pullRequestWatchRemarkFilter", "Pull request watch remarks"],
   ["agentSessionImportWindowDays", "Session import window"],
   ["agentSessionImportMaxMessages", "Imported messages per session"],
-  ["sidebarGroupsEnabled", "Sidebar groups"],
-  ["sidebarGroupSingleThreadOpens", "Single-thread tabs"],
+  ["sidebarTabsEnabled", "Sidebar tabs"],
+  ["sidebarTabSingleThreadOpens", "Single-thread tabs"],
   ["snoozeQuickOptions", "Snooze quick options"],
   ["worktreePathTemplate", "Worktree path template"],
   ["repositoryOwnerFilters", "Repository owner filters"],
@@ -53,7 +58,11 @@ const FORK_RESTORED_SETTINGS = [
   ["focusLevelHighlight", "Focus highlight"],
   ["tooltipShortcuts", "Shortcuts in tooltips"],
   ["tooltipShortcutLimit", "Keys per tooltip"],
+  ["backForwardButtons", "Back and forward buttons"],
+  ["rememberBackForwardHistory", "Remember back and forward history"],
   ["confirmTerminalClose", "Terminal close confirmation"],
+  ["restartReconnectWarningGrace", "Quiet reconnect after restart"],
+  ["accessChangeNotices", "Access change notices"],
 ] as const satisfies ReadonlyArray<
   readonly [keyof UnifiedSettings & keyof ScopedSettingsPatch, string]
 >;

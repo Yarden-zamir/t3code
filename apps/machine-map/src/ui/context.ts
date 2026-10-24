@@ -3,6 +3,8 @@ import type {
   ClientId,
   CommandDelivery,
   MachineCommandInput,
+  MachineCallRecord,
+  MachineExecRecord,
   MachineId,
   MachineMapDocument,
   MapChange,
@@ -21,6 +23,8 @@ import type {
   WriteResult,
 } from "../api.ts";
 import type { Route, Selection, View } from "./route.ts";
+import type { ApprovalKind } from "../rules/approval.ts";
+import type { ApprovalReturn } from "./pendingApproval.ts";
 
 /** One held change of a draft (MM-707). */
 export interface DraftChange {
@@ -39,6 +43,13 @@ export interface CommandOptions {
 export type Dialog =
   /** MM-1110: `position` is the place picked on the map. Without it the portal picks a free spot. */
   | { readonly _tag: "addMachine"; readonly position?: MapPosition }
+  | { readonly _tag: "addPhone"; readonly position?: MapPosition }
+  | {
+      readonly _tag: "approval";
+      readonly kind: ApprovalKind;
+      readonly state: ApprovalReturn;
+      readonly mode: "confirm" | "return" | "interrupted";
+    }
   | {
       readonly _tag: "joinCode";
       readonly machineId: MachineId;
@@ -81,6 +92,10 @@ export interface Portal {
   readonly pending: ReadonlyArray<PendingClient> | null;
   /** MM-913: invites of native apps that wait to be used. */
   readonly invites: ReadonlyArray<ClientInvite>;
+  /** MM-1908: the newest `machine_exec` runs, newest first. */
+  readonly execs: ReadonlyArray<MachineExecRecord>;
+  /** MM-1922: the newest calls forwarded over arrow links, newest first. */
+  readonly calls: ReadonlyArray<MachineCallRecord>;
   readonly draft: ReadonlyArray<DraftChange> | null;
   readonly now: number;
   readonly route: Route;

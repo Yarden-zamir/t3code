@@ -1,12 +1,50 @@
 # Fork features
 
-The user-facing features of the fork [Yarden-zamir/t3code](https://github.com/Yarden-zamir/t3code). The groups follow the README list and Settings > Fork. Settings > Fork shows every fork setting, with the same rows as their usual pages. Maintainer procedures are in [operations.md](operations.md).
+The user-facing features of the fork [Yarden-zamir/t3code](https://github.com/Yarden-zamir/t3code). The groups follow the README list and Settings > Fork. Settings > Fork shows every fork setting, with the same rows as their proper places, and links to each place. Maintainer procedures are in [operations.md](operations.md).
 
 Each section names:
 
 - **Setting:** the settings key, its default and its place in Settings. A server setting applies to every client of that environment. A client setting applies to one browser or device.
 - **Works on:** web, desktop and mobile. "Server" means that the server does it for every client.
 - **Limits:** known limits, each with the condition to revisit it.
+
+## Central build caches
+
+Local builds can keep their disposable Vite caches and Android app outputs outside checkouts.
+
+- **Setting:** `T3_FORK_CENTRAL_BUILD_CACHE=1` in the build environment (off by default). `XDG_CACHE_HOME` chooses the cache base; otherwise it is `~/.cache`. No installed-app setting is needed.
+- **Works on:** local web, server, desktop, portal and marketing Vite tools, shared-client tests, and Android prebuilds. Each canonical checkout path has its own SHA-256 key. APKs remain at `apps/mobile/android/app/build/outputs/apk` through a link.
+- **Limits:** existing local outputs are not moved or deleted. Enable before a clean Android prebuild. Root Android outputs, dependency codegen and `.cxx` stay in place. Disabling the variable does not remove an existing link; the next clean prebuild restores the normal layout. `node scripts/fork-build-cache-prune.ts --dry-run` previews central-only cleanup, with 14 days as the default age. See [operations](operations.md#central-build-caches).
+
+## Worktrees
+
+### Restore worktrees on resume
+
+Restore a missing worktree at its saved path before starting the next turn. If its branch still exists, recovery preserves it. If the branch was deleted, recovery fetches origin's default branch and creates the saved branch name from that revision. The thread warns that earlier uncommitted work is not in the recreated checkout. Project setup runs before the agent starts. Dependencies that artifact eviction removed also run normal setup. A missing `node_modules` that eviction did not remove does not run setup. The thread shows the restore as an activity. A stopped, failed or crashed setup closes that activity, and so does a server restart during setup. Missing build outputs do not add a setup or build step on resume; the next build recreates them.
+
+- **Setting:** `restoreWorktreesOnResume` (server setting, off by default). Settings > Storage > Worktrees > "Restore worktrees on resume".
+- **Works on:** server, for web, desktop, mobile, agent tools and scheduled turns.
+- **Limits:** a conflicting path stops recovery. Only this checkout's Git registration is repaired; no broad prune runs. When its branch exists, its saved index and refs, including staged changes, stay. Existing branches are never reset. Deleted-branch recovery requires a reachable origin with a discoverable default branch; its old index is not restored. Dependencies require a configured project setup script. When this setting is off, upstream's recovery runs unchanged: for a managed worktree path, it runs `git worktree prune` and adds the worktree again, without project setup. Pending dependency restoration after artifact eviction still runs.
+
+### Auto-settle waits for background commands
+
+Auto-settle skips a thread while a background command of its agent runs, for example a typecheck that a Claude agent started with `run_in_background`. Settling stops the agent session, and that kills the command before it can wake the agent. Upstream auto-settle waits only for monitors, background agents and other background tasks.
+
+- **Setting:** `autoSettleWaitsForBackgroundCommands` (server setting, off by default). Settings > General > Organization > "Auto-settle waits for background commands".
+- **Works on:** server, for every provider that reports background commands. Manual settle still stops the session.
+- **Limits:** a command left running, such as a dev server, holds the thread until the session releases idle background work (`DEFAULT_MAX_IDLE_PIN_MS` in `apps/server/src/orchestration-v2/ProviderSessionManager.ts`). Revisit this if threads with dev servers stay unsettled too long.
+
+### Artifact-only worktree cleanup
+
+Remove regenerable build outputs before dependencies, without removing the worktree or its branch. The storage cleanup report splits logical file bytes and folder counts into Android builds, Gradle caches, other builds, other caches and `node_modules`. These are not recorded as physical space freed: pnpm files can share APFS blocks with its store. Evicted dependencies run normal project setup before the next turn, even if eviction has since been switched off. Build outputs do not trigger setup or an extra build step on resume; the agent's next build recreates them.
+
+The measured Mac examples were 6.91 GiB logical `node_modules` removed for 0.13 GiB reclaimed, and 1.35 GiB `apps/mobile/android/app/build` removed for 1.18 GiB reclaimed. These are reference measurements, not a conversion rule or a prediction of the next cleanup's physical reclamation.
+
+- **Setting:** `worktreeArtifactEviction` (server setting, off by default) and `worktreeArtifactEvictionDays` (14 days by default, 1–3650). Settings > Storage > Worktrees > "Evict worktree artifacts".
+- **Works on:** server. All clients, scheduled turns and agent tools use the same recovery path.
+- **Eligibility:** this protects process cwds and T3-known active work. A single idle thread must own the checkout and be settled or inactive for the configured days. Shared threads and subagents, running, queued or pending work, setup, builds, open terminals and uncertain process visibility keep artifacts. T3 metadata naming the worktree blocks cleanup even when its cwd is higher. Any process cwd in the checkout, a descendant or its container (the immediate parent holding sibling worktrees) also blocks cleanup. A deleted or unreadable cwd blocks cleanup only when its old path is in the checkout, a descendant or its container. The nearest readable folder above it gives that path. This rule also applies to T3 terminal and provider session cwds. A project setup script must be configured. These guards stay independent of the process scan and run again before deletion.
+- **Files:** exact reviewed relative paths only, including `apps/mobile/android/app/build`; there is no arbitrary `build` or `dist` basename rule. Dependency paths are expanded from workspace declarations into exact `node_modules` paths. Git must ignore each folder and track no file within it. Extension and path rules classify conservatively; they do not prove where a file came from or distinguish every hand-written ignored `.js` or `.json` file from generated output. A `.env*` file, secret, original source or unknown content, `_shared` link, or link outside the checkout keeps the whole folder. For an unrecognized file type, the report says the folder was kept and gives its reason and an example path. Kotlin incremental table exceptions apply only under `kotlin/<task>/cacheable/caches-jvm/`. Shared pnpm storage is not managed by this feature.
+- **Limits:** orphan Git worktrees without a stored T3 thread are excluded. A clean process list does not prove no external activity. A process above the container, such as one with cwd `$HOME` or `/`, can still act on the worktree through an absolute path; revisit if a real tool does that. T3-known active work remains protected independently of that cwd bound. Process checks support macOS and Linux. Other systems keep artifacts until inspection is available. This setting does not change or disable upstream whole-worktree cleanup rules; turn those off separately if you want every checkout kept. With [central build caches](#central-build-caches) on, `apps/mobile/android/app/build` is a link, so this feature keeps it. Use `node scripts/fork-build-cache-prune.ts` for the central caches.
 
 ## Remote access
 
@@ -40,6 +78,14 @@ Trusted browser origins get credentialed CORS and session cookies. One browser p
 - **Setting:** `trustedBrowserOrigins` (empty by default). Settings > Connections > "Allow pairing through a tunnel", in the desktop app. On a headless server, set `T3CODE_TRUSTED_BROWSER_ORIGINS`. A server on the machine map trusts the origins of the other machines without this setting (MM-1311).
 - **Works on:** web, desktop. Mobile does not need it.
 
+### Quiet reconnect after restart
+
+After an update, the app and the remote servers restart at about the same time. A remote server can need about 40 seconds before it accepts the connection again. With this setting on, the composer does not show "<server> is reconnecting" in the first 45 seconds after the app starts.
+
+- **Setting:** client setting `restartReconnectWarningGrace` (off by default). Settings > Connections > Connection warnings > "Quiet reconnect after restart".
+- **Works on:** web, desktop. The sidebar, the environment chips and Settings > Connections still show the state at once. A send in that time still shows "Not connected: message not sent".
+- **Limits:** a refused sign-in or an offline device shows at once. Later reconnects keep the upstream wait of 2 seconds. The mobile app shows only a small "Reconnecting" status, so it has no wait. Revisit the 45 seconds when a normal restart takes longer.
+
 ## Machine map
 
 One portal at `https://t3.yarden-zamir.com` (a Cloudflare Worker) maps every T3 machine and sets what each machine can do on the others.
@@ -52,13 +98,70 @@ One portal at `https://t3.yarden-zamir.com` (a Cloudflare Worker) maps every T3 
 
 Use the machine map name as the server environment name. A name change in the portal updates connected clients without a restart. Turn the setting off to use the operating system name again.
 
-- **Setting:** `environmentLabelFromMachineMap` (server setting, off by default). Settings > Fork > Machine map > Environment name from machine map.
+- **Setting:** `environmentLabelFromMachineMap` (server setting, off by default). Settings > Machines > Machine map > "Environment name from machine map".
 - **Works on:** server, web, desktop and mobile, through direct and relay connections.
 - **Limits:** the server must join the map and receive its machine record. Without a name, it keeps the operating system name. An offline server keeps the last map name until the portal connects again. Disconnected clients get the current name when they connect. Older clients need an update for live display changes.
 
+### Access change notices
+
+When the owner changes an arrow or a client arrow, open clients get the new access without a reload. A notice names the change, for example "Access to VPS changed: You can now send messages." A change of an arrow with agent tools names what the agents of the server can now do on the other machine.
+
+- **Setting:** server setting `accessChangeNotices` (off by default). Settings > Machines > "Access change notices", and Settings > Fork in the mobile app. A shared value in the portal turns it on for every machine.
+- **Works on:** web, desktop (a toast) and mobile (a popup). The mobile app shows the notices of one update in one popup.
+- **How it works:** the portal sends the new desired state to the target machine at once. A changed level ends the sessions of that machine or client (MM-305, MM-912, MM-917), and the client pairs again with the new scopes. The desktop app pairs again at most once in 30 seconds per machine (MM-306), so a second change soon after can take up to 30 seconds. A link of agents follows the map state that the server sends to its clients on each change. Clients subscribe to that state only while the setting is on.
+- **Limits:** a launch or a reload shows no notice, because there is no earlier access to compare. A removed arrow shows "Access to <machine> ended" when the desktop app removes the machine or the mobile app turns it off.
+
 ### Portal views
 
-The portal has the views Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients (MM-1102). Each view and each selected item has its own link. Agents use the `machines_*` and `machine_tool_call` tools for machine operations. Client approvals, invites and the resume after an emergency pause stay with the owner.
+The portal has the views Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients (MM-1102). Each view and each selected item has its own link. Agents use the `machines_*` and `machine_exec` tools for machine operations, and the T3 tools with `environmentId` for work on other machines. Client approvals, invites and the resume after an emergency pause stay with the owner.
+
+The map role never raises a thread's limits. Map writes need a live full-access/default caller, even with `edit`. These checks run on the server for agents started from web, desktop and mobile.
+
+Each arrow lists what agents on the source can do on the target: read threads, launch and delegate, exec and settings (MM-1915). The arrow panel, Map, Table and `machines_read` show the list. Secret copy waits for MM-1917.
+
+### Work on other machines
+
+An arrow with agent tools makes the target machine a linked environment of the source (MM-1921). Agents on the source pass its `environmentId` to the T3 tools, for example `t3_thread_list`, `t3_thread_launch` or `delegate_task` with `target.environmentId`. `t3_environment_links` lists the linked machines. A delegated task runs on the other machine and wakes the parent thread when it ends (MM-1910).
+
+- **Setting:** an arrow with agent tools and a level above `none`, from the machine that runs the agent to the other machine. Set it in the portal.
+- **Access:** `read` gives read-only access. `standard` gives `auto`, and it changes only the threads that its own link started: not the projects, settings or threads of the other machine. `admin` gives full access (MM-302).
+- **Thread limits:** each call carries the limits of the calling thread, and the other machine applies the narrower of those and the level. A thread in plan or approval-required mode can work on another machine within its own mode (MM-1902).
+- **Pause and removal:** while the owner's emergency pause is on, work on other machines waits and tries again after Resume. Removing the arrow or its agent tools fails that work with the reason (MM-1914).
+- **Manual links:** `t3 environment link` and `t3 environment unlink` refuse. Settings > Connections on web, desktop and mobile shows the arrow links read-only, with "Set arrows in the portal". A permanent arrow shows no expiry. A temporary arrow shows its end; renew it in the portal.
+- **History:** each tool call that an agent forwards to another machine shows in the portal History, with the machines, the calling thread, the tool, the outcome and the time. The arguments and the output stay out of the portal (MM-1922).
+- **Unanswered machines:** a machine that has not answered since this server started shows as an unreachable link with the reason, under the id `machine:<machine id>`. A call with that id fails with the reason, and names the real id once the machine answers. An offline machine or an old T3 Code version is the usual cause; the portal shows its presence and version.
+- **Limits:** a link reaches the other machine through its tunnel hostname.
+
+### Commands on other machines
+
+An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908). In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's (MM-1919).
+
+- **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Table and the arrow panel show an "exec" sticker.
+- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Without a thread credential it is refused (MM-1920). The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
+- **Stop:** the emergency pause, a removed arrow or exec turned off stops a running command at once (MM-1916).
+- **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`. A `t3 machine exec` run gives one entry when it ends.
+- **In a shell:** in a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
+  - `t3 machine exec vps -- uname -a`
+  - `t3 machine exec vps --cwd ~/app -- git status`
+  - `t3 machine exec vps -- cat app.log | grep error`
+  - `echo hi | t3 machine exec vps -- cat`
+- **Copy files:** use tar through the pipe. The target folder must exist; put `mkdir -p <folder> &&` before the remote `tar` if it does not.
+  - Folder to the other machine: `tar c -C dist . | t3 machine exec vps -- tar x -C /srv/app`
+  - Folder from the other machine: `t3 machine exec vps -- tar c -C /srv/app . | tar x -C ./backup`
+  - One file to the other machine: `t3 machine exec vps -- 'cat > /tmp/file' < file`
+- **Exit codes:** the exit code of the command. 124 when `--timeout` stops it. 255 when the stream fails: a refusal, a lost connection, or an arrow that stops allowing exec. The reason goes to stderr.
+- **Long jobs:** `t3 machine exec` has no time limit. A ping every 25 seconds keeps the connection open through Cloudflare. The end of the agent's turn does not stop it, so an agent can run it in the background. A lost connection stops the command, as with ssh. For a job that must outlive the connection, start it with `nohup <command> > job.log 2>&1 &` in a command that exits 0, and read the log later. A command that exits with another code stops its background jobs too. A command that a signal ends keeps them.
+- **Limits:** a `machine_exec` run lasts at most 90 seconds, because the answer goes through Cloudflare. Use `t3 machine exec` for longer work. `machine_exec` keeps 50,000 bytes of stdout and of stderr. A timeout loses the output. A command that reads stdin waits for the timeout. On a Windows machine, Windows PowerShell runs the command. `t3 machine exec` joins the words of the command with spaces, so quote the command for PowerShell, not for a POSIX shell. Byte-exact stdin to a command on Windows is not tested yet. A machine that is offline from the portal still runs commands and sends the History entry when it connects, unless it restarts first.
+
+### Thread mentions across machines
+
+The `@` menu lists the threads of this machine and of the machines that it reads through the machine map. With more than one machine, each item names its machine. The agent reads an attached thread of another machine through the arrow, on the T3 server of that machine (MM-1905 to MM-1907).
+
+- **Setting:** an arrow with agent tools and a level above `none`, from the machine that runs the agent to the machine of the thread. Set it in the portal.
+- **Works on:** web, desktop and mobile, through local, relay and tunnel connections. The client lists the threads of a machine only when it also connects to that machine.
+- A send stops when the target machine cannot read an attached thread. Remove the thread, or switch to a machine that can read it.
+- Agents in every mode can read these threads. The read carries the limits of the agent's thread, so the other machine refuses what that thread may not do.
+- **Limits:** a machine asks each peer once for its environment id. An offline peer is not listed until it answers. Right after a page load, a send with a thread of another machine waits until the list of readable machines arrives.
 
 ### Join and install
 
@@ -89,6 +192,8 @@ A setting with a shared value syncs to every machine, also to an offline or a ne
 
 The map has no edges. Cards stay where you drop them. The map zooms, pans and fits all cards, also on phones and small windows. "Auto layout" places every card so that the map reads well, as one change with Undo.
 
+Before rotating a machine token, check that it can connect within 24 hours. The old secret stops at confirmation or at that deadline. If the deadline passes without confirmation, select "Join again with a new code" on the machine and use the code there. The portal keeps that recovery notice until the machine joins again or confirms the new secret.
+
 ### Approved clients
 
 Clients are the browsers and phones of the owner (MM-904). A new browser waits in the Clients view until the owner approves it with a fresh MFA step. Each client gets a card and a level per machine.
@@ -99,6 +204,7 @@ Each machine decides which browsers get in through Cloudflare Access.
 
 - **Setting:** `clientAccess` (`off` by default). Change it per machine in the portal Settings view, with the passkey step. In the desktop app of a machine, change it in Settings > Machines > "Client access".
 - `off` keeps the owner login. `observe` gives a browser of an approved client the level of its arrow, at most `standard`. `enforce` lets in only browsers of approved clients. Other browsers wait for approval.
+- An open browser also enters the waiting page if its key is removed or the machine switches to `enforce`. It checks for approval automatically.
 - To turn it on safely, and to get back in after a lockout, follow [Client access](../../apps/machine-map/README.md#client-access) in the portal README.
 
 ### Sibling client sessions
@@ -111,11 +217,22 @@ A browser client session lasts 1 day, also on sibling machines (MM-922). A refus
 
 Only the owner changes `clientAccess` and `machineMap`: in the portal with the passkey step, or in the desktop app of the machine (MM-919). Agents cannot change them, not even as a proposal.
 
+Only the owner raises access between machines, in the portal (MM-803). When an agent raises a level, turns on agent tools or exec, or raises a map role, the change waits in the Inbox as "owner only", also with the map role `edit`. An agent with `edit` still lowers or removes access at once.
+
 ### App invites and app tokens
 
 Only the owner makes an invite, in the portal. "Invite an app" shows a QR code that a native app, such as the T3 Android app, uses once (MM-913). The app gets its own Cloudflare Access token, and each machine gives it the level of its arrow.
 
+To add a phone from the map, select "Add phone", or double-click empty map space (long-press on a phone) and select "Add phone here". Check the name and arrows, which start at `standard`, then make the invite with the passkey check. The same dialog shows the QR code, link and "Add with Obtainium". The phone card appears at the chosen point. "Invite an app" in Clients still starts new arrows at `none`.
+
+After a successful passkey check, the dialog returns and makes the invite without another click. Browser approvals and owner-only settings changes, including held changes, resume the same way. The saved request expires after 10 minutes. If confirmation fails or expires, select "Try again". If an affected item changed while you confirmed, the portal asks you to review it before applying anything.
+
+On the same phone, select "Open in the T3 app" in the dialog or invite page, then tap Add environment in the app. Or copy the link, open the T3 app, open Environments, tap +, and paste it in Address. Older app builds need this copy-and-paste path.
+
 - In the mobile app, scan the code in Add environment, or paste its link in Address. The app then pairs with every machine that it may reach.
+- The app keeps the token, also when a machine does not pair at once. It pairs again by itself when a machine ends its session, for example after an access change, an expiry, a resume or a `clientAccess` change.
+- The app reads its machines from the portal when it opens and when it returns to the foreground. Settings > Fork > App token > Refresh machines reads them at once. A machine with access `none` is disabled, and comes back when it gets access again.
+- When the portal no longer accepts the token, for example after "Remove client", the machine says so. Use "Invite an app" for this phone again.
 
 ### Emergency pause
 
@@ -138,6 +255,8 @@ Each machine sends CPU, memory, disk, swap and battery samples. The portal keeps
 
 The portal installs as an app, with an offline page and an app badge. Turn on Web Push per device in Clients > "Notifications on this device". Pushes go out for health alerts, Inbox proposals, sign-ins that wait for approval, and the pause (MM-1801 to MM-1809).
 
+"Sign out everywhere" turns notifications off on every device. Signing in again keeps them off until you select "Turn on" on that device, even if the browser still holds its old push subscription.
+
 ### Machines panel
 
 A read-only map in the right panel of a thread. Open it from the "+" menu of the panel, or with "Show machines" in the command palette.
@@ -149,7 +268,7 @@ A read-only map in the right panel of a thread. Open it from the "+" menu of the
 
 ### Fork releases
 
-Nightly desktop builds for macOS, Windows and Linux, plus Linux server archives and `SHA256SUMS`. A release builds on each push to main that changes more than docs or the portal. `t3 update`, "Update everything" and `scripts/install.sh` install from the fork releases. How releases build: [Fork Release](operations.md#fork-release).
+Nightly desktop builds for macOS, Windows and Linux, plus Linux server archives and `SHA256SUMS`. A release builds on each push to main that changes more than docs or the portal. `t3 update`, "Update everything" and `scripts/install.sh` install from the fork releases. Each morning one nightly becomes a release with notes in three sections: fork changes, upstream changes and their integration. How releases build: [Fork Release](operations.md#fork-release) and [Daily release](operations.md#daily-release).
 
 - **Works on:** desktop and server.
 - **Limits:** macOS builds use a self-made certificate and are not notarized, so the first install needs Control-click > Open. Revisit if the fork gets an Apple developer account.
@@ -181,7 +300,7 @@ While agents run, the desktop update button offers "Install when idle" next to "
 
 A headless server that runs as the background service installs each newer fork release when no agent turn, no background shell and no program in a terminal thread runs.
 
-- **Setting:** server setting `forkAutoUpdate` (off by default). Settings > General > "Server auto-update".
+- **Setting:** server setting `forkAutoUpdate` (off by default). Settings > General > About > "Server auto-update".
 - **Works on:** server (the background service of `t3 service install`). The desktop app updates itself.
 - **Limits:** the restart stops running turns. Turn on [Recover interrupted agents](#recover-interrupted-agents) to continue them. Details: [Server updates](operations.md#server-updates).
 
@@ -189,14 +308,14 @@ A headless server that runs as the background service installs each newer fork r
 
 Before the desktop app installs a downloaded update, it checks for a newer release. If one exists, it asks "Download newer" or "Install this one". Install when idle and the machine map take the newer release.
 
-- **Setting:** client setting `checkNewerBeforeUpdateInstall` (off by default). Settings > General > "Check for a newer update before install".
+- **Setting:** client setting `checkNewerBeforeUpdateInstall` (off by default). Settings > General > About > "Check for a newer update before install".
 - **Works on:** desktop.
 
 ### Changelog
 
 A timeline of fork releases and their commits, the upstream commits that fork main does not have yet, and the Fork Sync runs.
 
-- **Setting:** client setting `forkChangelogEnabled` (on by default). Settings > General > "Fork changelog".
+- **Setting:** client setting `forkChangelogEnabled` (on by default). Settings > General > About > "Fork changelog".
 - **Works on:** web and desktop (the Settings row). The update popover is on desktop only.
 - **Open it:** from the Fork changelog row in Settings, or from "Open changelog" in the update popover. With the setting on, the update popover shows the changelog of every release between the installed version and the offered one.
 - **Releases tab:** commits, newest first, with a divider for each release, its time and an "Installed" mark. A fork icon marks a fork commit, and a down-arrow icon marks an upstream commit. A `#123` in a commit subject links to the pull request of its repository. Merge commits do not show.
@@ -223,7 +342,7 @@ These README lines are maintainer procedures:
 
 Every agent runs as a child process of the T3 server, so an update, a crash or a quit stops them all. With this setting, the next server start sends each cut-off thread a short message, so that its agent continues.
 
-- **Setting:** server settings `recoverInterruptedTurns` (off by default), `recoverInterruptedTurnsMessage` (default "Recover and continue") and `recoverInterruptedTurnsSubagentMessage` (default "Recover and continue. Your parent thread was also restarted."). Settings > General > "Recover interrupted agents".
+- **Setting:** server settings `recoverInterruptedTurns` (off by default), `recoverInterruptedTurnsMessage` (default "Recover and continue") and `recoverInterruptedTurnsSubagentMessage` (default "Recover and continue. Your parent thread was also restarted."). Settings > General > Behavior > "Recover interrupted agents".
 - **Works on:** server.
 - A thread gets the message when the restart stopped its turn, or when its finished turn still had open background work: a native subagent, a monitor or a background shell. A delegated thread gets the subagent message.
 - The thread shows the message as a "T3 Code restarted" notice. The agent receives the message text.
@@ -237,7 +356,7 @@ Every agent runs as a child process of the T3 server, so an update, a crash or a
 
 Background work notifications name their tasks and output files. A status icon opens a details popover, and descriptions render Markdown links.
 
-- **Setting:** client setting `backgroundWorkDetails` (on by default). Settings > General > "Background work details".
+- **Setting:** client setting `backgroundWorkDetails` (on by default). Settings > General > Behavior > "Background work details".
 - **Works on:** web, desktop.
 - **Limits:** the mobile app shows only the upstream pending work. Revisit when mobile users need the task names and output files.
 
@@ -265,7 +384,7 @@ Selects which comments and reviews wake an agent that watches a pull request.
 
 Sets how far back recent Claude Code and Codex sessions are offered for import, and how many messages an imported session keeps.
 
-- **Setting:** server settings `agentSessionImportWindowDays` (default 30, 1 to 3650) and `agentSessionImportMaxMessages` (default 200, 1 to 10000). Settings > General > "Session import window" and "Imported messages per session".
+- **Setting:** server settings `agentSessionImportWindowDays` (default 30, 1 to 3650) and `agentSessionImportMaxMessages` (default 200, 1 to 10000). Settings > General > Projects & threads > "Session import window" and "Imported messages per session".
 - **Works on:** server.
 - An imported session keeps its first user message and the newest messages up to the limit.
 
@@ -273,39 +392,43 @@ Sets how far back recent Claude Code and Codex sessions are offered for import, 
 
 A scheduled task runs on any provider instance, or on the project default model. Pick it in the scheduled task editor.
 
+The model applies to runs that launch a new thread. A run that posts into a bound thread uses the current model of that thread.
+
 - **Works on:** web, desktop, mobile.
 
 ## Threads
 
-### Sidebar groups
+### Sidebar tabs
 
-Thread groups show as tabs under the sidebar search. A thread lives in one group, so the groups act like folders.
+Tabs under the sidebar search hold threads. A thread lives in one tab, so the tabs act like folders.
 
-- **Setting:** client settings `sidebarGroupsEnabled` (off by default) and `sidebarGroupSingleThreadOpens` (off by default). Settings > General > "Sidebar groups" and "Single-thread tabs". The groups are the server setting `sidebarGroups` of the primary server. The machine map syncs them to every machine (MM-411). The mobile app shows the tabs while the server setting `mobileSidebarGroups` is on (off by default): Settings > Appearance > Mobile app, or Fork in the mobile Settings.
-- **Works on:** web, desktop, mobile. On mobile the tabs show above the thread list. Tap a tab to show its threads. Long-press a tab to edit, move or delete it, and tap + to make a group. Long-press a thread and pick "Move to group". Settings > Fork > Sidebar groups lists the groups too.
+- **Setting:** client settings `sidebarTabsEnabled` (off by default) and `sidebarTabSingleThreadOpens` (off by default). Settings > General > Organization > "Sidebar tabs" and "Single-thread tabs". The tabs are the server setting `sidebarTabs` of the primary server. The machine map syncs them to every machine (MM-411). The mobile app shows the tabs while the server setting `mobileSidebarTabs` is on (off by default): Settings > Appearance > Mobile app, or Fork in the mobile Settings.
+- **Works on:** web, desktop, mobile. On mobile the tabs show above the thread list. Tap a tab to show its threads. Long-press a tab to edit, move or delete it, and tap + to make a tab. Long-press a thread and pick "Assign to tab". Settings > Fork > Sidebar tabs lists the tabs too.
 - **Use it:**
-  - The first tab, "Threads", holds every thread that is in no group. It can be renamed, and it can show all threads.
-  - Drag a thread onto a tab to move it into that group. During a drag, a + shows at the end of the bar. A drop on it makes a new group.
-  - Right-click the bar outside a tab and pick "New group" to make an empty group. Right-click a tab, or click the sliders button of the open tab, to rename it, pick its icon, edit its rules, move it or delete it.
-  - Rules put threads in a group. A thread matches a group when it matches every rule. Rules compare the repository, the repository owner, the status, the provider, the creator, the background work and the title. A repository rule matches on every machine.
-  - A thread lives in the group that you dragged it into. Otherwise it lives in the first group, from left to right, whose rules match. Otherwise it lives in "Threads".
-  - A rule on "Group" makes a view: a tab that shows the threads of other groups. Pick Group > "Any group" for an "All" tab.
-  - A tab shows the status of its most urgent thread. Settled and snoozed threads stay in the Settled and Snoozed shelves of their group.
-  - With "Single-thread tabs", a group with one thread shows that thread on its tab, and a click opens it.
+  - The first tab, "Threads", holds every thread that is in no other tab. It can be renamed, and it can show all threads.
+  - Drag a thread onto a tab to assign it to that tab. During a drag, a + shows at the end of the bar. A drop on it makes a new tab.
+  - Right-click the bar outside a tab and pick "New tab" to make an empty tab. Right-click a tab, or click the sliders button of the open tab, to rename it, pick its icon, edit its rules, move it or delete it.
+  - Rules put threads in a tab. A thread matches a tab when it matches every rule. Rules compare the repository, the repository owner, the status, the provider, the creator, the background work and the title. A repository rule matches on every machine.
+  - A thread lives in the tab that you assigned it to. Otherwise it lives in the first tab, from left to right, whose rules match. Otherwise it lives in "Threads".
+  - A rule on "Tab" makes a view: a tab that shows the threads of other tabs. Pick Tab > "Any tab" for an "All" tab.
+  - A tab shows the status of its most urgent thread. Settled and snoozed threads stay in the Settled and Snoozed shelves of their tab.
+  - With "Single-thread tabs", a tab with one thread shows that thread on its tab, and a click opens it.
   - Each tab has an icon, or a dot by default. Turn off "Show the name on the tab" to show the icon only.
   - Tabs that do not fit go to a "+N" menu. Drag a tab to move it; the first tab stays first.
   - Search covers every tab. A thread that you open from a link or a notification shows its tab.
 - **Limits:**
   - On mobile, "Single-thread tabs" does not apply, and a thread link does not switch to the tab of the thread. Revisit if users open threads from links on the phone often.
-  - The hosted app at app.t3.codes has no primary server to keep the groups, so it shows no tabs. Revisit if hosted clients get a place for shared settings.
-  - When two devices change groups at the same moment, the last change wins. Revisit if groups get lost in practice.
+  - The hosted app at app.t3.codes has no primary server to keep the tabs, so it shows no tabs. Revisit if hosted clients get a place for shared settings.
+  - When two devices change tabs at the same moment, the last change wins. Revisit if tabs get lost in practice.
   - A machine without the map role `edit`, or off the map, keeps a change on its own server only.
+  - Tabs were called groups before. A server moves `sidebarGroups` and `mobileSidebarGroups` in `settings.json` to the new keys once at start, and renames the old `sidebar.group.*`, `sidebar.previousGroup` and `sidebar.nextGroup` keybindings. A client moves `sidebarGroupsEnabled` and `sidebarGroupSingleThreadOpens` when it loads. The portal moves the shared values and overrides of the map once. A machine on an older version keeps the old keys, so it does not sync tabs with a machine on a newer version until both update. The open tab resets to "Threads" once.
+  - Applies only after upstream thread groups merge ([pingdotgg/t3code#15988](https://github.com/pingdotgg/t3code/pull/15988) "feat: related threads stay together as a group"): a nested thread always shows in the tab of its top thread, so a nested group never splits across tabs. This holds for views too. A drag or "Assign to tab" on a nested thread assigns its top thread. Fork Sync resolves that merge with this rule.
 
 ### Snooze quick options
 
 Edits the choices of the snooze menus.
 
-- **Setting:** client setting `snoozeQuickOptions` (empty by default: the built-in choices). Settings > General > "Snooze quick options".
+- **Setting:** client setting `snoozeQuickOptions` (null by default: the built-in choices). Settings > General > Organization > "Snooze quick options".
 - **Works on:** web, desktop: the snooze button, the thread menu and the menu for selected threads.
 - A choice snoozes for a number of minutes, hours or days, or until a time today, tomorrow or on the next given weekday. A blank label shows a label that names the choice.
 - A choice for today shows while its time is more than an hour away. The reset button brings back the built-in choices.
@@ -315,7 +438,7 @@ Edits the choices of the snooze menus.
 
 A template decides where new worktrees go, for example next to `main/` in a `.bare` container.
 
-- **Setting:** server setting `worktreePathTemplate` (empty by default: the worktree location setting applies). Settings > Storage > "Worktree path template".
+- **Setting:** server setting `worktreePathTemplate` (empty by default: the worktree location setting applies). Settings > Storage > Worktrees > "Worktree path template".
 - **Works on:** server.
 - The variables are `{worktrees}` (the worktree location), `{repoDir}` (the checkout, or the `.bare` container), `{repo}` (the folder name of `{repoDir}`), `{branch}` (with `/` changed to `-`) and `{branchLeaf}` (the last part of the branch). The template must hold `{branch}` or `{branchLeaf}`.
 - For a `.bare` container, use `{repoDir}/{branchLeaf}`. A worktree for `feat/api/qcdi-1234-auth` then goes to `<container>/qcdi-1234-auth`, next to `main/`.
@@ -327,11 +450,23 @@ A template decides where new worktrees go, for example next to `main/` in a `.ba
 
 Every thread link in chat shows as the chip of an attached thread, and opens the thread in T3 Code.
 
-- **Setting:** server setting `threadLinkChips` (off by default). Settings > Appearance > Thread links > "Thread link chips".
+- **Setting:** server setting `threadLinkChips` (off by default). Settings > Appearance > Thread links > "Thread link chips". In the mobile Settings: Thread behavior, or Fork.
 - **Works on:** web, desktop, mobile. Mobile reads the setting of the server of the thread, and has no switch of its own.
 - The chip reads `t3-thread://v1/<threadId>`, `t3code://threads/<environmentId>/<threadId>`, `https://<host>/<environmentId>/<threadId>`, and the attached-thread marker `[Thread: <title>; ref=<contextId>]` that agents copy.
 - An app link or a web address becomes a chip only when this client knows the environment. Copy keeps the link as written.
-- **Limits:** `?message=<messageId>` is kept, but the app does not scroll to the message. Revisit when upstream pingdotgg/t3code#19203 adds message links.
+- A `t3-thread://` link to a thread on another machine opens that thread when this client knows its environment.
+- A link that names a message shows a marker: `#` on web and desktop, a message icon on mobile. See [Message links](#message-links).
+- **Limits:** on mobile, the project icon of the thread replaces the message icon in chat messages (upstream pingdotgg/t3code#22585). Revisit if message links on mobile need their marker back.
+
+### Message links
+
+A thread link that names a message opens the thread at that message. Use **Copy message link** beside a message on web and desktop, or hold its copy button on mobile. The command palette copies the message under the timeline cursor; bind `timeline.copyMessageLink` in Settings > Keybindings if needed. The app loads earlier history and opens a folded turn when needed, scrolls to the message and highlights it for a moment.
+
+- **Setting:** server setting `messageLinks` (on by default). Settings > Appearance > Thread links > "Message links". In the mobile Settings: Thread behavior, or Fork. Off: the link opens the thread only, and **Copy message link** is hidden.
+- **Works on:** web, desktop, mobile.
+- **Forms:** `t3-thread://v1/<threadId>#<messageId>`, and a thread address or app link with `#<messageId>` or `?message=<messageId>`. Agents take `messageId` from `t3_thread_read`, also for a thread on another machine.
+- A message that the thread does not have shows "Message not found", and the thread stays open.
+- **Limits:** on mobile, a reply hidden in the fold of a prompt without a run shows as not found. Revisit when upstream pingdotgg/t3code#19203 merges; then use its scroll code.
 
 ### Thread addresses open the desktop app
 
@@ -347,18 +482,40 @@ A thread address opened from outside T3 Code, for example from Slack or GitHub, 
 
 What New thread opens in the mobile app.
 
-- **Setting:** server setting `mobileNewThreadProject`: `picker` (default, the project list), `last` (a draft in the project of the last new thread on the phone) or `none` (a draft without a project). Settings > Appearance > Mobile app, or Fork in the mobile Settings.
+- **Setting:** server setting `mobileNewThreadProject`: `picker` (default, the project list), `last` (a draft in the project of the last new thread on the phone) or `none` (a draft without a project). Settings > Appearance > Mobile app. In the mobile Settings: Server settings > New threads, or Fork.
 - **Works on:** mobile.
 - Back from the draft shows the project list. A share, a prompt link and "Choose a project" in the draft keep the project list.
-- **Limits:** `none` needs a server that offers threads without a project. Without one, and with `last` and no earlier new thread, the project list shows.
+- The "New task" launcher shortcut on Android opens the same draft, also when the app was closed.
+- The draft opens at once when the phone knows its project, also before a server connects: the last project, or the project of the last thread without a project. Sending waits for the connection.
+- **Limits:** `none` needs a server that offers threads without a project. Without one, and with `last` and no earlier new thread, the project list shows. The first thread without a project on a phone waits for the server to make that project.
 
 ### Camera in the mobile composer
 
 The plus button of the mobile composer, the new thread draft and question answers offers "Take Photo" next to "Photo Library" and "Choose Files".
 
-- **Setting:** server setting `mobileComposerCamera` (off by default, because on a server without file attachments the plus button opens a menu instead of the photo library). Settings > Appearance > Mobile app, or Fork in the mobile Settings.
+- **Setting:** server setting `mobileComposerCamera` (off by default, because on a server without file attachments the plus button opens a menu instead of the photo library). Settings > Appearance > Mobile app. In the mobile Settings: Thread behavior, or Fork.
 - **Works on:** mobile.
 - **Limits:** photos only, because the app asks for no microphone access. Revisit if video from the camera is needed.
+
+### Android assistant panel
+
+T3 Code can be the Android digital assistant. The assistant button opens a panel over the current app. The panel attaches the screenshot and the screen text, takes typed or spoken text, and starts a new thread or adds the message to an existing thread. The title of the panel opens a picker with a search, the recent threads and the projects. With more than one machine, a machine icon opens the machine list, and the picker then shows the threads and projects of that machine. "Ask T3 Code" in the Android share sheet opens the same panel with the shared text or image. Context pills show the context: the shared item, the screenshot, the screen text, the text selected on screen, the page link, the clipboard, and, when turned on in Settings > Voice, the newest photo of the last 15 minutes and the last known location. A tap attaches a pill or leaves it out; a hold opens it to read and edit the text, or to draw on the screenshot. Text that was not sent comes back when the panel opens again within a minute.
+
+- **Setting:** the Android setting Default apps > Digital assistant app. The options are phone-local preferences under `voice` (`apps/mobile/src/persistence/forkVoicePreferences.ts`), in Settings > Voice of the mobile app: a new thread or the last opened thread (a new thread by default), keyboard or voice first (keyboard by default), start the thread after speaking (off), attach the screenshot (on), attach the screen text (on), open the thread (off), read the first reply aloud (off), and the project (the last new thread project by default).
+- **Works on:** mobile, Android 10 or later.
+- The panel and the app share one JS runtime. The outbox sender and the T3 Connect sign-in run once across both (`apps/mobile/src/lib/singletonHost.ts`).
+- The message goes through the thread outbox, so a new thread uses the project's model defaults, and the message waits for the connection when offline. A message to an existing thread is queued after a running turn, so "read the first reply aloud" reads the reply to that message.
+- **Limits:** no lock screen launch, because anyone that holds the phone could start agent work. A share of several images keeps only the first; revisit if users share albums. The location is the last fix the phone knows, so it can be old or missing; it never turns on GPS. Revisit with a request to unlock first. Password fields are left out of the screen text. Apps that block screenshots send none.
+
+### Read aloud on mobile
+
+A read-aloud button next to copy and fork on each reply. Holding it reads every new reply of that thread aloud, until it is held again.
+
+- **Setting:** phone-local preferences under `voice`, in Settings > Voice of the mobile app: the read-aloud button (on by default), the threads that read new replies, and the speech rate.
+- **Works on:** mobile.
+- The text is cleaned for speech: a code block becomes "Code block.", and markup characters are dropped.
+- Only replies of runs that complete after the thread starts to read aloud count, so a thread never reads its history.
+- **Limits:** replies are read only while the app or the assistant panel is on screen, because Android pauses JS timers in the background. Revisit if users ask for replies with the screen off: that needs a native player driven by the agent push notification.
 
 ### Thread card layouts
 
@@ -376,7 +533,7 @@ Build the thread card from its elements, for desktop and web and for mobile.
 
 Filters the pull request page and the sidebar by the owner of each repository: a GitHub account or organization.
 
-- **Setting:** client setting `repositoryOwnerFilters` (on by default). Settings > General > "Repository owner filters". The sidebar choice is the client setting `sidebarOwnerFilter`.
+- **Setting:** client setting `repositoryOwnerFilters` (on by default). Settings > General > Organization > "Repository owner filters". The sidebar choice is the client setting `sidebarOwnerFilter`.
 - **Works on:** web, desktop.
 - Pull request page: open Filters > Owner, pick "Show only selected" or "Hide selected", then pick the owners. In the search, type `org:` or `owner:` to show an owner, and `-org:` or `-owner:` to hide one.
 - Sidebar: click the building icon next to the project scope. A chip under the header names the filter, counts the hidden projects, and shows how many hidden threads need you.
@@ -387,7 +544,7 @@ Filters the pull request page and the sidebar by the owner of each repository: a
 
 The active pull request filters show as chips above the list.
 
-- **Setting:** client setting `pullRequestFilterChips` (on by default). Settings > General > "Pull request filter chips".
+- **Setting:** client setting `pullRequestFilterChips` (on by default). Settings > General > Organization > "Pull request filter chips".
 - **Works on:** web, desktop.
 - Click "is" or "is not" on a chip to flip it. A label flips into a typed `-label:`. Click × to remove a filter, or "Clear all".
 - When no pull request matches, the empty list names the filters and offers "Clear filters".
@@ -397,42 +554,45 @@ The active pull request filters show as chips above the list.
 
 ### Global scripts
 
-Scripts for every project, pinned script buttons, floating previews and app overlays.
+Scripts for every project, pinned script buttons, desktop global shortcuts, floating previews and app overlays.
 
 - **Setting:** server settings `globalScripts`, `pinnedGlobalScriptIds` and `pinnedProjectScriptIds` (all empty by default). Settings > General > Global scripts.
 - **Works on:** web, desktop.
 - Pin a script to get a button. Global pins show in the title bar. Project pins show next to the thread details toggle. Right-click a button for the pin menu.
 - A global script's preview opens as a floating popup. A script can run in the background without the terminal drawer (`runInBackground`).
-- An action with "Open as an app overlay" (`previewOverlay`) opens its page in a large panel over the app. It runs its command only when the page is down.
-- **Limits:** a remote client opens an app overlay in the preview instead, because it cannot frame the page. The mobile app runs project scripts only. Revisit when the mobile parity work reaches scripts.
+- An action with "Open as an app overlay" (`previewOverlay`) opens its page in a large panel over the app. It probes the page URL first. If the page is down, it runs the command in a background terminal and waits up to 20 seconds for an answer. The page can post `{ type: "t3:close-overlay" }` to close the overlay.
+- In the global script editor, set "Global shortcut" (`globalScripts[].globalShortcut`) to an Electron accelerator, for example `CommandOrControl+Alt+N` or `F18`. It is off until set. It works from any app while the desktop app runs. It shows and focuses T3 Code, then runs the script like its pinned button. Clear the field, or delete the script, to release its key. Settings > General > Global scripts opens the same editor.
+- The open thread's environment supplies the shortcuts. With no open thread, the primary environment supplies them. App-toggle keys take priority, then the first script with a key. An unavailable key shows a notification; choose a different key. An unrelated settings write does not release unchanged keys.
+- For navgator, add a global script with command `navgator web --no-open`, preview URL `http://127.0.0.1:4747` and "Open as an app overlay" on. Set its global shortcut and open a thread with terminal access. The shortcut starts navgator only if the page does not answer. It uses the page URL, not `/api/health` or a navgator-specific marker.
+- **Limits:** starting a command needs an open thread with terminal access, as pinned scripts do. A running overlay page can open without a thread. A remote environment opens an app overlay in the preview instead, because the client cannot frame its page. Web clients can edit the shortcut but cannot register an OS key. The mobile app runs project scripts only. Revisit when the mobile parity work reaches scripts.
 
 ### App toggle shortcuts
 
 Global keys that show and hide the desktop app.
 
-- **Setting:** client setting `appToggleShortcuts` (empty by default). Settings > General > "App toggle shortcuts", for example `F17, Alt+Space`.
+- **Setting:** client setting `appToggleShortcuts` (empty by default). Settings > Keybindings > Keyboard > "App toggle shortcuts", for example `F17, Alt+Space`.
 - **Works on:** desktop.
 - Each entry is an Electron accelerator. The settings field rejects a key that Electron cannot name.
 - **Limits:** the ISO section key `§` has no Electron name. Map it to a function key, for example with Karabiner. If another app holds a key, the desktop app logs a warning and skips it. On macOS, the app hides without animation.
 
 ### Keyboard focus levels
 
-Escape moves focus from the composer to the timeline, then to the sidebar. Arrow keys move a cursor there to open threads, switch groups and cite parts of messages.
+Escape moves focus from the composer to the timeline, then to the sidebar. Arrow keys move a cursor there to open threads, switch tabs and cite parts of messages. Inside a message, the cursor also stops on links, section headers and buttons, and Enter clicks them.
 
-- **Setting:** client settings `keyboardFocusLevels` (off by default) and `focusLevelHighlight` (on by default). Settings > General > "Keyboard focus levels" and "Focus highlight". Change the keys in Settings > Keybindings (`focus.*`, `sidebar.*` and `timeline.*` commands).
+- **Setting:** client settings `keyboardFocusLevels` (off by default) and `focusLevelHighlight` (on by default). Settings > Keybindings > Keyboard > "Keyboard focus levels" and "Focus highlight". Change the keys in Settings > Keybindings (`focus.*`, `sidebar.*` and `timeline.*` commands).
 - **Works on:** web, desktop.
 - Keys for thread actions, approvals and right panel tabs, and `mod+,` on web, work with the setting off.
 - `focusLevelHighlight` outlines the area that takes focus from a key.
-- **Limits:** the setting is off by default because it changes existing keys. Escape in the timeline and the right panel moves focus. A click into the timeline makes Up and Down move the cursor instead of scrolling. `mod+f` in the sidebar focuses sidebar search. Letters typed in the sidebar no longer go to the composer, and digits switch groups.
+- **Limits:** the setting is off by default because it changes existing keys. Escape in the timeline and the right panel moves focus. A click into the timeline makes Up and Down move the cursor instead of scrolling. `mod+f` in the sidebar focuses sidebar search. Letters typed in the sidebar no longer go to the composer, and digits switch tabs.
 
 ### Shortcuts in tooltips
 
 Control tooltips show the keys of the control as chips, such as "Stash ⌘S", for example on the stash, the runtime mode and the approval buttons.
 
-- **Setting:** client settings `tooltipShortcuts` (on by default) and `tooltipShortcutLimit` (default 4, 1 to 9). Settings > General > "Shortcuts in tooltips" and "Keys per tooltip".
+- **Setting:** client settings `tooltipShortcuts` (on by default) and `tooltipShortcutLimit` (default 4, 1 to 9). Settings > Keybindings > Keyboard > "Shortcuts in tooltips" and "Keys per tooltip".
 - **Works on:** web, desktop.
 - Your own keys come first. More keys than the limit show as "+N".
-- **Limits:** a group tab names no digit while focus levels are off. A sidebar row names the pin and settle keys only for the open thread.
+- **Limits:** a sidebar tab names no digit while focus levels are off. A sidebar row names the pin and settle keys only for the open thread.
 
 ### Keyboard cheat sheet
 
@@ -448,9 +608,9 @@ Control tooltips show the keys of the control as chips, such as "Stash ⌘S", fo
 
 A thread whose screen is a live terminal, next to the other threads of a project. A schedule, a webhook or an agent can type into it.
 
-- **Setting:** server setting `terminalThreads` (off by default); client settings `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax` (8 and 24), the zoom limits of every terminal (Cmd+=, Cmd+-, Cmd+0, macOS only, because Ctrl+- is undo in shells). Settings > Terminal (`TerminalSettings.tsx`), which holds every terminal setting: the drawer terminal and terminal threads. The terminal font moved there from Appearance > Typography; it applies only with advanced typography, so without it the row offers "Use a separate font". The Fork page lists the fork rows again, with a link to Settings > Terminal. The settings search shows them once, under Terminal: a row whose usual place is a fork page gets no Fork page copy in the search (`forkSettingsSearchItems`). Keybinding commands `chat.newTerminal` (`mod+alt+t`) and `chat.newTerminalLocal` (`mod+alt+shift+n`).
+- **Setting:** server setting `terminalThreads` (off by default); client settings `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax` (8 and 24), the zoom limits of every terminal (Cmd+=, Cmd+-, Cmd+0, macOS only, because Ctrl+- is undo in shells). Settings > Terminal (`TerminalSettings.tsx`), which holds every terminal setting: the drawer terminal and terminal threads. The terminal font moved there from Appearance > Typography; it applies only with advanced typography, so without it the row offers "Use a separate font". Its fork rows render through the places `terminal-all-terminals` and `terminal-threads` (`forkSettingsCatalog.ts`). The Fork page lists them again, with a link to Settings > Terminal, and the settings search finds each row at both places. Keybinding commands `chat.newTerminal` (`mod+alt+t`) and `chat.newTerminalLocal` (`mod+alt+shift+n`).
 - **Works on:** web and desktop create and use them. The mobile app opens one on its native terminal screen and cannot create one. Remote environments work the same, because the terminal runs on the server of the thread.
-- **Thread:** a normal thread with the provider `terminal` (constants in `packages/contracts/src/forkTerminalThreads.ts`). `ThreadRouteView` renders `ForkTerminalThreadScreen` for it, not `ChatView`: the thread header above the main terminal `term-1`, with the drawer for the other terminals. The right panel, the thread details and their shortcuts are the ones of ChatView (`components/chat/useThreadRightPanel.tsx`, shared by both screens). Without a composer, previews and terminals there offer no "send to chat", and the thread details leave out the project scripts. The snooze and settle line (`useThreadStatusLine`, with the terminal snooze rule), the thread error banner (`useThreadErrorBanner`, the only place a failed message shows) and the environment notices (`useEnvironmentBanners`) are ChatView's too.
+- **Thread:** a normal thread with the provider `terminal` (constants in `packages/contracts/src/forkTerminalThreads.ts`). `ThreadRouteView` renders `ForkTerminalThreadScreen` for it, not `ChatView`: the thread header above the main terminal `term-1`, with the drawer for the other terminals. The right panel, the thread details and their shortcuts work like the ones of ChatView (`components/chat/useThreadRightPanel.tsx`). Without a composer, previews and terminals there offer no "send to chat", and the thread details leave out the project scripts. The environment notices are ChatView's (`useSystemComposerBanners`). The snooze and settle line (`useForkThreadStatusLine`, with the terminal snooze rule) copies the status line part of ChatView's `useThreadLifecycle`, which needs a composer. The thread error banner is the only place a failed message shows.
 - **Shells:** the model of a terminal thread is its shell. The `terminal` driver lists the shells of the server as its models (`apps/server/src/fork/terminalShells.ts`): on Unix the executable entries of `/etc/shells` and `$SHELL`, on Windows `pwsh`, `powershell`, `cmd` and Git Bash from the Git install folders (not the WSL `bash.exe` on the PATH), the default shell first, with the path as `subProvider`. Custom shells follow as `isCustom` models: `customShells` (name, executable, args; `TerminalCustomShells` in contracts) in the config of the `terminal` provider instance, edited in Settings > Terminal > Shells (`TerminalShellsSettings.tsx`). The schema refuses a name of `TERMINAL_SHELL_NAMES`, the legacy `terminal` and duplicates. The manager resolves the executable at each start on the PATH of the terminal, with PATHEXT on Windows and a `.cmd` or `.bat` through `cmd.exe /d /c` (`customShellCandidate`). Each provider snapshot checks the executable of each custom shell on the PATH of the server and sets `unavailableReason` (a fork field of `ServerProviderModel`) when it is missing, so Settings shows the error inline, also for a remote server, and both shell pickers mark the shell as not found. `TerminalShellNotFoundError` lists only the shells that can start. Saving a missing executable is allowed, because the PATH can change and each start checks again. A chosen shell runs alone: a failed start fails with its error in the terminal, and only the default shell (no `shell`) falls back to the next candidate. The manager writes the reason of a failed start into the history (`[terminal] …`), because an attach drops an error event that is older than its snapshot. The legacy model `terminal` means the default shell. `terminal.open` and `terminal.attach` take the shell as `shell` (`terminalThreadShell` maps a model to it); an unknown shell, such as a custom shell that was removed, fails the start and not the open, so the session keeps its history and shows `TerminalShellNotFoundError` in it. A message to that thread fails with the same reason (`TerminalPort.open` reads the error event). Settings names the threads that use a custom shell that the user removes or renames. Another shell restarts a running terminal, like another cwd or env. For every terminal of an existing terminal thread, the drawer and the panel too, the server fills in the shell of the thread when a client names none (`fork/terminalThreadShellFill.ts`), so no client and no view that attaches again after a server restart starts the wrong shell. Agent model pickers (composer, project defaults, mobile) leave the shells out (`withoutTerminalProvider`); scheduled tasks and `orchestrator_capabilities` offer them.
 - **Abandoned drafts:** the server closes, with its history, the main terminal of a terminal thread that has no attach stream and no thread for 30 seconds (`apps/server/src/fork/AbandonedTerminalDrafts.ts`, a check every 10 seconds), also one whose shell exited. It is the only place that discards a draft shell. A terminal of a thread that exists stays. The shell of a draft attaches through `attachDraft` (`client-runtime/src/state/terminal.ts`), which detaches 5 seconds after its last view goes, so a draft that the user leaves in the app ends within about 45 seconds. Other terminals keep the 5-minute stream, so a switch back replays no history.
 - **Creation:** a new terminal is a new-thread draft in Terminal mode (`apps/web/src/forkDraftTerminalStore.ts`). `useNewThreadHandler` takes a `kind`, so every way to open a draft sets its mode and the project rules of the New thread button apply. `ForkDraftTerminalComposer` replaces the prompt with the main terminal under the thread id that the draft reserves, and a prompt typed in Agent mode stays in the draft: after promotion the draft keeps it under a new reserved thread id. The first command end mark, or a command that runs for a second, creates the thread with the same id and the draft's shell as its model, titled with `terminalThreadTitle` (the command, else the shell); a shell that printed no mark yet (no integration, or bash 3.2) counts an Enter after typed text instead. The enlarge button creates it at once. The context strip sets the folder of the shell with the meaning that a chat draft gives it (`forkDraftTerminalWorkspace.ts`), and a change restarts the shell there. New worktree shows Create worktree in place of the shell: `vcs.prepareDraftWorktree` calls `ThreadLaunchService.prepareDraftWorktree`, which runs the worktree preparation of a thread launch without a thread (fetch from origin, temporary `t3/` branch, setup script, `WorktreeSetupTracker` progress under the draft's thread id). The panel shows that progress with `WorktreeSetupCard`. The call returns once the setup script started, or ended for a script that is not async, and the draft then points at the worktree like at an existing worktree. A failure or a cancel before that removes the worktree and closes the setup terminal. An async setup script keeps running in its terminal under the draft's thread id, so the thread gets it in its drawer. A draft that the user leaves keeps the worktree, and the script runs to its end. Limit: a draft has no message to name the branch after, so the branch keeps its temporary `t3/` name, and a worktree path template names the folder after that name. A view transition (`t3-fork-terminal` in `fork-theme.css`) grows the draft terminal into the thread screen; reduced motion skips it. A draft that the user leaves (another route) goes back to Agent mode. No client closes a draft shell, because another tab or client can show the same draft; the server closes it once no client is attached (`AbandonedTerminalDrafts.ts`). `useGrabTerminalFocus` focuses a new terminal once its surface exists, unless the user moved to a text field, a dialog or a menu.
@@ -493,7 +653,7 @@ App shortcuts take priority in a focused terminal, and the app asks before a ter
 
 Each server web app, such as `https://t3-vps.yarden-zamir.com`, installs as an app, with an offline page, notifications and an app badge.
 
-- **Setting:** client setting `installedAppEnabled` (on by default). Settings > General > "Installed app", in each browser and for each server.
+- **Setting:** client setting `installedAppEnabled` (on by default). Settings > General > Behavior > "Installed app", in each browser and for each server.
 - **Works on:** web browsers. Desktop Chrome and Edge show "Install" in the address bar. Android Chrome shows "Install app" in its menu. On iPhone, use Share > Add to Home Screen.
 - The app has shortcuts for a new thread, pull requests and settings. On Android, long-press the app icon.
 - The offline page shows when the device is offline, or when the tunnel answers but the server is down.
@@ -505,7 +665,8 @@ Each server web app, such as `https://t3-vps.yarden-zamir.com`, installs as an a
 
 A phone gets thread notifications while the installed app is closed, from each server that the page connects to.
 
-- **Setting:** client setting `webPushEnabled` (on by default). Settings > General > "Web Push". It needs the installed app setting and system notifications. "Send a test" sends a test push.
+- **Setting:** client setting `webPushEnabled` (on by default). Settings > General > Behavior > "Web Push". It needs the installed app setting and system notifications. "Send a test" sends a test push.
+- Failed registration retries automatically with increasing delays, then stops. The failure appears separately from the enabled preference. Reconnect or reload to try again after retries stop.
 - **Works on:** web browsers, mainly the installed web app on a phone. The native mobile app has its own push, see [Android APK](#android-apk).
 - A server pushes when a thread starts to wait for approval or input, or when a running thread completes or fails. A terminal thread also pushes for a new attention on its main terminal: Input needed, Program done or Program failed, like the page notification.
 - A push replaces the page notification of the same thread. No push shows when the window in front already shows that thread.
@@ -540,7 +701,7 @@ The mobile app uses the themes that its servers publish.
 
 ### Fork settings on mobile
 
-Fork in the mobile Settings holds the fork settings that apply to the mobile app: published themes, the camera in the composer, thread link chips and what New thread opens. A change writes the setting to each selected environment.
+Fork in the mobile Settings holds the fork settings that apply to the mobile app: published themes, the camera in the composer, thread link chips, message links and what New thread opens. Thread behavior also shows the camera, thread link chips and message links, and Server settings > New threads shows what New thread opens. A change writes the setting to each selected environment.
 
 - **Works on:** mobile.
 - **Limits:** a change on the phone is the own value of each server, not the shared value of the machine map. Set the shared value in the portal or from a machine with the map role `edit`.
@@ -550,10 +711,9 @@ Fork in the mobile Settings holds the fork settings that apply to the mobile app
 A published theme can replace app icons with its own SVGs, in the theme JSON field `icons`. Without it, every icon stays stock.
 
 - **Works on:** web, desktop.
-- The slots are the sidebar group icons (`group.<id>`), the thread statuses (`status.<status>`), the group tab bar buttons (`groups.more`, `groups.new`, `groups.edit`) and the sidebar header (`sidebar.search`, `sidebar.filter`, `sidebar.add-project`, `sidebar.new-thread`). `apps/web/src/components/AppIcon.tsx` lists them.
-- Each icon carries `data-app-icon="<slot>"`. The group tabs carry `data-sidebar-group-tab`, `data-selected`, `data-status`, `data-attention` and `data-drop-target` for theme CSS.
-- The tick3d themes in the dotfiles carry a neo-brutalism pack. The `t3-theme` skill in the dotfiles describes the fields.
-- **Limits:** the app strips scripts, styles, links and remote content from each SVG, and an icon is at most 4096 characters. The mobile app shows stock icons. Revisit after sidebar groups reach mobile.
+- The slots are the sidebar tab icons (`tab.<id>`), the thread statuses (`status.<status>`), the tab bar buttons (`tabs.more`, `tabs.new`, `tabs.edit`) and the sidebar header (`sidebar.search`, `sidebar.filter`, `sidebar.add-project`, `sidebar.new-thread`). `apps/web/src/components/AppIcon.tsx` lists them.
+- Each icon carries `data-app-icon="<slot>"`. The sidebar tabs carry `data-sidebar-tab` (`default` or `custom`), `data-selected`, `data-status`, `data-attention` and `data-drop-target` for theme CSS.
+- **Limits:** the app strips scripts, styles, links and remote content from each SVG, and an icon is at most 4096 characters. The mobile app shows stock icons. Revisit after sidebar tabs reach mobile.
 
 ### Local server groups
 
@@ -580,6 +740,20 @@ The fork desktop app, its notifications and the bundled web page use the Tick3d 
 - **Works on:** desktop, web, Android APK. The APK uses the layers `assets/fork/tick3d-android-{foreground,background,monochrome}.svg`, as PNG files in `apps/mobile/assets/fork/`.
 - **Limits:** iOS builds keep the nightly icon.
 
+### Back and forward
+
+Back and forward buttons sit right of the sidebar toggle, like in VS Code. A button is dimmed when it has nothing to go to.
+
+- **Setting:** client settings `backForwardButtons` and `rememberBackForwardHistory` (both off by default). Settings > Appearance > Interface > "Back and forward buttons", and Settings > General > Behavior > "Remember back and forward history".
+- **Works on:** web, desktop. The mobile app uses its own native navigation.
+- The buttons, `mod+[` and `mod+]`, the command palette ("Go back", "Go forward") and the browser buttons all move in one history, the browser history of the window. The keys and the palette work also with the buttons hidden.
+- With `rememberBackForwardHistory`, back and forward skip threads and drafts that no longer exist. The desktop app also stores the back history of its window. After a restart, back goes to the views of the last run. A browser tab keeps its own history over a reload or a browser restart.
+- The desktop preview browser has its own back and forward buttons for the page that it shows.
+- **Limits:**
+  - The desktop app keeps at most 50 entries, and no forward entries: the start of the app is a new navigation.
+  - In a browser without the Navigation API, such as an older Safari or Firefox, both buttons stay enabled, and a missing thread goes to a new thread instead of a skip.
+  - Mouse buttons 4 and 5 and trackpad swipes do not go back or forward in the desktop app.
+
 ## Command line and MCP
 
 ### `t3 tool`
@@ -587,7 +761,10 @@ The fork desktop app, its notifications and the bundled web page use the Tick3d 
 `t3 tool list`, `t3 tool describe <name>` and `t3 tool call <name> --input '<json>'` run T3 MCP tools from the command line. In a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
 
 - **Works on:** server.
-- In an agent terminal, the command uses the credential of the thread. Otherwise it calls the running server of its T3 home.
+- In an agent's shell, the command uses the credential of the agent's thread, so the limits of that thread apply. See [MM-1920](../../apps/machine-map/SPEC.md#19-cross-machine-work). `t3 machine exec` uses the same credential; see [Commands on other machines](#commands-on-other-machines).
+- Elsewhere, also in a T3 terminal, it calls the running server of its T3 home with a short full-access session. Machine map History names that caller "CLI (local user)".
+- To call a dev server from an agent shell, unset `T3_ACP_MCP_ENDPOINT` and `T3_ACP_MCP_AUTHORIZATION`. The CLI refuses a `--base-dir` or `T3CODE_HOME` that does not match the shell's thread credential.
+- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session. That session runs nothing on another machine and forwards no tool there: `machine_exec`, `t3 machine exec`, and tools or delegation with the `environmentId` of another machine refuse it. Use a thread, or the portal. The `machines_*` portal tools follow the map role of the machine.
 
 ### Open workspace with a checkout
 

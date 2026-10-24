@@ -5,20 +5,24 @@
 import {
   type ArrowRecord,
   AuthAccessWriteScope,
+  AuthOrchestrationOperateScope,
   AuthRelayWriteScope,
   type AuthEnvironmentScope,
   clientSessionSubject,
   type DesiredBrowserClient,
   type DesiredClient,
+  MACHINE_LEVEL_LINK_ACCESS,
   type AuthMcpClientAccess,
   MACHINE_LEVEL_SCOPES,
   type MachineDesiredState,
-  type MachineId,
+  MachineId,
   type MachineLevel,
   type PeerMachine,
   machineSessionSubject,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
+
+import type { McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
 
 /** What a pairing credential for a machine holds (MM-1305). */
 export interface MachineGrant {
@@ -31,7 +35,7 @@ export interface MachineGrant {
  * The level of an arrow at `nowMs`. An arrow past its expiry has its revert level, so a machine
  * that missed the expiry revision of the portal (MM-304) still enforces it.
  */
-export const effectiveLevel = (
+const effectiveLevel = (
   arrow: Pick<ArrowRecord, "level" | "expiresAt" | "revertLevel">,
   nowMs: number,
 ): MachineLevel =>
@@ -181,20 +185,56 @@ export const isMapSubject = (subject: string) =>
 
 /**
  * MM-1307: the MCP access of a machine session, or undefined when its arrow has no agent tools.
- * `read` only reads. `standard` and `admin` hold every scope that a full-access MCP client holds.
+ * The source sends the limits of its calling thread in `T3-Mode-Limit`, and this machine narrows
+ * the access to them (MM-1902). A session without `orchestration:operate`, as an older source
+ * pairs for reads, stays read-only whatever the level.
  */
 export const machineMcpAccessFor = (
   desired: MachineDesiredState,
-  subject: string,
+  session: { readonly subject: string; readonly scopes: ReadonlyArray<AuthEnvironmentScope> },
   nowMs: number,
 ): { readonly peer: PeerMachine; readonly access: AuthMcpClientAccess } | undefined => {
-  const peer = peerOfSubject(desired, subject);
+  const peer = peerOfSubject(desired, session.subject);
   if (peer === undefined) return undefined;
   const arrow = arrowFrom(desired, peer.id);
   if (arrow === undefined || !arrow.agentTools) return undefined;
   const level = effectiveLevel(arrow, nowMs);
   if (level === "none") return undefined;
-  return { peer, access: level === "read" ? "read-only" : "full-access" };
+  return {
+    peer,
+    access: session.scopes.includes(AuthOrchestrationOperateScope)
+      ? MACHINE_LEVEL_LINK_ACCESS[level]
+      : "read-only",
+  };
+};
+
+/**
+ * MM-1307, MM-1921: the MCP client of a machine session whose arrow has agent tools: a linked
+ * environment with the access of its level. Only a bearer token, as an MCP client presents it,
+ * never a cookie. Its `sessionId` names the source machine, not the session: sessions end on every
+ * level change (MM-1306), and the work that the machine started (upstream `linkOrigin`) and its
+ * request keys must stay its own.
+ */
+export const machineMcpClientFor = (
+  desired: MachineDesiredState,
+  session: {
+    readonly subject: string;
+    readonly method: string;
+    readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  },
+  nowMs: number,
+) => {
+  if (session.method !== "bearer-access-token") return undefined;
+  const granted = machineMcpAccessFor(desired, session, nowMs);
+  return granted === undefined
+    ? undefined
+    : {
+        sessionId: machineSessionSubject(granted.peer.id),
+        label: `machine ${granted.peer.name}`,
+        access: granted.access,
+        peerLink: true as const,
+        machineId: granted.peer.id,
+      };
 };
 
 /**
@@ -206,15 +246,53 @@ export const isLocalDesktopSubject = (subject: string) => subject === "desktop-b
 
 const MACHINE_REQUEST_NAMESPACE_PREFIX = "machine-session:";
 
+/** MM-1902: forwarding must not grant a capability absent from the source credential. */
+export const MACHINE_MCP_CAPABILITIES = ["orchestration", "worktree", "pull-requests"] as const;
+
 /**
  * The MCP request namespace of a machine session. The machine map tools refuse such callers, so
- * an agent on another machine cannot borrow the map role or the arrows of this machine.
+ * an agent on another machine cannot borrow the map role or the arrows of this machine. It names
+ * the source machine for `machine_exec` (MM-1908). The id is URI-encoded, so it holds no `:`.
  */
-export const machineRequestNamespace = (client: { readonly sessionId: string }) =>
-  `${MACHINE_REQUEST_NAMESPACE_PREFIX}${client.sessionId}`;
+export const machineRequestNamespace = (client: {
+  readonly machineId: MachineId;
+  readonly sessionId: string;
+}) =>
+  `${MACHINE_REQUEST_NAMESPACE_PREFIX}${encodeURIComponent(client.machineId)}:${client.sessionId}`;
 
 export const isMachineRequestNamespace = (requestNamespace: string) =>
   requestNamespace.startsWith(MACHINE_REQUEST_NAMESPACE_PREFIX);
+
+/** The source machine of a machine session namespace, or undefined for any other namespace. */
+export const machineOfRequestNamespace = (requestNamespace: string): MachineId | undefined => {
+  if (!isMachineRequestNamespace(requestNamespace)) return undefined;
+  const rest = requestNamespace.slice(MACHINE_REQUEST_NAMESPACE_PREFIX.length);
+  const end = rest.indexOf(":");
+  return end <= 0 ? undefined : MachineId.make(decodeURIComponent(rest.slice(0, end)));
+};
+
+/**
+ * MM-1908: `exec` works only with agent tools, because `machine_exec` is an MCP tool on the
+ * target, and only at `standard` or `admin`, because a command can do what the user can do.
+ */
+export const arrowAllowsExec = (arrow: ArrowRecord, nowMs: number): boolean => {
+  const level = effectiveLevel(arrow, nowMs);
+  return arrow.agentTools && arrow.exec && (level === "standard" || level === "admin");
+};
+
+/**
+ * MM-1908, MM-1916: the arrow from `from` into this machine while it allows `exec` now, else
+ * undefined. The pause refuses every run.
+ */
+export const execArrowInto = (
+  desired: MachineDesiredState,
+  from: MachineId,
+  nowMs: number,
+): ArrowRecord | undefined => {
+  if (desired.paused === true || from === desired.self.id) return undefined;
+  const arrow = arrowFrom(desired, from);
+  return arrow !== undefined && arrowAllowsExec(arrow, nowMs) ? arrow : undefined;
+};
 
 type Leveled = Pick<ArrowRecord, "level" | "expiresAt" | "revertLevel">;
 
@@ -300,3 +378,57 @@ export const reachablePeers = (desired: MachineDesiredState | null, nowMs: numbe
       { machine, level, agentTools: arrow.agentTools, origin: `https://${machine.hostname}` },
     ];
   });
+
+/** MM-1921: an arrow out of this machine that is a linked environment now. */
+export interface ArrowLinkTarget {
+  readonly machine: PeerMachine;
+  readonly origin: string;
+  readonly access: AuthMcpClientAccess;
+  /** When the link ends: the expiry of a temporary level that reverts to `none`. */
+  readonly endsAtMs: number | null;
+}
+
+/**
+ * MM-1921: the arrows out of this machine with agent tools and a level above `none`. These are
+ * its only linked environments. A temporary level that reverts to a level above `none` keeps the
+ * link, so only a revert to `none` ends it.
+ */
+export const arrowLinkTargets = (
+  desired: MachineDesiredState,
+  nowMs: number,
+): ReadonlyArray<ArrowLinkTarget> =>
+  reachablePeers(desired, nowMs).flatMap((peer) => {
+    if (!peer.agentTools) return [];
+    const arrow = desired.arrowsOut.find(
+      (candidate) => candidate.from === desired.self.id && candidate.to === peer.machine.id,
+    );
+    const endsAtMs =
+      arrow?.expiresAt != null && (arrow.revertLevel ?? "none") === "none"
+        ? Date.parse(arrow.expiresAt)
+        : null;
+    return [
+      {
+        machine: peer.machine,
+        origin: peer.origin,
+        access: MACHINE_LEVEL_LINK_ACCESS[peer.level],
+        endsAtMs: endsAtMs !== null && Number.isFinite(endsAtMs) ? endsAtMs : null,
+      },
+    ];
+  });
+
+/**
+ * MM-1920: the label of the thread-less session that the `t3` CLI issues for the local user when
+ * its shell has no thread credential. An OAuth client that names itself so is refused the same way.
+ */
+export const CLI_LOCAL_USER_LABEL = "CLI (local user)";
+
+export const CLI_LOCAL_USER_REFUSAL =
+  "Cross-machine calls need a thread credential: run them from an agent shell that has T3_ACP_MCP_ENDPOINT and T3_ACP_MCP_AUTHORIZATION, or use the portal. The local-user session of the t3 CLI has no thread, so no thread limits could go with the call.";
+
+/** MM-1920: the local-user session of the CLI works on this machine only. */
+export const isCliLocalUser = (scope: McpInvocationScope) =>
+  scope.thread === undefined && scope.client?.label === CLI_LOCAL_USER_LABEL;
+
+/** MM-1921: the answer to a manual link or unlink, from the CLI, Connections or an agent. */
+export const MANUAL_LINK_REFUSAL =
+  "Links to other machines come from the machine map. Set the arrow with agent tools in the portal.";

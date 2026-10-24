@@ -56,6 +56,7 @@ describe("applyChanges", () => {
         to: VPS,
         level: "admin",
         agentTools: true,
+        exec: true,
         expiresAt: null,
         revertLevel: null,
       },

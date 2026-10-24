@@ -9,8 +9,7 @@ import type {
   TimestampFormat,
 } from "@t3tools/contracts/settings";
 
-import { formatShortTimestamp } from "../timestampFormat";
-import { snoozeWakeDescription } from "./Sidebar.snooze";
+import { formatShortTimestamp, parseTimestampDate } from "../timestampFormat";
 
 const MINUTE_MS = 60 * 1_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -26,6 +25,29 @@ const WEEKDAYS = [
 ] as const satisfies ReadonlyArray<SnoozeQuickOptionDay>;
 
 /** The built-in snooze options, as the setting spells them. The settings editor starts here. */
+
+const DAY_MS = 86_400_000;
+
+/** The wake time of a custom option: the time today, "tomorrow", the weekday, or the date. */
+function snoozeWakeDescription(
+  snoozedUntil: string,
+  now: Date,
+  timestampFormat: TimestampFormat,
+): string {
+  const wake = parseTimestampDate(snoozedUntil);
+  if (wake === null) return "";
+  const time = formatShortTimestamp(wake.toISOString(), timestampFormat);
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const dayDelta = Math.floor((wake.getTime() - startOfToday.getTime()) / DAY_MS);
+  if (dayDelta === 0) return time;
+  if (dayDelta === 1) return `tomorrow ${time}`;
+  const weekday = wake.toLocaleDateString(undefined, { weekday: "short" });
+  if (dayDelta < 7) return `${weekday} ${time}`;
+  const date = wake.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `${date}, ${time}`;
+}
+
 export const BUILT_IN_SNOOZE_QUICK_OPTIONS: ReadonlyArray<SnoozeQuickOption> = [
   { _tag: "in", amount: 1, unit: "hours" },
   { _tag: "in", amount: 3, unit: "hours" },

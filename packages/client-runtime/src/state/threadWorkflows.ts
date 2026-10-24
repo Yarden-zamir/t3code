@@ -2,12 +2,13 @@ import type {
   ChatAttachment,
   OrchestrationV2ProjectedTurnItem,
   OrchestrationV2ProviderCapabilities,
-  OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
 import { copySorted } from "@t3tools/shared/Array";
 import { usageLimitBlockedRun } from "@t3tools/shared/orchestrationV2ThreadError";
 
-type Projection = OrchestrationV2ThreadProjection;
+import type { ThreadStructure } from "./models.ts";
+
+type Projection = ThreadStructure;
 type Run = Projection["runs"][number];
 type Message = Projection["messages"][number];
 type ProviderSession = Projection["providerSessions"][number];
@@ -36,6 +37,7 @@ export interface ThreadQueueWorkflowState {
   readonly heldByUsageLimit: boolean;
   readonly canReorder: boolean;
   readonly canPromoteToSteer: boolean;
+  readonly canSendNow: boolean;
 }
 
 export function resolveActiveThreadRun(projection: Pick<Projection, "runs">): Run | null {
@@ -159,6 +161,10 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
       usageLimitBlockedRun(projection.runs, projection.turnItems, session?.lastError ?? null) !==
       null,
     canReorder: capabilities?.supportsQueuedMessages === true,
+    canSendNow:
+      activeRun === null &&
+      projection.thread.archivedAt == null &&
+      projection.thread.deletedAt == null,
     canPromoteToSteer:
       hasSteerableProviderTurn &&
       (capabilities?.supportsActiveSteering === true ||

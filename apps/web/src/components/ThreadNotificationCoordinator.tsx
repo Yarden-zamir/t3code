@@ -2,7 +2,7 @@ import {
   type PendingSubagentRequest,
   presentThreadShell,
 } from "@t3tools/client-runtime/state/models";
-import { pendingSubagentRequestsByThread } from "@t3tools/client-runtime/state/threads";
+import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
@@ -18,12 +18,15 @@ import { Fragment, useEffect, useRef } from "react";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { showInstalledAppNotification } from "../installedApp";
 import { useEnvironmentIds } from "../state/environments";
+import { useDelegatedUnderParent } from "../state/entities";
 import { environmentShell } from "../state/shell";
+import { environmentThreadShells } from "../state/threads";
 import {
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
   setNotificationBadge,
+  threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
 import { ForkTerminalThreadNotifications } from "./ForkTerminalThreadNotifications";
@@ -121,6 +124,11 @@ function EnvironmentNotifications({
   const shell = useAtomValue(environmentShell.stateValueAtom(environmentId));
   const threads =
     shell.status === "live" && Option.isSome(shell.snapshot) ? shell.snapshot.value.threads : null;
+  // A parent here also hears of what its tasks on linked environments ask.
+  const subagentRequests = useAtomValue(
+    environmentThreadShells.pendingSubagentRequestsAtom(environmentId),
+  );
+  const delegatedUnderParent = useDelegatedUnderParent();
   const mode = useClientSettings((settings) => settings.notificationMode);
   const inAppNotificationsEnabled = useClientSettings(
     (settings) => settings.inAppNotificationsEnabled,
@@ -137,9 +145,16 @@ function EnvironmentNotifications({
       return;
     }
     const next = new Map<ThreadId, NotificationState>();
-    const subagentRequests = pendingSubagentRequestsByThread(threads);
     for (const rawThread of threads) {
-      if (rawThread.lineage.relationshipToParent === "subagent") continue;
+      if (
+        isShownUnderParent(
+          { environmentId, threadId: rawThread.id },
+          rawThread.lineage,
+          delegatedUnderParent,
+        )
+      ) {
+        continue;
+      }
       const prior = previous.current.get(rawThread.id);
       const subagentRequest = subagentRequests.get(rawThread.id) ?? null;
       if (prior?.raw === rawThread && prior.subagentRequest === subagentRequest) {
@@ -165,7 +180,9 @@ function EnvironmentNotifications({
       const kind =
         attention && attention !== prior.attention
           ? "input"
-          : completion !== null && (prior.completion === null || completion > prior.completion)
+          : !rawThread.latestRunStopRequested &&
+              completion !== null &&
+              (prior.completion === null || completion > prior.completion)
             ? "completion"
             : null;
       if (!kind) continue;
@@ -197,11 +214,13 @@ function EnvironmentNotifications({
   }, [
     activeEnvironmentId,
     activeThreadId,
+    delegatedUnderParent,
     environmentId,
     inAppNotificationsEnabled,
     mode,
     navigate,
     onNotification,
+    subagentRequests,
     threads,
   ]);
 
@@ -289,13 +308,14 @@ export function notifyThread(input: {
   try {
     const notification = new Notification(title, {
       body: threadTitle,
-      tag: `${environmentId}:${threadId}`,
+      tag: threadNotificationTag(environmentId, threadId),
       silent: true,
     });
     onNotification(environmentId, notification);
     notification.addEventListener("click", () => {
       notification.close();
       window.focus();
+      void window.desktopBridge?.revealWindow?.().catch(() => undefined);
       void navigate({
         to: "/$environmentId/$threadId",
         params: { environmentId, threadId },
@@ -308,7 +328,7 @@ export function notifyThread(input: {
       title,
       {
         body: threadTitle,
-        tag: `${environmentId}:${threadId}`,
+        tag: threadNotificationTag(environmentId, threadId),
         url: `/${environmentId}/${threadId}`,
       },
       () => void navigate({ to: "/$environmentId/$threadId", params: { environmentId, threadId } }),

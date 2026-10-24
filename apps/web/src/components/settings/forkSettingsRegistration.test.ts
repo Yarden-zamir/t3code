@@ -1,12 +1,23 @@
 import { ForkClientSettingsFields, ForkServerSettingsFields } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { forkSettingGroups } from "./forkSettingsCatalog";
+import {
+  FORK_SETTING_PLACES,
+  forkSettingGroups,
+  forkSettingsSearchItems,
+  type ForkSettingPlace,
+} from "./forkSettingsCatalog";
 import { FORK_SETTINGS_RESTORE_PATCH } from "./forkSettingsRestore";
-import { SETTINGS_SEARCH_ITEMS, type SettingsSearchItemId } from "./settingsSearch";
+import {
+  isSettingsSearchItemOnPlatform,
+  SETTINGS_SEARCH_ITEMS,
+  searchSettings,
+  type SettingsSearchItem,
+  type SettingsSearchItemId,
+} from "./settingsSearch";
 
-// Fork: a new fork setting must show on Settings > Fork and reset with Restore defaults.
-// docs/fork/operations.md "Change the fork" names both places.
+// Fork: a new fork setting must show in its proper place, on Settings > Fork, in search, and
+// reset with Restore defaults. docs/fork/operations.md "Change the fork" names these places.
 
 type ForkSettingKey = keyof typeof ForkClientSettingsFields | keyof typeof ForkServerSettingsFields;
 
@@ -18,6 +29,10 @@ const FORK_PAGE_ROWS: Record<
   ForkSettingKey,
   SettingsSearchItemId | { readonly notListed: string }
 > = {
+  restoreWorktreesOnResume: "restore-worktrees-on-resume",
+  autoSettleWaitsForBackgroundCommands: "auto-settle-waits-for-background-commands",
+  worktreeArtifactEviction: "worktree-artifact-eviction",
+  worktreeArtifactEvictionDays: "worktree-artifact-eviction-days",
   confirmTerminalClose: "terminal-close-confirmation",
   terminalAppShortcutsFirst: "terminal-app-shortcuts-first",
   appToggleShortcuts: "app-toggle-shortcuts",
@@ -29,13 +44,17 @@ const FORK_PAGE_ROWS: Record<
   repositoryOwnerFilters: "repository-owner-filters",
   pullRequestFilterChips: "pull-request-filter-chips",
   sidebarOwnerFilter: { notListed: "The sidebar owner filter menu sets it." },
-  sidebarGroupsEnabled: "sidebar-groups",
-  sidebarGroupSingleThreadOpens: "sidebar-group-single-thread",
+  sidebarTabsEnabled: "sidebar-tabs",
+  sidebarTabSingleThreadOpens: "sidebar-tab-single-thread",
   snoozeQuickOptions: "snooze-quick-options",
   keyboardFocusLevels: "keyboard-focus-levels",
   focusLevelHighlight: "focus-level-highlight",
   tooltipShortcuts: "tooltip-shortcuts",
   tooltipShortcutLimit: "tooltip-shortcut-limit",
+  backForwardButtons: "back-forward-buttons",
+  rememberBackForwardHistory: "remember-back-forward-history",
+  restartReconnectWarningGrace: "restart-reconnect-warning-grace",
+  accessChangeNotices: "access-change-notices",
   worktreePathTemplate: "storage-worktree-path-template",
   recoverInterruptedTurns: "recover-interrupted-turns",
   recoverInterruptedTurnsMessage: "recover-interrupted-turns",
@@ -50,19 +69,20 @@ const FORK_PAGE_ROWS: Record<
   preferOriginRemote: "prefer-origin-remote",
   threadLinkChips: "thread-link-chips",
   threadLinksOpenDesktopApp: "thread-links-open-desktop-app",
+  messageLinks: "message-links",
   machineMap: "machine-map",
   clientAccess: {
     notListed: "The portal sets it. Settings > Machines holds the way back in (MM-919).",
   },
   threadCardLayouts: "thread-card-layout",
-  sidebarGroups: { notListed: "Content that the user builds in the sidebar." },
+  sidebarTabs: { notListed: "Content that the user builds in the sidebar." },
   keybindingSync: "keybinding-sync",
   environmentLabelFromMachineMap: "environment-label-from-machine-map",
   previewLocalServerGroups: "preview-local-server-groups",
   mobilePublishedThemes: "mobile-published-themes",
   mobileNewThreadProject: "mobile-new-thread-project",
   mobileComposerCamera: "mobile-composer-camera",
-  mobileSidebarGroups: "mobile-sidebar-groups",
+  mobileSidebarTabs: "mobile-sidebar-tabs",
   terminalThreads: "terminal-threads",
   terminalHistoryLines: "terminal-history",
   terminalHistoryMegabytes: "terminal-history",
@@ -76,7 +96,7 @@ const KEPT_BY_RESTORE: Partial<Record<ForkSettingKey, string>> = {
   globalScripts: "User data, like project scripts.",
   pinnedGlobalScriptIds: "User data, like project scripts.",
   pinnedProjectScriptIds: "User data, like project scripts.",
-  sidebarGroups: "Content that the user built, like keybindings.",
+  sidebarTabs: "Content that the user built, like keybindings.",
   threadCardLayouts: "Content that the user built, like keybindings.",
   machineMap: "A reset leaves the machine map.",
   clientAccess: "A reset changes access.",
@@ -126,4 +146,73 @@ describe("fork settings registration", () => {
       );
     expect(missing).toEqual([]);
   });
+
+  it("gives each fork setting one place outside the Fork page, where its search result opens", () => {
+    const entries = forkSettingGroups.flatMap((group) => group.entries);
+    const problems = forkSettingKeys.flatMap((key) => {
+      const row = FORK_PAGE_ROWS[key];
+      if (typeof row !== "string") return [];
+      const owners = entries.filter((entry) => (entry.ids as ReadonlyArray<string>).includes(row));
+      if (owners.length !== 1) return [`${key}: "${row}" is in ${owners.length} catalog entries`];
+      const [entry] = owners;
+      if (entry === undefined || !("place" in entry)) return [`${key}: its entry has no place`];
+      const place = FORK_SETTING_PLACES[entry.place];
+      if ((place.to as string) === "/settings/fork") return [`${key}: its place is the Fork page`];
+      return entry.ids.flatMap((id) => {
+        const item = searchItem(id);
+        return item.to === place.to
+          ? []
+          : [`${key}: search opens "${id}" on ${item.to}, but its place is on ${place.to}`];
+      });
+    });
+    expect(problems).toEqual([]);
+  });
+
+  it("renders each place from exactly one slot", () => {
+    const sources = Object.values(
+      import.meta.glob<string>(["../**/*.tsx", "!../**/*.test.tsx"], {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }),
+    );
+    const counts = (Object.keys(FORK_SETTING_PLACES) as ForkSettingPlace[]).map((place) => [
+      place,
+      sources.reduce((count, source) => count + source.split(`place="${place}"`).length - 1, 0),
+    ]);
+    expect(counts.filter(([, count]) => count !== 1)).toEqual([]);
+  });
+
+  it("finds each fork row in search at its place and on the Fork page", () => {
+    const items = [...SETTINGS_SEARCH_ITEMS, ...forkSettingsSearchItems(SETTINGS_SEARCH_ITEMS)];
+    const missing = forkSettingGroups.flatMap((group) =>
+      group.entries.flatMap((entry) =>
+        "place" in entry
+          ? entry.ids.flatMap((id) => {
+              const item = searchItem(id);
+              // Tests run outside the desktop app, where search drops desktop-only rows.
+              if (!isSettingsSearchItemOnPlatform(item, "")) return [];
+              const results = searchSettings(item.title, items);
+              const found =
+                results.some(
+                  (result) => result.id === id && result.to === FORK_SETTING_PLACES[entry.place].to,
+                ) &&
+                results.some(
+                  (result) => result.id === `fork-${id}` && result.to === "/settings/fork",
+                );
+              return found ? [] : [id];
+            })
+          : [],
+      ),
+    );
+    expect(missing).toEqual([]);
+  });
 });
+
+function searchItem(id: string): SettingsSearchItem {
+  const item = (SETTINGS_SEARCH_ITEMS as ReadonlyArray<SettingsSearchItem>).find(
+    (candidate) => candidate.id === id,
+  );
+  if (item === undefined) throw new Error(`No settings search item "${id}".`);
+  return item;
+}

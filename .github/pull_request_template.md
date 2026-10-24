@@ -36,4 +36,8 @@ For UI changes, include clear before/after screenshots. Include a short recordin
 when motion, timing, transitions, or interaction details are needed to demonstrate
 the change. Upload evidence to GitHub and embed or link it here. Never commit PR-only assets. -->
 
-<!-- If you used an agent, end with the model and harness that did the work. -->
+## Review
+
+<!-- Fork: say how the change was reviewed, for example the review-loop skill
+(.agents/skills/review-loop) or a subagent. Give the reviewer kind, the number of
+rounds, the verdict and what the review changed. Do not name a model or harness. -->

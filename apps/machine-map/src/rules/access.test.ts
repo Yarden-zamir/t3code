@@ -11,7 +11,7 @@ import {
   touchesOwnerOnlySettings,
 } from "./access.ts";
 import { applyChanges, findArrow, findClientArrow } from "./map.ts";
-import { client, MAC, machine, PHONE, threeMachines, VPS } from "./testMap.ts";
+import { client, MAC, machine, PHONE, threeMachines, VPS, WIN } from "./testMap.ts";
 
 const withRole = (role: "none" | "read" | "propose" | "edit"): MachineMapDocument => ({
   ...threeMachines(),
@@ -41,6 +41,45 @@ describe("arrowChange", () => {
       expiresAt: null,
       revertLevel: null,
     });
+  });
+});
+
+describe("exec (MM-1908)", () => {
+  it("needs agent tools, and turning agent tools off turns exec off", () => {
+    let map = threeMachines();
+    const without = arrowChange(map, {
+      from: MAC,
+      to: VPS,
+      level: "admin",
+      exec: true,
+      expiresAt: null,
+    });
+    expect(without._tag === "setArrow" && without.arrow.exec).toBe(false);
+    map = applyChanges(map, [
+      arrowChange(map, {
+        from: MAC,
+        to: VPS,
+        level: "admin",
+        agentTools: true,
+        exec: true,
+        expiresAt: null,
+      }),
+    ]).map;
+    expect(findArrow(map, MAC, VPS).exec).toBe(true);
+    const off = arrowChange(map, {
+      from: MAC,
+      to: VPS,
+      level: "admin",
+      agentTools: false,
+      expiresAt: null,
+    });
+    expect(off._tag === "setArrow" && off.arrow.exec).toBe(false);
+  });
+
+  it("counts turning exec on as more access, so an agent only proposes it for its machine", () => {
+    const base = { ...findArrow(threeMachines(), MAC, VPS), agentTools: true };
+    expect(arrowRaises(base, { ...base, exec: true })).toBe(true);
+    expect(arrowRaises({ ...base, exec: true }, base)).toBe(false);
   });
 });
 
@@ -91,6 +130,46 @@ describe("self-escalation (MM-803)", () => {
       _tag: "propose",
       reason: "map-role",
     });
+  });
+});
+
+describe("owner-only grants (MM-803)", () => {
+  const vpsToWin = (map: MachineMapDocument) => findArrow(map, VPS, WIN);
+  const linked = applyChanges(withRole("edit"), [
+    {
+      _tag: "setArrow",
+      arrow: { ...vpsToWin(threeMachines()), level: "standard", agentTools: true },
+    },
+  ]).map;
+
+  it("proposes every raise of another machine's arrow, also with the edit role", () => {
+    const raises = [
+      { ...vpsToWin(linked), level: "admin" as const },
+      { ...vpsToWin(linked), exec: true },
+      {
+        ...vpsToWin(linked),
+        level: "admin" as const,
+        expiresAt: "2026-10-13T10:00:00.000Z",
+        revertLevel: "standard" as const,
+      },
+    ];
+    for (const arrow of raises) {
+      expect(decideAgentWrite(linked, MAC, [{ _tag: "setArrow", arrow }])).toEqual({
+        _tag: "propose",
+        reason: "owner-only",
+      });
+    }
+  });
+
+  it("applies a lower level or agent tools turned off with the edit role", () => {
+    for (const arrow of [
+      { ...vpsToWin(linked), level: "read" as const },
+      { ...vpsToWin(linked), agentTools: false },
+    ]) {
+      expect(decideAgentWrite(linked, MAC, [{ _tag: "setArrow", arrow }])).toEqual({
+        _tag: "apply",
+      });
+    }
   });
 });
 

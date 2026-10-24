@@ -18,24 +18,10 @@ import {
 } from "../projectScriptEditor";
 import { Button } from "../ui/button";
 import { ProjectActionsList } from "./ProjectActionsList";
-import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
-
-/**
- * Scripts available in every project of the selected environments. Shown at
- * environment scope only, because they belong to the environment.
- */
-export function GlobalScriptsSettings() {
-  const { scope, target } = useSettingsScope();
-  if (scope.kind === "project" || scope.kind === "checkout" || !target) return null;
-  return (
-    <SettingsSection title="Global scripts">
-      <GlobalScriptsSettingsRows />
-    </SettingsSection>
-  );
-}
 
 export function GlobalScriptsSettingsRows() {
   const { scope, targets, target } = useSettingsScope();
@@ -111,7 +97,7 @@ export function GlobalScriptsSettingsRows() {
         settingKeys={["globalScripts"]}
         mixed={mixed}
         {...searchableSetting("global-scripts")}
-        description="Commands available in every project. They run in the thread's worktree, or else the project folder. Right-click the sidebar toggle or the chat header to pin them."
+        description="Commands available in every project. They run in the thread's worktree, or else the project folder. Pin them from the sidebar toggle or chat header, or set a desktop global shortcut in the script editor."
         control={
           <Button
             size="xs"

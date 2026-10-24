@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from "vite-plus";
+import { viteCacheDir as forkViteCacheDir } from "../../scripts/lib/fork-build-cache.cjs";
 
 const SERVICE_WORKER = "sw.js";
 /** The minifier picks the quote, so the mark of `src/sw/sw.ts` takes any of them. */
@@ -28,6 +29,7 @@ function serviceWorkerFiles(): Plugin {
 
 // The page bundle and the service worker. Wrangler serves `dist` with Workers Static Assets.
 export default defineConfig({
+  cacheDir: forkViteCacheDir(import.meta.url)!,
   plugins: [serviceWorkerFiles()],
   build: {
     outDir: "dist",

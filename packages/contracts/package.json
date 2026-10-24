@@ -1,12 +1,16 @@
 {
   "name": "@t3tools/contracts",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "files": [
     "dist"
   ],
   "type": "module",
   "exports": {
+    "./forkBrowserCapture": {
+      "types": "./src/forkBrowserCapture.ts",
+      "import": "./src/forkBrowserCapture.ts"
+    },
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
@@ -26,10 +30,14 @@
     "./machineMapResources": {
       "types": "./src/machineMapResources.ts",
       "import": "./src/machineMapResources.ts"
+    },
+    "./sidebarTabs": {
+      "types": "./src/sidebarTabs.ts",
+      "import": "./src/sidebarTabs.ts"
     }
   },
   "scripts": {
-    "typecheck": "tsc-rs --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {

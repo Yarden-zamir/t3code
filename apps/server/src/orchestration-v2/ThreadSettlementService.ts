@@ -7,6 +7,7 @@ import {
   isTerminalThread,
   type ThreadId,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2PendingBackgroundTask,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
@@ -38,7 +39,7 @@ export interface SettlementPullRequest {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
-export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
+const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 
 function toMillis(value: DateTime.Utc | null | undefined): number | null {
   return value == null ? null : DateTime.toEpochMillis(value);
@@ -77,6 +78,34 @@ function pullRequestMatchesProject(
     canonicalRepositoryKey(pullRequest.repositoryKey) ===
       canonicalRepositoryKey(project.repositoryIdentity.canonicalKey)
   );
+}
+
+type SettlementPullRequestLink = NonNullable<
+  ProjectionStore.ProjectionSettlementCandidate["pullRequests"]
+>[number];
+
+/** When the linked pull request merged or closed, or -Infinity if it has not. */
+function linkTerminalAtMs(link: SettlementPullRequestLink): number {
+  const snapshot = link.snapshot;
+  const value = snapshot?.state === "merged" ? snapshot.mergedAt : snapshot?.closedAt;
+  const timestamp = Date.parse(value ?? "");
+  return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp;
+}
+
+/**
+ * The links whose outcome the thread waits on. A link made after its pull
+ * request had already merged or closed records work the thread did, such as an
+ * agent merging pull requests it was asked to merge, so it cannot settle the
+ * thread.
+ */
+function settlementPullRequestLinks(
+  links: ReadonlyArray<SettlementPullRequestLink>,
+): ReadonlyArray<SettlementPullRequestLink> {
+  return visibleThreadPullRequests(links).filter((link) => {
+    if (link.snapshot === null || link.snapshot.state === "open") return true;
+    const linkedAtMs = Date.parse(link.linkedAt);
+    return Number.isNaN(linkedAtMs) || linkTerminalAtMs(link) >= linkedAtMs;
+  });
 }
 
 /**
@@ -130,6 +159,18 @@ function pullRequestSettles(
   return pullRequestAtMs >= userAnchorMs;
 }
 
+/**
+ * Fork: settling stops the provider session, which kills a running background command before it
+ * can wake its agent. A command left running, such as a dev server, holds the thread until the
+ * provider session releases its silent background work (DEFAULT_MAX_IDLE_PIN_MS in
+ * ProviderSessionManager.ts).
+ */
+function hasPendingBackgroundCommand(
+  tasks: ReadonlyArray<Pick<OrchestrationV2PendingBackgroundTask, "kind">>,
+): boolean {
+  return tasks.some((task) => task.kind === "command");
+}
+
 export function isAutoSettlementCandidate(
   thread: Omit<ProjectionStore.ProjectionSettlementCandidate, "latestUserAuthoredMessageAt">,
   nowMs: number,
@@ -140,16 +181,8 @@ export function isAutoSettlementCandidate(
   if (thread.activityRunStatus != null) return false;
   if (backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])) return false;
   if (threadHasQueuedTurnStart(thread, nowMs)) return false;
-  const snoozedUntilMs = toMillis(thread.snoozedUntil);
-  if (snoozedUntilMs === null || snoozedUntilMs <= nowMs) return true;
-  const snoozedAtMs = toMillis(thread.snoozedAt);
-  const completedAtMs = toMillis(thread.latestRunCompletedAt);
-  const wokeOnError =
-    thread.status === "failed" &&
-    (snoozedAtMs === null || (completedAtMs !== null && completedAtMs > snoozedAtMs));
-  const wokeOnCompletion =
-    snoozedAtMs !== null && completedAtMs !== null && completedAtMs > snoozedAtMs;
-  return wokeOnError || wokeOnCompletion;
+  // Interrupted runs must keep the same snooze protection the sidebar shows.
+  return !isSnoozed(thread, nowMs);
 }
 
 /**
@@ -171,12 +204,7 @@ export function isSnoozed(
   const wokeOnError =
     thread.status === "failed" &&
     (snoozedAtMs === null || (completedAtMs !== null && completedAtMs > snoozedAtMs));
-  const wokeOnCompletion =
-    thread.status === "completed" &&
-    snoozedAtMs !== null &&
-    completedAtMs !== null &&
-    completedAtMs > snoozedAtMs;
-  return !wokeOnError && !wokeOnCompletion;
+  return !wokeOnError;
 }
 
 export function resolveAutoSettlementAt(input: {
@@ -189,17 +217,11 @@ export function resolveAutoSettlementAt(input: {
 }): DateTime.Utc | null {
   const { thread } = input;
   let pullRequest = input.pullRequest;
-  const links = visibleThreadPullRequests(thread.pullRequests ?? []);
+  const links = settlementPullRequestLinks(thread.pullRequests ?? []);
   if (links.some((link) => link.snapshot === null || link.snapshot.state === "open")) return null;
   if (links.length > 0) {
-    const terminalAt = (link: (typeof links)[number]) => {
-      const snapshot = link.snapshot;
-      const value = snapshot?.state === "merged" ? snapshot.mergedAt : snapshot?.closedAt;
-      const timestamp = Date.parse(value ?? "");
-      return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp;
-    };
     const latest = links.reduce((current, candidate) =>
-      terminalAt(candidate) > terminalAt(current) ? candidate : current,
+      linkTerminalAtMs(candidate) > linkTerminalAtMs(current) ? candidate : current,
     );
     pullRequest =
       latest.snapshot === null
@@ -211,19 +233,20 @@ export function resolveAutoSettlementAt(input: {
           };
   }
   if (!isAutoSettlementCandidate(thread, input.nowMs)) return null;
-  const activityAtMs = latestMillis([
-    toMillis(thread.latestUserMessageAt),
-    toMillis(thread.latestRunRequestedAt),
-    toMillis(thread.latestRunStartedAt),
-    toMillis(thread.latestRunCompletedAt),
-  ]);
+  const activityAtMs =
+    latestMillis([
+      toMillis(thread.latestUserMessageAt),
+      toMillis(thread.latestRunRequestedAt),
+      toMillis(thread.latestRunStartedAt),
+      toMillis(thread.latestRunCompletedAt),
+    ]) ?? DateTime.toEpochMillis(thread.createdAt);
   if (pullRequest !== null && pullRequestSettles(thread, pullRequest, input.autoSettleOnMerge)) {
-    return activityAtMs === null ? thread.createdAt : DateTime.makeUnsafe(activityAtMs);
+    return DateTime.makeUnsafe(activityAtMs);
   }
   const hasPullRequest =
     pullRequest !== null || thread.linkedPullRequest != null || thread.branchPullRequest != null;
   if (input.autoSettleKeepPullRequests === true && hasPullRequest) return null;
-  if (input.autoSettleAfterDays === null || activityAtMs === null) return null;
+  if (input.autoSettleAfterDays === null) return null;
   const snoozedUntilMs = toMillis(thread.snoozedUntil);
   const timerWakeAtMs =
     snoozedUntilMs !== null && snoozedUntilMs <= input.nowMs ? snoozedUntilMs : null;
@@ -312,7 +335,14 @@ export const make = Effect.gen(function* () {
     // the merged pull request: most threads carry no link and settle from
     // their branch lookup, which would otherwise wait for the next minute's
     // sweep on a possibly stale cached answer.
-    const candidates = threads.filter((thread) => isAutoSettlementCandidate(thread, nowMs));
+    const candidates = threads.filter(
+      (thread) =>
+        isAutoSettlementCandidate(thread, nowMs) &&
+        !(
+          settings.autoSettleWaitsForBackgroundCommands &&
+          hasPendingBackgroundCommand(thread.pendingBackgroundTasks ?? [])
+        ),
+    );
 
     const settleThread = Effect.fn("ThreadSettlementServiceV2.settleThread")(
       function* (thread: (typeof candidates)[number], pullRequest: SettlementPullRequest | null) {

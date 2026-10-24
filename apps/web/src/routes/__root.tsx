@@ -1,4 +1,5 @@
 import { PermissionUpdateNotice } from "../components/PermissionUpdateNotice";
+import { ForkAccessChangeNotices } from "../components/ForkAccessChangeNotices";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { setCredentialedSiblingOrigins } from "@t3tools/client-runtime/rpc/siblingCredentials";
@@ -20,8 +21,10 @@ import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL, APP_VERSION } from ".
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { AppOverlay } from "../components/AppOverlay";
+import { GlobalScriptShortcuts } from "../components/GlobalScriptShortcuts";
 import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
+import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { KeybindingsConfigWarning } from "../components/KeybindingsConfigWarning";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
@@ -36,7 +39,6 @@ import { DesktopUpdateIdleInstall } from "../components/desktop/DesktopUpdateIdl
 import { MachineMapDesktop } from "../components/desktop/MachineMapDesktop";
 import { ClientPendingSurface } from "../components/auth/ClientPendingSurface";
 import { MachinePausedSurface, MachinePauseWatcher } from "../components/auth/MachinePausedSurface";
-import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { DesktopUpdateLaunchNotice } from "../components/sidebar/updateEverythingRun";
 import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationToast";
 import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
@@ -44,6 +46,7 @@ import { InstalledAppCoordinator } from "../components/InstalledAppCoordinator";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { PullRequestGuideRunCoordinator } from "../components/pullRequest/guide/PullRequestGuideRunCoordinator";
+import { HostFreezeToastCoordinator } from "../components/HostFreezeToastCoordinator";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ProviderAuthCallbackCoordinator } from "../components/settings/ProviderAuthCallbackCoordinator";
@@ -240,6 +243,7 @@ function RootRouteView() {
         <Outlet />
       </AppSidebarLayout>
       <AppOverlay />
+      <GlobalScriptShortcuts />
     </CommandPalette>
   );
 
@@ -275,15 +279,17 @@ function RootRouteView() {
           <ConfirmDialogHost />
           <CustomSnoozeDialogHost />
           <SlowRpcRequestToastCoordinator />
+          <HostFreezeToastCoordinator />
           <PermissionUpdateNotice />
+          <ForkAccessChangeNotices />
           {primaryEnvironmentAuthenticated ? <LegacyThreadMigrationToast /> : null}
           <ProjectCloneToastCoordinator />
+          <AddProjectToMachineDialogHost />
           <PullRequestGuideRunCoordinator />
           <HostedStaticEnvironmentBootstrap />
           {primaryEnvironmentAuthenticated ? (
             <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
           ) : null}
-          {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
           {isElectron ? <DesktopUpdateLaunchNotice /> : null}
           {appShell}
           {/* Above the router: a theme draft is judged by walking the app, so the

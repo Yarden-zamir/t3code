@@ -8,6 +8,7 @@ import * as Semaphore from "effect/Semaphore";
 import {
   EnvironmentId,
   EnvironmentTheme,
+  MobileNewThreadProject,
   PullRequestInvolvement,
   PullRequestListFilters,
   PullRequestListState,
@@ -23,6 +24,7 @@ import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../l
 import * as MobileDatabase from "./mobile-database";
 import * as MobileSecureStorage from "./mobile-secure-storage";
 import { MobileStorageDecodeError, MobileStorageEncodeError } from "./mobile-storage";
+import { sanitizeVoicePreferences, type VoicePreferences } from "./forkVoicePreferences";
 
 const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
@@ -61,6 +63,16 @@ const LastNewThreadProject = Schema.Struct({
 });
 export type LastNewThreadProject = typeof LastNewThreadProject.Type;
 const isLastNewThreadProject = Schema.is(LastNewThreadProject);
+const ScratchProjectRef = Schema.Struct({ environmentId: EnvironmentId, projectId: Schema.String });
+export type ScratchProjectRef = typeof ScratchProjectRef.Type;
+const isScratchProjectRef = Schema.is(ScratchProjectRef);
+const isMobileNewThreadProject = Schema.is(MobileNewThreadProject);
+const AppTokenClient = Schema.Struct({
+  machinesUrl: Schema.String,
+  clientId: Schema.optionalKey(Schema.String),
+});
+export type AppTokenClient = typeof AppTokenClient.Type;
+const isAppTokenClient = Schema.is(AppTokenClient);
 
 export interface Preferences {
   readonly pullRequestHideTestFiles?: boolean;
@@ -75,6 +87,7 @@ export interface Preferences {
   readonly markdownFontSize?: number;
   readonly codeFontSize?: number | null;
   readonly codeWordBreak?: boolean;
+  readonly mathRenderingEnabled?: boolean;
   readonly connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
   readonly collapsedProjectGroups?: readonly string[];
   /** Environments whose "reclaim database space" notice was dismissed. */
@@ -102,8 +115,18 @@ export interface Preferences {
   readonly publishedDefaultThemeApplied?: string;
   /** Fork: the project of the last new thread, for `mobileNewThreadProject: "last"`. */
   readonly lastNewThreadProject?: LastNewThreadProject;
-  /** Fork: the open sidebar group tab of the home thread list. */
-  readonly sidebarGroupTabId?: string;
+  /** Fork: the project of the last thread without a project, so a new one opens without the server. */
+  readonly scratchProject?: ScratchProjectRef;
+  /** Fork: the last `mobileNewThreadProject` of a server, so a cold start uses it before connecting. */
+  readonly newThreadProjectMode?: MobileNewThreadProject;
+  /** Fork: the open sidebar tab of the home thread list. */
+  readonly sidebarTabId?: string;
+  /** Fork: environments that the app token repair disabled because the portal no longer lists them. */
+  readonly appTokenDisabledEnvironmentIds?: ReadonlyArray<string>;
+  /** Fork: the app token client of this phone (MM-913) and its machine list (MM-914). */
+  readonly appTokenClient?: AppTokenClient;
+  /** Fork: the Android assistant panel and read aloud. */
+  readonly voice?: VoicePreferences;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -157,6 +180,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     markdownFontSize?: number;
     codeFontSize?: number | null;
     codeWordBreak?: boolean;
+    mathRenderingEnabled?: boolean;
     connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
     collapsedProjectGroups?: readonly string[];
     dismissedDatabaseStorageNotices?: readonly string[];
@@ -176,7 +200,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     publishedThemes?: ReadonlyArray<EnvironmentTheme>;
     publishedDefaultThemeApplied?: string;
     lastNewThreadProject?: LastNewThreadProject;
-    sidebarGroupTabId?: string;
+    scratchProject?: ScratchProjectRef;
+    newThreadProjectMode?: MobileNewThreadProject;
+    sidebarTabId?: string;
+    appTokenDisabledEnvironmentIds?: ReadonlyArray<string>;
+    appTokenClient?: AppTokenClient;
+    voice?: VoicePreferences;
   } = {};
 
   if (typeof parsed.pullRequestHideTestFiles === "boolean") {
@@ -233,6 +262,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     preferences.codeFontSize = parsed.codeFontSize;
   }
   if (typeof parsed.codeWordBreak === "boolean") preferences.codeWordBreak = parsed.codeWordBreak;
+  if (typeof parsed.mathRenderingEnabled === "boolean")
+    preferences.mathRenderingEnabled = parsed.mathRenderingEnabled;
   if (Array.isArray(parsed.connectOnboardingOptOutAccounts)) {
     preferences.connectOnboardingOptOutAccounts = parsed.connectOnboardingOptOutAccounts.filter(
       (account): account is string => typeof account === "string",
@@ -314,9 +345,26 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (isLastNewThreadProject(parsed.lastNewThreadProject)) {
     preferences.lastNewThreadProject = parsed.lastNewThreadProject;
   }
-  if (typeof parsed.sidebarGroupTabId === "string") {
-    preferences.sidebarGroupTabId = parsed.sidebarGroupTabId;
+  if (isScratchProjectRef(parsed.scratchProject)) {
+    preferences.scratchProject = parsed.scratchProject;
   }
+  if (isMobileNewThreadProject(parsed.newThreadProjectMode)) {
+    preferences.newThreadProjectMode = parsed.newThreadProjectMode;
+  }
+  if (typeof parsed.sidebarTabId === "string") {
+    preferences.sidebarTabId = parsed.sidebarTabId;
+  }
+  if (
+    Array.isArray(parsed.appTokenDisabledEnvironmentIds) &&
+    parsed.appTokenDisabledEnvironmentIds.every((value: unknown) => typeof value === "string")
+  ) {
+    preferences.appTokenDisabledEnvironmentIds = parsed.appTokenDisabledEnvironmentIds;
+  }
+  if (isAppTokenClient(parsed.appTokenClient)) {
+    preferences.appTokenClient = parsed.appTokenClient;
+  }
+  const voice = sanitizeVoicePreferences(parsed.voice);
+  if (voice) preferences.voice = voice;
   return preferences;
 }
 

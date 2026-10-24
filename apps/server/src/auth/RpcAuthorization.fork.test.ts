@@ -1,17 +1,43 @@
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
+  AuthSourceControlWriteScope,
   AuthTerminalOperateScope,
   ThreadId,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
-import { expect, it } from "@effect/vitest";
+import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as RpcTest from "effect/rpc/RpcTest";
 
 import * as RpcAuthorization from "./RpcAuthorization.ts";
+
+describe("RPC authorization scopes fork", () => {
+  it("requires source control writes to start Fork Sync but not to read the fork changelog", () => {
+    expect(RpcAuthorization.requiredScopeForRpcMethod(WS_METHODS.forkChangelogStartSync)).toBe(
+      AuthSourceControlWriteScope,
+    );
+    for (const method of [
+      WS_METHODS.forkChangelogListReleases,
+      WS_METHODS.forkChangelogReleaseChanges,
+      WS_METHODS.forkChangelogUpstreamPending,
+      WS_METHODS.forkChangelogSyncStatus,
+    ]) {
+      expect(RpcAuthorization.requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
+    }
+  });
+
+  it("requires source control writes to prepare the new worktree of a terminal draft", () => {
+    expect(RpcAuthorization.requiredScopeForRpcMethod(WS_METHODS.vcsPrepareDraftWorktree)).toBe(
+      RpcAuthorization.requiredScopeForRpcMethod(WS_METHODS.vcsCreateWorktree),
+    );
+    expect(RpcAuthorization.requiredScopeForRpcMethod(WS_METHODS.vcsPrepareDraftWorktree)).toBe(
+      AuthSourceControlWriteScope,
+    );
+  });
+});
 
 const method = WS_METHODS.terminalMoveToThread;
 const group = WsRpcGroup.omit(

@@ -4,17 +4,10 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useClientSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
-import {
-  TerminalAppShortcutsFirstSettingsRow,
-  TerminalCloseConfirmationSettingsRow,
-} from "./ForkSettingsRows";
+import { ForkSettingsSlot } from "./ForkSettingsSlot";
 import { TerminalFontPreview } from "./SettingsFontPreviews";
-import { TerminalFontRow } from "./SettingsPanels";
-import { TerminalHistorySettingsRows } from "./TerminalHistorySettingsRows";
-import { TerminalKeyMappingsSettingsRow } from "./TerminalKeyMappingsSettingsRow";
 import { TerminalShellsSettings } from "./TerminalShellsSettings";
-import { TerminalThreadFontLimitsSettingsRow } from "./TerminalThreadFontLimitsSettingsRow";
-import { TerminalThreadsSettingsRow } from "./TerminalThreadsSettingsRow";
+import { TerminalFontRow } from "./TypographySettings";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
@@ -55,14 +48,10 @@ export function TerminalSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="all-terminals" title="All terminals">
         <TerminalFontSettingsRow />
-        <TerminalThreadFontLimitsSettingsRow />
-        <TerminalKeyMappingsSettingsRow />
-        <TerminalAppShortcutsFirstSettingsRow />
-        <TerminalCloseConfirmationSettingsRow />
-        <TerminalHistorySettingsRows />
+        <ForkSettingsSlot place="terminal-all-terminals" />
       </SettingsSection>
       <SettingsSection id="terminal-thread-settings" title="Terminal threads">
-        <TerminalThreadsSettingsRow />
+        <ForkSettingsSlot place="terminal-threads" />
         <TerminalShellsSettings />
       </SettingsSection>
     </SettingsPageContainer>

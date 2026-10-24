@@ -53,8 +53,8 @@ export const layer = Layer.effect(
         ),
       // A shell that cannot start leaves the session in `error` and does not fail the open, so
       // the open listens for the reason that the manager publishes.
-      open: (input) =>
-        Effect.gen(function* () {
+      open: Effect.fn("TerminalPort.open")(
+        function* (input) {
           let reason: string | null = null;
           const stop = yield* manager.subscribe((event) =>
             Effect.sync(() => {
@@ -70,7 +70,12 @@ export const layer = Layer.effect(
           if (snapshot.status === "error") {
             return yield* Effect.fail(reason ?? "The shell did not start.");
           }
-        }).pipe(Effect.mapError((cause) => new TerminalPortError({ operation: "open", cause }))),
+        },
+        (effect) =>
+          effect.pipe(
+            Effect.mapError((cause) => new TerminalPortError({ operation: "open", cause })),
+          ),
+      ),
       write: (input) =>
         manager
           .write(input)

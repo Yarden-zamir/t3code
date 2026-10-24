@@ -50,6 +50,7 @@ export type T3McpToolSummaryAction =
   | "project-delete"
   | "project-clone"
   | "environment-read"
+  | "environment-links"
   | "environment-update"
   | "attachment-prepare"
   | "attachment-discard"
@@ -66,8 +67,7 @@ export type T3McpToolSummaryAction =
   | "html-preview"
   | "html-render"
   // Fork: machine map tools.
-  | "machine-map"
-  | "machine-tool-call";
+  | "machine-map";
 
 export interface T3McpToolDefinition {
   readonly displayName: string;
@@ -109,12 +109,12 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "pull-request",
   ),
   unwatch_pull_request: tool(
-    ["Stop watching", "Stopping watching", "Stopped watching", "a pull request"],
+    ["Stop watching", "Unwatching", "Stopped watching", "a pull request"],
     "unwatch-pr",
     "pull-request",
   ),
   write_pull_request_guides: tool(
-    ["Write", "Writing", "Started", "review guides"],
+    ["Write", "Writing", "Started writing", "review guides"],
     "write-pr-guides",
     "pull-request",
   ),
@@ -130,7 +130,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   delegate_task: tool(["Delegate", "Delegating", "Delegated", "a child task"], "delegate"),
   task_status: tool(["Get", "Getting", "Got", "delegated task status"], "task-status"),
   task_cancel: tool(
-    ["Cancel", "Canceling", "Requested cancellation of", "delegated task"],
+    ["Cancel", "Canceling", "Requested cancellation of", "a delegated task"],
     "task-cancel",
   ),
   schedule_task: tool(
@@ -312,6 +312,10 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Read", "Reading", "Read", "environment preferences"],
     "environment-read",
   ),
+  t3_environment_links: tool(
+    ["List", "Listing", "Listed", "linked environments"],
+    "environment-links",
+  ),
   t3_environment_preferences_update: tool(
     ["Update", "Updating", "Updated", "environment preferences"],
     "environment-update",
@@ -347,10 +351,6 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   machines_undo: tool(["Undo", "Undoing", "Undid", "a machine map change"], "machine-map"),
   machines_preset: tool(["Apply", "Applying", "Applied", "a machine map preset"], "machine-map"),
   machines_join: tool(["Join", "Joining", "Joined", "the machine map"], "machine-map"),
-  machine_tool_call: tool(
-    ["Call", "Calling", "Called", "a tool on another machine"],
-    "machine-tool-call",
-  ),
 };
 
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));
@@ -416,10 +416,4 @@ export function resolveT3McpToolPresentation(
 ): T3McpToolPresentation | null {
   const definition = resolveT3McpToolDefinition(toolName);
   return definition === null ? null : { displayName: definition.displayName, logo: "t3-code" };
-}
-
-export function resolveT3McpToolSummaryAction(
-  toolName: string | null | undefined,
-): T3McpToolSummaryAction | null {
-  return resolveT3McpToolDefinition(toolName)?.summaryAction ?? null;
 }

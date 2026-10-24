@@ -138,7 +138,7 @@ describe("groupHistory (MM-714)", () => {
       revision(map, [arrowTo("admin")], { at: "2026-10-13T10:01:00.000Z", actor: phone }),
       revision(map, [move(0.3)], { at: "2026-10-13T10:00:00.000Z", actor: phone }),
     ];
-    const [day] = groupHistory(historyEntries(revisions, [], []));
+    const [day] = groupHistory(historyEntries(revisions, [], [], [], []));
     expect(day?.items.map((item) => (item._tag === "group" ? item.entries.length : 1))).toEqual([
       3, 1, 1, 1,
     ]);
@@ -151,6 +151,8 @@ describe("groupHistory (MM-714)", () => {
     const entries = historyEntries(
       [revision(map, [move(0.1)], { at: "2026-10-12T09:00:00.000Z" })],
       [command("c1"), command("c2", VPS), command("c3", WIN)],
+      [],
+      [],
       [],
     );
     const days = groupHistory(entries);
@@ -170,6 +172,8 @@ describe("matchesFilter (MM-716)", () => {
         { _tag: "setSetting", machineId: null, scope: "server", key: "x", present: true, value: 1 },
       ]),
     ],
+    [],
+    [],
     [],
     [],
   );
@@ -197,13 +201,19 @@ describe("alert entries (MM-1505)", () => {
   });
 
   it("an ended alert gives a start and an end entry, an active one only a start", () => {
-    const entries = historyEntries([], [], [alert("2026-10-12T09:00:00.000Z"), alert(null)]);
+    const entries = historyEntries(
+      [],
+      [],
+      [alert("2026-10-12T09:00:00.000Z"), alert(null)],
+      [],
+      [],
+    );
     expect(entries.map((e) => (e._tag === "alert" ? e.ended : null))).toEqual([true, false, false]);
     expect(entries.every((e) => e.kind === "alert")).toBe(true);
   });
 
   it("filters by the alert machine and the portal actor", () => {
-    const entries = historyEntries([], [], [alert(null)]);
+    const entries = historyEntries([], [], [alert(null)], [], []);
     expect(entries.filter((e) => matchesFilter(e, { ...NO_FILTER, machineId: WIN }))).toHaveLength(
       1,
     );
@@ -213,6 +223,58 @@ describe("alert entries (MM-1505)", () => {
     expect(entries.filter((e) => matchesFilter(e, { ...NO_FILTER, actor: "portal" }))).toHaveLength(
       1,
     );
+  });
+});
+
+describe("exec entries (MM-1908)", () => {
+  const exec = {
+    id: "e1",
+    at: "2026-10-12T08:00:00.000Z",
+    from: VPS,
+    to: WIN,
+    threadId: "thread-1",
+    threadTitle: "Fix the build",
+    command: "make",
+    cwd: "/home/t3",
+    outcome: "exited" as const,
+    exitCode: 0,
+    durationMs: 12,
+  };
+
+  it("shows under both machines and under the agents of the source machine", () => {
+    const entries = historyEntries([], [], [], [exec], []);
+    const count = (filter: Parameters<typeof matchesFilter>[1]) =>
+      entries.filter((e) => matchesFilter(e, filter)).length;
+    expect(count({ ...NO_FILTER, machineId: VPS })).toBe(1);
+    expect(count({ ...NO_FILTER, machineId: WIN })).toBe(1);
+    expect(count({ ...NO_FILTER, machineId: MAC })).toBe(0);
+    expect(count({ ...NO_FILTER, actor: `agent:${VPS}` })).toBe(1);
+    expect(count({ ...NO_FILTER, kind: "exec" })).toBe(1);
+  });
+});
+
+describe("forwarded call entries (MM-1922)", () => {
+  const call = {
+    id: "c1",
+    at: "2026-10-12T08:00:00.000Z",
+    from: VPS,
+    to: WIN,
+    threadId: "thread-1",
+    threadTitle: "Fix the build",
+    tool: "t3_thread_read",
+    outcome: "succeeded" as const,
+  };
+
+  it("shows under both machines and the source agents, and is not important", () => {
+    const entries = historyEntries([], [], [], [], [call]);
+    const count = (filter: Parameters<typeof matchesFilter>[1]) =>
+      entries.filter((e) => matchesFilter(e, filter)).length;
+    expect(count({ ...NO_FILTER, machineId: VPS })).toBe(1);
+    expect(count({ ...NO_FILTER, machineId: WIN })).toBe(1);
+    expect(count({ ...NO_FILTER, machineId: MAC })).toBe(0);
+    expect(count({ ...NO_FILTER, actor: `agent:${VPS}` })).toBe(1);
+    expect(count({ ...NO_FILTER, kind: "call" })).toBe(1);
+    expect(count({ ...NO_FILTER, importantOnly: true })).toBe(0);
   });
 });
 

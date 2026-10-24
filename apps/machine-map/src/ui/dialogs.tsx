@@ -19,15 +19,25 @@ import {
   type TunnelSetup,
 } from "../api.ts";
 import { usesText } from "../rules/access.ts";
-import { findArrow, LEVELS } from "../rules/map.ts";
+import { applyChanges, findArrow, LEVELS } from "../rules/map.ts";
 import { savePresetChange } from "../rules/presets.ts";
-import { callApi, StepUpNeeded } from "./apiClient.ts";
-import { ApprovalsSetup, confirmWithPasskey, PasskeyStepUp } from "./Approvals.tsx";
+import { callApi, PASSKEY_STEP_TEXT, StepUpNeeded } from "./apiClient.ts";
+import { ApprovalsSetup, PasskeyStepUp } from "./Approvals.tsx";
 import { usePortalContext, type Dialog } from "./context.ts";
 import { confirmResume, EmergencyButton } from "./emergency.tsx";
-import { COMMAND_LABEL, LEVEL_LABEL, timeUntil } from "./format.ts";
+import { COMMAND_LABEL, LEVEL_LABEL, timeUntil, valueText } from "./format.ts";
 import { CopyIcon, KindIcon } from "./icons.tsx";
 import { OBTAINIUM_ADD_URL } from "./obtainium.ts";
+import { INVITE_FALLBACK, inviteAppUrl, isPhone } from "../clientInvite.ts";
+import {
+  approvalExpired,
+  finishApproval,
+  pendingApproval,
+  startApproval,
+} from "./pendingApproval.ts";
+import { APPROVAL_CHANGED, approvalMatches, captureApproval } from "../rules/approval.ts";
+import { ClientAccessSummary, PendingSignIn } from "./panels.tsx";
+import { describeChange } from "./derive.ts";
 import { playJoinSound, showJoinEffects } from "./panicEffects.ts";
 import { QrCodeSvg } from "./QrCode.tsx";
 import {
@@ -179,6 +189,16 @@ export function DialogHost({ dialog, close }: { dialog: Dialog; close: () => voi
         <InviteAppDialog
           close={close}
           {...(dialog.clientId ? { clientId: dialog.clientId } : {})}
+        />
+      );
+    case "addPhone":
+      return <InviteAppDialog phone position={dialog.position} close={close} />;
+    case "approval":
+      return (
+        <ApprovalDialog
+          key={`${dialog.mode}:${"pending" in dialog.state ? dialog.state.pending.savedAt : dialog.state._tag}`}
+          dialog={dialog}
+          close={close}
         />
       );
     case "importSettings":
@@ -606,14 +626,44 @@ function NewJoinCodeDialog(props: {
  * MM-913: an invite for a native app. Making it needs the passkey check of MM-1207, because the
  * app gets the access of its client. The QR holds the only copy of the code.
  */
-function InviteAppDialog({ clientId, close }: { clientId?: ClientId; close: () => void }) {
+function InviteAppDialog({
+  clientId,
+  phone = false,
+  position,
+  initialRequest,
+  initialInvite,
+  close,
+}: {
+  clientId?: ClientId;
+  phone?: boolean;
+  position?: MapPosition | undefined;
+  initialRequest?: InviteRequest;
+  initialInvite?: InviteResponse;
+  close: () => void;
+}) {
   const portal = usePortalContext();
   const { map, now } = portal;
-  const existing = clientId === undefined ? undefined : map.clients.find((c) => c.id === clientId);
-  const [name, setName] = useState("");
-  const [arrows, setArrows] = useState<Record<string, MachineLevel>>({});
+  const targetId =
+    initialRequest?.client._tag === "existing" ? initialRequest.client.clientId : clientId;
+  const existing =
+    targetId === undefined ? undefined : portal.snapshot.map.clients.find((c) => c.id === targetId);
+  const [name, setName] = useState(
+    initialRequest?.client._tag === "new" ? initialRequest.client.name : phone ? "Phone" : "",
+  );
+  const [arrows, setArrows] = useState<Record<string, MachineLevel>>(
+    initialRequest
+      ? Object.fromEntries(
+          map.machines.map((m) => [
+            m.id,
+            initialRequest.arrows.find((a) => a.to === m.id)?.level ?? "none",
+          ]),
+        )
+      : {},
+  );
+  const pickedPosition =
+    initialRequest?.client._tag === "new" ? initialRequest.client.position : position;
   const [needsPasskey, setNeedsPasskey] = useState(false);
-  const [invite, setInvite] = useState<InviteResponse | null>(null);
+  const [invite, setInvite] = useState<InviteResponse | null>(initialInvite ?? null);
   const [status, setStatus] = useState<ApprovalsStatus | null>(null);
   const { pending, error, run } = useAction();
 
@@ -635,19 +685,26 @@ function InviteAppDialog({ clientId, close }: { clientId?: ClientId; close: () =
     };
   }, []);
 
-  const create = () =>
+  const request = (): InviteRequest =>
+    existing
+      ? { client: { _tag: "existing", clientId: existing.id }, arrows: [] }
+      : {
+          client: {
+            _tag: "new",
+            name: name.trim(),
+            ...(pickedPosition ? { position: pickedPosition } : {}),
+          },
+          arrows: map.machines.flatMap((machine) => {
+            const level = arrows[machine.id] ?? (phone ? "standard" : "none");
+            return level === "none" ? [] : [{ to: machine.id, level }];
+          }),
+        };
+
+  const create = (request: InviteRequest) =>
     run(async () => {
-      const request: InviteRequest = existing
-        ? { client: { _tag: "existing", clientId: existing.id }, arrows: [] }
-        : {
-            client: { _tag: "new", name: name.trim() },
-            arrows: map.machines.flatMap((machine) => {
-              const level = arrows[machine.id] ?? "none";
-              return level === "none" ? [] : [{ to: machine.id, level }];
-            }),
-          };
       try {
-        setInvite(await callApi<InviteResponse>("POST", "/api/grant/invite", request));
+        const action = captureApproval({ _tag: "invite", request, phone }, portal);
+        setInvite(await callApi<InviteResponse>("POST", "/api/grant/invite", action.request));
       } catch (reason) {
         if (reason instanceof StepUpNeeded) setNeedsPasskey(true);
         throw reason;
@@ -656,7 +713,9 @@ function InviteAppDialog({ clientId, close }: { clientId?: ClientId; close: () =
 
   return (
     <Modal
-      title={existing ? `Invite an app into ${existing.name}` : "Invite an app"}
+      title={
+        existing ? `Invite an app into ${existing.name}` : phone ? "Add phone" : "Invite an app"
+      }
       onClose={close}
     >
       {invite ? (
@@ -665,10 +724,21 @@ function InviteAppDialog({ clientId, close }: { clientId?: ClientId; close: () =
             <QrCodeSvg value={invite.url} />
           </div>
           <p className="small">
+            <a href={OBTAINIUM_ADD_URL} target="_blank" rel="noreferrer">
+              Add with Obtainium
+            </a>
+          </p>
+          <p className="small">
             Scan this with the T3 app on the phone. It works once and expires{" "}
             {timeUntil(invite.expiresAt, now)}. Close this dialog when the phone joined.
           </p>
           <p className="small mono break">{invite.url}</p>
+          {isPhone(navigator.userAgent) && (
+            <a className="btn primary" href={inviteAppUrl(invite.url)}>
+              Open in the T3 app
+            </a>
+          )}
+          <p className="small muted">{INVITE_FALLBACK}</p>
           <div className="actions end">
             <button
               type="button"
@@ -702,7 +772,7 @@ function InviteAppDialog({ clientId, close }: { clientId?: ClientId; close: () =
           className="stack"
           onSubmit={(e) => {
             e.preventDefault();
-            create();
+            create(request());
           }}
         >
           <p className="small muted">
@@ -744,7 +814,7 @@ function InviteAppDialog({ clientId, close }: { clientId?: ClientId; close: () =
                 <label className="field inline" key={machine.id}>
                   {machine.name}
                   <select
-                    value={arrows[machine.id] ?? "none"}
+                    value={arrows[machine.id] ?? (phone ? "standard" : "none")}
                     onChange={(e) => {
                       const level = LEVELS.find((l) => l === e.target.value) ?? "none";
                       setArrows({ ...arrows, [machine.id]: level });
@@ -760,18 +830,30 @@ function InviteAppDialog({ clientId, close }: { clientId?: ClientId; close: () =
               ))}
             </>
           )}
+          {existing && <ClientAccessSummary clientId={existing.id} />}
           {existing?.serviceToken && (
             <p className="hint">
               The app token of {existing.name} ends when the new invite is used.
             </p>
           )}
-          {needsPasskey ? <PasskeyStepUp /> : <ErrorLine error={error} />}
+          {needsPasskey && <PasskeyStepUp />}
+          <ErrorLine error={needsPasskey && error === PASSKEY_STEP_TEXT ? null : error} />
           <div className="actions end">
             <button type="button" className="btn" onClick={close}>
               Cancel
             </button>
             {needsPasskey ? (
-              <button type="button" className="btn primary" onClick={confirmWithPasskey}>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() =>
+                  run(async () => {
+                    startApproval(
+                      pendingApproval({ _tag: "invite", request: request(), phone }, portal),
+                    );
+                  })
+                }
+              >
                 Confirm with passkey
               </button>
             ) : (
@@ -784,8 +866,308 @@ function InviteAppDialog({ clientId, close }: { clientId?: ClientId; close: () =
               </button>
             )}
           </div>
-          {needsPasskey && <p className="hint">After the passkey, open this invite again.</p>}
+          {needsPasskey && (
+            <p className="hint">After the passkey, this dialog returns with your invite.</p>
+          )}
         </form>
+      )}
+    </Modal>
+  );
+}
+
+function ApprovalDialog({
+  dialog,
+  close: onClose,
+}: {
+  dialog: Extract<Dialog, { _tag: "approval" }>;
+  close: () => void;
+}) {
+  const portal = usePortalContext();
+  const saved = "pending" in dialog.state ? dialog.state.pending : undefined;
+  const action = saved?.action;
+  const attempted = useRef(false);
+  const mounted = useRef(true);
+  const [phase, setPhase] = useState<
+    "working" | "confirm" | "failed" | "changed" | "expired" | "missing"
+  >(
+    dialog.state._tag === "expired"
+      ? "expired"
+      : dialog.state._tag !== "ready"
+        ? "missing"
+        : dialog.mode === "confirm"
+          ? "confirm"
+          : dialog.mode === "return"
+            ? "working"
+            : "failed",
+  );
+  const [message, setMessage] = useState("The passkey confirmation did not finish. Try again.");
+  const [review, setReview] = useState(false);
+  const [retryReview, setRetryReview] = useState(false);
+  const [invite, setInvite] = useState<InviteResponse | null>(null);
+  const close = () => {
+    mounted.current = false;
+    try {
+      finishApproval();
+    } catch {
+      /* A blocked store must not trap the owner in a dialog. */
+    }
+    onClose();
+  };
+
+  useEffect(() => {
+    mounted.current = true;
+    const leaving = () => {
+      mounted.current = false;
+    };
+    addEventListener("pagehide", leaving);
+    return () => {
+      mounted.current = false;
+      removeEventListener("pagehide", leaving);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (dialog.mode === "confirm" || attempted.current) return;
+    if (
+      dialog.mode === "return" &&
+      dialog.state._tag === "ready" &&
+      action?._tag === "approve" &&
+      portal.pending === null
+    )
+      return;
+    attempted.current = true;
+    try {
+      finishApproval();
+    } catch {
+      setPhase("failed");
+      setMessage(
+        "The browser could not clear the saved approval. Allow tab storage and try again.",
+      );
+      return;
+    }
+    if (!saved || dialog.state._tag !== "ready" || dialog.mode !== "return") return;
+    if (approvalExpired(saved)) {
+      setPhase("expired");
+      return;
+    }
+    if (!approvalMatches(saved.action, portal)) {
+      setPhase("changed");
+      return;
+    }
+    void (async () => {
+      try {
+        if (saved.action._tag === "invite") {
+          const result = await callApi<InviteResponse>(
+            "POST",
+            "/api/grant/invite",
+            saved.action.request,
+          );
+          if (mounted.current) setInvite(result);
+          return;
+        }
+        const result = await callApi<WriteResult>(
+          "POST",
+          `/api/grant/${saved.action._tag === "approve" ? "approve" : "changes"}`,
+          saved.action.request,
+        );
+        if (!mounted.current) return;
+        portal.call(
+          async () => result,
+          saved.action._tag === "approve" ? "Approved." : `${saved.action.request.summary}.`,
+        );
+        if (saved.action._tag === "approve") portal.select({ _tag: "none" }, "clients");
+        close();
+      } catch (error) {
+        if (!mounted.current) return;
+        const text =
+          error instanceof StepUpNeeded
+            ? "The passkey confirmation did not finish. Try again."
+            : error instanceof Error
+              ? error.message
+              : String(error);
+        setMessage(text);
+        setRetryReview(!(error instanceof StepUpNeeded));
+        setPhase(text === APPROVAL_CHANGED ? "changed" : "failed");
+      }
+    })();
+  }, [portal.pending, portal.snapshot.map, portal.pause]);
+
+  const begin = () => {
+    if (!saved) {
+      if (dialog.kind === "invite") setReview(true);
+      else {
+        close();
+        portal.select({ _tag: "none" }, dialog.kind === "approve" ? "clients" : "settings");
+      }
+      return;
+    }
+    if (!approvalMatches(saved.action, portal)) {
+      setPhase("changed");
+      return;
+    }
+    try {
+      startApproval({ ...saved, savedAt: Date.now() });
+    } catch (error) {
+      setPhase("failed");
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const title =
+    dialog.kind === "invite"
+      ? action?._tag === "invite" && action.phone
+        ? "Add phone"
+        : "Invite an app"
+      : dialog.kind === "approve"
+        ? "Approve browser"
+        : "Apply changes";
+
+  if (action?._tag === "invite" && (invite || review))
+    return (
+      <InviteAppDialog
+        initialRequest={action.request}
+        phone={action.phone ?? false}
+        {...(invite ? { initialInvite: invite } : {})}
+        close={close}
+      />
+    );
+  if (review && action?._tag === "approve") {
+    const pending = portal.pending?.find((p) => p.thumbprint === action.request.thumbprint);
+    return (
+      <Modal title="Review browser approval" onClose={close}>
+        {pending ? (
+          <PendingSignIn pending={pending} initialRequest={action.request} done={close} />
+        ) : (
+          <>
+            <p>This sign-in is gone. Open Clients to choose a waiting sign-in.</p>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                close();
+                portal.select({ _tag: "none" }, "clients");
+              }}
+            >
+              Open Clients
+            </button>
+          </>
+        )}
+      </Modal>
+    );
+  }
+  if (review && action?._tag === "changes") {
+    let current: ReadonlyArray<string> | null = null;
+    try {
+      const map = portal.snapshot.map;
+      applyChanges(map, action.request.changes);
+      current = action.request.changes.flatMap((change) => {
+        if (change._tag !== "setSetting")
+          return applyChanges(map, [change]).inverse.map((c) => describeChange(c, map));
+        const values =
+          change.machineId === null
+            ? map.settings.shared[change.scope]
+            : (map.settings.overrides[change.machineId]?.[change.scope] ?? {});
+        const present = Object.hasOwn(values, change.key);
+        const text = describeChange({ ...change, present, value: values[change.key] ?? null }, map);
+        if (present || change.machineId === null) return [text];
+        const shared = map.settings.shared[change.scope];
+        return [
+          Object.hasOwn(shared, change.key)
+            ? `${text}; follows shared ${valueText(shared[change.key])}`
+            : `${text}; reports ${valueText(portal.snapshot.reportedSettings[change.machineId]?.[change.scope][change.key])}`,
+        ];
+      });
+    } catch {
+      /* A removed target cannot be reviewed as a current item. */
+    }
+    return (
+      <Modal title="Review changes" onClose={close}>
+        <p>{APPROVAL_CHANGED}</p>
+        <h3>Current</h3>
+        {current ? (
+          <ul className="list small break">
+            {current.map((text, i) => (
+              <li key={i}>{text}</li>
+            ))}
+          </ul>
+        ) : (
+          <p>An item is gone. Open Settings to choose current items.</p>
+        )}
+        <h3>Requested</h3>
+        <ul className="list small break">
+          {action.request.changes.map((c, i) => (
+            <li key={i}>{describeChange(c, portal.snapshot.map)}</li>
+          ))}
+        </ul>
+        <div className="actions end">
+          <button type="button" className="btn" onClick={close}>
+            Cancel
+          </button>
+          {current ? (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                try {
+                  startApproval(pendingApproval(action, portal));
+                } catch (error) {
+                  setMessage(error instanceof Error ? error.message : String(error));
+                  setReview(false);
+                  setPhase("failed");
+                }
+              }}
+            >
+              Confirm these changes
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                close();
+                portal.select({ _tag: "none" }, "settings");
+              }}
+            >
+              Open Settings
+            </button>
+          )}
+        </div>
+      </Modal>
+    );
+  }
+  if (review && !action && dialog.kind === "invite") return <InviteAppDialog close={close} />;
+  return (
+    <Modal title={title} onClose={close}>
+      {action?._tag === "changes" && <p className="small break">{action.request.summary}</p>}
+      {phase === "working" ? (
+        <p>Finishing your approval…</p>
+      ) : (
+        <>
+          <p role="alert">
+            {phase === "changed"
+              ? APPROVAL_CHANGED
+              : phase === "expired"
+                ? "This saved approval expired. Try again to start a fresh confirmation."
+                : phase === "missing"
+                  ? "The saved approval could not be found. Try again."
+                  : phase === "confirm"
+                    ? "Confirm with your passkey to finish this action."
+                    : message}
+          </p>
+          {phase === "confirm" && <PasskeyStepUp />}
+          <div className="actions end">
+            <button type="button" className="btn" onClick={close}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={action?._tag === "approve" && portal.pending === null}
+              onClick={phase === "changed" || retryReview ? () => setReview(true) : begin}
+            >
+              {phase === "confirm" ? "Confirm with passkey" : "Try again"}
+            </button>
+          </div>
+        </>
       )}
     </Modal>
   );
@@ -918,6 +1300,11 @@ export function Palette({ close, toggleHold }: { close: () => void; toggleHold: 
       label: "Add machine",
       kind: "action",
       run: () => portal.open({ _tag: "addMachine" }),
+    });
+    out.push({
+      label: "Add phone",
+      kind: "action",
+      run: () => portal.open({ _tag: "addPhone" }),
     });
     out.push({
       label: portal.draft ? "Stop holding changes" : "Hold changes",

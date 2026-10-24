@@ -7,8 +7,10 @@ import { MachineId, PortalEvent, type PortalSnapshot } from "@t3tools/contracts/
 import type { ResourcesOverview } from "@t3tools/contracts/machineMapResources";
 
 import {
+  CallsEvent,
   ClientInvitesEvent,
   EnrolledEvent,
+  ExecsEvent,
   HealthEvent,
   PauseEvent,
   PendingClientsEvent,
@@ -33,6 +35,10 @@ export interface PortalState {
   readonly pending: ReadonlyArray<PendingClient> | null;
   /** MM-913: invites of native apps that wait to be used. */
   readonly invites: ReadonlyArray<ClientInvite>;
+  /** MM-1908: the newest `machine_exec` runs. */
+  readonly execs: ExecsEvent["execs"];
+  /** MM-1922: the newest calls forwarded over arrow links. */
+  readonly calls: CallsEvent["calls"];
 }
 
 export type PageEvent =
@@ -43,7 +49,9 @@ export type PageEvent =
   | ResourceSampleEvent
   | EnrolledEvent
   | PendingClientsEvent
-  | ClientInvitesEvent;
+  | ClientInvitesEvent
+  | ExecsEvent
+  | CallsEvent;
 
 const EMPTY_HEALTH: ResourcesOverview = { latest: {}, alerts: [], thresholds: {} };
 
@@ -55,6 +63,8 @@ export const INITIAL_STATE: PortalState = {
   joins: {},
   pending: null,
   invites: [],
+  execs: [],
+  calls: [],
 };
 
 export function reduce(state: PortalState, event: PageEvent): PortalState {
@@ -64,6 +74,8 @@ export function reduce(state: PortalState, event: PageEvent): PortalState {
   if (event._tag === "health") return { ...state, health: event.health };
   if (event._tag === "pendingClients") return { ...state, pending: event.pending };
   if (event._tag === "clientInvites") return { ...state, invites: event.invites };
+  if (event._tag === "execs") return { ...state, execs: event.execs };
+  if (event._tag === "calls") return { ...state, calls: event.calls };
   if (event._tag === "resourceSample") {
     const latest = { ...state.health.latest, [event.machineId]: event.sample };
     return { ...state, health: { ...state.health, latest } };
@@ -146,7 +158,12 @@ export function settleHeld<T>(
 
 const RotationsEventSchema = Schema.TaggedStruct("rotations", {
   rotations: Schema.Array(
-    Schema.Struct({ machineId: MachineId, createdAt: Schema.String, expiresAt: Schema.String }),
+    Schema.Struct({
+      machineId: MachineId,
+      createdAt: Schema.String,
+      expiresAt: Schema.String,
+      expired: Schema.optionalKey(Schema.Boolean),
+    }),
   ),
 });
 const decodeEvent = Schema.decodeUnknownSync(
@@ -159,6 +176,8 @@ const decodeEvent = Schema.decodeUnknownSync(
     EnrolledEvent,
     PendingClientsEvent,
     ClientInvitesEvent,
+    ExecsEvent,
+    CallsEvent,
   ]),
 );
 

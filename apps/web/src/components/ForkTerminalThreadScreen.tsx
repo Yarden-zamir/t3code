@@ -3,7 +3,11 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import {
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
 import { terminalThreadState } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import {
   isAtomCommandInterrupted,
@@ -19,6 +23,7 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   terminalThreadShell,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
@@ -50,7 +55,7 @@ import { useRemoteOpenState } from "../remoteOpen";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { settleAndAdvance } from "../settleAndAdvance";
 import { useProject, useQuietThreadShell } from "../state/entities";
-import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
+import { useEnvironment, useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import {
   primaryServerAvailableEditorsAtom,
@@ -67,22 +72,33 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { MAX_TERMINALS_PER_GROUP } from "../types";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
 import { resolveEffectiveEnvMode } from "./BranchToolbar.logic";
-import { ThreadVisitWatermark, useParentThreadLink } from "./ChatView";
 import {
   recallCheckoutIsRepo,
   rememberCheckoutIsRepo,
   startNewThreadForProject,
 } from "./ChatView.logic";
 import { ChatCanvas } from "./chat/ChatCanvas";
+import { composerShortcutCommands } from "./chat/composerShortcuts";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ComposerBannerStack } from "./chat/ComposerBannerStack";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { PanelLayoutControls } from "./chat/PanelLayoutControls";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
-import { ThreadErrorBanner, useThreadErrorBanner } from "./chat/ThreadErrorBanner";
-import { useThreadStatusLine } from "./chat/ThreadStatusLine";
-import { useEnvironmentBanners } from "./chat/useEnvironmentBanners";
-import { type ChatShortcutHandler, useChatShortcuts } from "./chat/useChatShortcuts";
+import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
+import {
+  dismissThreadErrorBannerForSession,
+  getThreadErrorBannerKey,
+  isThreadErrorBannerDismissedForSession,
+  shouldShowThreadErrorBanner,
+  ThreadErrorBanner,
+} from "./chat/ThreadErrorBanner";
+import { useForkThreadStatusLine } from "./chat/useForkThreadStatusLine";
+import { useSystemComposerBanners } from "./chat/useSystemComposerBanners";
+import {
+  type ChatShortcutCommands,
+  type ChatShortcutHandler,
+  useChatShortcuts,
+} from "./chat/useChatShortcuts";
 import {
   ThreadPanelHeaderControl,
   ThreadPanelLayoutControls,
@@ -105,6 +121,17 @@ import { PopoverCreateHandle } from "./ui/popover";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
 const NO_PROJECT_SCRIPTS: never[] = [];
+const NO_ENVIRONMENTS: never[] = [];
+
+// The screen has no composer or branch toolbar. Their chords reach the shell instead.
+const NO_COMPOSER = { current: null };
+const NO_BRANCH_TOOLBAR = { current: null };
+const COMPOSER_CHORDS_TO_SHELL: ChatShortcutCommands = Object.fromEntries(
+  Object.keys(composerShortcutCommands(NO_COMPOSER, NO_BRANCH_TOOLBAR)).map((command) => [
+    command,
+    () => false,
+  ]),
+);
 
 /** A pane shortcut that leaves Ctrl chords of the main terminal to its shell. */
 const shellKeyOr =
@@ -213,6 +240,8 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
     scriptKeybindings: keybindings,
     getShortcutContext,
     threadFindActive: false,
+    composerRef: NO_COMPOSER,
+    branchToolbarRef: NO_BRANCH_TOOLBAR,
     // Like the chat composer: a key typed while focus is on the page (after a dialog, a rename or
     // Wake now) goes to the shell, and the shell takes focus.
     typeIntoComposer: (key) => {
@@ -226,6 +255,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
     },
     closeThreadFind: () => {},
     commands: {
+      ...COMPOSER_CHORDS_TO_SHELL,
       "thread.copyReference": shellKeyOr(threadShortcuts.copyReference),
       "thread.settle": shellKeyOr(threadShortcuts.toggleSettled),
       "thread.pin": shellKeyOr(threadShortcuts.togglePinned),
@@ -374,10 +404,20 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
           onPresentationChange={rightPanel.setThreadPanelPresentation}
           environmentId={thread.environmentId}
           threadId={thread.id}
+          projectId={thread.projectId}
+          worktreePath={thread.worktreePath}
+          isServerThread
           activeProjectName={project.title}
           keybindings={keybindings}
           availableEditors={availableEditors}
           showOpenInPicker={workspace.showOpenInPicker}
+          openInShortcutEnabled={
+            !(
+              rightPanel.rightPanelOpen &&
+              rightPanel.renderedRightPanelSurface?.kind === "file" &&
+              rightPanel.renderedRightPanelSurface.attachment === undefined
+            )
+          }
           gitCwd={workspace.gitCwd}
           isGitRepo={workspace.isGitRepo}
           // A terminal thread has started, so its environment and workspace are fixed.
@@ -402,6 +442,8 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
           threadRef={threadRef}
           threadId={threadRef.threadId}
           active
+          // No composer under the drawer, so it may take the whole column.
+          composerHeight={0}
           launchContext={null}
           focusRequestId={drawer.focusRequestId}
           splitShortcutLabel={terminalShortcutLabel("terminal.split")}
@@ -453,15 +495,20 @@ function TerminalThreadError(props: {
   readonly thread: EnvironmentThreadShell;
 }) {
   const runtime = props.thread.runtime;
-  const threadError = useThreadErrorBanner(
-    scopedThreadKey(props.threadRef),
-    runtime?.lastError ?? null,
-  );
+  const threadKey = scopedThreadKey(props.threadRef);
+  const error = runtime?.lastError ?? null;
+  const bannerKey = getThreadErrorBannerKey(threadKey, error);
+  // State, not only the session set, so a dismiss re-renders a compiled caller.
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const dismissed = bannerKey === dismissedKey || isThreadErrorBannerDismissedForSession(bannerKey);
   return (
     <ThreadErrorBanner
-      error={threadError.visibleError}
+      error={shouldShowThreadErrorBanner(threadKey, error, dismissed) ? error : null}
       errorClass={runtime?.lastErrorClass ?? null}
-      onDismiss={threadError.dismiss}
+      onDismiss={() => {
+        dismissThreadErrorBannerForSession(bannerKey);
+        setDismissedKey(bannerKey);
+      }}
     />
   );
 }
@@ -477,7 +524,7 @@ function TerminalThreadNotices(props: {
   const { threadRef, thread } = props;
   const capabilities = useAtomValue(serverEnvironment.configValueAtom(threadRef.environmentId))
     ?.environment.capabilities;
-  const statusLine = useThreadStatusLine({
+  const statusLine = useForkThreadStatusLine({
     threadRef,
     thread,
     terminal: useTerminalThreadState(thread),
@@ -486,17 +533,34 @@ function TerminalThreadNotices(props: {
     supportsSettlement: capabilities?.threadSettlement === true,
     canOperate: useEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
   });
-  const environmentBanners = useEnvironmentBanners({
-    environment: useEnvironment(threadRef.environmentId),
+  const environment = useEnvironment(threadRef.environmentId);
+  const { environments } = useEnvironments();
+  const environmentUnavailable =
+    environment !== null && environment.connection.phase !== "connected";
+  const bannerItems = useSystemComposerBanners({
+    activeEnvironment: environment,
+    activeEnvironmentUnavailable: environmentUnavailable,
+    activeEnvironmentUnavailableState:
+      environment !== null && environmentUnavailable
+        ? {
+            environmentId: environment.environmentId,
+            label: environment.label,
+            connection: environment.connection,
+          }
+        : null,
+    activeThreadEnvironmentId: threadRef.environmentId,
+    serverConfig: environment?.serverConfig ?? null,
+    hasMultipleRegisteredEnvironments: environments.length > 1,
     automaticEnvironment: false,
+    autoUpdateEnvironments: NO_ENVIRONMENTS,
   });
-  if (statusLine.line === null && environmentBanners.items.length === 0) return null;
+  if (statusLine.line === null && bannerItems.length === 0) return null;
   return (
     // The banners take their width from the composer inset, which this screen has no composer to
     // set. Without it they shrink to their icon.
     <div className="flex flex-col gap-1 px-3 pb-2 [--chat-composer-drawer-inset:0px] [--chat-content-max-width:100%]">
       {statusLine.line}
-      <ComposerBannerStack items={environmentBanners.items} />
+      <ComposerBannerStack items={bannerItems} />
     </div>
   );
 }
@@ -828,4 +892,23 @@ function MainTerminal(props: {
       className="p-2"
     />
   );
+}
+
+/** The header link to the parent of a subagent thread, as ChatView builds it. */
+function useParentThreadLink(
+  thread: Pick<EnvironmentThreadShell, "environmentId" | "lineage"> | null | undefined,
+): { threadId: ThreadId; title: string } | null {
+  const parentSubagentThreadId =
+    thread?.lineage.relationshipToParent === "subagent" ? thread.lineage.parentThreadId : null;
+  const parentSubagentThreadRef =
+    thread && parentSubagentThreadId !== null
+      ? scopeThreadRef(thread.environmentId, parentSubagentThreadId)
+      : null;
+  const parentSubagentThread = useQuietThreadShell(parentSubagentThreadRef);
+  return parentSubagentThreadRef === null
+    ? null
+    : {
+        threadId: parentSubagentThreadRef.threadId,
+        title: parentSubagentThread?.title ?? "Parent thread",
+      };
 }

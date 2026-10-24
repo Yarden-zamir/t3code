@@ -221,6 +221,7 @@ function SettingsIndexSections() {
           target="SettingsFork"
           disabled={noServerTargets}
         />
+        <SettingsRow icon="mic" label="Voice" target="SettingsVoice" />
       </SettingsSection>
 
       <SettingsSection title="App">

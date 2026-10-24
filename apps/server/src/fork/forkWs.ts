@@ -26,6 +26,7 @@ import { requireLocalDesktop } from "./machineMap/browserAccess.ts";
 import * as MachineMap from "./machineMap/MachineMap.ts";
 import { isLocalDesktopSubject, isMachineSubject } from "./machineMap/machineAccess.ts";
 import * as MachineMapState from "./machineMap/MachineMapState.ts";
+import * as MachinePeers from "./machineMap/MachinePeers.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
 import * as TerminalThreadMove from "./TerminalThreadMove.ts";
 import * as WebPush from "./webPush/WebPush.ts";
@@ -74,11 +75,27 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
     Effect.gen(function* () {
       const forkChangelog = yield* ForkChangelog.ForkChangelog;
       const machineMap = yield* MachineMap.MachineMap;
+      // The server provides it; a bare RPC layer, as in tests, reads only this environment.
+      const machinePeers = yield* Effect.serviceOption(MachinePeers.MachinePeers);
+      const environment = yield* ServerEnvironment.ServerEnvironment;
       const webPush = yield* WebPush.WebPush;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const previewServerGroups = yield* PreviewServerGroups.PreviewServerGroups;
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const terminalThreadMove = yield* TerminalThreadMove.TerminalThreadMove;
+      /** MM-1907: this environment first, then the machines that its agents read. */
+      const readableEnvironments = Effect.fn("ForkWs.readableEnvironments")(function* () {
+        const self = yield* environment.getDescriptor;
+        // Another machine uses its own arrows, so it does not learn the arrows of this one.
+        const peers =
+          Option.isNone(machinePeers) || isMachineSubject(currentSession.subject)
+            ? []
+            : yield* machinePeers.value.readableEnvironments;
+        return [
+          { environmentId: self.environmentId, name: self.label },
+          ...peers.map(({ environmentId, name }) => ({ environmentId, name })),
+        ];
+      });
       // Only the local desktop app gets the machine map token (MM-306, MM-1401).
       const machineMapClient = { desktop: isLocalDesktopSubject(currentSession.subject) };
       return ForkWsRpcGroup.of({
@@ -107,6 +124,7 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
                 detail: "Other machines read the map with their own map role.",
               })
             : machineMap.readPanel,
+        [FORK_WS_METHODS.machineMapReadableEnvironments]: (_input) => readableEnvironments(),
         [FORK_WS_METHODS.webPushPublicKey]: (_input) =>
           webPush.publicKey.pipe(Effect.map((publicKey) => ({ publicKey }))),
         [FORK_WS_METHODS.webPushSubscribe]: (input) => webPush.subscribe(input).pipe(Effect.as({})),

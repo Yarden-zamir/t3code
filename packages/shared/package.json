@@ -7,6 +7,10 @@
       "types": "./src/webPush.ts",
       "import": "./src/webPush.ts"
     },
+    "./changedFileKind": {
+      "types": "./src/changedFileKind.ts",
+      "import": "./src/changedFileKind.ts"
+    },
     "./githubMarkdownLinks": {
       "types": "./src/githubMarkdownLinks.ts",
       "import": "./src/githubMarkdownLinks.ts"
@@ -195,6 +199,10 @@
       "types": "./src/dpopCommon.ts",
       "import": "./src/dpopCommon.ts"
     },
+    "./telemetryId": {
+      "types": "./src/telemetryId.ts",
+      "import": "./src/telemetryId.ts"
+    },
     "./relayAuth": {
       "types": "./src/relayAuth.ts",
       "import": "./src/relayAuth.ts"
@@ -282,6 +290,10 @@
     "./threadAddress": {
       "types": "./src/threadAddress.ts",
       "import": "./src/threadAddress.ts"
+    },
+    "./threadMessageLinks": {
+      "types": "./src/threadMessageLinks.ts",
+      "import": "./src/threadMessageLinks.ts"
     },
     "./threadMarkers": {
       "types": "./src/threadMarkers.ts",
@@ -435,10 +447,6 @@
       "types": "./src/hostClassification.ts",
       "import": "./src/hostClassification.ts"
     },
-    "./dateTime": {
-      "types": "./src/dateTime.ts",
-      "import": "./src/dateTime.ts"
-    },
     "./cliRelease": {
       "types": "./src/cliRelease.ts",
       "import": "./src/cliRelease.ts"
@@ -522,10 +530,18 @@
     "./PtyAdapter": {
       "types": "./src/PtyAdapter.ts",
       "import": "./src/PtyAdapter.ts"
+    },
+    "./markdownMath": {
+      "types": "./src/markdownMath.ts",
+      "import": "./src/markdownMath.ts"
+    },
+    "./cloneUrl": {
+      "types": "./src/cloneUrl.ts",
+      "import": "./src/cloneUrl.ts"
     }
   },
   "scripts": {
-    "typecheck": "tsc-rs --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
@@ -535,12 +551,14 @@
     "effect": "catalog:",
     "jose": "catalog:",
     "mdast-util-directive": "catalog:",
+    "mdast-util-to-hast": "^13.2.1",
     "micromark-extension-directive": "catalog:",
     "micromark-util-character": "catalog:",
     "rehype-raw": "catalog:",
     "rehype-sanitize": "catalog:",
     "remark-breaks": "catalog:",
     "remark-gfm": "catalog:",
+    "remark-math": "6.0.0",
     "remark-parse": "catalog:",
     "remark-rehype": "catalog:",
     "unified": "catalog:",
@@ -549,6 +567,7 @@
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
+    "@types/mdast": "^4.0.4",
     "@types/node": "catalog:",
     "micromark-util-types": "catalog:",
     "vite-plus": "catalog:"

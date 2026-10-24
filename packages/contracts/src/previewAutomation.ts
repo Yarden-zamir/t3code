@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { ForkSnapshotStage } from "./forkBrowserCapture.ts";
 
 import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
@@ -946,10 +947,11 @@ export class PreviewAutomationTimeoutError extends Schema.TaggedError<PreviewAut
   {
     ...PreviewAutomationRequestErrorFields,
     ...PreviewAutomationOptionalRemoteDiagnosticFields,
+    captureStage: Schema.optional(ForkSnapshotStage), // Fork: native capture has an inner stage deadline.
   },
 ) {
   override get message(): string {
-    const summary = `Preview automation ${this.operation} timed out after ${this.timeoutMs}ms.`;
+    const summary = `Preview automation ${this.operation} timed out after ${this.timeoutMs}ms${this.captureStage ? ` while capturing ${this.captureStage}` : ""}.`; // Fork: keep the capture stage visible to agents.
     return summary;
   }
 }

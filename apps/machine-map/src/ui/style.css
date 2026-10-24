@@ -551,6 +551,7 @@ p.error-text {
 }
 .row .link.left {
   display: grid;
+  overflow-wrap: anywhere;
   text-align: left;
   color: var(--ink);
   text-decoration: none;
@@ -837,6 +838,17 @@ p.error-text {
   display: grid;
   gap: 6px;
 }
+/* MM-1915: what agents on the source can do on the target. */
+.capabilities {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.capabilities li.no {
+  opacity: 0.6;
+}
 .with-icon {
   display: flex;
   align-items: center;
@@ -971,6 +983,7 @@ details.more[open] summary {
   border-radius: var(--radius);
 }
 .view {
+  min-width: 0;
   padding: 22px 24px;
 }
 .view-head {
@@ -1710,6 +1723,11 @@ td .stickers,
 .history-filters select {
   width: auto;
   min-width: 9em;
+  max-width: 100%;
+}
+.history-day .item-main > .grow {
+  flex-basis: 12rem;
+  overflow-wrap: anywhere;
 }
 .history-day + .history-day {
   margin-top: 24px;
@@ -1761,7 +1779,8 @@ td .stickers,
 }
 .item.hk-move,
 .item.hk-other,
-.item.hk-command {
+.item.hk-command,
+.item.hk-exec {
   border-left-color: var(--none);
 }
 .item.hk-pause,
@@ -1830,7 +1849,8 @@ td .stickers,
   background: var(--error);
   color: #ffffff;
 }
-.sticker.hk-command {
+.sticker.hk-command,
+.sticker.hk-exec {
   background: var(--surface);
   color: var(--ink);
 }

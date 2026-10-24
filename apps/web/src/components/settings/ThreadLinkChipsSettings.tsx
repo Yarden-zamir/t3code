@@ -1,7 +1,7 @@
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 
 import { ScopedSwitch } from "./ScopedSwitch";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
   useScopedSettings,
@@ -9,30 +9,20 @@ import {
   useUpdateScopedSettings,
 } from "./useScopedSettings";
 
-/** Fork: the thread link settings, `threadLinkChips` and `threadLinksOpenDesktopApp`. */
-export function ThreadLinkChipsSettingsSection() {
-  return (
-    <SettingsSection id="thread-links" title="Thread links">
-      <ThreadLinkChipsSettingsRow />
-      <ThreadLinksOpenDesktopAppSettingsRow />
-    </SettingsSection>
-  );
-}
-
 export function ThreadLinkChipsSettingsRow() {
   return (
-    <ThreadLinkSwitchRow
+    <ForkServerSwitchRow
       settingKey="threadLinkChips"
       searchId="thread-link-chips"
       label="Thread link chips"
-      description="Every thread link in chat looks like an attached thread: thread links, app links, web addresses of a thread on this machine or a connected machine, and the thread markers that agents copy. A click opens the thread here, not in a browser. Applies on desktop, web and the mobile app."
+      description="Thread links in chat show as attached-thread chips: app links, thread addresses of this or a connected machine, and the thread markers that agents copy. A click opens the thread here, not in a browser. Applies on desktop, web and the mobile app."
     />
   );
 }
 
 export function ThreadLinksOpenDesktopAppSettingsRow() {
   return (
-    <ThreadLinkSwitchRow
+    <ForkServerSwitchRow
       settingKey="threadLinksOpenDesktopApp"
       searchId="thread-links-open-desktop-app"
       label="Thread addresses open the desktop app"
@@ -41,9 +31,29 @@ export function ThreadLinksOpenDesktopAppSettingsRow() {
   );
 }
 
-function ThreadLinkSwitchRow(props: {
-  readonly settingKey: "threadLinkChips" | "threadLinksOpenDesktopApp";
-  readonly searchId: "thread-link-chips" | "thread-links-open-desktop-app";
+export function MessageLinksSettingsRow() {
+  return (
+    <ForkServerSwitchRow
+      settingKey="messageLinks"
+      searchId="message-links"
+      label="Message links"
+      description="A thread link that names a message, such as one an agent writes, opens the thread at that message and highlights it. Off: the link opens the thread only, and Copy message link is hidden. Applies on desktop, web and the mobile app."
+    />
+  );
+}
+
+/** Fork: a switch row of a boolean fork server setting. */
+export function ForkServerSwitchRow(props: {
+  readonly settingKey:
+    | "threadLinkChips"
+    | "threadLinksOpenDesktopApp"
+    | "messageLinks"
+    | "accessChangeNotices";
+  readonly searchId:
+    | "thread-link-chips"
+    | "thread-links-open-desktop-app"
+    | "message-links"
+    | "access-change-notices";
   readonly label: string;
   readonly description: string;
 }) {

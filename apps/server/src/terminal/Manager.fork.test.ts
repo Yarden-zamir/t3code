@@ -5,6 +5,7 @@ import {
   type TerminalEvent,
   type TerminalCustomShell,
   type TerminalOpenInput,
+  type TerminalSummary,
   TERMINAL_THREAD_ENV,
 } from "@t3tools/contracts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
@@ -25,12 +26,17 @@ import * as TerminalManager from "./Manager.ts";
 /** Exits when it is killed, as a shell does, so the manager shuts down without waiting. */
 class FakePty implements PtyAdapter.PtyProcess {
   readonly pid = 4242;
+  killed = false;
   private readonly exitListeners = new Set<(event: PtyAdapter.PtyExitEvent) => void>();
   private readonly dataListeners = new Set<(data: string) => void>();
   write() {}
   resize() {}
   kill() {
+    this.killed = true;
     for (const listener of this.exitListeners) listener({ exitCode: 0, signal: 15 });
+  }
+  exit(exitCode: number) {
+    for (const listener of this.exitListeners) listener({ exitCode, signal: 0 });
   }
   emit(data: string) {
     for (const listener of this.dataListeners) listener(data);
@@ -89,6 +95,7 @@ const createManager = (options: {
     typeof TerminalManager.makeWithOptions
   >[0]["subprocessInspector"];
   readonly customShells?: Ref.Ref<ReadonlyArray<TerminalCustomShell>>;
+  readonly forkShellIntegration?: ShellIntegration;
 }) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -101,7 +108,7 @@ const createManager = (options: {
       shellResolver: () => "/bin/default-shell",
       env: { PATH: "/usr/bin" },
       processKillGraceMs: 1,
-      forkShellIntegration: markingIntegration,
+      forkShellIntegration: options.forkShellIntegration ?? markingIntegration,
       ...(options.forkShells === undefined ? {} : { forkShells: options.forkShells }),
       ...(options.subprocessInspector === undefined
         ? {}
@@ -419,6 +426,168 @@ it.layer(
       expect(snapshot.history.indexOf("new shell")).toBeGreaterThan(
         snapshot.history.indexOf("old output"),
       );
+    }),
+  );
+
+  it.effect("keeps the exited shell of a terminal thread until a client starts a new one", () =>
+    Effect.gen(function* () {
+      const { manager, pty, events } = yield* createManager({});
+      yield* manager.open(threadScreenWithoutShell);
+      const exited = yield* Deferred.make<void>();
+      const stop = yield* manager.subscribe((event) =>
+        event.type === "exited"
+          ? Deferred.succeed(exited, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      pty.processes[0]?.emit("why the shell ended\r\n");
+      pty.processes[0]?.exit(0);
+      yield* Deferred.await(exited);
+      stop();
+
+      expect((yield* events).some((event) => event.type === "closed")).toBe(false);
+      // A client that comes back sees the dead shell, not a new one.
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["thread-1"]);
+      expect(pty.spawnInputs).toHaveLength(1);
+      // The open waits for the debounced history write of that output.
+      yield* TestClock.adjust("1 second");
+      // Starting a new shell keeps the screen of the shell that ended above it.
+      const reopened = yield* manager.open(threadScreenWithoutShell);
+      expect(pty.spawnInputs).toHaveLength(2);
+      expect(reopened.history).toContain("why the shell ended");
+    }),
+  );
+
+  it.effect("reports the shell state of a terminal thread from the marks of its shell", () =>
+    Effect.gen(function* () {
+      const { manager, pty } = yield* createManager({
+        forkShellIntegration: (candidate, env) => ({ candidate, env }),
+      });
+      const summaries: Array<TerminalSummary> = [];
+      const finished = yield* Deferred.make<void>();
+      const unsubscribe = yield* manager.subscribeMetadata((event) => {
+        if (event.type !== "upsert") return Effect.void;
+        summaries.push(event.terminal);
+        return event.terminal.attention?.kind === "finished"
+          ? Deferred.succeed(finished, undefined).pipe(Effect.asVoid)
+          : Effect.void;
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      yield* manager.open(threadScreenWithoutShell);
+      const shell = pty.processes[0];
+      shell?.emit("\u001b]133;A\u0007");
+      shell?.emit("\u001b]133;C\u0007out\r\n");
+      shell?.emit("\u001b]133;D;3\u0007\u001b]133;A\u0007");
+      yield* Deferred.await(finished);
+
+      expect(summaries[0]?.shell).toBe("starting");
+      expect(
+        summaries.some((summary) => summary.shell === "running" && summary.hasRunningSubprocess),
+      ).toBe(true);
+      const last = summaries.at(-1);
+      expect(last?.shell).toBe("prompt");
+      expect(last?.hasRunningSubprocess).toBe(false);
+      expect(last?.attention).toMatchObject({ kind: "finished", exitCode: 3 });
+    }),
+  );
+
+  it.effect("reports the command line that the shell of a terminal thread started", () =>
+    Effect.gen(function* () {
+      const { manager, pty } = yield* createManager({
+        forkShellIntegration: (candidate, env) => ({ candidate, env }),
+      });
+      const command = yield* Deferred.make<string>();
+      const unsubscribe = yield* manager.subscribeMetadata((event) =>
+        event.type === "upsert" && event.terminal.command !== undefined
+          ? Deferred.succeed(command, event.terminal.command).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      yield* manager.open(threadScreenWithoutShell);
+      const long = "x".repeat(300);
+      pty.processes[0]?.emit(`\u001b]133;A\u0007\u001b]133;C;cmdline=\t echo ${long} \u0007`);
+
+      expect(yield* Deferred.await(command)).toBe(`echo ${long}`.slice(0, 200));
+    }),
+  );
+
+  it.effect("starts the chosen shell, restarts on another shell and rejects an unknown one", () =>
+    Effect.gen(function* () {
+      const { manager, pty } = yield* createManager({
+        forkShells: [{ name: "fish", path: "/opt/fish/bin/fish" }],
+      });
+      const { env: _env, ...drawer } = threadScreen("fish");
+
+      yield* manager.open(drawer);
+      yield* manager.open(drawer);
+      expect(pty.spawnInputs.map((input) => input.shell)).toEqual(["/opt/fish/bin/fish"]);
+
+      const { shell: _shell, ...defaultShell } = drawer;
+      yield* manager.open(defaultShell);
+      expect(pty.spawnInputs.map((input) => input.shell)).toEqual([
+        "/opt/fish/bin/fish",
+        "/bin/default-shell",
+      ]);
+
+      const unknown = yield* manager.open({ ...drawer, shell: "nu" });
+      expect(unknown.status).toBe("error");
+      expect(unknown.history).toContain('The shell "nu" is not defined');
+      expect(pty.spawnInputs).toHaveLength(2);
+    }),
+  );
+
+  it.effect("lists a terminal thread screen as unattached only while no attach stream runs", () =>
+    Effect.gen(function* () {
+      const { manager } = yield* createManager({});
+      const screen = { ...threadScreenWithoutShell, threadId: "draft-1" };
+      const { env: _env, ...plain } = { ...threadScreenWithoutShell, threadId: "plain-1" };
+      yield* manager.open(screen);
+      yield* manager.open(plain);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
+
+      const detach = yield* manager.attachStream(screen, () => Effect.void);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
+      // The stream stays on the terminal through a close and a new session.
+      yield* manager.close({ threadId: "draft-1", terminalId: DEFAULT_TERMINAL_ID });
+      yield* manager.open(screen);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
+
+      detach();
+      detach();
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
+
+      // A WebSocket stream ends through the stop that it registers, also after a resync.
+      const stops: Array<() => void> = [];
+      yield* manager.attachStream(
+        screen,
+        () => Effect.void,
+        (stop) => stops.push(stop),
+      );
+      yield* manager.forkResyncAttachStream(
+        screen,
+        () => Effect.void,
+        (stop) => stops.push(stop),
+      );
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
+      for (const stop of stops) stop();
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
+    }),
+  );
+
+  it.effect("closeIdle keeps the terminal that the caller names", () =>
+    Effect.gen(function* () {
+      const { manager, pty } = yield* createManager({
+        subprocessInspector: () =>
+          Effect.succeed({ hasRunningSubprocess: false, childCommand: null, processIds: [] }),
+      });
+      const { env: _env, ...drawer } = threadScreenWithoutShell;
+      yield* manager.open(drawer);
+      yield* manager.open({ ...drawer, terminalId: "drawer" });
+
+      yield* manager.closeIdle({ threadId: "thread-1", keepTerminalId: DEFAULT_TERMINAL_ID });
+
+      expect(pty.processes.map((process) => process.killed)).toEqual([false, true]);
     }),
   );
 });

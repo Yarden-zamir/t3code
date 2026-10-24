@@ -52,6 +52,7 @@ it.live("runPortalSession ends a session whose socket never opens without an unh
     yield* Deferred.await(connected);
     yield* Fiber.interrupt(session);
     // The "error" from closing a CONNECTING socket arrives on a later tick.
+    // oxlint-disable-next-line t3code/no-real-time-wait-in-tests -- the test asserts that no uncaught error arrives; no event marks the point after which one cannot.
     yield* Effect.sleep("100 millis");
 
     expect(uncaught).toEqual([]);

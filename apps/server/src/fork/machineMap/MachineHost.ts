@@ -265,8 +265,8 @@ const make = Effect.gen(function* () {
     Effect.orElseSucceed((): ReadonlyArray<MachineClientSession> => []),
   );
 
-  const status: MachineHost["Service"]["status"] = (input) =>
-    Effect.gen(function* () {
+  const status: MachineHost["Service"]["status"] = Effect.fn("MachineHost.status")(
+    function* (input) {
       const [shell, tasks, clients, resources, nowMs, build] = yield* Effect.all([
         threads.getShellSnapshot().pipe(Effect.option),
         scheduledTasks.list().pipe(Effect.option),
@@ -300,33 +300,33 @@ const make = Effect.gen(function* () {
           onSome: (result) => result.tasks.map(portalTask),
         }),
       } satisfies MachineStatus;
-    });
+    },
+  );
 
   const succeed = (result: unknown): CommandOutcome => ({ ok: true, result, error: null });
   const fail = (error: string): CommandOutcome => ({ ok: false, result: null, error });
 
-  const stopAllAgents = (command: MachineCommand) =>
-    Effect.gen(function* () {
-      const snapshot = yield* threads.getShellSnapshot();
-      const running = snapshot.threads.filter((thread) => thread.activeRunId !== null);
-      const results = yield* Effect.forEach(
-        running,
-        (thread) =>
-          threads
-            .interruptThread({
-              projectId: thread.projectId,
-              commandId: CommandId.make(`machine-map:${command.id}:${thread.id}`),
-              threadId: thread.id,
-              reason: "Stopped from the machine map.",
-            })
-            .pipe(Effect.result),
-        { concurrency: 4 },
-      );
-      return succeed({
-        interrupted: results.filter((result) => result._tag === "Success").length,
-        failed: results.filter((result) => result._tag === "Failure").length,
-      });
+  const stopAllAgents = Effect.fn("MachineHost.stopAllAgents")(function* (command: MachineCommand) {
+    const snapshot = yield* threads.getShellSnapshot();
+    const running = snapshot.threads.filter((thread) => thread.activeRunId !== null);
+    const results = yield* Effect.forEach(
+      running,
+      (thread) =>
+        threads
+          .interruptThread({
+            projectId: thread.projectId,
+            commandId: CommandId.make(`machine-map:${command.id}:${thread.id}`),
+            threadId: thread.id,
+            reason: "Stopped from the machine map.",
+          })
+          .pipe(Effect.result),
+      { concurrency: 4 },
+    );
+    return succeed({
+      interrupted: results.filter((result) => result._tag === "Success").length,
+      failed: results.filter((result) => result._tag === "Failure").length,
     });
+  });
 
   const pauseScheduledTasks = Effect.gen(function* () {
     const { tasks } = yield* scheduledTasks.list();
@@ -362,31 +362,30 @@ const make = Effect.gen(function* () {
     return succeed({ resumed: toResume.length - failed.length, failed: failed.length });
   });
 
-  const startThread = (
+  const startThread = Effect.fn("MachineHost.startThread")(function* (
     command: MachineCommand,
     input: Extract<MachineCommand["input"], { readonly _tag: "startThread" }>,
-  ) =>
-    Effect.gen(function* () {
-      const projectId = ProjectId.make(input.projectId);
-      const project = yield* projects.getById(projectId);
-      if (Option.isNone(project)) return fail(`No project ${input.projectId} on this machine.`);
-      const current = yield* settings.getSettings;
-      const resolved = resolveProjectSettings(current, projectId, project.value).settings;
-      // Same as `t3_thread_launch` with no choices: the project defaults, in its root.
-      const launched = yield* threadLaunch.launch({
-        commandId: CommandId.make(`machine-map:${command.id}`),
-        projectId,
-        title: input.title,
-        modelSelection: resolved.defaultModelSelection ?? getAutoBootstrapThreadModelSelection(),
-        runtimeMode: resolved.defaultRuntimeMode,
-        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        workspaceStrategy: { type: "root" },
-        initialMessage: { text: input.message, attachments: [] },
-        createdBy: "system",
-        creationSource: "server",
-      });
-      return succeed({ threadId: launched.threadId });
+  ) {
+    const projectId = ProjectId.make(input.projectId);
+    const project = yield* projects.getById(projectId);
+    if (Option.isNone(project)) return fail(`No project ${input.projectId} on this machine.`);
+    const current = yield* settings.getSettings;
+    const resolved = resolveProjectSettings(current, projectId, project.value).settings;
+    // Same as `t3_thread_launch` with no choices: the project defaults, in its root.
+    const launched = yield* threadLaunch.launch({
+      commandId: CommandId.make(`machine-map:${command.id}`),
+      projectId,
+      title: input.title,
+      modelSelection: resolved.defaultModelSelection ?? getAutoBootstrapThreadModelSelection(),
+      runtimeMode: resolved.defaultRuntimeMode,
+      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      workspaceStrategy: { type: "root" },
+      initialMessage: { text: input.message, attachments: [] },
+      createdBy: "system",
+      creationSource: "server",
     });
+    return succeed({ threadId: launched.threadId });
+  });
 
   const collectDiagnostics = Effect.gen(function* () {
     const [processes, traces, resources] = yield* Effect.all([
@@ -434,8 +433,8 @@ const make = Effect.gen(function* () {
     });
   });
 
-  const run: MachineHost["Service"]["run"] = (command) =>
-    Effect.gen(function* () {
+  const run: MachineHost["Service"]["run"] = Effect.fnUntraced(
+    function* (command) {
       const nowMs = yield* Clock.currentTimeMillis;
       if (Date.parse(command.expiresAt) <= nowMs) {
         return fail("The command expired before it reached this machine.");
@@ -477,10 +476,13 @@ const make = Effect.gen(function* () {
         case "reloadWindows":
           return fail("This command runs in the desktop app.");
       }
-    }).pipe(
-      Effect.catch((cause) => Effect.succeed(fail(errorText(cause)))),
-      Effect.withSpan("MachineHost.run", { attributes: { kind: command.input._tag } }),
-    );
+    },
+    (effect, command) =>
+      effect.pipe(
+        Effect.catch((cause) => Effect.succeed(fail(errorText(cause)))),
+        Effect.withSpan("MachineHost.run", { attributes: { kind: command.input._tag } }),
+      ),
+  );
 
   const restartProcess = Effect.sync(() => {
     // SIGTERM runs the normal shutdown: provider sessions stop and finalizers run.

@@ -46,7 +46,7 @@ in Settings.
 
 ## Focus levels
 
-Turn on **Settings → General → Keyboard focus levels** to move focus between the composer,
+Turn on **Settings → Keybindings → Keyboard focus levels** to move focus between the composer,
 the timeline, the right panel and the sidebar with the keyboard. It is off by default.
 
 - Escape moves one level up: from the composer to the timeline, then to the sidebar.
@@ -55,12 +55,12 @@ the timeline, the right panel and the sidebar with the keyboard. It is off by de
 - In the desktop app, `mod+alt+left` and `mod+alt+right` move between the sidebar, the chat and
   the right panel.
 - Outside a text field, typing a letter in the chat goes to the composer. In the sidebar, digits
-  switch groups, and other letters do nothing.
+  switch tabs, and other letters do nothing.
 - A key that moves focus outlines the area it moves to. Turn this off in
-  **Settings → General → Focus highlight**.
+  **Settings → Keybindings → Focus highlight**.
 
 In the sidebar, Up and Down move between threads, and Enter opens one and focuses its timeline.
-Up from the first thread reaches the group tabs. Left and Right, or `1` to `9`, switch groups.
+Up from the first thread reaches the sidebar tabs. Left and Right, or `1` to `9`, switch tabs.
 `mod+f` focuses sidebar search.
 
 In the timeline, Up and Down move a cursor between messages. Right goes one level deeper:
@@ -73,6 +73,9 @@ from there, and Enter cites exactly the selected text.
 Shift with Up or Down extends the selection within one list. Enter cites the selection with a note, and
 `alt+enter` cites it without one. Only assistant text can be cited. `mod+down` jumps to the
 latest message. PageUp and PageDown still scroll.
+Inside a message, Up and Down also stop on each link, section header and button, after the text
+that holds it. Enter clicks it. Right opens a closed section, and Left closes an open one. Escape
+goes back to the text, and Escape on a link that has focus returns to the cursor.
 
 These keys work with the setting off too:
 
@@ -194,8 +197,9 @@ the focused thread.
 bottom of the sidebar, such as unpin, settle, snooze, archive, or discarding a
 draft. Consecutive
 actions of the same kind undo together. The notice remains available for five
-seconds after the latest action. The default shortcut skips text fields and
-terminals so native undo keeps working there.
+seconds after the latest action. Right after an action, the shortcut works even
+in a text field such as the composer. Once you type or press another key, the
+field gets its own undo back. Terminals always keep their native shortcut.
 
 `navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
 through the pages you have visited, like a browser's back and forward buttons.

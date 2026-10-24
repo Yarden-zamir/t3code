@@ -1,4 +1,5 @@
 import { PermissionUpdateNotice } from "./features/connection/PermissionUpdateNotice";
+import { ForkAccessChangeNotices } from "./features/connection/ForkAccessChangeNotices";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
@@ -6,9 +7,10 @@ import { StatusBar } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { createStaticNavigation } from "@react-navigation/native";
+import { createStaticNavigation, getStateFromPath } from "@react-navigation/native";
 
 import { RegistryContext } from "@effect/atom-react";
+import { ProjectChipIconRasterizer } from "./native/ProjectChipIconImages";
 import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";
 import * as Dialog from "./components/ui/Dialog";
 import { CloudAuthProvider } from "./features/cloud/CloudAuthProvider";
@@ -20,8 +22,12 @@ import {
 } from "./features/settings/appearance/AppearancePreferencesProvider";
 import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
+import { subscribeComposerDraftModelReconciliation } from "./state/use-composer-drafts";
+import { environmentThreadShells } from "./state/threads";
+import { environmentShell } from "./state/shell";
 import { OverlayPortalHost } from "./components/ui/OverlayPortal";
-import { shouldHandleAppLink } from "./lib/appLinking";
+import { initialShortcutHref } from "./features/shortcuts/useAppShortcuts";
+import { shouldHandleAppLink, restoreDraftLinkState } from "./lib/appLinking";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
@@ -41,6 +47,15 @@ const appLinking = {
   prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
   config: { initialRouteName: "Home" },
   filter: shouldHandleAppLink,
+  // A launcher shortcut that starts the app becomes the first screen. A navigation sent once the
+  // app runs comes too early on a cold start: React Navigation drops it before it is ready.
+  getInitialURL: async () => {
+    const href = initialShortcutHref();
+    // The href starts with "/"; the scheme prefix ends with "//".
+    return href === null ? Linking.getInitialURL() : Linking.createURL(href.slice(1));
+  },
+  getStateFromPath: (path: string, options: Parameters<typeof getStateFromPath>[1]) =>
+    restoreDraftLinkState(getStateFromPath(path, options), path),
 };
 
 const Navigation = createStaticNavigation(RootStack);
@@ -57,6 +72,16 @@ function SplashScreenCoordinator() {
 
 export default function App() {
   useUiRuntimeMemoryWarningGc();
+  useEffect(
+    () =>
+      subscribeComposerDraftModelReconciliation({
+        registry: appAtomRegistry,
+        threadShellAtom: environmentThreadShells.threadShellAtom,
+        threadRefsAtom: environmentThreadShells.threadRefsAtom,
+        shellStateAtom: environmentShell.stateAtom,
+      }),
+    [],
+  );
 
   return (
     <RegistryContext.Provider value={appAtomRegistry}>
@@ -78,6 +103,7 @@ function AppContent() {
       <SplashScreenCoordinator />
       <SubscriptionUsageCoordinator />
       <PermissionUpdateNotice />
+      <ForkAccessChangeNotices />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>
@@ -95,6 +121,7 @@ function AppContent() {
                   </IncomingShareProvider>
                   <Dialog.Host />
                   <ThreadArrangementHost />
+                  <ProjectChipIconRasterizer />
                 </NativeLayoutMetricsProvider>
               </GlobalVoiceInputControl>
               {/* Anchored-menu overlays render here — in-window, so the

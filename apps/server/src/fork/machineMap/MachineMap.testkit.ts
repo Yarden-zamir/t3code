@@ -30,6 +30,7 @@ export const arrow = (
   to,
   level,
   agentTools: false,
+  exec: false,
   expiresAt: null,
   revertLevel: null,
   ...overrides,
