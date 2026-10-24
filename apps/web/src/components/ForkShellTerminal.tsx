@@ -28,10 +28,6 @@ import { Button } from "./ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-/** The title of a terminal thread that no command named yet. */
-export const TERMINAL_THREAD_DEFAULT_TITLE = "Terminal";
-export const TERMINAL_TITLE_MAX_CHARS = 80;
-
 type SessionStatus = Parameters<
   NonNullable<Parameters<typeof TerminalViewport>[0]["onStatusChange"]>
 >[0];

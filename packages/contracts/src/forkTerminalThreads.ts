@@ -103,6 +103,23 @@ export function terminalThreadTitle(source: {
   return (title ?? "Terminal").slice(0, TERMINAL_THREAD_TITLE_MAX_LENGTH);
 }
 
+/**
+ * The title that a terminal thread gets from its first command, or null to keep its title. A
+ * thread that started without a command (the enlarge button) has the title of no command, which
+ * is the shell name for a named shell.
+ */
+export function terminalThreadCommandTitle(source: {
+  readonly title: string;
+  readonly command: string | undefined;
+  readonly shell: string | undefined;
+}): string | null {
+  const command = source.command?.trim();
+  if (!command) return null;
+  if (source.title !== terminalThreadTitle({ command: undefined, shell: source.shell }))
+    return null;
+  return terminalThreadTitle({ command, shell: source.shell });
+}
+
 /** The client opens the main terminal of a terminal thread with this variable set to "1". */
 export const TERMINAL_THREAD_ENV = "T3CODE_TERMINAL_THREAD";
 

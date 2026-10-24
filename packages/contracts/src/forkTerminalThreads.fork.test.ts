@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { terminalThreadTitle } from "./forkTerminalThreads.ts";
+import { terminalThreadCommandTitle, terminalThreadTitle } from "./forkTerminalThreads.ts";
 
 describe("terminalThreadTitle", () => {
   it("names a thread after its command line first", () => {
@@ -23,5 +23,29 @@ describe("terminalThreadTitle", () => {
 
   it("keeps a long command line to the title limit", () => {
     expect(terminalThreadTitle({ command: "x".repeat(300), shell: undefined })).toHaveLength(80);
+  });
+});
+
+describe("terminalThreadCommandTitle", () => {
+  it("names a thread that started without a command after its first command", () => {
+    expect(terminalThreadCommandTitle({ title: "zsh", command: " ls -la ", shell: "zsh" })).toBe(
+      "ls -la",
+    );
+    expect(terminalThreadCommandTitle({ title: "Terminal", command: "ls", shell: undefined })).toBe(
+      "ls",
+    );
+  });
+
+  it("keeps a title that came from a command or from the user", () => {
+    expect(terminalThreadCommandTitle({ title: "sleep 700", command: "ls", shell: "zsh" })).toBe(
+      null,
+    );
+    expect(terminalThreadCommandTitle({ title: "My shell", command: "ls", shell: "zsh" })).toBe(
+      null,
+    );
+  });
+
+  it("keeps the title while no command ran", () => {
+    expect(terminalThreadCommandTitle({ title: "zsh", command: "  ", shell: "zsh" })).toBe(null);
   });
 });

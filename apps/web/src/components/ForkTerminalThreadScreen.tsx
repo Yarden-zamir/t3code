@@ -22,6 +22,7 @@ import {
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
+  terminalThreadCommandTitle,
   terminalThreadShell,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -112,11 +113,7 @@ import { PersistentThreadTerminalDrawer } from "./PersistentThreadTerminals";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { useThreadLinkedPullRequest } from "./pullRequest/useThreadLinkedPullRequest";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
-import {
-  ForkShellTerminal,
-  TERMINAL_THREAD_DEFAULT_TITLE,
-  TERMINAL_TITLE_MAX_CHARS,
-} from "./ForkShellTerminal";
+import { ForkShellTerminal } from "./ForkShellTerminal";
 import { PopoverCreateHandle } from "./ui/popover";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
@@ -856,18 +853,22 @@ function MainTerminal(props: {
   const seenAt = (summary ? terminalThreadState(summary).failedAt : null) ?? summary?.attention?.at;
 
   // A thread that started without a command (the enlarge button) is named after its first one.
-  const command = summary?.command?.trim();
+  const commandTitle = terminalThreadCommandTitle({
+    title: props.title,
+    command: summary?.command,
+    shell: props.shell,
+  });
   const canRename = useEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope);
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
   useEffect(() => {
-    if (props.title !== TERMINAL_THREAD_DEFAULT_TITLE || !command || !canRename) return;
+    if (commandTitle === null || !canRename) return;
     void updateMetadata({
       environmentId: threadRef.environmentId,
-      input: { threadId: threadRef.threadId, title: command.slice(0, TERMINAL_TITLE_MAX_CHARS) },
+      input: { threadId: threadRef.threadId, title: commandTitle },
     });
-  }, [canRename, command, props.title, threadRef, updateMetadata]);
+  }, [canRename, commandTitle, threadRef, updateMetadata]);
   useEffect(() => {
     if (seenAt === undefined) return;
     const markSeen = () => {
