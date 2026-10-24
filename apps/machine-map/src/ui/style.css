@@ -580,11 +580,33 @@ p.error-text {
   justify-content: center;
   margin-top: 16px;
 }
-/* minmax(0, 1fr): a long word wraps instead of widening the column past the card. */
 .stack {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+}
+/*
+ * Single-column content grids. An implicit column, or 1fr, grows to the longest word, so one
+ * setting key or hostname would push every row past its card. Add each new one of these here.
+ */
+.stack,
+.list,
+.field,
+.changes,
+.capabilities,
+.cloudflare-step,
+.cloudflare-step .v,
+.passkey-step,
+.empty,
+.dialog-body,
+.palette ul,
+.steps,
+.install-step,
+.pause-info-effects,
+.meters,
+.charts,
+ul.alerts,
+.health-card {
+  grid-template-columns: minmax(0, 1fr);
 }
 .stack.tight {
   gap: 8px;
@@ -1460,6 +1482,9 @@ details.more[open] summary {
   margin-bottom: 12px;
   font-weight: 600;
 }
+.map-bar > span {
+  min-width: 0;
+}
 .map-bar .btn kbd {
   margin-left: 2px;
 }
@@ -1633,7 +1658,6 @@ td .stickers,
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 .item {
@@ -1869,6 +1893,15 @@ td .stickers,
   position: relative;
   z-index: 1;
   flex-basis: 100%;
+  min-width: 0;
+}
+/* A table cell keeps its longest word, so a long value scrolls here instead of leaving the row. */
+.item > details.diff {
+  overflow-x: auto;
+}
+/* The scroll box clips an outer outline, so the focus ring sits inside the summary. */
+.item > details.diff summary:focus-visible {
+  outline-offset: -3px;
 }
 details.diff summary {
   width: fit-content;
@@ -1889,8 +1922,9 @@ details.diff td {
   vertical-align: top;
   border: 0;
   background: none;
-  /* A table cell ignores break-word, so a long value would widen the table past the row. */
-  overflow-wrap: anywhere;
+}
+details.diff td:last-child {
+  padding-right: 0;
 }
 details.diff th {
   font-weight: 600;
