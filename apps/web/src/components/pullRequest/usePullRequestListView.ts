@@ -1,12 +1,11 @@
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
-  pullRequestHostOf,
   type EnvironmentId,
   type ProjectId,
   type PullRequestInvolvement,
   type PullRequestListFilters,
   type PullRequestListResult,
   type PullRequestListState,
-  type SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { useState } from "react";
 
@@ -172,9 +171,9 @@ export function usePullRequestScope(
   const expectedHosts = (() => {
     const byHost = new Map<string, PullRequestExpectedHost>();
     for (const project of projects) {
-      const kind = project.repositoryIdentity?.provider as SourceControlProviderKind | undefined;
+      const kind = project.repositoryIdentity?.provider;
       if (kind === undefined) continue;
-      const host = pullRequestHostOf(project.repositoryIdentity, kind);
+      const host = sourceControlClients.changeRequestHost(project.repositoryIdentity, kind);
       if (!byHost.has(host)) byHost.set(host, { host, kind });
     }
     return [...byHost.values()];

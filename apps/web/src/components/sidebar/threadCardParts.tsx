@@ -63,8 +63,6 @@ export interface ThreadCardStatus {
 export function ThreadCardStatusBadge(props: {
   status: ThreadCardStatus;
   trailing?: ReactNode;
-  /** Off for the open thread, which announces its own status. */
-  announce?: boolean;
 }) {
   const { status } = props;
   return (
@@ -72,9 +70,9 @@ export function ThreadCardStatusBadge(props: {
       {status.icon === null || status.icon === "woke" ? null : (
         <AppIcon slot={`status.${status.icon}`} />
       )}
-      {/* The label alone is the live region: a role="status" wrapper around a
-          ticking duration would make screen readers announce every second. */}
-      <span role={props.announce === false ? undefined : "status"}>{status.label}</span>
+      {/* Not a live region: a collapsed sidebar is inert, so
+          BackgroundThreadAnnouncer and the open thread's timeline speak status changes. */}
+      {status.label}
       {props.trailing}
     </span>
   );
