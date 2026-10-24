@@ -302,7 +302,7 @@ function SidebarUpdateControl() {
     }
 
     if (action === "install") {
-      if (ForkUpdate.openIdleInstallPromptIfAgentsRun()) {
+      if (ForkUpdate.openIdleInstallPromptIfWorkRuns()) {
         setIsActionPending(false);
         return;
       }
@@ -373,10 +373,10 @@ function SidebarUpdateControl() {
           : {}),
         ...(bridge && action !== "none"
           ? {
-              // Fork: while agents run, this app's restart offers "Install when idle".
+              // Fork: while agents or terminal programs run, this app's restart offers "Install when idle".
               // The relaunch is not under way then, so the pass shows its result now.
               installLocal: (reportError) =>
-                ForkUpdate.openIdleInstallPromptIfAgentsRun()
+                ForkUpdate.openIdleInstallPromptIfWorkRuns()
                   ? Promise.resolve(false)
                   : installLocalUpdate(bridge, reportError),
             }
@@ -444,8 +444,8 @@ function SidebarUpdateControl() {
           {...(run.localVersion === null && action === "install" && window.desktopBridge
             ? {
                 onRestart: async () => {
-                  // Fork: while agents run, the restart offers "Install when idle".
-                  if (ForkUpdate.openIdleInstallPromptIfAgentsRun()) return;
+                  // Fork: while agents or terminal programs run, the restart offers "Install when idle".
+                  if (ForkUpdate.openIdleInstallPromptIfWorkRuns()) return;
                   saveUpdateEverythingResult({
                     localVersion: localUpdateVersion,
                     updatedServers: 0,

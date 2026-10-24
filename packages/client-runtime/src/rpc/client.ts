@@ -77,7 +77,9 @@ export type EnvironmentSubscriptionRpcTag =
   // Fork: machine map client state (apps/machine-map/SPEC.md).
   | typeof WS_METHODS.machineMapSubscribe
   // Fork: preview local server groups (forkPreview.ts).
-  | typeof WS_METHODS.forkPreviewSubscribeLocalListeners;
+  | typeof WS_METHODS.forkPreviewSubscribeLocalListeners
+  // Fork: desktop "Install when idle" waits for terminal thread programs (forkTerminalThreads.ts).
+  | typeof WS_METHODS.forkUpdatesTerminalHold;
 
 export type EnvironmentStreamCommandRpcTag =
   | typeof WS_METHODS.chatGptHandoffSubscribe

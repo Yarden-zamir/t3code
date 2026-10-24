@@ -6,7 +6,7 @@
  */
 import * as Schema from "effect/Schema";
 
-import { ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import type { ModelSelection } from "./modelSelection.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
@@ -20,6 +20,20 @@ export const TERMINAL_THREAD_MODEL_SELECTION: ModelSelection = {
   instanceId: TERMINAL_THREAD_INSTANCE_ID,
   model: "terminal",
 };
+
+/**
+ * A program in a terminal thread holds a server update at most this many hours: the automatic
+ * update of a headless server, and "Install when idle" of the desktop app (`fork/ForkUpdates.ts`).
+ */
+export const TERMINAL_UPDATE_HOLD_MAX_HOURS = 6;
+
+/** Desktop "Install when idle": the hold counts from `heldSince` (epoch ms), when it was chosen. */
+export const ForkUpdateTerminalHoldInput = Schema.Struct({ heldSince: NonNegativeInt });
+export type ForkUpdateTerminalHoldInput = typeof ForkUpdateTerminalHoldInput.Type;
+
+/** `ready`: no program in a terminal thread holds the update any longer. */
+export const ForkUpdateTerminalHold = Schema.Struct({ ready: Schema.Boolean });
+export type ForkUpdateTerminalHold = typeof ForkUpdateTerminalHold.Type;
 
 /** The `shell` that opens the main terminal of a terminal thread; undefined for the default. */
 export function terminalThreadShell(model: string): string | undefined {

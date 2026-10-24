@@ -1,7 +1,10 @@
 import { EnvironmentId, type OrchestrationV2ShellThreadStatus } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { countRunningAgentTurns } from "./desktopUpdateIdleInstall.logic";
+import {
+  countRunningAgentTurns,
+  countRunningTerminalPrograms,
+} from "./desktopUpdateIdleInstall.logic";
 
 const primary = EnvironmentId.make("primary");
 const remote = EnvironmentId.make("remote");
@@ -36,5 +39,21 @@ describe("countRunningAgentTurns", () => {
 
     expect(countRunningAgentTurns(threads, primary)).toBe(1);
     expect(countRunningAgentTurns(threads, null)).toBe(0);
+  });
+});
+
+describe("countRunningTerminalPrograms", () => {
+  it("counts the terminal threads of the restarted environment whose program runs", () => {
+    const running = { status: "running", attention: null, running: true, failedAt: null } as const;
+    const threads = [
+      { environmentId: primary, terminal: running },
+      { environmentId: primary, terminal: { ...running, running: false } },
+      // An agent thread has no terminal state.
+      { environmentId: primary },
+      { environmentId: remote, terminal: running },
+    ];
+
+    expect(countRunningTerminalPrograms(threads, primary)).toBe(1);
+    expect(countRunningTerminalPrograms(threads, null)).toBe(0);
   });
 });

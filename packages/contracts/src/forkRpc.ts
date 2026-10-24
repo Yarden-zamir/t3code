@@ -27,6 +27,8 @@ import {
   ForkMoveTerminalToThreadInput,
   ForkPrepareDraftWorktreeInput,
   ForkPrepareDraftWorktreeResult,
+  ForkUpdateTerminalHold,
+  ForkUpdateTerminalHoldInput,
 } from "./forkTerminalThreads.ts";
 import {
   MachineMapClientState,
@@ -76,6 +78,8 @@ export const FORK_WS_METHODS = {
   vcsPrepareDraftWorktree: "vcs.prepareDraftWorktree",
   // Fork: a drawer terminal becomes a terminal thread (forkTerminalThreads.ts)
   terminalMoveToThread: "terminal.moveToThread",
+  // Fork: desktop "Install when idle" waits for terminal thread programs (forkTerminalThreads.ts)
+  forkUpdatesTerminalHold: "forkUpdates.terminalHold",
 } as const;
 
 const forkChangelogError = Schema.Union([ForkChangelogError, EnvironmentAuthorizationError]);
@@ -196,6 +200,14 @@ const WsTerminalMoveToThreadRpc = Rpc.make(FORK_WS_METHODS.terminalMoveToThread,
   error: Schema.Union([ForkMoveTerminalToThreadError, EnvironmentAuthorizationError]),
 });
 
+/** Fork: emits again when the hold changes. The server prints the notice in held terminals. */
+const WsForkUpdatesTerminalHoldRpc = Rpc.make(FORK_WS_METHODS.forkUpdatesTerminalHold, {
+  payload: ForkUpdateTerminalHoldInput,
+  success: ForkUpdateTerminalHold,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 export const ForkWsRpcGroup = RpcGroup.make(
   WsForkChangelogListReleasesRpc,
   WsForkChangelogReleaseChangesRpc,
@@ -215,6 +227,7 @@ export const ForkWsRpcGroup = RpcGroup.make(
   WsForkPreviewSubscribeLocalListenersRpc,
   WsVcsPrepareDraftWorktreeRpc,
   WsTerminalMoveToThreadRpc,
+  WsForkUpdatesTerminalHoldRpc,
 );
 
 /** The fork part of `CLIENT_GUARDED_RPC_SCOPES`. */
@@ -252,4 +265,6 @@ export const FORK_RPC_READ_SCOPES = {
   [FORK_WS_METHODS.webPushTest]: AuthOrchestrationReadScope,
   // Fork: the same data class as `subscribeDiscoveredLocalServers`.
   [FORK_WS_METHODS.forkPreviewSubscribeLocalListeners]: AuthOrchestrationReadScope,
+  // Fork: prints the update notice in held terminals, as the desktop update reports need.
+  [FORK_WS_METHODS.forkUpdatesTerminalHold]: AuthEnvironmentMaintainScope,
 } as const;

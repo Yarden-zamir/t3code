@@ -203,7 +203,7 @@ export function AboutVersionSection() {
 
     if (action === "install") {
       if (isUpdateActionPending) return;
-      if (Fork.openIdleInstallPromptIfAgentsRun()) return;
+      if (Fork.openIdleInstallPromptIfWorkRuns()) return;
       setIsUpdateActionPending(true);
       let confirmed = false;
       try {
