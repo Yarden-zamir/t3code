@@ -13,7 +13,7 @@ import {
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
 } from "lucide-react";
-import { Fragment, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { showInstalledAppNotification } from "../installedApp";
@@ -97,13 +97,11 @@ export function ThreadNotificationCoordinator() {
   if (mode === "off" && !inAppNotificationsEnabled) return null;
 
   return environmentIds.map((environmentId) => (
-    <Fragment key={environmentId}>
-      <EnvironmentNotifications environmentId={environmentId} onNotification={onNotification} />
-      <ForkTerminalThreadNotifications
-        environmentId={environmentId}
-        onNotification={onNotification}
-      />
-    </Fragment>
+    <EnvironmentNotifications
+      key={environmentId}
+      environmentId={environmentId}
+      onNotification={onNotification}
+    />
   ));
 }
 
@@ -196,19 +194,89 @@ function EnvironmentNotifications({
               : status === "failed"
                 ? "Thread failed"
                 : "Input needed";
-      notifyThread({
-        environmentId,
-        threadId: thread.id,
-        threadTitle: thread.title,
-        kind,
-        status,
-        title,
-        mode,
-        inAppNotificationsEnabled,
-        viewing: activeEnvironmentId === environmentId && activeThreadId === thread.id,
-        navigate,
-        onNotification,
-      });
+      if (hasNotificationSound(mode)) {
+        void playNotificationSound(kind, () =>
+          hasNotificationSound(getClientSettings().notificationMode),
+        );
+      }
+      if (
+        inAppNotificationsEnabled &&
+        document.visibilityState === "visible" &&
+        document.hasFocus() &&
+        (activeEnvironmentId !== environmentId || activeThreadId !== thread.id)
+      ) {
+        const toastId = toastManager.add({
+          type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
+          title,
+          description: thread.title,
+          data: {
+            hideCopyButton: true,
+            leadingIcon:
+              kind === "completion" ? (
+                <CircleCheckIcon aria-hidden className="size-4 text-success-foreground" />
+              ) : status === "approval" ? (
+                <ShieldQuestionIcon aria-hidden className="size-4 text-warning-foreground" />
+              ) : status === "failed" ? (
+                <CircleAlertIcon aria-hidden className="size-4 text-destructive-foreground" />
+              ) : (
+                <MessageCircleQuestionIcon aria-hidden className="size-4 text-info-foreground" />
+              ),
+          },
+          actionProps: {
+            children: "Open thread",
+            onClick: () => {
+              toastManager.close(toastId);
+              void navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId, threadId: thread.id },
+              });
+            },
+          },
+        });
+        continue;
+      }
+      if (
+        !hasDesktopNotifications(mode) ||
+        (document.visibilityState === "visible" && document.hasFocus()) ||
+        typeof Notification === "undefined" ||
+        Notification.permission !== "granted"
+      )
+        continue;
+      try {
+        const notification = new Notification(title, {
+          body: thread.title,
+          tag: threadNotificationTag(environmentId, thread.id),
+          silent: true,
+        });
+        onNotification(environmentId, notification);
+        notification.addEventListener("click", () => {
+          notification.close();
+          window.focus();
+          void window.desktopBridge?.revealWindow?.().catch(() => undefined);
+          void navigate({
+            to: "/$environmentId/$threadId",
+            params: { environmentId, threadId: thread.id },
+          });
+        });
+      } catch {
+        // Some browsers expose Notification but reject desktop presentation.
+        // Fork: the installed app shows it through its service worker.
+        const threadId = thread.id;
+        void showInstalledAppNotification(
+          title,
+          {
+            body: thread.title,
+            tag: threadNotificationTag(environmentId, threadId),
+            url: `/${environmentId}/${threadId}`,
+          },
+          () =>
+            void navigate({ to: "/$environmentId/$threadId", params: { environmentId, threadId } }),
+        )
+          .then((shown) => {
+            if (shown) onNotification(environmentId, shown, "replacedByTag");
+          })
+          .catch(() => undefined);
+      }
     }
     previous.current = next;
   }, [
@@ -224,118 +292,10 @@ function EnvironmentNotifications({
     threads,
   ]);
 
-  return null;
-}
-
-/**
- * Presents one thread notification: the sound, the in-app toast while the app has focus on
- * another thread, or a desktop notification. Fork: also used for terminal threads
- * (`ForkTerminalThreadNotifications`).
- */
-export function notifyThread(input: {
-  readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
-  readonly threadTitle: string;
-  readonly kind: "input" | "completion";
-  readonly status: string;
-  readonly title: string;
-  readonly mode: ReturnType<typeof getClientSettings>["notificationMode"];
-  readonly inAppNotificationsEnabled: boolean;
-  readonly viewing: boolean;
-  readonly navigate: ReturnType<typeof useNavigate>;
-  readonly onNotification: OnNotification;
-}) {
-  const {
-    environmentId,
-    threadId,
-    threadTitle,
-    kind,
-    status,
-    title,
-    mode,
-    inAppNotificationsEnabled,
-    navigate,
-    onNotification,
-  } = input;
-  if (hasNotificationSound(mode)) {
-    void playNotificationSound(kind, () =>
-      hasNotificationSound(getClientSettings().notificationMode),
-    );
-  }
-  if (
-    inAppNotificationsEnabled &&
-    document.visibilityState === "visible" &&
-    document.hasFocus() &&
-    !input.viewing
-  ) {
-    const toastId = toastManager.add({
-      type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
-      title,
-      description: threadTitle,
-      data: {
-        hideCopyButton: true,
-        leadingIcon:
-          kind === "completion" ? (
-            <CircleCheckIcon aria-hidden className="size-4 text-success-foreground" />
-          ) : status === "approval" ? (
-            <ShieldQuestionIcon aria-hidden className="size-4 text-warning-foreground" />
-          ) : status === "failed" ? (
-            <CircleAlertIcon aria-hidden className="size-4 text-destructive-foreground" />
-          ) : (
-            <MessageCircleQuestionIcon aria-hidden className="size-4 text-info-foreground" />
-          ),
-      },
-      actionProps: {
-        children: "Open thread",
-        onClick: () => {
-          toastManager.close(toastId);
-          void navigate({
-            to: "/$environmentId/$threadId",
-            params: { environmentId, threadId },
-          });
-        },
-      },
-    });
-    return;
-  }
-  if (
-    !hasDesktopNotifications(mode) ||
-    (document.visibilityState === "visible" && document.hasFocus()) ||
-    typeof Notification === "undefined" ||
-    Notification.permission !== "granted"
-  )
-    return;
-  try {
-    const notification = new Notification(title, {
-      body: threadTitle,
-      tag: threadNotificationTag(environmentId, threadId),
-      silent: true,
-    });
-    onNotification(environmentId, notification);
-    notification.addEventListener("click", () => {
-      notification.close();
-      window.focus();
-      void window.desktopBridge?.revealWindow?.().catch(() => undefined);
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: { environmentId, threadId },
-      });
-    });
-  } catch {
-    // Some browsers expose Notification but reject desktop presentation.
-    // Fork: the installed app shows it through its service worker.
-    void showInstalledAppNotification(
-      title,
-      {
-        body: threadTitle,
-        tag: threadNotificationTag(environmentId, threadId),
-        url: `/${environmentId}/${threadId}`,
-      },
-      () => void navigate({ to: "/$environmentId/$threadId", params: { environmentId, threadId } }),
-    )
-      .then((shown) => {
-        if (shown) onNotification(environmentId, shown, "replacedByTag");
-      })
-      .catch(() => undefined);
-  }
+  return (
+    <ForkTerminalThreadNotifications
+      environmentId={environmentId}
+      onNotification={onNotification}
+    />
+  );
 }
