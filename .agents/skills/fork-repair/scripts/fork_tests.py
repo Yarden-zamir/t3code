@@ -97,10 +97,15 @@ def main() -> None:
     parser.add_argument(
         "--exclude", action="append", default=[], metavar="PREFIX", help="skip files under this path prefix (repeatable)"
     )
+    parser.add_argument(
+        "--from-chunk", type=int, default=1, metavar="N", help="start at chunk N, after a run that stopped"
+    )
     parser.add_argument("--dry-run", action="store_true", help="print the files and chunks only")
     args = parser.parse_args()
     if args.chunk < 1:
         common.fail("--chunk must be at least 1")
+    if args.from_chunk < 1:
+        common.fail("--from-chunk must be at least 1")
 
     root = common.repo_root()
     if args.files is not None:
@@ -145,6 +150,8 @@ def main() -> None:
         return code
 
     for index, chunk in enumerate(chunks, 1):
+        if index < args.from_chunk:
+            continue
         code = run(chunk, str(index))
         if code == 0:
             continue
@@ -157,7 +164,12 @@ def main() -> None:
                 failed.extend(part)
 
     if not failed:
-        print(f"All {len(files)} fork test files passed. Logs: {logs}")
+        scope = (
+            f"Chunks {args.from_chunk} to {len(chunks)}"
+            if args.from_chunk > 1
+            else f"All {len(files)} fork test files"
+        )
+        print(f"{scope} passed. Logs: {logs}")
         return
     # Limit: a failed chunk lists all its files, also the ones that passed. Parse the vitest
     # output for the failed files if the re-runs get too slow.
