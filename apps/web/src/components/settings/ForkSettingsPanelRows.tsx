@@ -8,7 +8,7 @@ import { ForkSettingsSlot } from "./ForkSettingsSlot";
 export { ForkSettingsSlot } from "./ForkSettingsSlot";
 export { FORK_SETTINGS_RESTORE_PATCH, forkChangedSettingLabels } from "./forkSettingsRestore";
 export {
-  openIdleInstallPromptIfAgentsRun,
+  openIdleInstallPromptIfWorkRuns,
   useIdleInstallArmed,
 } from "../desktop/DesktopUpdateIdleInstall";
 export { prepareNewestUpdateInstall } from "../desktop/DesktopUpdateNewerCheck";

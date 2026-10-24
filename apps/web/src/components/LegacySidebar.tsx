@@ -145,7 +145,7 @@ import {
   shouldToastDesktopUpdateActionResult,
 } from "./desktopUpdate.logic";
 import { showDesktopUpdateDownloadedToast } from "./desktopUpdate.toast";
-import { openIdleInstallPromptIfAgentsRun } from "./desktop/DesktopUpdateIdleInstall";
+import { openIdleInstallPromptIfWorkRuns } from "./desktop/DesktopUpdateIdleInstall";
 import { prepareNewestUpdateInstall } from "./desktop/DesktopUpdateNewerCheck";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
@@ -3614,7 +3614,7 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
     }
 
     if (desktopUpdateButtonAction === "install") {
-      if (openIdleInstallPromptIfAgentsRun()) {
+      if (openIdleInstallPromptIfWorkRuns()) {
         setDesktopUpdateActionPending(false);
         return;
       }

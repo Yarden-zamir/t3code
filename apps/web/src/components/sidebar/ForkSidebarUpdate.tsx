@@ -11,7 +11,7 @@ import { ForkUpdateChanges } from "../forkChangelog/ForkUpdateChanges";
 import { Button } from "../ui/button";
 
 export {
-  openIdleInstallPromptIfAgentsRun,
+  openIdleInstallPromptIfWorkRuns,
   useIdleInstallArmed,
 } from "../desktop/DesktopUpdateIdleInstall";
 export { prepareNewestUpdateInstall } from "../desktop/DesktopUpdateNewerCheck";

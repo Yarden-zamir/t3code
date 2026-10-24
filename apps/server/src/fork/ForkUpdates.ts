@@ -12,8 +12,16 @@
  *   later.
  * - The machine map command `installUpdate` installs now, or at the next check
  *   that finds no running turn or shell (`whenIdle`).
+ * - The desktop app installs its own updates. Its "Install when idle" waits for
+ *   the agents itself and for terminal thread programs through `terminalHold`,
+ *   with the same maximum and notice.
  */
-import { TERMINAL_THREAD_INSTANCE_ID, type TerminalSummary } from "@t3tools/contracts";
+import {
+  type ForkUpdateTerminalHold,
+  TERMINAL_THREAD_INSTANCE_ID,
+  TERMINAL_UPDATE_HOLD_MAX_HOURS,
+  type TerminalSummary,
+} from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -24,6 +32,7 @@ import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/http";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -46,9 +55,12 @@ const CHECK_INTERVAL = Duration.minutes(5);
  * their work. A dev server or a CLI agent left open runs for days, and without a maximum the
  * machine would stay on an old release. Six hours lets a machine update on the same day.
  */
-export const TERMINAL_HOLD_MAX = Duration.hours(6);
+export const TERMINAL_HOLD_MAX = Duration.hours(TERMINAL_UPDATE_HOLD_MAX_HOURS);
 /** The time between the notice in each held terminal and the update. */
 export const TERMINAL_HOLD_NOTICE_LEAD = Duration.minutes(10);
+// The desktop install waits in front of the user, so it checks more often than the headless one.
+// Only a running program makes a check read the thread snapshot.
+export const DESKTOP_TERMINAL_HOLD_CHECK_INTERVAL = Duration.seconds(30);
 
 const TERMINAL_HOLD_NOTICE =
   "\r\n[T3 Code] A newer T3 Code waits for this program. In about 10 minutes it installs, " +
@@ -89,6 +101,11 @@ export class ForkUpdates extends Context.Service<
     readonly install: (input: {
       readonly whenIdle: boolean;
     }) => Effect.Effect<{ readonly version: string; readonly whenIdle: boolean }, ForkUpdateError>;
+    /**
+     * The terminal thread programs that hold a desktop "Install when idle", which started at
+     * `heldSince` (epoch ms). The headless hold rules apply, and the stream prints the notice.
+     */
+    readonly terminalHold: (heldSince: number) => Stream.Stream<ForkUpdateTerminalHold>;
   }
 >()("t3/fork/ForkUpdates") {}
 
@@ -107,7 +124,7 @@ const make = Effect.gen(function* () {
   const available = config.mode !== "desktop" && launcher.managed;
   // The machine map asked for an install at the next idle check.
   const installWhenIdle = yield* Ref.make(false);
-  const terminalHold = yield* Ref.make<TerminalHold>(null);
+  const headlessHold = yield* Ref.make<TerminalHold>(null);
 
   const newerRelease = newerForkRelease(httpClient, packageJson.version).pipe(
     Effect.mapError((error) => new ForkUpdateError({ reason: error.message })),
@@ -142,28 +159,46 @@ const make = Effect.gen(function* () {
   // a restart and can last for days. Native subagents and monitors are awaited
   // work that the upstream restart continuation resumes on purpose, and they
   // can run for hours, so waiting for them would hold updates back as long.
-  const runningWork = Effect.gen(function* () {
-    const snapshot = yield* threads.getShellSnapshot();
-    const running = yield* Ref.get(busyTerminals);
-    const terminalThreadIds = new Set<string>(
-      snapshot.threads
+  const busyPrograms = Ref.get(busyTerminals).pipe(
+    Effect.map((running) =>
+      [...running.values()].filter(
+        (terminal) => terminal.hasRunningSubprocess && terminal.status === "running",
+      ),
+    ),
+  );
+  const inTerminalThreads = (
+    programs: ReadonlyArray<TerminalSummary>,
+    shells: ReadonlyArray<{ readonly id: string; readonly providerInstanceId: string }>,
+  ) => {
+    const terminalThreadIds = new Set(
+      shells
         .filter((thread) => thread.providerInstanceId === TERMINAL_THREAD_INSTANCE_ID)
         .map((thread) => thread.id),
     );
+    return programs.filter((terminal) => terminalThreadIds.has(terminal.threadId));
+  };
+  const runningWork = Effect.gen(function* () {
+    const snapshot = yield* threads.getShellSnapshot();
     return {
       agents: snapshot.threads.some(
         (thread) =>
           thread.activeRunId !== null ||
           (thread.pendingBackgroundTasks ?? []).some((task) => task.kind === "command"),
       ),
-      terminalPrograms: [...running.values()].filter(
-        (terminal) =>
-          terminal.hasRunningSubprocess &&
-          terminal.status === "running" &&
-          terminalThreadIds.has(terminal.threadId),
-      ),
+      terminalPrograms: inTerminalThreads(yield* busyPrograms, snapshot.threads),
     };
   }).pipe(Effect.orElseSucceed(() => ({ agents: true, terminalPrograms: [] })));
+  const printHoldNotices = (programs: ReadonlyArray<TerminalSummary>) =>
+    Effect.forEach(
+      programs,
+      (terminal) =>
+        terminals.forkPrintNotice({
+          threadId: terminal.threadId,
+          terminalId: terminal.terminalId,
+          text: TERMINAL_HOLD_NOTICE,
+        }),
+      { discard: true },
+    );
 
   // The launcher records the last update. A version that rolled back or failed
   // is not tried again, so a broken release does not cause a restart loop.
@@ -196,25 +231,17 @@ const make = Effect.gen(function* () {
     const version = yield* newerRelease;
     if (version === undefined) {
       yield* Ref.set(installWhenIdle, false);
-      yield* Ref.set(terminalHold, null);
+      yield* Ref.set(headlessHold, null);
       return;
     }
     if (version === (yield* lastFailedVersion)) return;
     const step = nextTerminalHold(
-      yield* Ref.get(terminalHold),
+      yield* Ref.get(headlessHold),
       work.terminalPrograms.length > 0,
       yield* Clock.currentTimeMillis,
     );
-    yield* Ref.set(terminalHold, step.hold);
-    if (step.action === "notify") {
-      yield* Effect.forEach(work.terminalPrograms, (terminal) =>
-        terminals.forkPrintNotice({
-          threadId: terminal.threadId,
-          terminalId: terminal.terminalId,
-          text: TERMINAL_HOLD_NOTICE,
-        }),
-      );
-    }
+    yield* Ref.set(headlessHold, step.hold);
+    if (step.action === "notify") yield* printHoldNotices(work.terminalPrograms);
     if (step.action === "install") yield* runUpdate(version);
   }).pipe(Effect.catchCause((cause) => Effect.logWarning("Fork update check failed.", { cause })));
 
@@ -245,7 +272,42 @@ const make = Effect.gen(function* () {
     return { version, whenIdle };
   });
 
-  return ForkUpdates.of({ available, install });
+  const terminalHold: ForkUpdates["Service"]["terminalHold"] = (heldSince) =>
+    Stream.unwrap(
+      Effect.gen(function* () {
+        // The hold keeps counting from `heldSince` when programs stop and start again.
+        const started: TerminalHold = { since: heldSince, noticedAt: null };
+        const hold = yield* Ref.make(started);
+        const check = Effect.gen(function* () {
+          const busy = yield* busyPrograms;
+          const programs =
+            busy.length === 0
+              ? []
+              : inTerminalThreads(busy, (yield* threads.getShellSnapshot()).threads);
+          const step = nextTerminalHold(
+            yield* Ref.get(hold),
+            programs.length > 0,
+            yield* Clock.currentTimeMillis,
+          );
+          yield* Ref.set(hold, step.hold ?? started);
+          if (step.action === "notify") yield* printHoldNotices(programs);
+          return { ready: step.action === "install" };
+        }).pipe(
+          // A failed check holds, as `runningWork` does: an update must not end a program.
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Fork desktop update hold check failed.", { cause }).pipe(
+              Effect.as({ ready: false }),
+            ),
+          ),
+        );
+        return Stream.tick(DESKTOP_TERMINAL_HOLD_CHECK_INTERVAL).pipe(
+          Stream.mapEffect(() => check),
+          Stream.changesWith((left, right) => left.ready === right.ready),
+        );
+      }),
+    );
+
+  return ForkUpdates.of({ available, install, terminalHold });
 });
 
 export const layer = Layer.effect(ForkUpdates, make);

@@ -187,6 +187,13 @@ export const writesWithCapability = <P, A, E, R>(handle: (params: P) => Effect.E
 export const writesThreads = <P, A, E, R>(
   threads: (params: P) => ReadonlyArray<ThreadId | undefined>,
   handle: (params: P) => Effect.Effect<A, E, R>,
+  options?: {
+    /**
+     * Fork (MM-1923): the write neither runs nor stops code, such as a rename, so another
+     * machine reaches a terminal thread without exec. Leave it unset for anything else.
+     */
+    readonly metadataOnly?: true;
+  },
 ) =>
   declare(
     (params: P) =>
@@ -200,10 +207,11 @@ export const writesThreads = <P, A, E, R>(
           if (target !== null && target.deletedAt === null) {
             yield* assertTargetWithinLimits(caller.limits, target);
             yield* assertSameLink(caller, target);
-            yield* refuseTerminalThreadWithoutExec(
-              caller.scope.requestNamespace,
-              target.modelSelection,
-            );
+            if (options?.metadataOnly !== true)
+              yield* refuseTerminalThreadWithoutExec(
+                caller.scope.requestNamespace,
+                target.modelSelection,
+              );
           }
         }
         // The target's user can raise its modes after the check above; the

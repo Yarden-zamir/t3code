@@ -3,10 +3,12 @@ import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { MobileNewThreadProject } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import { environmentServerConfigsAtom } from "../../state/server";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
+import { newThreadStartChoice } from "./forkNewThreadStartChoice";
 
 /**
  * Fork: `mobileNewThreadProject` from the first server that changed it from `picker`. The machine
@@ -46,6 +48,7 @@ function useNewThreadProjectMode(): MobileNewThreadProject {
  * The draft opens before the first paint when its project is in the local project list, also
  * before a server connects: the last project, or the project of the last thread without a
  * project. Only the first thread without a project waits for the server to make that project.
+ * A connected environment wins over an offline one (`newThreadStartChoice`).
  */
 export function useForkNewThreadStart(input: {
   /** False when a share, a prompt link or the draft opened the picker: those keep the picker. */
@@ -62,6 +65,16 @@ export function useForkNewThreadStart(input: {
     ? preferences.value.scratchProject
     : undefined;
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
+  const { connectedEnvironments } = useRemoteConnectionStatus();
+  const connected = useMemo(
+    () =>
+      new Set(
+        connectedEnvironments
+          .filter((environment) => environment.connectionState === "connected")
+          .map((environment) => environment.environmentId),
+      ),
+    [connectedEnvironments],
+  );
   const ranRef = useRef(false);
   const { enabled, projects, canStartScratch, startScratch, selectProject } = input;
 
@@ -70,45 +83,27 @@ export function useForkNewThreadStart(input: {
     if (ranRef.current || !enabled || mode === "picker") return;
     // Wait until the preferences load; a missing last project keeps the picker.
     if (!AsyncResult.isSuccess(preferences)) return;
-    const scratch = mode === "none" || last?.scratch === true;
-    if (scratch) {
-      const known =
-        (rememberedScratch
-          ? projects.find(
-              (candidate) =>
-                candidate.environmentId === rememberedScratch.environmentId &&
-                candidate.id === rememberedScratch.projectId,
-            )
-          : undefined) ??
-        projects.find((candidate) =>
-          isScratchProject(
-            candidate,
-            serverConfigs.get(candidate.environmentId)?.scratchWorkspaceRoot,
-          ),
-        );
-      if (known) {
-        ranRef.current = true;
-        void selectProject(known);
-        return;
-      }
-      // Starting without a project needs a connected environment; wait for one.
-      if (!canStartScratch) return;
-      ranRef.current = true;
-      void startScratch();
-      return;
-    }
-    const project = last
-      ? projects.find(
-          (candidate) =>
-            candidate.environmentId === last.environmentId && candidate.id === last.projectId,
-        )
-      : undefined;
-    // The project can arrive with the environment snapshot. Until then, the picker shows.
-    if (!project) return;
+    const choice = newThreadStartChoice({
+      scratch: mode === "none" || last?.scratch === true,
+      last,
+      rememberedScratch,
+      projects,
+      isScratch: (candidate) =>
+        isScratchProject(
+          candidate,
+          serverConfigs.get(candidate.environmentId)?.scratchWorkspaceRoot,
+        ),
+      connected,
+      canStartScratch,
+    });
+    if (choice.kind === "wait") return;
     ranRef.current = true;
-    void selectProject(project);
+    if (choice.kind === "project") void selectProject(choice.project);
+    // Starting without a project needs a connected environment, which `canStartScratch` checks.
+    if (choice.kind === "start-scratch") void startScratch();
   }, [
     canStartScratch,
+    connected,
     enabled,
     last,
     mode,

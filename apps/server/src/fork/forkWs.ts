@@ -22,6 +22,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as ForkChangelog from "./ForkChangelog.ts";
+import * as ForkUpdates from "./ForkUpdates.ts";
 import { requireLocalDesktop } from "./machineMap/browserAccess.ts";
 import * as MachineMap from "./machineMap/MachineMap.ts";
 import { isLocalDesktopSubject, isMachineSubject } from "./machineMap/machineAccess.ts";
@@ -83,6 +84,7 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
       const previewServerGroups = yield* PreviewServerGroups.PreviewServerGroups;
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const terminalThreadMove = yield* TerminalThreadMove.TerminalThreadMove;
+      const forkUpdates = yield* ForkUpdates.ForkUpdates;
       /** MM-1907: this environment first, then the machines that its agents read. */
       const readableEnvironments = Effect.fn("ForkWs.readableEnvironments")(function* () {
         const self = yield* environment.getDescriptor;
@@ -146,6 +148,8 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
           ),
         [FORK_WS_METHODS.terminalMoveToThread]: (input) =>
           terminalThreadMove.moveToThread(input).pipe(Effect.as({})),
+        [FORK_WS_METHODS.forkUpdatesTerminalHold]: (input) =>
+          forkUpdates.terminalHold(input.heldSince),
       });
     }),
   );

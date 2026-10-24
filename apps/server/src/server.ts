@@ -525,7 +525,7 @@ const layerMachineMap = MachineExec.layer.pipe(
   Layer.provideMerge(MachineMap.layer),
   Layer.provideMerge(MachineHost.layer),
   // Fork: updates from the fork releases. It runs also when the machine map is off.
-  Layer.provide(ForkUpdates.layer.pipe(Layer.provide(layerServerSelfUpdate))),
+  Layer.provideMerge(ForkUpdates.layer.pipe(Layer.provide(layerServerSelfUpdate))),
   Layer.provideMerge(MachinePeers.layer),
   Layer.provide(MachineResources.layer),
   Layer.provide(MachineTunnel.layer.pipe(Layer.provide(ServerSecretStore.layer))),

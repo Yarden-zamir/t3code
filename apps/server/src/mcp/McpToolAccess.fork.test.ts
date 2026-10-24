@@ -232,7 +232,7 @@ it.effect.each([
     "runtime_mode_escalation_denied",
   ],
 
-  // MM-1923: every write to a terminal thread from another machine needs exec.
+  // MM-1923: a terminal thread write from another machine needs exec, unless metadataOnly.
   ["writes_threads", machineSession, { threadId: terminalThreadId }, "capability_denied"],
   ["writes_threads", machineSession, { threadId: fullAccessThreadId }, "here"],
   ["writes_threads", fullAccessClient, { threadId: terminalThreadId }, "here"],

@@ -126,6 +126,7 @@ const handlers = {
         const service = yield* ThreadMetadataMcpService.ThreadMetadataMcpService;
         return yield* service.update(scope, input);
       }),
+    { metadataOnly: true },
   ),
   t3_thread_send: McpToolAccess.writesThreads(
     (input) => [input.threadId],

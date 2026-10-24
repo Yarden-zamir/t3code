@@ -291,14 +291,14 @@ One command installs the fork from the fork releases on macOS, Windows or Linux 
 
 ### Install when idle
 
-While agents run, the desktop update button offers "Install when idle" next to "Install now". The app installs the update when no agent turn runs.
+While agents or programs in terminal threads run, the desktop update button offers "Install when idle" next to "Install now". The app installs the update when no agent turn and no terminal thread program runs. A terminal thread program holds the update by the rules of [Server auto-update](#server-auto-update): at most 6 hours from the choice, then a notice in its terminal, and the install about 10 minutes later.
 
 - **Works on:** desktop.
 - **Limits:** the wait lives in the window, so a window reload drops it. Revisit if a reload during the wait loses an update in practice.
 
 ### Server auto-update
 
-A headless server that runs as the background service installs each newer fork release when no agent turn, no background shell and no program in a terminal thread runs. A program in a terminal thread holds the update for at most 6 hours (`TERMINAL_HOLD_MAX` in `apps/server/src/fork/ForkUpdates.ts`). Then its terminal shows a notice, and the update installs about 10 minutes later and ends the program.
+A headless server that runs as the background service installs each newer fork release when no agent turn, no background shell and no program in a terminal thread runs. A program in a terminal thread holds the update for at most 6 hours (`TERMINAL_UPDATE_HOLD_MAX_HOURS` in `packages/contracts/src/forkTerminalThreads.ts`). Then its terminal shows a notice, and the update installs about 10 minutes later and ends the program.
 
 - **Setting:** server setting `forkAutoUpdate` (off by default). Settings > General > About > "Server auto-update".
 - **Works on:** server (the background service of `t3 service install`). The desktop app updates itself.
@@ -487,6 +487,7 @@ What New thread opens in the mobile app.
 - Back from the draft shows the project list. A share, a prompt link and "Choose a project" in the draft keep the project list.
 - The "New task" launcher shortcut on Android opens the same draft, also when the app was closed.
 - The draft opens at once when the phone knows its project, also before a server connects: the last project, or the project of the last thread without a project. Sending waits for the connection.
+- A connected environment wins over an offline one. Without a project, the draft opens on a connected environment when the remembered one is offline. With `last`, a last project on an offline environment keeps the project list while another environment is connected. With no connected environment, the remembered project opens.
 - **Limits:** `none` needs a server that offers threads without a project. Without one, and with `last` and no earlier new thread, the project list shows. The first thread without a project on a phone waits for the server to make that project.
 
 ### Camera in the mobile composer
