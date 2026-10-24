@@ -284,6 +284,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["typography family size monospace code blocks diffs file previews"],
   },
   {
+    id: "terminal-font",
+    title: "Terminal font",
+    to: "/settings/appearance",
+    searchTerms: ["typography family size monospace output"],
+  },
+  {
     id: "font-smoothing",
     title: "Font smoothing",
     to: "/settings/appearance",

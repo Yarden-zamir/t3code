@@ -40,12 +40,3 @@ describe("searchSettings", () => {
     );
   });
 });
-
-describe("terminal settings search", () => {
-  it("finds the terminal font on Settings > Terminal, not in Appearance", () => {
-    expect(searchSettings("terminal font")[0]).toMatchObject({
-      id: "terminal-font",
-      to: "/settings/terminal",
-    });
-  });
-});

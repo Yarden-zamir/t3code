@@ -154,8 +154,7 @@ function CodeFontRow({
   );
 }
 
-// Fork: Settings > Terminal shows it (TerminalSettings.tsx), not Typography.
-export function TerminalFontRow() {
+function TerminalFontRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const defaults = useFontDefaultFamilies();
@@ -257,6 +256,7 @@ function FontSettingsGroup() {
       <InterfaceFontRow />
       <PromptFontRow />
       <CodeFontRow />
+      <TerminalFontRow />
       <FontSmoothingRow />
     </>
   );
@@ -296,6 +296,7 @@ function SimpleFontRows() {
 // must not flip the section - the target would never mount to be scrolled to.
 const ADVANCED_TYPOGRAPHY_TARGET_IDS: ReadonlySet<string> = new Set([
   "prompt-font",
+  "terminal-font",
   ...(typeof navigator !== "undefined" && isMacPlatform(navigator.platform)
     ? ["font-smoothing"]
     : []),

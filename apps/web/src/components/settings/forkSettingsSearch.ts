@@ -403,12 +403,6 @@ export const PREVIEW_ITEMS = [
 /** Settings > Terminal: the drawer terminal and terminal threads. */
 export const TERMINAL_ITEMS = [
   {
-    id: "terminal-font",
-    title: "Terminal font",
-    to: "/settings/terminal",
-    searchTerms: ["typography family size monospace output"],
-  },
-  {
     id: "terminal-thread-font-limits",
     title: "Terminal zoom limits",
     to: "/settings/terminal",

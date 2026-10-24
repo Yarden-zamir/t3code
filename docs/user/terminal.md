@@ -134,9 +134,9 @@ terminal, and the output stays.
 
 ## Settings
 
-Settings > Terminal holds the settings of every terminal (font, zoom limits, key mappings,
+Settings > Terminal holds the settings of every terminal (zoom limits, key mappings,
 app shortcuts, close confirmation and history) and of terminal threads. The terminal font
-follows the monospace font of Appearance until you choose a separate font.
+stays in Appearance > Typography, and Settings > Terminal links to it.
 
 Shells lists the shells that the server found, and your custom shells. A custom shell is any
 program with arguments, for example `uv` with `run python`. A program name without a folder
