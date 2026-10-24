@@ -17,7 +17,7 @@ function configuredRelayUrl(): string {
   return resolveCloudPublicConfig().relayUrl ?? "http://relay.invalid";
 }
 
-const layerHttpClient = layerRemoteHttpClient(PrimaryEnvironmentHttpLayer.fetchWithoutHttpCache);
+const layerHttpClient = layerRemoteHttpClient((input, init) => globalThis.fetch(input, init));
 const layerRelayTracing = RelayTracing.layer(resolveRelayTracingConfig(), {
   serviceName: "t3code-web",
   serviceVersion: import.meta.env.APP_VERSION,

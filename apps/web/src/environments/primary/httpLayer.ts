@@ -43,19 +43,10 @@ function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpC
   );
 }
 
-/**
- * Fork: environment API responses are always live, so they skip the browser's HTTP cache. A GET
- * through the cache also waits for any other request to the same URL that is still open (the
- * cache lock); one stuck `/api/auth/session` request then held back every session check, and the
- * client could change no thread.
- */
-export const fetchWithoutHttpCache: typeof globalThis.fetch = (input, init) =>
-  globalThis.fetch(input, { ...init, cache: "no-store" });
-
 export function layerForCurrentOrigin() {
   return Layer.unwrap(
     Effect.sync(() => {
-      const layerBase = layerRemoteHttpClient(fetchWithoutHttpCache);
+      const layerBase = layerRemoteHttpClient(globalThis.fetch);
       if (isSameOriginBrowserPrimary()) {
         return Layer.merge(
           layerBase,
