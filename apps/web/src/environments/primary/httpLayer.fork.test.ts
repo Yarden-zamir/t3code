@@ -69,4 +69,20 @@ describe("primary environment HTTP layer", { concurrent: false }, () => {
       expect(getToken).toHaveBeenLastCalledWith("revoked");
     }).pipe(Effect.provide(PrimaryEnvironmentHttpLayer.layerForCurrentOrigin()));
   });
+
+  it("skips the HTTP cache and keeps the other request options", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await PrimaryEnvironmentHttpLayer.fetchWithoutHttpCache("/api/auth/session", {
+      method: "GET",
+      credentials: "include",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/session", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
+  });
 });
