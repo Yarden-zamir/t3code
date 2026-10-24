@@ -1,5 +1,5 @@
 import { FORK_KEYBINDING_COMMANDS, type ForkKeybindingCommand } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
@@ -46,6 +46,11 @@ export function registerFocusLevelCommands(
   return () => {
     for (const [command, handler] of added) handlers.get(command)?.delete(handler);
   };
+}
+
+/** Whether a mounted component handles `command` now, such as the Settings find box. */
+export function hasRegisteredFocusLevelCommand(command: ForkKeybindingCommand): boolean {
+  return (handlers.get(command)?.size ?? 0) > 0;
 }
 
 /**
@@ -101,9 +106,12 @@ export function useFocusLevelShortcuts() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const levelsSetting = useClientSettings((settings) => settings.keyboardFocusLevels);
   const navigate = useNavigate();
-  const latest = useRef({ keybindings, navigate });
+  const settingsPageOpen = useLocation({
+    select: (location) => location.pathname.startsWith("/settings"),
+  });
+  const latest = useRef({ keybindings, navigate, settingsPageOpen });
   useLayoutEffect(() => {
-    latest.current = { keybindings, navigate };
+    latest.current = { keybindings, navigate, settingsPageOpen };
     setFocusLevelsEnabled(levelsSetting);
   });
 
@@ -132,8 +140,12 @@ export function useFocusLevelShortcuts() {
     };
     const resolve = (event: KeyboardEvent): ForkKeybindingCommand | null => {
       if (event.isComposing || isCommandPaletteOpen()) return null;
+      // A shortcut recorder in Settings > Keybindings gets every key, also a bound one.
+      if (event.target instanceof Element && event.target.closest("[data-keybinding-capture]"))
+        return null;
       const command = resolveShortcutCommand(event, latest.current.keybindings, {
         context: {
+          settingsPageOpen: latest.current.settingsPageOpen,
           terminalFocus: isTerminalFocused(event),
           previewFocus: isPreviewFocused(),
           editableFocus: !isTerminalThreadAppChord(event) && isEditableFocused(event.target),
