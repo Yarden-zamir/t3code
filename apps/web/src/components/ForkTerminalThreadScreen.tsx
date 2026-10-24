@@ -23,6 +23,7 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   terminalThreadCommandTitle,
+  TERMINAL_THREADS_SETTING_PATH,
   terminalThreadShell,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -30,13 +31,14 @@ import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { isElectron } from "../env";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
+import { useTerminalThreadsEnabled } from "../hooks/useForkTerminalThreads";
 import { useTerminalThreadState } from "../hooks/useForkTerminalThreadState";
 import { useReturnFocusToTerminal } from "../hooks/useForkTerminalFocus";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
@@ -173,6 +175,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(threadRef.environmentId));
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
   const handleNewThread = useNewThreadHandler();
+  const terminalThreadsEnabled = useTerminalThreadsEnabled(threadRef.environmentId);
   const drawer = useTerminalThreadDrawer(threadRef);
   const parentThreadLink = useParentThreadLink(thread);
   const workspace = useTerminalThreadWorkspace(threadRef, thread, project);
@@ -243,6 +246,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
     // Like the chat composer: a key typed while focus is on the page (after a dialog, a rename or
     // Wake now) goes to the shell, and the shell takes focus.
     typeIntoComposer: (key) => {
+      if (!terminalThreadsEnabled) return false;
       if (!readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope)) return false;
       void writeTerminal({
         environmentId: threadRef.environmentId,
@@ -391,6 +395,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
             shell={terminalThreadShell(thread.modelSelection.model)}
             focusRequestId={drawer.mainFocusRequestId}
             keybindings={keybindings}
+            readOnly={!terminalThreadsEnabled}
           />
           <ThreadRightPanelHosts panel={rightPanel} />
         </ChatCanvas>
@@ -837,6 +842,8 @@ function MainTerminal(props: {
   readonly shell: string | undefined;
   readonly focusRequestId: number;
   readonly keybindings: ResolvedKeybindingsConfig;
+  /** The server setting is off: the saved output shows, and no shell starts. */
+  readonly readOnly: boolean;
 }) {
   const { threadRef } = props;
 
@@ -892,6 +899,20 @@ function MainTerminal(props: {
       focusRequestId={props.focusRequestId}
       keybindings={props.keybindings}
       className="p-2"
+      {...(props.readOnly
+        ? {
+            readOnlyNotice: (
+              <span>
+                Terminal threads are off, so this thread shows its saved output only. Turn them on
+                in{" "}
+                <Link to="/settings/terminal" className="underline underline-offset-2">
+                  {TERMINAL_THREADS_SETTING_PATH}
+                </Link>
+                .
+              </span>
+            ),
+          }
+        : {})}
     />
   );
 }

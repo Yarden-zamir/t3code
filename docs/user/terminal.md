@@ -46,6 +46,10 @@ thread: the terminal button next to New thread in the sidebar (not in the legacy
 same rules as the New thread button, including the project chooser and Shift. The command
 `chat.newTerminalLocal` (`mod+alt+shift+n`) starts in the focused project at once.
 
+When you turn the setting off, existing terminal threads stay in the sidebar with their saved
+output, read only. They start no shell, and a message or a scheduled task to them fails. A
+program that still runs keeps running until it ends or the server restarts.
+
 A new terminal starts as a new thread in Terminal mode: the composer box holds a live
 shell, and the Terminal button in the composer is on. The footer shows the folder of the shell. Pick the shell (zsh, bash and
 so on, or a custom shell) in place of the model. The first command that ends, or that runs for a second (an

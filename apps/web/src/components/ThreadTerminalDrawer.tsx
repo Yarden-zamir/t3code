@@ -440,6 +440,8 @@ interface TerminalViewportProps {
   shell?: string | undefined;
   /** Fork: the shell of a draft in Terminal mode, which detaches soon after it leaves. */
   draft?: boolean | undefined;
+  /** Fork: output only, such as a terminal thread while its server setting is off. */
+  readOnly?: boolean | undefined;
   onSessionExited: () => void;
   /** Fork: the session status after each change, for a screen that shows the ended state. */
   onStatusChange?: ((status: TerminalSessionState["status"]) => void) | undefined;
@@ -487,6 +489,7 @@ function TerminalSessionViewport({
   providerInstanceId,
   shell,
   draft,
+  readOnly,
   onSessionExited,
   onStatusChange,
   onInput,
@@ -502,9 +505,10 @@ function TerminalSessionViewport({
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
   const visibleRef = useRef(visible);
   const environmentId = threadRef.environmentId;
-  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
-  const hasTerminalWriteAccess = useEffectEvent(() =>
-    readEnvironmentScope(environmentId, AuthTerminalOperateScope),
+  const canOperateTerminal =
+    useEnvironmentScope(environmentId, AuthTerminalOperateScope) && readOnly !== true;
+  const hasTerminalWriteAccess = useEffectEvent(
+    () => readOnly !== true && readEnvironmentScope(environmentId, AuthTerminalOperateScope),
   );
   const canOpenHostEditor = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canActivateTerminalLink = useEffectEvent(

@@ -55,6 +55,8 @@ export function ForkShellTerminal(props: {
   readonly endedMessage?: ReactNode;
   /** Whether the shell is ended, for a host that changes its own controls then. */
   readonly onEndedChange?: (ended: boolean) => void;
+  /** Shows the output without input and without a new shell, with this notice under it. */
+  readonly readOnlyNotice?: ReactNode;
 }) {
   const { threadRef } = props;
   const [advancedTypography] = useLocalStorage(
@@ -68,7 +70,9 @@ export function ForkShellTerminal(props: {
   });
   const containerRef = useRef<HTMLDivElement>(null);
   useGrabTerminalFocus(containerRef);
-  const canOperate = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
+  const readOnly = props.readOnlyNotice !== undefined;
+  const canOperate =
+    useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope) && !readOnly;
   const openTerminal = useAtomCommand(terminalEnvironment.open);
 
   const [status, setStatus] = useState<SessionStatus | null>(null);
@@ -142,6 +146,7 @@ export function ForkShellTerminal(props: {
         runtimeEnv={launch.env}
         shell={props.shell}
         draft={props.draft}
+        readOnly={readOnly}
         onSessionExited={() => {}}
         onStatusChange={setStatus}
         onInput={props.onInput}
@@ -152,7 +157,11 @@ export function ForkShellTerminal(props: {
         drawerHeight={layout.height}
         keybindings={props.keybindings}
       />
-      {ended ? (
+      {readOnly ? (
+        <div className="absolute inset-x-0 bottom-0 z-10 flex justify-center border-t border-border/60 bg-background/90 px-3 py-2 text-sm text-muted-foreground">
+          {props.readOnlyNotice}
+        </div>
+      ) : ended ? (
         <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-3 border-t border-border/60 bg-background/90 px-3 py-2 text-sm">
           <span className="text-muted-foreground">
             {status === "error"
