@@ -1,7 +1,12 @@
 import { assert, describe, it } from "vite-plus/test";
 
 import type { KeybindingShortcut, ResolvedKeybindingsConfig } from "@t3tools/contracts";
-import { isTerminalAppShortcut, type ShortcutEventLike } from "./keybindings";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import {
+  isTerminalAppShortcut,
+  resolveShortcutCommand,
+  type ShortcutEventLike,
+} from "./keybindings";
 
 function event(overrides: Partial<ShortcutEventLike> = {}): ShortcutEventLike {
   return {
@@ -44,5 +49,18 @@ describe("isTerminalAppShortcut", () => {
     const options = { ...focused, appShortcutsFirst: true };
     assert.isFalse(isTerminalAppShortcut(event({ key: "x", ctrlKey: true }), BINDINGS, options));
     assert.isFalse(isTerminalAppShortcut(event({ key: "k", metaKey: true }), BINDINGS, options));
+  });
+});
+
+describe("settings.find", () => {
+  const find = event({ key: "f", metaKey: true });
+  const resolve = (context: Record<string, boolean>) =>
+    resolveShortcutCommand(find, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "MacIntel", context });
+
+  it("takes mod+f only on a Settings page", () => {
+    assert.strictEqual(resolve({ settingsPageOpen: true }), "settings.find");
+    assert.strictEqual(resolve({}), "chat.find");
+    assert.strictEqual(resolve({ sidebarFocus: true }), "sidebar.search");
+    assert.strictEqual(resolve({ terminalFocus: true }), null);
   });
 });

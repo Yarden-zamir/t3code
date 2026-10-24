@@ -171,6 +171,12 @@
   background-color: color-mix(in srgb, var(--primary) 24%, transparent);
 }
 
+/* Settings find (ForkSettingsFind.tsx): the rows and sections of the open page that do not
+   match. The find box sets the attribute on page elements it does not render itself. */
+[data-settings-find-hidden] {
+  display: none !important;
+}
+
 /* Fork: a draft terminal grows into the screen of its terminal thread
    (`ForkDraftTerminalComposer`). The text keeps its size and corner while the frame grows. */
 html[data-fork-terminal-expand="true"]::view-transition-group(t3-fork-terminal) {
