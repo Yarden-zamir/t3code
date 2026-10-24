@@ -440,6 +440,10 @@ it.effect.each([
       const sourceRunId = RunId.make("fork-compact-source-run");
       const userMessageId = MessageId.make("fork-compact-source-message");
       const sourceSelection = { instanceId: claude.instanceId, model: "test-model" };
+      // Fork: a Claude fork needs a recorded native message cursor (forkNativeSource.ts).
+      const attemptId = RunAttemptId.make("fork-compact-source-attempt");
+      const providerTurnId = ProviderTurnId.make("fork-compact-source-turn");
+      const rootNodeId = NodeId.make("fork-compact-source-root");
 
       yield* orchestrator.dispatch({
         type: "thread.create",
@@ -513,7 +517,7 @@ it.effect.each([
               providerThreadId,
               userMessageId,
               rootNodeId: null,
-              activeAttemptId: null,
+              activeAttemptId: attemptId,
               status: "completed",
               queuePosition: null,
               requestedAt: now,
@@ -521,6 +525,47 @@ it.effect.each([
               completedAt: now,
               checkpointId: null,
               contextHandoffId: null,
+            },
+          },
+          {
+            id: EventId.make("fork-compact-source-attempt"),
+            type: "run-attempt.created",
+            threadId: sourceThreadId,
+            runId: sourceRunId,
+            occurredAt: now,
+            payload: {
+              id: attemptId,
+              runId: sourceRunId,
+              attemptOrdinal: 1,
+              rootNodeId,
+              providerInstanceId: claude.instanceId,
+              providerThreadId,
+              providerTurnId,
+              reason: "initial",
+              status: "completed",
+              startedAt: now,
+              completedAt: now,
+            },
+          },
+          {
+            id: EventId.make("fork-compact-source-turn"),
+            type: "provider-turn.updated",
+            threadId: sourceThreadId,
+            occurredAt: now,
+            payload: {
+              id: providerTurnId,
+              providerThreadId,
+              nodeId: rootNodeId,
+              runAttemptId: attemptId,
+              nativeTurnRef: {
+                driver: claude.driver,
+                nativeId: "native-fork-compact-cursor",
+                strength: "strong",
+              },
+              ordinal: 1,
+              status: "completed",
+              startedAt: now,
+              completedAt: now,
             },
           },
           // Each message alone exceeds the default 16k handoff budget, so a
