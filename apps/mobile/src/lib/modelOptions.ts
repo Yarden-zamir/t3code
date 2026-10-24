@@ -11,7 +11,10 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
-import { resolveProjectProviderInstanceEnabled } from "@t3tools/contracts";
+import {
+  resolveProjectProviderInstanceEnabled,
+  TERMINAL_THREAD_INSTANCE_ID,
+} from "@t3tools/contracts";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
@@ -300,6 +303,9 @@ export function buildModelOptions(
   for (const provider of config?.providers ?? []) {
     if (
       !matchesLockedProvider(provider) ||
+      // Fork: the terminal lists shells, not agent models; mobile starts no terminal threads.
+      (provider.instanceId === TERMINAL_THREAD_INSTANCE_ID &&
+        providerInstanceId !== TERMINAL_THREAD_INSTANCE_ID) ||
       !isProviderEnabledForProject(config, provider, projectId) ||
       !provider.installed ||
       provider.auth.status === "unauthenticated" ||

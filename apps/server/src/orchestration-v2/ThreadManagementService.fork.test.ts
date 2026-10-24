@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import {
   CommandId,
   EnvironmentId,
+  MessageId,
   type OrchestrationV2Command,
   type OrchestrationV2Run,
   type OrchestrationV2StoredEvent,
@@ -9,6 +10,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   RunId,
+  TERMINAL_THREAD_INSTANCE_ID,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -154,4 +156,55 @@ it.effect("waitForThread can wait past an ended run for the thread's delegated w
       resultRun: { id: wakeRunId, status: "completed" },
     });
   }),
+);
+
+it.effect(
+  "refuses a terminal thread for a sender that asks for it, before anything is sent",
+  () => {
+    const projectId = ProjectId.make("project:thread-management:terminal");
+    const threadId = ThreadId.make("thread:thread-management:terminal");
+    const projection = {
+      thread: {
+        id: threadId,
+        projectId,
+        deletedAt: null,
+        archivedAt: null,
+        modelSelection: { instanceId: TERMINAL_THREAD_INSTANCE_ID, model: "terminal" },
+      },
+      runs: [],
+      providerTurns: [],
+    } as unknown as OrchestrationV2ThreadProjection;
+    const layerTest = ThreadManagementService.layer.pipe(
+      Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+      Layer.provide(
+        Layer.mock(Orchestrator.OrchestratorV2)({
+          getThreadRecords: () => Effect.succeed(projection),
+          getThreadProjection: () => Effect.succeed(projection),
+        }),
+      ),
+      Layer.provide(ServerSettings.layerTest()),
+      Layer.provide(layerReceiptsTest),
+    );
+
+    return Effect.gen(function* () {
+      const service = yield* ThreadManagementService.ThreadManagementService;
+      const error = yield* Effect.flip(
+        service.sendToThread({
+          projectId,
+          commandId: CommandId.make("command:thread-management:terminal"),
+          threadId,
+          messageId: MessageId.make("message:thread-management:terminal"),
+          text: "rm -rf ~",
+          attachments: [],
+          mode: "queue",
+          createdBy: "system",
+          creationSource: "server",
+          refuseTerminalThread: true,
+        }),
+      );
+      expect(error).toBeInstanceOf(
+        ThreadManagementService.ThreadManagementTerminalThreadRefusedError,
+      );
+    }).pipe(Effect.provide(layerTest));
+  },
 );

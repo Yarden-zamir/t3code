@@ -25,7 +25,6 @@ export const FORK_SETTING_PLACES = {
   "general-notifications": { to: "/settings/general", section: "Behavior" },
   "general-behavior": { to: "/settings/general", section: "Behavior" },
   "general-projects-and-threads": { to: "/settings/general", section: "Projects & threads" },
-  "general-confirmations": { to: "/settings/general", section: "Confirmations" },
   "general-about": { to: "/settings/general", section: "About" },
   "appearance-interface": { to: "/settings/appearance", section: "Interface" },
   "appearance-thread-cards": {
@@ -64,6 +63,8 @@ export const FORK_SETTING_PLACES = {
     forkSection: true,
   },
   "machines-machine-map": { to: "/settings/machines", section: "Machine map" },
+  "terminal-all-terminals": { to: "/settings/terminal", section: "All terminals" },
+  "terminal-threads": { to: "/settings/terminal", section: "Terminal threads" },
 } as const satisfies Record<string, ForkSettingPlaceDefinition>;
 
 export type ForkSettingPlace = keyof typeof FORK_SETTING_PLACES;
@@ -185,17 +186,27 @@ const FORK_SETTING_GROUPS = [
     ],
   },
   {
-    title: "Scripts and terminal",
+    title: "Scripts and keyboard",
     entries: [
       { ids: ["global-scripts"], place: "general-global-scripts" },
       { ids: ["app-toggle-shortcuts"], place: "keybindings-keyboard" },
-      { ids: ["terminal-app-shortcuts-first"], place: "keybindings-keyboard" },
       { ids: ["keyboard-focus-levels"], place: "keybindings-keyboard" },
       { ids: ["focus-level-highlight"], place: "keybindings-keyboard" },
       { ids: ["tooltip-shortcuts"], place: "keybindings-keyboard" },
       { ids: ["tooltip-shortcut-limit"], place: "keybindings-keyboard" },
       { ids: ["settings-find"], place: "keybindings-keyboard" },
-      { ids: ["terminal-close-confirmation"], place: "general-confirmations" },
+    ],
+  },
+  {
+    title: "Terminal",
+    entries: [
+      { ids: ["terminal-thread-font-limits"], place: "terminal-all-terminals" },
+      { ids: ["terminal-key-mappings"], place: "terminal-all-terminals" },
+      { ids: ["terminal-app-shortcuts-first"], place: "terminal-all-terminals" },
+      { ids: ["terminal-close-confirmation"], place: "terminal-all-terminals" },
+      { ids: ["terminal-history"], place: "terminal-all-terminals" },
+      { ids: ["terminal-threads"], place: "terminal-threads" },
+      { ids: ["current-project-terminal-opens-thread"], place: "terminal-threads" },
     ],
   },
   {

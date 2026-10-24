@@ -53,5 +53,7 @@ export const FORK_KEYBINDING_COMMANDS = [
   "settings.open",
   "settings.find",
   "keyboard.cheatSheet",
+  "chat.newTerminal",
+  "chat.newTerminalLocal",
 ] as const;
 export type ForkKeybindingCommand = (typeof FORK_KEYBINDING_COMMANDS)[number];

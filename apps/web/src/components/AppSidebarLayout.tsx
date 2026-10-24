@@ -261,7 +261,7 @@ export function NavigationHistoryShortcuts() {
       }
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
-          terminalFocus: isTerminalFocused(),
+          terminalFocus: isTerminalFocused(event),
           previewFocus: isPreviewFocused(),
           ...routePanelsOpen(routeThreadRef),
           editableFocus: isEditableFocused(event.target),

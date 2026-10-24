@@ -4,13 +4,13 @@ import { isSettingsFindPage, settingsFindMatch } from "./settingsFind";
 
 describe("settingsFindMatch", () => {
   it("matches only the rows of the open page", () => {
-    const match = settingsFindMatch("terminal", "/settings/keybindings");
-    expect(match.matched).toContain("terminal-app-shortcuts-first");
-    // Terminal close confirmation matches too, but lives on General.
-    expect(match.matched).not.toContain("terminal-close-confirmation");
-    expect(match.pageAnchors).not.toContain("terminal-close-confirmation");
-    expect(settingsFindMatch("terminal", "/settings/general").matched).toContain(
-      "terminal-close-confirmation",
+    // "shortcuts" names rows on Keybindings and on Terminal.
+    const keybindings = settingsFindMatch("shortcuts", "/settings/keybindings");
+    expect(keybindings.matched).toContain("tooltip-shortcuts");
+    expect(keybindings.matched).not.toContain("terminal-app-shortcuts-first");
+    expect([...keybindings.matched].every((id) => keybindings.pageAnchors.has(id))).toBe(true);
+    expect(settingsFindMatch("shortcuts", "/settings/terminal").matched).toContain(
+      "terminal-app-shortcuts-first",
     );
   });
 

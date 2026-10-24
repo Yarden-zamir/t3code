@@ -1,15 +1,22 @@
 /**
  * Fork: Web Push. Browsers subscribe on this server with its VAPID key. When a thread of this
  * server starts to wait for the user, or a running thread completes or fails, the server sends a
- * push to each subscription, so a phone shows the notification while the app is closed.
+ * push to each subscription, so a phone shows the notification while the app is closed. A terminal
+ * thread also pushes for a new attention on its main terminal, like `ForkTerminalThreadNotifications`
+ * on the web.
  *
  * The key is in the secret store. The subscriptions are in `<stateDir>/web-push.json`. With no
  * subscription, the service reads no thread.
  */
 import {
+  DEFAULT_TERMINAL_ID,
   type EnvironmentId,
+  isTerminalThread,
   type OrchestrationV2ThreadShell,
-  type ThreadId,
+  type TerminalAttention,
+  type TerminalMetadataStreamEvent,
+  type TerminalSummary,
+  ThreadId,
   WebPushError,
   type WebPushMessage,
   type WebPushSubscribeInput,
@@ -44,6 +51,7 @@ import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
+import * as TerminalManager from "../../terminal/Manager.ts";
 import { shouldPublishAgentAwarenessEvent } from "../../relay/AgentAwarenessRelay.ts";
 import { forkParked } from "../../serverActivation.ts";
 
@@ -83,22 +91,70 @@ export function attentionTransition(
   return null;
 }
 
+function transitionTitle(
+  thread: OrchestrationV2ThreadShell,
+  transition: NonNullable<ReturnType<typeof attentionTransition>>,
+): string {
+  // The same titles as `ThreadNotificationCoordinator`.
+  return transition === "completed"
+    ? "Thread completed"
+    : transition === "waiting_for_approval"
+      ? "Approval needed"
+      : transition === "waiting_for_input"
+        ? "Input needed"
+        : thread.lastErrorClass === "usage_limit"
+          ? "Usage limit reached"
+          : "Thread failed";
+}
+
+/** The same titles as `ForkTerminalThreadNotifications` on the web. */
+export function terminalAttentionTitle(attention: TerminalAttention): string {
+  if (attention.kind === "bell") return "Input needed";
+  return (attention.exitCode ?? 0) !== 0 ? "Program failed" : "Program done";
+}
+
+/**
+ * The attentions of main terminals in a metadata event that were not there before, and the
+ * record of each thread's last attention after it. The snapshot at the start of a subscription
+ * only records, so a resubscription does not repeat old attentions.
+ */
+export function newTerminalAttentions(
+  seen: ReadonlyMap<string, string>,
+  event: TerminalMetadataStreamEvent,
+): {
+  readonly seen: ReadonlyMap<string, string>;
+  readonly fresh: ReadonlyArray<{
+    readonly threadId: string;
+    readonly attention: TerminalAttention;
+  }>;
+} {
+  if (event.type === "remove") {
+    if (event.terminalId !== DEFAULT_TERMINAL_ID) return { seen, fresh: [] };
+    const next = new Map(seen);
+    next.delete(event.threadId);
+    return { seen: next, fresh: [] };
+  }
+  const terminals: ReadonlyArray<TerminalSummary> =
+    event.type === "snapshot" ? event.terminals : [event.terminal];
+  const next = new Map(event.type === "snapshot" ? [] : seen);
+  const fresh: Array<{ readonly threadId: string; readonly attention: TerminalAttention }> = [];
+  for (const terminal of terminals) {
+    const attention = terminal.attention;
+    if (terminal.terminalId !== DEFAULT_TERMINAL_ID || attention === undefined) continue;
+    if (event.type === "upsert" && seen.get(terminal.threadId) !== attention.at) {
+      fresh.push({ threadId: terminal.threadId, attention });
+    }
+    next.set(terminal.threadId, attention.at);
+  }
+  return { seen: next, fresh };
+}
+
 function messageFor(
   environmentId: EnvironmentId,
   thread: OrchestrationV2ThreadShell,
-  transition: NonNullable<ReturnType<typeof attentionTransition>>,
+  title: string,
 ): WebPushMessage {
-  // The same titles and tag as `ThreadNotificationCoordinator`.
-  const title =
-    transition === "completed"
-      ? "Thread completed"
-      : transition === "waiting_for_approval"
-        ? "Approval needed"
-        : transition === "waiting_for_input"
-          ? "Input needed"
-          : thread.lastErrorClass === "usage_limit"
-            ? "Usage limit reached"
-            : "Thread failed";
+  // The same tag as `ThreadNotificationCoordinator`.
   return {
     title,
     body: thread.title,
@@ -127,6 +183,7 @@ const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
   const threads = yield* ThreadManagement.ThreadManagementService;
+  const terminals = yield* TerminalManager.TerminalManager;
   const statePath = path.join(config.stateDir, "web-push.json");
 
   // A broken file must not stop the server. It starts with no subscription and logs why.
@@ -211,6 +268,18 @@ const make = Effect.gen(function* () {
     return result;
   });
 
+  const deliverToAll = (targets: ReadonlyArray<SavedSubscription>, message: WebPushMessage) =>
+    Effect.forEach(
+      targets,
+      (target) =>
+        deliver(target, message).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("Web Push delivery failed", { detail: error.message }),
+          ),
+        ),
+      { concurrency: "unbounded", discard: true },
+    );
+
   // The last phase of each thread since the start. Cleared while nobody subscribed.
   const phases = new Map<ThreadId, AgentAwarenessPhase | null>();
 
@@ -234,16 +303,9 @@ const make = Effect.gen(function* () {
       const transition = attentionTransition(phases.get(threadId), phase);
       phases.set(threadId, phase);
       if (transition === null || thread === null) return;
-      const message = messageFor(environmentId, thread, transition);
-      yield* Effect.forEach(
+      yield* deliverToAll(
         targets,
-        (target) =>
-          deliver(target, message).pipe(
-            Effect.catch((error) =>
-              Effect.logWarning("Web Push delivery failed", { detail: error.message }),
-            ),
-          ),
-        { concurrency: "unbounded", discard: true },
+        messageFor(environmentId, thread, transitionTitle(thread, transition)),
       );
     },
     (effect, threadId) =>
@@ -256,11 +318,46 @@ const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(observeThread);
 
+  const notifyTerminalAttention = Effect.fn("WebPush.notifyTerminalAttention")(
+    function* (input: { readonly threadId: string; readonly attention: TerminalAttention }) {
+      const targets = yield* Ref.get(subscriptions);
+      if (targets.length === 0) return;
+      const thread = yield* threads.getThreadShell(ThreadId.make(input.threadId));
+      if (thread === null || thread.archivedAt !== null || !isTerminalThread(thread)) return;
+      const environmentId = yield* serverEnvironment.getEnvironmentId;
+      yield* deliverToAll(
+        targets,
+        messageFor(environmentId, thread, terminalAttentionTitle(input.attention)),
+      );
+    },
+    (effect, input) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Web Push could not read a terminal thread", {
+            threadId: input.threadId,
+            cause: String(cause),
+          }),
+        ),
+      ),
+  );
+  const terminalWorker = yield* makeDrainableWorker(notifyTerminalAttention);
+
   const start: WebPush["Service"]["start"] = Effect.fn("WebPush.start")(function* () {
     yield* forkParked(
       Stream.runForEach(threads.streamDomainEvents, (event) =>
         shouldPublishAgentAwarenessEvent(event) ? worker.enqueue(event.threadId) : Effect.void,
       ),
+    );
+    let seenAttentions: ReadonlyMap<string, string> = new Map();
+    yield* forkParked(
+      Effect.acquireRelease(
+        terminals.subscribeMetadata((event) => {
+          const { seen, fresh } = newTerminalAttentions(seenAttentions, event);
+          seenAttentions = seen;
+          return Effect.forEach(fresh, terminalWorker.enqueue, { discard: true });
+        }),
+        (unsubscribe) => Effect.sync(unsubscribe),
+      ).pipe(Effect.andThen(Effect.never), Effect.scoped),
     );
   });
 

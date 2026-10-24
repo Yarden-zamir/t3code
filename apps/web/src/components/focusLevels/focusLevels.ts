@@ -69,6 +69,10 @@ export function focusLevelContext(target: EventTarget | null) {
 
 function focusTarget(level: FocusLevel): HTMLElement | null {
   const root = focusLevelElement(level);
+  // Fork: on a terminal thread, its shell takes the place of the composer.
+  if (!root && level === "composer") {
+    return document.querySelector<HTMLElement>('[data-terminal-owner="terminal-thread"] textarea');
+  }
   if (!root) return null;
   switch (level) {
     case "composer":

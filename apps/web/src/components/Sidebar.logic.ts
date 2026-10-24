@@ -1,3 +1,7 @@
+import {
+  terminalThreadStatusLabel,
+  type TerminalThreadState,
+} from "@t3tools/client-runtime/state/fork-terminal-threads";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
@@ -625,6 +629,8 @@ type ThreadStatusInput = Pick<
   | "runtime"
 > & {
   lastVisitedAt?: string | null | undefined;
+  /** Fork: the main terminal of a terminal thread. */
+  terminal?: TerminalThreadState | undefined;
   pendingBackgroundTasks?: SidebarThreadSummary["pendingBackgroundTasks"] | undefined;
   blockedOnThreadWait?: boolean | undefined;
 };
@@ -1093,9 +1099,30 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
+  const terminalLabel = terminalThreadStatusLabel(thread.terminal, thread.lastVisitedAt);
+  if (terminalLabel === "Awaiting Input") {
+    return {
+      label: "Awaiting Input",
+      colorClass: "text-indigo-600 dark:text-indigo-300/90",
+      dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
+      pulse: false,
+    };
+  }
+
+  // Fork: a shell that failed to start, or a program that failed, shows the Failed of a run.
+  if (terminalLabel === "Error") {
+    return {
+      label: "Failed",
+      colorClass: "text-red-600 dark:text-red-300/90",
+      dotClass: "bg-red-500 dark:bg-red-300/90",
+      pulse: false,
+    };
+  }
+
   if (
     (thread.runtime?.status === "running" && thread.blockedOnThreadWait !== true) ||
-    thread.runtime?.status === "waiting"
+    thread.runtime?.status === "waiting" ||
+    terminalLabel === "Working"
   ) {
     return {
       label: "Working",
@@ -1108,7 +1135,8 @@ export function resolveThreadStatusPill(input: {
   if (
     thread.runtime?.status === "preparing" ||
     thread.runtime?.status === "starting" ||
-    thread.runtime?.status === "queued"
+    thread.runtime?.status === "queued" ||
+    terminalLabel === "Connecting"
   ) {
     return {
       label: "Connecting",
@@ -1153,7 +1181,7 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
-  if (hasUnseenCompletion(thread)) {
+  if (hasUnseenCompletion(thread) || terminalLabel === "Completed") {
     return {
       label: "Completed",
       colorClass: "text-emerald-600 dark:text-emerald-300/90",

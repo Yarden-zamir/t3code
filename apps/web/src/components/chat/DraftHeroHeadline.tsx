@@ -1,5 +1,6 @@
 import type { DraftId } from "~/composerDraftStore";
 import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDraftStore";
+import { isDraftInTerminalMode, useDraftTerminalShell } from "~/forkDraftTerminalStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
@@ -75,6 +76,8 @@ export function DraftHeroHeadline({
   const openAddProject = () => openCommandPalette({ open: "add-project" });
   const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
   const openProjectDraft = useNewThreadHandler();
+  // Fork: a draft in Terminal mode opens a shell, it builds nothing yet.
+  const terminalMode = useDraftTerminalShell(draftId) !== undefined;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
   const pickerFilter = useComboboxFilter();
@@ -176,7 +179,10 @@ export function DraftHeroHeadline({
     };
     const currentDraft = getComposerDraft(draftId);
     if (!composerDraftHasUserContent(currentDraft)) {
-      void openProjectDraft(scopeProjectRef(project.environmentId, project.id));
+      // Fork: a draft in Terminal mode opens the other project's draft in Terminal mode too.
+      void openProjectDraft(scopeProjectRef(project.environmentId, project.id), {
+        kind: isDraftInTerminalMode(draftId) ? "terminal" : "chat",
+      });
       return;
     }
     setLogicalProjectDraftThreadId(
@@ -341,7 +347,7 @@ export function DraftHeroHeadline({
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
-      {hasResolvedProject && !isScratchDraft ? (
+      {hasResolvedProject && !isScratchDraft && !terminalMode ? (
         <DraftHeroProjectHeading projectName={activeProjectDisplayName ?? "Choose a project"}>
           {projectSelector}
         </DraftHeroProjectHeading>
@@ -349,6 +355,9 @@ export function DraftHeroHeadline({
         <h1 className="w-full text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
           {isScratchDraft ? (
             <>What should we work on?</>
+          ) : hasResolvedProject ? (
+            // Fork: a draft in Terminal mode (`useDraftTerminalShell`).
+            <>Open a terminal in {projectSelector}</>
           ) : canChooseProject ? (
             <>{projectSelector} to start</>
           ) : (

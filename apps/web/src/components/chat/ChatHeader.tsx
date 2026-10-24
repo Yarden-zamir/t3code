@@ -57,6 +57,8 @@ interface ChatHeaderProps {
   projectScripts: readonly ProjectScript[];
   /** Undefined when this client cannot run terminal commands. */
   onRunPinnedScript: ((script: ProjectScript) => void) | undefined;
+  /** Fork: the thread menu closed and its action ended. A terminal thread focuses its shell. */
+  onThreadMenuClosed?: (() => void) | undefined;
 }
 
 function resolveRenameCommit(input: {
@@ -88,6 +90,7 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenProjectSettings,
   projectScripts,
   onRunPinnedScript,
+  onThreadMenuClosed,
 }: ChatHeaderProps) {
   const pins = usePinnedScripts({
     environmentId: activeThreadEnvironmentId,
@@ -207,6 +210,7 @@ export const ChatHeader = memo(function ChatHeader({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
     onStartRename: startRename,
+    onClosed: onThreadMenuClosed,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
   const titleMenuTimerRef = useRef<number | null>(null);

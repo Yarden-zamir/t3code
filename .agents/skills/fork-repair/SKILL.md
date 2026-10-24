@@ -24,10 +24,12 @@ options.
 | `uv run .agents/skills/fork-repair/scripts/worktree.py create sync`        | Create the worktree `fork-sync-<UTC stamp>` on branch `fork-sync/<UTC stamp>` from `origin/main`, and install.                                                   |
 | `uv run .agents/skills/fork-repair/scripts/worktree.py create fix <topic>` | Create the worktree `fork-fix-<UTC stamp>` on branch `fork-fix/<UTC stamp>-<topic>` from `origin/main`, and install.                                             |
 | `uv run .agents/skills/fork-repair/scripts/worktree.py remove <folder>`    | Remove a repair worktree and its local branch. It prints the uncommitted files and unpushed commits that it discards.                                            |
+| `uv run .agents/skills/fork-repair/scripts/lockfile.py`                    | In a merge with a `pnpm-lock.yaml` conflict: rebuild the fork lockfile, and stage it when its integrity changes match the merged side.                           |
 | `uv run .agents/skills/fork-repair/scripts/shared_files.py`                | List the files that upstream and the fork both changed since the merge base, and write the upstream diff of each file to its own file.                           |
 | `uv run .agents/skills/fork-repair/scripts/shared_files.py --last-merge`   | The same review for the last upstream merge on `origin/main`.                                                                                                    |
 | `uv run .agents/skills/fork-repair/scripts/fork_tests.py`                  | Run the fork tests in chunks of 20 (`--chunk <n>`). A chunk that runs out of memory (exit 137) runs again once in smaller chunks. Prints one re-run command.     |
 | `uv run .agents/skills/fork-repair/scripts/fork_tests.py --files <file>`   | Run the test files listed in a file, for example the `failed.txt` of an earlier run.                                                                             |
+| `uv run .agents/skills/fork-repair/scripts/fork_tests.py --exclude <path>` | Skip the test files under a path prefix. `--only <path>` keeps only those files. Both repeat, and both also apply to `--files`.                                  |
 | `uv run .agents/skills/fork-repair/scripts/checks.py`                      | Run typecheck, the migration check and the adopted pull request check, and `vp run fork:check` on a `fork-fix/` branch. Reports each step.                       |
 
 - `worktree.py` reads the container (the folder that holds `.bare/`) from git. It works on the
@@ -35,6 +37,10 @@ options.
 - `fork_tests.py` selects the tests as the Fork Sync job does. It removes
   `T3_SERVICE_LAUNCHER_CONTEXT` from the test environment. It installs the Electron binary and
   Playwright Chromium when the selected tests need them.
+- On the VPS, the `apps/server/` fork tests stop the agent session. There, run
+  `--exclude apps/server/` and leave those files to Fork CI. A foreground command also stops
+  after 10 minutes. If a run takes longer, run `--only apps/web/` and `--exclude apps/web/`
+  as two runs.
 - `shared_files.py` and `checks.py` need `upstream/main`. Run
   `git fetch --no-tags upstream main` first.
 - The scripts call the existing `scripts/fork-*.ts` tools. They only run steps in order and

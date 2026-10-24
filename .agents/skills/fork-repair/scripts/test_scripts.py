@@ -7,6 +7,7 @@ import pytest
 import common
 import failed_run
 import fork_tests
+import lockfile
 import shared_files
 import worktree
 
@@ -34,6 +35,13 @@ def test_make_chunks_runs_web_tests_separately_and_respects_the_size():
     chunks = fork_tests.make_chunks(files, 2)
     assert [(chunk.group, len(chunk.files)) for chunk in chunks] == [("root", 2), ("root", 2), ("root", 1), ("web", 1)]
     assert sum(len(chunk.files) for chunk in chunks) == len(files)
+
+
+def test_filter_prefixes_applies_only_then_exclude():
+    files = ["apps/server/a.test.ts", "apps/web/b.test.ts", "packages/c.test.ts"]
+    assert fork_tests.filter_prefixes(files, [], []) == files
+    assert fork_tests.filter_prefixes(files, [], ["apps/server/"]) == ["apps/web/b.test.ts", "packages/c.test.ts"]
+    assert fork_tests.filter_prefixes(files, ["apps/"], ["apps/server/"]) == ["apps/web/b.test.ts"]
 
 
 def test_web_command_runs_from_apps_web_with_relative_paths():
@@ -101,3 +109,17 @@ def test_failed_step_output_skips_the_script_echo_and_other_steps():
 def test_shared_files_and_diff_names():
     assert shared_files.shared(["a", "b", "c"], ["c", "a", "d"]) == ["a", "c"]
     assert shared_files.diff_file_name("apps/web/x.ts") == "apps__web__x.ts.diff"
+
+
+def test_integrity_changes_ignore_peer_key_lines():
+    fork = "\n".join(
+        [
+            "-  a@file:x-1.tgz(react@19.3.0(supports-color@10.2.2)):",
+            "+  a@file:x-2.tgz(react@19.3.0(supports-color@10.2.2)):",
+            "-    resolution: {integrity: sha512-old, tarball: file:x-1.tgz}",
+            "+    resolution: {integrity: sha512-new, tarball: file:x-2.tgz}",
+        ]
+    )
+    upstream = fork.replace("supports-color@10.2.2", "supports-color@8.1.1").replace("    resolution", "  resolution")
+    assert lockfile.integrity_changes(fork) == lockfile.integrity_changes(upstream)
+    assert lockfile.integrity_changes(fork) != lockfile.integrity_changes(fork.replace("sha512-new", "sha512-other"))

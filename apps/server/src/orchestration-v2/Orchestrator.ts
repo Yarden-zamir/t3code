@@ -63,6 +63,8 @@ import {
   ThreadLinkedPullRequest,
   ThreadId,
   type TurnItemId,
+  changesThreadKind,
+  THREAD_KIND_CHANGE_MESSAGE,
 } from "@t3tools/contracts";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import {
@@ -161,6 +163,24 @@ export class OrchestratorDispatchError extends Schema.TaggedError<OrchestratorDi
   }
 }
 
+/**
+ * Fork: every model selection that a command carries for an existing thread passes here: the
+ * selection commands and the messages of users, agents, schedules and Settings edits.
+ */
+const refuseThreadKindChange = (
+  command: { readonly commandId: CommandId; readonly type: string },
+  thread: { readonly providerInstanceId: string },
+  selection: ModelSelection | undefined,
+) =>
+  selection !== undefined && changesThreadKind(thread, selection)
+    ? Effect.fail(
+        new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: THREAD_KIND_CHANGE_MESSAGE,
+        }),
+      )
+    : Effect.void;
 export class OrchestratorThreadAlreadyExistsError extends Schema.TaggedError<OrchestratorThreadAlreadyExistsError>()(
   "OrchestratorThreadAlreadyExistsError",
   { commandId: CommandId, threadId: ThreadId },
@@ -2944,6 +2964,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
     }
 
+    if (command.type === "thread.model-selection.set" || command.type === "provider.switch") {
+      yield* refuseThreadKindChange(command, thread, command.modelSelection);
+    }
     const needsProviderState =
       command.type === "thread.runtime-mode.set" ||
       command.type === "thread.model-selection.set" ||
@@ -4855,6 +4878,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
   ) {
     let projection = yield* getProjectionWithPendingEvents(command.threadId, events);
+    yield* refuseThreadKindChange(command, projection.thread, command.modelSelection);
     if (command.manualContinuationOfRunId !== undefined) {
       const source = projection.runs.find((run) => run.id === command.manualContinuationOfRunId);
       const limited = latestRootProviderFailure(source ?? null, projection.turnItems);
@@ -9397,6 +9421,31 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
   });
 
+  const runInterruptReason = Effect.fnUntraced(function* (
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      { readonly type: "run.interrupt" | "thread.background-work.settle" }
+    >,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    runId: RunId,
+  ) {
+    const isRequest = (
+      item: OrchestrationV2TurnItem,
+    ): item is Extract<OrchestrationV2TurnItem, { readonly type: "run_interrupt_request" }> =>
+      item.runId === runId && item.type === "run_interrupt_request";
+    const pending = (yield* Ref.get(events))
+      .flatMap((event) => (event.type === "turn-item.updated" ? [event.payload] : []))
+      .findLast(isRequest);
+    if (pending !== undefined) return pending.message;
+    const { turnItems } = yield* projectionStore
+      .getThreadRecords(command.threadId, ["turnItems"], {
+        turnItemTypes: ["run_interrupt_request"],
+        turnItemRunIds: [runId],
+      })
+      .pipe(mapDispatchError(command));
+    return turnItems.find(isRequest)?.message;
+  });
+
   // A successful Stop may have no terminal event to ingest: the session or
   // native turn already died, or its final write failed when storage filled.
   const settleInterruptedRun = Effect.fn("Orchestrator.settleInterruptedRun")(function* (input: {
@@ -9547,6 +9596,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           run,
           rootNode,
           providerThread,
+          reason: yield* runInterruptReason(input.command, input.events, run.id),
           completedAt: input.now,
         }),
       });
@@ -9646,7 +9696,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         completedAt: now,
         updatedAt: now,
         type: "run_interrupt_request",
-        message: command.reason ?? "Interrupt requested",
+        message: command.reason ?? RunExecutionService.USER_STOP_REASON,
       },
     });
   });
@@ -10175,7 +10225,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       completedAt: now,
       updatedAt: now,
       type: "run_interrupt_request",
-      message: command.reason ?? "Interrupt requested",
+      message: command.reason ?? RunExecutionService.USER_STOP_REASON,
     };
 
     const otherProviderInterrupts: Array<PendingOrchestrationEffectV2> = [];

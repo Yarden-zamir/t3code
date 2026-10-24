@@ -120,6 +120,21 @@ export interface ThreadLaunchPreparationInput {
   readonly runId: RunId;
 }
 
+/** Fork: a new worktree for a draft that has no thread yet (`prepareDraftWorktree`). */
+export interface ThreadLaunchDraftWorktreeInput {
+  readonly projectId: ProjectId;
+  /** The thread id that the draft reserves. The setup script runs in a terminal of it. */
+  readonly threadId: ThreadId;
+  readonly baseRef: string;
+  readonly startFromOrigin: boolean;
+}
+
+export interface ThreadLaunchDraftWorktree {
+  readonly worktreePath: string;
+  /** Null for the own folder of a scratch project draft, which has no branch. */
+  readonly branch: string | null;
+}
+
 export interface ThreadLaunchResult {
   readonly threadId: ThreadId;
   readonly projection: OrchestrationV2ThreadProjection;
@@ -225,12 +240,28 @@ export class ThreadLaunchService extends Context.Service<
       | ThreadManagement.ThreadManagementProviderInstanceDisabledError
     >;
     readonly prepareRun: (input: ThreadLaunchPreparationInput) => Effect.Effect<void>;
+    /**
+     * Fork: prepares a new worktree as a launch does: fetch, branch name, setup script and
+     * progress under the draft's thread id. Succeeds once the setup script started, or ended
+     * for a script that is not async. The client records the worktree in the draft, so a
+     * failure or a cancel before that removes it.
+     */
+    readonly prepareDraftWorktree: (
+      input: ThreadLaunchDraftWorktreeInput,
+    ) => Effect.Effect<
+      ThreadLaunchDraftWorktree,
+      | ThreadLaunchError
+      | ThreadLaunchBaseRefError
+      | ThreadLaunchBranchExistsError
+      | ThreadLaunchNotRepositoryError
+    >;
   }
 >()("t3/orchestration-v2/ThreadLaunchService") {}
 
 const isThreadLaunchError = Schema.is(ThreadLaunchError);
 
-function failureDetail(error: unknown): string {
+/** @public Fork: `forkWs.ts` gives a draft worktree failure this message. */
+export function failureDetail(error: unknown): string {
   if (isThreadLaunchError(error)) {
     const cause = error.cause;
     const detail = cause instanceof Error ? cause.message : String(cause);
@@ -369,6 +400,8 @@ const make = Effect.gen(function* () {
     requested: PreparationInput,
     threadId: ThreadId,
     runId: RunId | null,
+    // Fork: a draft has no thread to record the workspace on (`prepareDraftWorktree`).
+    draft = false,
   ) {
     const project = yield* projects.getById(requested.projectId).pipe(
       Effect.mapError(mapError(requested, "resolve-project", threadId)),
@@ -403,6 +436,12 @@ const make = Effect.gen(function* () {
       (yield* git
         .isOutsideRepository(project.workspaceRoot)
         .pipe(Effect.mapError(mapError(requested, "provision-worktree", threadId))));
+    if (draft && runsInProjectFolder)
+      return yield* mapError(
+        requested,
+        "provision-worktree",
+        threadId,
+      )("The project folder is not a Git repository, so it cannot have a worktree.");
     const input: PreparationInput = Option.isSome(scratchFolder)
       ? {
           ...requested,
@@ -426,7 +465,9 @@ const make = Effect.gen(function* () {
         threadId,
         branch: input.workspaceStrategy.branch ?? null,
         baseRef: input.workspaceStrategy.baseRef,
-        stages: ["fetch", "checkout", "setup-script", "agent"],
+        stages: draft
+          ? ["fetch", "checkout", "setup-script"]
+          : ["fetch", "checkout", "setup-script", "agent"],
         fiber: yield* Effect.fiber,
       });
     } else if (reused !== undefined) {
@@ -438,7 +479,7 @@ const make = Effect.gen(function* () {
         fiber: yield* Effect.fiber,
       });
     }
-    yield* Effect.gen(function* () {
+    return yield* Effect.gen(function* () {
       const initialMessage = input.initialMessage;
       const generateBranchNameFor = Effect.fn("ThreadLaunchService.generateBranchNameFor")(
         function* (cwd: string, message: ThreadLaunchInitialMessage) {
@@ -589,7 +630,7 @@ const make = Effect.gen(function* () {
 
       // A reused worktree is already recorded, and rewriting it could undo
       // the first attempt's branch rename.
-      if (reused === undefined) {
+      if (reused === undefined && !draft) {
         yield* threads
           .dispatch({
             type: "thread.metadata.update",
@@ -600,7 +641,7 @@ const make = Effect.gen(function* () {
           })
           .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
       }
-      workspaceRecorded = true;
+      workspaceRecorded = !draft;
 
       if (
         reused === undefined &&
@@ -768,6 +809,19 @@ const make = Effect.gen(function* () {
         yield* setupTracker.stageStatus(threadId, "setup-script", "skipped");
       }
       yield* setupTracker.markUncancellable(threadId);
+      // Fork: the shell of a draft starts where the agent of a thread would.
+      if (draft) {
+        workspaceRecorded = true;
+        runReleased = true;
+        yield* awaitAsyncSetup.pipe(
+          Effect.andThen(setupTracker.finish(threadId, "done")),
+          Effect.forkIn(preparationScope),
+        );
+        return {
+          worktreePath: worktreePath ?? project.workspaceRoot,
+          branch,
+        } satisfies ThreadLaunchDraftWorktree;
+      }
       yield* setupTracker.stageStatus(threadId, "agent", "running");
       if (runId !== null) {
         yield* threads
@@ -802,7 +856,8 @@ const make = Effect.gen(function* () {
             cancelled ? "cancelled" : "failed",
             cancelled ? null : failureDetail(Cause.squash(cause)),
           );
-          if (cancelled && setupTerminalId)
+          // Fork: a draft that failed keeps no terminal, because no thread shows its drawer.
+          if ((cancelled || draft) && setupTerminalId)
             yield* terminals
               .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
               .pipe(Effect.ignore);
@@ -820,15 +875,17 @@ const make = Effect.gen(function* () {
               .removeWorktree({ cwd: project.workspaceRoot, path: removedPath, force: true })
               .pipe(
                 Effect.andThen(
-                  threads
-                    .dispatch({
-                      type: "thread.metadata.update",
-                      commandId: CommandId.make(`${input.commandId}:cancel-workspace`),
-                      threadId,
-                      worktreePath: null,
-                      branch: null,
-                    })
-                    .pipe(Effect.ignore),
+                  draft
+                    ? Effect.void
+                    : threads
+                        .dispatch({
+                          type: "thread.metadata.update",
+                          commandId: CommandId.make(`${input.commandId}:cancel-workspace`),
+                          threadId,
+                          worktreePath: null,
+                          branch: null,
+                        })
+                        .pipe(Effect.ignore),
                 ),
                 Effect.catchCause((removeCause) =>
                   Effect.logWarning("Failed to remove an abandoned thread worktree", {
@@ -1263,7 +1320,47 @@ const make = Effect.gen(function* () {
     );
   };
 
-  return ThreadLaunchService.of({ launch, checkWorktreeBase, retryPreparation, prepareRun });
+  const prepareDraftWorktree: ThreadLaunchService["Service"]["prepareDraftWorktree"] = Effect.fn(
+    "ThreadLaunchService.prepareDraftWorktree",
+  )(function* (draft) {
+    const workspaceStrategy = {
+      type: "worktree",
+      baseRef: draft.baseRef,
+      startFromOrigin: draft.startFromOrigin,
+    } as const;
+    const input: PreparationInput = {
+      commandId: CommandId.make(`fork-draft-worktree:${draft.threadId}:${yield* randomUuidV4}`),
+      projectId: draft.projectId,
+      workspaceStrategy,
+    };
+    yield* checkWorktreeBase({ projectId: draft.projectId, workspaceStrategy });
+    // A thread has its workspace already. Its setup script would run a second time.
+    const existing = yield* threads
+      .getThreadShell(draft.threadId)
+      .pipe(Effect.mapError(mapError(input, "resolve-project", draft.threadId)));
+    if (existing !== null)
+      return yield* mapError(
+        input,
+        "resolve-project",
+        draft.threadId,
+      )("The draft is a thread already.");
+    const prepared = yield* prepareInBackground(input, draft.threadId, null, true);
+    if (prepared === undefined)
+      return yield* mapError(
+        input,
+        "provision-worktree",
+        draft.threadId,
+      )("The worktree preparation ended without a worktree.");
+    return prepared;
+  });
+
+  return ThreadLaunchService.of({
+    launch,
+    checkWorktreeBase,
+    retryPreparation,
+    prepareRun,
+    prepareDraftWorktree,
+  });
 });
 
 export const layer = Layer.effect(ThreadLaunchService, make);

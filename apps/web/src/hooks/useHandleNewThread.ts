@@ -31,9 +31,11 @@ import {
 } from "../state/entities";
 import {
   hasExplicitComposerModelSelection,
+  type NewThreadKind,
   resolveNewDraftStartFromOrigin,
   resolveNewThreadModelSelectionOverride,
 } from "../lib/chatThreadActions";
+import { requestDraftOpensAsThread, setDraftTerminalMode } from "../forkDraftTerminalStore";
 import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentSummaries } from "../state/presentation";
@@ -75,8 +77,19 @@ export function useNewThreadHandler() {
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
       replace?: boolean;
+      /** Fork: "terminal" opens the draft in Terminal mode (`forkDraftTerminalStore.ts`). */
+      kind?: NewThreadKind;
+      /** Fork: a draft in Terminal mode becomes a terminal thread at once. */
+      terminalOpensAsThread?: boolean;
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
+    // Fork: every way to open a draft sets its mode, before the draft renders.
+    const applyDraftKind = (draftId: DraftId) => {
+      setDraftTerminalMode(draftId, projectRef.environmentId, options?.kind === "terminal");
+      if (options?.kind === "terminal" && options.terminalOpensAsThread === true) {
+        requestDraftOpensAsThread(draftId);
+      }
+    };
     const projects = readProjects();
     // Read at call time: every provider status push replaces the config map, and
     // subscribing would hand every sidebar row a new handler.
@@ -285,6 +298,7 @@ export function useNewThreadHandler() {
           threadId: emptyStoredDraftThread.threadId,
         };
         const routeTargetAfterWrites = getCurrentRouteTarget();
+        applyDraftKind(emptyStoredDraftThread.draftId);
         if (
           routeTargetAfterWrites?.kind === "draft" &&
           routeTargetAfterWrites.draftId === emptyStoredDraftThread.draftId
@@ -322,6 +336,7 @@ export function useNewThreadHandler() {
         interactionMode: latestActiveDraftThread.interactionMode,
         ...pickExplicitWorkspaceOptions(options),
       });
+      applyDraftKind(currentRouteTarget.draftId);
       return Promise.resolve({
         draftId: currentRouteTarget.draftId,
         threadId: latestActiveDraftThread.threadId,
@@ -353,6 +368,7 @@ export function useNewThreadHandler() {
           interactionMode: racedDraft.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
         });
+        applyDraftKind(racedDraft.draftId);
         await router.navigate({
           to: "/draft/$draftId",
           params: { draftId: racedDraft.draftId },
@@ -380,6 +396,7 @@ export function useNewThreadHandler() {
       if (modelSelectionOverride) {
         setModelSelection(draftId, modelSelectionOverride, { replaceOptions: true });
       }
+      applyDraftKind(draftId);
       await router.navigate({
         to: "/draft/$draftId",
         params: { draftId },
@@ -406,6 +423,15 @@ export function useHandleNewThread() {
   );
   const projects = useProjects();
   const handleNewThread = useNewThreadHandler();
+  // Fork: a new terminal thread is a new-thread draft in Terminal mode.
+  const handleNewTerminalThread = (
+    projectRef: ScopedProjectRef,
+    options?: { readonly opensAsThread: boolean },
+  ) =>
+    handleNewThread(projectRef, {
+      kind: "terminal",
+      terminalOpensAsThread: options?.opensAsThread ?? false,
+    });
   const [defaultProject] = orderItemsByPreferredIds({
     items: projects,
     preferredIds: projectOrder,
@@ -424,6 +450,7 @@ export function useHandleNewThread() {
     activeThread,
     defaultProjectRef,
     handleNewThread,
+    handleNewTerminalThread,
     routeDraftId,
     routeThreadRef,
   };

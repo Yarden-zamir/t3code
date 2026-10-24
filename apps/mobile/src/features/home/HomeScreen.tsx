@@ -45,13 +45,13 @@ import type { SavedRemoteConnection } from "../../lib/connection";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import { nativeHeaderScrollEdgeEffects } from "../../native/scrollEdgeEffects";
-import { useRestingTopOffset } from "../../native/useRestingTopOffset";
 import {
   useNativeColumnLayoutMetrics,
   useNativeLayoutMetrics,
 } from "../../native/native-layout-metrics";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
+import { useTerminalThreadStates } from "../../state/forkTerminalThreads";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
@@ -219,9 +219,7 @@ function HomeTopContentSpacer() {
 }
 
 function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
-  const insets = useSafeAreaInsets();
   const primaryColumn = use(NativePrimaryColumnContext);
-  const restingOffset = useRestingTopOffset(insets.top, props);
   if (Platform.OS !== "ios") return <ScrollView {...props} />;
 
   // v5 needs the actual content scroll view registered with its screen controller.
@@ -236,14 +234,8 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
     >
       <ScrollView
         {...props}
-        {...restingOffset}
         // UIKit's scroll-edge material needs the scroll view's own surface color.
         className={cn(props.className, primaryColumn ? "bg-drawer" : "bg-screen")}
-        // Use the column's measured inset so UIKit recognizes the resting top.
-        // Padding visually clears the bar but leaves the native scroll offset
-        // past its edge, activating scroll-edge protection before any scroll.
-        automaticallyAdjustContentInsets={false}
-        contentInsetAdjustmentBehavior="never"
       />
     </ScrollViewMarker>
   );
@@ -479,6 +471,7 @@ export function HomeScreen(props: HomeScreenProps) {
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder(nowMinute, snoozeWakeTick);
+  const terminalStates = useTerminalThreadStates(props.threads);
   // Up/down menu availability for every card, computed once per section per
   // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
   // list construction quadratic, and this list rebuilds on every minute tick.
@@ -498,6 +491,7 @@ export function HomeScreen(props: HomeScreenProps) {
           settlementEnvironmentIds,
           snoozeEnvironmentIds,
           queuedThreadKeys,
+          terminalStates,
         }),
       });
     return new Map([
@@ -534,6 +528,7 @@ export function HomeScreen(props: HomeScreenProps) {
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey,
+      terminalStates,
     });
   })();
   const nextSnoozeWakeAt = threadListV2Layout.nextSnoozeWakeAt;
@@ -906,8 +901,9 @@ export function HomeScreen(props: HomeScreenProps) {
               ListEmptyComponent={v2ListEmpty}
               style={{ flex: 1 }}
               automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
-              contentInsetAdjustmentBehavior="never"
-              contentInset={Platform.OS === "ios" ? { top: insets.top } : undefined}
+              // UIKit owns the bar's inset, so a minimizing bar and a resized column move
+              // the list in the same frame as the bar.
+              contentInsetAdjustmentBehavior="automatic"
               contentInsetStartAdjustment={Platform.OS === "ios" ? insets.top : 0}
               initialScrollOffset={
                 initialScrollOffset > 0
@@ -926,7 +922,7 @@ export function HomeScreen(props: HomeScreenProps) {
                   (contentSideInsets?.right ?? 0) + (primaryColumn ? 8 : 0) + androidListGutter,
                 paddingBottom:
                   Platform.OS === "ios"
-                    ? iosBottomClearance
+                    ? iosBottomClearance - (columnMetrics?.safeArea.bottom ?? insets.bottom)
                     : (workspace?.bottomClearance ??
                       Math.max(insets.bottom, 16) +
                         (Platform.OS === "android" ? fabClearance : 88)),

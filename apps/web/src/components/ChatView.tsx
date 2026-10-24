@@ -349,6 +349,13 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { observeResize } from "~/lib/observeResize";
+import {
+  ForkDraftTerminalComposer,
+  ForkTerminalModeToggle,
+} from "./chat/ForkDraftTerminalComposer";
+import { withoutTerminalProvider } from "../lib/forkTerminalProviders";
+import { setDraftTerminalMode, useDraftTerminalShell } from "../forkDraftTerminalStore";
+import { useTerminalModeAvailable } from "../hooks/useForkTerminalThreads";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
@@ -1214,10 +1221,12 @@ export default function ChatView(props: ChatViewProps) {
     : (primaryEnvironment?.serverConfig ?? null);
   const providerEnvironmentId = (activeThread ? activeEnvironment : primaryEnvironment)
     ?.environmentId;
-  const providerStatuses =
+  const environmentProviderStatuses =
     (providerEnvironmentId === undefined
       ? undefined
       : providersByEnvironment.get(providerEnvironmentId)) ?? EMPTY_PROVIDERS;
+  // Fork: the terminal is no model; a draft switches to it with its own toggle.
+  const providerStatuses = withoutTerminalProvider(environmentProviderStatuses);
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
@@ -1696,12 +1705,13 @@ export default function ChatView(props: ChatViewProps) {
   if (providerStatusBannerKey === null && dismissedProviderStatusBannerKey !== null) {
     setDismissedProviderStatusBannerKey(null);
   }
-  const visibleProviderStatus = shouldShowProviderStatusBanner(
-    activeProviderStatus,
-    dismissedProviderStatusBannerKey,
-  )
-    ? activeProviderStatus
-    : null;
+  // Fork: a draft in Terminal mode runs no agent, so an agent provider's status is noise there.
+  const forkDraftTerminalShell = useDraftTerminalShell(draftId);
+  const visibleProviderStatus =
+    forkDraftTerminalShell === undefined &&
+    shouldShowProviderStatusBanner(activeProviderStatus, dismissedProviderStatusBannerKey)
+      ? activeProviderStatus
+      : null;
   const hasTimelineTopBanner = Boolean(timelineThreadError) || visibleProviderStatus !== null;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
@@ -1746,9 +1756,23 @@ export default function ChatView(props: ChatViewProps) {
           providerSubagentModels,
           reportedModelSelection,
         );
+  // Fork: a draft in Terminal mode shows a shell in place of the prompt
+  // (`ForkDraftTerminalComposer`); its shell runs in the workspace that the draft picks.
+  const forkTerminalModeAvailable = useTerminalModeAvailable(draftThread?.environmentId ?? null);
+  // Availability only offers the toggle: a draft that is in Terminal mode keeps its shell while a
+  // reconnect briefly reads the grants as missing.
+  const forkDraftTerminal =
+    draftId !== null &&
+    draftThread !== null &&
+    draftThread !== undefined &&
+    forkDraftTerminalShell !== undefined
+      ? { draftId, draft: draftThread, shell: forkDraftTerminalShell }
+      : null;
+  // Fork: a terminal draft keeps its workspace controls after a worktree setup card appears,
+  // because its shell can still move until the draft becomes a thread.
   const mountComposerContextStrip = shouldShowComposerContextStrip({
     isDraftHeroState,
-    persistInActiveThreads: settings.persistComposerContextStrip,
+    persistInActiveThreads: settings.persistComposerContextStrip || forkDraftTerminal !== null,
     hasActiveProject: activeProject !== null && !showProviderSubagentBar,
     isGitRepo,
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
@@ -1756,7 +1780,7 @@ export default function ChatView(props: ChatViewProps) {
   });
   const showComposerContextStrip = shouldShowComposerContextStrip({
     isDraftHeroState,
-    persistInActiveThreads: settings.persistComposerContextStrip,
+    persistInActiveThreads: settings.persistComposerContextStrip || forkDraftTerminal !== null,
     hasActiveProject: activeProject !== null && !showProviderSubagentBar,
     isGitRepo,
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
@@ -3548,8 +3572,31 @@ export default function ChatView(props: ChatViewProps) {
                               onOpenParent={parentThreadLink?.open ?? null}
                             />
                           ) : null}
-                          {!composerMounted ? null : (
+                          {!composerMounted ? null : forkDraftTerminal !== null &&
+                            activeProject !== null ? (
+                            <ForkDraftTerminalComposer
+                              draftId={forkDraftTerminal.draftId}
+                              draft={forkDraftTerminal.draft}
+                              workspaceRoot={activeProject.workspaceRoot}
+                              shell={forkDraftTerminal.shell}
+                              providers={environmentProviderStatuses}
+                              keybindings={keybindings}
+                            />
+                          ) : (
                             <ChatComposer
+                              forkLeadingControl={
+                                draftId !== null &&
+                                draftThread &&
+                                activeProject !== null &&
+                                forkTerminalModeAvailable ? (
+                                  <ForkTerminalModeToggle
+                                    active={false}
+                                    onToggle={() =>
+                                      setDraftTerminalMode(draftId, draftThread.environmentId, true)
+                                    }
+                                  />
+                                ) : null
+                              }
                               canOperateThread={canOperateThread}
                               reportedModelSelection={reportedModelSelection}
                               multipleModelSelections={multipleModelSelections}

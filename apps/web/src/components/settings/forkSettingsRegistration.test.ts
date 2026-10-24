@@ -35,6 +35,7 @@ const FORK_PAGE_ROWS: Record<
   worktreeArtifactEvictionDays: "worktree-artifact-eviction-days",
   confirmTerminalClose: "terminal-close-confirmation",
   terminalAppShortcutsFirst: "terminal-app-shortcuts-first",
+  currentProjectTerminalOpensThread: "current-project-terminal-opens-thread",
   appToggleShortcuts: "app-toggle-shortcuts",
   backgroundWorkDetails: "background-work-details",
   forkChangelogEnabled: "fork-changelog",
@@ -84,6 +85,12 @@ const FORK_PAGE_ROWS: Record<
   mobileNewThreadProject: "mobile-new-thread-project",
   mobileComposerCamera: "mobile-composer-camera",
   mobileSidebarTabs: "mobile-sidebar-tabs",
+  terminalThreads: "terminal-threads",
+  terminalHistoryLines: "terminal-history",
+  terminalHistoryMegabytes: "terminal-history",
+  terminalKeyMappings: "terminal-key-mappings",
+  terminalThreadFontSizeMin: "terminal-thread-font-limits",
+  terminalThreadFontSizeMax: "terminal-thread-font-limits",
 };
 
 /** The settings that Restore defaults keeps, with the reason. */
@@ -120,6 +127,16 @@ describe("fork settings registration", () => {
       ];
     });
     expect(missing).toEqual([]);
+  });
+
+  it("puts each terminal setting on Settings > Terminal", () => {
+    const misplaced = forkSettingKeys.flatMap((key) => {
+      const row = FORK_PAGE_ROWS[key];
+      if (typeof row !== "string" || !key.toLowerCase().includes("terminal")) return [];
+      const item = SETTINGS_SEARCH_ITEMS.find((candidate) => candidate.id === row);
+      return item?.to === "/settings/terminal" ? [] : [`${key}: ${row} leads to ${item?.to}`];
+    });
+    expect(misplaced).toEqual([]);
   });
 
   it("resets or deliberately keeps each fork setting on Restore defaults", () => {

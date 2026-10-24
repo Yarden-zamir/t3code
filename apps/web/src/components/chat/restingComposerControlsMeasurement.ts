@@ -82,16 +82,21 @@ export function measureRestingComposerControls(
   const separatorWidth = separator ? elementOuterWidth(separator) : 0;
   const overflow = controls.querySelector<HTMLElement>("[data-resting-controls-overflow]");
   const separatorAndGapWidth = separatorWidth > 0 ? separatorWidth + gap : 0;
+  // Fork: the Agent or Terminal toggle of a draft sits before the model picker.
+  const forkLeadingControl = controls.querySelector<HTMLElement>("[data-fork-leading-control]");
+  const leadingAndGapWidth = forkLeadingControl ? elementOuterWidth(forkLeadingControl) + gap : 0;
   const blocks = Array.from(controls.querySelectorAll<HTMLElement>("[data-resting-block]"));
   const widths = blocks.map(controlBlockWidths);
   return {
     gap,
     naturalFixedWidth:
       (picker ? providerModelPickerNaturalWidth(picker) : elementOuterWidth(leadingControl)) +
-      separatorAndGapWidth,
+      separatorAndGapWidth +
+      leadingAndGapWidth,
     minimumFixedWidth:
       (picker ? providerModelPickerMinimumWidth(picker) : elementOuterWidth(leadingControl)) +
-      separatorAndGapWidth,
+      separatorAndGapWidth +
+      leadingAndGapWidth,
     blockWidths: widths.map((width) => width.natural),
     iconOnlyBlockWidths: widths.map((width) => width.iconOnly),
     overflowWidth: overflow ? elementOuterWidth(overflow) : 0,

@@ -155,7 +155,7 @@ export function ReopenClosedViewShortcut() {
         return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
-          terminalFocus: isTerminalFocused(),
+          terminalFocus: isTerminalFocused(event),
           terminalOpen,
           previewFocus: isPreviewFocused(),
           previewOpen,

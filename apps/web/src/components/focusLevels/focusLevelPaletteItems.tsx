@@ -11,6 +11,7 @@ import {
   PanelRightIcon,
   PencilIcon,
   SearchIcon,
+  SquareTerminalIcon,
   TextCursorInputIcon,
 } from "lucide-react";
 import type { CommandPaletteActionItem } from "../CommandPalette.logic";
@@ -47,10 +48,17 @@ function afterPaletteCloses(run: () => void): Promise<void> {
   );
 }
 
-/** Fork: command palette items for the focus level commands. */
+/**
+ * Fork: command palette items for the focus level commands. A terminal thread has no timeline,
+ * and its shell is the composer (`focusLevels.ts`), so the composer item names the terminal. It
+ * has no Mark unread either (`readForkThreadMenuState`).
+ */
 export function focusLevelPaletteItems(
   iconClassName: string,
-  messageLinks = false,
+  {
+    messageLinks = false,
+    terminalThread = false,
+  }: { readonly messageLinks?: boolean; readonly terminalThread?: boolean } = {},
 ): CommandPaletteActionItem[] {
   return [
     // A Settings page with `settingsFind` on registers the command.
@@ -69,7 +77,8 @@ export function focusLevelPaletteItems(
           },
         ]
       : []),
-    ...(messageLinks
+    // A terminal thread has no timeline, so it has no message under a timeline cursor either.
+    ...(messageLinks && !terminalThread
       ? [
           {
             kind: "action" as const,
@@ -85,23 +94,32 @@ export function focusLevelPaletteItems(
           },
         ]
       : []),
-    ...FOCUS_ITEMS.map(([command, level, title, Icon]) => ({
-      kind: "action" as const,
-      value: `action:${command}`,
-      searchTerms: ["focus", "keyboard", "move", title],
-      title,
-      icon: <Icon className={iconClassName} />,
-      shortcutCommand: command,
-      run: () => afterPaletteCloses(() => void focusLevel(level)),
-    })),
-    ...THREAD_ITEMS.map(([command, title, Icon]) => ({
-      kind: "action" as const,
-      value: `action:${command}`,
-      searchTerms: ["thread", title],
-      title,
-      icon: <Icon className={iconClassName} />,
-      shortcutCommand: command,
-      run: () => afterPaletteCloses(() => void runRegisteredFocusLevelCommand(command)),
-    })),
+    ...FOCUS_ITEMS.filter(([, level]) => !(terminalThread && level === "timeline")).map(
+      ([command, level, chatTitle, ChatIcon]) => {
+        const terminal = terminalThread && level === "composer";
+        const title = terminal ? "Focus terminal" : chatTitle;
+        const Icon = terminal ? SquareTerminalIcon : ChatIcon;
+        return {
+          kind: "action" as const,
+          value: `action:${command}`,
+          searchTerms: ["focus", "keyboard", "move", title],
+          title,
+          icon: <Icon className={iconClassName} />,
+          shortcutCommand: command,
+          run: () => afterPaletteCloses(() => void focusLevel(level)),
+        };
+      },
+    ),
+    ...THREAD_ITEMS.filter(([command]) => !(terminalThread && command === "thread.markUnread")).map(
+      ([command, title, Icon]) => ({
+        kind: "action" as const,
+        value: `action:${command}`,
+        searchTerms: ["thread", title],
+        title,
+        icon: <Icon className={iconClassName} />,
+        shortcutCommand: command,
+        run: () => afterPaletteCloses(() => void runRegisteredFocusLevelCommand(command)),
+      }),
+    ),
   ];
 }

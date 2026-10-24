@@ -524,7 +524,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     searchTerms: ["ask before thread chat history"],
   },
-  ...ForkSearch.CONFIRMATION_ITEMS,
   {
     id: "quit-confirmation",
     title: "Quit shortcut",
@@ -801,6 +800,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["agent opens browser device simulator pop into view hide"],
   },
   ...ForkSearch.PREVIEW_ITEMS,
+  ...ForkSearch.TERMINAL_ITEMS,
   {
     id: "automatic-pull",
     title: "Automatically pull",

@@ -77,6 +77,27 @@ describe("command permissions", () => {
       }),
     ),
   );
+
+  it.effect("requires the destination source control grant to prepare a draft worktree", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const prepare = createCommandPermissions(runtime, WS_METHODS.vcsPrepareDraftWorktree);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(prepare.permissionAtom(env))).toBe(false);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthSourceControlWriteScope],
+            permissions: [AuthSourceControlWriteScope],
+          }),
+        );
+        expect(registry.get(prepare.permissionAtom(env))).toBe(true);
+        yield* prepare.authorize(registry, env);
+      }),
+    ),
+  );
 });
 
 it.effect(

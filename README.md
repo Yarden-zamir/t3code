@@ -90,6 +90,9 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Shortcuts in tooltips](docs/fork/features.md#shortcuts-in-tooltips):** control tooltips show the keys of the control as chips.
 - **[Keyboard cheat sheet](docs/fork/features.md#keyboard-cheat-sheet):** `mod+/` lists every key that works, with the area you are in first.
 - **[Find in settings](docs/fork/features.md#find-in-settings):** `mod+f` on a Settings page hides the rows that do not match (off by default).
+- **[Terminal threads](docs/fork/features.md#terminal-threads):** a thread whose screen is a live terminal; schedules and agents can type into it.
+- **[Terminal key mappings](docs/fork/features.md#terminal-key-mappings):** keys that a terminal sends as fixed bytes, with a preset for zsh editor keys.
+- **[Terminal history](docs/fork/features.md#terminal-history):** how many lines and megabytes of output the server keeps for each terminal.
 - **[Terminal settings](docs/fork/features.md#terminal-settings):** app shortcuts first in the terminal, and a confirmation before a terminal closes.
 
 **Web app and look**
@@ -113,11 +116,14 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 ## Fork fixes
 
 - Themes: border width and radius flow through Tailwind tokens. Composer backdrop, outline and banners follow the theme radius. One theme shadow for nested surfaces and for split buttons.
+- Menus: a fallback context menu takes keyboard focus when it opens, also from a focused terminal. Arrow keys move over its items and submenus, and Escape closes it.
 - MCP: `schedule_task`, `t3_project_create` and `t3_project_update` read and write the project model, environment mode, auto-pull and actions through project settings.
 - Desktop updates: the updater never downgrades, so a local build stays installed. The server recovers when quit-and-install does not quit.
 - Worktree launch: a worktree request in Scratch runs in a thread folder. A worktree request outside a Git repository runs in the project folder and says so in the thread. A launch refuses a new worktree branch that already exists.
+- Session checks: environment API requests from the web client skip the browser HTTP cache, so one stuck session check no longer holds back every later one.
 - Queue: a resumed queued turn shows after the turns that ran before it. A paused queue shows while a turn runs. Resume waits for an edit and for a usage limit. Send now on a stopped thread also waits for a usage limit.
 - Machine map: an expired machine arrow ends the sessions that it granted.
+- Terminal: powerline outlines and half circles (U+E0B1 to U+E0B7) fill their whole cell, so they meet the segments next to them.
 - Device panel: a Homebrew Android SDK (`android-commandlinetools`) works without `ANDROID_HOME`, also when the `adb` on `PATH` has no emulator.
 
 ---

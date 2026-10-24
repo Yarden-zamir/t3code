@@ -317,6 +317,16 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
+    // Fork: the new worktree of a draft in Terminal mode. It can run a setup script for minutes,
+    // so it does not wait in the per-folder queue of the other Git commands.
+    prepareDraftWorktree: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:prepare-draft-worktree",
+      tag: WS_METHODS.vcsPrepareDraftWorktree,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
+      },
+    }),
     worktreeSetup: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:vcs:worktree-setup",
       tag: WS_METHODS.subscribeWorktreeSetup,

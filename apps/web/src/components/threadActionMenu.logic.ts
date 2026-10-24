@@ -1,4 +1,5 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
+import { TERMINAL_PROGRAM_ARCHIVE_BLOCK_MESSAGE } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
 export type ThreadActionMenuId =
@@ -63,6 +64,28 @@ export function buildDraftActionMenuItems(options: {
   ];
 }
 
+/**
+ * Fork: why Archive refuses a thread now. Archive ends a program that runs in a terminal thread,
+ * so the program blocks it like an agent run.
+ */
+export type ThreadArchiveBlock = "agent" | "program";
+
+export const THREAD_ARCHIVE_BLOCK_REASON: Record<
+  ThreadArchiveBlock,
+  { readonly menu: string; readonly message: string }
+> = {
+  agent: { menu: "Stop the agent first", message: "Cannot archive while the provider is active." },
+  program: {
+    menu: "Stop the program first",
+    message: TERMINAL_PROGRAM_ARCHIVE_BLOCK_MESSAGE,
+  },
+};
+
+function forkArchiveThreadLabel(block: ThreadArchiveBlock | null): string {
+  if (block === null) return "Archive thread";
+  return `Archive thread (${THREAD_ARCHIVE_BLOCK_REASON[block].menu.toLowerCase()})`;
+}
+
 export interface ThreadActionMenuState {
   readonly canOperate: boolean;
   readonly branch: string | null;
@@ -78,12 +101,21 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
+  /**
+   * Fork: why Archive refuses the thread now. A running program also blocks it, and the label
+   * says why, because a native menu shows no tooltip.
+   */
+  readonly forkArchiveBlock?: ThreadArchiveBlock | null;
+  /** Fork: Mark unread needs a finished run; without one the server refuses it. */
+  readonly canMarkUnread?: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
     readonly snooze: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
+    /** Fork: a terminal thread has no Mark unread (`readForkThreadMenuState`). */
+    readonly markUnread?: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -158,7 +190,16 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
-    { id: "mark-unread", label: "Mark unread", icon: "mail-open" },
+    ...(state.supports.markUnread !== false
+      ? [
+          {
+            id: "mark-unread" as const,
+            label: "Mark unread",
+            icon: "mail-open",
+            disabled: state.canMarkUnread === false,
+          },
+        ]
+      : []),
     ...(state.projectFilter
       ? [
           {
@@ -207,9 +248,9 @@ export function buildThreadActionMenuItems(
     { id: "project-settings", label: "Project settings", icon: "settings" },
     {
       id: "archive",
-      label: "Archive thread",
+      label: forkArchiveThreadLabel(state.forkArchiveBlock ?? null),
       icon: "archive",
-      disabled: state.isRunning,
+      disabled: state.isRunning || (state.forkArchiveBlock ?? null) !== null,
       separatorBefore: true,
     },
     {

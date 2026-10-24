@@ -1,5 +1,11 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  TERMINAL_COMMAND_MAX_LENGTH,
+  TerminalAttention,
+  TerminalShellState,
+  TerminalThreadsOffError,
+} from "./forkTerminalThreads.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const DEFAULT_TERMINAL_ID = "term-1";
@@ -20,6 +26,8 @@ const TerminalEnvValueSchema = Schema.String.check(Schema.isMaxLength(8_192));
 const TerminalEnvSchema = Schema.Record(TerminalEnvKeySchema, TerminalEnvValueSchema).check(
   Schema.isMaxProperties(128),
 );
+/** Fork: a shell slug, one of the models of the `terminal` provider (`forkTerminalThreads.ts`). */
+const TerminalShellSchema = TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(64));
 
 export const TerminalThreadInput = Schema.Struct({
   threadId: TrimmedNonEmptyStringSchema,
@@ -41,6 +49,8 @@ export const TerminalOpenInput = Schema.Struct({
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),
   providerInstanceId: Schema.optional(ProviderInstanceId),
+  /** Fork: the shell to start instead of the default shell. A different shell restarts it. */
+  shell: Schema.optional(TerminalShellSchema),
 });
 export type TerminalOpenInput = typeof TerminalOpenInput.Type;
 
@@ -53,6 +63,8 @@ export const TerminalAttachInput = Schema.Struct({
   env: Schema.optional(TerminalEnvSchema),
   providerInstanceId: Schema.optional(ProviderInstanceId),
   restartIfNotRunning: Schema.optional(Schema.Boolean),
+  /** Fork: the shell to start when the attach opens the terminal. */
+  shell: Schema.optional(TerminalShellSchema),
   // Resubscriptions preserve stopped terminals; unknown IDs recover after a server restart.
   resume: Schema.optional(Schema.Boolean),
 });
@@ -126,6 +138,11 @@ export const TerminalSummary = Schema.Struct({
   hasRunningSubprocess: Schema.Boolean,
   label: Schema.String.check(Schema.isMaxLength(128)),
   updatedAt: Schema.String,
+  /** Fork: set on the main terminal of a terminal thread. */
+  attention: Schema.optionalKey(TerminalAttention),
+  shell: Schema.optionalKey(TerminalShellState),
+  /** The program and subcommand of the last command (`terminalCommandTitle`). */
+  command: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(TERMINAL_COMMAND_MAX_LENGTH))),
 });
 export type TerminalSummary = typeof TerminalSummary.Type;
 
@@ -367,6 +384,19 @@ export class TerminalResizeError extends Schema.TaggedError<TerminalResizeError>
   }
 }
 
+/** Fork: `shell` names no shell that this server found, such as a custom shell that was removed. */
+export class TerminalShellNotFoundError extends Schema.TaggedError<TerminalShellNotFoundError>()(
+  "TerminalShellNotFoundError",
+  {
+    shell: Schema.String,
+    available: Schema.Array(Schema.String),
+  },
+) {
+  override get message() {
+    return `The shell "${this.shell}" is not defined on this server any more. Choose another shell. This server has: ${this.available.join(", ") || "none"}.`;
+  }
+}
+
 export const TerminalError = Schema.Union([
   TerminalCwdError,
   TerminalHistoryError,
@@ -376,5 +406,7 @@ export const TerminalError = Schema.Union([
   TerminalNotRunningError,
   TerminalWriteError,
   TerminalResizeError,
+  TerminalShellNotFoundError,
+  TerminalThreadsOffError,
 ]);
 export type TerminalError = typeof TerminalError.Type;

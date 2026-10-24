@@ -1777,8 +1777,6 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        <Fork.ForkSettingsSlot place="general-confirmations" />
-
         {isElectron ? (
           <SettingsRow
             {...searchableSetting("quit-confirmation")}

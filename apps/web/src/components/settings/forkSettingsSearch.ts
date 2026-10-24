@@ -4,14 +4,17 @@
  */
 import type { SettingsSearchItem, SettingsSearchScope } from "./settingsSearch";
 
-export type ForkSettingsPath = "/settings/machines" | "/settings/fork";
+export type ForkSettingsPath = "/settings/terminal" | "/settings/machines" | "/settings/fork";
 
 export const SECTION_LABELS: Readonly<Record<ForkSettingsPath, string>> = {
+  "/settings/terminal": "Terminal",
   "/settings/machines": "Machines",
   "/settings/fork": "Fork",
 };
 
 export const CATEGORY_SCOPES: Readonly<Record<ForkSettingsPath, SettingsSearchScope | null>> = {
+  // Client and server settings share the Terminal page, so each row keeps its own scope.
+  "/settings/terminal": null,
   "/settings/machines": null,
   // Each row of the Fork page keeps the scope of its place.
   "/settings/fork": null,
@@ -236,15 +239,6 @@ export const AGENT_SESSION_IMPORT_ITEMS = [
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
-export const CONFIRMATION_ITEMS = [
-  {
-    id: "terminal-close-confirmation",
-    title: "Terminal close confirmation",
-    to: "/settings/general",
-    searchTerms: ["ask before terminal close stop process"],
-  },
-] as const satisfies ReadonlyArray<SettingsSearchItem>;
-
 export const KEYBOARD_ITEMS = [
   {
     id: "settings-find",
@@ -275,12 +269,6 @@ export const KEYBOARD_ITEMS = [
     title: "Keys per tooltip",
     to: "/settings/keybindings",
     searchTerms: ["keyboard shortcuts keybindings tooltip chips limit more how many"],
-  },
-  {
-    id: "terminal-app-shortcuts-first",
-    title: "App shortcuts in terminal",
-    to: "/settings/keybindings",
-    searchTerms: ["terminal keybindings keyboard shortcuts priority shell focus"],
   },
   {
     id: "app-toggle-shortcuts",
@@ -414,6 +402,62 @@ export const PREVIEW_ITEMS = [
     title: "All local servers in the browser",
     to: "/settings/integrations",
     searchTerms: ["preview local servers ports listeners dev server worktree project localhost"],
+    environmentOnly: true,
+  },
+] as const satisfies ReadonlyArray<SettingsSearchItem>;
+
+/** Settings > Terminal: the drawer terminal and terminal threads. */
+export const TERMINAL_ITEMS = [
+  {
+    id: "terminal-thread-font-limits",
+    title: "Terminal zoom limits",
+    to: "/settings/terminal",
+    searchTerms: ["terminal thread zoom font size smallest largest cmd plus minus"],
+  },
+  {
+    id: "terminal-app-shortcuts-first",
+    title: "App shortcuts in terminal",
+    to: "/settings/terminal",
+    searchTerms: ["terminal keybindings keyboard shortcuts priority shell focus"],
+  },
+  {
+    id: "terminal-close-confirmation",
+    title: "Terminal close confirmation",
+    to: "/settings/terminal",
+    searchTerms: ["ask before terminal close stop process"],
+  },
+  {
+    id: "terminal-key-mappings",
+    title: "Terminal key mappings",
+    to: "/settings/terminal",
+    searchTerms: ["terminal key mapping zle editor shortcut command cmd bytes escape send"],
+  },
+  {
+    id: "terminal-history",
+    title: "Terminal history",
+    to: "/settings/terminal",
+    searchTerms: ["terminal history scrollback lines megabytes output kept log size limit"],
+    environmentOnly: true,
+  },
+  {
+    id: "terminal-threads",
+    title: "Terminal threads",
+    to: "/settings/terminal",
+    searchTerms: ["terminal thread shell interactive vim cli new terminal"],
+    environmentOnly: true,
+  },
+  {
+    id: "current-project-terminal-opens-thread",
+    title: "Open terminal in current project as a thread",
+    to: "/settings/terminal",
+    searchTerms: ["terminal thread new current project enlarge expand draft at once shift click"],
+  },
+  {
+    // `TerminalShellsSettings` renders this id itself.
+    id: "terminal-shells",
+    title: "Shells",
+    to: "/settings/terminal",
+    searchTerms: ["terminal thread shell custom executable arguments bash zsh fish uv python"],
     environmentOnly: true,
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;

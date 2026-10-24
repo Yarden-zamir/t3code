@@ -22,6 +22,8 @@ export interface SidebarThreadHeaderProps {
   projectScope: ReactNode;
   /** Fork: the repository owner filter menu, rendered before the project scope. */
   ownerFilter?: ReactNode;
+  /** Fork: the new terminal thread button, rendered before the new thread button. */
+  terminalThreadButton?: ReactNode;
   onNewProject: () => void;
   onNewThread: (event: ReactMouseEvent) => void;
   newThreadDisabled: boolean;
@@ -42,6 +44,7 @@ export function SidebarThreadHeader({
   hasProjects,
   projectScope,
   ownerFilter,
+  terminalThreadButton,
   onNewProject,
   onNewThread,
   newThreadDisabled,
@@ -121,6 +124,7 @@ export function SidebarThreadHeader({
             </SidebarHeaderIconButton>
           </>
         ) : null}
+        {terminalThreadButton}
         <SidebarHeaderIconButton
           label="New thread"
           tooltip={

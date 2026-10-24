@@ -8,6 +8,7 @@ import {
 } from "../features/threads/threadOrder";
 import { getThreadListV2OrderedSection } from "../features/threads/threadListV2";
 import { appAtomRegistry } from "./atom-registry";
+import { readTerminalThreadStates } from "./forkTerminalThreads";
 import { environmentServerConfigsAtom } from "./server";
 import { environmentThreadShells } from "./threads";
 import { queuedThreadKeysAtom } from "./use-thread-outbox";
@@ -50,8 +51,9 @@ export function beginPendingThreadOrder(pending: PendingThreadOrder) {
     const current = appAtomRegistry.get(pendingThreadOrderAtom);
     if (current === null) return;
     const configs = appAtomRegistry.get(environmentServerConfigsAtom);
+    const threads = appAtomRegistry.get(environmentThreadShells.navigationThreadShellsAtom);
     const ordered = getThreadListV2OrderedSection({
-      threads: appAtomRegistry.get(environmentThreadShells.navigationThreadShellsAtom),
+      threads,
       section: current.section,
       now: new Date().toISOString(),
       queuedThreadKeys: appAtomRegistry.get(queuedThreadKeysAtom),
@@ -65,6 +67,7 @@ export function beginPendingThreadOrder(pending: PendingThreadOrder) {
           config.environment.capabilities.threadSnooze === true ? [id] : [],
         ),
       ),
+      terminalStates: readTerminalThreadStates(threads),
     });
     const next = reconcilePendingThreadOrder(current, ordered);
     if (next === null) cancel();

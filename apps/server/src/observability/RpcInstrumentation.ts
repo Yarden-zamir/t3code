@@ -102,6 +102,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.cloudInstallRelayClient]: "cloud",
   [WS_METHODS.pullRequestsList]: "pull-requests",
   [WS_METHODS.pullRequestsListStats]: "pull-requests",
+  [WS_METHODS.pullRequestsFilterOptions]: "pull-requests",
   [WS_METHODS.pullRequestsSummary]: "pull-requests",
   [WS_METHODS.pullRequestsRouting]: "pull-requests",
   [WS_METHODS.pullRequestsRoutingIdentity]: "pull-requests",
@@ -231,6 +232,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.webPushSubscribe]: "webPush",
   [WS_METHODS.webPushTest]: "webPush",
   [WS_METHODS.forkPreviewSubscribeLocalListeners]: "preview",
+  [WS_METHODS.vcsPrepareDraftWorktree]: "vcs",
+  [WS_METHODS.terminalMoveToThread]: "terminal",
 } as const satisfies Readonly<Record<WsRpcMethod, string>>;
 
 const RPC_SPAN_PREFIX = "ws.rpc";

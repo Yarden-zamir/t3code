@@ -183,6 +183,41 @@ export function TerminalAppShortcutsFirstSettingsRow() {
   );
 }
 
+/** Fork: `currentProjectTerminalOpensThread`. */
+export function CurrentProjectTerminalOpensThreadSettingsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("current-project-terminal-opens-thread")}
+      description="New terminal thread in current project (Shift+click, its shortcut or the command palette) makes the terminal thread right away, like the enlarge button. The thread shows in the sidebar even if you never run a command."
+      resetAction={
+        settings.currentProjectTerminalOpensThread !==
+        DEFAULT_UNIFIED_SETTINGS.currentProjectTerminalOpensThread ? (
+          <SettingResetButton
+            label="open terminal in current project as a thread"
+            onClick={() =>
+              updateSettings({
+                currentProjectTerminalOpensThread:
+                  DEFAULT_UNIFIED_SETTINGS.currentProjectTerminalOpensThread,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.currentProjectTerminalOpensThread}
+          onCheckedChange={(checked) =>
+            updateSettings({ currentProjectTerminalOpensThread: Boolean(checked) })
+          }
+          aria-label="Open terminal in current project as a thread"
+        />
+      }
+    />
+  );
+}
+
 /** Fork: `backgroundWorkDetails`. */
 export function BackgroundWorkDetailsSettingsRow() {
   const settings = useScopedSettings();

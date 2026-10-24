@@ -25,7 +25,11 @@ import {
   sidebarTabThreadKey,
   type SidebarTabStatusKind,
 } from "@t3tools/client-runtime/state/sidebarTabs";
-import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  forkEffectiveSnoozed,
+  forkThreadWokeAt,
+  terminalStateOf,
+} from "@t3tools/client-runtime/state/fork-terminal-threads";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useDeferredValue, useMemo } from "react";
@@ -41,6 +45,7 @@ import { Menu } from "../../components/ui/Menu";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { cn } from "../../lib/cn";
 import { scopedProjectKey } from "../../lib/scopedEntities";
+import { useTerminalThreadStates } from "../../state/forkTerminalThreads";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import {
   createMobileSidebarTab,
@@ -111,6 +116,7 @@ export function useHomeSidebarTabs(input: {
   const { threads, projects, environmentId, projectKeys, searching, now } = input;
   const settings = useAtomValue(sidebarTabsAtom);
   const selectedTabId = useAtomValue(selectedSidebarTabIdAtom);
+  const terminalStates = useTerminalThreadStates(threads);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const openTabId =
     selectedTabId ??
@@ -166,11 +172,12 @@ export function useHomeSidebarTabs(input: {
       )
       .map((thread) => {
         const settled = thread.settledOverride === "settled";
-        const wokeAt = threadWokeAt(thread, { now });
+        const terminal = terminalStateOf(terminalStates, thread);
+        const wokeAt = forkThreadWokeAt(thread, { now }, terminal);
         return {
           thread,
           settled,
-          asleep: settled || effectiveSnoozed(thread, { now }),
+          asleep: settled || forkEffectiveSnoozed(thread, { now }, terminal),
           isUnread: threadHasUnseenCompletion(thread),
           isWoke:
             wokeAt !== null &&
@@ -197,7 +204,7 @@ export function useHomeSidebarTabs(input: {
       describe(DEFAULT_SIDEBAR_TAB_ID, sidebarDefaultTabName(settings), settings.defaultTab),
       ...settings.tabs.map((tab) => describe(tab.id, tab.name, tab)),
     ];
-  }, [environmentId, now, projectKeys, settings, showsThread, threads]);
+  }, [environmentId, now, projectKeys, settings, showsThread, terminalStates, threads]);
 
   const filterThreads = useCallback(
     (list: ReadonlyArray<EnvironmentThreadShell>) =>

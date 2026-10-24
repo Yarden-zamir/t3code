@@ -122,6 +122,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsListStats]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsFilterOptions]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsSummary]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRouting]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRoutingIdentity]: AuthOrchestrationReadScope,
@@ -263,6 +264,10 @@ const requiredScopesForRpcCall = (
         ? AuthFilesystemReadScope
         : AuthOrchestrationReadScope,
     ];
+  }
+  // Fork: moving a terminal also creates its terminal thread.
+  if (method === WS_METHODS.terminalMoveToThread) {
+    return [AuthTerminalOperateScope, AuthOrchestrationOperateScope];
   }
   if (method === WS_METHODS.serverUpdateSettings) return requiredScopesForSettingsUpdate(payload);
   if (method === WS_METHODS.projectsMutate) {

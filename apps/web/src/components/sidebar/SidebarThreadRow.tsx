@@ -120,6 +120,11 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelLabel } from "../chat/providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
+import { useTerminalThreadState } from "../../hooks/useForkTerminalThreadState";
+import {
+  terminalThreadRowStatus,
+  terminalThreadStatusLabel,
+} from "@t3tools/client-runtime/state/fork-terminal-threads";
 import { InlineButton } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -650,8 +655,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ? resolveThreadCurrentPullRequestLink(thread.pullRequests)
     : null;
 
-  const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
-  const status = resolveSidebarThreadStatus(thread);
+  const terminalThreadState = useTerminalThreadState(thread);
+  const terminalLabel = terminalThreadStatusLabel(terminalThreadState, lastVisitedAt);
+  const isUnread =
+    hasUnseenCompletion({ ...thread, lastVisitedAt }) || terminalLabel === "Completed";
+  const status = terminalThreadRowStatus(resolveSidebarThreadStatus(thread), terminalLabel);
   const lastVisitedDate = lastVisitedAt === undefined ? null : parseTimestampDate(lastVisitedAt);
   const wokeAtDate = props.wokeAt === null ? null : parseTimestampDate(props.wokeAt);
   const isWoke =

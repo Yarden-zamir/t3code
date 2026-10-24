@@ -65,6 +65,7 @@ import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceRegistryHydration.ts";
 import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrideSweep.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as TerminalPortLayer from "./fork/terminalProvider/portLayer.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as RemoteDelegation from "./peer/RemoteDelegation.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
@@ -170,10 +171,13 @@ import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinar
 import * as ProcessGroupMetrics from "./resourceTelemetry/ProcessGroupMetrics.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as AntigravityUsage from "./provider/Drivers/AntigravityUsage.ts";
+import { MuseUsageHome } from "@t3tools/provider-muse/server";
 import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAccountReader";
 import * as CursorKeychain from "@t3tools/provider-cursor/server/CursorKeychain";
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as AbandonedTerminalDrafts from "./fork/AbandonedTerminalDrafts.ts";
+import * as TerminalThreadMove from "./fork/TerminalThreadMove.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkPreviewServerGroups from "./fork/PreviewServerGroups.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
@@ -284,6 +288,7 @@ const layerUsage = UsageService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
       AntigravityUsage.layer,
+      MuseUsageHome.layer,
       CodexUsageHistory.layer,
       CursorUsageAccounts.layer.pipe(
         Layer.provide(CursorAccountReader.layer.pipe(Layer.provide(CursorKeychain.layer))),
@@ -461,6 +466,14 @@ const layerTerminal = TerminalManager.layer.pipe(
   Layer.provide(layerPtyAdapter),
   Layer.provide(layerPortScanner),
   Layer.provide(layerNativeTelemetry),
+);
+
+// Fork: the terminal manager behind the `terminal` provider driver. The driver sits below the
+// terminal manager in the layer stack, so it cannot reach the manager without this layer. The
+// manager is built once: the layer value is shared.
+const layerTerminalPort = TerminalPortLayer.layer.pipe(
+  Layer.provide(layerTerminal),
+  Layer.provide(ProjectStore.layer),
 );
 
 const layerPreview = Layer.empty.pipe(
@@ -671,6 +684,10 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerMachineMap,
   // Fork: Web Push to the browsers that subscribed on this server.
   WebPush.layerWorker.pipe(Layer.provideMerge(WebPush.layer)),
+  // Fork: closes the shells of terminal thread drafts that their client left.
+  AbandonedTerminalDrafts.layer,
+  // Fork: a drawer terminal becomes a terminal thread (`terminal.moveToThread`).
+  TerminalThreadMove.layer,
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
@@ -686,6 +703,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ),
   Layer.provideMerge(ProviderRegistry.layer),
   Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
+  Layer.provideMerge(layerTerminalPort),
   Layer.provideMerge(
     Layer.mergeAll(
       AntigravityInstallation.AntigravityInstallation.layer,

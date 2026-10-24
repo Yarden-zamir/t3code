@@ -71,6 +71,7 @@ export * from "./forkChangelog.ts";
 export * from "./forkRpc.ts";
 export * from "./forkPreview.ts";
 export * from "./forkKeybindings.ts";
+export * from "./forkTerminalThreads.ts";
 export * from "./sidebarTabs.ts";
 export * from "./machineMap.ts";
 export * from "./machineMapClient.ts";

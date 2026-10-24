@@ -65,15 +65,16 @@ export function RightPanelSurfaceContent(props: {
   readonly threadRef: ScopedThreadRef;
   readonly environmentId: EnvironmentId;
   readonly visible: boolean;
-  readonly composerDraftTarget: ScopedThreadRef | DraftId;
+  /** Null on a screen without a composer, which hides the actions that write to it. */
+  readonly composerDraftTarget: ScopedThreadRef | DraftId | null;
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly configuredPreviewUrls: ReadonlyArray<string>;
   readonly workspaceMutationId: string | null;
   readonly getShortcutContext: () => ShortcutMatchContext;
-  readonly onSendAnnotation: (
-    annotation: PreviewAnnotationPayload,
-    image: ComposerImageAttachment | null,
-  ) => void;
+  /** Absent on a screen without a composer, which hides "send to chat". */
+  readonly onSendAnnotation:
+    | ((annotation: PreviewAnnotationPayload, image: ComposerImageAttachment | null) => void)
+    | undefined;
   readonly onCloseSurface: (surface: RightPanelSurface) => void;
   readonly terminal: RightPanelTerminalProps;
   readonly pullRequest: RightPanelPullRequestProps;
@@ -91,7 +92,7 @@ export function RightPanelSurfaceContent(props: {
             tabId={surface.resourceId}
             configuredUrls={props.configuredPreviewUrls}
             visible={visible}
-            onSendAnnotation={props.onSendAnnotation}
+            {...(props.onSendAnnotation ? { onSendAnnotation: props.onSendAnnotation } : {})}
           />
         </Suspense>
       );
@@ -161,7 +162,9 @@ export function RightPanelSurfaceContent(props: {
             },
             surface,
           )}
-          composerDraftTarget={props.composerDraftTarget}
+          {...(props.composerDraftTarget === null
+            ? {}
+            : { composerDraftTarget: props.composerDraftTarget })}
           onBack={pullRequest.onBack}
         />
       );
