@@ -18,6 +18,11 @@ describe("attentionTransition", () => {
     expect(attentionTransition(null, "completed")).toBeNull();
     expect(attentionTransition("completed", "completed")).toBeNull();
   });
+
+  it("stays quiet when a silent run completes, but not when it fails", () => {
+    expect(attentionTransition("running", "completed", true)).toBeNull();
+    expect(attentionTransition("running", "failed", true)).toBe("failed");
+  });
 });
 
 describe("terminal attention", () => {
