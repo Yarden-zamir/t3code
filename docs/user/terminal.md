@@ -72,8 +72,8 @@ The right panel (`mod+alt+b`) and the thread details (`mod+shift+b`; on Linux an
 with the focus outside the terminal) work like in a chat thread: changes and diff, files, pull requests, browser,
 devices, machines, and the git actions of the branch. A link that you click in a terminal
 opens in the browser of the panel when it is available, like in a chat thread. A terminal
-thread has no prompt, so the panel has no "send to chat", and the thread details have no
-project scripts. Comments on a diff or a file stay in the panel.
+thread has no prompt, so the panel has no "send to chat", no "Add to chat" and no comments on a
+diff or a file, and the thread details have no project scripts.
 
 ## Messages
 

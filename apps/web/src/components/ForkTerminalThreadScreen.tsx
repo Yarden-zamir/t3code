@@ -456,8 +456,8 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
         keybindings={keybindings}
         getShortcutContext={getShortcutContext}
         layoutControls={panelToggleControls}
-        // Diff and file comments go to the thread's composer draft, which this screen never shows.
-        composerDraftTarget={threadRef}
+        // No composer: the panel offers no comments and no "Add to chat".
+        composerDraftTarget={null}
         configuredPreviewUrls={NO_PROJECT_SCRIPTS}
         workspaceMutationId={workspace.mutationId}
         // No composer: previews and terminals offer no "send to chat".

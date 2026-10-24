@@ -83,7 +83,8 @@ interface AnnotatableCodeViewProps {
   pendingFiles: ReadonlyArray<FileDiffMetadata>;
   sectionId: string;
   sectionTitle: string;
-  composerDraftTarget: ScopedThreadRef | DraftId;
+  /** Null without a composer: the view then offers no comments. */
+  composerDraftTarget: ScopedThreadRef | DraftId | null;
   options: StyledDiffCodeViewOptions<DiffCommentAnnotationGroup>;
   viewerRef?: Ref<AnnotatableCodeViewHandle>;
   className?: string;
@@ -123,7 +124,9 @@ export function AnnotatableCodeView({
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
   const reviewComments = useComposerDraftStore(
-    (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
+    (store) =>
+      (composerDraftTarget === null ? null : store.getComposerDraft(composerDraftTarget))
+        ?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
   );
   const [selectedLines, setSelectedLines] = useState<{
     id: string;
@@ -197,7 +200,7 @@ export function AnnotatableCodeView({
     if (draft?.annotation.metadata.entries.some((entry) => entry.id === entryId)) {
       setDraft(null);
       setDraftText("");
-    } else {
+    } else if (composerDraftTarget !== null) {
       removeReviewComment(composerDraftTarget, entryId);
     }
   };
@@ -215,7 +218,7 @@ export function AnnotatableCodeView({
       range: entry.range,
       text,
     });
-    if (comment) addReviewComment(composerDraftTarget, comment);
+    if (comment && composerDraftTarget !== null) addReviewComment(composerDraftTarget, comment);
     setSelectedLines(null);
     setDraft(null);
     setDraftText("");
@@ -273,7 +276,7 @@ export function AnnotatableCodeView({
       onRevealSearchMatch={(item) => onRevealSearchMatch(item.id)}
       options={{
         ...options,
-        enableGutterUtility: draft === null,
+        enableGutterUtility: draft === null && composerDraftTarget !== null,
         enableLineSelection: draft === null,
         onGutterUtilityClick: beginComment,
       }}

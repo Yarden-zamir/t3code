@@ -466,7 +466,7 @@ export function ThreadRightPanelView(props: {
   readonly getShortcutContext: () => ShortcutMatchContext;
   /** The panel toggles, shown in the sheet's tab bar. */
   readonly layoutControls: ReactNode;
-  readonly composerDraftTarget: ScopedThreadRef | DraftId;
+  readonly composerDraftTarget: ScopedThreadRef | DraftId | null;
   readonly configuredPreviewUrls: ReadonlyArray<string>;
   readonly workspaceMutationId: string | null;
   readonly onSendAnnotation:
