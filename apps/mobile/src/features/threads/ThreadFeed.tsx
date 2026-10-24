@@ -2236,11 +2236,18 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }
     const target = resolveLinkedThread(href);
     if (target) {
-      openLinkedThread({
+      const thread = {
         environmentId: String(target.environmentId),
         threadId: String(target.threadId),
-        ...forkThreadLinks.messageParams(href),
-      });
+      };
+      // Fork: `openLinkedThread` stays on or pops to an open thread without params, which would
+      // drop the message of a message link. Such a link navigates, so the thread gets `message`.
+      const messageParams = forkThreadLinks.messageParams(href);
+      if (messageParams.message !== undefined) {
+        navigation.navigate("Thread", { ...thread, ...messageParams });
+      } else {
+        openLinkedThread(thread);
+      }
       return;
     }
     const media = resolveMarkdownMediaPreview(href, {
