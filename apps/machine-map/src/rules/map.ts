@@ -21,7 +21,6 @@ import {
   type MapNote,
   type MapPosition,
   type MapPreset,
-  type PairOffset,
   type ScopedSettingValues,
   type SettingScope,
   type SettingValues,
@@ -43,13 +42,16 @@ export const MAP_ROLES: ReadonlyArray<MachineMapRole> = ["none", "read", "propos
 export const levelRank = (level: MachineLevel): number => LEVELS.indexOf(level);
 export const roleRank = (role: MachineMapRole): number => MAP_ROLES.indexOf(role);
 
+/** The level one step up or down, or null at the end of the ladder. */
+export const stepLevel = (level: MachineLevel, step: 1 | -1): MachineLevel | null =>
+  LEVELS[levelRank(level) + step] ?? null;
+
 export const emptyMap = (): MachineMapDocument => ({
   revision: 0,
   machines: [],
   arrows: [],
   settings: { shared: { server: {}, client: {} }, overrides: {} },
   presets: [],
-  pairPlacements: [],
   notes: [],
   clients: [],
   clientArrows: [],
@@ -112,30 +114,6 @@ export const findMachine = (map: MachineMapDocument, id: MachineId): MachineReco
 
 export const findArrow = (map: MachineMapDocument, from: MachineId, to: MachineId): ArrowRecord =>
   map.arrows.find((arrow) => arrow.from === from && arrow.to === to) ?? defaultArrow(from, to);
-
-/** The same offset seen from the other end: it runs the other way and lies on the other side. */
-const flipOffset = (offset: PairOffset): PairOffset => ({
-  along: 1 - offset.along,
-  aside: -offset.aside,
-});
-
-/** A pair in stored order: `a` sorts before `b`. */
-function storedPair(
-  a: MachineId,
-  b: MachineId,
-  offset: PairOffset | null,
-): { a: MachineId; b: MachineId; offset: PairOffset | null } {
-  return a < b ? { a, b, offset } : { a: b, b: a, offset: offset && flipOffset(offset) };
-}
-
-/** MM-1108: where the owner put the card of a pair, seen from `a`. Null for the automatic place. */
-export function pairOffset(map: MachineMapDocument, a: MachineId, b: MachineId): PairOffset | null {
-  const key = storedPair(a, b, null);
-  const found = map.pairPlacements.find((p) => p.a === key.a && p.b === key.b);
-  if (!found) return null;
-  const offset = { along: found.along, aside: found.aside };
-  return a === key.a ? offset : flipOffset(offset);
-}
 
 export const findClient = (map: MachineMapDocument, id: ClientId): ClientRecord | undefined =>
   map.clients.find((client) => client.id === id);
@@ -229,8 +207,6 @@ function applyChange(map: MachineMapDocument, change: MapChange): Step {
       return putPreset(map, change.preset);
     case "removePreset":
       return removePreset(map, change.name);
-    case "placePair":
-      return placePair(map, change.a, change.b, change.offset);
     case "putNote":
       return putNote(map, change.note);
     case "removeNote":
@@ -349,11 +325,6 @@ function removeMachine(map: MachineMapDocument, machineId: MachineId): Step {
   const inverse: Array<MapChange> = [{ _tag: "putMachine", machine: previous }];
   for (const arrow of removedArrows) inverse.push({ _tag: "setArrow", arrow });
   for (const arrow of removedClientArrows) inverse.push({ _tag: "setClientArrow", arrow });
-  const touchesMachine = (p: { a: MachineId; b: MachineId }) =>
-    p.a === machineId || p.b === machineId;
-  for (const { a, b, along, aside } of map.pairPlacements.filter(touchesMachine)) {
-    inverse.push({ _tag: "placePair", a, b, offset: { along, aside } });
-  }
   if (own) {
     for (const scope of ["server", "client"] as const) {
       for (const [key, value] of Object.entries(own[scope])) {
@@ -370,7 +341,6 @@ function removeMachine(map: MachineMapDocument, machineId: MachineId): Step {
       arrows: map.arrows.filter((a) => a.from !== machineId && a.to !== machineId),
       clientArrows: map.clientArrows.filter((a) => a.to !== machineId),
       settings: { ...map.settings, overrides },
-      pairPlacements: map.pairPlacements.filter((p) => !touchesMachine(p)),
     },
     inverse,
   };
@@ -394,26 +364,6 @@ function removePreset(map: MachineMapDocument, name: string): Step {
   return {
     map: { ...map, presets: map.presets.filter((p) => p.name !== name) },
     inverse: [{ _tag: "putPreset", preset: previous }],
-  };
-}
-
-function placePair(
-  map: MachineMapDocument,
-  a: MachineId,
-  b: MachineId,
-  offset: PairOffset | null,
-): Step {
-  if (a === b) throw new MapRuleError("A machine has no pair with itself.");
-  for (const id of [a, b]) {
-    if (!findMachine(map, id)) throw new MapRuleError(`Unknown machine ${id}.`);
-  }
-  const previous = pairOffset(map, a, b);
-  const key = storedPair(a, b, offset);
-  const others = map.pairPlacements.filter((p) => !(p.a === key.a && p.b === key.b));
-  const pairPlacements = key.offset ? [...others, { a: key.a, b: key.b, ...key.offset }] : others;
-  return {
-    map: { ...map, pairPlacements },
-    inverse: [{ _tag: "placePair", a, b, offset: previous }],
   };
 }
 
@@ -696,8 +646,7 @@ export function machinesTouched(revision: RevisionChanges): ReadonlySet<MachineI
       case "addClientKey":
       case "removeClientKey":
         return "all";
-      // MM-1108, MM-1109: display data. No machine applies it.
-      case "placePair":
+      // MM-1109: display data. No machine applies it.
       case "putNote":
       case "removeNote":
         break;
@@ -809,11 +758,6 @@ const scalePlace = (place: unknown): unknown =>
     : place;
 const withPlace = (record: unknown): unknown =>
   isRecord(record) ? { ...record, position: scalePlace(record.position) } : record;
-/** The distance beside the line was a fraction of the shorter side of the map. */
-const scaleAside = (offset: unknown): unknown =>
-  isRecord(offset) && typeof offset.aside === "number"
-    ? { ...offset, aside: Math.round(offset.aside * Math.min(MAP_FRAME.width, MAP_FRAME.height)) }
-    : offset;
 const mapEach = (list: unknown, each: (item: unknown) => unknown): unknown =>
   Array.isArray(list) ? list.map(each) : list;
 
@@ -825,9 +769,6 @@ export function absoluteMapJson(map: unknown): unknown {
     machines: mapEach(map.machines, withPlace),
     ...(map.clients === undefined ? {} : { clients: mapEach(map.clients, withPlace) }),
     ...(map.notes === undefined ? {} : { notes: mapEach(map.notes, withPlace) }),
-    ...(map.pairPlacements === undefined
-      ? {}
-      : { pairPlacements: mapEach(map.pairPlacements, scaleAside) }),
   };
 }
 
@@ -842,8 +783,6 @@ export function absoluteChangesJson(changes: unknown): unknown {
         return { ...change, client: withPlace(change.client) };
       case "putNote":
         return { ...change, note: withPlace(change.note) };
-      case "placePair":
-        return { ...change, offset: scaleAside(change.offset) };
       default:
         return change;
     }

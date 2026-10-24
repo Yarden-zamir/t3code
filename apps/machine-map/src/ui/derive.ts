@@ -4,6 +4,9 @@
  */
 import {
   isMachineLocalSetting,
+  type ArrowRecord,
+  type ClientArrowRecord,
+  type ClientId,
   type MachineClientSession,
   type MachineCommand,
   type MachineId,
@@ -11,6 +14,7 @@ import {
   type MachineMapDocument,
   type MachineRecord,
   type MapChange,
+  type MapProposal,
   type MapRevision,
   type PortalSnapshot,
   type SettingScope,
@@ -204,10 +208,6 @@ export function describeChange(change: MapChange, map: MachineMapDocument): stri
       return `Preset ${change.preset.name} with ${change.preset.arrows.length} arrows`;
     case "removePreset":
       return `Delete preset ${change.name}`;
-    case "placePair":
-      return change.offset
-        ? `Card of ${name(change.a)} and ${name(change.b)} moved`
-        : `Card of ${name(change.a)} and ${name(change.b)} back to its own place`;
     case "putNote":
       return `Note ${noteQuote(change.note.text)}`;
     case "removeNote": {
@@ -342,3 +342,54 @@ export function groupClientSessions(
     folded: ordered.filter(isOld),
   };
 }
+
+/** MM-804: a waiting proposal that sets the arrow from `from` to `to`, with the arrow it asks for. */
+export interface ArrowAsk {
+  readonly proposal: MapProposal;
+  readonly arrow: ArrowRecord;
+}
+
+/** MM-804: the waiting proposals that change one arrow. Agents never touch client arrows (MM-807). */
+export const arrowAsks = (
+  proposals: ReadonlyArray<MapProposal>,
+  from: MachineId,
+  to: MachineId,
+): ReadonlyArray<ArrowAsk> =>
+  proposals.flatMap((proposal) =>
+    proposal.changes.flatMap((change) =>
+      change._tag === "setArrow" && change.arrow.from === from && change.arrow.to === to
+        ? [{ proposal, arrow: change.arrow }]
+        : [],
+    ),
+  );
+
+/** One arrow of the map: a machine arrow (MM-301) or a client arrow (MM-309). */
+export type Grant =
+  | {
+      readonly _tag: "machine";
+      readonly from: MachineRecord;
+      readonly to: MachineRecord;
+      readonly arrow: ArrowRecord;
+    }
+  | {
+      readonly _tag: "client";
+      readonly from: { readonly id: ClientId; readonly name: string };
+      readonly to: MachineRecord;
+      readonly arrow: ClientArrowRecord;
+    };
+
+/** The panel of a grant: the arrow panel of a machine arrow or of a client arrow. */
+export const grantSelection = (grant: Grant): Route["selection"] =>
+  grant._tag === "machine"
+    ? { _tag: "arrow", from: grant.from.id, to: grant.to.id }
+    : { _tag: "clientArrow", client: grant.from.id, to: grant.to.id };
+
+/** MM-717: the level before the pause of a grant that the pause cut, or null. */
+export const grantCut = (pause: PauseView | null, grant: Grant): MachineLevel | null => {
+  if (grant.arrow.level !== "none") return null;
+  if (grant._tag === "machine") return cutLevel(pause, grant.from.id, grant.to.id);
+  return (
+    pause?.cutClients.find((cut) => cut.client === grant.from.id && cut.to === grant.to.id)
+      ?.level ?? null
+  );
+};

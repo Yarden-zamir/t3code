@@ -10,11 +10,13 @@ import type {
 } from "@t3tools/contracts/machineMap";
 
 import { applyChanges, findArrow, findMachine } from "../rules/map.ts";
-import { MAC, threeMachines, VPS, WIN } from "../rules/testMap.ts";
+import { client, MAC, PHONE, threeMachines, VPS, WIN } from "../rules/testMap.ts";
 import {
+  arrowAsks,
   arrowEnds,
   arrowEndWait,
   connectChange,
+  grantCut,
   machineQueue,
   pairShows,
   pauseReach,
@@ -276,5 +278,65 @@ describe("connectChange (MM-1104)", () => {
   it("raises nothing during a pause or onto the same machine", () => {
     expect(connectChange(threeMachines(), MAC, VPS, true)).toBeNull();
     expect(connectChange(threeMachines(), MAC, MAC, false)).toBeNull();
+  });
+});
+
+describe("arrowAsks (MM-804)", () => {
+  it("finds the waiting proposals of one arrow, in its direction only", () => {
+    const map = threeMachines();
+    const ask = { ...findArrow(map, VPS, MAC), level: "admin" as const };
+    const proposal = {
+      id: "p1",
+      at: "2026-10-13T08:00:00.000Z",
+      expiresAt: "2026-10-14T08:00:00.000Z",
+      actor: { _tag: "agent" as const, machineId: VPS, threadId: null, threadTitle: null },
+      summary: "asks",
+      changes: [
+        { _tag: "setArrow" as const, arrow: ask },
+        {
+          _tag: "setArrow" as const,
+          arrow: { ...findArrow(map, VPS, WIN), level: "read" as const },
+        },
+      ],
+      reason: "self-escalation" as const,
+    };
+    expect(arrowAsks([proposal], VPS, MAC)).toEqual([{ proposal, arrow: ask }]);
+    expect(arrowAsks([proposal], MAC, VPS)).toEqual([]);
+  });
+});
+
+describe("grantCut (MM-717)", () => {
+  const map = { ...threeMachines(), clients: [client()] };
+  const machines = (id: MachineId): MachineRecord => {
+    const found = findMachine(map, id);
+    if (!found) throw new Error(`No machine ${id}.`);
+    return found;
+  };
+  const pause = {
+    pausedAt: "2026-10-13T08:00:00.000Z",
+    by: { _tag: "portal" as const, reason: "test" },
+    revision: null,
+    cut: [{ from: MAC, to: VPS, level: "admin" as const }],
+    cutClients: [{ client: PHONE, to: VPS, level: "read" as const }],
+  };
+
+  it("gives the level before the pause of a cut machine arrow and a cut client arrow", () => {
+    const machine = {
+      _tag: "machine" as const,
+      from: machines(MAC),
+      to: machines(VPS),
+      arrow: findArrow(map, MAC, VPS),
+    };
+    const phone = {
+      _tag: "client" as const,
+      from: client(),
+      to: machines(VPS),
+      arrow: { client: PHONE, to: VPS, level: "none" as const, expiresAt: null, revertLevel: null },
+    };
+    expect(grantCut(pause, machine)).toBe("admin");
+    expect(grantCut(pause, phone)).toBe("read");
+    expect(grantCut(null, machine)).toBeNull();
+    // An arrow that gives access again was not cut, whatever the pause list says.
+    expect(grantCut(pause, { ...machine, arrow: { ...machine.arrow, level: "read" } })).toBeNull();
   });
 });

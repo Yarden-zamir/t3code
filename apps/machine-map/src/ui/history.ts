@@ -154,8 +154,6 @@ function changeKind(revision: RevisionChanges, change: MapChange): ChangeKind {
     case "putPreset":
     case "removePreset":
       return "preset";
-    case "placePair":
-      return "move";
     case "putNote": {
       const previous = before(revision, "putNote", (c) => c.note.id === change.note.id)?.note;
       const moved =
@@ -357,9 +355,6 @@ function entryMachines(entry: HistoryEntry): ReadonlySet<string> {
       case "removeMachine":
         ids.add(change.machineId);
         break;
-      case "placePair":
-        ids.add(change.a).add(change.b);
-        break;
       case "setClientArrow":
         ids.add(change.arrow.to);
         break;
@@ -473,7 +468,7 @@ function listText(parts: ReadonlyArray<string>): string {
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** MM-714: "Moved Mac, VPS and 2 cards · 6 moves", or "Stop all agents on Mac and VPS". */
+/** MM-714: "Moved Mac, VPS and 2 notes · 6 moves", or "Stop all agents on Mac and VPS". */
 export function groupSummary(
   group: Extract<HistoryItem, { _tag: "group" }>,
   map: MachineMapDocument,
@@ -489,19 +484,16 @@ export function groupSummary(
     return `${label} on ${listText([...names])}`;
   }
   const machines = new Set<string>();
-  const cards = new Set<string>();
   const notes = new Set<string>();
   for (const entry of group.entries) {
     if (entry._tag !== "revision") continue;
     for (const change of entry.revision.changes) {
       if (change._tag === "putMachine") machines.add(change.machine.name);
       if (change._tag === "putClient") machines.add(change.client.name);
-      if (change._tag === "placePair") cards.add([change.a, change.b].toSorted().join(">"));
       if (change._tag === "putNote") notes.add(change.note.id);
     }
   }
   const parts = [...machines];
-  if (cards.size > 0) parts.push(count(cards.size, "card", "cards"));
   if (notes.size > 0) parts.push(count(notes.size, "note", "notes"));
   return `Moved ${listText(parts)} · ${count(group.entries.length, "move", "moves")}`;
 }
@@ -602,17 +594,6 @@ export function revisionDiff(revision: RevisionChanges, map: MachineMapDocument)
       }
       case "removePreset":
         return [{ label: `Preset ${change.name}`, before: "saved", after: "deleted" }];
-      case "placePair": {
-        const previous = before(revision, "placePair", (c) => c.a === change.a && c.b === change.b);
-        const text = (moved: boolean) => (moved ? "moved by hand" : "automatic place");
-        return [
-          {
-            label: `Card of ${name(change.a)} and ${name(change.b)}`,
-            before: text(previous?.offset != null),
-            after: text(change.offset !== null),
-          },
-        ];
-      }
       case "putNote": {
         const next = change.note;
         const previous = before(revision, "putNote", (c) => c.note.id === next.id)?.note;

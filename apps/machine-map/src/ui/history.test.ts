@@ -88,9 +88,6 @@ describe("classifyRevision (MM-715)", () => {
     } as const;
     expect(classifyRevision(revision(map, [setting]))).toBe("settings");
     expect(classifyRevision(revision(map, [move(0.2)]))).toBe("move");
-    expect(
-      classifyRevision(revision(map, [{ _tag: "placePair", a: MAC, b: VPS, offset: null }])),
-    ).toBe("move");
     const note = {
       _tag: "putNote",
       note: { id: "n", text: "hi", color: "blue", position: { x: 0.5, y: 0.5 } },
@@ -126,14 +123,16 @@ describe("groupHistory (MM-714)", () => {
     }) satisfies MachineCommand;
 
   it("joins moves of one actor in a row, and nothing else", () => {
+    const note = (id: string, x: number) =>
+      ({
+        _tag: "putNote",
+        note: { id, text: "hi", color: "blue", position: { x, y: 0 } },
+      }) as const;
+    const withNotes = applyChanges(map, [note("n1", 0), note("n2", 0)]).map;
     const revisions = [
       revision(map, [move(0.1)], { at: "2026-10-13T10:05:00.000Z" }),
-      revision(map, [{ _tag: "placePair", a: MAC, b: VPS, offset: { along: 0.4, aside: 0 } }], {
-        at: "2026-10-13T10:04:00.000Z",
-      }),
-      revision(map, [{ _tag: "placePair", a: VPS, b: WIN, offset: { along: 0.4, aside: 0 } }], {
-        at: "2026-10-13T10:03:00.000Z",
-      }),
+      revision(withNotes, [note("n1", 50)], { at: "2026-10-13T10:04:00.000Z" }),
+      revision(withNotes, [note("n2", 50)], { at: "2026-10-13T10:03:00.000Z" }),
       revision(map, [move(0.2)], { at: "2026-10-13T10:02:00.000Z", actor: phone }),
       revision(map, [arrowTo("admin")], { at: "2026-10-13T10:01:00.000Z", actor: phone }),
       revision(map, [move(0.3)], { at: "2026-10-13T10:00:00.000Z", actor: phone }),
@@ -144,7 +143,7 @@ describe("groupHistory (MM-714)", () => {
     ]);
     const group = day?.items[0];
     if (group?._tag !== "group") throw new Error("Expected a group.");
-    expect(groupSummary(group, map)).toBe("Moved MAC and 2 cards · 3 moves");
+    expect(groupSummary(group, map)).toBe("Moved MAC and 2 notes · 3 moves");
   });
 
   it("joins the stop commands of one pause, and splits days", () => {

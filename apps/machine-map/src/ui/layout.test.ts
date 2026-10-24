@@ -5,14 +5,10 @@ import {
   autoLayout,
   fitView,
   MAX_ZOOM,
-  offsetPoint,
-  pairCurve,
-  pairPath,
-  placePairs,
-  pointOffset,
   separate,
   toMapPoint,
   toScreenPoint,
+  wireGeometry,
   zoomAt,
   type Box,
   type LayoutCard,
@@ -46,115 +42,6 @@ describe("separate (MM-1103)", () => {
   });
 });
 
-describe("placePairs (MM-1103)", () => {
-  it("puts a pair card in the middle of its line when the middle is free", () => {
-    const [spot] = placePairs(
-      [{ a: { x: 100, y: 400 }, b: { x: 1100, y: 400 }, w: 300, h: 90, fixed: null }],
-      [card(100, 400), card(1100, 400)],
-    );
-    expect(spot).toEqual({ x: 600, y: 400 });
-  });
-
-  it("keeps two crossing pair cards apart and off the machine cards", () => {
-    // A square: both diagonals cross in the middle.
-    const machines = [card(200, 150), card(1000, 150), card(1000, 650), card(200, 650)];
-    const size = { w: 300, h: 90 };
-    const spots = placePairs(
-      [
-        { a: { x: 200, y: 150 }, b: { x: 1000, y: 650 }, ...size, fixed: null },
-        { a: { x: 1000, y: 150 }, b: { x: 200, y: 650 }, ...size, fixed: null },
-      ],
-      machines,
-    );
-    const pairBoxes = spots.map((p) => ({ ...p, ...size }));
-    expect(anyOverlap(pairBoxes)).toBe(false);
-    for (const pair of pairBoxes)
-      for (const machine of machines) expect(overlaps(pair, machine)).toBe(false);
-  });
-
-  it("moves a pair card beside a short line between two stacked machines", () => {
-    const machines = [card(600, 200), card(600, 340)];
-    const size = { w: 300, h: 90 };
-    const [spot] = placePairs(
-      [{ a: { x: 600, y: 200 }, b: { x: 600, y: 340 }, ...size, fixed: null }],
-      machines,
-    );
-    const pair = { ...(spot ?? { x: 0, y: 0 }), ...size };
-    for (const machine of machines) expect(overlaps(pair, machine)).toBe(false);
-  });
-
-  it("keeps a wide pair card off tall machines when no nearby candidate fits", () => {
-    const machines = [
-      { x: 100, y: 100, w: 224, h: 280 },
-      { x: 700, y: 100, w: 224, h: 279 },
-      { x: 400, y: 450, w: 224, h: 132 },
-    ];
-    const note = { x: 1000, y: 70, w: 190, h: 137 };
-    const size = { w: 597, h: 96 };
-    const [spot] = placePairs(
-      [{ a: machines[0]!, b: machines[1]!, ...size, fixed: null }],
-      machines,
-      [note],
-    );
-    expect(spot).toBeDefined();
-    const pair = { ...spot!, ...size };
-    for (const obstacle of [...machines, note]) expect(overlaps(pair, obstacle)).toBe(false);
-  });
-});
-
-describe("pair placement (MM-1108)", () => {
-  const a = { x: 100, y: 100 };
-  const b = { x: 100, y: 500 };
-
-  it("turns a dropped point into an offset and back", () => {
-    const point = { x: 160, y: 200 };
-    const offset = pointOffset(a, b, point);
-    expect(offset.along).toBeCloseTo(0.25);
-    expect(offsetPoint(a, b, offset).x).toBeCloseTo(point.x, 0);
-    expect(offsetPoint(a, b, offset).y).toBeCloseTo(point.y, 0);
-  });
-
-  it("follows the machines: the card keeps its place relative to the line", () => {
-    const offset = pointOffset(a, b, { x: 100, y: 300 });
-    // Both machines move right by 400: the card moves with them.
-    expect(offsetPoint({ x: 500, y: 100 }, { x: 500, y: 500 }, offset)).toEqual({
-      x: 500,
-      y: 300,
-    });
-  });
-
-  it("keeps the offset along the line in range, and beside it free (MM-1114)", () => {
-    expect(pointOffset(a, b, { x: 100, y: 900 }).along).toBe(1);
-    expect(pointOffset(a, b, { x: 5000, y: 300 }).aside).toBeLessThan(-1);
-  });
-
-  it("keeps a fixed card where the owner put it, and moves automatic cards off it", () => {
-    const size = { w: 200, h: 80 };
-    const line = { a: { x: 100, y: 400 }, b: { x: 1100, y: 400 } };
-    const [fixed, auto] = placePairs(
-      [
-        { ...line, ...size, fixed: { x: 600, y: 400 } },
-        { ...line, ...size, fixed: null },
-      ],
-      [],
-    );
-    expect(fixed).toEqual({ x: 600, y: 400 });
-    expect(overlaps({ ...(auto ?? { x: 0, y: 0 }), ...size }, { x: 600, y: 400, ...size })).toBe(
-      false,
-    );
-  });
-
-  it("shows a fixed card beside a machine card that it covers", () => {
-    const size = { w: 200, h: 80 };
-    const machine = card(600, 400);
-    const [fixed] = placePairs(
-      [{ a: { x: 100, y: 400 }, b: { x: 1100, y: 400 }, ...size, fixed: { x: 600, y: 400 } }],
-      [machine],
-    );
-    expect(overlaps({ ...(fixed ?? { x: 0, y: 0 }), ...size }, machine)).toBe(false);
-  });
-});
-
 describe("zoom and pan (MM-1116)", () => {
   it.each([390, 768, 1280])("fits every card above the controls at %s pixels wide", (width) => {
     const boxes = [
@@ -183,40 +70,6 @@ describe("zoom and pan (MM-1116)", () => {
     const fitted = fitView([card(100, 100), card(2000, 900)], 800, 600);
     expect(fitted && anyInView(fitted, [card(2000, 900)], 800, 600)).toBe(true);
     expect(fitView([], 800, 600)).toBeNull();
-  });
-});
-
-describe("pairCurve (MM-1108)", () => {
-  const a = { x: 100, y: 100 };
-  const b = { x: 700, y: 100 };
-  /** Twice the area of the triangle: zero when the three points are on one line. */
-  const cross = (p: Point, q: Point, r: Point) =>
-    (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
-
-  it("starts at A, passes the card and ends at B", () => {
-    const p = { x: 300, y: 260 };
-    const curve = pairCurve(a, b, p);
-    expect(curve[0]).toEqual(a);
-    expect(curve[3]).toEqual(p);
-    expect(curve[6]).toEqual(b);
-  });
-
-  it("bends smoothly through the card, without a corner", () => {
-    const curve = pairCurve(a, b, { x: 300, y: 260 });
-    const [, , before, p, after] = curve;
-    if (!before || !p || !after) throw new Error("short curve");
-    expect(cross(before, p, after)).toBeCloseTo(0);
-    // Both controls point along A -> B, on opposite sides of the card.
-    expect(before.x).toBeLessThan(p.x);
-    expect(after.x).toBeGreaterThan(p.x);
-  });
-
-  it("stays straight for a card on the line", () => {
-    for (const q of pairCurve(a, b, { x: 250, y: 100 })) expect(q.y).toBeCloseTo(100);
-  });
-
-  it("keeps an automatic card on a straight line", () => {
-    expect(pairPath(a, b, null)).toBe("M100,100L700,100");
   });
 });
 
@@ -261,5 +114,32 @@ describe("autoLayout (MM-1121)", () => {
     );
     for (const [i, p] of again.cards.entries())
       expect(distance([p, ...first.cards], 0, i + 1)).toBeLessThan(1);
+  });
+});
+
+describe("wireGeometry (MM-1103)", () => {
+  const a = card(100, 100);
+  const b = card(700, 100);
+  /** The path is "M<start>Q<control> <end>". */
+  const ends = (d: string) => {
+    const [start = "", curve = ""] = d.slice(1).split("Q");
+    const point = (text = "") => text.split(",").map(Number);
+    return { start: point(start), end: point(curve.split(" ")[1]) };
+  };
+
+  it("runs from the edge of the source card to just before the target card", () => {
+    const { start, end } = ends(wireGeometry(a, b, false).d);
+    expect(start).toEqual([a.x + a.w / 2, 100]);
+    expect(end[0]).toBeLessThan(b.x - b.w / 2);
+    expect(end[1]).toBeCloseTo(100);
+  });
+
+  it("bows the two arrows of a two-way pair apart, with their badges apart", () => {
+    const there = wireGeometry(a, b, true);
+    const back = wireGeometry(b, a, true);
+    expect(there.d).not.toBe(back.d);
+    expect(Math.hypot(there.badge.x - back.badge.x, there.badge.y - back.badge.y)).toBeGreaterThan(
+      40,
+    );
   });
 });
