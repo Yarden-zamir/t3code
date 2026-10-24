@@ -104,13 +104,13 @@ export function BoardView() {
    * The chip that a key or a ‹ › press moved. It lands in another column, so React mounts it
    * again; the new chip takes the focus back.
    */
-  const refocus = useRef<string | null>(null);
-  const markRefocus = (key: string) => {
-    refocus.current = key;
+  const refocus = useRef<{ readonly key: string; readonly column: MachineLevel } | null>(null);
+  const markRefocus = (key: string, column: MachineLevel | null) => {
+    refocus.current = column === null ? null : { key, column };
   };
-  /** True once for the chip that a step moved. */
-  const claimRefocus = (key: string): boolean => {
-    if (refocus.current !== key) return false;
+  /** True once, for the chip that a step moved, when it renders in its new column. */
+  const claimRefocus = (key: string, column: MachineLevel): boolean => {
+    if (refocus.current?.key !== key || refocus.current.column !== column) return false;
     refocus.current = null;
     return true;
   };
@@ -359,8 +359,9 @@ function Chip({
   onPointerCancel: (event: PointerEvent<HTMLElement>) => void;
   onClickCapture: (event: MouseEvent) => void;
   onLostPointerCapture: (event: PointerEvent<HTMLElement>) => void;
-  markRefocus: (key: string) => void;
-  claimRefocus: (key: string) => boolean;
+  /** Null forgets a step that moves nothing. */
+  markRefocus: (key: string, column: MachineLevel | null) => void;
+  claimRefocus: (key: string, column: MachineLevel) => boolean;
 }) {
   const portal = usePortalContext();
   const { grant, cut } = chip;
@@ -377,11 +378,12 @@ function Chip({
   const nameRef = useRef<HTMLButtonElement>(null);
   const key = chipKey(chip);
   useEffect(() => {
-    if (claimRefocus(key)) nameRef.current?.focus();
+    if (claimRefocus(key, chip.column)) nameRef.current?.focus();
   });
   /** A key or a ‹ › press: the chip moves one column and keeps the focus. */
   const step = (to: MachineLevel) => {
-    markRefocus(key);
+    const move = laneMove(chip, to, portal.pause !== null);
+    markRefocus(key, move._tag === "set" ? move.level : move._tag === "remove" ? "none" : null);
     applyMove(portal, chip, to);
   };
   const onKey = (event: KeyboardEvent) => {
