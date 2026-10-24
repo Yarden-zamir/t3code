@@ -81,8 +81,10 @@ export type ThreadRightPanel = ReturnType<typeof useThreadRightPanel>;
 
 /**
  * The right panel and the thread panel of a thread: their state and the actions that change
- * them. ChatView and the screen of a terminal thread (`ForkTerminalThreadScreen`) share it, and
- * render it with `ThreadRightPanelView` and `ThreadRightPanelHosts`.
+ * them. Only the screen of a terminal thread (`ForkTerminalThreadScreen`) uses it, and renders it
+ * with `ThreadRightPanelView` and `ThreadRightPanelHosts`. It copies the right panel logic of
+ * ChatView, and no test catches drift: when upstream changes that logic in ChatView, change it
+ * here too, until upstream's ChatView hooks can replace this copy.
  */
 export function useThreadRightPanel(input: {
   readonly threadRef: ScopedThreadRef | null;
