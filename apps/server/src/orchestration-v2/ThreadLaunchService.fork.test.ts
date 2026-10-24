@@ -64,7 +64,6 @@ interface HarnessOptions {
   readonly hasCommit?: GitWorkflow.GitWorkflowService["Service"]["hasCommit"];
   readonly serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   readonly git?: Partial<GitWorkflow.GitWorkflowService["Service"]>;
-  readonly fetchRemote?: GitWorkflow.GitWorkflowService["Service"]["fetchRemote"];
   readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
 }
 
@@ -120,7 +119,6 @@ function makeHarness(options: HarnessOptions = {}) {
       remoteExists: () => Effect.succeed(true),
       remoteBranchExists: () => Effect.succeed(true),
       removeWorktree,
-      fetchRemote: options.fetchRemote ?? (() => Effect.void),
       ...options.git,
     }),
     Layer.succeed(ProjectSetupScriptRunner.ProjectSetupScriptRunner, {
@@ -404,9 +402,11 @@ const draftSetupStarted = (
 
 it.effect("prepares a draft worktree from origin and starts its setup script", () =>
   Effect.gen(function* () {
-    const fetchRemote = vi.fn(() => Effect.void);
+    const fetchBase = vi.fn<GitWorkflow.GitWorkflowService["Service"]["fetchWorktreeBaseCommit"]>(
+      () => Effect.succeed({ commitSha: "remote-main-sha", remoteRefName: "origin/main" }),
+    );
     const harness = makeHarness({
-      fetchRemote,
+      git: { fetchWorktreeBaseCommit: fetchBase },
       runSetup: () => draftSetupStarted(true, Effect.never),
     });
     yield* Effect.gen(function* () {
@@ -422,7 +422,7 @@ it.effect("prepares a draft worktree from origin and starts its setup script", (
       });
       assert.equal(prepared.worktreePath, "/repo-worktrees/feature");
       assert.match(prepared.branch ?? "", /^t3\//u);
-      assert.equal(fetchRemote.mock.calls.length, 1);
+      assert.equal(fetchBase.mock.calls.length, 1);
       assert.equal(harness.createWorktree.mock.calls[0]?.[0].refName, "remote-main-sha");
       assert.deepEqual(
         harness.runSetup.mock.calls.map(([input]) => [input.threadId, input.worktreePath]),
