@@ -1,4 +1,5 @@
 import {
+  CommonActions,
   StackActions,
   useNavigation,
   usePreventRemove,
@@ -16,13 +17,19 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { type EnvironmentId, type ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_TERMINAL_ID,
+  type EnvironmentId,
+  type ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
+import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import { useEffect, useRef, useState } from "react";
 import { Platform, ScrollView, View } from "react-native";
 import { ScreenStack } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AndroidSheetHeader } from "../../components/ui/AndroidScreenHeader";
+import { AndroidScreenHeader } from "../../components/ui/AndroidScreenHeader";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
@@ -30,7 +37,7 @@ import { ListSection } from "../../components/ui/ListSection";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { uuidv4 } from "../../lib/uuid";
-import { NativeStackScreenOptions, nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
+import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { NativeHeader, NativeScreen } from "../../native/ThemedScreenStack";
 import { useEnvironmentServerConfig, useProject, useThreadShell } from "../../state/entities";
 import { useBranches } from "../../state/queries";
@@ -47,6 +54,7 @@ import {
   type TerminalFolderChoice,
 } from "./forkNewTerminalThread";
 import { isDraftThreadRoute } from "./thread-route-state";
+import { stagePendingTerminalLaunch } from "../terminal/terminalLaunchContext";
 import { WorktreeSetupCard } from "./worktree-setup-card";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
@@ -141,6 +149,10 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
   const busy = creation.phase === "preparing" || creation.phase === "creating";
   // The worktree and the thread are on their way; Cancel on the setup progress stops a worktree.
   usePreventRemove(busy, () => undefined);
+  // The choices stay disabled while the terminal opens. A disabled row is dimmed, so a row that
+  // turns enabled changes its native view tree, and on Android that change in the same frame as
+  // the navigation away crashes Fabric ("The specified child already has a parent").
+  const locked = busy || creation.phase === "opening";
 
   const createdThread = useThreadShell(
     creation.phase === "opening" ? scopeThreadRef(environmentId, threadId) : null,
@@ -149,21 +161,43 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
   useEffect(() => {
     if (creation.phase !== "opening" || createdThread === null || opened.current) return;
     opened.current = true;
+    // The terminal screen opens directly, with the launch that the Thread route redirect would
+    // stage (`ThreadRouteScreen`). Going through the Thread route adds a second stack change while
+    // the sheet closes, and two stack changes in a row crash Android's native view tree ("The
+    // specified child already has a parent").
+    if (workspaceRoot !== null) {
+      const launch = terminalThreadLaunch({
+        workspaceRoot,
+        worktreePath: createdThread.worktreePath ?? null,
+      });
+      stagePendingTerminalLaunch({
+        target: { environmentId, threadId, terminalId: DEFAULT_TERMINAL_ID },
+        launch: { cwd: launch.cwd, worktreePath: launch.worktreePath, env: { ...launch.env } },
+      });
+    }
+    const terminal = {
+      name: "ThreadTerminal" as const,
+      params: {
+        environmentId: String(environmentId),
+        threadId: String(threadId),
+        terminalId: DEFAULT_TERMINAL_ID,
+      },
+    };
     const state = navigation.getState();
     const below = state ? state.routes[state.index - 1] : undefined;
-    const thread = StackActions.replace("Thread", { environmentId, threadId });
     // The thread takes the place of the new-thread draft, as a sent draft does, so Back goes to
-    // the list. The prompt of the draft stays for the next new thread in the project.
-    if (below !== undefined && isDraftThreadRoute(below)) {
-      navigation.dispatch({ ...thread, source: below.key });
-      navigation.dispatch(StackActions.pop());
+    // the list. The prompt of the draft stays for the next new thread in the project. One reset
+    // replaces the draft and closes the sheet in a single stack change.
+    if (state !== undefined && below !== undefined && isDraftThreadRoute(below)) {
+      const routes = [...state.routes.slice(0, state.index - 1), terminal];
+      navigation.dispatch(CommonActions.reset({ ...state, routes, index: routes.length - 1 }));
     } else {
-      navigation.dispatch(thread);
+      navigation.dispatch(StackActions.replace(terminal.name, terminal.params));
     }
-  }, [createdThread, creation.phase, environmentId, navigation, threadId]);
+  }, [createdThread, creation.phase, environmentId, navigation, threadId, workspaceRoot]);
 
   const start = async () => {
-    if (busy || creation.phase === "opening" || project === null) return;
+    if (locked || project === null) return;
     let target: { readonly worktreePath: string | null; readonly branch: string | null };
     if (folder.kind === "new-worktree" && preparedWorktree !== null) {
       target = preparedWorktree;
@@ -200,6 +234,7 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
         shell,
         branch: target.branch,
         worktreePath: target.worktreePath,
+        // oxlint-disable-next-line react/purity -- This runs in a press handler, not during render.
         createdAt: new Date().toISOString(),
       }),
     });
@@ -222,7 +257,7 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
   };
 
   const choose = (choice: TerminalFolderChoice) => {
-    if (busy) return;
+    if (locked) return;
     setFolder(choice);
     if (creation.phase === "failed") setCreation({ phase: "idle" });
   };
@@ -252,7 +287,7 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
             description={shellDescription(option)}
             selected={option.slug === shell}
             separated={index > 0}
-            disabled={busy}
+            disabled={locked}
             onPress={() => setWantedShell(option.slug)}
           />
         ))}
@@ -275,7 +310,7 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
           label="Project folder"
           description={workspaceRoot ?? undefined}
           selected={folder.kind === "project"}
-          disabled={busy}
+          disabled={locked}
           onPress={() => choose({ kind: "project" })}
         />
         {worktreeRows.map((worktree) => (
@@ -285,7 +320,7 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
             description={worktree.worktreePath}
             selected={folder.kind === "worktree" && folder.worktreePath === worktree.worktreePath}
             separated
-            disabled={busy}
+            disabled={locked}
             onPress={() =>
               choose({
                 kind: "worktree",
@@ -301,7 +336,7 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
             description={baseBranch === null ? undefined : `From ${baseBranch}`}
             selected={folder.kind === "new-worktree"}
             separated
-            disabled={busy}
+            disabled={locked}
             onPress={() => choose({ kind: "new-worktree" })}
           />
         ) : null}
@@ -310,7 +345,7 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
             <ListToggleRow
               label="Start from origin"
               description="Fetch origin first, and start from its base branch"
-              disabled={busy}
+              disabled={locked}
               value={startFromOrigin}
               onValueChange={setStartFromOrigin}
             />
@@ -351,7 +386,7 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
           icon="terminal"
           tone="primary"
           fullWidth
-          loading={busy || creation.phase === "opening"}
+          loading={locked}
           disabled={startBlockedReason !== null}
           onPress={() => void start()}
         />
@@ -394,8 +429,8 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
   }
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
-      <NativeStackScreenOptions options={{ sheetCornerRadius: 28 }} />
-      <AndroidSheetHeader title={TITLE} onBack={() => navigation.goBack()} />
+      {/* A full screen card on Android (`Stack.tsx`), so the header pads for the status bar. */}
+      <AndroidScreenHeader title={TITLE} onBack={() => navigation.goBack()} />
       <ScreenContent insetHorizontal={layout.usesSplitView}>{content}</ScreenContent>
     </View>
   );

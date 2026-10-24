@@ -942,13 +942,19 @@ const RootStackConfig = createWorkspaceStackNavigator({
       },
     }),
     // Fork: the shell and the folder of a new terminal thread (`ForkNewTerminalThreadControl`).
+    // On Android a form sheet clips the end of a long list and its scroll view never scrolls, so
+    // the sheet is a card there, like ThreadSettingsSheet.
     ForkNewTerminalThread: createNativeStackScreen({
       screen: ForkNewTerminalThreadSheet,
       options: {
-        ...HORIZONTAL_FORM_SHEET_OPTIONS,
         headerShown: false,
-        sheetAllowedDetents: formSheetDetents(0.6, 0.9),
-        sheetGrabberVisible: true,
+        ...(Platform.OS === "android"
+          ? { presentation: "card" as const }
+          : {
+              ...HORIZONTAL_FORM_SHEET_OPTIONS,
+              sheetAllowedDetents: formSheetDetents(0.6, 0.9),
+              sheetGrabberVisible: true,
+            }),
       },
     }),
     ThreadAgents: createNativeStackScreen({
