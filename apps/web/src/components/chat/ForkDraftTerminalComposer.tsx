@@ -5,14 +5,17 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
-  DEFAULT_RUNTIME_MODE,
+  resolveTerminalShell,
+  TERMINAL_REPORTING_SHELLS,
+  terminalShellOptions,
+  terminalThreadCreateInput,
+} from "@t3tools/client-runtime/state/fork-terminal-thread-creation";
+import {
   DEFAULT_TERMINAL_ID,
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
   type ServerProvider,
   TERMINAL_THREAD_INSTANCE_ID,
-  TERMINAL_THREAD_MODEL_SELECTION,
-  terminalThreadTitle,
 } from "@t3tools/contracts";
 import { resolveProjectScripts, setupProjectScript } from "@t3tools/shared/projectScripts";
 import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
@@ -55,7 +58,6 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { vcsEnvironment } from "../../state/vcs";
 import { waitForAtomValue } from "../../state/waitForAtomValue";
-import { terminalShellOptions } from "../../lib/forkTerminalProviders";
 import { basenameOfPath } from "../../pierre-icons";
 import { recallCheckoutIsRepo } from "../ChatView.logic";
 import { ForkShellTerminal, ShellNotFoundMark } from "../ForkShellTerminal";
@@ -70,9 +72,6 @@ import { useComposerMenuProps } from "./composerEventScope";
 import { ComposerSurface } from "./ComposerSurface";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
 
-// The shells with the hook that reports exit codes and output to agents (`shellIntegration.ts`).
-// Limit: bash older than 4.4 has the name but no hook; revisit if the server reports it.
-const REPORTING_SHELLS = new Set(["bash", "zsh"]);
 /** A command that runs this long is a program (an editor, a dev server), not a typo. */
 const LONG_RUNNING_COMMAND_MS = 1_000;
 // The thread shell normally arrives in well under a second. Limit: when it arrives later, the
@@ -208,7 +207,7 @@ function ShellPicker(props: {
                     <span className="ms-2 text-muted-foreground text-xs">default</span>
                   ) : null}
                   <ShellNotFoundMark reason={shell.unavailableReason} />
-                  {REPORTING_SHELLS.has(shell.slug) || shell.unavailableReason ? null : (
+                  {TERMINAL_REPORTING_SHELLS.has(shell.slug) || shell.unavailableReason ? null : (
                     <span className="ms-2 text-muted-foreground text-xs">
                       types only, no results
                     </span>
@@ -430,8 +429,7 @@ export function ForkDraftTerminalComposer(props: {
   // The terminal and the thread it becomes name the same shell, because a different shell (or
   // none, which means the default) restarts a running terminal. A remembered shell that the
   // server no longer offers falls back to its default shell.
-  const shell =
-    shells.find((option) => option.slug === props.shell)?.slug ?? shells[0]?.slug ?? undefined;
+  const shell = resolveTerminalShell(shells, props.shell);
   const navigate = useNavigate();
   const createThread = useOrchestrationCommand(threadEnvironment.create);
   const openTerminal = useAtomCommand(terminalEnvironment.open);
@@ -487,20 +485,15 @@ export function ForkDraftTerminalComposer(props: {
     promotion.current = "promoting";
     const created = await createThread({
       environmentId,
-      input: {
+      input: terminalThreadCreateInput({
         threadId: draft.threadId,
         projectId: draft.projectId,
-        title: terminalThreadTitle({ command: summary?.command, shell }),
-        modelSelection: {
-          instanceId: TERMINAL_THREAD_INSTANCE_ID,
-          model: shell ?? TERMINAL_THREAD_MODEL_SELECTION.model,
-        },
-        runtimeMode: DEFAULT_RUNTIME_MODE,
-        interactionMode: "default",
+        shell,
+        command: summary?.command,
         branch,
         worktreePath,
         createdAt: new Date().toISOString(),
-      },
+      }),
     });
     if (created._tag === "Failure") {
       // The next command tries again.

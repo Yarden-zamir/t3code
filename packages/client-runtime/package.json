@@ -355,6 +355,10 @@
       "types": "./src/state/forkTerminalThreads.ts",
       "default": "./src/state/forkTerminalThreads.ts"
     },
+    "./state/fork-terminal-thread-creation": {
+      "types": "./src/state/forkTerminalThreadCreation.ts",
+      "default": "./src/state/forkTerminalThreadCreation.ts"
+    },
     "./state/thread-search": {
       "types": "./src/state/threadSearch.ts",
       "default": "./src/state/threadSearch.ts"

@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { terminalShellOptions } from "@t3tools/client-runtime/state/fork-terminal-thread-creation";
 import {
   AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
@@ -15,7 +16,6 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../appearanceFonts";
 import { terminalThreadOpenInput } from "../forkTerminalThreadOpen";
 import { useGrabTerminalFocus } from "../hooks/useForkTerminalFocus";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import { terminalShellOptions } from "../lib/forkTerminalProviders";
 import { observeResize } from "../lib/observeResize";
 import { cn } from "../lib/utils";
 import { providersIgnoringCheckedAtAtom } from "../state/server";
