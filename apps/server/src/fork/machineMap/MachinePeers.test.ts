@@ -320,6 +320,8 @@ const serveVps = (seen: Ref.Ref<Seen>, mapNow: Ref.Ref<MapNow>, vpsRun: VpsRun) 
           Ref.get(mapNow).pipe(
             Effect.map((map) => machineMcpClientFor(desiredOnVps(map), session, 0)),
           ),
+        // The terminal thread exec gate reads B's map (`terminalThreadExec.ts`).
+        activeDesired: Ref.get(mapNow).pipe(Effect.map(desiredOnVps)),
         lockedFor: () => Effect.succeed(false),
         trustsPeerOrigin: () => false,
         machineGrant: () => Effect.succeed(undefined),

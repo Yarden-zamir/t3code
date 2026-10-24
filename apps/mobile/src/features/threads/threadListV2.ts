@@ -23,8 +23,6 @@ import {
   forkEffectiveSnoozed,
   forkInboxReturnAt,
   forkThreadIsWorking,
-  terminalStateOf,
-  type TerminalThreadStates,
 } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import {
   sortActiveThreadsByOrderKey,
@@ -233,8 +231,6 @@ export function getThreadListV2OrderedSection(input: {
   readonly settlementEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly queuedThreadKeys?: ReadonlySet<string>;
-  /** Fork: the main terminals of terminal threads. */
-  readonly terminalStates?: TerminalThreadStates;
 }): EnvironmentThreadShell[] {
   const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const threads = input.threads.filter((thread) => {
@@ -249,11 +245,7 @@ export function getThreadListV2OrderedSection(input: {
     }
     if (
       (input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true) &&
-      forkEffectiveSnoozed(
-        thread,
-        { now: input.now },
-        terminalStateOf(input.terminalStates, thread),
-      )
+      forkEffectiveSnoozed(thread, { now: input.now })
     ) {
       return false;
     }
@@ -605,8 +597,6 @@ export function buildThreadListV2Items(input: {
   readonly settledShelfExpanded?: boolean;
   readonly selectedThreadKey?: string | null;
   readonly queuedThreadKeys?: ReadonlySet<string>;
-  /** Fork: the main terminals of terminal threads. */
-  readonly terminalStates?: TerminalThreadStates;
 }): ThreadListV2Layout {
   const now = input.now;
   const pending =
@@ -667,8 +657,7 @@ export function buildThreadListV2Items(input: {
     }
     const supportsSettlement = input.settlementEnvironmentIds?.has(thread.environmentId) ?? true;
     const supportsSnooze = input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true;
-    const terminal = terminalStateOf(input.terminalStates, thread);
-    if (supportsSnooze && forkEffectiveSnoozed(thread, { now }, terminal)) {
+    if (supportsSnooze && forkEffectiveSnoozed(thread, { now })) {
       snoozed.push(thread);
       if (
         thread.snoozedUntil != null &&
@@ -685,7 +674,7 @@ export function buildThreadListV2Items(input: {
       settled.push(thread);
     } else if (thread.pinnedAt != null) {
       pinned.push(thread);
-    } else if (workingShelfEnabled && forkThreadIsWorking(thread, terminal)) {
+    } else if (workingShelfEnabled && forkThreadIsWorking(thread)) {
       working.push(thread);
     } else {
       active.push(thread);
@@ -732,7 +721,7 @@ export function buildThreadListV2Items(input: {
   }
 
   const orderedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, forkInboxReturnAt(input.inboxReturnAt, input.terminalStates))
+    ? sortInboxThreadsByReturn(active, forkInboxReturnAt(input.inboxReturnAt))
     : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
   const orderedWorking = sortWorkingThreadsBySend(working);
   const orderedSnoozed = [...snoozed].sort(

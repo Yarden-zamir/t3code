@@ -1,11 +1,13 @@
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  MachineId,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   ProviderInstanceId,
   ProviderInteractionMode,
   RuntimeMode,
+  TERMINAL_THREAD_INSTANCE_ID,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -15,6 +17,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 
+import { machineRequestNamespace } from "../fork/machineMap/machineAccess.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
@@ -26,6 +29,7 @@ const supervisedThreadId = ThreadId.make("thread:supervised");
 const planThreadId = ThreadId.make("thread:plan");
 const fullAccessThreadId = ThreadId.make("thread:full-access");
 const endedThreadId = ThreadId.make("thread:ended");
+const terminalThreadId = ThreadId.make("thread:terminal");
 
 const shells = new Map([
   [supervisedThreadId, liveThreadShell(supervisedThreadId, { runtimeMode: "approval-required" })],
@@ -35,6 +39,14 @@ const shells = new Map([
   ],
   [fullAccessThreadId, liveThreadShell(fullAccessThreadId)],
   [endedThreadId, liveThreadShell(endedThreadId, { activeRunId: null })],
+  [
+    terminalThreadId,
+    {
+      ...liveThreadShell(terminalThreadId),
+      providerInstanceId: TERMINAL_THREAD_INSTANCE_ID,
+      modelSelection: { instanceId: TERMINAL_THREAD_INSTANCE_ID, model: "terminal" },
+    },
+  ],
 ]);
 
 const threadCaller = (threadId: ThreadId): McpInvocationContext.McpInvocationScope => ({
@@ -110,6 +122,14 @@ const linkedClient: McpInvocationContext.McpInvocationScope = {
 const fullAccessLinkedClient: McpInvocationContext.McpInvocationScope = {
   ...fullAccessClient,
   client: { ...fullAccessClient.client!, linked: true },
+};
+// A call from another machine over an arrow; no machine map here means no arrow allows exec.
+const machineSession: McpInvocationContext.McpInvocationScope = {
+  ...fullAccessClient,
+  requestNamespace: machineRequestNamespace({
+    machineId: MachineId.make("vps"),
+    sessionId: "session",
+  }),
 };
 
 const box = EnvironmentId.make("environment-box");
@@ -211,6 +231,11 @@ it.effect.each([
     { environmentId: here, threadId: fullAccessThreadId },
     "runtime_mode_escalation_denied",
   ],
+
+  // MM-1923: every write to a terminal thread from another machine needs exec.
+  ["writes_threads", machineSession, { threadId: terminalThreadId }, "capability_denied"],
+  ["writes_threads", machineSession, { threadId: fullAccessThreadId }, "here"],
+  ["writes_threads", fullAccessClient, { threadId: terminalThreadId }, "here"],
 ] as const)("a linked %s from %o with %o: %s", ([tool, scope, args, expected]) =>
   call(tool, scope, args).pipe(
     Effect.map((outcome) => expect(outcome).toBe(expected)),

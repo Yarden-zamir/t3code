@@ -18,10 +18,16 @@ import {
   readThread,
   unavailable,
 } from "../../threadAccess.ts";
+import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
 import { ThreadToolkit } from "./tools.ts";
+import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import {
+  refuseTerminalThreadWithoutExec,
+  scheduledTaskRunsWith,
+} from "../../../fork/machineMap/terminalThreadExec.ts";
 
 function queueEntry(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "messages">,
@@ -84,11 +90,17 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
     Effect.gen(function* () {
       const scheduler = yield* ScheduledTasks.ScheduledTaskService;
       const { tasks } = yield* scheduler.list().pipe(Effect.mapError(unavailable));
-      if (!tasks.some((task) => task.id === input.taskId))
+      const found = tasks.find((task) => task.id === input.taskId);
+      if (found === undefined)
         return yield* new OrchestratorMcpFailure({
           code: "invalid_request",
           message: "The scheduled task was not found.",
         });
+      // A project-default task lists the project default as its model.
+      yield* refuseTerminalThreadWithoutExec(
+        (yield* McpInvocationContext.McpInvocationContext).requestNamespace,
+        scheduledTaskRunsWith(yield* ThreadManagement.ThreadManagementService, found),
+      );
       const { task, threadId } = yield* scheduler
         .runNow({ id: input.taskId })
         .pipe(Effect.mapError(unavailable));

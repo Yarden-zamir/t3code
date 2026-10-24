@@ -120,7 +120,6 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelLabel } from "../chat/providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
-import { useTerminalThreadState } from "../../hooks/useForkTerminalThreadState";
 import {
   terminalThreadRowStatus,
   terminalThreadStatusLabel,
@@ -655,8 +654,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ? resolveThreadCurrentPullRequestLink(thread.pullRequests)
     : null;
 
-  const terminalThreadState = useTerminalThreadState(thread);
-  const terminalLabel = terminalThreadStatusLabel(terminalThreadState, lastVisitedAt);
+  const terminalLabel = terminalThreadStatusLabel(thread.terminal, lastVisitedAt);
   const isUnread =
     hasUnseenCompletion({ ...thread, lastVisitedAt }) || terminalLabel === "Completed";
   const status = terminalThreadRowStatus(resolveSidebarThreadStatus(thread), terminalLabel);

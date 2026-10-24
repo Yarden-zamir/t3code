@@ -143,9 +143,7 @@ export function useThreadActionMenu(input: {
         isPinned: thread.pinnedAt != null,
         isSettled: supports.settlement && thread.settledOverride === "settled",
         autoSettleEnabled: thread.autoSettleDisabledAt == null,
-        isSnoozed:
-          supports.snooze &&
-          forkEffectiveSnoozed(thread, { now: now.toISOString() }, forkMenuState.terminal),
+        isSnoozed: supports.snooze && forkEffectiveSnoozed(thread, { now: now.toISOString() }),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),

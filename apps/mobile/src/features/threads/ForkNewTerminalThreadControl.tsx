@@ -1,11 +1,28 @@
 import { useNavigation } from "@react-navigation/native";
 import { terminalThreadWorkspace } from "@t3tools/client-runtime/state/fork-terminal-thread-creation";
+import {
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
+  type EnvironmentId,
+} from "@t3tools/contracts";
 import { View } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
 
 import { ComposerInlineControl } from "../../components/ComposerToolbar";
-import { useTerminalThreadsAvailable } from "../../state/forkTerminalThreads";
+import { useEnvironmentServerConfig } from "../../state/entities";
+import { useEnvironmentScope } from "../../state/session";
 import { useNewTaskFlow } from "./new-task-flow-provider";
+
+/**
+ * Fork: this phone can start a terminal thread in the environment: the server setting
+ * `terminalThreads` is on, and the grants allow a new thread and a terminal.
+ */
+function useTerminalThreadsAvailable(environmentId: EnvironmentId | null): boolean {
+  const enabled = useEnvironmentServerConfig(environmentId)?.settings.terminalThreads === true;
+  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
+  const canCreateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  return enabled && canOperateTerminal && canCreateThread;
+}
 
 /**
  * Fork: the Terminal control of the new-thread draft, next to its workspace and branch controls,

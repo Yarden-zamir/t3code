@@ -4,7 +4,12 @@
  * server has the thread, and the client creates the thread on the first command. A client that
  * closes or loses its connection before that leaves the shell running, so a check every
  * CHECK_INTERVAL closes, with its history, each terminal thread screen that has no attach stream
- * and no thread for ABANDONED_AFTER.
+ * and no thread for ABANDONED_AFTER. A screen whose shell runs a program stays: the client makes
+ * the thread only after the first second of a command, so a short disconnect in that second
+ * must not end the program.
+ *
+ * Limit: a program in a draft whose client never comes back runs until it ends. Revisit if
+ * abandoned drafts with long programs pile up.
  *
  * Limit: only the main terminal of a draft closes. A drawer terminal of a draft keeps running.
  * Revisit if drafts get the terminal drawer.
@@ -22,12 +27,15 @@ import * as TerminalManager from "../terminal/Manager.ts";
 export const CHECK_INTERVAL = Duration.seconds(10);
 // The server is the only one that discards a draft terminal: another tab or client can show
 // the same draft, so a client that leaves cannot know whether the shell is still in use. A draft
-// has run no command yet, so losing it after a connection drop of this length costs little.
+// that runs no program holds at most the output of a short command, so losing it after a
+// connection drop of this length costs little.
 export const ABANDONED_AFTER = Duration.seconds(30);
 
 export interface AbandonedTerminalDraftDeps {
-  /** The thread ids of running terminal thread screens without an attach stream. */
-  readonly unattachedScreens: Effect.Effect<ReadonlyArray<string>>;
+  /** The terminal thread screens without an attach stream. */
+  readonly unattachedScreens: Effect.Effect<
+    ReadonlyArray<{ readonly threadId: string; readonly programRuns: boolean }>
+  >;
   readonly threadExists: (threadId: string) => Effect.Effect<boolean>;
   readonly close: (threadId: string) => Effect.Effect<void>;
 }
@@ -39,8 +47,8 @@ export const collectAbandonedTerminalDrafts = (deps: AbandonedTerminalDraftDeps)
   const check = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const abandoned = new Set<string>();
-    for (const threadId of yield* deps.unattachedScreens) {
-      if (yield* deps.threadExists(threadId)) continue;
+    for (const { threadId, programRuns } of yield* deps.unattachedScreens) {
+      if (programRuns || (yield* deps.threadExists(threadId))) continue;
       abandoned.add(threadId);
       const since = abandonedSince.get(threadId) ?? now;
       abandonedSince.set(threadId, since);

@@ -5,6 +5,7 @@ import { ProjectFavicon } from "../../components/ProjectFavicon";
 import * as Dialog from "../../components/ui/Dialog";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
+import { projectRemovalProgramNotice } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -174,7 +175,9 @@ function ProjectOverviewContent(props: {
     });
     Dialog.confirm({
       title: plan.targetKind === "checkout" ? "Remove checkout" : "Remove project",
-      message: plan.confirmationMessage,
+      message: [plan.confirmationMessage, ...projectRemovalProgramNotice(plan.projectThreads)].join(
+        "\n",
+      ),
       confirmText: plan.targetKind === "checkout" ? "Remove checkout" : "Remove project",
       destructive: true,
       onCancel: finishRemoval,

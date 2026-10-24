@@ -10,12 +10,14 @@ import {
 } from "./terminalShellState.ts";
 
 const fresh = (): ShellStateHolder => ({
-  shell: "starting",
-  shellConfirmedAt: 0,
-  attention: null,
   hasRunningSubprocess: false,
-  command: null,
-  commandStartedAt: 0,
+  fork: {
+    shell: "starting",
+    shellConfirmedAt: 0,
+    attention: null,
+    command: null,
+    commandStartedAt: 0,
+  },
 });
 const t0 = "2026-10-23T10:00:00.000Z";
 const t1 = "2026-10-23T10:00:05.000Z";
@@ -28,16 +30,15 @@ describe("applyShellItems", () => {
   it("follows a long command from prompt to running to finished with its exit code", () => {
     const session = fresh();
     expect(applyShellItems(session, [{ type: "prompt" }], t0)).toBe(true);
-    expect(session).toMatchObject({ shell: "prompt", hasRunningSubprocess: false });
+    expect(session).toMatchObject({ hasRunningSubprocess: false, fork: { shell: "prompt" } });
 
     applyShellItems(session, [{ type: "commandStart", commandLine: null }], t0);
-    expect(session).toMatchObject({ shell: "running", hasRunningSubprocess: true });
+    expect(session).toMatchObject({ hasRunningSubprocess: true, fork: { shell: "running" } });
 
     applyShellItems(session, [{ type: "commandEnd", exitCode: 2 }, { type: "prompt" }], tLong);
     expect(session).toMatchObject({
-      shell: "prompt",
       hasRunningSubprocess: false,
-      attention: { kind: "finished", at: tLong, exitCode: 2 },
+      fork: { shell: "prompt", attention: { kind: "finished", at: tLong, exitCode: 2 } },
     });
   });
 
@@ -47,7 +48,7 @@ describe("applyShellItems", () => {
     expect(
       applyShellItems(session, [{ type: "commandEnd", exitCode: 127 }, { type: "prompt" }], t1),
     ).toBe(true);
-    expect(session).toMatchObject({ shell: "prompt", attention: null });
+    expect(session.fork).toMatchObject({ shell: "prompt", attention: null });
   });
 
   it("raises no attention for a bell at the prompt, such as a completion beep", () => {
@@ -57,7 +58,7 @@ describe("applyShellItems", () => {
     expect(applyShellItems(session, [{ type: "continuation" }, { type: "attention" }], t1)).toBe(
       false,
     );
-    expect(session.attention).toBeNull();
+    expect(session.fork.attention).toBeNull();
   });
 
   it("keeps only the program and subcommand of a command line", () => {
@@ -67,14 +68,14 @@ describe("applyShellItems", () => {
       [{ type: "commandStart", commandLine: "GITHUB_TOKEN=ghp_abc123 gh pr list --limit 5" }],
       t0,
     );
-    expect(session.command).toBe("gh pr list");
+    expect(session.fork.command).toBe("gh pr list");
   });
 
   it("does not report a finished command for the first prompt of the shell", () => {
     const session = fresh();
     applyShellItems(session, [{ type: "commandEnd", exitCode: 0 }, { type: "prompt" }], t0);
-    expect(session.attention).toBeNull();
-    expect(session.shell).toBe("prompt");
+    expect(session.fork.attention).toBeNull();
+    expect(session.fork.shell).toBe("prompt");
   });
 
   it("keeps the bell of a program in its end, so a client can still show the bell", () => {
@@ -82,12 +83,17 @@ describe("applyShellItems", () => {
     applyShellItems(session, [{ type: "prompt" }, { type: "commandStart", commandLine: null }], t0);
     applyShellItems(session, [{ type: "attention" }], t0);
     applyShellItems(session, [{ type: "commandEnd", exitCode: 0 }, { type: "prompt" }], tLong);
-    expect(session.attention).toEqual({ kind: "finished", at: tLong, exitCode: 0, bellAt: t0 });
+    expect(session.fork.attention).toEqual({
+      kind: "finished",
+      at: tLong,
+      exitCode: 0,
+      bellAt: t0,
+    });
 
     const t2 = after(tLong, NOTIFIED_COMMAND_MIN_MS);
     applyShellItems(session, [{ type: "commandStart", commandLine: null }], tLong);
     applyShellItems(session, [{ type: "commandEnd", exitCode: 1 }, { type: "prompt" }], t2);
-    expect(session.attention).toEqual({ kind: "finished", at: t2, exitCode: 1, bellAt: t0 });
+    expect(session.fork.attention).toEqual({ kind: "finished", at: t2, exitCode: 1, bellAt: t0 });
   });
 
   it("raises a bell once per second", () => {
@@ -114,7 +120,7 @@ describe("forgetUnconfirmedShellState", () => {
     expect(
       forgetUnconfirmedShellState(session, false, confirmedAt + UNCONFIRMED_SHELL_STATE_MS),
     ).toBe(true);
-    expect(session).toMatchObject({ shell: null, hasRunningSubprocess: false });
+    expect(session).toMatchObject({ hasRunningSubprocess: false, fork: { shell: null } });
   });
 
   it("keeps a prompt state", () => {

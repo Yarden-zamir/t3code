@@ -6,10 +6,15 @@ import type {
   ScopedThreadRef,
   ThreadId,
 } from "@t3tools/contracts";
-import { isProviderNativeSubagentThread, OrchestrationV2ThreadShell } from "@t3tools/contracts";
+import {
+  isProviderNativeSubagentThread,
+  isTerminalThread,
+  OrchestrationV2ThreadShell,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
+import type { TerminalThreadState, TerminalThreadStates } from "./forkTerminalThreads.ts";
 import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts";
 import { presentThreadShell, threadRuntimeIsActive } from "./models.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
@@ -143,6 +148,7 @@ function sameApartFromStreaming(
   if (
     previous.environmentId !== next.environmentId ||
     previous.pendingSubagentRequest !== next.pendingSubagentRequest ||
+    previous.terminal !== next.terminal ||
     !threadRuntimeIsActive(next.runtime)
   ) {
     return false;
@@ -170,7 +176,22 @@ export function createEnvironmentThreadShellAtoms(input: {
   readonly snapshotAtom: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<OrchestrationV2ShellSnapshot | null>;
+  /** Fork: the terminal thread states of an environment, for `terminal` on its terminal threads. */
+  readonly terminalThreadStatesAtom?: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<TerminalThreadStates>;
 }) {
+  // Fork: only a terminal thread reads the states, so an environment without one never
+  // subscribes to terminal metadata.
+  const terminalOf = (
+    get: Atom.AtomContext,
+    environmentId: EnvironmentId,
+    thread: OrchestrationV2ThreadShell,
+  ): TerminalThreadState | undefined =>
+    input.terminalThreadStatesAtom === undefined || !isTerminalThread(thread)
+      ? undefined
+      : get(input.terminalThreadStatesAtom(environmentId)).get(thread.id);
+
   // Point reads and aggregate lists share values without keeping an atom alive
   // for every listed thread. Replaced source objects can be collected.
   const scopedThreads = new WeakMap<
@@ -181,7 +202,9 @@ export function createEnvironmentThreadShellAtoms(input: {
     environmentId: EnvironmentId,
     thread: OrchestrationV2ThreadShell,
     subagentRequests: ReadonlyMap<ThreadId, PendingSubagentRequest>,
+    get: Atom.AtomContext,
   ) => {
+    const terminal = terminalOf(get, environmentId, thread);
     let byEnvironment = scopedThreads.get(thread);
     if (byEnvironment === undefined) {
       byEnvironment = new Map();
@@ -190,8 +213,9 @@ export function createEnvironmentThreadShellAtoms(input: {
     const request = subagentRequests.get(thread.id) ?? null;
     const key = request === null ? environmentId : `${environmentId}:${request}`;
     let value = byEnvironment.get(key);
-    if (value === undefined) {
-      value = presentThreadShell(environmentId, thread, request);
+    if (value === undefined || value.terminal !== terminal) {
+      const shell = presentThreadShell(environmentId, thread, request);
+      value = terminal === undefined ? shell : { ...shell, terminal };
       byEnvironment.set(key, value);
     }
     return value;
@@ -321,6 +345,7 @@ export function createEnvironmentThreadShellAtoms(input: {
             ref.environmentId,
             source,
             get(pendingSubagentRequestsAtom(ref.environmentId)),
+            get,
           );
     }).pipe(Atom.withLabel(`environment-thread-shell:${key}`));
   });
@@ -380,7 +405,12 @@ export function createEnvironmentThreadShellAtoms(input: {
           pending.push(childKey);
           if (subagentRequest(thread) !== null) {
             next.push(
-              scopedThread(environmentId, thread, get(pendingSubagentRequestsAtom(environmentId))),
+              scopedThread(
+                environmentId,
+                thread,
+                get(pendingSubagentRequestsAtom(environmentId)),
+                get,
+              ),
             );
           }
         }
@@ -426,7 +456,7 @@ export function createEnvironmentThreadShellAtoms(input: {
           seen.add(key);
           const thread = threads.get(ref.threadId);
           if (thread !== undefined) {
-            next.push(scopedThread(ref.environmentId, thread, subagentRequests));
+            next.push(scopedThread(ref.environmentId, thread, subagentRequests, get));
           }
         }
       }
@@ -457,7 +487,7 @@ export function createEnvironmentThreadShellAtoms(input: {
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       const subagentRequests = get(pendingSubagentRequestsAtom(environmentId));
       for (const thread of get(environmentThreadsAtom(environmentId))) {
-        next.push(scopedThread(environmentId, thread, subagentRequests));
+        next.push(scopedThread(environmentId, thread, subagentRequests, get));
       }
     }
     if (arrayElementsEqual(previousThreadShells, next)) {
@@ -522,7 +552,7 @@ export function createEnvironmentThreadShellAtoms(input: {
         ) {
           continue;
         }
-        next.push(scopedThread(environmentId, thread, subagentRequests));
+        next.push(scopedThread(environmentId, thread, subagentRequests, get));
       }
     }
     if (arrayElementsEqual(previousNavigationShells, next)) return previousNavigationShells;
