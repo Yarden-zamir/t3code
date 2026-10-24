@@ -5,6 +5,7 @@ import {
   type GhosttyColor,
   type GhosttySnapshot,
 } from "./core";
+import { forkDrawPowerlines, forkPowerlineText } from "./forkPowerline";
 
 export interface GhosttyCellMetrics {
   readonly width: number;
@@ -235,8 +236,9 @@ export function renderGhosttySnapshot(options: {
       const runEnd = ghosttyTextRunEnd(row.cells, runStart, (cell) => sameTextStyle(cell, first));
       const text = row.cells
         .slice(runStart, runEnd)
-        .map((cell) => cell.text)
+        .map((cell) => forkPowerlineText(cell.text))
         .join("");
+      forkDrawPowerlines(context, row.cells, runStart, runEnd, padding, top, metrics);
       if (!first.invisible && text.trim().length > 0) {
         context.save();
         context.beginPath();
