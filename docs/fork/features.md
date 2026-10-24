@@ -606,7 +606,7 @@ Control tooltips show the keys of the control as chips, such as "Stash ⌘S", fo
 
 ### Terminal threads
 
-A thread whose screen is a live terminal, next to the other threads of a project. A schedule, a webhook or an agent can type into it.
+A thread whose screen is a live terminal, next to the other threads of a project. A schedule or an agent can type into it; a webhook task cannot.
 
 - **Setting:** server setting `terminalThreads` (off by default); client settings `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax` (8 and 24), the zoom limits of every terminal (Cmd+=, Cmd+-, Cmd+0, macOS only, because Ctrl+- is undo in shells), and `currentProjectTerminalOpensThread` (off), which makes New terminal thread in current project press the enlarge button at once. Settings > Terminal (`TerminalSettings.tsx`), which holds every terminal setting: the drawer terminal and terminal threads. The terminal font moved there from Appearance > Typography; it applies only with advanced typography, so without it the row offers "Use a separate font". Its fork rows render through the places `terminal-all-terminals` and `terminal-threads` (`forkSettingsCatalog.ts`). The Fork page lists them again, with a link to Settings > Terminal, and the settings search finds each row at both places. Keybinding commands `chat.newTerminal` (`mod+alt+t`) and `chat.newTerminalLocal` (`mod+alt+shift+n`).
 - **Works on:** web and desktop create and use them. The mobile app opens one on its native terminal screen and cannot create one. Remote environments work the same, because the terminal runs on the server of the thread.
