@@ -61,55 +61,6 @@ function fillSolidPowerlineSeparator(
   context.fill();
 }
 
-const POWERLINE_FIRST = 0xe0b0;
-const POWERLINE_LAST = 0xe0b7;
-
-/**
- * Fork: the other powerline separators up to U+E0B7 (outlines and half circles) are drawn as
- * shapes that fill the whole cell, as Ghostty does. The solid triangles take the upstream path
- * above, before a text run starts. Limit: not the diagonal and flame variants. Revisit if a
- * prompt theme uses U+E0B8 and above.
- */
-function powerlineCodepoint(text: string): number | null {
-  const codepoint = text.codePointAt(0);
-  if (codepoint === undefined || text.length !== 1) return null;
-  return codepoint >= POWERLINE_FIRST && codepoint <= POWERLINE_LAST ? codepoint : null;
-}
-
-function drawPowerline(
-  context: CanvasRenderingContext2D,
-  codepoint: number,
-  left: number,
-  top: number,
-  width: number,
-  height: number,
-) {
-  // One pixel of overlap on the open side hides the seam against the neighbouring cell.
-  const overlap = 1;
-  const pointsRight = codepoint <= 0xe0b1 || codepoint === 0xe0b4 || codepoint === 0xe0b5;
-  const outline = codepoint % 2 === 1;
-  const baseX = pointsRight ? left - overlap : left + width + overlap;
-  const tipX = pointsRight ? left + width : left;
-  const middle = top + height / 2;
-  context.beginPath();
-  if (codepoint <= 0xe0b3) {
-    context.moveTo(baseX, top);
-    context.lineTo(tipX, middle);
-    context.lineTo(baseX, top + height);
-    if (!outline) context.closePath();
-  } else {
-    context.moveTo(baseX, top);
-    context.bezierCurveTo(tipX, top, tipX, top + height, baseX, top + height);
-    if (!outline) context.closePath();
-  }
-  if (outline) {
-    context.lineWidth = Math.max(1, Math.round(width / 8));
-    context.stroke();
-  } else {
-    context.fill();
-  }
-}
-
 function ghosttyTextRunEnd(
   cells: readonly GhosttyCell[],
   start: number,
@@ -284,24 +235,8 @@ export function renderGhosttySnapshot(options: {
       const runEnd = ghosttyTextRunEnd(row.cells, runStart, (cell) => sameTextStyle(cell, first));
       const text = row.cells
         .slice(runStart, runEnd)
-        .map((cell) => (powerlineCodepoint(cell.text) === null ? cell.text : " "))
+        .map((cell) => cell.text)
         .join("");
-      if (!first.invisible) {
-        context.fillStyle = cssColor(first.foreground);
-        context.strokeStyle = cssColor(first.foreground);
-        for (let column = runStart; column < runEnd; column += 1) {
-          const codepoint = powerlineCodepoint(row.cells[column]?.text ?? "");
-          if (codepoint === null) continue;
-          drawPowerline(
-            context,
-            codepoint,
-            padding + column * metrics.width,
-            top,
-            metrics.width,
-            metrics.height,
-          );
-        }
-      }
       if (!first.invisible && text.trim().length > 0) {
         context.save();
         context.beginPath();
