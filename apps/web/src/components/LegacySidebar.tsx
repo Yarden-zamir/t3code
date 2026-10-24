@@ -96,6 +96,7 @@ import {
   waitForProjectRemoval,
 } from "../state/entities";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { readForkDeleteNotice, useTerminalThreadState } from "../hooks/useForkTerminalThreadState";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
 import { openDiscoveredPort } from "./preview/openDiscoveredPort";
@@ -453,10 +454,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ? (remoteEnvLabel ?? (isDesktopLocalThread ? "Local" : "Remote"))
     : null;
   const isThreadRunning = !threadRuntimeCanArchive(thread.runtime);
+  const terminalThreadState = useTerminalThreadState(thread);
   const threadStatus = resolveThreadStatusPill({
     thread: {
       ...thread,
       lastVisitedAt,
+      terminal: terminalThreadState,
     },
   });
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
@@ -1907,6 +1910,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         [
           `Delete ${count} thread${count === 1 ? "" : "s"}?`,
           "This permanently clears conversation history for these threads.",
+          ...readForkDeleteNotice(selectedThreadEntries.map(({ thread }) => thread)),
         ].join("\n"),
         { variant: "destructive" },
       );
@@ -2261,6 +2265,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           [
             `Delete thread "${thread.title}"?`,
             "This permanently clears conversation history for this thread.",
+            ...readForkDeleteNotice([thread]),
           ].join("\n"),
           { variant: "destructive" },
         );
@@ -3479,7 +3484,7 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
 
   const onWindowKeyDown = useEffectEvent((event: globalThis.KeyboardEvent) => {
     const shortcutContext = {
-      terminalFocus: isTerminalFocused(),
+      terminalFocus: isTerminalFocused(event),
       terminalOpen: routeTerminalOpen,
       modelPickerOpen: isModelPickerOpen(),
     };

@@ -1,8 +1,12 @@
 import { expect, it } from "@effect/vitest";
 import {
+  DEFAULT_TERMINAL_ID,
+  EventId,
   ProjectId,
   ProviderInstanceId,
+  TERMINAL_THREAD_MODEL_SELECTION,
   ThreadId,
+  type OrchestrationV2AppThread,
   type OrchestrationV2Command,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
@@ -181,6 +185,89 @@ it.effect("keeps a merged thread unsettled while its background command runs", (
         yield* Queue.take(candidateReads);
         yield* service.drain;
         expect((yield* Ref.get(commands)).map((command) => command.threadId)).toEqual([idle.id]);
+      }).pipe(Effect.provide(layer));
+    }),
+  ),
+);
+
+it.effect("keeps the shell of a terminal thread open when it settles", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("settled-terminal");
+      const thread: OrchestrationV2AppThread = {
+        createdBy: "user",
+        creationSource: "web",
+        id: threadId,
+        projectId: PROJECT_ID,
+        title: "settled-terminal",
+        providerInstanceId: TERMINAL_THREAD_MODEL_SELECTION.instanceId,
+        modelSelection: TERMINAL_THREAD_MODEL_SELECTION,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        activeProviderThreadId: null,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+        forkedFrom: null,
+        createdAt: DateTime.makeUnsafe(NOW),
+        updatedAt: DateTime.makeUnsafe(NOW),
+        archivedAt: null,
+        settledOverride: "settled",
+        settledAt: DateTime.makeUnsafe(NOW),
+        lastVisitedAt: null,
+        deletedAt: null,
+      };
+      const settled: OrchestrationV2DomainEvent = {
+        type: "thread.settled",
+        id: EventId.make("event:settled-terminal"),
+        threadId,
+        occurredAt: DateTime.makeUnsafe(NOW),
+        payload: thread,
+      };
+      const activation = yield* Deferred.make<void>();
+      const closedIdle =
+        yield* Queue.unbounded<
+          Parameters<TerminalManager.TerminalManager["Service"]["closeIdle"]>[0]
+        >();
+      const layer = ThreadSettlementService.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.succeed([]) }),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              getSettlementCandidates: () => Effect.succeed([]),
+              getThread: () => Effect.succeed(thread),
+            }),
+            Layer.mock(Orchestrator.OrchestratorV2)({ streamDomainEvents: Stream.make(settled) }),
+            Layer.mock(TerminalManager.TerminalManager)({
+              closeIdle: (input) => Queue.offer(closedIdle, input),
+            }),
+            Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
+            Layer.mock(GitManager.GitManager)({}),
+            Layer.mock(PullRequestService.PullRequestService)({
+              subscribeMerges: Effect.succeed(Stream.never),
+            }),
+            ServerSettings.layerTest({ sidebarAutoSettleAfterDays: null }),
+            Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
+            Layer.succeed(
+              Crypto.Crypto,
+              Crypto.make({
+                randomBytes: (size) => new Uint8Array(size).fill(1),
+                digest: (_algorithm, data) => Effect.succeed(data),
+              }),
+            ),
+            FileSystem.layerNoop({}),
+          ),
+        ),
+      );
+
+      yield* Effect.gen(function* () {
+        const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* service.start();
+        yield* Deferred.succeed(activation, undefined);
+        expect(yield* Queue.take(closedIdle)).toEqual({
+          threadId,
+          keepTerminalId: DEFAULT_TERMINAL_ID,
+        });
       }).pipe(Effect.provide(layer));
     }),
   ),

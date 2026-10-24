@@ -42,6 +42,8 @@ interface FileBrowserPanelProps {
   selectedPath: string | null;
   selectedPathRevealId: number;
   onOpenFile: (relativePath: string) => void;
+  /** False on a screen without a composer, which has no "Add to chat". */
+  canAddToChat: boolean;
   /**
    * Set when `cwd` is a host folder outside the workspace rather than the
    * workspace root. Entries then open and mention as host paths. A host folder can
@@ -145,6 +147,7 @@ export default function FileBrowserPanel({
   selectedPath,
   selectedPathRevealId,
   onOpenFile,
+  canAddToChat,
   onRefreshSelectedFile,
   workspaceMutationId,
   hostFolder = false,
@@ -211,7 +214,7 @@ export default function FileBrowserPanel({
           [
             ...fileMenuItems,
             { id: "copy-mention", label: "Copy mention" },
-            { id: "add-to-chat", label: "Add to chat" },
+            ...(canAddToChat ? [{ id: "add-to-chat", label: "Add to chat" }] : []),
           ],
           position,
         );

@@ -3,6 +3,7 @@
  * layer and calls the helpers below, so the upstream file keeps one line per hook.
  */
 import {
+  CommandId,
   FORK_WS_METHODS,
   ForkWsRpcGroup,
   OrchestrationV2ThreadLaunchError,
@@ -16,7 +17,7 @@ import * as Stream from "effect/Stream";
 import { HttpServerResponse } from "effect/http";
 
 import type * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
-import type * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
+import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
@@ -27,6 +28,7 @@ import { isLocalDesktopSubject, isMachineSubject } from "./machineMap/machineAcc
 import * as MachineMapState from "./machineMap/MachineMapState.ts";
 import * as MachinePeers from "./machineMap/MachinePeers.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
+import * as TerminalThreadMove from "./TerminalThreadMove.ts";
 import * as WebPush from "./webPush/WebPush.ts";
 
 /** The fork RPC tags, which the upstream handler object in `ws.ts` omits. */
@@ -79,6 +81,8 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
       const webPush = yield* WebPush.WebPush;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const previewServerGroups = yield* PreviewServerGroups.PreviewServerGroups;
+      const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
+      const terminalThreadMove = yield* TerminalThreadMove.TerminalThreadMove;
       /** MM-1907: this environment first, then the machines that its agents read. */
       const readableEnvironments = Effect.fn("ForkWs.readableEnvironments")(function* () {
         const self = yield* environment.getDescriptor;
@@ -128,6 +132,20 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
         // The scanner polls only while retained, as for `subscribeDiscoveredLocalServers`.
         [FORK_WS_METHODS.forkPreviewSubscribeLocalListeners]: (_input) =>
           Stream.unwrap(portDiscovery.retain.pipe(Effect.as(previewServerGroups.listeners))),
+        [FORK_WS_METHODS.vcsPrepareDraftWorktree]: (input) =>
+          threadLaunch.prepareDraftWorktree(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationV2ThreadLaunchError({
+                  commandId: CommandId.make(`fork-draft-worktree:${input.threadId}`),
+                  projectId: input.projectId,
+                  message: ThreadLaunchService.failureDetail(cause),
+                  cause,
+                }),
+            ),
+          ),
+        [FORK_WS_METHODS.terminalMoveToThread]: (input) =>
+          terminalThreadMove.moveToThread(input).pipe(Effect.as({})),
       });
     }),
   );

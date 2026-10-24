@@ -63,6 +63,8 @@ import {
   ThreadLinkedPullRequest,
   ThreadId,
   type TurnItemId,
+  changesThreadKind,
+  THREAD_KIND_CHANGE_MESSAGE,
 } from "@t3tools/contracts";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import {
@@ -161,6 +163,24 @@ export class OrchestratorDispatchError extends Schema.TaggedError<OrchestratorDi
   }
 }
 
+/**
+ * Fork: every model selection that a command carries for an existing thread passes here: the
+ * selection commands and the messages of users, agents, schedules and Settings edits.
+ */
+const refuseThreadKindChange = (
+  command: { readonly commandId: CommandId; readonly type: string },
+  thread: { readonly providerInstanceId: string },
+  selection: ModelSelection | undefined,
+) =>
+  selection !== undefined && changesThreadKind(thread, selection)
+    ? Effect.fail(
+        new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: THREAD_KIND_CHANGE_MESSAGE,
+        }),
+      )
+    : Effect.void;
 export class OrchestratorThreadAlreadyExistsError extends Schema.TaggedError<OrchestratorThreadAlreadyExistsError>()(
   "OrchestratorThreadAlreadyExistsError",
   { commandId: CommandId, threadId: ThreadId },
@@ -2944,6 +2964,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
     }
 
+    if (command.type === "thread.model-selection.set" || command.type === "provider.switch") {
+      yield* refuseThreadKindChange(command, thread, command.modelSelection);
+    }
     const needsProviderState =
       command.type === "thread.runtime-mode.set" ||
       command.type === "thread.model-selection.set" ||
@@ -4855,6 +4878,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
   ) {
     let projection = yield* getProjectionWithPendingEvents(command.threadId, events);
+    yield* refuseThreadKindChange(command, projection.thread, command.modelSelection);
     if (command.manualContinuationOfRunId !== undefined) {
       const source = projection.runs.find((run) => run.id === command.manualContinuationOfRunId);
       const limited = latestRootProviderFailure(source ?? null, projection.turnItems);

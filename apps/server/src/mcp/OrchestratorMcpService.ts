@@ -62,6 +62,7 @@ import {
   type ServerProvider,
   type ServerProviderModel,
   ThreadId,
+  TERMINAL_THREAD_INSTANCE_ID,
   isOrchestrationV2WorkActive,
 } from "@t3tools/contracts";
 import { getProviderOptionCurrentValue } from "@t3tools/shared/model";
@@ -121,6 +122,7 @@ import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
+import { forkProviderUsage } from "../fork/terminalProvider/agentUsage.ts";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
@@ -220,6 +222,32 @@ export class OrchestratorMcpService extends Context.Service<
 
 const isThreadManagementError = Schema.is(ThreadManagementService.ThreadManagementError);
 
+/**
+ * Fork: a run with an explicit model switches the thread that it is bound to. A terminal task
+ * bound to an agent thread would turn that thread into a terminal thread.
+ *
+ * An update that only changes the model of an already bound task is not checked here, because
+ * the check needs the bound thread. Its runs fail in the orchestrator (`refuseThreadKindChange`).
+ */
+function assertTerminalTaskBinding(
+  modelSelection: ModelSelection,
+  boundParent: { readonly thread: { readonly modelSelection: ModelSelection } } | undefined,
+): Effect.Effect<void, OrchestratorMcpFailure> {
+  if (
+    modelSelection.instanceId !== TERMINAL_THREAD_INSTANCE_ID ||
+    boundParent === undefined ||
+    boundParent.thread.modelSelection.instanceId === TERMINAL_THREAD_INSTANCE_ID
+  ) {
+    return Effect.void;
+  }
+  return Effect.fail(
+    failure(
+      "invalid_request",
+      "A terminal task bound to this thread would turn it into a terminal thread. Pass bindToCurrentThread:false.",
+    ),
+  );
+}
+
 function failure(code: OrchestratorMcpFailure["code"], message: string): OrchestratorMcpFailure {
   return new OrchestratorMcpFailure({ code, message });
 }
@@ -233,6 +261,7 @@ function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
       return failure("run_not_found", error.message);
     case "ThreadManagementThreadArchivedError":
     case "ThreadManagementNoSteerableRunError":
+    case "ThreadManagementTerminalThreadRefusedError":
       return failure("thread_not_sendable", error.message);
     case "ThreadManagementThreadNotInterruptibleError":
       return failure("thread_not_interruptible", error.message);
@@ -1903,6 +1932,10 @@ const make = Effect.gen(function* () {
           : isScheduledTaskProjectDefaultModel(input.modelSelection)
             ? { modelSelection: yield* inherited(), useProjectDefaultModel: true }
             : { modelSelection: yield* checkScheduledTaskModelSelection(input.modelSelection) };
+      yield* assertTerminalTaskBinding(
+        modelFields.modelSelection,
+        bindToCurrentThread ? parent : undefined,
+      );
       const derivedTitle = input.prompt.split("\n")[0]?.trim() ?? "";
       const title =
         input.title ?? (derivedTitle.length > 0 ? derivedTitle.slice(0, 80) : "Scheduled task");
@@ -1973,6 +2006,15 @@ const make = Effect.gen(function* () {
             parent === undefined
               ? "bindToCurrentThread needs an agent running inside a T3 thread."
               : "bindToCurrentThread binds to this thread, which belongs to a different project.",
+          );
+        }
+        if (input.bindToCurrentThread === true) {
+          yield* assertTerminalTaskBinding(
+            input.modelSelection === undefined ||
+              isScheduledTaskProjectDefaultModel(input.modelSelection)
+              ? existing.modelSelection
+              : input.modelSelection,
+            parent,
           );
         }
         const threadId =
@@ -2216,6 +2258,7 @@ const make = Effect.gen(function* () {
             canRunChildTask: constraints.length === 0,
             canRunCrossProviderChildTask: constraints.length === 0,
             constraints: [...constraints],
+            ...forkProviderUsage(provider),
           };
         }),
         features: {
@@ -2284,6 +2327,14 @@ const make = Effect.gen(function* () {
         providers,
         skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
       });
+      // Fork: a brief is markdown, and a terminal thread types it into a shell, where its
+      // backticks run as commands.
+      if (target.modelSelection.instanceId === TERMINAL_THREAD_INSTANCE_ID) {
+        return yield* failure(
+          "invalid_request",
+          "A delegated task cannot run in a terminal thread, because its brief would be typed into a shell. Use t3_thread_launch to start a terminal thread.",
+        );
+      }
       const runtimeMode = yield* resolveRuntimeMode(
         parent.thread.runtimeMode,
         input.runtimeMode,

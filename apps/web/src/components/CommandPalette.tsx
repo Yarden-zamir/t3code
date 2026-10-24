@@ -42,6 +42,7 @@ import {
   type EnvironmentId,
   type FilesystemBrowseResult,
   SourceControlProviderKind,
+  isTerminalThread,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
@@ -115,6 +116,7 @@ import {
 } from "../state/environments";
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
+import type { NewThreadKind } from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
@@ -129,6 +131,10 @@ import {
 import { onOpenCommandPalette } from "../commandPaletteBus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { focusLevelPaletteItems } from "./focusLevels/focusLevelPaletteItems";
+import {
+  forkHideChatOnlyItems,
+  useForkTerminalThreadPaletteItems,
+} from "./ForkTerminalThreadPaletteItems";
 import { handleForkMessageLinkPaletteShortcut } from "./chat/ForkCopyMessageLink";
 import { navigationHistoryPaletteItems } from "./ForkNavigationHistory";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -251,7 +257,8 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   const setOpen = (open: boolean) => dispatch({ _tag: "SetOpen", open });
   const toggleMode = (mode: SearchOverlayMode) => dispatch({ _tag: "ToggleMode", mode });
   const openAddProject = () => dispatch({ _tag: "OpenAddProject" });
-  const openNewThreadIn = () => dispatch({ _tag: "OpenNewThreadIn" });
+  const openNewThreadIn = (threadKind: NewThreadKind) =>
+    dispatch({ _tag: "OpenNewThreadIn", threadKind });
   const clearOpenIntent = () => dispatch({ _tag: "ClearOpenIntent" });
   const openChildSearch = (mode: "files" | "content", context: CommandPaletteReturnContext) =>
     dispatch({ _tag: "OpenChildSearch", mode, context });
@@ -288,7 +295,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
-          terminalFocus: isTerminalFocused(),
+          terminalFocus: isTerminalFocused(event),
           terminalOpen,
           previewFocus: isPreviewFocused(),
           previewOpen,
@@ -366,7 +373,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     () =>
       onOpenCommandPalette((detail) => {
         if (detail.open === "new-thread-in") {
-          openNewThreadIn();
+          openNewThreadIn(detail.threadKind ?? "chat");
         } else if (detail.open === "add-project") {
           openAddProject();
         } else if (detail.query !== undefined) {
@@ -899,6 +906,13 @@ function OpenCommandPaletteDialog(props: {
       ...projectItems.slice(noProjectIndex),
     ];
   })();
+  const forkTerminal = useForkTerminalThreadPaletteItems({
+    pickerProjects,
+    projectGroupByTargetKey,
+    locationByEnvironmentId: projectEnvironmentLocationById,
+    contextualProjectRef,
+    scratchWorkspaceRootFor,
+  });
 
   const { threadItems: allThreadItems, isSearchPending: isThreadSearchPending } =
     useCommandPaletteThreadItems({ activeThreadId, threadSearchQuery });
@@ -1227,6 +1241,7 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
+    actionItems.push(...forkTerminal.actionItems(activeProjectTitle));
   }
 
   if (scratchTargetEnvironmentId !== null) {
@@ -1488,7 +1503,10 @@ function OpenCommandPaletteDialog(props: {
 
   // The parent pushes an intent into this mounted dialog; applying it clears the
   // parent's intent and may navigate, so it runs after commit but before paint.
-  const projectThreadItemCount = projectThreadItems.length;
+  const projectThreadItemCount =
+    openIntent?.kind === "new-thread-in" && openIntent.threadKind === "terminal"
+      ? forkTerminal.projectItemCount
+      : projectThreadItems.length;
   const applyOpenIntent = useEffectEvent((intent: CommandPaletteOpenIntent) => {
     clearOpenIntent();
     browseNavigation.invalidate();
@@ -1506,6 +1524,7 @@ function OpenCommandPaletteDialog(props: {
         openAddProjectFlow();
         return;
       case "new-thread-in":
+        if (intent.threadKind === "terminal") return pushPaletteView(forkTerminal.newThreadInView);
         pushPaletteView({
           addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
           groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
@@ -1528,10 +1547,11 @@ function OpenCommandPaletteDialog(props: {
   }, [openIntent, projectThreadItemCount]);
 
   actionItems.push(
-    ...focusLevelPaletteItems(
-      ITEM_ICON_CLASS,
-      activeThread !== null && activeThreadServerConfig?.settings.messageLinks !== false,
-    ),
+    ...focusLevelPaletteItems(ITEM_ICON_CLASS, {
+      messageLinks:
+        activeThread !== null && activeThreadServerConfig?.settings.messageLinks !== false,
+      terminalThread: activeThread !== null && isTerminalThread(activeThread),
+    }),
   );
   actionItems.push(themeEditorItem);
 
@@ -1613,7 +1633,10 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
+  const rootGroups = buildRootGroups({
+    actionItems: forkHideChatOnlyItems(actionItems, activeThread),
+    recentThreadItems,
+  });
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,
     availableSettingsSearchItems,
@@ -2377,6 +2400,7 @@ function OpenCommandPaletteDialog(props: {
     }
     // ChatView ignores shortcuts while the palette is open, so handle find here
     // instead of letting the browser's own Find open.
+    if (command === "chat.find" && activeThread && isTerminalThread(activeThread)) return;
     if (command === "chat.find" && activeThreadId && !event.nativeEvent.isComposing) {
       event.preventDefault();
       event.stopPropagation();

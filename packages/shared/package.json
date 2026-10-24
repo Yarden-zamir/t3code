@@ -319,6 +319,14 @@
       "types": "./src/terminalLabels.ts",
       "import": "./src/terminalLabels.ts"
     },
+    "./terminalThreadLaunch": {
+      "types": "./src/terminalThreadLaunch.ts",
+      "import": "./src/terminalThreadLaunch.ts"
+    },
+    "./terminalKeyMappings": {
+      "types": "./src/terminalKeyMappings.ts",
+      "import": "./src/terminalKeyMappings.ts"
+    },
     "./relayClient": {
       "types": "./src/relayClient.ts",
       "import": "./src/relayClient.ts"

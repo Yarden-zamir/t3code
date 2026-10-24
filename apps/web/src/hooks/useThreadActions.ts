@@ -5,8 +5,9 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { canSnooze, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
-import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
+import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
+import { forkThreadWokeAt } from "@t3tools/client-runtime/state/fork-terminal-threads";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
@@ -30,6 +31,12 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
+import {
+  readForkDeleteNotice,
+  readForkThreadMenuState,
+  readTerminalThreadState,
+} from "./useForkTerminalThreadState";
+import { THREAD_ARCHIVE_BLOCK_REASON } from "../components/threadActionMenu.logic";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
@@ -65,11 +72,28 @@ export class ThreadArchiveBlockedError extends Schema.TaggedError<ThreadArchiveB
   {
     environmentId: EnvironmentId,
     threadId: ThreadId,
+    reason: Schema.Literals(["agent", "program"]),
   },
 ) {
   override get message(): string {
-    return "Cannot archive while the provider is active.";
+    return THREAD_ARCHIVE_BLOCK_REASON[this.reason].message;
   }
+}
+
+/**
+ * Fork: refuses Archive with its reason in a toast. Every entry point checks this before it asks
+ * for confirmation: a key or the command palette picks Archive without a menu that shows it
+ * disabled, so they must not do nothing.
+ */
+export function refuseBlockedArchive(thread: EnvironmentThreadShell): boolean {
+  const block = readForkThreadMenuState(thread).archiveBlock;
+  if (block === null) return false;
+  toastManager.add({
+    type: "warning",
+    title: "Cannot archive this thread now",
+    description: THREAD_ARCHIVE_BLOCK_REASON[block].message,
+  });
+  return true;
 }
 
 export class ThreadSettlementUnsupportedError extends Schema.TaggedError<ThreadSettlementUnsupportedError>()(
@@ -345,12 +369,15 @@ export function useThreadActions() {
     const resolved = resolveThreadTarget(target);
     if (!resolved) return AsyncResult.success(undefined);
     const { thread, threadRef } = resolved;
-    if (!threadRuntimeCanArchive(thread.runtime)) {
+    // Fork: read before the archive, which closes the main terminal of a terminal thread.
+    const { terminal, archiveBlock } = readForkThreadMenuState(thread);
+    if (archiveBlock !== null) {
       return AsyncResult.failure(
         Cause.fail(
           new ThreadArchiveBlockedError({
             environmentId: threadRef.environmentId,
             threadId: threadRef.threadId,
+            reason: archiveBlock,
           }),
         ),
       );
@@ -369,7 +396,7 @@ export function useThreadActions() {
       action.finish();
       return archiveResult;
     }
-    const wokeAt = threadWokeAt(thread, { now: new Date().toISOString() });
+    const wokeAt = forkThreadWokeAt(thread, { now: new Date().toISOString() }, terminal);
     if (wokeAt !== null) {
       markThreadVisited(scopedThreadKey(threadRef), wokeAt);
     }
@@ -706,7 +733,11 @@ export function useThreadActions() {
     }
     const resolved = resolveThreadTarget(target);
     const wokeAt = resolved
-      ? threadWokeAt(resolved.thread, { now: new Date().toISOString() })
+      ? forkThreadWokeAt(
+          resolved.thread,
+          { now: new Date().toISOString() },
+          readTerminalThreadState(resolved.thread),
+        )
       : null;
     const undoPlan = ThreadUndo.planThreadUndo("settle", resolved?.thread);
     // An older unpin/snooze Undo would re-pin or re-snooze, and the server
@@ -883,6 +914,7 @@ export function useThreadActions() {
           [
             `Delete thread "${title}"?`,
             "This permanently clears conversation history for this thread.",
+            ...readForkDeleteNotice(resolved ? [resolved.thread] : []),
           ].join("\n"),
           { variant: "destructive" },
         ),

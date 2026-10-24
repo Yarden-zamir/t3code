@@ -18,6 +18,8 @@ import {
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_TERMINAL_ID,
+  isTerminalThread,
   EnvironmentId,
   ThreadId,
   type ProjectScript,
@@ -66,6 +68,7 @@ import {
   stagePendingTerminalLaunch,
 } from "../terminal/terminalLaunchContext";
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
+import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import type { ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { ThreadScreenBinding, ThreadScreenFallback, ThreadScreenHost } from "./ThreadScreenHost";
 import { draftRouteIdentity } from "./thread-route-state";
@@ -628,6 +631,52 @@ function ThreadRouteContent(
       ...(nextTerminalId ? { terminalId: nextTerminalId } : {}),
     });
   };
+
+  // Fork: a terminal thread opens on its native terminal screen. The replace keeps the thread
+  // list as the screen behind it. Limit: the thread has no timeline, so the messages that a
+  // schedule or an agent sent show only in the terminal. Revisit when the terminal screen needs them.
+  const terminalThreadRedirected = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedThread || !isTerminalThread(selectedThread)) return;
+    if (!canReadTerminal && !canOperateTerminal) return;
+    // A client that can only read terminals shows the session read only and never starts it.
+    const workspaceRoot = selectedThreadProject?.workspaceRoot;
+    if (canOperateTerminal && !workspaceRoot) return;
+    const redirectKey = `${selectedThread.environmentId}:${selectedThread.id}`;
+    if (terminalThreadRedirected.current === redirectKey) return;
+    terminalThreadRedirected.current = redirectKey;
+    if (canOperateTerminal && workspaceRoot) {
+      const launch = terminalThreadLaunch({
+        workspaceRoot,
+        worktreePath: resolvePreferredThreadWorktreePath({
+          threadShellWorktreePath: selectedThread.worktreePath ?? null,
+          threadDetailWorktreePath: selectedThreadDetailWorktreePath,
+        }),
+      });
+      stagePendingTerminalLaunch({
+        target: {
+          environmentId: selectedThread.environmentId,
+          threadId: selectedThread.id,
+          terminalId: DEFAULT_TERMINAL_ID,
+        },
+        launch: { cwd: launch.cwd, worktreePath: launch.worktreePath, env: { ...launch.env } },
+      });
+    }
+    navigation.dispatch(
+      StackActions.replace("ThreadTerminal", {
+        environmentId: String(selectedThread.environmentId),
+        threadId: String(selectedThread.id),
+        terminalId: DEFAULT_TERMINAL_ID,
+      }),
+    );
+  }, [
+    canOperateTerminal,
+    canReadTerminal,
+    navigation,
+    selectedThread,
+    selectedThreadDetailWorktreePath,
+    selectedThreadProject,
+  ]);
 
   const handleOpenNewTerminal = () => {
     terminalDebugLog("terminal-menu:open-new", {

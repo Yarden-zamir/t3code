@@ -26,12 +26,18 @@ export interface ChatShortcutsInput {
   readonly enabled: boolean;
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly scriptKeybindings: ResolvedKeybindingsConfig;
-  readonly getShortcutContext: (target: EventTarget | null) => ShortcutMatchContext & {
+  /** Fork: `event` is the key event, so a terminal thread can tell an app chord (`isTerminalFocused`). */
+  readonly getShortcutContext: (
+    target: EventTarget | null,
+    event?: KeyboardEvent,
+  ) => ShortcutMatchContext & {
     readonly modelPickerOpen: boolean;
   };
   readonly threadFindActive: boolean;
   /** Takes type-to-focus keys and the composer and branch toolbar chords. */
   readonly composerRef: ComposerHandleRef;
+  /** Fork: takes type-to-focus keys in place of `composerRef`, as a terminal thread's shell does. */
+  readonly typeIntoComposer?: (key: string) => boolean;
   readonly branchToolbarRef: { readonly current: BranchToolbarHandle | null };
   readonly closeThreadFind: () => void;
   readonly commands: ChatShortcutCommands;
@@ -59,14 +65,15 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
     if (!input.enabled || isCommandPaletteOpen()) return;
     const terminalFocusOwner = getTerminalFocusOwner();
     if (event.defaultPrevented && terminalFocusOwner === null) return;
-    const shortcutContext = input.getShortcutContext(event.target);
+    const shortcutContext = input.getShortcutContext(event.target, event);
 
     if (
       !shortcutContext.terminalFocus &&
       !shortcutContext.modelPickerOpen &&
       !focusLevelContext(event.target).sidebarFocus &&
       shouldTypeToFocusComposer(event) &&
-      input.composerRef.current?.insertTextAtEnd(event.key) === true
+      (input.typeIntoComposer?.(event.key) ??
+        input.composerRef.current?.insertTextAtEnd(event.key)) === true
     ) {
       event.preventDefault();
       event.stopPropagation();

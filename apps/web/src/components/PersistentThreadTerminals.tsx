@@ -1,6 +1,8 @@
 import {
   AuthTerminalOperateScope,
+  DEFAULT_TERMINAL_ID,
   type EnvironmentId,
+  isTerminalThread,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
@@ -10,6 +12,7 @@ import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/proje
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { memo, useEffect, useState } from "react";
 import { useComposerDraftStore } from "../composerDraftStore";
+import { useDraftTerminalShell } from "../forkDraftTerminalStore";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type { TerminalContextSelection } from "../lib/terminalContext";
 import { cn } from "~/lib/utils";
@@ -22,6 +25,7 @@ import { useProject, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentScope } from "../state/session";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useForkMoveTerminalToThread } from "./terminal/useForkMoveTerminalToThread";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { resolveTerminalWorktreePath } from "./ChatView.logic";
@@ -89,7 +93,8 @@ interface PersistentThreadTerminalDrawerProps {
   newShortcutLabel: string | undefined;
   closeShortcutLabel: string | undefined;
   keybindings: ResolvedKeybindingsConfig;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  /** Absent where no chat can take a terminal selection, such as a terminal thread. */
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
 }
 
 export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDrawer({
@@ -108,8 +113,11 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
 }: PersistentThreadTerminalDrawerProps) {
   const canOperateTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
   const terminalActions = useThreadTerminalActions(threadRef);
+  const moveTerminalToThread = useForkMoveTerminalToThread(threadRef);
   const serverThread = useQuietThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
+  const draftId = useComposerDraftStore((store) => store.getDraftIdByRef(threadRef));
+  const draftInTerminalMode = useDraftTerminalShell(draftId) !== undefined;
   const projectRef = serverThread
     ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
     : draftThread
@@ -130,9 +138,18 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   const panelTerminalIds = new Set(
     panelSurfaces.flatMap((surface) => (surface.kind === "terminal" ? surface.terminalIds : [])),
   );
+  // Fork: the main terminal of a terminal thread, or of a draft in Terminal mode, is the thread
+  // view, not a drawer tab.
+  const mainTerminalOfTerminalThread =
+    (serverThread !== null && isTerminalThread(serverThread)) || draftInTerminalMode
+      ? DEFAULT_TERMINAL_ID
+      : null;
   const drawerTerminalSessions =
-    knownTerminalSessions?.filter((session) => !panelTerminalIds.has(session.target.terminalId)) ??
-    [];
+    knownTerminalSessions?.filter(
+      (session) =>
+        !panelTerminalIds.has(session.target.terminalId) &&
+        session.target.terminalId !== mainTerminalOfTerminalThread,
+    ) ?? [];
   const terminalLabelsById = new Map<string, string>();
   for (const session of drawerTerminalSessions) {
     terminalLabelsById.set(
@@ -240,12 +257,14 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     bumpFocusRequestId();
   });
 
-  const handleAddTerminalContext = (selection: TerminalContextSelection) => {
-    if (!visible) {
-      return;
-    }
-    onAddTerminalContext(selection);
-  };
+  const handleAddTerminalContext = onAddTerminalContext
+    ? (selection: TerminalContextSelection) => {
+        if (!visible) {
+          return;
+        }
+        onAddTerminalContext(selection);
+      }
+    : undefined;
 
   if (!project || (!terminalUiState.terminalOpen && !active) || !cwd) {
     return null;
@@ -287,6 +306,8 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
           keybindings={keybindings}
           onActiveTerminalChange={activateTerminal}
           onCloseTerminal={closeTerminal}
+          // Fork: a draft has no thread whose project and folder the new thread takes.
+          onMoveTerminalToThread={serverThread ? moveTerminalToThread : undefined}
           onHeightChange={setTerminalHeight}
           onAddTerminalContext={handleAddTerminalContext}
           terminalLabelsById={terminalLabelsById}
@@ -304,7 +325,7 @@ export interface PersistentThreadTerminalPanelProps {
   launchContext: PersistentTerminalLaunchContext | null;
   focusRequestId: number;
   keybindings: ResolvedKeybindingsConfig;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext: ((selection: TerminalContextSelection) => void) | undefined;
   onSplitTerminal: () => void;
   onSplitTerminalVertical: () => void;
   onNewTerminal: () => void;

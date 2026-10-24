@@ -170,3 +170,27 @@
 ::highlight(timeline-cursor) {
   background-color: color-mix(in srgb, var(--primary) 24%, transparent);
 }
+
+/* Fork: a draft terminal grows into the screen of its terminal thread
+   (`ForkDraftTerminalComposer`). The text keeps its size and corner while the frame grows. */
+html[data-fork-terminal-expand="true"]::view-transition-group(t3-fork-terminal) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-fork-terminal-expand="true"]::view-transition-image-pair(t3-fork-terminal) {
+  overflow: clip;
+}
+
+html[data-fork-terminal-expand="true"]::view-transition-old(t3-fork-terminal),
+html[data-fork-terminal-expand="true"]::view-transition-new(t3-fork-terminal) {
+  height: auto;
+  width: auto;
+  object-fit: none;
+  object-position: left top;
+}
+
+html[data-fork-terminal-expand="true"]::view-transition-old(root),
+html[data-fork-terminal-expand="true"]::view-transition-new(root) {
+  animation-duration: 180ms;
+}

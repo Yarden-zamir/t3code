@@ -16,10 +16,15 @@ import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useTerminalThreadEnvironmentIds } from "../hooks/useForkTerminalThreads";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
-import { isTerminalFocused } from "../lib/terminalFocus";
+import {
+  isTerminalFocused,
+  isTerminalThreadAppChord,
+  isTerminalThreadShellKey,
+} from "../lib/terminalFocus";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { resolveShortcutCommand } from "../keybindings";
@@ -33,8 +38,16 @@ import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
-    useHandleNewThread();
+  const {
+    activeDraftThread,
+    activeThread,
+    defaultProjectRef,
+    handleNewThread,
+    handleNewTerminalThread,
+    routeThreadRef,
+  } = useHandleNewThread();
+  // Fork: the terminal thread shortcuts stay inert while no server has terminal threads on.
+  const terminalThreadsAvailable = useTerminalThreadEnvironmentIds().size > 0;
   const canOperatePreview = useEnvironmentScope(
     routeThreadRef?.environmentId ?? null,
     AuthPreviewOperateScope,
@@ -69,11 +82,11 @@ function ChatRouteGlobalShortcuts() {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
-          terminalFocus: isTerminalFocused(),
+          terminalFocus: isTerminalFocused(event),
           terminalOpen,
           previewFocus: isPreviewFocused(),
           previewOpen,
-          editableFocus: isEditableFocused(event.target),
+          editableFocus: !isTerminalThreadAppChord(event) && isEditableFocused(event.target),
           modelPickerOpen: isModelPickerOpen(),
         },
       });
@@ -88,15 +101,28 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
-      if (command === "chat.newLocal") {
+      // Fork: each new-thread shortcut has a terminal twin that starts a terminal thread.
+      const terminalTwin = command === "chat.newTerminal" || command === "chat.newTerminalLocal";
+      if (terminalTwin && !terminalThreadsAvailable) return;
+      if (terminalTwin && event.repeat) {
+        event.preventDefault();
+        return;
+      }
+      const newThreadKind = terminalTwin ? "terminal" : "chat";
+
+      if (command === "chat.newLocal" || command === "chat.newTerminalLocal") {
         event.preventDefault();
         event.stopPropagation();
-        void startNewThreadFromContext({
-          activeDraftThread,
-          activeThread: activeThread ?? undefined,
-          defaultProjectRef,
-          handleNewThread,
-        });
+        void startNewThreadFromContext(
+          {
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+            handleNewTerminalThread,
+          },
+          newThreadKind,
+        );
         return;
       }
 
@@ -111,23 +137,28 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
-      if (command === "chat.new") {
+      if (command === "chat.new" || command === "chat.newTerminal") {
         event.preventDefault();
         event.stopPropagation();
         if (!legacySidebarEnabled && projectGroupCount > 1) {
-          openCommandPalette({ open: "new-thread-in" });
+          openCommandPalette({ open: "new-thread-in", threadKind: newThreadKind });
           return;
         }
-        void startNewThreadFromContext({
-          activeDraftThread,
-          activeThread: activeThread ?? undefined,
-          defaultProjectRef,
-          handleNewThread,
-        });
+        void startNewThreadFromContext(
+          {
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+            handleNewTerminalThread,
+          },
+          newThreadKind,
+        );
         return;
       }
 
-      if (command === "preview.toggle") {
+      // Fork: a Ctrl chord in the main terminal of a terminal thread goes to its shell.
+      if (command === "preview.toggle" && !isTerminalThreadShellKey(event)) {
         event.preventDefault();
         event.stopPropagation();
         if (!routeThreadRef || (!canOperatePreview && !previewOpen)) return;
@@ -179,6 +210,7 @@ function ChatRouteGlobalShortcuts() {
     clearSelection,
     canOperatePreview,
     handleNewThread,
+    handleNewTerminalThread,
     keybindings,
     defaultProjectRef,
     previewOpen,
@@ -190,6 +222,7 @@ function ChatRouteGlobalShortcuts() {
     startScratchThread,
     legacySidebarEnabled,
     terminalOpen,
+    terminalThreadsAvailable,
   ]);
 
   return null;

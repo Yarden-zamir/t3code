@@ -13,6 +13,7 @@ import {
 import {
   Plus,
   Square,
+  SquareArrowOutUpRight,
   SquareSplitHorizontal,
   SquareSplitVertical,
   TerminalSquare,
@@ -64,11 +65,13 @@ import { isTerminalUrl } from "../terminal-links";
 import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,
+  isTerminalCloseShortcut,
   isTerminalNewShortcut,
   isTerminalSplitShortcut,
   isTerminalSplitVerticalShortcut,
   isTerminalToggleShortcut,
   isTerminalAppShortcut,
+  resolveShortcutCommand,
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
 } from "../keybindings";
@@ -79,6 +82,7 @@ import {
 } from "../types";
 import { readLocalApi } from "~/localApi";
 import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
+import { terminalZoomShortcut, useTerminalZoom } from "../hooks/useForkTerminalZoom";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useAttachedTerminalSession } from "../state/terminalSessions";
@@ -90,8 +94,13 @@ import { useEnvironmentScope } from "../state/session";
 import { openTerminalLinkInPreview } from "./preview/openTerminalLinkInPreview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
+import { getTerminalFocusOwner, isTerminalThreadShellKey } from "../lib/terminalFocus";
 import { useActiveThemeFonts } from "../hooks/useEnvironmentTheme";
 import { observeResize } from "../lib/observeResize";
+import {
+  compileTerminalKeyMappings,
+  findTerminalKeyMapping,
+} from "@t3tools/shared/terminalKeyMappings";
 import {
   fontSettingOrThemeFont,
   resolveTerminalFontPreference,
@@ -427,8 +436,18 @@ interface TerminalViewportProps {
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
   providerInstanceId?: ProviderInstanceId;
+  /** Fork: the shell slug of a terminal thread; the server default when absent. */
+  shell?: string | undefined;
+  /** Fork: the shell of a draft in Terminal mode, which detaches soon after it leaves. */
+  draft?: boolean | undefined;
+  /** Fork: output only, such as a terminal thread while its server setting is off. */
+  readOnly?: boolean | undefined;
   onSessionExited: () => void;
-  onAddTerminalContext?: (selection: TerminalContextSelection) => void;
+  /** Fork: the session status after each change, for a screen that shows the ended state. */
+  onStatusChange?: ((status: TerminalSessionState["status"]) => void) | undefined;
+  /** Fork: the bytes that the user typed, before they go to the terminal. */
+  onInput?: ((data: string) => void) | undefined;
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   focusRequestId: number;
   autoFocus: boolean;
   visible: boolean;
@@ -453,6 +472,7 @@ export function TerminalViewport(props: TerminalViewportProps) {
     props.cwd,
     props.worktreePath ?? null,
     runtimeEnvSignature(props.runtimeEnv),
+    props.shell ?? null,
   ]);
   return <TerminalSessionViewport key={sessionKey} {...props} />;
 }
@@ -467,7 +487,12 @@ function TerminalSessionViewport({
   worktreePath,
   runtimeEnv,
   providerInstanceId,
+  shell,
+  draft,
+  readOnly,
   onSessionExited,
+  onStatusChange,
+  onInput,
   onAddTerminalContext,
   focusRequestId,
   autoFocus,
@@ -480,9 +505,10 @@ function TerminalSessionViewport({
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
   const visibleRef = useRef(visible);
   const environmentId = threadRef.environmentId;
-  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
-  const hasTerminalWriteAccess = useEffectEvent(() =>
-    readEnvironmentScope(environmentId, AuthTerminalOperateScope),
+  const canOperateTerminal =
+    useEnvironmentScope(environmentId, AuthTerminalOperateScope) && readOnly !== true;
+  const hasTerminalWriteAccess = useEffectEvent(
+    () => readOnly !== true && readEnvironmentScope(environmentId, AuthTerminalOperateScope),
   );
   const canOpenHostEditor = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canActivateTerminalLink = useEffectEvent(
@@ -508,6 +534,15 @@ function TerminalSessionViewport({
   const selectionActionRequestIdRef = useRef(0);
   const openSelectionMenuRequestIdRef = useRef<number | null>(null);
   const readKeybindings = useEffectEvent(() => keybindings);
+  const keyMappings = useClientSettings((settings) => settings.terminalKeyMappings);
+  const readMappedKey = useEffectEvent((event: KeyboardEvent) => {
+    const mapping = findTerminalKeyMapping(
+      compileTerminalKeyMappings(keyMappings),
+      event,
+      navigator.platform,
+    );
+    return mapping?.data ?? null;
+  });
   const handleSessionExited = useEffectEvent(() => {
     if (hasTerminalWriteAccess()) onSessionExited();
   });
@@ -528,13 +563,15 @@ function TerminalSessionViewport({
     terminalFontSetting,
     themeFonts.terminal ?? themeFonts.code,
   );
-  const terminalFontSize = useClientSettings((settings) =>
+  const baseTerminalFontSize = useClientSettings((settings) =>
     resolveTerminalFontSizePreference({
       advanced: advancedTypography,
       code: settings.fontSizeCode,
       terminal: settings.fontSizeTerminal,
     }),
   );
+  const { fontSize: terminalFontSize, zoom } = useTerminalZoom(baseTerminalFontSize);
+  const zoomTerminal = useEffectEvent(zoom);
   const terminalFontRef = useRef({ family: terminalFontFamily, size: terminalFontSize });
   const terminalSession = useAttachedTerminalSession({
     environmentId,
@@ -545,7 +582,9 @@ function TerminalSessionViewport({
       ...(worktreePath !== undefined ? { worktreePath } : {}),
       ...(runtimeEnv ? { env: runtimeEnv } : {}),
       ...(providerInstanceId ? { providerInstanceId } : {}),
+      ...(shell ? { shell } : {}),
     },
+    draft,
   });
   const canResizeTerminal =
     canOperateTerminal && terminalSession.version > 0 && terminalSession.status === "running";
@@ -568,6 +607,7 @@ function TerminalSessionViewport({
   const terminalStatus = terminalSession.status;
   const outputCursorRef = useRef<TerminalOutputCursor>(INITIAL_TERMINAL_OUTPUT_CURSOR);
   const synchronizedStatusRef = useRef<TerminalSessionState["status"]>("closed");
+  const reportedStatusRef = useRef<TerminalSessionState["status"] | null>(null);
   const synchronizeTerminalStatus = useEffectEvent(
     (terminal: GhosttyTerminalSurface, status: TerminalSessionState["status"], version: number) => {
       const synchronized = synchronizedStatusRef.current;
@@ -584,9 +624,18 @@ function TerminalSessionViewport({
           }
         }, 0);
       }
-      if (version > 0) synchronizedStatusRef.current = status;
+      if (version > 0) {
+        synchronizedStatusRef.current = status;
+        // Reported per change, including the first status after a mount (a shell that is
+        // already dead when the screen opens).
+        if (reportedStatusRef.current !== status) {
+          reportedStatusRef.current = status;
+          onStatusChange?.(status);
+        }
+      }
     },
   );
+  const reportInput = useEffectEvent((data: string) => onInput?.(data));
   const terminalVersion = terminalSession.version;
   const previousSessionRef = useRef({
     output: terminalOutput,
@@ -656,6 +705,7 @@ function TerminalSessionViewport({
         onResize: (cols, rows) => void resizeTerminal(cols, rows),
         onSelectionChange: () => handleSelectionChange(),
         beforeKey: (event) => handleBeforeKey(event),
+        mapKey: (event) => readMappedKey(event),
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
         canActivateLink: (text) => canActivateTerminalLink(text),
         // The surface listens from construction, so a right-click can land
@@ -907,8 +957,36 @@ function TerminalSessionViewport({
       };
 
       function handleBeforeKey(event: KeyboardEvent): boolean {
+        const zoom = terminalZoomShortcut(event);
+        if (zoom !== null) {
+          event.preventDefault();
+          event.stopPropagation();
+          zoomTerminal(zoom);
+          return false;
+        }
         const currentKeybindings = readKeybindings();
         const options = { context: { terminalFocus: true, terminalOpen: true } };
+        // Fork: a Cmd chord in the main terminal of a terminal thread is an app shortcut
+        // (`isTerminalFocused`), so it stays out of the shell.
+        if (
+          event.metaKey &&
+          getTerminalFocusOwner() === "terminal-thread" &&
+          resolveShortcutCommand(event, currentKeybindings, {
+            context: { terminalFocus: false, terminalOpen: true },
+          }) !== null
+        ) {
+          return false;
+        }
+        if (
+          isTerminalThreadShellKey(event) &&
+          (isTerminalToggleShortcut(event, currentKeybindings, options) ||
+            isTerminalSplitShortcut(event, currentKeybindings, options) ||
+            isTerminalSplitVerticalShortcut(event, currentKeybindings, options) ||
+            isTerminalNewShortcut(event, currentKeybindings, options) ||
+            isTerminalCloseShortcut(event, currentKeybindings, options))
+        ) {
+          return true;
+        }
         if (preventTerminalCloseShortcut(event, currentKeybindings)) {
           return false;
         }
@@ -999,6 +1077,7 @@ function TerminalSessionViewport({
 
       function handleData(data: string): void {
         if (!hasTerminalWriteAccess()) return;
+        reportInput(data);
         void (async () => {
           const result = await writeTerminal(data);
           if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
@@ -1183,8 +1262,10 @@ interface ThreadTerminalDrawerProps {
   closeShortcutLabel?: string | undefined;
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string) => void;
+  /** Fork: turns the terminal into a terminal thread. Absent where terminal threads are off. */
+  onMoveTerminalToThread?: ((terminalId: string) => void) | undefined;
   onHeightChange: (height: number) => void;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   keybindings: ResolvedKeybindingsConfig;
   terminalLabelsById?: ReadonlyMap<string, string>;
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
@@ -1272,7 +1353,7 @@ function TerminalSplitPanes({
   advancedTypography: boolean;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   focusRequestId: number;
   visible: boolean;
   resizeEpoch: number;
@@ -1470,6 +1551,7 @@ export default function ThreadTerminalDrawer({
   closeShortcutLabel,
   onActiveTerminalChange,
   onCloseTerminal,
+  onMoveTerminalToThread,
   onHeightChange,
   onAddTerminalContext,
   keybindings,
@@ -1912,6 +1994,20 @@ export default function ThreadTerminalDrawer({
             >
               <Plus className="size-3.25" />
             </TerminalActionButton>
+            {onMoveTerminalToThread ? (
+              <>
+                <div className="h-4 w-px bg-border/80" />
+                <TerminalActionButton
+                  disabled={!canOperateTerminal}
+                  className="p-1 text-foreground/90 transition-colors hover:bg-accent"
+                  onClick={() => onMoveTerminalToThread(resolvedActiveTerminalId)}
+                  label="Move to a terminal thread"
+                  tooltipLabel="Move to a terminal thread: the shell goes on there"
+                >
+                  <SquareArrowOutUpRight className="size-3.25" />
+                </TerminalActionButton>
+              </>
+            ) : null}
             <div className="h-4 w-px bg-border/80" />
             <TerminalActionButton
               disabled={!canOperateTerminal}
@@ -1931,7 +2027,8 @@ export default function ThreadTerminalDrawer({
         <div
           className={cn(
             "flex h-full min-h-0 bg-(--terminal-background)",
-            hasTerminalSidebar && "gap-1.5",
+            // Fork: the floating toolbar gets its own strip, so it covers no line of the terminal.
+            hasTerminalSidebar ? "gap-1.5" : "pt-8",
           )}
         >
           <div className="min-w-0 flex-1">
@@ -2005,6 +2102,17 @@ export default function ThreadTerminalDrawer({
                   >
                     <Plus className="size-3.25" />
                   </TerminalActionButton>
+                  {onMoveTerminalToThread ? (
+                    <TerminalActionButton
+                      disabled={!canOperateTerminal}
+                      className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
+                      onClick={() => onMoveTerminalToThread(resolvedActiveTerminalId)}
+                      label="Move to a terminal thread"
+                      tooltipLabel="Move to a terminal thread: the shell goes on there"
+                    >
+                      <SquareArrowOutUpRight className="size-3.25" />
+                    </TerminalActionButton>
+                  ) : null}
                   <TerminalActionButton
                     disabled={!canOperateTerminal}
                     className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"

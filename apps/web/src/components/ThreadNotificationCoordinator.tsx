@@ -29,10 +29,11 @@ import {
   threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
+import { ForkTerminalThreadNotifications } from "./ForkTerminalThreadNotifications";
 import { resolveSidebarThreadStatus } from "./Sidebar.logic";
 import { toastManager } from "./ui/toast";
 
-type OnNotification = (
+export type OnNotification = (
   environmentId: EnvironmentId,
   notification: Notification,
   replaced?: "replacedByTag",
@@ -291,5 +292,10 @@ function EnvironmentNotifications({
     threads,
   ]);
 
-  return null;
+  return (
+    <ForkTerminalThreadNotifications
+      environmentId={environmentId}
+      onNotification={onNotification}
+    />
+  );
 }

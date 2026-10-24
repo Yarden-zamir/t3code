@@ -265,6 +265,10 @@ const requiredScopesForRpcCall = (
         : AuthOrchestrationReadScope,
     ];
   }
+  // Fork: moving a terminal also creates its terminal thread.
+  if (method === WS_METHODS.terminalMoveToThread) {
+    return [AuthTerminalOperateScope, AuthOrchestrationOperateScope];
+  }
   if (method === WS_METHODS.serverUpdateSettings) return requiredScopesForSettingsUpdate(payload);
   if (method === WS_METHODS.projectsMutate) {
     return requiredScopesForProjectMutation(decodeProjectMutation(payload));

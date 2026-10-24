@@ -26,6 +26,7 @@ import {
   type ScheduledTaskSetEnabledInput,
   type ScheduledTaskUpsertInput,
   type ModelSelection,
+  TERMINAL_THREAD_INSTANCE_ID,
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Cause from "effect/Cause";
@@ -884,6 +885,12 @@ export const layer = Layer.effect(
               taskId: active.id,
             });
           }
+          // Fork: the project default can be the terminal, which types the text into a shell.
+          if (webhook !== undefined && selection.instanceId === TERMINAL_THREAD_INSTANCE_ID) {
+            return yield* taskError("A webhook task cannot run in a terminal thread.", {
+              taskId: active.id,
+            });
+          }
           return selection;
         });
         const result =
@@ -926,6 +933,8 @@ export const layer = Layer.effect(
                     mode: "queue",
                     createdBy: active.createdBy,
                     creationSource: active.creationSource,
+                    // Fork: the bound thread can be a terminal thread, whatever model the task has.
+                    refuseTerminalThread: webhook !== undefined,
                   })
                   .pipe(Effect.as(ThreadId.make(active.threadId))),
               );
@@ -1121,6 +1130,13 @@ export const layer = Layer.effect(
     const upsert: ScheduledTaskService["Service"]["upsert"] = Effect.fn(
       "ScheduledTaskService.upsert",
     )(function* (input) {
+      // Fork: a webhook value is typed into a shell, and its sender controls the text.
+      if (
+        input.schedule.type === "webhook" &&
+        input.modelSelection?.instanceId === TERMINAL_THREAD_INSTANCE_ID
+      ) {
+        return yield* taskError("A webhook task cannot run in a terminal thread.");
+      }
       const now = yield* localNow;
       const uuid =
         input.commandId === undefined

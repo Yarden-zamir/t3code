@@ -35,6 +35,14 @@ function recordEffect(action: string) {
 }
 
 vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn() }));
+vi.mock("./useForkTerminalThreadState", () => ({
+  readForkThreadMenuState: () => ({
+    terminal: undefined,
+    archiveBlock: null,
+    titleRegeneration: true,
+    markUnread: true,
+  }),
+}));
 vi.mock("react", () => ({
   useCallback: (callback: unknown) => callback,
   useMemo: (factory: () => unknown) => factory(),
@@ -123,6 +131,7 @@ vi.mock("./useSettings", () => ({
   getClientSettings: () => ({ snoozeQuickOptions: null }),
 }));
 vi.mock("./useThreadActions", () => ({
+  refuseBlockedArchive: () => false,
   useThreadActions: () =>
     Object.fromEntries(
       [

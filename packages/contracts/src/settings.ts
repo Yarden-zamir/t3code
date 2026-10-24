@@ -48,6 +48,7 @@ import {
   ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
+import { TERMINAL_THREAD_INSTANCE_ID } from "./forkTerminalThreads.ts";
 import { ForkStorageCleanupReportEntryFields } from "./forkStorageCleanup.ts";
 import {
   ForkClientSettingsFields,
@@ -1355,9 +1356,11 @@ const DEFAULT_DISABLED_PROVIDER_DRIVERS: ReadonlySet<ProviderDriverKind> = new S
   ),
 );
 
-const DEFAULT_ENABLED_DEFAULT_INSTANCES: ReadonlySet<ProviderInstanceId> = new Set(
-  ["codex", "claudeAgent"].map((instanceId) => ProviderInstanceId.make(instanceId)),
-);
+const DEFAULT_ENABLED_DEFAULT_INSTANCES: ReadonlySet<ProviderInstanceId> = new Set([
+  ...["codex", "claudeAgent"].map((instanceId) => ProviderInstanceId.make(instanceId)),
+  // Fork: the terminal provider exists only while the server setting `terminalThreads` is on.
+  TERMINAL_THREAD_INSTANCE_ID,
+]);
 
 export const isUnconfiguredDefaultInstanceEnabled = (instanceId: ProviderInstanceId): boolean =>
   DEFAULT_ENABLED_DEFAULT_INSTANCES.has(instanceId);

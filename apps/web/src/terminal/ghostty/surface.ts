@@ -503,6 +503,11 @@ export interface GhosttyTerminalSurfaceOptions {
   readonly onResize: (cols: number, rows: number) => void;
   readonly onSelectionChange: () => void;
   readonly beforeKey: (event: KeyboardEvent) => boolean;
+  /**
+   * Fork: the bytes to send for a key in place of its own encoding, or null. A mapped key wins
+   * over the terminal's own shortcuts, except copy while text is selected.
+   */
+  readonly mapKey?: (event: KeyboardEvent) => string | null;
   readonly onLinkActivate: (text: string, event: MouseEvent) => void;
   readonly canActivateLink?: (text: string) => boolean;
   /**
@@ -1063,6 +1068,17 @@ export class GhosttyTerminalSurface {
     // IME candidates belong to the textarea, even if the key also resembles
     // a local shortcut. Safari signals the initial composition with code 229.
     if (isTerminalCompositionKey(event, this.composing)) {
+      return;
+    }
+    const mapped =
+      isTerminalCopyShortcut(event) && this.hasSelection()
+        ? null
+        : (this.options.mapKey?.(event) ?? null);
+    if (mapped !== null) {
+      event.preventDefault();
+      event.stopPropagation();
+      // Not an encoded press, so its release sends nothing either.
+      this.options.onData(mapped);
       return;
     }
     const mac = isMacPlatform(navigator.platform);

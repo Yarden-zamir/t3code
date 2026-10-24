@@ -64,6 +64,7 @@ interface HarnessOptions {
   readonly hasCommit?: GitWorkflow.GitWorkflowService["Service"]["hasCommit"];
   readonly serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   readonly git?: Partial<GitWorkflow.GitWorkflowService["Service"]>;
+  readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -89,14 +90,20 @@ function makeHarness(options: HarnessOptions = {}) {
   );
   const runSetup = vi.fn<
     ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"]
-  >(() => Effect.succeed({ status: "no-script" as const }));
+  >(options.runSetup ?? (() => Effect.succeed({ status: "no-script" as const })));
+  const removeWorktree = vi.fn<GitWorkflow.GitWorkflowService["Service"]["removeWorktree"]>(
+    () => Effect.void,
+  );
+  const closeTerminal = vi.fn<TerminalManager.TerminalManager["Service"]["close"]>(
+    () => Effect.void,
+  );
   const generateBranchName = vi.fn<TextGeneration.TextGeneration["Service"]["generateBranchName"]>(
     () => Effect.succeed({ branch: "generated-branch" }),
   );
   const layerExternalServices = Layer.mergeAll(
     WorktreeSetupTracker.layer,
     Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
-    Layer.mock(TerminalManager.TerminalManager)({ close: () => Effect.void }),
+    Layer.mock(TerminalManager.TerminalManager)({ close: closeTerminal }),
     Layer.mock(ProjectService.ProjectService)({
       getById: (id) => Effect.succeed(id === projectId ? Option.some(project) : Option.none()),
       getByWorkspaceRoot: () => Effect.succeed(Option.some(project)),
@@ -111,7 +118,7 @@ function makeHarness(options: HarnessOptions = {}) {
       resolveWorktreeBaseRemote: () => Effect.succeed({ remoteName: "origin", branchName: "main" }),
       remoteExists: () => Effect.succeed(true),
       remoteBranchExists: () => Effect.succeed(true),
-      removeWorktree: () => Effect.void,
+      removeWorktree,
       ...options.git,
     }),
     Layer.succeed(ProjectSetupScriptRunner.ProjectSetupScriptRunner, {
@@ -141,10 +148,18 @@ function makeHarness(options: HarnessOptions = {}) {
     ),
   );
   return {
-    layer: Layer.mergeAll(layerLaunch, layerThreadManagement, layerDatabase),
+    // The same layer as the launch service gets, so a test reads the tracker that it writes.
+    layer: Layer.mergeAll(
+      layerLaunch,
+      layerThreadManagement,
+      layerDatabase,
+      WorktreeSetupTracker.layer,
+    ),
     createWorktree,
     generateBranchName,
     runSetup,
+    removeWorktree,
+    closeTerminal,
   };
 }
 
@@ -366,5 +381,88 @@ it.effect("an agent's launch never starts work above the modes it asks for", () 
     const projection = yield* threads.getThreadProjection(created.threadId);
     assert.equal(projection.runs.length, 0);
     assert.equal(projection.messages.length, 0);
+  }).pipe(Effect.provide(harness.layer));
+});
+
+// The new worktree of a draft in Terminal mode, which has no thread yet.
+const draftSetupStarted = (
+  async: boolean,
+  completion: Effect.Effect<{ exitCode: number | null; durationMs: number }>,
+) =>
+  Effect.succeed({
+    status: "started" as const,
+    async,
+    scriptId: "setup",
+    scriptName: "Setup",
+    scriptCommand: "vp install",
+    terminalId: "setup-setup",
+    cwd: "/repo-worktrees/feature",
+    completion,
+  });
+
+it.effect("prepares a draft worktree from origin and starts its setup script", () =>
+  Effect.gen(function* () {
+    const fetchBase = vi.fn<GitWorkflow.GitWorkflowService["Service"]["fetchWorktreeBaseCommit"]>(
+      () => Effect.succeed({ commitSha: "remote-main-sha", remoteRefName: "origin/main" }),
+    );
+    const harness = makeHarness({
+      git: { fetchWorktreeBaseCommit: fetchBase },
+      runSetup: () => draftSetupStarted(true, Effect.never),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const threadId = ThreadId.make("thread:draft-worktree");
+      const prepared = yield* launches.prepareDraftWorktree({
+        projectId,
+        threadId,
+        baseRef: "main",
+        startFromOrigin: true,
+      });
+      assert.equal(prepared.worktreePath, "/repo-worktrees/feature");
+      assert.match(prepared.branch ?? "", /^t3\//u);
+      assert.equal(fetchBase.mock.calls.length, 1);
+      assert.equal(harness.createWorktree.mock.calls[0]?.[0].refName, "remote-main-sha");
+      assert.deepEqual(
+        harness.runSetup.mock.calls.map(([input]) => [input.threadId, input.worktreePath]),
+        [[threadId, "/repo-worktrees/feature"]],
+      );
+      assert.deepEqual(
+        (yield* tracker.get(threadId))?.stages.map((stage) => [stage.id, stage.status]),
+        [
+          ["fetch", "done"],
+          ["checkout", "done"],
+          ["setup-script", "running"],
+        ],
+      );
+      assert.isEmpty(harness.removeWorktree.mock.calls);
+      assert.isNull(yield* threads.getThreadShell(threadId));
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
+it.effect("removes a draft worktree whose setup script fails", () => {
+  const harness = makeHarness({
+    runSetup: () => draftSetupStarted(false, Effect.succeed({ exitCode: 1, durationMs: 1 })),
+    git: { hasRefNamed: () => Effect.succeed(true) },
+  });
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+    const threadId = ThreadId.make("thread:draft-worktree-setup-fails");
+    const failure = yield* launches
+      .prepareDraftWorktree({ projectId, threadId, baseRef: "main", startFromOrigin: false })
+      .pipe(Effect.flip);
+    assert.match(ThreadLaunch.failureDetail(failure), /Setup script exited with 1/u);
+    assert.deepEqual(
+      harness.removeWorktree.mock.calls.map(([input]) => input.path),
+      ["/repo-worktrees/feature"],
+    );
+    assert.deepEqual(
+      harness.closeTerminal.mock.calls.map(([input]) => [input.threadId, input.terminalId]),
+      [[threadId, "setup-setup"]],
+    );
+    assert.equal((yield* tracker.get(threadId))?.phase, "failed");
   }).pipe(Effect.provide(harness.layer));
 });

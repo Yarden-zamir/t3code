@@ -158,3 +158,39 @@ it.effect("resolves a project default task at run time: the project, then the ap
     }).pipe(Effect.provide(ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies))));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
+
+it.effect("refuses a webhook task that runs in a terminal thread", () =>
+  Effect.gen(function* () {
+    const layerDependencies = Layer.mergeAll(
+      NodeCrypto.layer,
+      Scheduler.layer,
+      Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        namedProjectsRoot: "/projects",
+        isScratchProject: () => Effect.succeed(false),
+      }),
+      Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+      ServerSettings.layerTest(),
+      Layer.mock(SecretRequests.SecretRequests)({}),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const error = yield* service
+        .upsert(
+          yield* decodeUpsertInput({
+            title: "Hook",
+            prompt: "{{body.command}}",
+            enabled: true,
+            schedule: { type: "webhook" },
+            projectId: "project-webhook-terminal",
+            workspaceStrategy: { type: "root" },
+            modelSelection: { instanceId: "terminal", model: "terminal" },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+          }),
+        )
+        .pipe(Effect.flip);
+      expect(error.message).toContain("terminal thread");
+    }).pipe(Effect.provide(ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies))));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);

@@ -19,6 +19,7 @@ import {
   AutoSettleWaitsForBackgroundCommandsSettingsRow,
   BackgroundWorkDetailsSettingsRow,
   CheckNewerBeforeUpdateInstallSettingsRow,
+  CurrentProjectTerminalOpensThreadSettingsRow,
   ForkAutoUpdateSettingsRow,
   RestartReconnectWarningGraceSettingsRow,
   TerminalAppShortcutsFirstSettingsRow,
@@ -44,6 +45,10 @@ import { RepositoryOwnerFiltersSettingsRow } from "./RepositoryOwnerFiltersSetti
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import { SidebarTabsSettingsRow } from "./SidebarTabsSettingsRow";
 import { SnoozeQuickOptionsSettingsRow } from "./SnoozeQuickOptionsSettingsRow";
+import { TerminalHistorySettingsRows } from "./TerminalHistorySettingsRows";
+import { TerminalKeyMappingsSettingsRow } from "./TerminalKeyMappingsSettingsRow";
+import { TerminalThreadFontLimitsSettingsRow } from "./TerminalThreadFontLimitsSettingsRow";
+import { TerminalThreadsSettingsRow } from "./TerminalThreadsSettingsRow";
 import { ThreadCardLayoutSettingsRows } from "./ThreadCardLayoutSettings";
 import {
   MessageLinksSettingsRow,
@@ -109,6 +114,11 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "thread-links-open-desktop-app": ThreadLinksOpenDesktopAppSettingsRow,
   "message-links": MessageLinksSettingsRow,
   "preview-local-server-groups": PreviewLocalServerGroupsSettingsRow,
+  "terminal-threads": TerminalThreadsSettingsRow,
+  "current-project-terminal-opens-thread": CurrentProjectTerminalOpensThreadSettingsRow,
+  "terminal-thread-font-limits": TerminalThreadFontLimitsSettingsRow,
+  "terminal-history": TerminalHistorySettingsRows,
+  "terminal-key-mappings": TerminalKeyMappingsSettingsRow,
   "machine-map": MachineMapSettingsRows,
   "keybinding-sync": KeybindingSyncSettingsRow,
   "mobile-published-themes": MobilePublishedThemesSettingsRow,

@@ -369,6 +369,8 @@ export interface ChatComposerHandle {
 }
 
 export interface ChatComposerProps {
+  /** Fork: a control before the model picker, the Terminal mode toggle of a draft. */
+  forkLeadingControl?: ReactNode;
   composerDraftTarget: ScopedThreadRef | DraftId;
   environmentId: EnvironmentId;
   canOperateThread: boolean;
@@ -538,6 +540,7 @@ const NO_PROVIDER_SLASH_COMMANDS: ServerProvider["slashCommands"] = [];
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
+    forkLeadingControl,
     composerDraftTarget,
     environmentId,
     canOperateThread,
@@ -2549,6 +2552,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : expandedControlsIconOnlyBlockCount;
   const composerControls = (
     <ComposerControlsBar
+      forkLeadingControl={forkLeadingControl}
       environmentId={environmentId}
       routeKind={routeKind}
       routeThreadRef={routeThreadRef}

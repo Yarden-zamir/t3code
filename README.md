@@ -89,6 +89,9 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Keyboard focus levels](docs/fork/features.md#keyboard-focus-levels):** Escape moves focus between composer, timeline and sidebar; arrow keys move a cursor.
 - **[Shortcuts in tooltips](docs/fork/features.md#shortcuts-in-tooltips):** control tooltips show the keys of the control as chips.
 - **[Keyboard cheat sheet](docs/fork/features.md#keyboard-cheat-sheet):** `mod+/` lists every key that works, with the area you are in first.
+- **[Terminal threads](docs/fork/features.md#terminal-threads):** a thread whose screen is a live terminal; schedules and agents can type into it.
+- **[Terminal key mappings](docs/fork/features.md#terminal-key-mappings):** keys that a terminal sends as fixed bytes, with a preset for zsh editor keys.
+- **[Terminal history](docs/fork/features.md#terminal-history):** how many lines and megabytes of output the server keeps for each terminal.
 - **[Terminal settings](docs/fork/features.md#terminal-settings):** app shortcuts first in the terminal, and a confirmation before a terminal closes.
 
 **Web app and look**

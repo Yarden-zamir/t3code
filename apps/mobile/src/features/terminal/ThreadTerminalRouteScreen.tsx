@@ -4,6 +4,7 @@ import {
   AuthTerminalOperateScope,
   DEFAULT_TERMINAL_ID,
   EnvironmentId,
+  isTerminalThread,
   ThreadId,
   sessionGrantsScope,
 } from "@t3tools/contracts";
@@ -95,6 +96,7 @@ import { useTerminalGridSync } from "./useTerminalGridSync";
 import { useTerminalLifecycle } from "./useTerminalLifecycle";
 
 function TerminalHeader(props: {
+  readonly title: string;
   readonly subtitle: string;
   readonly isEnvironmentReady: boolean;
   readonly canOperateTerminal: boolean;
@@ -111,7 +113,7 @@ function TerminalHeader(props: {
 }) {
   return (
     <AppBar
-      title="Terminal"
+      title={props.title}
       subtitle={props.subtitle}
       onBack={props.onCloseTerminal}
       backInSplitView={{
@@ -553,6 +555,9 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const pendingModifier =
     pendingModifierState.terminalId === terminalId ? pendingModifierState.value : null;
   const headerSubtitle = selectedThreadProject?.title ?? "";
+  // Fork: the terminal of a terminal thread is the thread, so it shows the thread title.
+  const headerTitle =
+    selectedThread && isTerminalThread(selectedThread) ? selectedThread.title : "Terminal";
   const terminalToolbarActions = useMemo<ReadonlyArray<TerminalToolbarAction>>(() => {
     const modifierActions: ReadonlyArray<TerminalToolbarAction> =
       hostPlatform === "mac"
@@ -1144,6 +1149,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       ) : null}
       <TerminalHeader
         canOperateTerminal={canOperateTerminal}
+        title={headerTitle}
         subtitle={headerSubtitle}
         isEnvironmentReady={isEnvironmentReady}
         fontSize={fontSize}
