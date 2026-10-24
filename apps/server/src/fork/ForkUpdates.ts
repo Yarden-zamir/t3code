@@ -7,10 +7,14 @@
  *
  * - With `forkAutoUpdate` on, a check every 5 minutes installs a newer fork
  *   release when no agent turn, background shell or terminal thread program runs.
+ *   A terminal thread program holds the update at most TERMINAL_HOLD_MAX; then
+ *   its terminal gets a notice, and the update installs TERMINAL_HOLD_NOTICE_LEAD
+ *   later.
  * - The machine map command `installUpdate` installs now, or at the next check
  *   that finds no running turn or shell (`whenIdle`).
  */
 import { TERMINAL_THREAD_INSTANCE_ID, type TerminalSummary } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -35,6 +39,38 @@ import { newerForkRelease } from "./forkReleases.ts";
 // Each check reads the GitHub release index once. Unauthenticated, GitHub
 // allows 60 requests an hour for each address.
 const CHECK_INTERVAL = Duration.minutes(5);
+
+/**
+ * A program in a terminal thread holds an update at most this long, counted from the first
+ * check that finds a newer release. Builds and test runs end well within it, so they never lose
+ * their work. A dev server or a CLI agent left open runs for days, and without a maximum the
+ * machine would stay on an old release. Six hours lets a machine update on the same day.
+ */
+export const TERMINAL_HOLD_MAX = Duration.hours(6);
+/** The time between the notice in each held terminal and the update. */
+export const TERMINAL_HOLD_NOTICE_LEAD = Duration.minutes(10);
+
+const TERMINAL_HOLD_NOTICE =
+  "\r\n[T3 Code] A newer T3 Code waits for this program. In about 10 minutes it installs, " +
+  "the server restarts and this program ends.\r\n";
+
+export type TerminalHold = { readonly since: number; readonly noticedAt: number | null } | null;
+
+/** One check with a newer release and no agent work: install, wait, or print the notice. */
+export function nextTerminalHold(
+  hold: TerminalHold,
+  terminalProgramsRun: boolean,
+  nowMs: number,
+): { readonly action: "install" | "wait" | "notify"; readonly hold: TerminalHold } {
+  if (!terminalProgramsRun) return { action: "install", hold: null };
+  if (hold === null) return { action: "wait", hold: { since: nowMs, noticedAt: null } };
+  if (nowMs - hold.since < Duration.toMillis(TERMINAL_HOLD_MAX)) return { action: "wait", hold };
+  if (hold.noticedAt === null) return { action: "notify", hold: { ...hold, noticedAt: nowMs } };
+  if (nowMs - hold.noticedAt < Duration.toMillis(TERMINAL_HOLD_NOTICE_LEAD)) {
+    return { action: "wait", hold };
+  }
+  return { action: "install", hold: null };
+}
 
 export class ForkUpdateError extends Schema.TaggedError<ForkUpdateError>()("ForkUpdateError", {
   reason: Schema.String,
@@ -71,14 +107,15 @@ const make = Effect.gen(function* () {
   const available = config.mode !== "desktop" && launcher.managed;
   // The machine map asked for an install at the next idle check.
   const installWhenIdle = yield* Ref.make(false);
+  const terminalHold = yield* Ref.make<TerminalHold>(null);
 
   const newerRelease = newerForkRelease(httpClient, packageJson.version).pipe(
     Effect.mapError((error) => new ForkUpdateError({ reason: error.message })),
   );
 
   // Terminals that run a program. The restart kills a program in a terminal thread, and nothing
-  // wakes it again. Limit: a CLI agent left open in a terminal thread blocks auto-update until
-  // it ends. Revisit when updates stall; a multiplexer would keep the program through a restart.
+  // wakes it again, so such a program holds the update up to TERMINAL_HOLD_MAX. A multiplexer
+  // would keep the program through a restart.
   const busyTerminals = yield* Ref.make<ReadonlyMap<string, TerminalSummary>>(new Map());
   const keyOf = (terminal: { threadId: string; terminalId: string }) =>
     `${terminal.threadId}\u0000${terminal.terminalId}`;
@@ -105,7 +142,7 @@ const make = Effect.gen(function* () {
   // a restart and can last for days. Native subagents and monitors are awaited
   // work that the upstream restart continuation resumes on purpose, and they
   // can run for hours, so waiting for them would hold updates back as long.
-  const idle = Effect.gen(function* () {
+  const runningWork = Effect.gen(function* () {
     const snapshot = yield* threads.getShellSnapshot();
     const running = yield* Ref.get(busyTerminals);
     const terminalThreadIds = new Set<string>(
@@ -113,21 +150,20 @@ const make = Effect.gen(function* () {
         .filter((thread) => thread.providerInstanceId === TERMINAL_THREAD_INSTANCE_ID)
         .map((thread) => thread.id),
     );
-    const terminalBusy = [...running.values()].some(
-      (terminal) =>
-        terminal.hasRunningSubprocess &&
-        terminal.status === "running" &&
-        terminalThreadIds.has(terminal.threadId),
-    );
-    return (
-      !terminalBusy &&
-      snapshot.threads.every(
+    return {
+      agents: snapshot.threads.some(
         (thread) =>
-          thread.activeRunId === null &&
-          !(thread.pendingBackgroundTasks ?? []).some((task) => task.kind === "command"),
-      )
-    );
-  }).pipe(Effect.orElseSucceed(() => false));
+          thread.activeRunId !== null ||
+          (thread.pendingBackgroundTasks ?? []).some((task) => task.kind === "command"),
+      ),
+      terminalPrograms: [...running.values()].filter(
+        (terminal) =>
+          terminal.hasRunningSubprocess &&
+          terminal.status === "running" &&
+          terminalThreadIds.has(terminal.threadId),
+      ),
+    };
+  }).pipe(Effect.orElseSucceed(() => ({ agents: true, terminalPrograms: [] })));
 
   // The launcher records the last update. A version that rolled back or failed
   // is not tried again, so a broken release does not cause a restart loop.
@@ -154,14 +190,32 @@ const make = Effect.gen(function* () {
 
   const check = Effect.gen(function* () {
     const { forkAutoUpdate } = yield* settings.getSettings;
-    if (!(forkAutoUpdate || (yield* Ref.get(installWhenIdle))) || !(yield* idle)) return;
+    if (!(forkAutoUpdate || (yield* Ref.get(installWhenIdle)))) return;
+    const work = yield* runningWork;
+    if (work.agents) return;
     const version = yield* newerRelease;
     if (version === undefined) {
       yield* Ref.set(installWhenIdle, false);
+      yield* Ref.set(terminalHold, null);
       return;
     }
     if (version === (yield* lastFailedVersion)) return;
-    yield* runUpdate(version);
+    const step = nextTerminalHold(
+      yield* Ref.get(terminalHold),
+      work.terminalPrograms.length > 0,
+      yield* Clock.currentTimeMillis,
+    );
+    yield* Ref.set(terminalHold, step.hold);
+    if (step.action === "notify") {
+      yield* Effect.forEach(work.terminalPrograms, (terminal) =>
+        terminals.forkPrintNotice({
+          threadId: terminal.threadId,
+          terminalId: terminal.terminalId,
+          text: TERMINAL_HOLD_NOTICE,
+        }),
+      );
+    }
+    if (step.action === "install") yield* runUpdate(version);
   }).pipe(Effect.catchCause((cause) => Effect.logWarning("Fork update check failed.", { cause })));
 
   if (available) {

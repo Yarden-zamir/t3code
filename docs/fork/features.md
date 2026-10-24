@@ -298,7 +298,7 @@ While agents run, the desktop update button offers "Install when idle" next to "
 
 ### Server auto-update
 
-A headless server that runs as the background service installs each newer fork release when no agent turn, no background shell and no program in a terminal thread runs.
+A headless server that runs as the background service installs each newer fork release when no agent turn, no background shell and no program in a terminal thread runs. A program in a terminal thread holds the update for at most 6 hours (`TERMINAL_HOLD_MAX` in `apps/server/src/fork/ForkUpdates.ts`). Then its terminal shows a notice, and the update installs about 10 minutes later and ends the program.
 
 - **Setting:** server setting `forkAutoUpdate` (off by default). Settings > General > About > "Server auto-update".
 - **Works on:** server (the background service of `t3 service install`). The desktop app updates itself.

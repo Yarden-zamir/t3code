@@ -630,6 +630,37 @@ it.layer(
     }),
   );
 
+  it.effect("prints a notice into a running terminal after the output before it", () =>
+    Effect.gen(function* () {
+      const { manager, pty } = yield* createManager({});
+      yield* manager.open(threadScreenWithoutShell);
+      const printed = yield* Deferred.make<ReadonlyArray<string>>();
+      const outputs: Array<string> = [];
+      const stop = yield* manager.subscribe((event) => {
+        if (event.type !== "output") return Effect.void;
+        outputs.push(event.data);
+        return outputs.length === 2
+          ? Deferred.succeed(printed, outputs).pipe(Effect.asVoid)
+          : Effect.void;
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(stop));
+
+      pty.processes[0]?.emit("program output\r\n");
+      yield* manager.forkPrintNotice({
+        threadId: "thread-1",
+        terminalId: DEFAULT_TERMINAL_ID,
+        text: "[T3 Code] notice\r\n",
+      });
+
+      expect(yield* Deferred.await(printed)).toEqual([
+        "program output\r\n",
+        "[T3 Code] notice\r\n",
+      ]);
+      const reopened = yield* manager.open(threadScreenWithoutShell);
+      expect(reopened.history).toContain("[T3 Code] notice");
+    }),
+  );
+
   it.effect("closeIdle keeps the terminal that the caller names", () =>
     Effect.gen(function* () {
       const { manager, pty } = yield* createManager({

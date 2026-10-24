@@ -270,6 +270,13 @@ export class TerminalManager extends Context.Service<
       registerCleanup?: (stop: () => void) => void,
     ) => Effect.Effect<() => void, TerminalError>;
 
+    /** Fork: prints a line from T3 Code into a running terminal, in order with its output. */
+    readonly forkPrintNotice: (input: {
+      readonly threadId: string;
+      readonly terminalId: string;
+      readonly text: string;
+    }) => Effect.Effect<void>;
+
     /** Fork: the terminal thread screens that no client attaches to. */
     readonly forkUnattachedThreadScreens: Effect.Effect<
       ReadonlyArray<{ readonly threadId: string; readonly programRuns: boolean }>
@@ -3324,6 +3331,18 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     registerCleanup,
   ) => streamSession(input, openOrAttachForStream(input), listener, registerCleanup);
 
+  const forkPrintNotice: TerminalManager["Service"]["forkPrintNotice"] = Effect.fn(
+    "TerminalManager.forkPrintNotice",
+  )(function* (input) {
+    const session = yield* getSession(input.threadId, input.terminalId);
+    if (Option.isNone(session) || session.value.pid === null) return;
+    const pid = session.value.pid;
+    // The notice goes through the output queue of the process, so it keeps the sequence order.
+    if (enqueueProcessEvent(session.value, pid, { type: "output", data: input.text })) {
+      yield* drainProcessEvents(session.value, pid);
+    }
+  });
+
   const forkAttachCounts = makeAttachCounts();
   const forkRetainAttach: TerminalManager["Service"]["forkRetainAttach"] = (input) =>
     forkAttachCounts.retain(toSessionKey(input.threadId, input.terminalId));
@@ -3726,6 +3745,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     subscribeMetadata,
     forkUnattachedThreadScreens,
     forkRetainAttach,
+    forkPrintNotice,
     forkSavedOutputStream,
     forkMoveSession,
   });
