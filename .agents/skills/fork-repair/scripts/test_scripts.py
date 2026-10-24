@@ -36,6 +36,13 @@ def test_make_chunks_runs_web_tests_separately_and_respects_the_size():
     assert sum(len(chunk.files) for chunk in chunks) == len(files)
 
 
+def test_filter_prefixes_applies_only_then_exclude():
+    files = ["apps/server/a.test.ts", "apps/web/b.test.ts", "packages/c.test.ts"]
+    assert fork_tests.filter_prefixes(files, [], []) == files
+    assert fork_tests.filter_prefixes(files, [], ["apps/server/"]) == ["apps/web/b.test.ts", "packages/c.test.ts"]
+    assert fork_tests.filter_prefixes(files, ["apps/"], ["apps/server/"]) == ["apps/web/b.test.ts"]
+
+
 def test_web_command_runs_from_apps_web_with_relative_paths():
     command, folder = fork_tests.command("vp", fork_tests.Chunk("web", ("apps/web/src/x.test.ts",)))
     assert folder == "apps/web/"
