@@ -40,7 +40,7 @@ import {
   type Duration,
 } from "./format.ts";
 import { ClientIcon, KindIcon, PlugIcon, TerminalIcon, TimerIcon } from "./icons.tsx";
-import type { Selection } from "./route.ts";
+import type { Route, Selection } from "./route.ts";
 import { ClientLink, MachineLink, RouteLink } from "./StickerLink.tsx";
 
 /** The short level names of small badges. The panel uses `LEVEL_LABEL`. */
@@ -186,22 +186,38 @@ export function AskCallout({ ask }: { ask: ArrowAsk }) {
           Expires {timeUntil(ask.proposal.expiresAt, portal.now)}.
         </span>
       </div>
-      <div className="actions">
-        <button
-          type="button"
-          className="btn small primary"
-          onClick={() => decideProposal(portal, ask.proposal.id, "approve")}
-        >
-          Approve
-        </button>
-        <button
-          type="button"
-          className="btn small danger"
-          onClick={() => decideProposal(portal, ask.proposal.id, "reject")}
-        >
-          Reject
-        </button>
-      </div>
+      {ask.proposal.changes.length > 1 ? (
+        // MM-804: Approve decides the whole proposal, so one with more changes opens first.
+        <div className="actions">
+          <span className="small muted">
+            The proposal has {ask.proposal.changes.length} changes.
+          </span>
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => portal.select({ _tag: "proposal", id: ask.proposal.id }, "inbox")}
+          >
+            Open the proposal
+          </button>
+        </div>
+      ) : (
+        <div className="actions">
+          <button
+            type="button"
+            className="btn small primary"
+            onClick={() => decideProposal(portal, ask.proposal.id, "approve")}
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            className="btn small danger"
+            onClick={() => decideProposal(portal, ask.proposal.id, "reject")}
+          >
+            Reject
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -457,31 +473,33 @@ export function GrantEditor({ grant }: { grant: Grant }) {
 function Delivery({ grant }: { grant: Extract<Grant, { _tag: "machine" }> }) {
   const portal = usePortalContext();
   const ends = arrowEnds(portal.snapshot, grant.from.id, grant.to.id);
-  const waits = [[ends.from, grant.from] as const, [ends.to, grant.to] as const].flatMap(
-    ([end, machine]) => {
-      const text = arrowEndWait(end, machine);
-      return end === "applied" || text === null
-        ? []
-        : [{ text, route: arrowEndRoute(end, machine.id) }];
+  // MM-604: the target first, then the source, for example "applied on VPS, queued for Mac".
+  const parts = [[ends.to, grant.to] as const, [ends.from, grant.from] as const].map(
+    ([end, machine]): { text: string; route: Route } => {
+      const wait = arrowEndWait(end, machine);
+      return end === "applied" || wait === null
+        ? {
+            text: `applied on ${machine.name}`,
+            route: { view: portal.route.view, selection: { _tag: "machine", id: machine.id } },
+          }
+        : { text: wait, route: arrowEndRoute(end, machine.id) };
     },
   );
+  const applied = ends.from === "applied" && ends.to === "applied";
   return (
     <p className="small delivery">
-      {waits.length === 0 ? (
-        <>
-          <span className="sticker ok flat">applied</span> on both machines.
-        </>
-      ) : (
-        <>
-          <span className="sticker wait flat">waiting</span>{" "}
-          {waits.map((w, i) => (
-            <span key={w.text}>
-              {i > 0 && ", "}
-              <RouteLink route={w.route}>{w.text}</RouteLink>
-            </span>
-          ))}
-        </>
-      )}
+      <span className={`sticker flat ${applied ? "ok" : "wait"}`}>
+        {applied ? "applied" : "waiting"}
+      </span>{" "}
+      {parts.map((part, i) => (
+        <span key={part.text}>
+          {i > 0 && ", "}
+          <RouteLink route={part.route}>
+            {i === 0 ? part.text.charAt(0).toUpperCase() + part.text.slice(1) : part.text}
+          </RouteLink>
+        </span>
+      ))}
+      .
     </p>
   );
 }

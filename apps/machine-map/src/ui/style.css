@@ -3403,6 +3403,12 @@ ul.alerts li.ended {
   background: var(--pink);
   border-left: var(--bw) solid var(--border);
 }
+.chip .step.more {
+  font-size: 0.8rem;
+  color: #ffffff;
+  background: var(--accent);
+  border-left: var(--bw) solid var(--border);
+}
 .no-level .lvl-pill {
   display: none;
 }

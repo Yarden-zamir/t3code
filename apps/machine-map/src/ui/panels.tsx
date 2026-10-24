@@ -15,14 +15,13 @@ import {
 } from "@t3tools/contracts/machineMap";
 
 import type { ApprovalsStatus, ApproveClientRequest, PendingClient, WriteResult } from "../api.ts";
-import { clientArrowChange, usesText } from "../rules/access.ts";
+import { usesText } from "../rules/access.ts";
 import {
   effectiveSettings,
   findArrow,
   findClientArrow,
   findMachine,
   LEVELS,
-  levelRank,
   MAP_ROLES,
   roleRank,
   sameValue,
@@ -40,6 +39,7 @@ import {
   connectMachines,
   cutLevel,
   describeChange,
+  grantCut,
   machineQueue,
   pairCut,
   pairShows,
@@ -49,8 +49,6 @@ import {
   COMMAND_LABEL,
   COMMAND_STICKER,
   DANGEROUS_COMMANDS,
-  DURATION_LABEL,
-  durationExpiry,
   LEVEL_LABEL,
   machineName,
   PRESENCE_STICKER,
@@ -62,7 +60,6 @@ import {
   timeAgo,
   timeUntil,
   valueText,
-  type Duration,
 } from "./format.ts";
 import { GrantPanel } from "./AccessEditor.tsx";
 import { ClientIcon, CloseIcon, KindIcon, UndoIcon } from "./icons.tsx";
@@ -833,83 +830,41 @@ function MachineManage({ machine }: { machine: MachineRecord }) {
   );
 }
 
-/** MM-309: the level of a client on each machine, with the expiry of MM-304. */
+/** MM-309, MM-909: the arrow of the client to each machine. Each row opens the arrow editor. */
 function ClientAccess({ client }: { client: ClientRecord }) {
   const portal = usePortalContext();
   const { map, now } = portal;
-  const [duration, setDuration] = useState<Duration>("permanent");
-  const [until, setUntil] = useState("");
-  const setLevel = (to: MachineRecord, level: MachineLevel) => {
-    // oxlint-disable-next-line react/purity -- This runs in a click handler, not during render.
-    const expiry = durationExpiry(duration, until, Date.now());
-    if (expiry === undefined) {
-      portal.call(() => Promise.reject(new Error("Pick a time in the future.")));
-      return;
-    }
-    const suffix = expiry === null ? "" : ` until ${shortTime(expiry)}`;
-    portal.submit(`${usesText(client.name, to.name)}: ${LEVEL_LABEL[level]}${suffix}`, [
-      clientArrowChange(map, { client: client.id, to: to.id, level, expiresAt: expiry }),
-    ]);
-  };
   if (map.machines.length === 0) return <p className="hint">Add a machine first.</p>;
   return (
     <>
       {portal.pause && <PausedNote />}
-      <div className="seg wide" role="group" aria-label="How long">
-        {(["permanent", "hour", "day", "until"] as const).map((d) => (
-          <button
-            key={d}
-            type="button"
-            aria-pressed={duration === d}
-            onClick={() => setDuration(d)}
-          >
-            {DURATION_LABEL[d]}
-          </button>
-        ))}
-      </div>
-      {duration === "until" && (
-        <input
-          type="datetime-local"
-          aria-label="Until"
-          className="full"
-          value={until}
-          onChange={(e) => setUntil(e.target.value)}
-        />
-      )}
       {map.machines.map((machine) => {
         const arrow = findClientArrow(map, client.id, machine.id);
-        const was =
-          arrow.level === "none"
-            ? (portal.pause?.cutClients.find((c) => c.client === client.id && c.to === machine.id)
-                ?.level ?? null)
-            : null;
+        const was = grantCut(portal.pause, { _tag: "client", from: client, to: machine, arrow });
         return (
-          <div className="stack tight" key={machine.id}>
-            <div className="row">
-              <span className="t grow">{usesText(client.name, machine.name)}</span>
+          <div className="row" key={machine.id}>
+            <RouteLink
+              className="link grow left"
+              route={{
+                view: portal.route.view,
+                selection: { _tag: "clientArrow", client: client.id, to: machine.id },
+              }}
+            >
+              <span className="t">{usesText(client.name, machine.name)}</span>
               {arrow.expiresAt && arrow.revertLevel && (
-                <span
-                  className="sticker warn flat"
-                  data-tip={`Back to ${LEVEL_LABEL[arrow.revertLevel]} ${timeUntil(arrow.expiresAt, now)}`}
-                >
-                  temp
+                <span className="v">
+                  Back to {LEVEL_LABEL[arrow.revertLevel]} {timeUntil(arrow.expiresAt, now)}
                 </span>
               )}
-              {was && <span className="sticker cut-sticker">cut, was {LEVEL_LABEL[was]}</span>}
-            </div>
-            <div className="seg wide" role="group" aria-label={`Level on ${machine.name}`}>
-              {LEVELS.map((level) => (
-                <button
-                  key={level}
-                  type="button"
-                  aria-pressed={arrow.level === level}
-                  disabled={portal.pause !== null && levelRank(level) > levelRank(arrow.level)}
-                  onClick={() => setLevel(machine, level)}
-                >
-                  {LEVEL_LABEL[level]}
-                </button>
-              ))}
-            </div>
+            </RouteLink>
+            {was ? (
+              <>
+                <span className={`sticker lvl-${was} was`}>{LEVEL_LABEL[was]}</span>
+                <span className="sticker cut-sticker">cut</span>
+              </>
+            ) : (
+              <span className={`sticker lvl-${arrow.level}`}>{LEVEL_LABEL[arrow.level]}</span>
+            )}
           </div>
         );
       })}

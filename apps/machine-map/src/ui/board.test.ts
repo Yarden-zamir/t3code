@@ -110,10 +110,10 @@ describe("lane moves (MM-1123)", () => {
   it("never leaves the lane: a pointer past either end takes the end column", () => {
     expect(columnAt(edges, -5000)).toBe("none");
     expect(columnAt(edges, 5000)).toBe("admin");
-    // A chip centered at x = 450 moves at most to the lane edges.
-    expect(laneShift(edges, 450, -900)).toBe(-250);
-    expect(laneShift(edges, 450, 900)).toBe(150);
-    expect(laneShift(edges, 450, 30)).toBe(30);
+    // A chip 60 pixels wide, centered at x = 450, keeps its whole width inside the lane.
+    expect(laneShift(edges, 450, 30, -900)).toBe(-220);
+    expect(laneShift(edges, 450, 30, 900)).toBe(120);
+    expect(laneShift(edges, 450, 30, 30)).toBe(30);
   });
 
   it("refuses a lane without one column per level", () => {

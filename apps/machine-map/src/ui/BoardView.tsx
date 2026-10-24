@@ -3,7 +3,14 @@
  * its lane, on the rail of the lane, in the column of its level. A drag moves a chip only along
  * its own lane; ‹ and › do the same with the keyboard.
  */
-import { useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
+} from "react";
 import type { MachineLevel } from "@t3tools/contracts/machineMap";
 
 import { LEVELS, stepLevel } from "../rules/map.ts";
@@ -61,6 +68,8 @@ interface Drag {
   readonly edges: ReadonlyArray<ColumnEdge>;
   /** The center of the chip before the drag, in client pixels. */
   readonly center: number;
+  /** Half the width of the chip, so the whole chip stays inside the lane. */
+  readonly half: number;
   moved: boolean;
 }
 
@@ -91,6 +100,20 @@ export function BoardView() {
   const drag = useRef<Drag | null>(null);
   /** A drag that moved ends with a click on its chip. That click is not a tap. */
   const swallowClick = useRef(false);
+  /**
+   * The chip that a key or a ‹ › press moved. It lands in another column, so React mounts it
+   * again; the new chip takes the focus back.
+   */
+  const refocus = useRef<string | null>(null);
+  const markRefocus = (key: string) => {
+    refocus.current = key;
+  };
+  /** True once for the chip that a step moved. */
+  const claimRefocus = (key: string): boolean => {
+    if (refocus.current !== key) return false;
+    refocus.current = null;
+    return true;
+  };
   /** The lane and the column under a moving chip, so the lane shows its bounds and the target. */
   const [target, setTarget] = useState<{ lane: string; level: MachineLevel } | null>(null);
   const lanes = boardLanes(map, snapshot.proposals, portal.pause);
@@ -108,6 +131,16 @@ export function BoardView() {
       return { left: cell.left, right: cell.right };
     });
     const box = element.getBoundingClientRect();
+    // The chip takes the pointer only once it moves, so a tap still reaches its buttons. A press
+    // that ends off the chip before that ends here.
+    const forget = (up: globalThis.PointerEvent) => {
+      if (up.pointerId !== event.pointerId) return;
+      if (drag.current?.pointerId === up.pointerId && !drag.current.moved) drag.current = null;
+      removeEventListener("pointerup", forget);
+      removeEventListener("pointercancel", forget);
+    };
+    addEventListener("pointerup", forget);
+    addEventListener("pointercancel", forget);
     drag.current = {
       lane: lane.key,
       chip,
@@ -117,6 +150,7 @@ export function BoardView() {
       startY: event.clientY,
       edges,
       center: box.left + box.width / 2,
+      half: box.width / 2,
       moved: false,
     };
   };
@@ -137,7 +171,7 @@ export function BoardView() {
       current.element.setPointerCapture(current.pointerId);
       current.element.classList.add("dragging");
     }
-    const shift = laneShift(current.edges, current.center, dx);
+    const shift = laneShift(current.edges, current.center, current.half, dx);
     current.element.style.transform = `translateX(${shift}px)`;
     const level = columnAt(current.edges, current.center + shift);
     setTarget((was) =>
@@ -156,7 +190,12 @@ export function BoardView() {
     setTarget(null);
     swallowClick.current = true;
     if (!drop) return;
-    const shift = laneShift(current.edges, current.center, event.clientX - current.startX);
+    const shift = laneShift(
+      current.edges,
+      current.center,
+      current.half,
+      event.clientX - current.startX,
+    );
     applyMove(portal, current.chip, columnAt(current.edges, current.center + shift));
   };
 
@@ -236,6 +275,9 @@ export function BoardView() {
                       onPointerMove={onPointerMove}
                       onPointerUp={(event) => endDrag(event, true)}
                       onPointerCancel={(event) => endDrag(event, false)}
+                      onLostPointerCapture={(event) => endDrag(event, false)}
+                      markRefocus={markRefocus}
+                      claimRefocus={claimRefocus}
                       onClickCapture={(event: MouseEvent) => {
                         if (!swallowClick.current) return;
                         swallowClick.current = false;
@@ -306,6 +348,8 @@ function LaneTitle({ lane }: { lane: BoardLane }) {
 /** One arrow of a lane. ‹ and › move it one column; a tap opens it. */
 function Chip({
   chip,
+  markRefocus,
+  claimRefocus,
   ...pointer
 }: {
   chip: BoardChip;
@@ -314,6 +358,9 @@ function Chip({
   onPointerUp: (event: PointerEvent<HTMLElement>) => void;
   onPointerCancel: (event: PointerEvent<HTMLElement>) => void;
   onClickCapture: (event: MouseEvent) => void;
+  onLostPointerCapture: (event: PointerEvent<HTMLElement>) => void;
+  markRefocus: (key: string) => void;
+  claimRefocus: (key: string) => boolean;
 }) {
   const portal = usePortalContext();
   const { grant, cut } = chip;
@@ -327,11 +374,21 @@ function Chip({
   const up = cut === null ? stepLevel(grant.arrow.level, 1) : null;
   const canUp = up !== null && !paused;
   const name = `${grant.from.name} uses ${grant.to.name}`;
+  const nameRef = useRef<HTMLButtonElement>(null);
+  const key = chipKey(chip);
+  useEffect(() => {
+    if (claimRefocus(key)) nameRef.current?.focus();
+  });
+  /** A key or a ‹ › press: the chip moves one column and keeps the focus. */
+  const step = (to: MachineLevel) => {
+    markRefocus(key);
+    applyMove(portal, chip, to);
+  };
   const onKey = (event: KeyboardEvent) => {
     const to = event.key === "ArrowLeft" ? down : event.key === "ArrowRight" && canUp ? up : null;
     if (to === null) return;
     event.preventDefault();
-    applyMove(portal, chip, to);
+    step(to);
   };
   return (
     <div
@@ -345,11 +402,12 @@ function Chip({
           down ? `Lower ${name} to ${LEVEL_LABEL[down]}` : `${name} is at the lowest level`
         }
         disabled={down === null}
-        onClick={() => down && applyMove(portal, chip, down)}
+        onClick={() => down && step(down)}
       >
         ‹
       </button>
       <button
+        ref={nameRef}
         type="button"
         className="chip-name"
         aria-label={`${name}: ${cut ? `cut by the pause, was ${LEVEL_LABEL[cut]}` : LEVEL_LABEL[grant.arrow.level]}`}
@@ -377,7 +435,7 @@ function Chip({
         className="step"
         aria-label={up ? `Raise ${name} to ${LEVEL_LABEL[up]}` : `${name} is at the highest level`}
         disabled={!canUp}
-        onClick={() => up && applyMove(portal, chip, up)}
+        onClick={() => up && step(up)}
       >
         ›
       </button>
@@ -411,22 +469,37 @@ function AskChip({ ask }: { ask: ArrowAsk }) {
         {ask.arrow.exec && <TerminalIcon />}
         <span className="ask-word">asks</span>
       </button>
-      <button
-        type="button"
-        className="step yes"
-        aria-label={`Approve ${name}`}
-        onClick={() => decideProposal(portal, ask.proposal.id, "approve")}
-      >
-        ✓
-      </button>
-      <button
-        type="button"
-        className="step no"
-        aria-label={`Reject ${name}`}
-        onClick={() => decideProposal(portal, ask.proposal.id, "reject")}
-      >
-        ✕
-      </button>
+      {ask.proposal.changes.length > 1 ? (
+        // MM-804: Approve decides the whole proposal, so one with more changes opens first.
+        <button
+          type="button"
+          className="step more"
+          aria-label={`Open the proposal: ${ask.proposal.changes.length} changes`}
+          data-tip={`${ask.proposal.changes.length} changes in one proposal`}
+          onClick={() => portal.select({ _tag: "proposal", id: ask.proposal.id }, "inbox")}
+        >
+          +{ask.proposal.changes.length - 1}
+        </button>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="step yes"
+            aria-label={`Approve ${name}`}
+            onClick={() => decideProposal(portal, ask.proposal.id, "approve")}
+          >
+            ✓
+          </button>
+          <button
+            type="button"
+            className="step no"
+            aria-label={`Reject ${name}`}
+            onClick={() => decideProposal(portal, ask.proposal.id, "reject")}
+          >
+            ✕
+          </button>
+        </>
+      )}
     </div>
   );
 }

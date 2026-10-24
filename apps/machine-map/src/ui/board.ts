@@ -97,12 +97,17 @@ export function columnAt(edges: ReadonlyArray<ColumnEdge>, x: number): MachineLe
   return level;
 }
 
-/** How far a dragged chip may move: its center stays inside the lane. */
-export function laneShift(edges: ReadonlyArray<ColumnEdge>, center: number, dx: number): number {
+/** How far a dragged chip of half width `half` may move: the whole chip stays inside the lane. */
+export function laneShift(
+  edges: ReadonlyArray<ColumnEdge>,
+  center: number,
+  half: number,
+  dx: number,
+): number {
   const first = edges[0];
   const last = edges.at(-1);
   if (!first || !last) return 0;
-  return Math.min(last.right - center, Math.max(first.left - center, dx));
+  return Math.min(last.right - half - center, Math.max(first.left + half - center, dx));
 }
 
 /** What a move of a chip to a column does. */
