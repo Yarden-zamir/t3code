@@ -2,11 +2,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { __setClientSettingsForTests } from "../hooks/useSettings";
-import {
-  startNewThreadFromContext,
-  startNewThreadInProject,
-  type ChatThreadActionContext,
-} from "./chatThreadActions";
+import { startNewThreadFromContext, type ForkThreadActionContext } from "./chatThreadActions";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const PROJECT_ID = ProjectId.make("project-1");
@@ -18,8 +14,8 @@ function setup(currentProjectTerminalOpensThread: boolean) {
     activeDraftThread: null,
     activeThread: { environmentId: ENVIRONMENT_ID, projectId: PROJECT_ID },
     defaultProjectRef: null,
-    handleNewThread: vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {}),
-    handleNewTerminalThread: vi.fn<ChatThreadActionContext["handleNewTerminalThread"]>(
+    handleNewThread: vi.fn<ForkThreadActionContext["handleNewThread"]>(async () => {}),
+    handleNewTerminalThread: vi.fn<ForkThreadActionContext["handleNewTerminalThread"]>(
       async () => {},
     ),
   };
@@ -46,13 +42,5 @@ describe("startNewThreadFromContext", () => {
     expect(context.handleNewTerminalThread).toHaveBeenCalledWith(PROJECT_REF, {
       opensAsThread: true,
     });
-  });
-
-  it("keeps a draft from the project picker with currentProjectTerminalOpensThread on", async () => {
-    const context = setup(true);
-
-    await startNewThreadInProject(context, PROJECT_REF, "terminal");
-
-    expect(context.handleNewTerminalThread).toHaveBeenCalledWith(PROJECT_REF, undefined);
   });
 });

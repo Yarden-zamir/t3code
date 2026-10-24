@@ -35,29 +35,21 @@ export interface ChatThreadActionContext {
   readonly activeThread: ThreadContextLike | undefined;
   readonly defaultProjectRef: ScopedProjectRef | null;
   readonly handleNewThread: NewThreadHandler;
+}
+
+/** Fork: a normal chat thread or a terminal thread (`forkTerminalThreads.ts`). */
+export type NewThreadKind = "chat" | "terminal";
+
+/** Fork: a context that can also start a terminal thread. */
+export interface ForkThreadActionContext extends ChatThreadActionContext {
   /**
-   * Fork: opens a terminal draft (`forkTerminalThreads.ts`). `opensAsThread` makes the draft a
+   * Opens a terminal draft (`forkTerminalThreads.ts`). `opensAsThread` makes the draft a
    * terminal thread at once, like its enlarge button.
    */
   readonly handleNewTerminalThread: (
     projectRef: ScopedProjectRef,
     options?: { readonly opensAsThread: boolean },
   ) => Promise<unknown>;
-}
-
-/** Fork: a normal chat thread or a terminal thread (`forkTerminalThreads.ts`). */
-export type NewThreadKind = "chat" | "terminal";
-
-/** Fork: starts a thread of `kind` in a project, the one place both kinds branch. */
-export function startNewThreadInProject(
-  context: Pick<ChatThreadActionContext, "handleNewThread" | "handleNewTerminalThread">,
-  projectRef: ScopedProjectRef,
-  kind: NewThreadKind,
-  terminalOptions?: { readonly opensAsThread: boolean },
-): Promise<unknown> {
-  return kind === "terminal"
-    ? context.handleNewTerminalThread(projectRef, terminalOptions)
-    : context.handleNewThread(projectRef);
 }
 
 export function resolveNewDraftStartFromOrigin(input: {
@@ -106,8 +98,13 @@ export function resolveThreadActionProjectRef(
   return context.defaultProjectRef;
 }
 
+export function startNewThreadFromContext(context: ChatThreadActionContext): Promise<boolean>;
+export function startNewThreadFromContext(
+  context: ForkThreadActionContext,
+  kind: NewThreadKind,
+): Promise<boolean>;
 export async function startNewThreadFromContext(
-  context: ChatThreadActionContext,
+  context: ChatThreadActionContext | ForkThreadActionContext,
   kind: NewThreadKind = "chat",
 ): Promise<boolean> {
   const projectRef = resolveThreadActionProjectRef(context);
@@ -115,10 +112,17 @@ export async function startNewThreadFromContext(
     return false;
   }
 
-  // Fork: only this "in current project" path reads the setting. The project picker calls
-  // `startNewThreadInProject` directly, so its terminal stays a draft until the first command.
-  await startNewThreadInProject(context, projectRef, kind, {
-    opensAsThread: getClientSettings().currentProjectTerminalOpensThread,
-  });
+  if (kind === "terminal") {
+    if (!("handleNewTerminalThread" in context)) {
+      throw new Error("A terminal thread needs a context with handleNewTerminalThread.");
+    }
+    // Fork: only this "in current project" path reads the setting. The project picker
+    // (`ForkTerminalThreadPaletteItems.tsx`) keeps its terminal a draft until the first command.
+    await context.handleNewTerminalThread(projectRef, {
+      opensAsThread: getClientSettings().currentProjectTerminalOpensThread,
+    });
+    return true;
+  }
+  await context.handleNewThread(projectRef);
   return true;
 }

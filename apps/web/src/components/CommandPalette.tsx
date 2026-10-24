@@ -64,15 +64,10 @@ import {
   RotateCcwIcon,
   SettingsIcon,
   SquarePenIcon,
-  SquareTerminalIcon,
   TextSearchIcon,
   NetworkIcon,
 } from "lucide-react";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
-import {
-  useTerminalThreadEnvironmentIds,
-  useTerminalThreadsEnabled,
-} from "../hooks/useForkTerminalThreads";
 import {
   useDeferredValue,
   useEffect,
@@ -120,12 +115,8 @@ import {
   usePrimaryEnvironmentId,
 } from "../state/environments";
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
-import {
-  type NewThreadKind,
-  resolveThreadActionProjectRef,
-  startNewThreadFromContext,
-  startNewThreadInProject,
-} from "../lib/chatThreadActions";
+import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
+import type { NewThreadKind } from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
@@ -140,6 +131,10 @@ import {
 import { onOpenCommandPalette } from "../commandPaletteBus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { focusLevelPaletteItems } from "./focusLevels/focusLevelPaletteItems";
+import {
+  forkHideChatOnlyItems,
+  useForkTerminalThreadPaletteItems,
+} from "./ForkTerminalThreadPaletteItems";
 import { handleForkMessageLinkPaletteShortcut } from "./chat/ForkCopyMessageLink";
 import { navigationHistoryPaletteItems } from "./ForkNavigationHistory";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -538,24 +533,8 @@ function OpenCommandPaletteDialog(props: {
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
-  const {
-    activeDraftThread,
-    activeThread,
-    defaultProjectRef,
-    handleNewThread,
-    handleNewTerminalThread,
-  } = useHandleNewThread();
-  const newThreadContext = {
-    activeDraftThread,
-    activeThread: activeThread ?? undefined,
-    defaultProjectRef,
-    handleNewThread,
-    handleNewTerminalThread,
-  };
-  const terminalThreadEnvironmentIds = useTerminalThreadEnvironmentIds();
-  const terminalThreadsEnabled = useTerminalThreadsEnabled(
-    resolveThreadActionProjectRef(newThreadContext)?.environmentId ?? null,
-  );
+  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
+    useHandleNewThread();
   const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
   const referenceThreadRef =
@@ -633,7 +612,12 @@ function OpenCommandPaletteDialog(props: {
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
   const { environmentLabelById, projectEnvironmentLocationById } = useEnvironmentLookups();
   const projectGroups = useSortedProjectGroups(environmentLabelById);
-  const contextualProjectRef = resolveThreadActionProjectRef(newThreadContext);
+  const contextualProjectRef = resolveThreadActionProjectRef({
+    activeDraftThread,
+    activeThread: activeThread ?? undefined,
+    defaultProjectRef,
+    handleNewThread,
+  });
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: projectGroups,
     preferredProjectRef: contextualProjectRef,
@@ -880,18 +864,12 @@ function OpenCommandPaletteDialog(props: {
     runProject: openProjectFromSearch,
   });
 
-  // Fork: the terminal kind lists only projects on a server with `terminalThreads` on, and has no
-  // "No project" entry.
-  const projectThreadItemsFor = (kind: NewThreadKind) => {
+  const projectThreadItems = (() => {
     const isScratch = (project: CommandPaletteProject) =>
       isScratchProject(project, scratchWorkspaceRootFor(project.environmentId));
     const projectItems = enumerateCommandPaletteItems(
       buildNewThreadInProjectItems({
-        projects: pickerProjects.filter(
-          (project) =>
-            !isScratch(project) &&
-            (kind === "chat" || terminalThreadEnvironmentIds.has(project.environmentId)),
-        ),
+        projects: pickerProjects.filter((project) => !isScratch(project)),
         projectGroupByTargetKey,
         locationByEnvironmentId: projectEnvironmentLocationById,
         runProject: async (project) => {
@@ -903,17 +881,15 @@ function OpenCommandPaletteDialog(props: {
                 projectRef.environmentId === contextualProjectRef.environmentId &&
                 projectRef.projectId === contextualProjectRef.projectId,
             );
-          await startNewThreadInProject(
-            newThreadContext,
+          await handleNewThread(
             contextualRefBelongsToGroup
               ? contextualProjectRef
               : scopeProjectRef(project.environmentId, project.id),
-            kind,
           );
         },
       }),
     );
-    if (kind === "terminal" || scratchTargetEnvironmentId === null) return projectItems;
+    if (scratchTargetEnvironmentId === null) return projectItems;
 
     const noProjectIndex = pickerProjects[0] !== undefined && isScratch(pickerProjects[0]) ? 0 : 1;
     return [
@@ -929,9 +905,14 @@ function OpenCommandPaletteDialog(props: {
       },
       ...projectItems.slice(noProjectIndex),
     ];
-  };
-  const projectThreadItems = projectThreadItemsFor("chat");
-  const terminalThreadProjectItems = projectThreadItemsFor("terminal");
+  })();
+  const forkTerminal = useForkTerminalThreadPaletteItems({
+    pickerProjects,
+    projectGroupByTargetKey,
+    locationByEnvironmentId: projectEnvironmentLocationById,
+    contextualProjectRef,
+    scratchWorkspaceRootFor,
+  });
 
   const { threadItems: allThreadItems, isSearchPending: isThreadSearchPending } =
     useCommandPaletteThreadItems({ activeThreadId, threadSearchQuery });
@@ -1241,38 +1222,14 @@ function OpenCommandPaletteDialog(props: {
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
         shortcutCommand: "chat.newLocal",
         run: async () => {
-          await startNewThreadFromContext(newThreadContext);
+          await startNewThreadFromContext({
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+          });
         },
       });
-      if (terminalThreadsEnabled) {
-        actionItems.push({
-          kind: "action",
-          value: "action:new-terminal-thread",
-          searchTerms: ["new terminal thread", "terminal", "shell"],
-          title: (
-            <>
-              New terminal thread in <span className="font-semibold">{activeProjectTitle}</span>
-            </>
-          ),
-          icon: <SquareTerminalIcon className={ITEM_ICON_CLASS} />,
-          shortcutCommand: "chat.newTerminalLocal",
-          run: async () => {
-            await startNewThreadFromContext(newThreadContext, "terminal");
-          },
-        });
-      }
-      if (terminalThreadProjectItems.length > 0) {
-        actionItems.push({
-          kind: "submenu",
-          value: "action:new-terminal-thread-in",
-          searchTerms: ["new terminal thread", "terminal", "project", "pick", "choose", "select"],
-          title: "New terminal thread in...",
-          shortcutCommand: "chat.newTerminal",
-          icon: <SquareTerminalIcon className={ITEM_ICON_CLASS} />,
-          addonIcon: <SquareTerminalIcon className={ADDON_ICON_CLASS} />,
-          groups: [{ value: "projects", label: "Projects", items: terminalThreadProjectItems }],
-        });
-      }
     }
 
     actionItems.push({
@@ -1284,6 +1241,7 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
+    actionItems.push(...forkTerminal.actionItems(activeProjectTitle));
   }
 
   if (scratchTargetEnvironmentId !== null) {
@@ -1298,8 +1256,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  // A terminal thread has no messages to search. Its search belongs to the terminal.
-  if (activeThreadId && supportsThreadFind && !(activeThread && isTerminalThread(activeThread))) {
+  if (activeThreadId && supportsThreadFind) {
     actionItems.push({
       kind: "action",
       value: "find-current-thread",
@@ -1338,9 +1295,7 @@ function OpenCommandPaletteDialog(props: {
   const plainPromptLink = promptLinkInput
     ? composerPromptLink({ ...promptLinkInput, withContext: false })
     : null;
-  // Fork: a terminal thread shows no composer, so it has no prompt to link.
-  const promptLinkAvailable = !(activeThread !== null && isTerminalThread(activeThread));
-  if (promptLinkAvailable && promptLinkInput !== null && plainPromptLink !== null) {
+  if (promptLinkInput !== null && plainPromptLink !== null) {
     actionItems.push({
       kind: "action",
       value: "action:copy-prompt-link",
@@ -1423,41 +1378,39 @@ function OpenCommandPaletteDialog(props: {
           .open(scopeThreadRef(thread.environmentId, thread.id), "machines");
       },
     });
-    // Fork: a terminal thread has no agent session; its shell restarts from its own screen.
-    if (!isTerminalThread(thread))
-      actionItems.push({
-        kind: "action",
-        value: "action:restart-agent-session",
-        searchTerms: ["restart", "reset", "reload", "agent", "session", "skills", "plugins", "mcp"],
-        title: "Restart agent session",
-        icon: <RotateCcwIcon className={ITEM_ICON_CLASS} />,
-        run: async () => {
-          const { environmentId } = thread;
-          if (thread.runtime !== null) {
-            const stopped = await stopThreadSession({
-              environmentId,
-              input: { threadId: thread.id },
-            });
-            if (stopped._tag === "Failure") throw squashAtomCommandFailure(stopped);
-          }
-          toastManager.add({
-            type: "success",
-            title: "Agent session will restart",
-            description: "Your next message starts a fresh session.",
-          });
-          const project = projectByKey.get(`${environmentId}:${thread.projectId}`);
-          if (!project) return;
-          const refreshed = await refreshProviders({
+    actionItems.push({
+      kind: "action",
+      value: "action:restart-agent-session",
+      searchTerms: ["restart", "reset", "reload", "agent", "session", "skills", "plugins", "mcp"],
+      title: "Restart agent session",
+      icon: <RotateCcwIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        const { environmentId } = thread;
+        if (thread.runtime !== null) {
+          const stopped = await stopThreadSession({
             environmentId,
-            input: {
-              instanceId: thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId,
-              cwd: thread.worktreePath ?? project.workspaceRoot,
-              fresh: true,
-            },
+            input: { threadId: thread.id },
           });
-          if (refreshed._tag === "Failure") throw squashAtomCommandFailure(refreshed);
-        },
-      });
+          if (stopped._tag === "Failure") throw squashAtomCommandFailure(stopped);
+        }
+        toastManager.add({
+          type: "success",
+          title: "Agent session will restart",
+          description: "Your next message starts a fresh session.",
+        });
+        const project = projectByKey.get(`${environmentId}:${thread.projectId}`);
+        if (!project) return;
+        const refreshed = await refreshProviders({
+          environmentId,
+          input: {
+            instanceId: thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId,
+            cwd: thread.worktreePath ?? project.workspaceRoot,
+            fresh: true,
+          },
+        });
+        if (refreshed._tag === "Failure") throw squashAtomCommandFailure(refreshed);
+      },
+    });
   }
 
   actionItems.push({
@@ -1550,10 +1503,10 @@ function OpenCommandPaletteDialog(props: {
 
   // The parent pushes an intent into this mounted dialog; applying it clears the
   // parent's intent and may navigate, so it runs after commit but before paint.
-  const newThreadInItems = (kind: NewThreadKind) =>
-    kind === "terminal" ? terminalThreadProjectItems : projectThreadItems;
-  const newThreadInItemCount =
-    openIntent?.kind === "new-thread-in" ? newThreadInItems(openIntent.threadKind).length : 0;
+  const projectThreadItemCount =
+    openIntent?.kind === "new-thread-in" && openIntent.threadKind === "terminal"
+      ? forkTerminal.projectItemCount
+      : projectThreadItems.length;
   const applyOpenIntent = useEffectEvent((intent: CommandPaletteOpenIntent) => {
     clearOpenIntent();
     browseNavigation.invalidate();
@@ -1571,16 +1524,10 @@ function OpenCommandPaletteDialog(props: {
         openAddProjectFlow();
         return;
       case "new-thread-in":
+        if (intent.threadKind === "terminal") return pushPaletteView(forkTerminal.newThreadInView);
         pushPaletteView({
-          addonIcon:
-            intent.threadKind === "terminal" ? (
-              <SquareTerminalIcon className={ADDON_ICON_CLASS} />
-            ) : (
-              <SquarePenIcon className={ADDON_ICON_CLASS} />
-            ),
-          groups: [
-            { value: "projects", label: "Projects", items: newThreadInItems(intent.threadKind) },
-          ],
+          addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
+          groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
         });
         return;
       case "change-theme":
@@ -1594,10 +1541,10 @@ function OpenCommandPaletteDialog(props: {
   useLayoutEffect(() => {
     if (openIntent === null) return;
     // A new-thread-in intent waits until the project items exist.
-    if (openIntent.kind === "new-thread-in" && newThreadInItemCount === 0) return;
+    if (openIntent.kind === "new-thread-in" && projectThreadItemCount === 0) return;
     // oxlint-disable-next-line react/set-state-in-effect -- applying the intent dispatches to the parent reducer and can navigate, neither of which may run during render.
     applyOpenIntent(openIntent);
-  }, [openIntent, newThreadInItemCount]);
+  }, [openIntent, projectThreadItemCount]);
 
   actionItems.push(
     ...focusLevelPaletteItems(ITEM_ICON_CLASS, {
@@ -1686,7 +1633,10 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
+  const rootGroups = buildRootGroups({
+    actionItems: forkHideChatOnlyItems(actionItems, activeThread),
+    recentThreadItems,
+  });
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,
     availableSettingsSearchItems,
@@ -2450,12 +2400,8 @@ function OpenCommandPaletteDialog(props: {
     }
     // ChatView ignores shortcuts while the palette is open, so handle find here
     // instead of letting the browser's own Find open.
-    if (
-      command === "chat.find" &&
-      activeThreadId &&
-      !(activeThread && isTerminalThread(activeThread)) &&
-      !event.nativeEvent.isComposing
-    ) {
+    if (command === "chat.find" && activeThread && isTerminalThread(activeThread)) return;
+    if (command === "chat.find" && activeThreadId && !event.nativeEvent.isComposing) {
       event.preventDefault();
       event.stopPropagation();
       setOpen(false);
