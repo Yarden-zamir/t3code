@@ -123,6 +123,10 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import { forkProviderUsage } from "../fork/terminalProvider/agentUsage.ts";
+import {
+  refuseTerminalThreadWithoutExec,
+  scheduledTaskRunsWith,
+} from "../fork/machineMap/terminalThreadExec.ts";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
@@ -1936,6 +1940,7 @@ const make = Effect.gen(function* () {
         modelFields.modelSelection,
         bindToCurrentThread ? parent : undefined,
       );
+      yield* refuseTerminalThreadWithoutExec(scope.requestNamespace, modelFields.modelSelection);
       const derivedTitle = input.prompt.split("\n")[0]?.trim() ?? "";
       const title =
         input.title ?? (derivedTitle.length > 0 ? derivedTitle.slice(0, 80) : "Scheduled task");
@@ -2008,14 +2013,13 @@ const make = Effect.gen(function* () {
               : "bindToCurrentThread binds to this thread, which belongs to a different project.",
           );
         }
+        const nextModelSelection =
+          input.modelSelection === undefined ||
+          isScheduledTaskProjectDefaultModel(input.modelSelection)
+            ? existing.modelSelection
+            : input.modelSelection;
         if (input.bindToCurrentThread === true) {
-          yield* assertTerminalTaskBinding(
-            input.modelSelection === undefined ||
-              isScheduledTaskProjectDefaultModel(input.modelSelection)
-              ? existing.modelSelection
-              : input.modelSelection,
-            parent,
-          );
+          yield* assertTerminalTaskBinding(nextModelSelection, parent);
         }
         const threadId =
           input.bindToCurrentThread === undefined
@@ -2023,6 +2027,20 @@ const make = Effect.gen(function* () {
             : input.bindToCurrentThread && parent !== undefined
               ? parent.thread.id
               : null;
+        // Fork: a new prompt for a terminal task is a new shell command too. A bound task runs
+        // with the model of its thread, and an unbound project-default task with the project
+        // default of now, not with the model that the task had before.
+        yield* refuseTerminalThreadWithoutExec(
+          scope.requestNamespace,
+          threadId === null &&
+            input.modelSelection !== undefined &&
+            isScheduledTaskProjectDefaultModel(input.modelSelection)
+            ? requireProject(existing.projectId).pipe(Effect.flatMap(projectDefaultModelSelection))
+            : scheduledTaskRunsWith(threadManagement, {
+                threadId,
+                modelSelection: nextModelSelection,
+              }),
+        );
         // Rebinding changes where runs execute, so the workspace strategy must
         // follow: unbinding a root-strategy task would otherwise run loose
         // prompts in the shared project checkout.
