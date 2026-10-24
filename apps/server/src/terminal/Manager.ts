@@ -31,9 +31,7 @@ import {
   type TerminalRestartInput,
   type TerminalSessionSnapshot,
   type TerminalSessionStatus,
-  type TerminalAttention,
   type TerminalCustomShell,
-  type TerminalShellState,
   type TerminalSummary,
   type TerminalWriteInput,
   ClaudeSettings,
@@ -91,8 +89,17 @@ import {
   makeShellIntegration,
   type ShellIntegration,
 } from "../fork/shellIntegration.ts";
-import { makeShellMarkParser } from "../fork/shellMarks.ts";
-import { applyShellItems, forgetUnconfirmedShellState } from "../fork/terminalShellState.ts";
+import {
+  applyForkProcessPoll,
+  applyForkShellOutput,
+  type ForkTerminalSession,
+  forkShellSpawned,
+  forkSummaryFields,
+  makeAttachCounts,
+  makeForkTerminalSession,
+  resetForkSessionForStart,
+  resetForkShellMarks,
+} from "../fork/terminalSessionFork.ts";
 import {
   customShellCandidate,
   customShellProblem,
@@ -245,14 +252,12 @@ export class TerminalManager extends Context.Service<
     ) => Effect.Effect<() => void>;
 
     /**
-     * Fork: `resyncStream` for an attach stream that overflowed, so the resubscribed stream still
-     * counts as attached for `forkUnattachedThreadScreens`.
+     * Fork: counts a client as attached to the terminal until the scope closes, for
+     * `forkUnattachedThreadScreens`. A WebSocket attach stream holds it for its whole life.
      */
-    readonly forkResyncAttachStream: (
+    readonly forkRetainAttach: (
       input: TerminalObserveInput,
-      listener: (event: TerminalAttachStreamEvent) => Effect.Effect<void>,
-      registerCleanup?: (stop: () => void) => void,
-    ) => Effect.Effect<() => void, TerminalError>;
+    ) => Effect.Effect<void, never, Scope.Scope>;
 
     /**
      * Fork: the read-only screen of a terminal thread while `terminalThreads` is off. It streams
@@ -358,20 +363,8 @@ interface TerminalSessionState {
   unsubscribeExit: (() => void) | null;
   hasRunningSubprocess: boolean;
   childCommandLabel: string | null;
-  /** Fork: what the user is asked for in a terminal thread (`forkTerminalThreads.ts`). */
-  attention: TerminalAttention | null;
-  shell: TerminalShellState | null;
-  shellConfirmedAt: number;
-  shellMarks: ReturnType<typeof makeShellMarkParser> | null;
-  command: string | null;
-  commandStartedAt: number;
-  /** Fork: the `shell` that opened the session, null for the default shell. */
-  shellName: string | null;
-  /**
-   * Fork: the running process is a custom shell. Its child process is often the program itself
-   * (`uv run python` starts python), so a child does not mean that a program runs.
-   */
-  customShell: boolean;
+  /** Fork: the terminal thread state (`fork/terminalSessionFork.ts`). */
+  fork: ForkTerminalSession;
   runtimeEnv: Record<string, string> | null;
 }
 
@@ -473,19 +466,8 @@ function summary(session: TerminalSessionState): TerminalSummary {
     hasRunningSubprocess: session.hasRunningSubprocess,
     label: terminalWireLabel(session),
     updatedAt: session.updatedAt,
-    ...(session.attention === null ? {} : { attention: session.attention }),
-    ...(session.shell === null ? {} : { shell: session.shell }),
-    ...(session.command === null ? {} : { command: session.command }),
+    ...forkSummaryFields(session.fork),
   };
-}
-
-function applyShellMarks(session: TerminalSessionState, data: string): boolean {
-  if (session.shellMarks === null) return false;
-  return applyShellItems(
-    session,
-    session.shellMarks.push(data),
-    DateTime.formatIso(DateTime.nowUnsafe()),
-  );
 }
 
 function shouldPublishTerminalMetadataEvent(event: TerminalEvent): boolean {
@@ -1494,17 +1476,6 @@ function createTerminalSpawnEnv(
   return stripAppImageRuntimeEnv(spawnEnv);
 }
 
-/**
- * Fork: the dim line between the output of a terminal thread and the shell that starts below it.
- * It goes into the history, because a client that attaches again redraws from the history.
- */
-const NEW_SHELL_MARKER = "\r\n\x1b[2m\u2500 new shell \u2500\x1b[0m\r\n";
-
-function markNewShellBelowOutput(session: TerminalSessionState): void {
-  if (session.history.value().length === 0) return;
-  session.history.append(NEW_SHELL_MARKER);
-}
-
 function normalizedRuntimeEnv(
   env: Record<string, string> | undefined,
 ): Record<string, string> | null {
@@ -2302,7 +2273,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             session.history.append(sanitized.visibleText);
           }
           // The state change comes first, so it takes the lower sequence.
-          const activitySequence = applyShellMarks(session, nextEvent.data)
+          const activitySequence = applyForkShellOutput(session, nextEvent.data)
             ? advanceEventSequence(session).sequence
             : null;
           const eventStamp = advanceEventSequence(session);
@@ -2522,13 +2493,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session.exitSignal = null;
       session.hasRunningSubprocess = false;
       session.childCommandLabel = null;
-      session.attention = null;
-      session.shell = null;
-      session.command = null;
-      // Fork: the marks also carry the bell, which a shell without the hook still rings.
-      session.shellMarks = isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv)
-        ? makeShellMarkParser()
-        : null;
+      resetForkSessionForStart(session);
       session.pendingProcessEvents = [];
       session.pendingProcessEventIndex = 0;
       session.processEventDrainRunning = false;
@@ -2584,7 +2549,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
                 }
               }
             }
-            const shellLaunch = yield* shellLaunchFor(session.shellName, terminalEnv, session.cwd);
+            const shellLaunch = yield* shellLaunchFor(
+              session.fork.shellName,
+              terminalEnv,
+              session.cwd,
+            );
             const spawnResult = yield* trySpawn(
               shellLaunch.candidates,
               terminalEnv,
@@ -2609,19 +2578,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               session.process = ptyProcess;
               session.pid = processPid;
               session.status = "running";
-              session.customShell = shellLaunch.custom;
-              // Fork: only a shell that starts gets the line, so a failed start adds none.
-              if (isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv)) {
-                markNewShellBelowOutput(session);
-              }
-              if (spawnResult.integrationNotice !== null) {
-                session.history.append(spawnResult.integrationNotice);
-              }
-              // Fork: a shell with integration reports its state from its first prompt on.
-              if (spawnResult.integrated) {
-                session.shell = "starting";
-                session.shellConfirmedAt = spawnedAtMs;
-              }
+              forkShellSpawned(session, {
+                custom: shellLaunch.custom,
+                integrated: spawnResult.integrated,
+                integrationNotice: spawnResult.integrationNotice,
+                atMs: spawnedAtMs,
+              });
               // onExit may replay an exit immediately; accept it before subscribing.
               session.unsubscribeData = spawnResult.process.onData((data) => {
                 if (!enqueueProcessEvent(session, processPid, { type: "output", data })) {
@@ -2766,7 +2728,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               new Error(`Terminal ${to.threadId}/${to.terminalId} exists, so nothing moves there.`),
             );
           }
-          yield* prepare({ summary: summary(session), shell: session.shellName });
+          yield* prepare({ summary: summary(session), shell: session.fork.shellName });
           yield* flushPersist(from.threadId, from.terminalId);
           const closedSequence = session.eventSequence + 1;
           const startedSequence = yield* modifyManagerState((state) => {
@@ -2781,9 +2743,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             session.worktreePath = launch.worktreePath;
             session.runtimeEnv = normalizedRuntimeEnv(launch.env);
             // The bell of a thread screen counts; the shell itself has no hook to print marks.
-            session.shellMarks = isTerminalThreadMainTerminal(to.terminalId, session.runtimeEnv)
-              ? makeShellMarkParser()
-              : null;
+            resetForkShellMarks(session);
             // The closed event of the old key takes one sequence number.
             session.eventSequence = closedSequence;
             sessions.set(toSessionKey(to.threadId, to.terminalId), session);
@@ -2826,7 +2786,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           Number.isInteger(session.pid) &&
           // Fork: a shell at its prompt reports its own state, and a background job is no program
           // that runs. A starting or running state is checked against the child processes.
-          session.shell !== "prompt",
+          session.fork.shell !== "prompt",
       )
       .map((session) => ({
         session,
@@ -2919,23 +2879,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           return [Option.none(), state] as const;
         }
         const live = liveSession.value;
-        const before = [live.shell, live.hasRunningSubprocess, live.childCommandLabel] as const;
-        // Fork: the marks of an integrated shell say whether a program runs, and the poll only
-        // names it. A state that no child process confirms is forgotten.
-        forgetUnconfirmedShellState(live, next.hasRunningSubprocess, polledAtMs);
-        if (live.shell === null) {
-          live.hasRunningSubprocess = next.hasRunningSubprocess && !live.customShell;
-          live.childCommandLabel = live.hasRunningSubprocess ? nextChildLabel : null;
-        } else if (live.hasRunningSubprocess && nextChildLabel !== null) {
-          live.childCommandLabel = nextChildLabel;
-        }
-        if (
-          before[0] === live.shell &&
-          before[1] === live.hasRunningSubprocess &&
-          before[2] === live.childCommandLabel
-        ) {
-          return [Option.none(), state] as const;
-        }
+        const changed = applyForkProcessPoll(
+          live,
+          { hasChildProcess: next.hasRunningSubprocess, childLabel: nextChildLabel },
+          polledAtMs,
+        );
+        if (!changed) return [Option.none(), state] as const;
         const eventStamp = advanceEventSequence(liveSession.value);
         // Only this poll's own event may advance the mark without waking it.
         mark += 1;
@@ -3086,14 +3035,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         unsubscribeExit: null,
         hasRunningSubprocess: false,
         childCommandLabel: null,
-        attention: null,
-        shell: null,
-        shellConfirmedAt: 0,
-        shellMarks: null,
-        command: null,
-        commandStartedAt: 0,
-        shellName: input.shell ?? null,
-        customShell: false,
+        fork: makeForkTerminalSession(input.shell ?? null),
         runtimeEnv: normalizedRuntimeEnv(input.env),
       };
 
@@ -3135,14 +3077,14 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       liveSession.cwd !== input.cwd ||
       runtimeEnvChanged ||
       liveSession.worktreePath !== nextWorktreePath ||
-      liveSession.shellName !== nextShellName;
+      liveSession.fork.shellName !== nextShellName;
 
     if (launchContextChanged) {
       yield* stopProcess(liveSession);
       liveSession.cwd = input.cwd;
       liveSession.worktreePath = nextWorktreePath;
       liveSession.runtimeEnv = nextRuntimeEnv;
-      liveSession.shellName = nextShellName;
+      liveSession.fork.shellName = nextShellName;
       // Fork: the output is the content of a terminal thread, so a new shell starts below it, as
       // after an exit. A client with another folder, env or shell must not wipe it.
       if (!isTerminalThreadMainTerminal(liveSession.terminalId, liveSession.runtimeEnv)) {
@@ -3156,7 +3098,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     } else if (liveSession.status === "exited" || liveSession.status === "error") {
       liveSession.runtimeEnv = nextRuntimeEnv;
       liveSession.worktreePath = nextWorktreePath;
-      liveSession.shellName = nextShellName;
+      liveSession.fork.shellName = nextShellName;
       // Fork: a terminal thread keeps the output of the shell that ended above the new one, so
       // the screen still shows why it ended.
       if (!isTerminalThreadMainTerminal(liveSession.terminalId, liveSession.runtimeEnv)) {
@@ -3376,52 +3318,15 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     );
   };
 
-  // Fork: the open attach streams of each session key. A stream outlives a close and a new open
-  // of its terminal, so the count belongs to the key and not to the session. A stream ends
-  // through its returned unsubscribe or through the stop that it registers, whichever comes first.
-  const attachStreamCounts = new Map<string, number>();
-  const countAttachStream = (
-    input: TerminalObserveInput,
-    stream: (
-      registerCleanup: (stop: () => void) => void,
-    ) => Effect.Effect<() => void, TerminalError>,
-    registerCleanup: ((stop: () => void) => void) | undefined,
-  ) =>
-    Effect.suspend(() => {
-      const key = toSessionKey(input.threadId, input.terminalId);
-      attachStreamCounts.set(key, (attachStreamCounts.get(key) ?? 0) + 1);
-      let attached = true;
-      const detach = () => {
-        if (!attached) return;
-        attached = false;
-        const remaining = (attachStreamCounts.get(key) ?? 1) - 1;
-        if (remaining > 0) attachStreamCounts.set(key, remaining);
-        else attachStreamCounts.delete(key);
-      };
-      return stream((stop) =>
-        registerCleanup?.(() => {
-          stop();
-          detach();
-        }),
-      ).pipe(
-        Effect.map((unsubscribe) => () => {
-          unsubscribe();
-          detach();
-        }),
-        Effect.onError(() => Effect.sync(detach)),
-      );
-    });
-
   const attachStream: TerminalManager["Service"]["attachStream"] = (
     input,
     listener,
     registerCleanup,
-  ) =>
-    countAttachStream(
-      input,
-      (register) => streamSession(input, openOrAttachForStream(input), listener, register),
-      registerCleanup,
-    );
+  ) => streamSession(input, openOrAttachForStream(input), listener, registerCleanup);
+
+  const forkAttachCounts = makeAttachCounts();
+  const forkRetainAttach: TerminalManager["Service"]["forkRetainAttach"] = (input) =>
+    forkAttachCounts.retain(toSessionKey(input.threadId, input.terminalId));
 
   const forkUnattachedThreadScreens: TerminalManager["Service"]["forkUnattachedThreadScreens"] =
     readManagerState.pipe(
@@ -3431,7 +3336,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             ([key, session]) =>
               // An exited draft shell holds its output; it goes too.
               (session.status === "running" || session.status === "exited") &&
-              !attachStreamCounts.has(key) &&
+              !forkAttachCounts.has(key) &&
               isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv),
           )
           .map(([, session]) => ({
@@ -3464,17 +3369,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         Effect.map((session) => (Option.isSome(session) ? snapshot(session.value) : null)),
       ),
       listener,
-      registerCleanup,
-    );
-
-  const forkResyncAttachStream: TerminalManager["Service"]["forkResyncAttachStream"] = (
-    input,
-    listener,
-    registerCleanup,
-  ) =>
-    countAttachStream(
-      input,
-      (register) => resyncStream(input, listener, register),
       registerCleanup,
     );
 
@@ -3697,14 +3591,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         unsubscribeExit: null,
         hasRunningSubprocess: false,
         childCommandLabel: null,
-        attention: null,
-        shell: null,
-        shellConfirmedAt: 0,
-        shellMarks: null,
-        command: null,
-        commandStartedAt: 0,
-        shellName: null,
-        customShell: false,
+        fork: makeForkTerminalSession(null),
         runtimeEnv: normalizedRuntimeEnv(input.env),
       };
       const createdSession = session;
@@ -3838,7 +3725,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     subscribe,
     subscribeMetadata,
     forkUnattachedThreadScreens,
-    forkResyncAttachStream,
+    forkRetainAttach,
     forkSavedOutputStream,
     forkMoveSession,
   });

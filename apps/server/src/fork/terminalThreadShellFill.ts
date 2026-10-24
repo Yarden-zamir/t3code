@@ -25,7 +25,7 @@ export interface TerminalThreadLaunchServices {
   readonly settings: Pick<ServerSettings.ServerSettingsService["Service"], "getSettings">;
   readonly terminals: Pick<
     TerminalManager.TerminalManager["Service"],
-    "attachStream" | "forkResyncAttachStream" | "forkSavedOutputStream"
+    "attachStream" | "resyncStream" | "forkRetainAttach" | "forkSavedOutputStream"
   >;
 }
 
@@ -103,12 +103,17 @@ export const terminalThreadOpen = <Input extends LaunchInput>(
 /** `terminal.attach`: a read-only screen gets its output without a shell. */
 export const terminalThreadAttach = resolveLaunch;
 
+/**
+ * The stream holds its attach count for its whole life, so a resubscribe after an overflow never
+ * leaves a gap in which `AbandonedTerminalDrafts` sees a draft screen as abandoned.
+ */
 export const terminalThreadAttachStream = (
   services: TerminalThreadLaunchServices,
   input: TerminalAttachInput,
 ) =>
   Stream.unwrap(
-    terminalThreadAttach(services, input).pipe(
+    services.terminals.forkRetainAttach(input).pipe(
+      Effect.andThen(terminalThreadAttach(services, input)),
       Effect.map((launch) => {
         const { terminals } = services;
         if (launch.type === "readOnly") {
@@ -124,8 +129,7 @@ export const terminalThreadAttachStream = (
         }
         return terminalOutputStream<TerminalAttachStreamEvent, TerminalError>(
           (listener, register) => terminals.attachStream(launch.input, listener, register),
-          (listener, register) =>
-            terminals.forkResyncAttachStream(launch.input, listener, register),
+          (listener, register) => terminals.resyncStream(launch.input, listener, register),
         );
       }),
     ),

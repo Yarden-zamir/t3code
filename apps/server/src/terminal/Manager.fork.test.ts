@@ -13,10 +13,12 @@ import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
 import { expect } from "vite-plus/test";
 
@@ -569,47 +571,27 @@ it.layer(
     }),
   );
 
-  it.effect("lists a terminal thread screen as unattached only while no attach stream runs", () =>
+  it.effect("lists a terminal thread screen as unattached only while a client holds it", () =>
     Effect.gen(function* () {
       const { manager } = yield* createManager({});
       const screen = { ...threadScreenWithoutShell, threadId: "draft-1" };
       const { env: _env, ...plain } = { ...threadScreenWithoutShell, threadId: "plain-1" };
       yield* manager.open(screen);
       yield* manager.open(plain);
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual([
-        { threadId: "draft-1", programRuns: false },
-      ]);
+      const unattached = [{ threadId: "draft-1", programRuns: false }];
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual(unattached);
 
-      const detach = yield* manager.attachStream(screen, () => Effect.void);
+      const scope = yield* Scope.make();
+      yield* manager.forkRetainAttach(screen).pipe(Scope.provide(scope));
+      yield* manager.forkRetainAttach(screen).pipe(Scope.provide(scope));
       expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
-      // The stream stays on the terminal through a close and a new session.
+      // The hold stays on the terminal through a close and a new session.
       yield* manager.close({ threadId: "draft-1", terminalId: DEFAULT_TERMINAL_ID });
       yield* manager.open(screen);
       expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
 
-      detach();
-      detach();
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual([
-        { threadId: "draft-1", programRuns: false },
-      ]);
-
-      // A WebSocket stream ends through the stop that it registers, also after a resync.
-      const stops: Array<() => void> = [];
-      yield* manager.attachStream(
-        screen,
-        () => Effect.void,
-        (stop) => stops.push(stop),
-      );
-      yield* manager.forkResyncAttachStream(
-        screen,
-        () => Effect.void,
-        (stop) => stops.push(stop),
-      );
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
-      for (const stop of stops) stop();
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual([
-        { threadId: "draft-1", programRuns: false },
-      ]);
+      yield* Scope.close(scope, Exit.void);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual(unattached);
     }),
   );
 
