@@ -82,7 +82,7 @@ The portal is `https://t3.yarden-zamir.com`. Each machine is one T3 server, for 
 
 ## Terminal threads
 
-A terminal thread is a thread whose view is a live shell. See [Terminal threads](fork/features.md#terminal-threads). The server setting `terminalThreads` must be on. Change it with `machines_set_setting`.
+A terminal thread is a thread whose view is a live shell. See [Terminal threads](fork/features.md#terminal-threads). The server setting `terminalThreads` must be on. Change it with `machines_set_setting`. While it is on, the `terminal` entry of `orchestrator_capabilities` lists the shells as models and explains the use in `usage`.
 
 | Task                               | Do this                                                                                                                                                                     |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
