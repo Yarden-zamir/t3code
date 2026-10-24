@@ -122,6 +122,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - Session checks: environment API requests from the web client skip the browser HTTP cache, so one stuck session check no longer holds back every later one.
 - Queue: a resumed queued turn shows after the turns that ran before it. A paused queue shows while a turn runs. Resume waits for an edit and for a usage limit. Send now on a stopped thread also waits for a usage limit.
 - Machine map: an expired machine arrow ends the sessions that it granted.
+- Terminal: powerline outlines and half circles (U+E0B1 to U+E0B7) fill their whole cell, so they meet the segments next to them.
 - Device panel: a Homebrew Android SDK (`android-commandlinetools`) works without `ANDROID_HOME`, also when the `adb` on `PATH` has no emulator.
 
 ---
