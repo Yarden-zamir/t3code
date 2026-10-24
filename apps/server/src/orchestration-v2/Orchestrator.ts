@@ -5,6 +5,13 @@ import type {
 } from "@t3tools/contracts";
 import { resolveForkSourcePoint } from "./forkNativeSource.ts";
 import {
+  forkCommandReleasedQueue,
+  forkIsChildWake,
+  forkMayStartSubagentFollowup,
+  forkParentCancelledChild,
+  forkProviderFailureRunToQueueBehind,
+} from "./forkDelegatedWork.ts";
+import {
   latestExecutedRun,
   latestRootProviderFailure,
   runRanAfter,
@@ -5324,13 +5331,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       projection.thread.worktreePath === null
         ? latestRun
         : undefined;
-    const queueBehindRun = activeRun ?? worktreeMissingRun;
     const pendingMergeBackTransfers = pendingMergeBackTransfersForThread(projection);
     const startsOrQueuesRun =
       dispatchMode.type === "defer_start" ||
       dispatchMode.type === "start_immediately" ||
       dispatchMode.type === "queue_after_active";
-    const shouldQueue = queueBehindRun !== undefined && startsOrQueuesRun;
     // A message the user sends from a client means they are back, so the
     // queue a stop or a restart held runs again, in its order, rather than
     // waiting for a Resume.
@@ -5350,8 +5355,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.createdBy === "user" &&
       (command.creationSource === "web" || command.creationSource === "mobile") &&
       command.scheduledTaskId === undefined;
+    const providerFailureRun = forkProviderFailureRunToQueueBehind({
+      command,
+      providerInstanceId: modelSelection.instanceId,
+      sentByUserFromClient,
+      startsOrQueuesRun,
+      blocked:
+        activeRun !== undefined || worktreeMissingRun !== undefined || worktreeSetupUnresolved,
+      latestRun,
+      nextQueuedRun: nextQueuedRun(projection),
+      turnItems: projection.turnItems,
+    });
+    const queueBehindRun = activeRun ?? worktreeMissingRun ?? providerFailureRun;
+    const shouldQueue = queueBehindRun !== undefined && startsOrQueuesRun;
     const heldRunsToRelease =
-      sentByUserFromClient && startsOrQueuesRun && !worktreeSetupUnresolved
+      (sentByUserFromClient && startsOrQueuesRun && !worktreeSetupUnresolved) ||
+      providerFailureRun !== undefined
         ? projection.runs.filter((run) => run.status === "queued" && run.queueHeld === true)
         : [];
     const releasedAt = yield* DateTime.now;
@@ -7257,13 +7276,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
   ) {
-    if (
-      command.scheduledTaskId !== undefined ||
-      command.notification !== undefined ||
-      command.restartContinuationOfRunId !== undefined ||
-      (command.createdBy !== "user" && command.creationSource !== "mcp")
-    )
-      return;
+    if (!forkMayStartSubagentFollowup(command)) return;
     const pending = yield* Ref.get(events);
     const message = pending
       .flatMap((event) =>
@@ -7287,7 +7300,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (
       child.lineage.relationshipToParent !== "subagent" ||
       parentThreadId === null ||
-      (command.createdBy !== "user" && command.senderThreadId !== parentThreadId)
+      (!forkIsChildWake(command) &&
+        command.createdBy !== "user" &&
+        command.senderThreadId !== parentThreadId)
     )
       return;
     const run =
@@ -7313,6 +7328,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         task.id === (child.forkedFrom?.type === "node" ? child.forkedFrom.nodeId : undefined),
     );
     if (original === undefined || original.result === null) return;
+    if (forkIsChildWake(command) && forkParentCancelledChild(parent.subagents, child.id)) return;
     const owner =
       parent.runs.filter(isBlockingRun).toSorted((a, b) => b.ordinal - a.ordinal)[0] ??
       latestExecutedRun(parent.runs);
@@ -12225,6 +12241,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             command.type === "queued-run.start" ? { queuedRunId: command.runId } : undefined,
           ),
         );
+      } else if (
+        command.type === "message.dispatch" &&
+        forkCommandReleasedQueue(storedEvents, command.threadId)
+      ) {
+        yield* mapDispatchError(command)(startNextQueuedRun(command.threadId));
       }
       return {
         sequence: receipt.resultSequence,
@@ -12363,6 +12384,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.type === "queued-run.start" ? { queuedRunId: command.runId } : undefined,
         ),
       );
+    } else if (
+      command.type === "message.dispatch" &&
+      forkCommandReleasedQueue(committed.storedEvents, command.threadId)
+    ) {
+      yield* mapDispatchError(command)(startNextQueuedRun(command.threadId));
     }
     if (command.type === "notification.delivery.accept") {
       yield* mapDispatchError(command)(offerDelegatedCompletionDeliveries(command.threadId));
@@ -12386,10 +12412,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       commandThreadId(command),
       dispatchWithReceiptEffect(command),
     );
-    if (
-      command.type !== "message.dispatch" ||
-      (command.createdBy !== "user" && command.creationSource !== "mcp")
-    )
+    if (command.type !== "message.dispatch" || !forkMayStartSubagentFollowup(command))
       return yield* dispatch;
     const parentThreadId = yield* appOwnedSubagentParentThreadId(command.threadId).pipe(
       Effect.mapError(
