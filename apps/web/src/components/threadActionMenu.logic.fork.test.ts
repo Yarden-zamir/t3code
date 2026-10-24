@@ -12,7 +12,8 @@ const state: ThreadActionMenuState = {
   isSnoozed: false,
   canSnoozeNow: true,
   isRegeneratingTitle: false,
-  archiveBlock: null,
+  isRunning: false,
+  forkArchiveBlock: null,
   canMarkUnread: true,
   supports: {
     settlement: true,
@@ -31,8 +32,8 @@ const archiveOf = (overrides: Partial<ThreadActionMenuState>) =>
 describe("buildThreadActionMenuItems (fork)", () => {
   it("names the reason of a disabled Archive, because a native menu has no tooltip", () => {
     expect(archiveOf({})).toMatchObject({ disabled: false });
-    const program = archiveOf({ archiveBlock: "program" });
-    const agent = archiveOf({ archiveBlock: "agent" });
+    const program = archiveOf({ forkArchiveBlock: "program" });
+    const agent = archiveOf({ isRunning: true, forkArchiveBlock: "agent" });
     expect(program?.disabled).toBe(true);
     expect(agent?.disabled).toBe(true);
     expect(program?.label).toContain("program");

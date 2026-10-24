@@ -81,6 +81,11 @@ export const THREAD_ARCHIVE_BLOCK_REASON: Record<
   },
 };
 
+function forkArchiveThreadLabel(block: ThreadArchiveBlock | null): string {
+  if (block === null) return "Archive thread";
+  return `Archive thread (${THREAD_ARCHIVE_BLOCK_REASON[block].menu.toLowerCase()})`;
+}
+
 export interface ThreadActionMenuState {
   readonly canOperate: boolean;
   readonly branch: string | null;
@@ -94,13 +99,15 @@ export interface ThreadActionMenuState {
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
   readonly isRegeneratingTitle: boolean;
+  /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
+  readonly isRunning: boolean;
   /**
-   * Archive rejects a thread with an attached provider, so disable it here rather than let the
-   * action fail. Fork: the label says why, because a native menu shows no tooltip.
+   * Fork: why Archive refuses the thread now. A running program also blocks it, and the label
+   * says why, because a native menu shows no tooltip.
    */
-  readonly archiveBlock: ThreadArchiveBlock | null;
-  /** Mark unread needs a finished run; without one the server refuses it. */
-  readonly canMarkUnread: boolean;
+  readonly forkArchiveBlock?: ThreadArchiveBlock | null;
+  /** Fork: Mark unread needs a finished run; without one the server refuses it. */
+  readonly canMarkUnread?: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
@@ -108,7 +115,7 @@ export interface ThreadActionMenuState {
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
     /** Fork: a terminal thread has no Mark unread (`readForkThreadMenuState`). */
-    readonly markUnread: boolean;
+    readonly markUnread?: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -183,13 +190,13 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
-    ...(state.supports.markUnread
+    ...(state.supports.markUnread !== false
       ? [
           {
             id: "mark-unread" as const,
             label: "Mark unread",
             icon: "mail-open",
-            disabled: !state.canMarkUnread,
+            disabled: state.canMarkUnread === false,
           },
         ]
       : []),
@@ -241,12 +248,9 @@ export function buildThreadActionMenuItems(
     { id: "project-settings", label: "Project settings", icon: "settings" },
     {
       id: "archive",
-      label:
-        state.archiveBlock === null
-          ? "Archive thread"
-          : `Archive thread (${THREAD_ARCHIVE_BLOCK_REASON[state.archiveBlock].menu.toLowerCase()})`,
+      label: forkArchiveThreadLabel(state.forkArchiveBlock ?? null),
       icon: "archive",
-      disabled: state.archiveBlock !== null,
+      disabled: state.isRunning || (state.forkArchiveBlock ?? null) !== null,
       separatorBefore: true,
     },
     {

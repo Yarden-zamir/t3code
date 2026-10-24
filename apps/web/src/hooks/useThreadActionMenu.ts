@@ -42,6 +42,7 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
+import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { readForkDeleteNotice, readForkThreadMenuState } from "./useForkTerminalThreadState";
 import { useNewThreadHandler } from "./useHandleNewThread";
@@ -147,7 +148,8 @@ export function useThreadActionMenu(input: {
           forkEffectiveSnoozed(thread, { now: now.toISOString() }, forkMenuState.terminal),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
-        archiveBlock: forkMenuState.archiveBlock,
+        isRunning: !threadRuntimeCanArchive(thread.runtime),
+        forkArchiveBlock: forkMenuState.archiveBlock,
         canMarkUnread: thread.latestRun?.completedAt != null,
         supports,
         snoozePresets,

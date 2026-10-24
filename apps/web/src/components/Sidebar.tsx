@@ -32,7 +32,10 @@ import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { createInboxReturnTracker } from "@t3tools/client-runtime/state/thread-inbox";
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import {
+  threadRuntimeCanArchive,
+  type EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/models";
 import {
   forkEffectiveSnoozed,
   forkInboxReturnAt,
@@ -2462,7 +2465,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
-              archiveBlock: forkMenuState.archiveBlock,
+              isRunning: !threadRuntimeCanArchive(thread.runtime),
+              forkArchiveBlock: forkMenuState.archiveBlock,
               canMarkUnread: thread.latestRun?.completedAt != null,
               supports: {
                 settlement: supportsSettlement,
