@@ -84,6 +84,7 @@ import {
   NewTaskThreadSettingsRouteScreen,
 } from "./features/threads/ThreadSettingsSheet";
 import { NewTaskFlowProvider } from "./features/threads/new-task-flow-provider";
+import { ForkNewTerminalThreadSheet } from "./features/threads/ForkNewTerminalThreadSheet";
 import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
 import { SettingsNavigationRouteScreen } from "./features/settings/SettingsNavigationRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
@@ -529,6 +530,7 @@ const WORKSPACE_OVERLAY_ROUTES = new Set([
   "SettingsSheet",
   "ThreadAgents",
   "ThreadBackgroundWork",
+  "ForkNewTerminalThread",
   "ThreadPullRequests",
   "ThreadQueue",
   "ThreadReviewComment",
@@ -936,6 +938,16 @@ const RootStackConfig = createWorkspaceStackNavigator({
         ...HORIZONTAL_FORM_SHEET_OPTIONS,
         headerShown: false,
         sheetAllowedDetents: formSheetDetents(0.5, 0.9),
+        sheetGrabberVisible: true,
+      },
+    }),
+    // Fork: the shell and the folder of a new terminal thread (`ForkNewTerminalThreadControl`).
+    ForkNewTerminalThread: createNativeStackScreen({
+      screen: ForkNewTerminalThreadSheet,
+      options: {
+        ...HORIZONTAL_FORM_SHEET_OPTIONS,
+        headerShown: false,
+        sheetAllowedDetents: formSheetDetents(0.6, 0.9),
         sheetGrabberVisible: true,
       },
     }),

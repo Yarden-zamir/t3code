@@ -94,6 +94,7 @@ import { createTerminalPasteSession } from "./terminalPaste";
 import { cacheTerminalGridSize, getCachedTerminalGridSize } from "./terminalUiState";
 import { useTerminalGridSync } from "./useTerminalGridSync";
 import { useTerminalLifecycle } from "./useTerminalLifecycle";
+import { useForkTerminalThreadTitle } from "./useForkTerminalThreadTitle";
 
 function TerminalHeader(props: {
   readonly title: string;
@@ -269,6 +270,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const { selectedThread, selectedThreadProject, selectedEnvironmentConnection } =
     useThreadSelection();
   const selectedThreadDetail = useSelectedThreadProjection();
+  useForkTerminalThreadTitle(selectedThread);
   const selectedThreadDetailWorktreePath =
     selectedThreadDetail?.projection.thread.worktreePath ?? null;
   const routeEnvironmentIdRaw = firstRouteParam(params.environmentId);

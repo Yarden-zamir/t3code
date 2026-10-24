@@ -17,12 +17,3 @@ export function withoutTerminalProvider(
   }
   return filtered;
 }
-
-/** The shells that the server of an environment offers, default shell first. */
-export function terminalShellOptions(providers: ReadonlyArray<ServerProvider>) {
-  return (
-    providers
-      .find((provider) => provider.instanceId === TERMINAL_THREAD_INSTANCE_ID)
-      ?.models.filter((model) => model.isLegacy !== true) ?? []
-  );
-}

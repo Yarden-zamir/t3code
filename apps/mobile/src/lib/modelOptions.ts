@@ -303,7 +303,7 @@ export function buildModelOptions(
   for (const provider of config?.providers ?? []) {
     if (
       !matchesLockedProvider(provider) ||
-      // Fork: the terminal lists shells, not agent models; mobile starts no terminal threads.
+      // Fork: the terminal lists shells, not agent models. The New terminal thread sheet offers them.
       (provider.instanceId === TERMINAL_THREAD_INSTANCE_ID &&
         providerInstanceId !== TERMINAL_THREAD_INSTANCE_ID) ||
       !isProviderEnabledForProject(config, provider, projectId) ||

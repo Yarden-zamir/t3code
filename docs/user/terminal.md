@@ -70,6 +70,12 @@ program and subcommand of the command (`git push`, `npm run dev`), or after the 
 - While the worktree is set up, Cancel stops it, and Work locally runs the shell in the
   project folder instead.
 
+On the phone app, start a new thread in a project, then tap Terminal next to the workspace and
+branch controls. Choose the shell and the folder: the project folder, an existing worktree, or a
+new worktree. A new worktree starts from the base branch of the new thread. Tap Open terminal.
+The thread starts at once and opens on the terminal screen. A new worktree shows its setup first.
+Cancel stops it, and Work locally stops it and selects the project folder. Your prompt stays for the next new thread in the project.
+
 The screen is the header of a normal thread above the terminal. `mod+j` opens the drawer
 for more terminals of the thread. The Move to a terminal thread button of the drawer, in a
 chat thread or a terminal thread, makes its terminal a new terminal thread. The shell goes on

@@ -28,6 +28,10 @@ import { Platform, Pressable, View } from "react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { KeyboardController } from "react-native-keyboard-controller";
 import { useRememberNewThreadProject } from "./forkNewThreadStart";
+import {
+  ForkNewTerminalThreadControl,
+  ForkNewTerminalThreadRow,
+} from "./ForkNewTerminalThreadControl";
 
 import {
   AuthOrchestrationOperateScope,
@@ -1143,6 +1147,7 @@ export function NewTaskDraftScreen(props: {
           onPress={() => openContextPicker("NewTaskBranch")}
         />
       </View>
+      <ForkNewTerminalThreadControl disabled={isComposerInteractionLocked} />
     </View>
   );
 
@@ -1223,7 +1228,11 @@ export function NewTaskDraftScreen(props: {
                   />
                 </View>
               ) : null}
-              {flow.canChooseWorkspace ? workspaceControls : null}
+              {flow.canChooseWorkspace ? (
+                workspaceControls
+              ) : (
+                <ForkNewTerminalThreadRow disabled={isComposerInteractionLocked} />
+              )}
             </View>
           ),
           editorRef: promptInputRef,
