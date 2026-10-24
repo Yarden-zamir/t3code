@@ -37,7 +37,11 @@ import {
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import { newThreadId } from "../../lib/utils";
-import { setDraftTerminalMode, setDraftTerminalShell } from "../../forkDraftTerminalStore";
+import {
+  setDraftTerminalMode,
+  setDraftTerminalShell,
+  useDraftOpensAsThread,
+} from "../../forkDraftTerminalStore";
 import { resolveDraftTerminalWorkspace } from "../../forkDraftTerminalWorkspace";
 import { terminalThreadOpenInput } from "../../forkTerminalThreadOpen";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
@@ -551,6 +555,13 @@ export function ForkDraftTerminalComposer(props: {
     const timer = window.setTimeout(() => void promote(), LONG_RUNNING_COMMAND_MS);
     return () => window.clearTimeout(timer);
   }, [finishedAt, running]);
+  // Setting `currentProjectTerminalOpensThread`: the enlarge button, pressed for the user. It waits
+  // for the shell list, so the thread names the same shell as the draft terminal.
+  const opensAsThread = useDraftOpensAsThread(draftId);
+  const canOpenAsThread = shellsKnown && workspace.kind === "folder";
+  useEffect(() => {
+    if (opensAsThread && canOpenAsThread) void promote();
+  }, [opensAsThread, canOpenAsThread]);
   const typedText = useRef(false);
   const onInput = (data: string) => {
     if (integrated) return;

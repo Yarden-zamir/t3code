@@ -6,6 +6,7 @@ import type {
   ScopedProjectRef,
 } from "@t3tools/contracts";
 import type { ComposerThreadDraftState, DraftThreadEnvMode } from "../composerDraftStore";
+import { getClientSettings } from "../hooks/useSettings";
 
 type ComposerModelSelectionState = Pick<
   ComposerThreadDraftState,
@@ -34,8 +35,14 @@ export interface ChatThreadActionContext {
   readonly activeThread: ThreadContextLike | undefined;
   readonly defaultProjectRef: ScopedProjectRef | null;
   readonly handleNewThread: NewThreadHandler;
-  /** Fork: creates a terminal thread (`forkTerminalThreads.ts`) and opens it. */
-  readonly handleNewTerminalThread: (projectRef: ScopedProjectRef) => Promise<unknown>;
+  /**
+   * Fork: opens a terminal draft (`forkTerminalThreads.ts`). `opensAsThread` makes the draft a
+   * terminal thread at once, like its enlarge button.
+   */
+  readonly handleNewTerminalThread: (
+    projectRef: ScopedProjectRef,
+    options?: { readonly opensAsThread: boolean },
+  ) => Promise<unknown>;
 }
 
 /** Fork: a normal chat thread or a terminal thread (`forkTerminalThreads.ts`). */
@@ -46,9 +53,10 @@ export function startNewThreadInProject(
   context: Pick<ChatThreadActionContext, "handleNewThread" | "handleNewTerminalThread">,
   projectRef: ScopedProjectRef,
   kind: NewThreadKind,
+  terminalOptions?: { readonly opensAsThread: boolean },
 ): Promise<unknown> {
   return kind === "terminal"
-    ? context.handleNewTerminalThread(projectRef)
+    ? context.handleNewTerminalThread(projectRef, terminalOptions)
     : context.handleNewThread(projectRef);
 }
 
@@ -107,6 +115,10 @@ export async function startNewThreadFromContext(
     return false;
   }
 
-  await startNewThreadInProject(context, projectRef, kind);
+  // Fork: only this "in current project" path reads the setting. The project picker calls
+  // `startNewThreadInProject` directly, so its terminal stays a draft until the first command.
+  await startNewThreadInProject(context, projectRef, kind, {
+    opensAsThread: getClientSettings().currentProjectTerminalOpensThread,
+  });
   return true;
 }

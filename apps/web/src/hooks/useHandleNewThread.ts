@@ -35,7 +35,7 @@ import {
   resolveNewDraftStartFromOrigin,
   resolveNewThreadModelSelectionOverride,
 } from "../lib/chatThreadActions";
-import { setDraftTerminalMode } from "../forkDraftTerminalStore";
+import { requestDraftOpensAsThread, setDraftTerminalMode } from "../forkDraftTerminalStore";
 import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentSummaries } from "../state/presentation";
@@ -79,11 +79,17 @@ export function useNewThreadHandler() {
       replace?: boolean;
       /** Fork: "terminal" opens the draft in Terminal mode (`forkDraftTerminalStore.ts`). */
       kind?: NewThreadKind;
+      /** Fork: a draft in Terminal mode becomes a terminal thread at once. */
+      terminalOpensAsThread?: boolean;
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     // Fork: every way to open a draft sets its mode, before the draft renders.
-    const applyDraftKind = (draftId: DraftId) =>
+    const applyDraftKind = (draftId: DraftId) => {
       setDraftTerminalMode(draftId, projectRef.environmentId, options?.kind === "terminal");
+      if (options?.kind === "terminal" && options.terminalOpensAsThread === true) {
+        requestDraftOpensAsThread(draftId);
+      }
+    };
     const projects = readProjects();
     // Read at call time: every provider status push replaces the config map, and
     // subscribing would hand every sidebar row a new handler.
@@ -418,8 +424,14 @@ export function useHandleNewThread() {
   const projects = useProjects();
   const handleNewThread = useNewThreadHandler();
   // Fork: a new terminal thread is a new-thread draft in Terminal mode.
-  const handleNewTerminalThread = (projectRef: ScopedProjectRef) =>
-    handleNewThread(projectRef, { kind: "terminal" });
+  const handleNewTerminalThread = (
+    projectRef: ScopedProjectRef,
+    options?: { readonly opensAsThread: boolean },
+  ) =>
+    handleNewThread(projectRef, {
+      kind: "terminal",
+      terminalOpensAsThread: options?.opensAsThread ?? false,
+    });
   const [defaultProject] = orderItemsByPreferredIds({
     items: projects,
     preferredIds: projectOrder,

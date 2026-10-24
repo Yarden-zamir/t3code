@@ -205,6 +205,7 @@ const FORK_SETTING_GROUPS = [
       { ids: ["terminal-close-confirmation"], place: "terminal-all-terminals" },
       { ids: ["terminal-history"], place: "terminal-all-terminals" },
       { ids: ["terminal-threads"], place: "terminal-threads" },
+      { ids: ["current-project-terminal-opens-thread"], place: "terminal-threads" },
     ],
   },
   {

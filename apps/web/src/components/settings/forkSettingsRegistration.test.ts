@@ -35,6 +35,7 @@ const FORK_PAGE_ROWS: Record<
   worktreeArtifactEvictionDays: "worktree-artifact-eviction-days",
   confirmTerminalClose: "terminal-close-confirmation",
   terminalAppShortcutsFirst: "terminal-app-shortcuts-first",
+  currentProjectTerminalOpensThread: "current-project-terminal-opens-thread",
   appToggleShortcuts: "app-toggle-shortcuts",
   backgroundWorkDetails: "background-work-details",
   forkChangelogEnabled: "fork-changelog",

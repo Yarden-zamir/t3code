@@ -263,6 +263,13 @@ export const ForkClientSettingsFields = {
   terminalKeyMappings: Schema.Array(TerminalKeyMapping)
     .check(Schema.isMaxLength(MAX_TERMINAL_KEY_MAPPINGS))
     .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  /**
+   * Fork: "New terminal thread in current project" makes the terminal thread at once, like the
+   * enlarge button of a terminal draft. Off, because the thread shows before a command runs.
+   */
+  currentProjectTerminalOpensThread: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   /** Fork: back and forward buttons next to the sidebar toggle in the title bar. Off, because it changes the title bar. */
   backForwardButtons: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
@@ -305,6 +312,7 @@ export const ForkClientSettingsPatchFields = {
   terminalKeyMappings: Schema.optionalKey(
     Schema.Array(TerminalKeyMapping).check(Schema.isMaxLength(MAX_TERMINAL_KEY_MAPPINGS)),
   ),
+  currentProjectTerminalOpensThread: Schema.optionalKey(Schema.Boolean),
   backForwardButtons: Schema.optionalKey(Schema.Boolean),
   rememberBackForwardHistory: Schema.optionalKey(Schema.Boolean),
   restartReconnectWarningGrace: Schema.optionalKey(Schema.Boolean),

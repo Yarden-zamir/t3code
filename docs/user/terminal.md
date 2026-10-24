@@ -45,7 +45,7 @@ A new terminal starts as a new thread in Terminal mode: the composer box holds a
 shell, and the Terminal button in the composer is on. The footer shows the folder of the shell. Pick the shell (zsh, bash and
 so on, or a custom shell) in place of the model. The first command that ends, or that runs for a second (an
 editor, a dev server), makes it a terminal thread with the same shell, named after the
-command, or after the shell when the shell does not report its commands. The enlarge button next to the hint makes it a terminal thread at once. Until then:
+command, or after the shell when the shell does not report its commands. The enlarge button next to the hint makes it a terminal thread at once, named after its first command. To skip the draft for New terminal thread in the current project (Shift, `chat.newTerminalLocal` or its command palette entry), turn on Settings > Terminal > Open terminal in current project as a thread. Until then:
 
 - The Terminal button switches back to an agent, and closes the shell.
 - A prompt that you typed before switching to Terminal stays in the draft. When the terminal

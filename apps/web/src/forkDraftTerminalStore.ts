@@ -17,9 +17,15 @@ interface ForkDraftTerminalState {
   readonly shellByDraftId: Readonly<Record<string, string | null>>;
   /** The shell that the user picked last per environment, the default of the next draft. */
   readonly lastShellByEnvironmentId: Readonly<Record<string, string>>;
+  /**
+   * The drafts that become a terminal thread at once, like the enlarge button. Not persisted:
+   * after a reload such a draft waits for its first command.
+   */
+  readonly opensAsThreadDraftIds: ReadonlySet<string>;
   readonly enterTerminalMode: (draftId: string, environmentId: string) => void;
   readonly setShell: (draftId: string, environmentId: string, shell: string) => void;
   readonly leaveTerminalMode: (draftId: string) => void;
+  readonly requestOpensAsThread: (draftId: string) => void;
 }
 
 const useForkDraftTerminalStore = create<ForkDraftTerminalState>()(
@@ -27,6 +33,7 @@ const useForkDraftTerminalStore = create<ForkDraftTerminalState>()(
     (set) => ({
       shellByDraftId: {},
       lastShellByEnvironmentId: {},
+      opensAsThreadDraftIds: new Set(),
       enterTerminalMode: (draftId, environmentId) =>
         set((state) => {
           if (draftId in state.shellByDraftId) return state;
@@ -49,7 +56,16 @@ const useForkDraftTerminalStore = create<ForkDraftTerminalState>()(
         set((state) => {
           if (!(draftId in state.shellByDraftId)) return state;
           const { [draftId]: _left, ...shellByDraftId } = state.shellByDraftId;
-          return { shellByDraftId };
+          const opensAsThreadDraftIds = new Set(state.opensAsThreadDraftIds);
+          opensAsThreadDraftIds.delete(draftId);
+          return { shellByDraftId, opensAsThreadDraftIds };
+        }),
+      requestOpensAsThread: (draftId) =>
+        set((state) => {
+          if (!(draftId in state.shellByDraftId)) {
+            throw new Error(`Draft ${draftId} is not in Terminal mode.`);
+          }
+          return { opensAsThreadDraftIds: new Set(state.opensAsThreadDraftIds).add(draftId) };
         }),
     }),
     {
@@ -84,6 +100,15 @@ export function setDraftTerminalMode(draftId: string, environmentId: string, ter
 
 export function setDraftTerminalShell(draftId: string, environmentId: string, shell: string) {
   useForkDraftTerminalStore.getState().setShell(draftId, environmentId, shell);
+}
+
+/** Makes a draft in Terminal mode a terminal thread at once (`ForkDraftTerminalComposer`). */
+export function requestDraftOpensAsThread(draftId: string) {
+  useForkDraftTerminalStore.getState().requestOpensAsThread(draftId);
+}
+
+export function useDraftOpensAsThread(draftId: string): boolean {
+  return useForkDraftTerminalStore((state) => state.opensAsThreadDraftIds.has(draftId));
 }
 
 export function isDraftInTerminalMode(draftId: string): boolean {

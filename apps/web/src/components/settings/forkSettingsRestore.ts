@@ -54,6 +54,7 @@ const FORK_RESTORED_SETTINGS = [
   ["sidebarOwnerFilter", "Sidebar owner filter"],
   ["appToggleShortcuts", "App toggle shortcuts"],
   ["terminalAppShortcutsFirst", "App shortcuts in terminal"],
+  ["currentProjectTerminalOpensThread", "Open terminal in current project as a thread"],
   ["keyboardFocusLevels", "Keyboard focus levels"],
   ["focusLevelHighlight", "Focus highlight"],
   ["tooltipShortcuts", "Shortcuts in tooltips"],

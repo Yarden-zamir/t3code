@@ -447,6 +447,12 @@ export const TERMINAL_ITEMS = [
     environmentOnly: true,
   },
   {
+    id: "current-project-terminal-opens-thread",
+    title: "Open terminal in current project as a thread",
+    to: "/settings/terminal",
+    searchTerms: ["terminal thread new current project enlarge expand draft at once shift click"],
+  },
+  {
     // `TerminalShellsSettings` renders this id itself.
     id: "terminal-shells",
     title: "Shells",
