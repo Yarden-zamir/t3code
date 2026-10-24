@@ -487,6 +487,7 @@ What New thread opens in the mobile app.
 - Back from the draft shows the project list. A share, a prompt link and "Choose a project" in the draft keep the project list.
 - The "New task" launcher shortcut on Android opens the same draft, also when the app was closed.
 - The draft opens at once when the phone knows its project, also before a server connects: the last project, or the project of the last thread without a project. Sending waits for the connection.
+- A connected environment wins over an offline one. Without a project, the draft opens on a connected environment when the remembered one is offline. With `last`, a last project on an offline environment keeps the project list while another environment is connected. With no connected environment, the remembered project opens.
 - **Limits:** `none` needs a server that offers threads without a project. Without one, and with `last` and no earlier new thread, the project list shows. The first thread without a project on a phone waits for the server to make that project.
 
 ### Camera in the mobile composer
