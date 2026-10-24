@@ -265,8 +265,10 @@ export class TerminalManager extends Context.Service<
       registerCleanup?: (stop: () => void) => void,
     ) => Effect.Effect<() => void, TerminalError>;
 
-    /** Fork: the thread ids of running terminal thread screens that no client attaches to. */
-    readonly forkUnattachedThreadScreens: Effect.Effect<ReadonlyArray<string>>;
+    /** Fork: the terminal thread screens that no client attaches to. */
+    readonly forkUnattachedThreadScreens: Effect.Effect<
+      ReadonlyArray<{ readonly threadId: string; readonly programRuns: boolean }>
+    >;
 
     /**
      * Fork: moves a running session, with its process and its output, to a key that has no
@@ -3422,7 +3424,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               !attachStreamCounts.has(key) &&
               isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv),
           )
-          .map(([, session]) => session.threadId),
+          .map(([, session]) => ({
+            threadId: session.threadId,
+            programRuns: session.hasRunningSubprocess,
+          })),
       ),
     );
 

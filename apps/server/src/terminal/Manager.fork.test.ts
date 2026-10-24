@@ -447,7 +447,9 @@ it.layer(
 
       expect((yield* events).some((event) => event.type === "closed")).toBe(false);
       // A client that comes back sees the dead shell, not a new one.
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["thread-1"]);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual([
+        { threadId: "thread-1", programRuns: false },
+      ]);
       expect(pty.spawnInputs).toHaveLength(1);
       // The open waits for the debounced history write of that output.
       yield* TestClock.adjust("1 second");
@@ -548,7 +550,9 @@ it.layer(
       const { env: _env, ...plain } = { ...threadScreenWithoutShell, threadId: "plain-1" };
       yield* manager.open(screen);
       yield* manager.open(plain);
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual([
+        { threadId: "draft-1", programRuns: false },
+      ]);
 
       const detach = yield* manager.attachStream(screen, () => Effect.void);
       expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
@@ -559,7 +563,9 @@ it.layer(
 
       detach();
       detach();
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual([
+        { threadId: "draft-1", programRuns: false },
+      ]);
 
       // A WebSocket stream ends through the stop that it registers, also after a resync.
       const stops: Array<() => void> = [];
@@ -575,7 +581,9 @@ it.layer(
       );
       expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
       for (const stop of stops) stop();
-      expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
+      expect(yield* manager.forkUnattachedThreadScreens).toEqual([
+        { threadId: "draft-1", programRuns: false },
+      ]);
     }),
   );
 
