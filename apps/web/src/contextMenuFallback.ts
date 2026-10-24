@@ -246,42 +246,7 @@ export function showContextMenuFallback<T extends string>(
       if (event.key === "Escape") {
         event.preventDefault();
         cleanup(null);
-        return;
       }
-      if (moveFocusFromKey(event.key)) event.preventDefault();
-    };
-
-    // Fork: the menu takes focus when it opens, so these keys reach it and not a terminal.
-    const moveFocusFromKey = (key: string): boolean => {
-      const active = document.activeElement;
-      const level = menuStack.findLastIndex((menu) => isNodeWithinMenuStack(active, [menu]));
-      const menu = menuStack[level];
-      if (!menu) return false;
-      if (key === "ArrowDown" || key === "ArrowUp") {
-        const buttons = [...menu.querySelectorAll<HTMLButtonElement>("button")].filter(
-          (button) => !button.disabled,
-        );
-        if (buttons.length === 0) return true;
-        const index = buttons.findIndex((button) => button === active);
-        const step = key === "ArrowDown" ? 1 : -1;
-        const next = index === -1 ? (step === 1 ? 0 : buttons.length - 1) : index + step;
-        buttons[(next + buttons.length) % buttons.length]!.focus({ preventScroll: true });
-        return true;
-      }
-      if (key === "ArrowRight") {
-        if (!(active instanceof HTMLButtonElement) || !active.hasAttribute("aria-haspopup")) {
-          return false;
-        }
-        active.click();
-        return true;
-      }
-      if (key === "ArrowLeft" && level > 0) {
-        const trigger = submenuTriggerStack[level];
-        closeMenusFromLevel(level);
-        trigger?.focus({ preventScroll: true });
-        return true;
-      }
-      return false;
     };
 
     const onPointerDown = (event: PointerEvent) => {
@@ -323,8 +288,6 @@ export function showContextMenuFallback<T extends string>(
       menu.style.left = `${preferredLeft}px`;
       menu.style.top = `${preferredTop}px`;
       menu.dataset.level = String(level);
-      menu.setAttribute("role", "menu");
-      menu.tabIndex = -1;
 
       const inner = document.createElement("div");
       inner.className =
@@ -377,7 +340,6 @@ export function showContextMenuFallback<T extends string>(
           button.style.pointerEvents = "none";
         }
 
-        button.setAttribute("role", "menuitem");
         if (typeof item.checked === "boolean") {
           button.setAttribute("role", "menuitemradio");
           button.setAttribute("aria-checked", item.checked ? "true" : "false");
@@ -515,7 +477,6 @@ export function showContextMenuFallback<T extends string>(
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("contextmenu", onContextMenu, true);
     openMenu(items, position?.x ?? 0, position?.y ?? 0, 0);
-    menuStack[0]?.focus({ preventScroll: true });
     // Only one fallback menu can be open at a time: a new show must dismiss
     // any prior one, or its DOM and listeners leak and close() can only ever
     // reach the newest menu.
