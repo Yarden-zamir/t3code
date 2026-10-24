@@ -1,34 +1,132 @@
 import {
+  DEFAULT_TERMINAL_ID,
   isTerminalThread,
-  terminalThreadShell,
   type TerminalAttachInput,
-  type TerminalOpenInput,
+  type TerminalAttachStreamEvent,
+  type TerminalError,
+  terminalThreadShell,
+  TerminalThreadsOffError,
   ThreadId,
 } from "@t3tools/contracts";
+import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 
+import type { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import type * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import type * as ServerSettings from "../serverSettings.ts";
+import type * as TerminalManager from "../terminal/Manager.ts";
+import { terminalOutputStream } from "../terminal/OutputProtocol.ts";
+
+export interface TerminalThreadLaunchServices {
+  readonly threads: Pick<ThreadManagement.ThreadManagementService["Service"], "getThreadShell">;
+  readonly projects: Pick<ProjectStoreV2["Service"], "get">;
+  readonly settings: Pick<ServerSettings.ServerSettingsService["Service"], "getSettings">;
+  readonly terminals: Pick<
+    TerminalManager.TerminalManager["Service"],
+    "attachStream" | "forkResyncAttachStream" | "forkSavedOutputStream"
+  >;
+}
+
+/** The fields of `terminal.open`, `terminal.attach` and `terminal.restart` that start a shell. */
+interface LaunchInput {
+  readonly threadId: string;
+  readonly terminalId: string;
+  readonly cwd?: string | undefined;
+  readonly shell?: string | undefined;
+}
+
+type Launch<Input> =
+  | { readonly type: "launch"; readonly input: Input }
+  /** The setting is off: the screen of a terminal thread shows its output and starts no shell. */
+  | { readonly type: "readOnly"; readonly cwd: string; readonly worktreePath: string | null };
 
 /**
- * Fork: every terminal of a terminal thread runs the shell of the thread, whichever client opens
- * it. A client that names no shell (mobile, an older web client, a view that attaches again after
- * a server restart) would otherwise start the default shell, and a terminal that runs restarts on
- * a different shell. A draft terminal has no thread yet, so its client names the shell itself.
+ * Fork: the server owns how the main terminal of a terminal thread starts. It takes the folder,
+ * worktree, env and shell from the thread record, because a client with other values (an older
+ * web or mobile bundle) would make `terminal.open` restart the running program and drop its
+ * shell integration. Its drawer terminals keep the client's folder and get the thread's shell
+ * when the client names none. A draft has no thread record yet, so its client names all of it.
  */
-export function withTerminalThreadShell<Input extends TerminalOpenInput | TerminalAttachInput>(
-  threads: ThreadManagement.ThreadManagementService["Service"],
+const resolveLaunch = Effect.fn("TerminalThreadLaunch.resolve")(function* <
+  Input extends LaunchInput,
+>(services: TerminalThreadLaunchServices, input: Input) {
+  const enabled = (yield* services.settings.getSettings.pipe(Effect.orDie)).terminalThreads;
+  if (!enabled && input.shell !== undefined) return yield* new TerminalThreadsOffError();
+  const launch = (next: Input): Launch<Input> => ({ type: "launch", input: next });
+  // Without the thread, the client's input stands.
+  const thread = yield* services.threads
+    .getThreadShell(ThreadId.make(input.threadId))
+    .pipe(Effect.orElseSucceed(() => null));
+  if (thread === null || !isTerminalThread(thread)) return launch(input);
+
+  const shell = terminalThreadShell(thread.modelSelection.model);
+  if (input.terminalId !== DEFAULT_TERMINAL_ID) {
+    return launch(
+      enabled && shell !== undefined && input.shell === undefined ? { ...input, shell } : input,
+    );
+  }
+  const project = yield* services.projects.get(thread.projectId).pipe(Effect.orDie);
+  if (Option.isNone(project)) {
+    return yield* Effect.die(new Error(`The project of terminal thread ${thread.id} is missing.`));
+  }
+  const context = terminalThreadLaunch({
+    workspaceRoot: project.value.workspaceRoot,
+    worktreePath: thread.worktreePath,
+  });
+  if (!enabled) {
+    return { type: "readOnly", cwd: context.cwd, worktreePath: context.worktreePath } as const;
+  }
+  // An attach without a folder opens no shell, so it has nothing to replace.
+  if (input.cwd === undefined) return launch(input);
+  return launch({
+    ...input,
+    cwd: context.cwd,
+    worktreePath: context.worktreePath,
+    env: { ...context.env },
+    ...(shell === undefined ? {} : { shell }),
+  });
+});
+
+/** `terminal.open` and `terminal.restart`: a read-only screen starts no shell. */
+export const terminalThreadOpen = <Input extends LaunchInput>(
+  services: TerminalThreadLaunchServices,
   input: Input,
-): Effect.Effect<Input> {
-  if (input.shell !== undefined) return Effect.succeed(input);
-  return threads.getThreadShell(ThreadId.make(input.threadId)).pipe(
-    Effect.map((thread) => {
-      const shell =
-        thread !== null && isTerminalThread(thread)
-          ? terminalThreadShell(thread.modelSelection.model)
-          : undefined;
-      return shell === undefined ? input : { ...input, shell };
-    }),
-    // Without the thread, the client's input stands, as it did before this fill.
-    Effect.orElseSucceed(() => input),
+) =>
+  resolveLaunch(services, input).pipe(
+    Effect.flatMap((launch) =>
+      launch.type === "launch" ? Effect.succeed(launch.input) : new TerminalThreadsOffError(),
+    ),
   );
-}
+
+/** `terminal.attach`: a read-only screen gets its output without a shell. */
+export const terminalThreadAttach = resolveLaunch;
+
+export const terminalThreadAttachStream = (
+  services: TerminalThreadLaunchServices,
+  input: TerminalAttachInput,
+) =>
+  Stream.unwrap(
+    terminalThreadAttach(services, input).pipe(
+      Effect.map((launch) => {
+        const { terminals } = services;
+        if (launch.type === "readOnly") {
+          const saved = { ...input, cwd: launch.cwd, worktreePath: launch.worktreePath };
+          const subscribe = (
+            listener: (event: TerminalAttachStreamEvent) => Effect.Effect<void>,
+            register: (stop: () => void) => void,
+          ) => terminals.forkSavedOutputStream(saved, listener, register);
+          return terminalOutputStream<TerminalAttachStreamEvent, TerminalError>(
+            subscribe,
+            subscribe,
+          );
+        }
+        return terminalOutputStream<TerminalAttachStreamEvent, TerminalError>(
+          (listener, register) => terminals.attachStream(launch.input, listener, register),
+          (listener, register) =>
+            terminals.forkResyncAttachStream(launch.input, listener, register),
+        );
+      }),
+    ),
+  );

@@ -8,6 +8,7 @@ import {
   TERMINAL_COMMAND_MAX_LENGTH,
   type TerminalAttention,
   type TerminalShellState,
+  terminalCommandTitle,
 } from "@t3tools/contracts";
 
 import type { ShellItem } from "./shellMarks.ts";
@@ -18,12 +19,21 @@ export interface ShellStateHolder {
   shellConfirmedAt: number;
   attention: TerminalAttention | null;
   hasRunningSubprocess: boolean;
-  /** The command line of the last command that started. */
+  /** The program and subcommand of the last command that started (`terminalCommandTitle`). */
   command: string | null;
+  /** Epoch milliseconds of the start of the last command. */
+  commandStartedAt: number;
 }
 
 // A bell storm raises one attention per second, so the sidebar does not repaint on each ring.
 const BELL_MIN_INTERVAL_MS = 1000;
+
+/**
+ * A command that ends sooner raises no attention. The user still watches a short command, and its
+ * end is not worth a sound, a push to the phone or a move to the top of the inbox. A command that
+ * takes this long is one that the user leaves to do something else.
+ */
+export const NOTIFIED_COMMAND_MIN_MS = 10_000;
 
 /**
  * A shell that starts or runs a command for this long with no child process may have stopped
@@ -76,13 +86,17 @@ export function applyShellItems(
       case "commandStart": {
         set("shell", "running");
         set("hasRunningSubprocess", true);
-        const command = item.commandLine?.trim().slice(0, TERMINAL_COMMAND_MAX_LENGTH);
-        if (command) set("command", command);
+        session.commandStartedAt = Date.parse(at);
+        const command = terminalCommandTitle(item.commandLine ?? undefined);
+        if (command !== undefined) set("command", command.slice(0, TERMINAL_COMMAND_MAX_LENGTH));
         break;
       }
       case "commandEnd":
         // The first prompt of a shell reports an end without a command.
-        if (session.shell === "running") {
+        if (
+          session.shell === "running" &&
+          Date.parse(at) - session.commandStartedAt >= NOTIFIED_COMMAND_MIN_MS
+        ) {
           const previous = session.attention;
           const bellAt = previous?.kind === "bell" ? previous.at : previous?.bellAt;
           session.attention = {
@@ -97,6 +111,8 @@ export function applyShellItems(
         set("hasRunningSubprocess", false);
         break;
       case "attention": {
+        // A bell at the prompt is the line editor, such as a completion with no match.
+        if (session.shell === "prompt") break;
         const previous = session.attention;
         if (
           previous?.kind === "bell" &&

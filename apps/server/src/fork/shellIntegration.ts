@@ -43,6 +43,7 @@ const BASH_RC = `# Written by T3 Code: reports where the shell stands to the ter
 if [[ \${BASH_VERSINFO[0]} -gt 4 || (\${BASH_VERSINFO[0]} -eq 4 && \${BASH_VERSINFO[1]} -ge 4) ]]; then
   __t3_prompt() {
     local code=$?
+    __t3_histcmd=$HISTCMD
     printf '\\e]133;D;%s\\a\\e]133;A\\a' "$code"
     return "$code"
   }
@@ -52,11 +53,19 @@ if [[ \${BASH_VERSINFO[0]} -gt 4 || (\${BASH_VERSINFO[0]} -eq 4 && \${BASH_VERSI
     PROMPT_COMMAND="__t3_prompt\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
   fi
   # The start mark carries the command line from the history, without the control characters
-  # that would end the mark. A command that the history skips (HISTCONTROL=ignorespace) reports
-  # the command before it.
+  # that would end the mark. A command that the history skips (HISTCONTROL=ignorespace or
+  # ignoredups) leaves HISTCMD as the prompt saw it. fc prints a tab and a space before the line.
+  # A command that starts with a space has no command line, because users type secrets that way.
   __t3_command_line() {
     local line
-    line=$(builtin fc -ln -0 2>/dev/null)
+    if [[ $HISTCMD != "$__t3_histcmd" ]]; then
+      line=$(builtin fc -ln -0 2>/dev/null)
+      line="\${line:2}"
+    fi
+    if [[ -z "$line" || "$line" == " "* ]]; then
+      printf '\\e]133;C\\a'
+      return
+    fi
     line="\${line//[[:cntrl:]]/ }"
     printf '\\e]133;C;cmdline=%s\\a' "\${line:0:${COMMAND_LINE_HOOK_LENGTH}}"
   }
@@ -94,6 +103,11 @@ __t3_precmd() { local code=$?; print -rn -- $'\\e]133;D;'"$code"$'\\a\\e]133;A\\
 # the command. Themes such as powerlevel10k turn it on again, so it goes off before each command.
 __t3_preexec() {
   setopt no_prompt_sp
+  # A command that starts with a space has no command line, because users type secrets that way.
+  if [[ "$1" == " "* ]]; then
+    print -rn -- $'\\e]133;C\\a'
+    return
+  fi
   # The start mark carries the command line, without the control characters that would end it.
   local line="\${1//[[:cntrl:]]/ }"
   print -rn -- $'\\e]133;C;cmdline='"\${line[1,${COMMAND_LINE_HOOK_LENGTH}]}"$'\\a'

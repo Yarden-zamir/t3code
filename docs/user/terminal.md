@@ -50,7 +50,7 @@ A new terminal starts as a new thread in Terminal mode: the composer box holds a
 shell, and the Terminal button in the composer is on. The footer shows the folder of the shell. Pick the shell (zsh, bash and
 so on, or a custom shell) in place of the model. The first command that ends, or that runs for a second (an
 editor, a dev server), makes it a terminal thread with the same shell, named after the
-command, or after the shell when the shell does not report its commands. The enlarge button next to the hint makes it a terminal thread at once, named after its first command. To skip the draft for New terminal thread in the current project (Shift, `chat.newTerminalLocal` or its command palette entry), turn on Settings > Terminal > Open terminal in current project as a thread. Until then:
+program and subcommand of the command (`git push`, `npm run dev`), or after the shell when the shell does not report its commands. Other parts of the command line, such as values, flags and paths, never show in the name, because the name syncs to every client. A command that starts with a space is not used for the name. The enlarge button next to the hint makes it a terminal thread at once, named after its first command. To skip the draft for New terminal thread in the current project (Shift, `chat.newTerminalLocal` or its command palette entry), turn on Settings > Terminal > Open terminal in current project as a thread. Until then:
 
 - The Terminal button switches back to an agent, and closes the shell.
 - A prompt that you typed before switching to Terminal stays in the draft. When the terminal
@@ -112,13 +112,14 @@ into its terminal. The terminal shows exactly what the message said.
 The sidebar shows the state of a terminal thread until you visit it:
 
 - A bell or an app notification from a program shows Input, also while a program runs and
-  after it ends.
-- A program that ends shows Done, or Failed when its exit code is not zero.
+  after it ends. A bell at the prompt, such as a completion beep, does not.
+- A command that ran for 10 seconds or more shows Done when it ends, or Failed when its exit
+  code is not zero. A shorter command shows nothing, because you still watch it.
 - A program that runs in the shell shows Working. A background job does not.
 - A shell that cannot start shows Failed.
 
-With Web Push on, a phone also gets a notification for a bell (Input needed) and for a program
-that ends (Program done or Program failed).
+With Web Push on, a phone also gets a notification for a bell (Input needed) and for a command
+of 10 seconds or more that ends (Program done or Program failed).
 
 ## Shell exit
 

@@ -254,6 +254,17 @@ export class TerminalManager extends Context.Service<
       registerCleanup?: (stop: () => void) => void,
     ) => Effect.Effect<() => void, TerminalError>;
 
+    /**
+     * Fork: the read-only screen of a terminal thread while `terminalThreads` is off. It streams
+     * the session if one exists, and otherwise the saved output as an exited session. It never
+     * starts a shell.
+     */
+    readonly forkSavedOutputStream: (
+      input: TerminalObserveInput & { readonly cwd: string; readonly worktreePath: string | null },
+      listener: (event: TerminalAttachStreamEvent) => Effect.Effect<void>,
+      registerCleanup?: (stop: () => void) => void,
+    ) => Effect.Effect<() => void, TerminalError>;
+
     /** Fork: the thread ids of running terminal thread screens that no client attaches to. */
     readonly forkUnattachedThreadScreens: Effect.Effect<ReadonlyArray<string>>;
 
@@ -351,6 +362,7 @@ interface TerminalSessionState {
   shellConfirmedAt: number;
   shellMarks: ReturnType<typeof makeShellMarkParser> | null;
   command: string | null;
+  commandStartedAt: number;
   /** Fork: the `shell` that opened the session, null for the default shell. */
   shellName: string | null;
   /**
@@ -3067,6 +3079,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         shellConfirmedAt: 0,
         shellMarks: null,
         command: null,
+        commandStartedAt: 0,
         shellName: input.shell ?? null,
         customShell: false,
         runtimeEnv: normalizedRuntimeEnv(input.env),
@@ -3450,6 +3463,42 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       registerCleanup,
     );
 
+  const forkSavedOutputStream: TerminalManager["Service"]["forkSavedOutputStream"] = (
+    input,
+    listener,
+    registerCleanup,
+  ) =>
+    streamSession(
+      input,
+      Effect.gen(function* () {
+        const existing = yield* getSession(input.threadId, input.terminalId);
+        if (Option.isSome(existing)) return snapshot(existing.value);
+        yield* flushPersist(input.threadId, input.terminalId);
+        const history = yield* readHistory(input.threadId, input.terminalId);
+        return {
+          threadId: input.threadId,
+          terminalId: input.terminalId,
+          cwd: input.cwd,
+          worktreePath: input.worktreePath,
+          status: "exited",
+          pid: null,
+          // Neutralized as for a cold open, so a program that held the screen does not hold it.
+          history: neutralizeInheritedHistory(
+            history.value(),
+            historyLineLimit,
+            Math.min(historyByteLimit, DEFAULT_MAX_TERMINAL_BUFFER_BYTES),
+          ),
+          exitCode: null,
+          exitSignal: null,
+          label: truncateTerminalWireLabel(getTerminalLabel(input.terminalId)),
+          updatedAt: yield* nowIso,
+          sequence: 0,
+        } satisfies TerminalSessionSnapshot;
+      }),
+      listener,
+      registerCleanup,
+    );
+
   const metadataEventFromTerminalEvent = (
     event: TerminalEvent,
   ): Effect.Effect<TerminalMetadataStreamEvent | null> => {
@@ -3638,6 +3687,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         shellConfirmedAt: 0,
         shellMarks: null,
         command: null,
+        commandStartedAt: 0,
         shellName: null,
         customShell: false,
         runtimeEnv: normalizedRuntimeEnv(input.env),
@@ -3774,6 +3824,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     subscribeMetadata,
     forkUnattachedThreadScreens,
     forkResyncAttachStream,
+    forkSavedOutputStream,
     forkMoveSession,
   });
 });

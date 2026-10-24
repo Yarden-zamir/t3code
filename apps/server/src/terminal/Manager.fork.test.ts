@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import {
   DEFAULT_TERMINAL_ID,
+  type TerminalAttachStreamEvent,
   type TerminalEvent,
   type TerminalCustomShell,
   type TerminalOpenInput,
@@ -463,12 +464,15 @@ it.layer(
         forkShellIntegration: (candidate, env) => ({ candidate, env }),
       });
       const summaries: Array<TerminalSummary> = [];
-      const finished = yield* Deferred.make<void>();
+      // The end of the command is the prompt that follows a running state. A command this short
+      // raises no attention (`terminalShellState.test.ts` covers the attention rules).
+      const ended = yield* Deferred.make<void>();
       const unsubscribe = yield* manager.subscribeMetadata((event) => {
         if (event.type !== "upsert") return Effect.void;
         summaries.push(event.terminal);
-        return event.terminal.attention?.kind === "finished"
-          ? Deferred.succeed(finished, undefined).pipe(Effect.asVoid)
+        return event.terminal.shell === "prompt" &&
+          summaries.some((summary) => summary.shell === "running")
+          ? Deferred.succeed(ended, undefined).pipe(Effect.asVoid)
           : Effect.void;
       });
       yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
@@ -478,7 +482,7 @@ it.layer(
       shell?.emit("\u001b]133;A\u0007");
       shell?.emit("\u001b]133;C\u0007out\r\n");
       shell?.emit("\u001b]133;D;3\u0007\u001b]133;A\u0007");
-      yield* Deferred.await(finished);
+      yield* Deferred.await(ended);
 
       expect(summaries[0]?.shell).toBe("starting");
       expect(
@@ -487,11 +491,10 @@ it.layer(
       const last = summaries.at(-1);
       expect(last?.shell).toBe("prompt");
       expect(last?.hasRunningSubprocess).toBe(false);
-      expect(last?.attention).toMatchObject({ kind: "finished", exitCode: 3 });
     }),
   );
 
-  it.effect("reports the command line that the shell of a terminal thread started", () =>
+  it.effect("reports the program and subcommand that the shell of a terminal thread started", () =>
     Effect.gen(function* () {
       const { manager, pty } = yield* createManager({
         forkShellIntegration: (candidate, env) => ({ candidate, env }),
@@ -505,10 +508,11 @@ it.layer(
       yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
 
       yield* manager.open(threadScreenWithoutShell);
-      const long = "x".repeat(300);
-      pty.processes[0]?.emit(`\u001b]133;A\u0007\u001b]133;C;cmdline=\t echo ${long} \u0007`);
+      pty.processes[0]?.emit(
+        "\u001b]133;A\u0007\u001b]133;C;cmdline=\t TOKEN=ghp_abc123 gh pr list --limit 5 \u0007",
+      );
 
-      expect(yield* Deferred.await(command)).toBe(`echo ${long}`.slice(0, 200));
+      expect(yield* Deferred.await(command)).toBe("gh pr list");
     }),
   );
 
@@ -572,6 +576,41 @@ it.layer(
       expect(yield* manager.forkUnattachedThreadScreens).toEqual([]);
       for (const stop of stops) stop();
       expect(yield* manager.forkUnattachedThreadScreens).toEqual(["draft-1"]);
+    }),
+  );
+
+  it.effect("streams the saved output of a terminal thread without a shell", () =>
+    Effect.gen(function* () {
+      const { manager, pty } = yield* createManager({});
+      yield* manager.open(threadScreenWithoutShell);
+      const printed = yield* Deferred.make<void>();
+      const stop = yield* manager.subscribe((event) =>
+        event.type === "output"
+          ? Deferred.succeed(printed, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      pty.processes[0]?.emit("saved output\r\n");
+      yield* Deferred.await(printed);
+      stop();
+      yield* TestClock.adjust("1 second");
+      // As after a server restart: the session is gone and only its history file is left.
+      yield* manager.close({ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID });
+
+      const events: Array<TerminalAttachStreamEvent> = [];
+      const unsubscribe = yield* manager.forkSavedOutputStream(
+        { threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID, cwd: "/repo", worktreePath: null },
+        (event) => Effect.sync(() => events.push(event)),
+      );
+      unsubscribe();
+
+      expect(pty.spawnInputs).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        type: "snapshot",
+        snapshot: { status: "exited", pid: null },
+      });
+      expect(events[0]?.type === "snapshot" && events[0].snapshot.history).toContain(
+        "saved output",
+      );
     }),
   );
 

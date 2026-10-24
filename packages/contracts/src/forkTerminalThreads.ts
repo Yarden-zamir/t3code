@@ -85,10 +85,50 @@ export const TERMINAL_COMMAND_MAX_LENGTH = 200;
 
 const TERMINAL_THREAD_TITLE_MAX_LENGTH = 80;
 
+/** A program name: no quotes, `$` or brackets, which a title cannot show as the shell reads them. */
+const PROGRAM_WORD = /^[\w.+/-]+$/;
+/** A subcommand such as `push`, `run`, `compose` or `build:prod`. Digits suggest a value. */
+const SUBCOMMAND_WORD = /^[a-z][a-z:-]{0,23}$/;
+
 /**
- * The title of a new terminal thread: its command line, else the program that runs, else its
- * shell. A shell without the hook (a custom shell, a drawer terminal) reports no command line.
- * Typed keys are no command line either, because of line editing, completion and history.
+ * A long word with both letters and digits is a token or a key more often than a program name. A
+ * token that is pasted into the shell by mistake runs as a command. This misses a short password,
+ * which is why the arguments never show. Revisit if a real program name gets refused.
+ */
+function looksLikeSecret(word: string): boolean {
+  return word.length >= 16 && /\d/.test(word) && /[a-z]/i.test(word);
+}
+
+/**
+ * The words of a command line that say what it does: the program and up to two subcommand words
+ * (`git push origin`, `npm run dev`, `docker compose up`). The title of a thread and the
+ * `command` of its terminal sync to every client and machine, so the rest of the line never
+ * shows. `NAME=value` parts, flags (`--token …`, `-H "Authorization: Bearer …"`), paths and
+ * values often carry secrets. A word that is not a plain lowercase word ends the title, so a
+ * secret shape that nobody listed stays out too. Undefined when no program is left.
+ */
+export function terminalCommandTitle(commandLine: string | undefined): string | undefined {
+  const words = commandLine?.trim().split(/\s+/) ?? [];
+  const programIndex = words.findIndex((word) => !word.includes("="));
+  const program = words[programIndex];
+  if (program === undefined || !PROGRAM_WORD.test(program) || looksLikeSecret(program)) {
+    return undefined;
+  }
+  const name = program.slice(program.lastIndexOf("/") + 1);
+  if (name.length === 0) return undefined;
+  const subcommands: Array<string> = [];
+  for (const word of words.slice(programIndex + 1, programIndex + 3)) {
+    if (!SUBCOMMAND_WORD.test(word)) break;
+    subcommands.push(word);
+  }
+  return [name, ...subcommands].join(" ");
+}
+
+/**
+ * The title of a new terminal thread: the program and subcommand of its command line, else the
+ * program that runs, else its shell. A shell without the hook (a custom shell, a drawer terminal)
+ * reports no command line. Typed keys are no command line either, because of line editing,
+ * completion and history.
  */
 export function terminalThreadTitle(source: {
   readonly command: string | undefined;
@@ -97,9 +137,11 @@ export function terminalThreadTitle(source: {
   /** The shell slug, undefined for the default shell. */
   readonly shell: string | undefined;
 }): string {
-  const title = [source.command, source.program, source.shell]
-    .map((value) => value?.trim())
-    .find((value) => value !== undefined && value.length > 0);
+  const title = [
+    terminalCommandTitle(source.command),
+    terminalCommandTitle(source.program),
+    source.shell?.trim(),
+  ].find((value) => value !== undefined && value.length > 0);
   return (title ?? "Terminal").slice(0, TERMINAL_THREAD_TITLE_MAX_LENGTH);
 }
 
@@ -113,8 +155,8 @@ export function terminalThreadCommandTitle(source: {
   readonly command: string | undefined;
   readonly shell: string | undefined;
 }): string | null {
-  const command = source.command?.trim();
-  if (!command) return null;
+  const command = terminalCommandTitle(source.command);
+  if (command === undefined) return null;
   if (source.title !== terminalThreadTitle({ command: undefined, shell: source.shell }))
     return null;
   return terminalThreadTitle({ command, shell: source.shell });
@@ -205,5 +247,21 @@ export class ForkMoveTerminalToThreadError extends Schema.TaggedError<ForkMoveTe
 ) {
   override get message(): string {
     return `The terminal did not move to a terminal thread. ${this.detail}`;
+  }
+}
+
+/** Where a user turns terminal threads on. The server and the clients show it in the same words. */
+export const TERMINAL_THREADS_SETTING_PATH = "Settings > Terminal > Terminal threads";
+
+/**
+ * While the server setting `terminalThreads` is off, the server starts no shell for a terminal
+ * thread and accepts no `shell` field, so turning the setting off turns the feature off.
+ */
+export class TerminalThreadsOffError extends Schema.TaggedError<TerminalThreadsOffError>()(
+  "TerminalThreadsOffError",
+  {},
+) {
+  override get message(): string {
+    return `Terminal threads are off. Turn them on in ${TERMINAL_THREADS_SETTING_PATH}.`;
   }
 }

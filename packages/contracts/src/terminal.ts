@@ -4,6 +4,7 @@ import {
   TERMINAL_COMMAND_MAX_LENGTH,
   TerminalAttention,
   TerminalShellState,
+  TerminalThreadsOffError,
 } from "./forkTerminalThreads.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
@@ -140,7 +141,7 @@ export const TerminalSummary = Schema.Struct({
   /** Fork: set on the main terminal of a terminal thread. */
   attention: Schema.optionalKey(TerminalAttention),
   shell: Schema.optionalKey(TerminalShellState),
-  /** The command line of the last command that the shell started, trimmed. */
+  /** The program and subcommand of the last command (`terminalCommandTitle`). */
   command: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(TERMINAL_COMMAND_MAX_LENGTH))),
 });
 export type TerminalSummary = typeof TerminalSummary.Type;
@@ -406,5 +407,6 @@ export const TerminalError = Schema.Union([
   TerminalWriteError,
   TerminalResizeError,
   TerminalShellNotFoundError,
+  TerminalThreadsOffError,
 ]);
 export type TerminalError = typeof TerminalError.Type;
