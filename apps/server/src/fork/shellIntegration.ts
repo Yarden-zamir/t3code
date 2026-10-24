@@ -118,12 +118,28 @@ preexec_functions+=(__t3_preexec)
 PS2=$'%{\\e]133;A;k=s\\a%}'"$PS2"
 `;
 
-/** The shell command and environment with the hook, or null for a shell without support. */
+/**
+ * The shell command and environment with the hook. `failed` is a shell that supports the hook
+ * while the hook files are missing: it starts without the hook, and the notice goes into the
+ * terminal above it.
+ */
 export type ShellIntegration = (
   candidate: ShellCandidate,
   env: NodeJS.ProcessEnv,
-) => { readonly candidate: ShellCandidate; readonly env: NodeJS.ProcessEnv } | null;
+) =>
+  | {
+      readonly type: "hooked";
+      readonly candidate: ShellCandidate;
+      readonly env: NodeJS.ProcessEnv;
+    }
+  | { readonly type: "unsupported" }
+  | { readonly type: "failed"; readonly notice: string };
 
+/**
+ * Limit: the hook files are written once, at server start. A failed write (a full disk, no
+ * permission) turns the hook off until the next server start, and a file removed later breaks
+ * the hook of new shells. Revisit if either happens in practice.
+ */
 export const makeShellIntegration = Effect.fn("makeShellIntegration")(function* () {
   const { stateDir } = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -133,30 +149,44 @@ export const makeShellIntegration = Effect.fn("makeShellIntegration")(function* 
   const root = path.join(stateDir, "shell-integration");
   const zshDir = path.join(root, "zsh");
   const bashRc = path.join(root, "bash.rc");
-  yield* fileSystem.makeDirectory(zshDir, { recursive: true });
-  yield* fileSystem.writeFileString(bashRc, BASH_RC);
-  yield* fileSystem.writeFileString(path.join(zshDir, ".zshenv"), zshForward(".zshenv"));
-  yield* fileSystem.writeFileString(path.join(zshDir, ".zprofile"), zshForward(".zprofile"));
-  yield* fileSystem.writeFileString(path.join(zshDir, ".zshrc"), ZSHRC);
-  yield* fileSystem.writeFileString(path.join(zshDir, ".zlogin"), zshForward(".zlogin"));
+  const writeError = yield* Effect.gen(function* () {
+    yield* fileSystem.makeDirectory(zshDir, { recursive: true });
+    yield* fileSystem.writeFileString(bashRc, BASH_RC);
+    yield* fileSystem.writeFileString(path.join(zshDir, ".zshenv"), zshForward(".zshenv"));
+    yield* fileSystem.writeFileString(path.join(zshDir, ".zprofile"), zshForward(".zprofile"));
+    yield* fileSystem.writeFileString(path.join(zshDir, ".zshrc"), ZSHRC);
+    yield* fileSystem.writeFileString(path.join(zshDir, ".zlogin"), zshForward(".zlogin"));
+    return null;
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("Terminal threads run without shell integration.", { root, error }).pipe(
+        Effect.as(error.message),
+      ),
+    ),
+  );
+  // The same form as the start errors of the terminal manager.
+  const notice =
+    writeError === null
+      ? null
+      : `\r\n[terminal] Shell integration is off, so this thread shows no command results: ${writeError}\r\n`;
 
   const integrate: ShellIntegration = (candidate, env) => {
     const shell = shellPath.parse(candidate.shell).name.toLowerCase();
+    if (shell !== "bash" && shell !== "zsh") return { type: "unsupported" };
+    if (notice !== null) return { type: "failed", notice };
     if (shell === "bash") {
-      return { candidate: { ...candidate, args: ["--rcfile", bashRc] }, env };
+      return { type: "hooked", candidate: { ...candidate, args: ["--rcfile", bashRc] }, env };
     }
-    if (shell === "zsh") {
-      return {
-        candidate,
-        env: {
-          ...env,
-          ZDOTDIR: zshDir,
-          T3_ZDOTDIR: zshDir,
-          T3_USER_ZDOTDIR: env.ZDOTDIR ?? "",
-        },
-      };
-    }
-    return null;
+    return {
+      type: "hooked",
+      candidate,
+      env: {
+        ...env,
+        ZDOTDIR: zshDir,
+        T3_ZDOTDIR: zshDir,
+        T3_USER_ZDOTDIR: env.ZDOTDIR ?? "",
+      },
+    };
   };
   return integrate;
 });

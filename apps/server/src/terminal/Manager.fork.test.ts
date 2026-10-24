@@ -86,6 +86,7 @@ const makeFakePtyAdapter = () => {
 
 // Marks a spawn that got the hook, so a test can see that a shell ran without it.
 const markingIntegration: ShellIntegration = (candidate, env) => ({
+  type: "hooked",
   candidate: { ...candidate, args: ["--integrated"] },
   env: { ...env, T3_TEST_INTEGRATED: "1" },
 });
@@ -297,6 +298,31 @@ it.layer(
     }),
   );
 
+  it.effect("starts a shell without the hook and says why when the hook is not available", () =>
+    Effect.gen(function* () {
+      const { manager, pty } = yield* createManager({
+        forkShells: [{ name: "bash", path: "/bin/bash" }],
+        forkShellIntegration: () => ({ type: "failed", notice: "[terminal] no hook files\r\n" }),
+      });
+      const summaries: Array<TerminalSummary> = [];
+      const unsubscribe = yield* manager.subscribeMetadata((event) =>
+        Effect.sync(() => {
+          if (event.type === "upsert") summaries.push(event.terminal);
+        }),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      const snapshot = yield* manager.open(threadScreen("bash"));
+
+      expect(snapshot.status).toBe("running");
+      expect(pty.spawnInputs[0]?.args).toBeUndefined();
+      expect(snapshot.history).toContain("[terminal] no hook files");
+      // The shell reports no state, as a shell without support for the hook.
+      expect(summaries.at(-1)?.status).toBe("running");
+      expect(summaries.at(-1)?.shell).toBeUndefined();
+    }),
+  );
+
   it.effect("reports a program in a detected shell, not the child process of a custom shell", () =>
     Effect.gen(function* () {
       const customShells = yield* Ref.make<ReadonlyArray<TerminalCustomShell>>([
@@ -463,7 +489,7 @@ it.layer(
   it.effect("reports the shell state of a terminal thread from the marks of its shell", () =>
     Effect.gen(function* () {
       const { manager, pty } = yield* createManager({
-        forkShellIntegration: (candidate, env) => ({ candidate, env }),
+        forkShellIntegration: (candidate, env) => ({ type: "hooked", candidate, env }),
       });
       const summaries: Array<TerminalSummary> = [];
       // The end of the command is the prompt that follows a running state. A command this short
@@ -499,7 +525,7 @@ it.layer(
   it.effect("reports the program and subcommand that the shell of a terminal thread started", () =>
     Effect.gen(function* () {
       const { manager, pty } = yield* createManager({
-        forkShellIntegration: (candidate, env) => ({ candidate, env }),
+        forkShellIntegration: (candidate, env) => ({ type: "hooked", candidate, env }),
       });
       const command = yield* Deferred.make<string>();
       const unsubscribe = yield* manager.subscribeMetadata((event) =>

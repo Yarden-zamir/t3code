@@ -2433,7 +2433,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     index = 0,
     lastError: PtyAdapter.PtySpawnError | null = null,
   ): Effect.fn.Return<
-    { process: PtyAdapter.PtyProcess; shellLabel: string; integrated: boolean },
+    {
+      process: PtyAdapter.PtyProcess;
+      shellLabel: string;
+      integrated: boolean;
+      integrationNotice: string | null;
+    },
     PtyAdapter.PtySpawnError
   > {
     if (index >= shellCandidates.length) {
@@ -2455,7 +2460,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       );
     }
 
-    const integrated = integrate?.(candidate, spawnEnv) ?? null;
+    const integration = integrate?.(candidate, spawnEnv) ?? null;
+    const integrated = integration?.type === "hooked" ? integration : null;
     const launchEnv = integrated?.env ?? spawnEnv;
     const launch = yield* agentScope.wrap({
       command: candidate.shell,
@@ -2480,6 +2486,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         process: attempt.success,
         shellLabel: formatShellCandidate(candidate),
         integrated: integrated !== null,
+        integrationNotice: integration?.type === "failed" ? integration.notice : null,
       };
     }
 
@@ -2606,6 +2613,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               // Fork: only a shell that starts gets the line, so a failed start adds none.
               if (isTerminalThreadMainTerminal(session.terminalId, session.runtimeEnv)) {
                 markNewShellBelowOutput(session);
+              }
+              if (spawnResult.integrationNotice !== null) {
+                session.history.append(spawnResult.integrationNotice);
               }
               // Fork: a shell with integration reports its state from its first prompt on.
               if (spawnResult.integrated) {
