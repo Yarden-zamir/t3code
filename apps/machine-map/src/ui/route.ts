@@ -33,6 +33,8 @@ export type Selection =
   /** MM-907: a browser key that waits for approval, by its thumbprint. */
   | { readonly _tag: "pending"; readonly thumbprint: string }
   | { readonly _tag: "arrow"; readonly from: string; readonly to: string }
+  /** MM-309: the arrow of a client to one machine. */
+  | { readonly _tag: "clientArrow"; readonly client: string; readonly to: string }
   | { readonly _tag: "revision"; readonly revision: number }
   | { readonly _tag: "proposal"; readonly id: string }
   | { readonly _tag: "setting"; readonly scope: "server" | "client"; readonly key: string }
@@ -62,6 +64,8 @@ export function formatRoute(route: Route): string {
         return ["pending", s.thumbprint];
       case "arrow":
         return ["arrow", s.from, s.to];
+      case "clientArrow":
+        return ["client-arrow", s.client, s.to];
       case "revision":
         return ["revision", s.revision];
       case "proposal":
@@ -95,6 +99,7 @@ export function parseRoute(hash: string): Route {
     if (kind === "client" && a) return { _tag: "client", id: a };
     if (kind === "pending" && a) return { _tag: "pending", thumbprint: a };
     if (kind === "arrow" && a && b) return { _tag: "arrow", from: a, to: b };
+    if (kind === "client-arrow" && a && b) return { _tag: "clientArrow", client: a, to: b };
     if (kind === "revision" && a && Number.isSafeInteger(Number(a))) {
       return { _tag: "revision", revision: Number(a) };
     }
@@ -106,3 +111,7 @@ export function parseRoute(hash: string): Route {
   })();
   return { view, selection };
 }
+
+/** Two selections name the same item. */
+export const sameSelection = (a: Selection, b: Selection): boolean =>
+  formatRoute({ view: "map", selection: a }) === formatRoute({ view: "map", selection: b });

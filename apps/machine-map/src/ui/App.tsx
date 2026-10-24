@@ -11,7 +11,7 @@ import type { HistoryResponse, WriteResult } from "../api.ts";
 import { touchesOwnerOnlySettings } from "../rules/access.ts";
 import { applyChanges } from "../rules/map.ts";
 import { DEFAULT_COMMAND_MINUTES } from "../rules/queue.ts";
-import { callApi, StepUpNeeded } from "./apiClient.ts";
+import { callApi, isFixturePage, StepUpNeeded } from "./apiClient.ts";
 import {
   PortalContext,
   type CommandOptions,
@@ -46,8 +46,8 @@ import {
   QueueView,
   TasksView,
   SettingsView,
-  TableView,
 } from "./views.tsx";
+import { BoardView } from "./BoardView.tsx";
 
 /** Relative times refresh on this clock, not on a continuous animation (MM-1107). */
 const CLOCK_MS = 30_000;
@@ -150,6 +150,11 @@ function Brand({ connection, revision }: { connection: Connection; revision: num
       <span className="live">
         <span className={`sticker ${CONNECTION_STICKER[connection]}`}>{connection}</span>
         {revision !== null && <span className="mono muted">rev {revision}</span>}
+        {isFixturePage() && (
+          <span className="sticker wait" data-tip="Dev fixture: changes stay in this page">
+            fixture
+          </span>
+        )}
       </span>
     </div>
   );
@@ -448,7 +453,7 @@ export function App() {
       case "map":
         return <MapView map={map} readOnly={false} />;
       case "table":
-        return <TableView />;
+        return <BoardView />;
       case "health":
         return <HealthView />;
       case "settings":

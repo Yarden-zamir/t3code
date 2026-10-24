@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   clientKeyCode,
-  MACHINE_LEVEL_SCOPES,
   type ClientRecord,
   type CommandDelivery,
   type MachineCommandInput,
@@ -16,21 +15,19 @@ import {
 } from "@t3tools/contracts/machineMap";
 
 import type { ApprovalsStatus, ApproveClientRequest, PendingClient, WriteResult } from "../api.ts";
-import { arrowChange, clientArrowChange, usesText } from "../rules/access.ts";
+import { usesText } from "../rules/access.ts";
 import {
   effectiveSettings,
   findArrow,
   findClientArrow,
   findMachine,
   LEVELS,
-  levelRank,
   MAP_ROLES,
-  pairOffset,
   roleRank,
   sameValue,
 } from "../rules/map.ts";
 import { DEFAULT_COMMAND_MINUTES, ROTATION_MINUTES } from "../rules/queue.ts";
-import { CapabilityList, CapabilityStickers } from "./ArrowCapabilities.tsx";
+import { CapabilityStickers } from "./ArrowCapabilities.tsx";
 import { callApi, StepUpNeeded } from "./apiClient.ts";
 import { ApprovalsSetup, PasskeyStepUp } from "./Approvals.tsx";
 import { captureApproval } from "../rules/approval.ts";
@@ -39,16 +36,13 @@ import { usePortalContext, type CommandOptions, type Portal } from "./context.ts
 import { buildStandings } from "./build.ts";
 import { BuildLabel, BuildSticker } from "./BuildLabel.tsx";
 import {
-  arrowEndRoute,
-  arrowEndWait,
-  arrowEnds,
   connectMachines,
   cutLevel,
   describeChange,
+  grantCut,
   machineQueue,
   pairCut,
   pairShows,
-  type ArrowEnd,
 } from "./derive.ts";
 import {
   actorText,
@@ -56,7 +50,6 @@ import {
   COMMAND_STICKER,
   DANGEROUS_COMMANDS,
   LEVEL_LABEL,
-  LEVEL_TEXT,
   machineName,
   PRESENCE_STICKER,
   presenceState,
@@ -68,6 +61,7 @@ import {
   timeUntil,
   valueText,
 } from "./format.ts";
+import { GrantPanel } from "./AccessEditor.tsx";
 import { ClientIcon, CloseIcon, KindIcon, UndoIcon } from "./icons.tsx";
 import { MachineStickers } from "./MachineStickers.tsx";
 import { MachineLink, RouteLink } from "./StickerLink.tsx";
@@ -77,6 +71,7 @@ import { settingControl, settingProblem } from "./settingControls.ts";
 
 const PANEL_LABEL: Record<Exclude<Selection["_tag"], "none">, string> = {
   arrow: "Arrow",
+  clientArrow: "Client arrow",
   machine: "Machine",
   client: "Client",
   pending: "Sign-in",
@@ -93,7 +88,8 @@ export function Panel({ selection }: { selection: Selection }) {
   const body = (() => {
     switch (selection._tag) {
       case "arrow":
-        return <ArrowPanel from={selection.from} to={selection.to} />;
+      case "clientArrow":
+        return <GrantPanel selection={selection} />;
       case "machine":
         return <MachinePanel id={selection.id} />;
       case "client":
@@ -144,303 +140,6 @@ const PausedNote = () => (
     <span className="sticker">paused</span> Access only goes down until you resume.
   </div>
 );
-
-type Duration = "permanent" | "hour" | "day" | "until";
-
-const DURATION_LABEL: Record<Duration, string> = {
-  permanent: "Always",
-  hour: "1 hour",
-  day: "1 day",
-  until: "Until…",
-};
-
-/** MM-304: null for a permanent level, undefined for a time that is not in the future. */
-function durationExpiry(duration: Duration, until: string, now: number): string | null | undefined {
-  if (duration === "permanent") return null;
-  if (duration === "hour") return new Date(now + 3_600_000).toISOString();
-  if (duration === "day") return new Date(now + 86_400_000).toISOString();
-  const at = Date.parse(until);
-  return Number.isNaN(at) || at <= now ? undefined : new Date(at).toISOString();
-}
-
-/** MM-301 to MM-307, MM-604. */
-function ArrowPanel({ from, to }: { from: string; to: string }) {
-  const portal = usePortalContext();
-  const { map, snapshot, now } = portal;
-  const [duration, setDuration] = useState<Duration>("permanent");
-  const [until, setUntil] = useState("");
-  const source = map.machines.find((m) => m.id === from);
-  const target = map.machines.find((m) => m.id === to);
-  if (!source || !target || source.id === target.id) return <Missing what="arrow" />;
-  const arrow = findArrow(map, source.id, target.id);
-  const reverse = findArrow(map, target.id, source.id);
-  const f = source.name;
-  const t = target.name;
-  const permanent = arrow.revertLevel ?? arrow.level;
-  const was = arrow.level === "none" ? cutLevel(portal.pause, source.id, target.id) : null;
-
-  const setLevel = (level: MachineLevel) => {
-    // oxlint-disable-next-line react/purity -- This runs in a click handler, not during render.
-    const expiry = durationExpiry(duration, until, Date.now());
-    if (expiry === undefined) {
-      portal.call(() => Promise.reject(new Error("Pick a time in the future.")));
-      return;
-    }
-    const suffix = expiry === null ? "" : ` until ${shortTime(expiry)}`;
-    portal.submit(`${usesText(f, t)}: ${LEVEL_LABEL[level]}${suffix}`, [
-      arrowChange(map, { from: source.id, to: target.id, level, expiresAt: expiry }),
-    ]);
-  };
-
-  const ends = arrowEnds(snapshot, source.id, target.id);
-  const endText = (end: ArrowEnd, machine: MachineRecord) => {
-    const wait = arrowEndWait(end, machine);
-    if (wait === null) return `applied on ${machine.name}`;
-    return end === "queued" && !snapshot.presence[machine.id]?.online ? `${wait} (offline)` : wait;
-  };
-  const applied = ends.from === "applied" && ends.to === "applied";
-  /** MM-602: each end opens its machine, or the Queue of its machine while the arrow waits. */
-  const endLink = (end: ArrowEnd, machine: MachineRecord, first: boolean) => {
-    const text = endText(end, machine);
-    return (
-      <RouteLink
-        route={
-          end === "applied"
-            ? { view: portal.route.view, selection: { _tag: "machine", id: machine.id } }
-            : arrowEndRoute(end, machine.id)
-        }
-      >
-        {first ? text.charAt(0).toUpperCase() + text.slice(1) : text}
-      </RouteLink>
-    );
-  };
-  const lastTest = snapshot.commands.find(
-    (c) => c.machineId === source.id && c.input._tag === "testArrow" && c.input.to === target.id,
-  );
-  const scopes = arrow.level === "none" ? [] : MACHINE_LEVEL_SCOPES[arrow.level];
-
-  return (
-    <>
-      <h2>
-        <MachineLink id={source.id}>{f}</MachineLink> <span className="verb">uses</span>{" "}
-        <MachineLink id={target.id}>{t}</MachineLink>
-      </h2>
-      <p className="desc">
-        What {f} can do on {t}.
-      </p>
-      <button
-        type="button"
-        className="link reverse"
-        onClick={() => portal.select({ _tag: "arrow", from: target.id, to: source.id })}
-      >
-        Other way: {usesText(t, f)}: {LEVEL_LABEL[reverse.level]}
-      </button>
-      {portal.pause && <PausedNote />}
-      {was && (
-        <p className="hint">The pause cut this arrow. Resume returns it to {LEVEL_LABEL[was]}.</p>
-      )}
-
-      <Section>How long</Section>
-      <div className="seg wide" role="group" aria-label="How long">
-        {(["permanent", "hour", "day", "until"] as const).map((d) => (
-          <button
-            key={d}
-            type="button"
-            aria-pressed={duration === d}
-            onClick={() => setDuration(d)}
-          >
-            {DURATION_LABEL[d]}
-          </button>
-        ))}
-      </div>
-      {duration === "until" && (
-        <input
-          type="datetime-local"
-          aria-label="Until"
-          className="full"
-          value={until}
-          onChange={(e) => setUntil(e.target.value)}
-        />
-      )}
-      <p className="hint">
-        {duration === "permanent"
-          ? "The level you pick stays until you change it."
-          : `Pick a level below. It returns to ${LEVEL_LABEL[permanent]} ${duration === "until" ? "at that time" : `after ${DURATION_LABEL[duration]}`}.`}
-      </p>
-
-      <Section>Level</Section>
-      <div className="seg wide" role="group" aria-label="Level">
-        {LEVELS.map((level) => (
-          <button
-            key={level}
-            type="button"
-            aria-pressed={arrow.level === level}
-            disabled={portal.pause !== null && levelRank(level) > levelRank(arrow.level)}
-            onClick={() => setLevel(level)}
-          >
-            {LEVEL_LABEL[level]}
-          </button>
-        ))}
-      </div>
-      <p className="desc">{LEVEL_TEXT[arrow.level]}</p>
-      {scopes.length > 0 && (
-        <details className="more">
-          <summary>{scopes.length} T3 scopes</summary>
-          <p className="small mono scopes">{scopes.join(", ")}</p>
-        </details>
-      )}
-      {arrow.expiresAt && arrow.revertLevel && (
-        <div className="row callout">
-          <div className="v">
-            <span className="sticker warn flat">temp</span> Returns to{" "}
-            {LEVEL_LABEL[arrow.revertLevel]} {timeUntil(arrow.expiresAt, now)}.
-          </div>
-          <button
-            type="button"
-            className="btn small"
-            onClick={() =>
-              portal.submit(`${usesText(f, t)}: made permanent`, [
-                arrowChange(map, {
-                  from: source.id,
-                  to: target.id,
-                  level: arrow.level,
-                  expiresAt: null,
-                }),
-              ])
-            }
-          >
-            Make permanent
-          </button>
-        </div>
-      )}
-
-      <Section>Agents</Section>
-      <label className="row toggle-row">
-        <span>
-          <span className="t">
-            Agents on {f} use {t}'s T3 tools
-          </span>
-          <span className="v">Within the scopes of the level.</span>
-        </span>
-        <input
-          type="checkbox"
-          className="switch"
-          checked={arrow.agentTools}
-          disabled={portal.pause !== null && !arrow.agentTools}
-          onChange={(e) =>
-            portal.submit(`${usesText(f, t)}: agent tools ${e.target.checked ? "on" : "off"}`, [
-              arrowChange(map, {
-                from: source.id,
-                to: target.id,
-                level: arrow.level,
-                agentTools: e.target.checked,
-                expiresAt: arrow.expiresAt,
-              }),
-            ])
-          }
-        />
-      </label>
-      {/* MM-1908: machine_exec is an agent tool, so exec needs agent tools. */}
-      <label className="row toggle-row">
-        <span>
-          <span className="t">
-            Agents on {f} run commands on {t}
-          </span>
-          <span className="v">
-            {arrow.agentTools
-              ? levelRank(arrow.level) >= levelRank("standard")
-                ? `As ${t}'s T3 user, with machine_exec. History lists each run.`
-                : "Works only at Standard or Admin."
-              : "Turn on agent tools first."}
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          className="switch"
-          checked={arrow.exec}
-          disabled={!arrow.exec && (!arrow.agentTools || portal.pause !== null)}
-          onChange={(e) =>
-            portal.submit(`${usesText(f, t)}: exec ${e.target.checked ? "on" : "off"}`, [
-              arrowChange(map, {
-                from: source.id,
-                to: target.id,
-                level: arrow.level,
-                exec: e.target.checked,
-                expiresAt: arrow.expiresAt,
-              }),
-            ])
-          }
-        />
-      </label>
-
-      <Section>What it can do</Section>
-      <CapabilityList arrow={arrow} from={f} to={t} />
-
-      <Section>Delivery</Section>
-      <p className="small">
-        {applied ? (
-          <span className="sticker ok flat">applied</span>
-        ) : (
-          <span className="sticker wait flat">pending</span>
-        )}{" "}
-        {endLink(ends.to, target, true)}, {endLink(ends.from, source, false)}.
-      </p>
-      <div className="actions spaced">
-        {/* MM-502: only a machine that reports the command can test. */}
-        {snapshot.presence[source.id]?.status?.commands.includes("testArrow") && (
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => portal.command(source.id, { _tag: "testArrow", to: target.id })}
-          >
-            Test the connection
-          </button>
-        )}
-        {lastTest && (
-          <span className="small muted">
-            Last test{" "}
-            <span className={`sticker flat ${COMMAND_STICKER[lastTest.status]}`}>
-              {lastTest.status}
-            </span>{" "}
-            {timeAgo(lastTest.updatedAt, now)}
-          </span>
-        )}
-      </div>
-      {lastTest?.result != null && <pre>{JSON.stringify(lastTest.result, null, 2)}</pre>}
-      {lastTest?.error && <p className="error-text">{lastTest.error}</p>}
-
-      <Section>Card on the map</Section>
-      {!pairShows(map, source.id, target.id) && !pairCut(portal.pause, source.id, target.id) ? (
-        <p className="hint">
-          The map hides this pair: neither machine uses the other. A level above None shows it
-          again.
-        </p>
-      ) : pairOffset(map, source.id, target.id) ? (
-        <div className="row callout">
-          <div className="v">You placed this card. It follows its line when the machines move.</div>
-          <button
-            type="button"
-            className="btn small"
-            onClick={() =>
-              portal.submit(`Card of ${f} and ${t} back to its own place`, [
-                { _tag: "placePair", a: source.id, b: target.id, offset: null },
-              ])
-            }
-          >
-            Reset position
-          </button>
-        </div>
-      ) : (
-        <p className="hint">The map places this card. Drag it to put it somewhere else.</p>
-      )}
-      <p className="desc footnote">
-        {f} proves who it is with its own Cloudflare service token,{" "}
-        <code>{source.tokenClientId}</code>. {t} applies a change in under a second and ends open
-        sessions from {f} when access drops.
-      </p>
-    </>
-  );
-}
 
 /** Commands without input, in the order of the panel. Resources has "Collect diagnostics" with its result. */
 const SIMPLE_COMMANDS: ReadonlyArray<
@@ -1131,83 +830,41 @@ function MachineManage({ machine }: { machine: MachineRecord }) {
   );
 }
 
-/** MM-309: the level of a client on each machine, with the expiry of MM-304. */
+/** MM-309, MM-909: the arrow of the client to each machine. Each row opens the arrow editor. */
 function ClientAccess({ client }: { client: ClientRecord }) {
   const portal = usePortalContext();
   const { map, now } = portal;
-  const [duration, setDuration] = useState<Duration>("permanent");
-  const [until, setUntil] = useState("");
-  const setLevel = (to: MachineRecord, level: MachineLevel) => {
-    // oxlint-disable-next-line react/purity -- This runs in a click handler, not during render.
-    const expiry = durationExpiry(duration, until, Date.now());
-    if (expiry === undefined) {
-      portal.call(() => Promise.reject(new Error("Pick a time in the future.")));
-      return;
-    }
-    const suffix = expiry === null ? "" : ` until ${shortTime(expiry)}`;
-    portal.submit(`${usesText(client.name, to.name)}: ${LEVEL_LABEL[level]}${suffix}`, [
-      clientArrowChange(map, { client: client.id, to: to.id, level, expiresAt: expiry }),
-    ]);
-  };
   if (map.machines.length === 0) return <p className="hint">Add a machine first.</p>;
   return (
     <>
       {portal.pause && <PausedNote />}
-      <div className="seg wide" role="group" aria-label="How long">
-        {(["permanent", "hour", "day", "until"] as const).map((d) => (
-          <button
-            key={d}
-            type="button"
-            aria-pressed={duration === d}
-            onClick={() => setDuration(d)}
-          >
-            {DURATION_LABEL[d]}
-          </button>
-        ))}
-      </div>
-      {duration === "until" && (
-        <input
-          type="datetime-local"
-          aria-label="Until"
-          className="full"
-          value={until}
-          onChange={(e) => setUntil(e.target.value)}
-        />
-      )}
       {map.machines.map((machine) => {
         const arrow = findClientArrow(map, client.id, machine.id);
-        const was =
-          arrow.level === "none"
-            ? (portal.pause?.cutClients.find((c) => c.client === client.id && c.to === machine.id)
-                ?.level ?? null)
-            : null;
+        const was = grantCut(portal.pause, { _tag: "client", from: client, to: machine, arrow });
         return (
-          <div className="stack tight" key={machine.id}>
-            <div className="row">
-              <span className="t grow">{usesText(client.name, machine.name)}</span>
+          <div className="row" key={machine.id}>
+            <RouteLink
+              className="link grow left"
+              route={{
+                view: portal.route.view,
+                selection: { _tag: "clientArrow", client: client.id, to: machine.id },
+              }}
+            >
+              <span className="t">{usesText(client.name, machine.name)}</span>
               {arrow.expiresAt && arrow.revertLevel && (
-                <span
-                  className="sticker warn flat"
-                  data-tip={`Back to ${LEVEL_LABEL[arrow.revertLevel]} ${timeUntil(arrow.expiresAt, now)}`}
-                >
-                  temp
+                <span className="v">
+                  Back to {LEVEL_LABEL[arrow.revertLevel]} {timeUntil(arrow.expiresAt, now)}
                 </span>
               )}
-              {was && <span className="sticker cut-sticker">cut, was {LEVEL_LABEL[was]}</span>}
-            </div>
-            <div className="seg wide" role="group" aria-label={`Level on ${machine.name}`}>
-              {LEVELS.map((level) => (
-                <button
-                  key={level}
-                  type="button"
-                  aria-pressed={arrow.level === level}
-                  disabled={portal.pause !== null && levelRank(level) > levelRank(arrow.level)}
-                  onClick={() => setLevel(machine, level)}
-                >
-                  {LEVEL_LABEL[level]}
-                </button>
-              ))}
-            </div>
+            </RouteLink>
+            {was ? (
+              <>
+                <span className={`sticker lvl-${was} was`}>{LEVEL_LABEL[was]}</span>
+                <span className="sticker cut-sticker">cut</span>
+              </>
+            ) : (
+              <span className={`sticker lvl-${arrow.level}`}>{LEVEL_LABEL[arrow.level]}</span>
+            )}
           </div>
         );
       })}

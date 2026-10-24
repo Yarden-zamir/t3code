@@ -19,7 +19,6 @@ import {
   emptyMap,
   machinesTouched,
   MapRuleError,
-  pairOffset,
   keepClientKeys,
   sameValue,
   undoChanges,
@@ -303,22 +302,18 @@ describe("places in map pixels (MM-1114)", () => {
       machines: [{ ...machine(MAC), position: { x: 0.25, y: 0.5 } }],
       clients: [{ ...client(), position: { x: 0.75, y: 0.25 } }],
       notes: [{ id: "n", text: "hi", color: "yellow", position: { x: 1, y: 0 } }],
-      pairPlacements: [{ a: MAC, b: VPS, along: 0.5, aside: -0.2 }],
     };
     const map = decodeMap(absoluteMapJson(old));
     expect(map.machines[0]?.position).toEqual({ x: 350, y: 350 });
     expect(map.clients[0]?.position).toEqual({ x: 1050, y: 175 });
     expect(map.notes[0]?.position).toEqual({ x: 1400, y: 0 });
-    expect(map.pairPlacements[0]?.aside).toBe(-140);
     const note = { id: "n", text: "hi", color: "yellow" };
     expect(
       absoluteChangesJson([
-        { _tag: "placePair", a: MAC, b: VPS, offset: null },
         { _tag: "putNote", note: { ...note, position: { x: 0.5, y: 0.5 } } },
         { _tag: "putClient", client: { ...client(), position: { x: 0.75, y: 0.25 } } },
       ]),
     ).toEqual([
-      { _tag: "placePair", a: MAC, b: VPS, offset: null },
       { _tag: "putNote", note: { ...note, position: { x: 700, y: 350 } } },
       { _tag: "putClient", client: { ...client(), position: { x: 1050, y: 175 } } },
     ]);
@@ -348,7 +343,7 @@ describe("freePosition (MM-206)", () => {
 
 const decodeMap = Schema.decodeUnknownSync(MachineMapDocument);
 
-describe("display data (MM-1108, MM-1109)", () => {
+describe("display data (MM-1109)", () => {
   it("decodes places outside 0..1, so a later portal can write map pixels (MM-1114)", () => {
     const map = {
       ...threeMachines(),
@@ -364,27 +359,15 @@ describe("display data (MM-1108, MM-1109)", () => {
     position: { x: 0.3, y: 0.4 },
   };
   const display: ReadonlyArray<MapChange> = [
-    { _tag: "placePair", a: WIN, b: MAC, offset: { along: 0.25, aside: 0.1 } },
     { _tag: "putNote", note },
     { _tag: "putNote", note: { ...note, position: { x: 0.6, y: 0.4 } } },
   ];
 
-  it("stores a pair offset once, whichever end names it first", () => {
-    const map = applyChanges(threeMachines(), display).map;
-    expect(map.pairPlacements).toHaveLength(1);
-    expect(pairOffset(map, WIN, MAC)).toEqual({ along: 0.25, aside: 0.1 });
-    expect(pairOffset(map, MAC, WIN)).toEqual({ along: 0.75, aside: -0.1 });
-    const reset = applyChanges(map, [{ _tag: "placePair", a: MAC, b: WIN, offset: null }]).map;
-    expect(reset.pairPlacements).toEqual([]);
-    expect(pairOffset(reset, MAC, WIN)).toBeNull();
-  });
-
-  it("undoes pair placements and notes with their inverse", () => {
+  it("undoes notes with their inverse", () => {
     const before = threeMachines();
     const applied = applyChanges(before, [...display, { _tag: "removeNote", id: "n1" }]);
     expect(applied.map.notes).toEqual([]);
     const undone = applyChanges(applied.map, applied.inverse).map;
-    expect(undone.pairPlacements).toEqual(before.pairPlacements);
     expect(undone.notes).toEqual(before.notes);
     const withNote = applyChanges(before, display);
     expect(applyChanges(withNote.map, withNote.inverse).map).toEqual(before);
@@ -400,28 +383,14 @@ describe("display data (MM-1108, MM-1109)", () => {
     }
   });
 
-  it("drops the card place of a removed machine, and the inverse brings it back", () => {
-    const map = applyChanges(threeMachines(), display).map;
-    const removed = applyChanges(map, [{ _tag: "removeMachine", machineId: WIN }]);
-    expect(removed.map.pairPlacements).toEqual([]);
-    expect(applyChanges(removed.map, removed.inverse).map.pairPlacements).toEqual(
-      map.pairPlacements,
-    );
-  });
-
-  it("refuses a pair of unknown machines and a note that is gone", () => {
+  it("refuses a note that is gone", () => {
     const map = threeMachines();
-    const ghost = MachineId.make("ghost");
-    expect(() =>
-      applyChanges(map, [{ _tag: "placePair", a: MAC, b: ghost, offset: null }]),
-    ).toThrow(MapRuleError);
     expect(() => applyChanges(map, [{ _tag: "removeNote", id: "nope" }])).toThrow(MapRuleError);
   });
 
-  it("decodes a map saved before display data with no notes and no card places", () => {
-    const { pairPlacements: _p, notes: _n, ...old } = emptyMap();
+  it("decodes a map saved before display data with no notes", () => {
+    const { notes: _n, ...old } = emptyMap();
     const decoded = decodeMap(old);
-    expect(decoded.pairPlacements).toEqual([]);
     expect(decoded.notes).toEqual([]);
   });
 });

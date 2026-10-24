@@ -16,9 +16,7 @@ import type {
 } from "../api.ts";
 import { clientKeyCode } from "@t3tools/contracts/machineMap";
 
-import { usesText } from "../rules/access.ts";
-import { effectiveSettings, findArrow, MAP_ROLES, roleRank, sameValue } from "../rules/map.ts";
-import { CapabilityStickers } from "./ArrowCapabilities.tsx";
+import { effectiveSettings, sameValue } from "../rules/map.ts";
 import { callApi } from "./apiClient.ts";
 import { usePortalContext } from "./context.ts";
 import { buildStandings } from "./build.ts";
@@ -35,8 +33,6 @@ import {
   PROPOSAL_REASON,
   LEVEL_LABEL,
   machineName,
-  PRESENCE_STICKER,
-  presenceState,
   presenceText,
   shortTime,
   timeAgo,
@@ -114,157 +110,6 @@ function Item({
       </button>
       {side}
     </li>
-  );
-}
-
-/** MM-1102 Table: the arrow matrix and the machine list. */
-export function TableView() {
-  const portal = usePortalContext();
-  const { map, snapshot, route, now } = portal;
-  const standings = buildStandings(snapshot.presence);
-  const selected = route.selection;
-  if (map.machines.length === 0)
-    return (
-      <div className="card view">
-        <Empty title="No machines yet">Add a machine. Its arrows show here as a grid.</Empty>
-      </div>
-    );
-  return (
-    <div className="card view stack">
-      <h2>Who can use whom</h2>
-      <p className="small muted">
-        Each cell is what the machine of the row can do on the machine of the column.
-      </p>
-      <div className="scroll">
-        <table className="matrix">
-          <thead>
-            <tr>
-              <th className="corner" scope="col">
-                Row uses column
-              </th>
-              {map.machines.map((m) => (
-                <th key={m.id} scope="col">
-                  <MachineLink id={m.id}>{m.name}</MachineLink>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {map.machines.map((from) => (
-              <tr key={from.id}>
-                <th scope="row">
-                  <MachineLink id={from.id}>{from.name}</MachineLink>
-                </th>
-                {map.machines.map((to) => {
-                  if (from.id === to.id)
-                    return <td key={to.id} className="self" aria-label="Same machine" />;
-                  const arrow = findArrow(map, from.id, to.id);
-                  const on =
-                    selected._tag === "arrow" && selected.from === from.id && selected.to === to.id;
-                  return (
-                    <td key={to.id} className={`cell${on ? " on" : ""}`}>
-                      <button
-                        type="button"
-                        className="cell-btn"
-                        aria-label={`${usesText(from.name, to.name)}: ${LEVEL_LABEL[arrow.level]}`}
-                        onClick={() => portal.select({ _tag: "arrow", from: from.id, to: to.id })}
-                      >
-                        <span className={`sticker lvl-${arrow.level}`}>
-                          {LEVEL_LABEL[arrow.level]}
-                        </span>
-                        {(arrow.agentTools || arrow.expiresAt) && (
-                          <span className="stickers">
-                            <CapabilityStickers arrow={arrow} />
-                            {arrow.expiresAt && <span className="sticker warn flat">temp</span>}
-                          </span>
-                        )}
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <h2>Machines</h2>
-      <div className="scroll">
-        <table>
-          <thead>
-            <tr>
-              <th className="left" scope="col">
-                Machine
-              </th>
-              <th scope="col">State</th>
-              <th scope="col">Build</th>
-              <th scope="col">Applied</th>
-              <th scope="col">Map role</th>
-            </tr>
-          </thead>
-          <tbody>
-            {map.machines.map((machine) => {
-              const presence = snapshot.presence[machine.id];
-              const state = presenceState(presence);
-              const on = selected._tag === "machine" && selected.id === machine.id;
-              const applied = presence?.appliedRevision ?? null;
-              return (
-                <tr key={machine.id} className={on ? "on" : ""}>
-                  <td className="left cell">
-                    <button
-                      type="button"
-                      className="cell-btn left"
-                      onClick={() => portal.select({ _tag: "machine", id: machine.id })}
-                    >
-                      <b>{machine.name}</b>
-                    </button>
-                  </td>
-                  <td>
-                    <span className={`sticker ${PRESENCE_STICKER[state]}`}>{state}</span>
-                    {state === "offline" && (
-                      <div className="small muted">
-                        {timeAgo(presence?.lastSeenAt ?? null, now)}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    {presence?.status ? <BuildLabel status={presence.status} /> : "-"}{" "}
-                    <BuildSticker standing={standings.get(machine.id)} />
-                  </td>
-                  <td className="mono">
-                    {applied === null ? "-" : `${applied} of ${map.revision}`}
-                  </td>
-                  <td>
-                    <select
-                      aria-label={`Map role of ${machine.name}`}
-                      value={machine.mapRole}
-                      onChange={(e) => {
-                        const role = MAP_ROLES.find((r) => r === e.target.value);
-                        if (role)
-                          portal.submit(`${machine.name} map role ${role}`, [
-                            { _tag: "putMachine", machine: { ...machine, mapRole: role } },
-                          ]);
-                      }}
-                    >
-                      {MAP_ROLES.map((role) => (
-                        <option
-                          key={role}
-                          value={role}
-                          disabled={
-                            portal.pause !== null && roleRank(role) > roleRank(machine.mapRole)
-                          }
-                        >
-                          {role}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
   );
 }
 

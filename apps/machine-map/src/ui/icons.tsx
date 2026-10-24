@@ -96,3 +96,32 @@ export function CopyIcon() {
     </svg>
   );
 }
+
+/** MM-303: agents on the source call T3 tools on the target (Lucide "plug"). */
+export function PlugIcon() {
+  return (
+    <svg viewBox="0 0 24 24" {...STROKE} aria-hidden>
+      <path d="M12 22v-5M9 8V2M15 8V2M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />
+    </svg>
+  );
+}
+
+/** MM-1908: agents on the source run shell commands on the target (Lucide "square-terminal"). */
+export function TerminalIcon() {
+  return (
+    <svg viewBox="0 0 24 24" {...STROKE} aria-hidden>
+      <path d="m7 11 2-2-2-2M11 13h4" />
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+    </svg>
+  );
+}
+
+/** MM-304: an arrow that returns to its permanent level later (Lucide "timer"). */
+export function TimerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" {...STROKE} aria-hidden>
+      <path d="M10 2h4M12 14l3-3" />
+      <circle cx="12" cy="14" r="8" />
+    </svg>
+  );
+}

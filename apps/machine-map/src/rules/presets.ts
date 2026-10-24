@@ -26,7 +26,6 @@ import {
   findClientArrow,
   findMachine,
   findNote,
-  pairOffset,
   sameArrow,
   settingKeys,
   sameClientArrow,
@@ -121,7 +120,7 @@ export function pauseChanges(map: MachineMapDocument): Array<MapChange> {
 /**
  * MM-704: the changes that return `current` to `target`. Machines are not added or removed,
  * because that also needs a machine token: the restore keeps the current machines and restores
- * their names, kinds, places and map roles. Pair cards and notes return too.
+ * their names, kinds, places and map roles. Notes return too.
  */
 export function restoreChanges(
   current: MachineMapDocument,
@@ -190,14 +189,6 @@ export function restoreChanges(
     }
   }
 
-  for (const [i, a] of restoredMachines.entries()) {
-    for (const b of restoredMachines.slice(i + 1)) {
-      const offset = pairOffset(target, a.id, b.id);
-      if (!sameValue(offset, pairOffset(current, a.id, b.id))) {
-        changes.push({ _tag: "placePair", a: a.id, b: b.id, offset });
-      }
-    }
-  }
   for (const note of target.notes) {
     if (!sameValue(note, findNote(current, note.id))) changes.push({ _tag: "putNote", note });
   }

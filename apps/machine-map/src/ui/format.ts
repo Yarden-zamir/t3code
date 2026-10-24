@@ -9,7 +9,6 @@ import type {
   MachineMapRole,
   MachinePresence,
   MapActor,
-  MapPosition,
   MapProposal,
 } from "@t3tools/contracts/machineMap";
 import type { BatteryReading, HealthAlertKind } from "@t3tools/contracts/machineMapResources";
@@ -192,26 +191,6 @@ export function presenceText(presence: MachinePresence | undefined, now: number)
   }
 }
 
-export type Toward = "→" | "←" | "↓" | "↑";
-
-export const TOWARD_TEXT: Record<Toward, string> = {
-  "→": "to the right",
-  "←": "to the left",
-  "↓": "below",
-  "↑": "above",
-};
-
-/**
- * MM-1103: where `to` sits on the map, seen from `from`, rounded to the nearest of the four
- * directions. The text of a row always reads "from uses to"; this glyph only hints at the map.
- */
-export function towardGlyph(from: MapPosition, to: MapPosition): Toward {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "→" : "←";
-  return dy >= 0 ? "↓" : "↑";
-}
-
 /** A short text of any setting value for tables. */
 export function valueText(value: unknown): string {
   if (value === undefined) return "-";
@@ -300,4 +279,27 @@ export function batteryText(battery: BatteryReading): string {
     case "full":
       return `${battery.percent}%, full`;
   }
+}
+
+/** MM-304: how long the next level change lasts. */
+export type Duration = "permanent" | "hour" | "day" | "until";
+
+export const DURATION_LABEL: Record<Duration, string> = {
+  permanent: "Always",
+  hour: "1 hour",
+  day: "1 day",
+  until: "Until…",
+};
+
+/** MM-304: null for a permanent level, undefined for a time that is not in the future. */
+export function durationExpiry(
+  duration: Duration,
+  until: string,
+  now: number,
+): string | null | undefined {
+  if (duration === "permanent") return null;
+  if (duration === "hour") return new Date(now + 3_600_000).toISOString();
+  if (duration === "day") return new Date(now + 86_400_000).toISOString();
+  const at = Date.parse(until);
+  return Number.isNaN(at) || at <= now ? undefined : new Date(at).toISOString();
 }

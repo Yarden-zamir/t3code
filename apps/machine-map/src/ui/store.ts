@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import { MachineId, PortalEvent, type PortalSnapshot } from "@t3tools/contracts/machineMap";
 import type { ResourcesOverview } from "@t3tools/contracts/machineMapResources";
 
+import { isFixturePage } from "./apiClient.ts";
 import {
   CallsEvent,
   ClientInvitesEvent,
@@ -231,6 +232,27 @@ export function usePortal(): { state: PortalState; connection: Connection } {
   const [connection, setConnection] = useState<Connection>("connecting");
 
   useEffect(() => {
+    if (import.meta.env.DEV && isFixturePage()) {
+      let stop: (() => void) | null = null;
+      let stopped = false;
+      import("./fixture.ts")
+        .then(({ subscribeFixture }) =>
+          subscribeFixture((event) => setState((state) => reduce(state, event))),
+        )
+        .then((unsubscribe) => {
+          if (stopped) return unsubscribe();
+          stop = unsubscribe;
+          setConnection("live");
+        })
+        .catch((error: unknown) => {
+          console.error("The fixture did not load", error);
+          setConnection("offline");
+        });
+      return () => {
+        stopped = true;
+        stop?.();
+      };
+    }
     let socket: WebSocket | null = null;
     let stopped = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
