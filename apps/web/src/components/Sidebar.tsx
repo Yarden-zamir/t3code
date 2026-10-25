@@ -481,14 +481,19 @@ function useSidebarThreads(input: {
     partition;
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const olderSettledShelf = useOlderSettledShelf({
-    scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),
+    // Fork: the owner filter narrows the scope too, as for drafts.
+    scopes: olderSettledScopes(
+      [...serverConfigs.keys()],
+      scopedProjectKeys ?? input.fork.ownerVisibleProjectKeys,
+    ),
     expanded: settledShelfExpanded,
     visibleCount: settledVisibleCount,
   });
   const listedSettledThreads = settledThreads.filter(olderSettledShelf.isListed);
   useOlderSettledShelfGrowth(olderSettledShelf, listedSettledThreads);
   const settledCount =
-    settledThreads.length + olderSettledShelf.unloadedCount(partition.visibleThreads);
+    // Fork: every held row, since the tabs narrow `visibleThreads`; the count keeps rows in scope.
+    settledThreads.length + olderSettledShelf.unloadedCount(threads);
   const visibleSettledThreads = (() => {
     const visible = listedSettledThreads.slice(0, settledVisibleCount);
     if (
