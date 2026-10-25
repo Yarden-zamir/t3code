@@ -4,6 +4,7 @@ import datetime
 
 import pytest
 
+import checks
 import common
 import failed_run
 import fork_tests
@@ -123,3 +124,11 @@ def test_integrity_changes_ignore_peer_key_lines():
     upstream = fork.replace("supports-color@10.2.2", "supports-color@8.1.1").replace("    resolution", "  resolution")
     assert lockfile.integrity_changes(fork) == lockfile.integrity_changes(upstream)
     assert lockfile.integrity_changes(fork) != lockfile.integrity_changes(fork.replace("sha512-new", "sha512-other"))
+
+
+def test_sync_branches_lint_fork_files_and_fix_branches_run_fork_check():
+    assert checks.lintable(["a.ts", "b.md", "c.tsx", "a.ts", "d.mjs"]) == ["a.ts", "c.tsx", "d.mjs"]
+    sync = [name for name, _ in checks.steps("vp", "fork-sync/x", ["a.ts"])]
+    fix = [name for name, _ in checks.steps("vp", "fork-fix/x", ["a.ts"])]
+    assert sync[-1] == "lint" and "fork:check" not in sync
+    assert fix[-1] == "fork:check" and "lint" not in fix
