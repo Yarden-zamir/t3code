@@ -78,6 +78,7 @@ import { lastOpenedThread } from "./assistantTargets";
 import { AssistantConversation } from "./AssistantConversation";
 import { AssistantTargetPicker, type AssistantTarget } from "./AssistantTargetPicker";
 import {
+  CONTEXT_PILL_ICONS,
   ContextPills,
   EdgeGlow,
   FileContextView,
@@ -909,7 +910,15 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     setAddedFiles((current) => [...current, ...picked.value.files]);
     if (picked.value.error) setPhase({ type: "failed", message: picked.value.error });
   };
+  // The menu stays open while pills are toggled, so several can change in one visit.
   const addItems: ReadonlyArray<PanelMenuItem> = [
+    ...pills.map((pill) => ({
+      key: `pill:${pill.id}`,
+      icon: CONTEXT_PILL_ICONS[pill.kind],
+      label: pill.label,
+      checked: pill.attached,
+      onPress: () => void togglePill(pill.id),
+    })),
     { key: "photos", icon: "photo", label: "Photos", onPress: () => void pickPhotos(false) },
     { key: "camera", icon: "camera", label: "Take a photo", onPress: () => void pickPhotos(true) },
     ...(maxUploadBytes === undefined
