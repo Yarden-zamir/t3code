@@ -1,11 +1,8 @@
 /**
  * Fork: theme sync through the machine map settings (apps/machine-map/SPEC.md, MM-408 to MM-410).
- *
- * Two server settings are not normal settings service fields:
- * - `sharedThemes` is the content of the `themes/` folder. The machine reports the themes it
- *   publishes, and a desired value writes theme files into the folder.
- * - `defaultTheme` changes through the code path of `t3 theme set`, so `defaultThemeSetAt`
- *   updates and connected clients switch.
+ * `sharedThemes` is the content of the `themes/` folder: the machine reports what it publishes, and
+ * a desired value writes theme files. `defaultTheme` changes through the `t3 theme set` code path,
+ * so `defaultThemeSetAt` updates and connected clients switch.
  */
 import {
   type EnvironmentTheme,

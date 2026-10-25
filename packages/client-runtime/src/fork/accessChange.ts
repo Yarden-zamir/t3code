@@ -1,14 +1,8 @@
 /**
- * Fork: access change notices (`accessChangeNotices`). The machine map changes access in two
- * ways, and clients already learn both without a reload:
- *
- * - Session access (MM-305, MM-912, MM-917). A changed arrow or client arrow ends the sessions on
- *   the target, and the client pairs again with the new scopes. The session state then holds the
- *   new scopes.
- * - Agent links (MM-1921). The server pushes its whole map state again on each change. Its
- *   `reachable` machines with agent tools are the links of its agents, as the server works them out.
- *
- * This module only compares each new value with the last one and words the difference.
+ * Fork: access change notices (`accessChangeNotices`). Clients learn both access changes without a
+ * reload: new session scopes after pairing again (MM-305, MM-912, MM-917), and agent links in each
+ * pushed map state (MM-1921). This module only compares each new value with the last one and words
+ * the difference.
  */
 import {
   AuthEnvironmentScope,

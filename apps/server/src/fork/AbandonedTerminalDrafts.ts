@@ -1,18 +1,8 @@
 /**
- * Fork: closes the shell of a terminal thread draft that its client left. A new terminal thread
- * starts as a draft in the client: its main terminal runs under the reserved thread id before the
- * server has the thread, and the client creates the thread on the first command. A client that
- * closes or loses its connection before that leaves the shell running, so a check every
- * CHECK_INTERVAL closes, with its history, each terminal thread screen that has no attach stream
- * and no thread for ABANDONED_AFTER. A screen whose shell runs a program stays: the client makes
- * the thread only after the first second of a command, so a short disconnect in that second
- * must not end the program.
- *
- * Limit: a program in a draft whose client never comes back runs until it ends. Revisit if
- * abandoned drafts with long programs pile up.
- *
- * Limit: only the main terminal of a draft closes. A drawer terminal of a draft keeps running.
- * Revisit if drafts get the terminal drawer.
+ * Fork: closes the main shell of a terminal thread draft that its client left before the first
+ * command. A screen with no attach stream and no thread for ABANDONED_AFTER closes, unless its
+ * shell runs a program, so a short disconnect never ends a program. Limit: that program runs until
+ * it ends, and drawer terminals stay. Revisit if such programs pile up or drafts get the drawer.
  */
 import { DEFAULT_TERMINAL_ID, ThreadId } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";

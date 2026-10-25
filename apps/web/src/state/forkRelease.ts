@@ -11,11 +11,9 @@ const ReleaseAssets = Schema.Struct({
 const decodeReleaseAssets = Schema.decodeUnknownEffect(ReleaseAssets);
 
 /**
- * Fork replacement for the npm check in npmRelease.ts: whether the fork
- * release `v<version>` can install on a server. The release workflow uploads
- * the checksum file last, after every server archive, so a release without it
- * is not ready. A 404 is false; network and API errors stay unknown. Both
- * re-check every few minutes.
+ * Fork replacement for the npm check in npmRelease.ts: whether release `v<version>` can install on
+ * a server. The release workflow uploads the checksum file last, so a release without it is not
+ * ready. A 404 is false; network and API errors stay unknown. Both re-check every few minutes.
  */
 const forkReleaseInstallableAtom = Atom.family((version: string) =>
   Atom.make(

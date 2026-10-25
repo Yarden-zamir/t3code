@@ -1,15 +1,8 @@
 /**
- * Fork: `restartReconnectWarningGrace`. After an update, the desktop app and the remote servers
- * restart at about the same time. A remote server then needs up to about 40 seconds before it
- * accepts a connection, so the composer showed "<server> is reconnecting" on each restart.
- *
- * The wait counts from the page load, not from the composer mount: the composer mounts again
- * for each thread, and a wait per mount would restart on each thread switch. Only connecting
- * and reconnecting servers wait (`useSystemComposerBanners`), so a refused sign-in or an
- * offline device still shows at once.
- *
- * Limit: 45 seconds covers the slowest restart in the desktop traces (38 seconds from app start
- * to connected, while the server restarted too). Revisit when a normal restart takes longer.
+ * Fork: after an update, a remote server needs up to 40 seconds to accept a connection again.
+ * The wait counts from page load, not composer mount, which repeats on each thread switch.
+ * Only connecting and reconnecting servers wait; a refused sign-in or offline device shows at once.
+ * Limit: 45 seconds covers the slowest traced restart (38 seconds). Revisit if one takes longer.
  */
 const RESTART_RECONNECT_WARNING_GRACE_MS = 45_000;
 

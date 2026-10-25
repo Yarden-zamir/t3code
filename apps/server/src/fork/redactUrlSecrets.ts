@@ -3,9 +3,8 @@ import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { resolveT3McpToolId } from "@t3tools/shared/t3McpToolPresentation";
 
 // Always on, no setting: a stored secret leaks to every client and copy of the thread.
-// Only preview tool calls get this. Known limit: other tools keep secrets in their stored URLs,
-// because changing their data shows the agent and the user output that the tool never returned.
-// Revisit when a second real leak comes through another tool.
+// Only preview tool calls get this. Known limit: other tools keep secrets in stored URLs, because
+// a change would show output that the tool never returned. Revisit when another tool leaks one.
 // `token` is also the fragment key of the T3 pairing URL (packages/shared/src/remote.ts).
 const SECRET_KEYS: ReadonlySet<string> = new Set([
   "token",

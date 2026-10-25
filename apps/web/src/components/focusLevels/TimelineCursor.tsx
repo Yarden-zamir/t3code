@@ -19,15 +19,10 @@ import {
 } from "./useFocusLevelShortcuts";
 
 /**
- * Fork: a keyboard cursor over the timeline. Depth 0 is a message row. Each deeper depth splits
- * the unit above it: a message into blocks (paragraphs, list items, headings, code blocks, table
- * rows), a block into nested blocks, and a block without nested blocks into sentences, or a code
- * block into lines. The cursor paints with the CSS Custom Highlight API, so it never changes the
- * message DOM, and citing reuses the citation code of a mouse selection.
- *
- * Inside a message, each control is a stop too, after the unit that holds it: a sentence, then its
- * links, then the next sentence. Enter clicks a control. A disclosure, such as a `<details>`
- * summary or a tool call group, is a block: Right opens it, and Left closes it.
+ * Fork: a keyboard cursor over the timeline. Each depth splits the unit above it: message, blocks,
+ * nested blocks, then sentences or code lines. It paints with the CSS Custom Highlight API, so the
+ * message DOM never changes. A control is a stop after the unit that holds it, and Enter clicks
+ * it. A disclosure is a block: Right opens it, and Left closes it.
  */
 
 const HIGHLIGHT_NAME = "timeline-cursor";

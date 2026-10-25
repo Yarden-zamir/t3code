@@ -301,11 +301,9 @@ export function moveSidebarThreads(
 }
 
 /**
- * Drops assignments that can do nothing any more: a thread that is gone or archived on an
- * environment whose threads are loaded, or a tab that cannot hold threads. An entry that the
- * rules agree with stays: rules on status, background work or title change over time, and the
- * drag must still hold when they stop matching. An offline environment keeps its entries,
- * because its threads are not known.
+ * Drops assignments that can do nothing any more: a gone or archived thread on an environment whose
+ * threads are loaded, or a tab that cannot hold threads. An entry that the rules agree with stays,
+ * because the drag must hold when the rules stop matching. An offline environment keeps entries.
  */
 export function pruneSidebarTabAssignments(
   settings: SidebarTabs,

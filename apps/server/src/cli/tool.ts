@@ -115,13 +115,10 @@ const printJson = (value: unknown) => Console.log(encodeJson(value));
 const portOf = (url: string) => (URL.canParse(url) ? new URL(url).port : undefined);
 
 /**
- * Calls one tool on the running server. An agent shell reuses its thread
- * credential (MM-1920); otherwise the CLI issues a short-lived MCP client
- * session from the local auth store and revokes it after the call.
- *
- * An explicit home, `--base-dir` or `T3CODE_HOME`, is never ignored: with a
- * thread credential, it must name the server of that credential, so a call
- * meant for a dev server never reaches the live server as the agent's thread.
+ * Calls one tool on the running server. An agent shell reuses its thread credential (MM-1920);
+ * otherwise the CLI issues a short-lived MCP client session and revokes it after the call.
+ * With a thread credential, an explicit home (`--base-dir` or `T3CODE_HOME`) must name its server,
+ * so a call meant for a dev server never reaches the live server as the agent's thread.
  */
 export const callOnServer = Effect.fn("callToolOnServer")(function* <A, R>(
   flags: { readonly baseDir: Option.Option<string> },

@@ -1,9 +1,8 @@
 /**
- * Fork: the `terminal` provider adapter. A turn types the message into the main terminal of the
- * thread (`term-1`), the same terminal that the thread view shows. See `protocol.ts` for what the
- * run answers. A message that arrives during a run is typed into the program that runs (a steer).
- * The model of the thread is the shell that the terminal opens with. The adapter has no tools and
- * no approvals.
+ * Fork: the `terminal` provider adapter. A turn types the message into the thread's main terminal
+ * (`term-1`), which the thread view shows; `protocol.ts` says what the run answers. A message in a
+ * run is typed into the running program (a steer). The model is the shell that the terminal opens
+ * with. The adapter has no tools and no approvals.
  */
 import {
   DEFAULT_TERMINAL_ID,

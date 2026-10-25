@@ -1,12 +1,8 @@
 /**
- * Fork: Web Push. Browsers subscribe on this server with its VAPID key. When a thread of this
- * server starts to wait for the user, or a running thread completes or fails, the server sends a
- * push to each subscription, so a phone shows the notification while the app is closed. A terminal
- * thread also pushes for a new attention on its main terminal, like `ForkTerminalThreadNotifications`
- * on the web.
- *
- * The key is in the secret store. The subscriptions are in `<stateDir>/web-push.json`. With no
- * subscription, the service reads no thread.
+ * Fork: Web Push. Browsers subscribe with the server VAPID key, and the server pushes when a thread
+ * starts to wait for the user, completes or fails, and for a new attention on a terminal thread's
+ * main terminal. The key is in the secret store, subscriptions in `<stateDir>/web-push.json`. With
+ * no subscription, the service reads no thread.
  */
 import {
   DEFAULT_TERMINAL_ID,
@@ -74,11 +70,10 @@ const ACTIVE_PHASES: ReadonlySet<AgentAwarenessPhase> = new Set([
 ]);
 
 /**
- * The phase change that needs a notification, or null. A thread seen for the first time since
- * the start (`previous` undefined) never notifies, so a restart does not repeat old alerts. A
- * completion or failure notifies only after an active phase: a new session reads `completed`
- * for an instant before its first turn. A silent run (an idle compaction that T3 Code started)
- * does not notify on completion, as in `ThreadNotificationCoordinator`; its failure still does.
+ * The phase change that needs a notification, or null. A thread first seen since start never
+ * notifies, so a restart does not repeat alerts. Completion or failure notifies only after an
+ * active phase, because a new session reads `completed` before its first turn. A silent run
+ * (an idle compaction) notifies only on failure, as in `ThreadNotificationCoordinator`.
  */
 export function attentionTransition(
   previous: AgentAwarenessPhase | null | undefined,

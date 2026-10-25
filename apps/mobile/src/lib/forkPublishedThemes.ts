@@ -84,13 +84,10 @@ function colorOverrides(
 }
 
 /**
- * The palette of `theme` for `appearance`, or null when the theme has no colors for it. The
- * listed colors go on top of the stock palette of that appearance.
- *
- * Known limit: web derives the roles that a theme does not list from `canvas` and `accent` with
- * the generator in `apps/web/src/themePalette.ts`. Mobile takes the stock role instead, so a theme
- * that lists only `canvas` and `accent` gets only those two colors here. Revisit when such a theme
- * is in use on a phone, or when upstream moves the generator to `packages/shared`.
+ * The palette of `theme` for `appearance` on top of the stock palette, or null without colors.
+ * Limit: web derives unlisted roles from `canvas` and `accent` (`apps/web/src/themePalette.ts`),
+ * but mobile keeps the stock role. Revisit when such a theme is in use on a phone, or when
+ * upstream moves the generator to `packages/shared`.
  */
 export function publishedThemeColors(
   theme: EnvironmentTheme,

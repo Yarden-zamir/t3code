@@ -1,11 +1,8 @@
 /**
- * Fork: machine map, the contract between a T3 server and its own clients (desktop app and web
- * Settings). The portal protocol is in `machineMap.ts`. Requirement numbers (MM-xxx) refer to
- * `apps/machine-map/SPEC.md`.
- *
- * A client subscribes to `machineMap.subscribe` and gets the whole state again on each change.
- * The local desktop app also gets `tokenHeaders`, runs `desktopCommands`, and reports back with
- * `machineMap.reportDesktop`.
+ * Fork: machine map contract between a T3 server and its own clients. The portal protocol is in
+ * `machineMap.ts`, and MM-xxx refers to `apps/machine-map/SPEC.md`. `machineMap.subscribe` sends
+ * the whole state on each change. The local desktop app also gets `tokenHeaders`, runs
+ * `desktopCommands`, and reports back with `machineMap.reportDesktop`.
  */
 import * as Schema from "effect/Schema";
 
@@ -171,11 +168,10 @@ export const MachinesReadResult = Schema.TaggedStruct("read", {
 export type MachinesReadResult = typeof MachinesReadResult.Type;
 
 /**
- * MM-1701: what the Machines panel gets. `unavailable` says why there is no map:
- * - `off`: the `machineMap` setting is off or no machine token is saved.
- * - `paused`: the emergency pause is on, and the portal refuses `machines_read` (MM-711).
- * - `not-connected`, `timed-out`, `refused`: the portal call failed.
- * - `unreadable`: the portal answered with a result that this server does not understand.
+ * MM-1701: what the Machines panel gets. `unavailable` says why there is no map: `off` (setting
+ * off or no machine token), `paused` (emergency pause, MM-711), `not-connected`, `timed-out` and
+ * `refused` (the portal call failed), or `unreadable` (a portal result that this server does not
+ * understand).
  */
 export const MachineMapPanelState = Schema.Union([
   MachinesReadResult,

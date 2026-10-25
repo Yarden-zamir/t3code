@@ -171,11 +171,10 @@ function bellIsUnseen(attention: TerminalAttention | null, seenAt: string | null
 }
 
 /**
- * The status pill that a terminal thread adds to the pill of its message runs, the same pills as
- * an agent thread. A bell or an app notification asks for input, also while a program runs or
- * after it ended, because the program wants the user. A program that runs is working. A program
- * that ended is completed work, or an error when it exited with a non-zero code. Input, completed
- * and error show until the user visits the thread after them.
+ * The status pill that a terminal thread adds to its message run pills. A bell or app notification
+ * asks for input, also while a program runs or after it ended. A running program is working; an
+ * ended one is completed, or an error on a non-zero exit. Input, completed and error show until the
+ * user visits the thread after them.
  */
 export function terminalThreadStatusLabel(
   terminal: TerminalThreadState | undefined,

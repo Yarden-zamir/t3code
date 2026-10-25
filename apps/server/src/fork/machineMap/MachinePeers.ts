@@ -1,13 +1,8 @@
 /**
- * Fork: machine map. This server as a client of other machines. It pairs with a peer through the
- * tunnel hostname of the peer, with this machine's token as request headers, the same way the
- * desktop app does (MM-306). The peer gives the session the scopes of the arrow (MM-1305) and the
- * link access of its level (MM-302).
- *
- * MM-1921: the arrows out of this machine with agent tools are its only linked environments. This
- * module gives upstream's `PeerLinks` those arrows instead of the table of manual links, which the
- * fork never creates (docs/fork/operations.md "Migrations"). It gives upstream's `PeerMcpClient` a
- * client that adds the machine token and pairs again once when the peer ends the session.
+ * Fork: machine map. This server as a client of other machines: it pairs through the peer tunnel
+ * with this machine's token, as the desktop app does (MM-306, MM-1305, MM-302). MM-1921: upstream
+ * `PeerLinks` gets the arrows with agent tools instead of the manual link table, which the fork
+ * never fills, and `PeerMcpClient` gets a client that adds the token and pairs again once on 401.
  */
 import {
   ARROW_LINK_NO_EXPIRY,
@@ -471,11 +466,10 @@ const make = Effect.gen(function* () {
         );
       }
       if (looked.found === undefined) {
-        // A machine that answered as this id before is unknown once it has no arrow, and only
-        // offline while it keeps one, also at a new hostname. Known limit: an id that never
-        // answered, while a machine with an arrow is offline and was never reached, reads as
-        // unreachable, so its work retries instead of failing. Revisit if the portal gives each
-        // machine its environment id.
+        // A machine that answered as this id is unknown once its arrow is gone, and offline while
+        // it keeps one, also at a new hostname. Known limit: an unknown id reads as unreachable
+        // while a never-reached arrow machine is offline, so its work retries. Revisit if the
+        // portal gives each machine its environment id.
         const machine = machineOfEnvironment.get(environmentId);
         const arrowed =
           machine !== undefined &&
@@ -544,12 +538,10 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * The client of `PeerMcpClient`. Each request to a linked machine carries the machine token
-   * for Cloudflare Access and the current session. The peer ends the sessions of this machine on
-   * every level change (MM-1306), and upstream reads a 401 as a revoked link, so a 401 pairs
-   * again once and sends the request again. When the peer still refuses, its arrow changed before
-   * this machine saw the change: that fails as a dropped route, which delegation retries, and the
-   * next lookup reads the reason from this machine's map (MM-1914).
+   * The client of `PeerMcpClient`. Each request carries the machine token for Cloudflare Access and
+   * the session. The peer ends sessions on each level change (MM-1306) and upstream reads 401 as a
+   * revoked link, so a 401 pairs again and retries once. A second refusal means the arrow changed:
+   * it fails as a dropped route, which delegation retries, and the next lookup reads why (MM-1914).
    */
   const linkHttpClient = HttpClient.transform(httpClient, (_unchanged, request) =>
     Effect.gen(function* () {

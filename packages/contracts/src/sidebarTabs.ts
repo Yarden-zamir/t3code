@@ -1,11 +1,7 @@
 /**
- * Fork: sidebar tabs, the value of the `sidebarTabs` server setting.
- *
- * Every machine holds this value, and a newer T3 version can write a rule that an older one does
- * not know. So a stored rule decodes with open strings, and clients skip a rule that is not a
- * `SidebarTabRule`. A closed schema here would make an older server reject the whole settings
- * patch, or reset every setting when it reads a newer `settings.json`.
- *
+ * Fork: sidebar tabs, the `sidebarTabs` server setting. A newer T3 version can write a rule that an
+ * older one does not know, so stored rules decode with open strings and clients skip unknown ones.
+ * A closed schema makes an older server reject the settings patch or reset a newer `settings.json`.
  * @module sidebarTabs
  */
 import * as Effect from "effect/Effect";

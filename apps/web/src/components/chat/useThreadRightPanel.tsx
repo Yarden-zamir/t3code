@@ -80,11 +80,10 @@ const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 export type ThreadRightPanel = ReturnType<typeof useThreadRightPanel>;
 
 /**
- * The right panel and the thread panel of a thread: their state and the actions that change
- * them. Only the screen of a terminal thread (`ForkTerminalThreadScreen`) uses it, and renders it
- * with `ThreadRightPanelView` and `ThreadRightPanelHosts`. It copies the right panel logic of
- * ChatView, and no test catches drift: when upstream changes that logic in ChatView, change it
- * here too, until upstream's ChatView hooks can replace this copy.
+ * Right panel and thread panel state and actions for the terminal thread screen
+ * (`ForkTerminalThreadScreen`). It copies the right panel logic of ChatView, and no test catches
+ * drift: when upstream changes that logic, change it here too. Replace this copy when upstream
+ * ChatView exposes hooks for it.
  */
 export function useThreadRightPanel(input: {
   readonly threadRef: ScopedThreadRef | null;

@@ -1,20 +1,8 @@
 /**
- * Fork: the groups of the preview "Local servers" list (`previewLocalServerGroups`). Upstream
- * lists only the servers of T3 terminals. This service lists every other local listener and the
- * project folder that its process runs in, so a client shows them in groups: same worktree, same
- * project, then all others.
- *
- * Upstream sends HTTP only to listeners of T3 terminals, because a request to an unknown app can
- * crash it (pingdotgg/t3code#18377). This service keeps that rule for every listener outside the
- * projects: it lists them with the port and the process name only. It checks a listener only when
- * its process runs inside a root or worktree of a project of this server, because there the user
- * runs their own dev servers.
- *
- * `PortScanner.ts` calls `scannerHook` once per scan, so the upstream scan keeps its cost while
- * nobody subscribes or the setting is off.
- *
- * The list fills in progressively: every listener shows as soon as its folder is known, and each
- * HTTP check updates its own row when it ends. Rows keep the order in which they first appeared.
+ * Fork: groups the preview "Local servers" list by worktree, project, then all others, and adds
+ * every local listener beyond the T3 terminals. An HTTP request can crash an unknown app
+ * (pingdotgg/t3code#18377), so only a listener whose process runs in a project root or worktree
+ * gets HTTP checks. `PortScanner.ts` calls `scannerHook`, so the scan costs nothing extra unused.
  */
 import {
   type DiscoveredLocalServer,
@@ -107,13 +95,10 @@ export const scannerHook = Effect.serviceOption(PreviewServerGroups).pipe(
 );
 
 /**
- * Resolves symlinks, drops folders that do not exist, keeps the first entry for each real folder,
- * and puts the deepest folders first. It also drops the home folder and every folder above it: a
- * project there would put nearly every process inside a project.
- *
- * Limit: two projects with the same root keep only the first project, so the servers there are in
- * the "all others" group for a thread of the second project. That changes no HTTP check, because
- * every project folder gets one. Revisit if a group must name every project of a folder.
+ * Resolves symlinks, drops missing folders and duplicates, and puts the deepest folders first. It
+ * drops the home folder and every folder above it, because those hold nearly every process.
+ * Limit: two projects with the same root keep only the first, so a thread of the second sees those
+ * servers under "all others". Revisit if a group must name every project of a folder.
  */
 export const resolveProjectFolders = Effect.fn("PreviewServerGroups.resolveProjectFolders")(
   function* (folders: ReadonlyArray<Omit<ProjectFolder, "realPath">>) {
@@ -285,7 +270,7 @@ const sameListeners = (
   right: ReadonlyArray<ForkLocalListener>,
 ): boolean => JSON.stringify(left) === JSON.stringify(right);
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -401,13 +386,10 @@ export const make = Effect.gen(function* () {
   });
 
   /**
-   * The T3 thread that started each process: the nearest process up the tree whose command line
-   * (or, on Linux, whose session variable) names the native id of exactly one T3 provider thread.
-   * Null when the lookup itself failed, so the PIDs are read again on the next scan.
-   *
-   * Limit: a server whose shell exited has `launchd` or `init` as its parent, so on macOS it gets
-   * no thread. macOS hides the environment of other processes. Revisit if T3 records the process
-   * groups of the commands that agents run.
+   * The T3 thread that started each process: the nearest ancestor whose command line (or Linux
+   * session variable) names the native id of exactly one T3 provider thread. Null when the lookup
+   * failed, so the next scan reads the PIDs again. Limit: macOS hides other environments, so there
+   * a server whose shell exited gets no thread. Revisit if T3 records agent command process groups.
    */
   const readOwners = Effect.fn("PreviewServerGroups.readOwners")(function* (
     pids: ReadonlyArray<number>,

@@ -50,12 +50,10 @@ export function useThemeRaised(): {
 }
 
 /**
- * The theme shape of a Jetpack Compose control, such as a floating action button: the theme
- * radius as a clip, which also hides the stock elevation shadow, the outline and the hard shadow.
- * The container color fills the corners that the stock control shape leaves inside the clip.
- *
- * Known limit: a theme without a radius keeps the stock control, because the outline and the
- * shadow need a known shape. Revisit when a theme sets a shadow or a border without a radius.
+ * The theme shape of a Jetpack Compose control, such as a floating action button: the theme radius
+ * as a clip (it also hides the stock elevation shadow), the outline and the hard shadow. The
+ * container color fills the corners inside the clip. Limit: a theme without a radius keeps the
+ * stock control. Revisit when a theme sets a shadow or a border without a radius.
  */
 export function useThemeComposeModifiers(
   borderColor: string,

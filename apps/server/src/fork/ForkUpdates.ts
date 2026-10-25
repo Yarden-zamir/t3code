@@ -1,20 +1,8 @@
 /**
- * Fork: updates from the fork releases for a server that runs as the upstream
- * background service (`t3 service install`). The install is the upstream
- * self-update: the pinned runtime, then a trial start with rollback by the
- * service launcher. Restart recovery continues the threads (the settings
- * `continueThreadsAfterServerUpdate` and `recoverInterruptedTurns`).
- *
- * - With `forkAutoUpdate` on, a check every 5 minutes installs a newer fork
- *   release when no agent turn, background shell or terminal thread program runs.
- *   A terminal thread program holds the update at most TERMINAL_HOLD_MAX; then
- *   its terminal gets a notice, and the update installs TERMINAL_HOLD_NOTICE_LEAD
- *   later.
- * - The machine map command `installUpdate` installs now, or at the next check
- *   that finds no running turn or shell (`whenIdle`).
- * - The desktop app installs its own updates. Its "Install when idle" waits for
- *   the agents itself and for terminal thread programs through `terminalHold`,
- *   with the same maximum and notice.
+ * Fork: installs fork releases through the upstream self-update of a `t3 service install` server.
+ * With `forkAutoUpdate`, a check every 5 minutes installs when no turn, background shell or
+ * terminal thread program runs. A program holds it at most TERMINAL_HOLD_MAX, gets a notice, and
+ * the update installs TERMINAL_HOLD_NOTICE_LEAD later. Desktop "Install when idle": `terminalHold`.
  */
 import {
   type ForkUpdateTerminalHold,
@@ -152,14 +140,10 @@ const make = Effect.gen(function* () {
   );
   yield* Effect.addFinalizer(() => Effect.sync(unsubscribeTerminals));
 
-  // A background shell is still work: the restart kills it and recovery wakes
-  // the thread. Limit: a shell that never ends, such as a dev server, blocks
-  // auto-update until it stops. Revisit if updates stall on such shells.
-  // Other pending tasks do not block. A pull request watch (`monitor`) survives
-  // a restart and can last for days. Native subagents, and monitors that the
-  // agent marks as awaited, are work that the upstream restart continuation
-  // resumes on purpose. They can run for hours, so waiting for them would hold
-  // updates back as long.
+  // A background shell blocks: the restart kills it and recovery wakes the thread. Limit: a shell
+  // that never ends, such as a dev server, blocks auto-update. Revisit if updates stall on those.
+  // Other tasks do not block. Pull request watches survive a restart, and the restart continuation
+  // resumes native subagents and awaited monitors. They run for hours, so waiting holds updates.
   const busyPrograms = Ref.get(busyTerminals).pipe(
     Effect.map((running) =>
       [...running.values()].filter(

@@ -42,13 +42,10 @@ const defaultLocationLogged = new Set<string>();
 const REFS_HEADS = "refs/heads/";
 
 /**
- * The folder and branch for a new worktree. A template path inside the
- * checkout, as `{repoDir}/{branchLeaf}` gives in a normal clone, uses
- * `defaultPath` instead, so one template fits both layouts. With `pickFreeName`, a taken
- * branch or folder gets a `-1`, `-2` suffix on the branch, as `renameBranch`
- * does, so that the folder still follows the branch. When a branch blocks
- * the namespace, the name is flattened, as `t3/x` becomes `t3-x`. Run
- * `release` after `git worktree add` ends.
+ * The folder and branch for a new worktree. A template path inside the checkout, such as
+ * `{repoDir}/{branchLeaf}` in a normal clone, uses `defaultPath`, so one template fits both
+ * layouts. `pickFreeName` adds a `-1`, `-2` branch suffix for a taken branch or folder, as
+ * `renameBranch` does. A blocked namespace flattens `t3/x` to `t3-x`. Run `release` after add.
  */
 export const placeTemplateWorktree = Effect.fn("placeTemplateWorktree")(function* (input: {
   readonly cwd: string;

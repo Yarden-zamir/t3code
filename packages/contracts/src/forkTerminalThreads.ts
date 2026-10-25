@@ -114,12 +114,10 @@ function looksLikeSecret(word: string): boolean {
 }
 
 /**
- * The words of a command line that say what it does: the program and up to two subcommand words
- * (`git push origin`, `npm run dev`, `docker compose up`). The title of a thread and the
- * `command` of its terminal sync to every client and machine, so the rest of the line never
- * shows. `NAME=value` parts, flags (`--token …`, `-H "Authorization: Bearer …"`), paths and
- * values often carry secrets. A word that is not a plain lowercase word ends the title, so a
- * secret shape that nobody listed stays out too. Undefined when no program is left.
+ * The program and up to two subcommand words of a command line (`git push origin`). The title
+ * syncs to every client and machine, and the rest of a line often carries secrets. The first word
+ * that is not a plain lowercase word ends the title, so an unlisted secret shape stays out too.
+ * Undefined when no program is left.
  */
 export function terminalCommandTitle(commandLine: string | undefined): string | undefined {
   const words = commandLine?.trim().split(/\s+/) ?? [];

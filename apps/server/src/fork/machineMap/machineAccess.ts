@@ -162,13 +162,10 @@ export const isMachineSubject = (subject: string) => subject.startsWith(MACHINE_
 const BROWSER_CLIENT_LABEL_PREFIX = "browser client ";
 
 /**
- * MM-922: the life of a session that a browser client got through Cloudflare Access with its key:
- * the page cookie and the bearer of a sibling. Neither is bound to the key, so it lasts 1 day, and
- * the browser signs in or pairs again with its key without user action. Owner, pairing-link and
- * app token sessions keep the normal life.
- *
- * Known limit: a stolen one works for up to 1 day. Revisit when upstream gives DPoP a bootstrap
- * source that is not the T3 Connect cloud session; then siblings can use key-bound DPoP tokens.
+ * MM-922: a session that a browser client got through Cloudflare Access with its key (the page
+ * cookie or a sibling bearer) lasts 1 day, because neither is bound to the key; the browser renews
+ * it without user action. Known limit: a stolen one works for up to 1 day. Revisit when upstream
+ * DPoP gets a bootstrap source other than the T3 Connect cloud session, for key-bound tokens.
  */
 export const clientBrowserSessionTtl = (grant: {
   readonly subject: string;
@@ -209,11 +206,10 @@ export const machineMcpAccessFor = (
 };
 
 /**
- * MM-1307, MM-1921: the MCP client of a machine session whose arrow has agent tools: a linked
- * environment with the access of its level. Only a bearer token, as an MCP client presents it,
- * never a cookie. Its `sessionId` names the source machine, not the session: sessions end on every
- * level change (MM-1306), and the work that the machine started (upstream `linkOrigin`) and its
- * request keys must stay its own.
+ * MM-1307, MM-1921: the MCP client of a machine session whose arrow has agent tools, with the
+ * access of its level. Bearer tokens only, never a cookie. Its `sessionId` names the source
+ * machine, because sessions end on every level change (MM-1306) and the machine's work (upstream
+ * `linkOrigin`) and request keys must stay its own.
  */
 export const machineMcpClientFor = (
   desired: MachineDesiredState,
@@ -297,11 +293,10 @@ export const execArrowInto = (
 type Leveled = Pick<ArrowRecord, "level" | "expiresAt" | "revertLevel">;
 
 /**
- * MM-1306: the sources whose sessions must end. A session got the level of its arrow at the time
- * the old desired state arrived (`previousAtMs`), so the old side reads that level and the new
- * side the level now. An arrow that expired between the two states then counts as a change, and
- * an arrow that had expired before the old state arrived does not. A state saved before the time
- * was kept (`null`) reads its raw level.
+ * MM-1306: the sources whose sessions must end. The old side reads the arrow level at the arrival
+ * of the old desired state (`previousAtMs`), the new side the level now. So an arrow that expired
+ * between the states counts as a change, and one that expired earlier does not. A state saved
+ * without that time (`null`) reads its raw level.
  */
 const sourcesWithChangedLevel = <K>(
   previous: ReadonlyArray<readonly [K, Leveled]>,

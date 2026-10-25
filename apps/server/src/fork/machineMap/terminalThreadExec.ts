@@ -15,12 +15,10 @@ import * as MachineMapState from "./MachineMapState.ts";
 type RunsWith = Pick<ModelSelection, "instanceId">;
 
 /**
- * Fork (MM-1923): a terminal thread types each message into a shell, so a launch of one, a send or
- * an interrupt to one or a terminal scheduled task runs or stops shell commands, as `machine_exec`
- * does. A call from another machine (a machine session) may do that only through an arrow that
- * allows exec. Metadata writes skip this check (`metadataOnly` in `McpToolAccess.writesThreads`).
- * Other callers keep their mode checks only. `runsWith` is the model that the work runs with. An effect
- * resolves it only for a machine session without exec, so other callers never pay for it.
+ * Fork (MM-1923): a terminal thread types messages into a shell, so a launch, send, interrupt or
+ * terminal scheduled task runs shell commands, as `machine_exec` does. A machine session needs an
+ * arrow that allows exec; metadata writes skip this (`metadataOnly`). `runsWith` is the work model,
+ * an effect that resolves only for a machine session without exec, so others never pay for it.
  */
 export const refuseTerminalThreadWithoutExec = Effect.fn("refuseTerminalThreadWithoutExec")(
   function* <E = never, R = never>(

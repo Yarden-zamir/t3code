@@ -1637,11 +1637,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       available: [...forkShells, ...startable].map((shell) => shell.name),
     });
   });
-  // Fork: only the default shell falls back to the next candidate. A shell that the user chose
-  // runs alone, so a thread never runs another shell than its own, and a failed start shows its
-  // error. An unknown shell (a custom shell that was removed) fails here, in the start, and not
-  // the open, so the session keeps its output and shows why. Only detected shells get the shell
-  // integration; a custom shell (`bash --norc`) keeps its own arguments.
+  // Fork: only the default shell falls back to the next candidate. A shell the user chose runs
+  // alone, so a failed start shows its error. An unknown shell (a removed custom shell) fails at
+  // start, not open, so the session keeps its output and shows why. Only detected shells get
+  // shell integration; a custom shell (`bash --norc`) keeps its own arguments.
   const shellLaunchFor = Effect.fn("terminal.shellLaunchFor")(function* (
     shellName: string | null,
     env: NodeJS.ProcessEnv,

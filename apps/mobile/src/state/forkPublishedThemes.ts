@@ -47,13 +47,10 @@ function defaultThemePatch(
 }
 
 /**
- * Fork: the published themes that the app offers, while a connected server has
- * `mobilePublishedThemes` on. Before a server connects, the stored copy keeps the theme on screen.
- * The hook also stores each new live copy and takes each new `defaultTheme` once.
- *
- * Known limit: an empty live list counts as "not received yet", because the cached server config
- * carries no themes. So when a server stops publishing every theme, the phone keeps the stored
- * copy. Revisit if the server config ever tells a received empty list apart.
+ * Fork: the published themes, while a connected server has `mobilePublishedThemes` on. It stores
+ * each live copy for the time before a server connects, and takes each new `defaultTheme` once.
+ * Limit: an empty live list counts as "not received yet", so the phone keeps the stored copy.
+ * Revisit if the server config tells a received empty list apart.
  */
 export function usePublishedMobileThemes(input: {
   readonly storedPreferences: Preferences | null;

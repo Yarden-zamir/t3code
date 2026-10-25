@@ -48,14 +48,10 @@ export function knownSlotLayout<const Element extends string>(
 }
 
 /**
- * Builds the stored schema for one surface. Every element appears at most
- * once, and the `required` elements must appear, so a layout can never hide
- * the parts a surface depends on (for example the controls a hover reveals).
- *
- * Element names are open strings. Every machine holds the layout, and a newer
- * version can store an element that an older one does not know. A closed list
- * would make an older server reject the whole settings patch, or reset every
- * setting when it reads a newer `settings.json`. Read through `knownSlotLayout`.
+ * Builds the stored schema for one surface. Each element appears at most once and the `required`
+ * ones must appear, so a layout never hides parts that a surface depends on. Element names stay
+ * open strings, so an older server keeps a newer layout instead of rejecting the settings patch.
+ * Read through `knownSlotLayout`.
  */
 // Export it when a second surface gets a layout; until then only this file uses it.
 function makeSlotLayoutSchema(required: ReadonlyArray<string>) {

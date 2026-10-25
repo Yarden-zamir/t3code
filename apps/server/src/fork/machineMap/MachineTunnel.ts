@@ -1,14 +1,8 @@
 /**
- * Fork: machine map. The tunnel that a join delivers (MM-213, MM-1309, MM-1310).
- *
- * - The join saves the tunnel token in the server secret store and the hostname and the Access
- *   login in `<stateDir>/machine-map-tunnel.json`.
- * - At start, `cli/config.ts` reads that file for the tunnel and Access settings, unless the
- *   environment or the desktop settings give their own tunnel. Then the explicit values win.
- * - The joined tunnel applies only while the `machineMap` setting is on (MM-1301).
- * - When the server uses the joined tunnel, this service runs the pinned `cloudflared` of the
- *   upstream relay client as a child process. It starts it again after each exit, and stops it
- *   when the map turns off, on "Leave" too, or with the server.
+ * Fork: machine map. The tunnel that a join delivers (MM-213, MM-1309, MM-1310). The token goes to
+ * the secret store, the hostname and Access login to `<stateDir>/machine-map-tunnel.json`, which
+ * `cli/config.ts` reads unless explicit tunnel settings win. While `machineMap` is on (MM-1301),
+ * this runs the pinned upstream `cloudflared` and starts it again after each exit.
  */
 import { MachineMapRequestError, MachineTunnelGrant } from "@t3tools/contracts";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";

@@ -1,10 +1,8 @@
 /**
- * Fork: `t3 machine-map join <code> [--portal <url>]` (MM-203). It calls the tool
- * `machines_join` on the running server, so the CLI, the agent tool and T3 Settings share one
- * service method. The server must run.
- *
+ * Fork: `t3 machine-map join <code> [--portal <url>]` (MM-203) calls the tool `machines_join` on
+ * the running server, so the CLI, the agent tool and T3 Settings share one service method.
  * `t3 machine exec <machine> -- <command>` (MM-1919) runs a command on another machine like ssh,
- * through the stream route of the running server.
+ * through the stream route of the running server. Both need a running server.
  */
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { MACHINE_EXEC_STREAM_PATH } from "@t3tools/contracts";

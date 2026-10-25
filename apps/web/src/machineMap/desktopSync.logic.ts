@@ -40,12 +40,10 @@ function isMachineOrigin(origin: string): boolean {
 }
 
 /**
- * Decides which machine environments to add, pair again, and remove.
- *
- * - `managedOrigins` are the origins that this app added for the map. Only those get removed, so
- *   an environment the user saved by hand stays as it is, headers included.
- * - A managed environment in phase `error` pairs again, for example after the target ended the
- *   session of this machine on a level change (MM-305) or by hand. The caller limits the rate.
+ * Decides which machine environments to add, pair again, and remove. Only `managedOrigins`, the
+ * ones this app added, get removed, so a hand-saved environment stays with its headers. A managed
+ * environment in phase `error` pairs again, for example after a level change ended its session
+ * (MM-305). The caller limits the rate.
  */
 export function planMachineSync(input: {
   readonly state: Pick<MachineMapClientState, "enabled" | "joined" | "reachable" | "tokenHeaders">;

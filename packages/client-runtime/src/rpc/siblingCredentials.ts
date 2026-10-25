@@ -1,18 +1,11 @@
-// Fork: cookies for sibling environments behind a proxy such as Cloudflare
-// Access, which answers a request without its own cookie with a login redirect.
-//
-// This leaks nothing new: the browser sends only cookies that it already holds
-// for the target host, and it exposes the response only when the target server
-// lists the page origin with credentials (T3CODE_TRUSTED_BROWSER_ORIGINS). The
-// page's own server must also list the target, so cookies stay off until the
-// user opts in on the servers. Without that gate, a sibling server that keeps
-// the wildcard CORS would reject every credentialed request.
+// Fork: cookies for sibling environments behind a proxy such as Cloudflare Access, which redirects
+// a request without its cookie to a login. The browser sends only cookies that it holds for the
+// target, and the target must list the page origin (T3CODE_TRUSTED_BROWSER_ORIGINS). The page
+// server must also list the target, so cookies stay off until the user opts in on the servers.
 
-// Origins that the page's own server trusts (its `trustedBrowserOrigins`).
-// Empty until the primary server config arrives.
-// Limit: a remote request before that config loads goes without cookies and
-// fails once; the connection retry then succeeds. Revisit when that first
-// failure shows in the UI.
+// Origins that the page's own server trusts (`trustedBrowserOrigins`), empty until config loads.
+// Limit: a remote request before then goes without cookies and fails once; the retry succeeds.
+// Revisit when that first failure shows in the UI.
 let trustedOrigins: ReadonlySet<string> = new Set();
 
 /** Set from the page's primary server config. An empty list turns cookies off. */
@@ -26,12 +19,10 @@ interface PageLocation {
 }
 
 /**
- * Whether `url` is an https sibling of the page: both https and the last two
- * hostname labels match (`t3-vps.example.com` and `t3-mac.example.com`).
- *
- * Limit: a two-label check treats hosts under a multi-part public suffix such
- * as `co.uk` as siblings of every other `co.uk` site. Revisit with a public
- * suffix list when a user runs environments under such a suffix.
+ * Whether `url` is an https sibling of the page: both https and the last two hostname labels match
+ * (`t3-vps.example.com` and `t3-mac.example.com`). Limit: all hosts under a multi-part suffix such
+ * as `co.uk` count as siblings. Revisit with a public suffix list when a user runs environments
+ * under such a suffix.
  */
 export const isSiblingOfPage = (url: string, page: PageLocation | undefined): boolean => {
   if (page === undefined || page.protocol !== "https:") return false;

@@ -243,7 +243,7 @@ export function QueuedRunsControl({
     setBusyRunId(null);
   };
 
-  // Fork guards until upstream #14617 lands. Replace with upstream when #14617 merges.
+  // Fork guards until upstream pingdotgg/t3code#14617 lands; then replace with upstream.
   // Resuming mid-edit would send the saved text, not the draft being edited.
   const resumeBlockedByEdit = props.editingRunId !== null;
   const resume = async () => {

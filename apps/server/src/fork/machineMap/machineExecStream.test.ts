@@ -1,8 +1,7 @@
-// Fork: `t3 machine exec` (MM-1919). The CLI end (`runExecClient`) opens A's real stream route
-// with the MCP credential of an agent's thread (MM-1920). A sends the stream over its arrow to B's
-// real stream route, which admits A's machine session through the real MCP client auth
-// (`servePeer`). Only Cloudflare Access and the pairing exchange are faked, as in
-// MachinePeers.test.ts. The commands run for real on this machine, as B.
+// Fork: `t3 machine exec` (MM-1919). The CLI (`runExecClient`) opens A's real stream route with an
+// agent thread's MCP credential (MM-1920), and A relays over its arrow to B's real route and auth
+// (`servePeer`). Only Cloudflare Access and pairing are faked, as in MachinePeers.test.ts.
+// The commands run for real on this machine, as B.
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";

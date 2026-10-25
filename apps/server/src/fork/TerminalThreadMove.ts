@@ -1,11 +1,8 @@
 /**
- * Fork: a running terminal of a drawer becomes a new terminal thread. The process moves, with its
- * output, to the main terminal of the thread, so the user goes on where they were. The thread is
- * in the project and the folder of the thread whose drawer held the terminal, and its model is
- * the shell of the terminal.
- *
- * A drawer terminal has no shell integration, so the thread reports no shell state: it shows
- * Done or Failed only when the shell exits, and a message is typed without a result.
+ * Fork: moves a running drawer terminal, with its output, to the main terminal of a new terminal
+ * thread in the same project and folder. The model of the thread is the shell of the terminal.
+ * A drawer terminal has no shell integration, so the thread shows Done or Failed only when the
+ * shell exits, and a message is typed without a result.
  */
 import {
   CommandId,

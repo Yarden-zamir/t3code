@@ -221,9 +221,8 @@ export class ThreadLaunchService extends Context.Service<
       ThreadLaunchError | ThreadManagement.ThreadManagementProviderInstanceDisabledError
     >;
     /**
-     * Fails when a new worktree's base ref cannot give provisioning a commit,
-     * when its requested branch already exists, or when the project is not a
-     * Git repository.
+     * Fails when a new worktree's base ref gives provisioning no commit, when its requested branch
+     * exists, or when the project is not a Git repository.
      * `launch` accepts such a launch and reports the failure inside the
      * thread; a caller that needs it before a thread exists checks first.
      */
@@ -335,11 +334,10 @@ const make = Effect.gen(function* () {
     const strategy = input.workspaceStrategy;
     if (strategy.type !== "worktree") return;
     const { baseRef, branch } = strategy;
-    // `git worktree add -b` refuses a branch that exists or that a branch
-    // blocks, as `docs` blocks `docs/x`. Limit: short names read a branch that
-    // shares its name with a tag as `heads/<name>`, so the launch reports that
-    // case instead. Revisit if agents name branches after tags.
-    // A temporary `t3/<id>` name is flattened at launch when it conflicts.
+    // `git worktree add -b` refuses a branch that exists or that a branch blocks, as `docs`
+    // blocks `docs/x`. Limit: short names read a branch that shares its name with a tag as
+    // `heads/<name>`, so the launch reports that case instead. Revisit if agents name branches
+    // after tags. A temporary `t3/<id>` name is flattened at launch when it conflicts.
     if (branch !== undefined && !isTemporaryWorktreeBranch(branch)) {
       const taken = yield* Effect.gen(function* () {
         const project = Option.getOrUndefined(yield* projects.getById(input.projectId));
@@ -415,11 +413,10 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
-    // A worktree needs a Git repository. Scratch gives a worktree request (a
-    // stale composer mode, an agent, a scheduled task, or a retry of one) a
-    // folder of its own. In another folder that Git reports as outside any
-    // repository, the request runs in the project folder, as the composer
-    // does, and the thread says so. Two such runs then share that folder.
+    // A worktree needs a Git repository. Scratch gives a worktree request (a stale composer mode,
+    // an agent, a scheduled task, or a retry) its own folder. In another folder outside any
+    // repository, the request runs in the project folder, as the composer does, and the thread
+    // says so. Two such runs then share that folder.
     const scratchFolder =
       requested.workspaceStrategy.type === "worktree"
         ? yield* managedFolders

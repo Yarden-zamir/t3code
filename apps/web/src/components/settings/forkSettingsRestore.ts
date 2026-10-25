@@ -4,12 +4,10 @@ import * as Equal from "effect/Equal";
 import type { ScopedSettingsPatch } from "./scopedSettings";
 
 /**
- * Fork: the fork settings that Restore defaults resets, with the label that its confirmation
- * names. Like upstream, Restore defaults resets preferences, and user data and access stay. That
- * keep list is deliberate: `globalScripts` and the pin lists (like project scripts),
- * `sidebarTabs` and `threadCardLayouts` (content that the user built, like keybindings),
- * `machineMap` and `clientAccess` (a reset leaves the map or changes access), and tunnel pairing
- * (desktop connection settings). A new fork preference goes in this list.
+ * Fork: the fork settings that Restore defaults resets, with their confirmation labels. Like
+ * upstream, it resets preferences and keeps user data and access: `globalScripts`, pin lists,
+ * `sidebarTabs`, `threadCardLayouts`, `machineMap`, `clientAccess` and tunnel pairing stay.
+ * A new fork preference goes in this list.
  */
 const FORK_RESTORED_SETTINGS = [
   ["restoreWorktreesOnResume", "Restore worktrees on resume"],

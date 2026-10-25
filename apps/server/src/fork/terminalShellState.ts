@@ -1,9 +1,8 @@
 /**
- * Fork: the state of the shell of a terminal thread, from the marks that its shell integration
- * prints (`shellMarks.ts`). The manager keeps these fields in the `fork` object of a terminal
- * session (`terminalSessionFork.ts`) and the summary of the terminal reports them: the sidebar of
- * a client reads `shell`, `hasRunningSubprocess` and `attention` from there, and a new terminal
- * thread takes its title from `command`.
+ * Fork: the shell state of a terminal thread, from its shell integration marks (`shellMarks.ts`).
+ * The manager keeps it in the `fork` object of a terminal session (`terminalSessionFork.ts`), and
+ * the terminal summary reports it: the client sidebar reads `shell`, `hasRunningSubprocess` and
+ * `attention`, and a new terminal thread takes its title from `command`.
  */
 import {
   TERMINAL_COMMAND_MAX_LENGTH,

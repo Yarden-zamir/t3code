@@ -24,11 +24,10 @@ function decodeSegment(segment: string): string | null {
 }
 
 /**
- * Fork: the thread that a link names with its environment: a web address of a T3 server,
- * `https://<host>/<environmentId>/<threadId>`, or the app link `t3code://threads/<environmentId>/<threadId>`.
- * Both may carry `?message=<messageId>` or `#<messageId>`. The host does not matter: the
- * environment id is the identity, so a client checks it against the environments it knows. Any other query makes it
- * something else, such as a prompt link (`promptLinks.ts`), so it stays a normal link.
+ * Fork: the thread that a web address `https://<host>/<environmentId>/<threadId>` or an app link
+ * `t3code://threads/<environmentId>/<threadId>` names, with optional `?message=` or `#<messageId>`.
+ * The host does not matter: a client checks the environment id against its environments. Any other
+ * query makes it a normal link, such as a prompt link (`promptLinks.ts`).
  */
 export function parseThreadAddress(href: string): ThreadAddress | null {
   if (!URL.canParse(href)) return null;

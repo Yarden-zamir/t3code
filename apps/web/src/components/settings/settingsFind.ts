@@ -2,11 +2,9 @@ import { forkSettingsSearchItems } from "./forkSettingsCatalog";
 import { SETTINGS_SEARCH_ITEMS, searchSettings, type SettingsSearchItem } from "./settingsSearch";
 
 /**
- * Fork: the find box of one Settings page (`settings.find`). It uses the settings search, so a
- * row matches by its search title and keywords, and it hides the page elements by their search
- * anchors. Limit: a row without a search item, such as a row that a toggle reveals, hides while
- * the box has text. Revisit if users miss such rows; matching the row text would be a second
- * matcher.
+ * Fork: the find box of one Settings page (`settings.find`). It matches rows by search title and
+ * keywords, and hides page elements by their search anchors. Limit: a row without a search item,
+ * such as one that a toggle reveals, hides while the box has text. Revisit if users miss such rows.
  */
 
 const ALL_ITEMS: ReadonlyArray<SettingsSearchItem> = [

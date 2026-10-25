@@ -280,11 +280,10 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * MM-1919: runs a stream's command here. Stdin, stdout and stderr flow as they come; each send
-   * waits for the network, so a slow reader slows the command instead of filling memory. The run
-   * has no time limit of its own. It ends at its timeout, when the arrow stops allowing exec
-   * (MM-1916), or when the caller goes away. The History gets one entry at the end, never the
-   * output (MM-1908).
+   * MM-1919: runs a stream's command here. Each send waits for the network, so a slow reader slows
+   * the command instead of filling memory. The run ends at its timeout, when the arrow stops
+   * allowing exec (MM-1916), or when the caller goes away. The History gets one entry at the end,
+   * never the output (MM-1908).
    */
   const runStreamHere = Effect.fn("MachineExec.runStreamHere")(function* (
     from: MachineId,

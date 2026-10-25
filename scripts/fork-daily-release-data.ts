@@ -767,11 +767,10 @@ const SECTIONS = [
 ] as const;
 
 /**
- * The release notes from the changes and the agent's plan. The highlights of each section come
- * first. "## Full changelog" then lists every cluster with its changes folded. The desktop update
- * popover reads only the lines above "Full changelog" and drops `<details>` blocks, so it shows
- * the highlight lines. Over the size budget, the changes of the last clusters without picked
- * images lose their screenshots first. The breaking changes always stay.
+ * The release notes: section highlights first, then "## Full changelog" with each cluster folded.
+ * The desktop update popover reads only the lines above "Full changelog" and drops `<details>`.
+ * Over the size budget, the last clusters without picked images lose their screenshots first.
+ * The breaking changes always stay.
  */
 export function renderNotes(
   changes: DailyChanges,

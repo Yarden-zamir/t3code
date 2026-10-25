@@ -1,15 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off -- the shell name comes from a path string.
 /**
- * Fork: shell integration of terminal threads. The main terminal of a terminal thread starts
- * its shell with a small hook that prints OSC 133 marks (`shellMarks.ts`) when the prompt shows,
- * when a command starts and when it ends with its exit code. The server then knows, without
- * wrapper text in the terminal, whether a program runs and how a command ended.
- *
- * Supported: bash 4.4 or newer and zsh. Another shell runs without the hook and reports no state.
- * An older bash (macOS /bin/bash is 3.2) gets the rcfile but no hook, so it stays `starting`: the
- * first message of each session waits SHELL_READY_TIMEOUT_MS, and the process poll then forgets
- * the state. Revisit if users run terminal threads on bash 3.2. Revisit when a user needs fish; its hook is a function on the
- * `fish_prompt` and `fish_preexec` events.
+ * Fork: the main terminal of a terminal thread starts its shell with a hook that prints OSC 133
+ * marks (`shellMarks.ts`), so the server knows whether a program runs and how a command ended.
+ * Supported: bash 4.4 or newer and zsh. An older bash (macOS 3.2) gets no hook and stays
+ * `starting`, so a first message waits SHELL_READY_TIMEOUT_MS. Revisit for bash 3.2 or fish users.
  */
 import * as NodePath from "node:path";
 

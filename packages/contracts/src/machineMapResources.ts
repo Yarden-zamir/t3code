@@ -1,11 +1,8 @@
 /**
- * Fork: machine map resources and health (`apps/machine-map/SPEC.md`, MM-15xx). The T3 server
- * sends a resource sample to the portal every minute. The portal keeps the history, checks the
- * thresholds and records alerts.
- *
- * These messages ride on the same machine socket as `MachineToPortal` and `PortalToMachine`, but
- * stay out of those unions: an older portal and an older server fail to decode them and ignore
- * them, so old and new ends keep working together (MM-1502).
+ * Fork: machine map resources and health (`apps/machine-map/SPEC.md`, MM-15xx). The server sends
+ * a resource sample to the portal every minute. These messages share the machine socket but stay
+ * out of `MachineToPortal` and `PortalToMachine`, so an older end fails to decode them and ignores
+ * them (MM-1502).
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";

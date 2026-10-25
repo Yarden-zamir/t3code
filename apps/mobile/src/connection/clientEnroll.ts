@@ -1,8 +1,7 @@
 /**
- * Fork: native app clients of the machine map (MM-913, MM-914). An invite from
- * the portal gives this app its own Cloudflare Access service token and the
- * machines it may reach. The app keeps the token as request headers for each
- * machine origin and the portal origin, then pairs with each machine through
+ * Fork: native app clients of the machine map (MM-913, MM-914). A portal invite gives this app its
+ * own Cloudflare Access service token and its machines. The app keeps the token as request headers
+ * for each machine origin and the portal origin, then pairs with each machine through
  * `/api/auth/cloudflare-access/pairing-credential`.
  */
 import { AuthPairingCredentialResult, ClientEnrollResponse } from "@t3tools/contracts";

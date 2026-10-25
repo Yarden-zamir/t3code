@@ -8,12 +8,10 @@ type ForkSettingPlaceDefinition = {
 };
 
 /**
- * The places in other settings pages where fork rows render. Each place is one
- * `<ForkSettingsSlot place=... />` hook. `section` names the section of the page, or is null
- * when its heading changes, like the machine name in Connections. A place with `forkSection`
- * renders its own section with that title; the others add rows to an upstream section. A place
- * with `hideAtProjectScope` hides its rows at a project scope, like the upstream rows beside it.
- * Elsewhere a server row stays and locks, through `SettingsRow`.
+ * Places in other settings pages where fork rows render, each one `<ForkSettingsSlot place=... />`.
+ * `section` names the page section, or is null when its heading changes. `forkSection` renders its
+ * own section; others add rows to an upstream section. `hideAtProjectScope` hides rows at project
+ * scope like their upstream neighbors; elsewhere a server row locks through `SettingsRow`.
  */
 export const FORK_SETTING_PLACES = {
   "general-global-scripts": {
@@ -74,11 +72,10 @@ export function forkSettingPlace(place: ForkSettingPlace): ForkSettingPlaceDefin
 }
 
 /**
- * One setting on the Fork page. `ids` are the search ids of the rows of one row component; the
- * first one is the link to its place. A fork row has a `place`, where its slot renders it. An
- * upstream setting that the fork changed has a `change` note instead: upstream renders its row.
- * A `linkOnly` entry is an upstream row that is not its own component: the page shows its title,
- * the note and a link to it.
+ * One setting on the Fork page. `ids` are the search ids of one row component; the first links to
+ * its place. A fork row has a `place`, where its slot renders it. An upstream setting that the fork
+ * changed has a `change` note instead. A `linkOnly` entry is an upstream row without its own
+ * component: the page shows its title, the note and a link.
  */
 type ForkSettingEntry =
   | {

@@ -73,11 +73,9 @@ export const newerForkRelease = (httpClient: HttpClient.HttpClient, currentVersi
   installableReleases(httpClient).pipe(Effect.map((releases) => newerIn(releases, currentVersion)));
 
 /**
- * The version that a self-update request installs. A requested version
- * without an installable fork release, for example an upstream version from
- * the store mobile app, installs the newest newer fork release instead. Any
- * other case keeps the requested version, and the upstream updater reports
- * its own error.
+ * The version that a self-update request installs. A requested version with no installable fork
+ * release, such as an upstream version from the store mobile app, installs the newest newer fork
+ * release. Otherwise the request keeps its version, and the upstream updater reports any error.
  */
 export const forkUpdateTarget = (
   httpClient: HttpClient.HttpClient,

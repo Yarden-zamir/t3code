@@ -1,10 +1,8 @@
 /**
- * Fork: the chips of the `pullRequestFilterChips` setting. Each active menu filter becomes one
- * chip with the list scope change that removes it and, where the filter has a negative form, the
- * change that flips it. Typed qualifiers stay in the search box, where the reader already sees
- * them, so they get no chip. A menu filter that a typed qualifier replaces gets no chip either,
- * because it does not apply. If upstream T3 Code ships its own active-filter chips, drop this
- * fork version and use theirs.
+ * Fork: chips for the `pullRequestFilterChips` setting. Each active menu filter becomes a chip
+ * with the scope change that removes it and, if it has a negative form, the change that flips it.
+ * Typed qualifiers get no chip, since the search box shows them, and neither does a menu filter
+ * they replace. If upstream ships its own active-filter chips, use theirs and drop this file.
  */
 import type { PullRequestListFilters } from "@t3tools/contracts";
 

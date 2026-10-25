@@ -36,13 +36,10 @@ const OWNER: OwnerBrowserAccess = { _tag: "owner" };
 const loggedProofFailures = new Set<string>();
 
 /**
- * MM-917, MM-918: an owner browser that proves its key gets the arrow of its client. The proof is
- * read only while `clientAccess` is not `off`, so `off` stays the owner login of MM-308. Under
- * `observe`, a missing or bad proof or an unknown key keeps the owner login; under `enforce`, it
- * gets nothing and waits for approval.
- *
- * Known limit: an owner subject that is not an email is the desktop service token for remote
- * machines (docs/fork/operations.md), so it keeps the owner login. Revisit when that token is retired.
+ * MM-917, MM-918: an owner browser that proves its key gets the arrow of its client; `off` keeps
+ * the owner login of MM-308. A missing or bad proof or unknown key keeps the owner login under
+ * `observe` and waits for approval under `enforce`. Known limit: a non-email owner subject (the
+ * desktop service token) keeps the owner login. Revisit when that token is retired.
  */
 export const ownerBrowserAccess = (
   machineMap: Option.Option<MachineMapState.MachineMapState["Service"]>,

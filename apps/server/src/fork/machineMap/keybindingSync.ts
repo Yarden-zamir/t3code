@@ -1,14 +1,8 @@
 /**
- * Fork: keybinding sync through the machine map settings (apps/machine-map/SPEC.md, MM-414).
- *
- * The server setting `keybindings` is no settings service field. It is the rule list of
- * `keybindings.json`, which the map reports and applies only while `keybindingSync` is on. The
- * keybindings service watches that file, so a written value reloads like an edit by hand.
- *
- * The value keeps a rule with a command that this build does not know: the keybindings loader
- * skips that rule, and it works after an update. A written value is the decoded value, so it
- * reads back equal and is no local change (MM-404). A write replaces the whole file, so the
- * file before it stays as `keybindings.json.bak`.
+ * Fork: keybinding sync through the machine map settings (apps/machine-map/SPEC.md, MM-414). The
+ * `keybindings` setting is the rule list of `keybindings.json`, synced only while `keybindingSync`
+ * is on. Unknown commands stay for a later build. A written value is decoded, so it reads back
+ * equal (MM-404). A write replaces the whole file and keeps the old one as `keybindings.json.bak`.
  */
 import {
   KEYBINDINGS_SETTING_KEY,
@@ -105,13 +99,10 @@ const syncOnFor = (
 };
 
 /**
- * Writes the `keybindings` value of a desired state into the file, when it differs from the
- * value that the previous desired state applied. So the saved desired state at start, and a
- * revision that changes another setting, leave the file alone: a default rule that the
- * keybindings service adds at start stays, and the machine reports it as its own value (MM-404).
- * A `keybindingSync` value in the same desired state decides, because this runs before the
- * settings patch: the settings change that turns the sync on must find the new file, or it
- * reports the old rules as a local change.
+ * Writes the desired `keybindings` value into the file only when it differs from the previous
+ * desired value, so a default rule from start stays and reports as the machine's value (MM-404).
+ * This runs before the settings patch, so the change that turns on `keybindingSync` finds the new
+ * file instead of reporting the old rules as a local change.
  */
 export const applyKeybindingSettings = Effect.fn(function* (input: {
   readonly keybindingsPath: string;

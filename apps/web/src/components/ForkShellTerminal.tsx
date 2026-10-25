@@ -33,12 +33,10 @@ type SessionStatus = Parameters<
 >[0];
 
 /**
- * Fork: the shell of a terminal thread, or of a draft in Terminal mode: the main terminal
- * `term-1` with focus on mount and the ended state. When the shell exits, or cannot start, the
- * server keeps the output and writes the reason into it; Start a new shell (or Enter) opens a
- * fresh shell below it, and every client that shows the terminal follows, because the state comes
- * from the server. A thread can pick another shell there, for example when its custom shell was
- * removed; a draft picks its shell in the composer.
+ * Fork: the shell of a terminal thread, or of a draft in Terminal mode, as the main terminal
+ * `term-1`. When the shell exits or cannot start, the server keeps the output and the reason.
+ * Start a new shell (or Enter) opens a fresh shell below it, and every client follows.
+ * A thread can pick another shell there; a draft picks its shell in the composer.
  */
 export function ForkShellTerminal(props: {
   readonly threadRef: ScopedThreadRef;

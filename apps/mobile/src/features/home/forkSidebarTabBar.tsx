@@ -1,11 +1,8 @@
 /**
- * Fork: the sidebar tabs of web, above the home thread list, while a connected server has
- * `mobileSidebarTabs` on. The tabs come from the server setting `sidebarTabs`, which the
- * machine map syncs, so web and mobile show the same tabs. Tap a tab to show its threads, and
- * long-press it to edit, move or delete it.
- *
- * Known limits: a thread link does not switch to the tab of the thread, and web theme icon packs
- * do not apply. Revisit if users open threads from links on the phone often.
+ * Fork: the web sidebar tabs (server setting `sidebarTabs`) above the home thread list, while a
+ * connected server has `mobileSidebarTabs` on. Long-press a tab to edit, move or delete it.
+ * Limit: a thread link does not switch to its tab, and web icon packs do not apply. Revisit if
+ * users often open threads from links on the phone.
  */
 import { useAtomValue } from "@effect/atom-react";
 import type {
