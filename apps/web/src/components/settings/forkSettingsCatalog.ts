@@ -166,8 +166,10 @@ const FORK_SETTING_GROUPS = [
       },
       { ids: ["sidebar-tabs", "sidebar-tab-single-thread"], place: "general-organization" },
       { ids: ["snooze-quick-options"], place: "general-organization" },
+      { ids: ["message-pins"], place: "general-behavior" },
       { ids: ["mobile-new-thread-project"], place: "appearance-mobile-app" },
       { ids: ["mobile-composer-camera"], place: "appearance-mobile-app" },
+      { ids: ["mobile-message-pins"], place: "appearance-mobile-app" },
       { ids: ["mobile-sidebar-tabs"], place: "appearance-mobile-app" },
       { ids: ["storage-worktree-path-template"], place: "storage-worktrees" },
       {

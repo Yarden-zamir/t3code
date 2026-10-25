@@ -11,6 +11,7 @@ import { ForkCopyMessageLink } from "./ForkCopyMessageLink";
 const state = vi.hoisted(() => ({ enabled: true }));
 vi.mock(import("./ForkMessageLinkTarget"), () => ({
   useForkMessageLinks: () => state.enabled,
+  forkMessageLinkNavigation: () => ({}),
 }));
 vi.mock(import("../../hooks/useSettings"), () => ({
   useClientSettings: (() => true) as never,

@@ -18,6 +18,7 @@ import {
   AgentSessionImportSettingsRows,
   AutoSettleWaitsForBackgroundCommandsSettingsRow,
   BackgroundWorkDetailsSettingsRow,
+  MessagePinsSettingsRow,
   CheckNewerBeforeUpdateInstallSettingsRow,
   CurrentProjectTerminalOpensThreadSettingsRow,
   ForkAutoUpdateSettingsRow,
@@ -34,6 +35,7 @@ import { KeybindingSyncSettingsRow } from "./KeybindingSyncSettingsRow";
 import { MachineMapSettingsRows } from "./MachineMapSettingsRows";
 import {
   MobileComposerCameraSettingsRow,
+  MobileMessagePinsSettingsRow,
   MobileNewThreadProjectSettingsRow,
   MobilePublishedThemesSettingsRow,
   MobileSidebarTabsSettingsRow,
@@ -96,6 +98,7 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "check-newer-before-update-install": CheckNewerBeforeUpdateInstallSettingsRow,
   "recover-interrupted-turns": RecoverInterruptedTurnsSettings,
   "background-work-details": BackgroundWorkDetailsSettingsRow,
+  "message-pins": MessagePinsSettingsRow,
   "prefer-origin-remote": PreferOriginRemoteSettingsRow,
   "pull-request-watch-roles": PullRequestWatchSettingsRows,
   "agent-session-import-window": AgentSessionImportSettingsRows,
@@ -128,6 +131,7 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "mobile-published-themes": MobilePublishedThemesSettingsRow,
   "mobile-new-thread-project": MobileNewThreadProjectSettingsRow,
   "mobile-composer-camera": MobileComposerCameraSettingsRow,
+  "mobile-message-pins": MobileMessagePinsSettingsRow,
   "mobile-sidebar-tabs": MobileSidebarTabsSettingsRow,
   "back-forward-buttons": BackForwardButtonsSettingsRow,
   "remember-back-forward-history": RememberBackForwardHistorySettingsRow,

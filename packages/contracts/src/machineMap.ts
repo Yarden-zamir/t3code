@@ -247,6 +247,8 @@ const MACHINE_LOCAL_SETTINGS: Readonly<Record<SettingScope, ReadonlySet<string>>
     "projectSettingsOverrides",
     "projectScriptOverrides",
     "pinnedProjectScriptIds",
+    // Keyed by thread id. A thread id is local to one environment.
+    "pinnedMessages",
     "projectAutoPullOverrides",
     "projectAgentBrowserAccessOverrides",
     // SSH hosts and the device setup of this machine.

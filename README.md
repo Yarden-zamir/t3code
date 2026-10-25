@@ -71,6 +71,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Worktree path template](docs/fork/features.md#worktree-path-template):** a template decides where new worktrees go.
 - **[Thread link chips](docs/fork/features.md#thread-link-chips):** every thread link in chat shows as an attached-thread chip.
 - **[Message links](docs/fork/features.md#message-links):** copy a link from each message to open the thread at that message.
+- **[Message pins](docs/fork/features.md#message-pins):** pin messages, and list the pins in thread details and in the sidebar.
 - **[Thread addresses open the desktop app](docs/fork/features.md#thread-addresses-open-the-desktop-app):** a thread address from Slack or GitHub opens the desktop app.
 - **[New thread on mobile](docs/fork/features.md#new-thread-on-mobile):** New thread in the mobile app opens the project list, the last project, or no project.
 - **[Camera in the mobile composer](docs/fork/features.md#camera-in-the-mobile-composer):** the plus button of the mobile composer can take a photo.

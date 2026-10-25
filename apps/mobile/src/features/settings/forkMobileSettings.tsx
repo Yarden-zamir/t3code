@@ -80,6 +80,13 @@ const FORK_MOBILE_SWITCHES = [
     place: "threads",
   },
   {
+    key: "mobileMessagePins",
+    icon: "pin",
+    label: "Message pins",
+    subtitle: "A long press on a message offers Pin and Unpin.",
+    place: "threads",
+  },
+  {
     key: "mobileSidebarTabs",
     icon: "square.grid.2x2",
     label: "Sidebar tabs",
