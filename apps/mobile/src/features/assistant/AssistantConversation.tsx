@@ -8,7 +8,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { environmentThreadDetails } from "../../state/threads";
 import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
-import { panelExchanges } from "./assistantConversation";
+import { panelExchanges } from "./panelExchanges";
 
 /** Pixels from the end that still count as reading the newest words. */
 const FOLLOW_SLOP = 24;
