@@ -156,9 +156,10 @@ const make = Effect.gen(function* () {
   // the thread. Limit: a shell that never ends, such as a dev server, blocks
   // auto-update until it stops. Revisit if updates stall on such shells.
   // Other pending tasks do not block. A pull request watch (`monitor`) survives
-  // a restart and can last for days. Native subagents and monitors are awaited
-  // work that the upstream restart continuation resumes on purpose, and they
-  // can run for hours, so waiting for them would hold updates back as long.
+  // a restart and can last for days. Native subagents, and monitors that the
+  // agent marks as awaited, are work that the upstream restart continuation
+  // resumes on purpose. They can run for hours, so waiting for them would hold
+  // updates back as long.
   const busyPrograms = Ref.get(busyTerminals).pipe(
     Effect.map((running) =>
       [...running.values()].filter(
