@@ -77,19 +77,6 @@ export function ForkSettingsFind() {
     };
   }, [shown, trimmedQuery, pathname]);
 
-  useEffect(() => {
-    if (!shown) return;
-    // On `document`, so it runs before the window listener that leaves Settings on Escape.
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
-      event.preventDefault();
-      setOpen(false);
-      setQuery("");
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [shown]);
-
   if (!shown) return null;
   // Limit: counts the search items of the page, also rows that the selected scope hides.
   const empty = trimmedQuery !== "" && settingsFindMatch(trimmedQuery, pathname).matched.size === 0;
@@ -119,7 +106,16 @@ export function ForkSettingsFind() {
           aria-label="Find on this settings page"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+            if (event.nativeEvent.isComposing) return;
+            // Stopped here, so the Settings modal's document listener does not close on it.
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              setOpen(false);
+              setQuery("");
+              return;
+            }
+            if (event.key !== "Enter") return;
             event.preventDefault();
             jumpToFirstMatch();
           }}
