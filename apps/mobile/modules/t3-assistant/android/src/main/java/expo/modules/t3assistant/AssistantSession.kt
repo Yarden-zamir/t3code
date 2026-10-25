@@ -44,12 +44,13 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context) {
     val packageName = structure?.activityComponent?.packageName
     val structuredData = content?.structuredData?.take(MAX_STRUCTURED_DATA_CHARS)
     val clip = content?.clipData
+    val focused = state.isFocused
     AssistantCapture.addScreen(
       sourcePackage = packageName,
       webUri = content?.webUri?.toString(),
       screenText = structure?.let(::screenText),
       selectedText = structure?.let(::selectedText),
-      report = AssistantCapture.ScreenReport(
+      report = if (!focused) null else AssistantCapture.ScreenReport(
         appLabel = packageName?.let(::appLabel),
         activityClass = structure?.activityComponent?.className,
         structuredData = structuredData,
@@ -59,7 +60,8 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context) {
       ),
     )
     val pressId = AssistantCapture.current?.id ?: return
-    structuredData?.let(::pageContentUri)?.let { readPageText(pressId, it) }
+    if (!focused || packageName == null) return
+    structuredData?.let { pageContentUri(it, packageName) }?.let { readPageText(pressId, it) }
   }
 
   private fun appLabel(packageName: String): String? = runCatching {
@@ -71,10 +73,14 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context) {
     context.packageManager.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
   }.getOrNull()
 
-  /** Chrome links the page text in its structured data, readable by the default assistant. */
-  private fun pageContentUri(structuredData: String): Uri? = runCatching {
+  /**
+   * Chrome links the page text in its structured data, readable by the default assistant. The
+   * app on screen writes that data, so only its own page content provider is read, never a file.
+   */
+  private fun pageContentUri(structuredData: String, packageName: String): Uri? = runCatching {
     JSONObject(structuredData).optJSONObject("page_metadata")?.optString("content_uri")
       ?.takeIf(String::isNotBlank)?.let(Uri::parse)
+      ?.takeIf { it.scheme == "content" && it.authority == "$packageName$PAGE_CONTENT_AUTHORITY_SUFFIX" }
   }.getOrNull()
 
   /** Chrome keeps the link valid for 60 seconds and takes up to 10 to extract, so read now. */
@@ -157,5 +163,6 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context) {
     const val MAX_SCREEN_TEXT_CHARS = 20_000
     const val MAX_STRUCTURED_DATA_CHARS = 4_000
     const val MAX_PAGE_TEXT_CHARS = 100_000
+    const val PAGE_CONTENT_AUTHORITY_SUFFIX = ".PageContentProvider"
   }
 }

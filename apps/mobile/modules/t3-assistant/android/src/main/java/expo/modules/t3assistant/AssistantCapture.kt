@@ -81,18 +81,19 @@ object AssistantCapture {
     webUri: String?,
     screenText: String?,
     selectedText: String?,
-    report: ScreenReport,
+    /** Null for an activity without focus: only the one in use names the screen. */
+    report: ScreenReport?,
   ) = update {
     it.copy(
-      // Android calls once per window; the first window that reports a field keeps it.
-      appLabel = it.appLabel ?: report.appLabel,
-      activityClass = it.activityClass ?: report.activityClass,
-      structuredData = it.structuredData ?: report.structuredData,
-      clipMimeType = it.clipMimeType ?: report.clipMimeType,
-      clipLabel = it.clipLabel ?: report.clipLabel,
-      isHomeApp = it.isHomeApp || report.isHomeApp,
-      sourcePackage = it.sourcePackage ?: sourcePackage,
-      webUri = it.webUri ?: webUri,
+      appLabel = report?.appLabel ?: it.appLabel,
+      activityClass = report?.activityClass ?: it.activityClass,
+      structuredData = report?.structuredData ?: it.structuredData,
+      clipMimeType = report?.clipMimeType ?: it.clipMimeType,
+      clipLabel = report?.clipLabel ?: it.clipLabel,
+      isHomeApp = report?.isHomeApp ?: it.isHomeApp,
+      // Android calls once per activity on screen, in any order; the focused one wins.
+      sourcePackage = if (report != null) sourcePackage ?: it.sourcePackage else it.sourcePackage ?: sourcePackage,
+      webUri = if (report != null) webUri ?: it.webUri else it.webUri ?: webUri,
       selectedText = it.selectedText ?: selectedText,
       screenText = listOfNotNull(it.screenText, screenText?.takeIf(String::isNotBlank))
         .joinToString("\n\n")

@@ -70,6 +70,16 @@ describe("screenSubject", () => {
     );
   });
 
+  it("builds a position link only for YouTube", () => {
+    const vimeo = screenSubject(
+      report({
+        webUri: "https://vimeo.com/1",
+        structuredData: '{"@videoId":"1","@videoTimeStamp":"PT10S"}',
+      }),
+    );
+    expect(vimeo.type === "video" ? vimeo.linkAtPosition : "not a video").toBeNull();
+  });
+
   it("treats a chat app's link as a chat, not as a page", () => {
     // Telegram sends a t.me link for a public chat or channel.
     expect(screenSubject(report({ appLabel: "Telegram", webUri: "https://t.me/durov" })).type).toBe(

@@ -38,6 +38,7 @@ const VIDEO_HOSTS = [
   "dailymotion.com",
   "tiktok.com",
 ];
+const YOUTUBE_HOSTS = ["youtube.com", "youtu.be"];
 const CHAT_HOSTS = ["t.me", "wa.me", "signal.me", "discord.com"];
 
 /** "www.theverge.com" → "theverge.com", or null for a link that is not http(s). */
@@ -114,7 +115,11 @@ export function screenSubject(report: ScreenReport): ScreenSubject {
       durationSeconds: isoDurationSeconds(data?.["@videoDuration"]),
       hasCaptions: data?.["@videoHasCaptions"] === true,
       linkAtPosition:
-        videoId !== null && positionSeconds !== null
+        // A video id alone does not say which site it belongs to.
+        videoId !== null &&
+        positionSeconds !== null &&
+        host !== null &&
+        isOnHost(host, YOUTUBE_HOSTS)
           ? `https://youtu.be/${encodeURIComponent(videoId)}?t=${Math.floor(positionSeconds)}`
           : null,
     };

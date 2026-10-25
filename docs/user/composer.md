@@ -224,7 +224,8 @@ left out until you tap them, and password fields are never included. The **+** p
 adds photos, a new photo from the camera, files, your newest photo, or your location.
 The screen text pill names what is on screen, such as "Video · YouTube · 6:52",
 "Chat · WhatsApp", or "Page · theverge.com". On a Chrome page it holds the whole
-page, and on a video the link opens at the moment you were watching. On the home
+page; turn this off with **Settings → Voice → Whole page in Chrome**. On a video, the
+link opens where you were watching. On the home
 screen, the screenshot and the screen text are left out until you tap them.
 
 If you close the panel without sending, your text comes back when you open it
