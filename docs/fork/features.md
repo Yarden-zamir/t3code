@@ -236,7 +236,7 @@ On the same phone, select "Open in the T3 app" in the dialog or invite page, the
 
 ### Emergency pause
 
-A big red button in the portal stops all agents and sets all access to `none` (MM-708 to MM-713). While paused, each machine locks T3 Code for every client except its own desktop app (MM-718). Only the owner resumes, in the portal.
+A big red button in the portal stops all agents and sets all access to `none` (MM-708 to MM-713). While paused, each machine locks T3 Code for every client except its own desktop app (MM-718). Guest links stop too: a guest's open thread closes, and the guest gets back in after Resume. Only the owner resumes, in the portal.
 
 - **Limits:** what the mobile app shows while a machine is locked is not checked. Revisit when the pause is tested on Android.
 
