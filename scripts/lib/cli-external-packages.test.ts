@@ -123,9 +123,9 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
 });
 
 describe("findInlinedExternalPackages", () => {
-  const region = (path: string) => `//#region ${path}
+  const region = (path: string) => `// ${path}
+// A prose comment with a path/like token is not a module.
 var x = 1;
-//#endregion
 `;
 
   it("flags an external package that was inlined", () => {
