@@ -294,6 +294,7 @@ import {
   ThreadMarkdownImageView,
 } from "./ThreadMarkdownImage";
 import { openSettings } from "../settings/settings-navigation";
+import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   // iOS blockquotes and selectable text measure separately; definite bubble width matches UIKit's drawing width.
@@ -410,6 +411,7 @@ function AssistantForkButton(props: {
   });
   const forkFromRun = useAtomCommand(threadEnvironment.forkFromRun, "fork from response");
   const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
   const [busy, setBusy] = useState(false);
   const canFork = canForkProjectedAssistantItem({
     projectedItem: props.projectedItem,
@@ -448,9 +450,9 @@ function AssistantForkButton(props: {
               );
               return;
             }
-            navigation.navigate("Thread", {
-              environmentId: props.environmentId,
-              threadId: targetThreadId,
+            selectDetail({
+              name: "Thread",
+              params: { environmentId: props.environmentId, threadId: targetThreadId },
             });
           })
           .finally(() => setBusy(false));
@@ -2276,6 +2278,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const screenColor = theme["--color-screen"];
   const userBubbleColor = theme["--color-user-bubble"];
   const forkThreadLinks = useForkThreadLinks(props.environmentId);
+  const selectMessageThread = useSelectWorkspaceDetail();
   const openSkillInstructions = (path: string) => {
     void Haptics.selectionAsync();
     navigation.navigate("ThreadFile", {
@@ -2311,10 +2314,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         threadId: String(target.threadId),
       };
       // Fork: `openLinkedThread` stays on or pops to an open thread without params, which would
-      // drop the message of a message link. Such a link navigates, so the thread gets `message`.
+      // drop the message of a message link. Selecting the thread passes `message` on.
       const messageParams = forkThreadLinks.messageParams(href);
       if (messageParams.message !== undefined) {
-        navigation.navigate("Thread", { ...thread, ...messageParams });
+        selectMessageThread({ name: "Thread", params: { ...thread, ...messageParams } });
       } else {
         openLinkedThread(thread);
       }
@@ -3159,6 +3162,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     <PresentationSource identifier={fileShareSourceIdentifier} style={{ flex: 1 }}>
       <View className="flex-1" onLayout={handleViewportLayout}>
         <View className="flex-1">
+          {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- ThreadFeedScrollView is passed through the iOS-only spread below; the prop rejects undefined. */}
           <KeyboardAwareLegendList
             ref={listRef}
             // LegendList cannot see adjustedContentInset; remount so initial positioning waits for UIKit attachment.

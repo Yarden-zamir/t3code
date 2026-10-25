@@ -7,6 +7,8 @@
 Steps: `vp run typecheck`, the migration check against upstream/main, the adopted pull request
 check, and on a fork-fix/ branch `vp run fork:check`. A fork-sync/ branch skips fork:check:
 on a merge with upstream it checks hundreds of files, and Fork CI checks the pull request.
+A fork-sync/ branch lints the files that differ from upstream/main instead, because a new
+upstream lint rule can fail on fork files that the merge did not touch.
 """
 
 import argparse
@@ -15,7 +17,14 @@ import sys
 import common
 
 
-def steps(vp: str, branch: str) -> list[tuple[str, list[str]]]:
+LINT_SUFFIXES = (".ts", ".tsx", ".js", ".mjs", ".cjs")
+
+
+def lintable(paths: list[str]) -> list[str]:
+    return sorted({path for path in paths if path.endswith(LINT_SUFFIXES)})
+
+
+def steps(vp: str, branch: str, fork_files: list[str]) -> list[tuple[str, list[str]]]:
     result = [
         ("typecheck", [vp, "run", "typecheck"]),
         ("migrations", ["node", "scripts/fork-check-migrations.ts", "upstream/main"]),
@@ -23,6 +32,8 @@ def steps(vp: str, branch: str) -> list[tuple[str, list[str]]]:
     ]
     if branch.startswith("fork-fix/"):
         result.append(("fork:check", [vp, "run", "fork:check"]))
+    elif fork_files:
+        result.append(("lint", [vp, "lint", *fork_files]))
     return result
 
 
@@ -36,7 +47,9 @@ def main() -> None:
     branch = common.git("branch", "--show-current", cwd=root)
     logs = common.log_dir("checks")
     failed: list[str] = []
-    for name, cmd in steps(common.vp(root), branch):
+    changed = common.git("diff", "--name-only", "--diff-filter=AM", "upstream/main", "HEAD", cwd=root)
+    fork_files = lintable(changed.splitlines())
+    for name, cmd in steps(common.vp(root), branch, fork_files):
         log = logs / f"{name.replace(' ', '-').replace(':', '-')}.log"
         code = common.run_logged(cmd, log, root)
         print(f"{'pass' if code == 0 else f'fail (exit {code})':<16} {name:<12} {log}")
