@@ -41,6 +41,8 @@ export interface VoicePreferences {
   readonly assistantGlowSeconds?: AssistantGlowSeconds;
   /** Offers the newest gallery photo as a pill. Needs photo access. */
   readonly assistantRecentPhoto?: boolean;
+  /** Offers a pill with what Android reports about the screen, to check what it knows. */
+  readonly assistantScreenInfo?: boolean;
   /** Offers the last known location as a pill. Needs location access. */
   readonly assistantLocation?: boolean;
   /** Keeps the panel open until the first reply is read aloud. */
@@ -65,6 +67,7 @@ export const VOICE_PREFERENCE_DEFAULTS = {
   assistantSpeakFirstReply: false,
   assistantRecentPhoto: false,
   assistantLocation: false,
+  assistantScreenInfo: false,
   assistantProject: null,
   readAloudButton: true,
   readAloudRate: 1,
@@ -121,6 +124,7 @@ export function sanitizeVoicePreferences(value: unknown): VoicePreferences | und
     "assistantSpeakFirstReply",
     "assistantRecentPhoto",
     "assistantLocation",
+    "assistantScreenInfo",
     "readAloudButton",
   ] as const) {
     const flag = parsed[key];

@@ -111,6 +111,7 @@ const CONTEXT_PILL_TITLES: Record<FoundContextPillKind, string> = {
   selection: "Selected text",
   screenshot: "Screenshot",
   screenText: "Screen text",
+  screenInfo: "Screen info",
   link: "Link",
   recentPhoto: "Recent photo",
   location: "Location",
@@ -528,6 +529,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     selection: capture?.selectedText ?? null,
     screenshot: capture?.screenshotUri ?? null,
     screenText: capture?.screenText ?? null,
+    screenInfo: voice.assistantScreenInfo ? (capture?.screenInfo ?? null) : null,
     link: capture?.webUri ?? null,
     recentPhoto: wantsRecentPhoto ? (recentPhoto?.uri ?? null) : null,
     location: wantsLocation ? location : null,
@@ -541,6 +543,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     link: true,
     screenshot: voice.assistantAttachScreenshot,
     screenText: voice.assistantAttachScreenText,
+    screenInfo: false,
     // Private, so they wait for a tap, unless they were asked for from "+".
     recentPhoto: askedFor.recentPhoto,
     location: askedFor.location,
@@ -613,6 +616,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     link: attachedText("link"),
     location: attachedText("location"),
     clipboard: attachedText("clipboard"),
+    screenInfo: attachedText("screenInfo"),
   });
   const editImage = async (
     id: string,

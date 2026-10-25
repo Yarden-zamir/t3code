@@ -17,6 +17,8 @@ export interface AssistantCapture {
   /** Text and an image that another app shared to "Ask T3 Code". */
   readonly sharedText: string | null;
   readonly sharedImageUri: string | null;
+  /** What Android reports about the app on screen, as readable lines. */
+  readonly screenInfo: string | null;
 }
 
 export interface RecentPhoto {

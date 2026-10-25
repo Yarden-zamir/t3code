@@ -27,6 +27,8 @@ object AssistantCapture {
     /** Text and an image that another app shared to "Ask T3 Code". */
     val sharedText: String? = null,
     val sharedImageUri: String? = null,
+    /** What Android reports about the app on screen, as readable lines. */
+    val screenInfo: String? = null,
   )
 
   private val main = Handler(Looper.getMainLooper())
@@ -72,8 +74,11 @@ object AssistantCapture {
     webUri: String?,
     screenText: String?,
     selectedText: String?,
+    screenInfo: String?,
   ) = update {
     it.copy(
+      // Android calls once per window on screen, so each window adds its block.
+      screenInfo = listOfNotNull(it.screenInfo, screenInfo).joinToString("\n\n").ifEmpty { null },
       sourcePackage = it.sourcePackage ?: sourcePackage,
       webUri = it.webUri ?: webUri,
       selectedText = it.selectedText ?: selectedText,

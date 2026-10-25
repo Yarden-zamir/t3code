@@ -27,6 +27,7 @@ describe("context pills", () => {
         link: "https://x.dev",
         location: null,
         clipboard: "  ",
+        screenInfo: null,
       }),
     ).toBe("Link: https://x.dev\n\nSelected text:\n> line one\n> line two");
     expect(
@@ -36,6 +37,7 @@ describe("context pills", () => {
         link: null,
         location: null,
         clipboard: null,
+        screenInfo: null,
       }),
     ).toBe("");
   });

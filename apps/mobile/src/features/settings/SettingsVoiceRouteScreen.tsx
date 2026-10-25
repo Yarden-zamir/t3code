@@ -230,6 +230,12 @@ export function SettingsVoiceRouteScreen() {
                 }
               />
               <SettingsSwitchRow
+                label="Screen info"
+                subtitle="Shows what Android reports about the app on screen: name, category, link, open file. For checking."
+                value={voice.assistantScreenInfo}
+                onValueChange={(value) => updateVoice({ assistantScreenInfo: value })}
+              />
+              <SettingsSwitchRow
                 label="Location"
                 subtitle="Offers the place the phone last knew. Asks for approximate location."
                 value={voice.assistantLocation}

@@ -8,6 +8,7 @@ export type TextContextPillKind =
   | "sharedText"
   | "selection"
   | "screenText"
+  | "screenInfo"
   | "link"
   | "location"
   | "clipboard";
@@ -23,6 +24,7 @@ export const CONTEXT_PILL_ORDER: ReadonlyArray<FoundContextPillKind> = [
   "selection",
   "screenshot",
   "screenText",
+  "screenInfo",
   "link",
   "recentPhoto",
   "location",
@@ -70,6 +72,8 @@ export function contextPillLabel(kind: ContextPillKind, value: string): string {
       return value;
     case "screenText":
       return `Screen text · ${nonEmptyLines(value)} lines`;
+    case "screenInfo":
+      return "Screen info";
     case "sharedText":
     case "selection":
       return quotedLabel(value);
@@ -108,6 +112,7 @@ export function inlineContextText(input: {
   readonly link: string | null;
   readonly location: string | null;
   readonly clipboard: string | null;
+  readonly screenInfo: string | null;
 }): string {
   return [
     input.sharedText?.trim() ? `Shared text:\n${quote(input.sharedText)}` : null,
@@ -115,6 +120,7 @@ export function inlineContextText(input: {
     input.selection?.trim() ? `Selected text:\n${quote(input.selection)}` : null,
     input.location?.trim() ? `Location: ${input.location.trim()}` : null,
     input.clipboard?.trim() ? `Clipboard:\n${quote(input.clipboard)}` : null,
+    input.screenInfo?.trim() ? `Screen info:\n${quote(input.screenInfo)}` : null,
   ]
     .filter((block) => block !== null)
     .join("\n\n");

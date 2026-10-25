@@ -102,6 +102,7 @@ export function ContextPills(props: {
 const CONTEXT_PILL_ICONS = {
   screenshot: "photo",
   screenText: "doc.text",
+  screenInfo: "info.circle",
   selection: "text.alignleft",
   link: "link",
   clipboard: "doc.on.doc",
