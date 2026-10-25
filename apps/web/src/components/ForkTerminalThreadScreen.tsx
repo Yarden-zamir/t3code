@@ -32,8 +32,9 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 
+import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { isElectron } from "../env";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -170,6 +171,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
     thread ? scopeProjectRef(thread.environmentId, thread.projectId) : null,
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const backgroundThread = use(BackgroundThreadContext);
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(threadRef.environmentId));
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
   const handleNewThread = useNewThreadHandler();
@@ -234,7 +236,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
 
   const writeTerminal = useAtomCommand(terminalEnvironment.write, { reportFailure: false });
   useChatShortcuts({
-    enabled: true,
+    enabled: !backgroundThread,
     keybindings,
     scriptKeybindings: keybindings,
     getShortcutContext,
