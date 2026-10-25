@@ -177,7 +177,6 @@ function RootRouteView() {
   if (authGateState.status === "machine-paused") {
     return (
       <>
-        <DocumentTitleSync />
         <BrowserChromeThemeSync key={pathname} />
         <MachinePausedSurface />
       </>
@@ -187,7 +186,6 @@ function RootRouteView() {
   if (authGateState.status === "client-pending") {
     return (
       <>
-        <DocumentTitleSync />
         <BrowserChromeThemeSync key={pathname} />
         <ClientPendingSurface pending={authGateState.pending} />
       </>
