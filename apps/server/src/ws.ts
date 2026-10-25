@@ -3242,7 +3242,7 @@ export const layerWsRpc = (
               ).pipe(
                 Stream.merge(
                   ForkWs.environmentLabelUpdates(
-                    loadServerConfig({ usageLimitsCommand }),
+                    loadServerConfig({ usageLimitsCommand, workspaceSnapshotsOnDemand }),
                     config.environment.label,
                   ),
                 ),
