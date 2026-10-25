@@ -75,11 +75,14 @@ class T3AssistantModule : Module() {
       }
     }.runOnQueue(Queues.MAIN)
 
-    /** Paints the strokes onto a copy of the image and resolves with the copy's file URI. */
-    AsyncFunction("annotateImage") { uri: String, strokes: List<AnnotationStroke> ->
+    /**
+     * Paints the strokes onto a copy of the image, then cuts the copy to `crop`. Resolves with
+     * the copy's file URI.
+     */
+    AsyncFunction("editImage") { uri: String, strokes: List<AnnotationStroke>, crop: CropRect? ->
       val context = appContext.reactContext
         ?: throw CodedException("ERR_NO_CONTEXT", "The app is not ready.", null)
-      val bitmap = decodeForAnnotation(context, Uri.parse(uri))
+      val bitmap = decodeForEditing(context, Uri.parse(uri))
         ?: throw CodedException("ERR_BAD_IMAGE", "The image could not be read.", null)
       val canvas = Canvas(bitmap)
       for (stroke in strokes) {
@@ -101,11 +104,13 @@ class T3AssistantModule : Module() {
         }
         canvas.drawPath(path, paint)
       }
+      val edited = crop?.let { cropBitmap(bitmap, it) } ?: bitmap
       val file = File(
         AssistantCapture.screenshotDirectory(context),
-        "annotated-${System.currentTimeMillis()}.jpg",
+        "edited-${System.currentTimeMillis()}.jpg",
       )
-      file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, ANNOTATED_QUALITY, it) }
+      file.outputStream().use { edited.compress(Bitmap.CompressFormat.JPEG, EDITED_QUALITY, it) }
+      if (edited !== bitmap) edited.recycle()
       bitmap.recycle()
       Uri.fromFile(file).toString()
     }
@@ -244,12 +249,21 @@ class T3AssistantModule : Module() {
     return permissions.any { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
   }
 
+  /** The crop is in fractions of the image; it keeps at least one pixel on each side. */
+  private fun cropBitmap(bitmap: Bitmap, crop: CropRect): Bitmap {
+    val left = (crop.x.coerceIn(0.0, 1.0) * bitmap.width).toInt().coerceIn(0, bitmap.width - 1)
+    val top = (crop.y.coerceIn(0.0, 1.0) * bitmap.height).toInt().coerceIn(0, bitmap.height - 1)
+    val width = (crop.width * bitmap.width).toInt().coerceIn(1, bitmap.width - left)
+    val height = (crop.height * bitmap.height).toInt().coerceIn(1, bitmap.height - top)
+    return Bitmap.createBitmap(bitmap, left, top, width, height)
+  }
+
   /** Decodes a file or content URI, scaled down so a camera photo fits in memory. */
-  private fun decodeForAnnotation(context: Context, uri: Uri): Bitmap? {
+  private fun decodeForEditing(context: Context, uri: Uri): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
     var sample = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_ANNOTATED_SIDE) sample *= 2
+    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_EDITED_SIDE) sample *= 2
     val options = BitmapFactory.Options().apply {
       inSampleSize = sample
       inMutable = true
@@ -262,9 +276,17 @@ class T3AssistantModule : Module() {
     const val CAPTURE_EVENT = "onCapture"
     const val PHOTOS_EVENT = "onPhotosChanged"
     const val SPEECH_REQUEST_CODE = 0x7433
-    const val ANNOTATED_QUALITY = 90
-    const val MAX_ANNOTATED_SIDE = 2560
+    const val EDITED_QUALITY = 90
+    const val MAX_EDITED_SIDE = 2560
   }
+}
+
+/** A crop in fractions of the image size. */
+class CropRect : Record {
+  @Field val x: Double = 0.0
+  @Field val y: Double = 0.0
+  @Field val width: Double = 1.0
+  @Field val height: Double = 1.0
 }
 
 /** One annotation stroke. Points are flat x, y pairs and the width is a fraction of the image width. */
