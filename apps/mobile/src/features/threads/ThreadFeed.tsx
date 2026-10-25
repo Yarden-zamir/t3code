@@ -2278,6 +2278,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const screenColor = theme["--color-screen"];
   const userBubbleColor = theme["--color-user-bubble"];
   const forkThreadLinks = useForkThreadLinks(props.environmentId);
+  const selectMessageThread = useSelectWorkspaceDetail();
   const openSkillInstructions = (path: string) => {
     void Haptics.selectionAsync();
     navigation.navigate("ThreadFile", {
@@ -2313,10 +2314,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         threadId: String(target.threadId),
       };
       // Fork: `openLinkedThread` stays on or pops to an open thread without params, which would
-      // drop the message of a message link. Such a link navigates, so the thread gets `message`.
+      // drop the message of a message link. Selecting the thread passes `message` on.
       const messageParams = forkThreadLinks.messageParams(href);
       if (messageParams.message !== undefined) {
-        navigation.navigate("Thread", { ...thread, ...messageParams });
+        selectMessageThread({ name: "Thread", params: { ...thread, ...messageParams } });
       } else {
         openLinkedThread(thread);
       }
