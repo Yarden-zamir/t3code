@@ -1,5 +1,4 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useNavigation } from "@react-navigation/native";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ComposerContextId, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { formatComposerContextHref } from "@t3tools/shared/composerContextReferences";
@@ -22,6 +21,7 @@ import { enrichedContextLinkCustomization } from "../../native/useEnrichedLinkVa
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { environmentThreadDetails } from "../../state/threads";
+import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 import { useForkMessageLinksEnabled } from "./forkMessageLinks";
 
 // The pill of an attached thread with no record, so both looks stay one.
@@ -36,7 +36,7 @@ const threadPill = enrichedContextLinkCustomization(
  * thread at it (`messageParams`) with a message icon. With the setting off, both return nothing.
  */
 export function useForkThreadLinks(environmentId: EnvironmentId) {
-  const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
   const chips = useEnvironmentServerConfig(environmentId)?.settings.threadLinkChips === true;
   const messageLinks = useForkMessageLinksEnabled(environmentId);
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
@@ -51,14 +51,17 @@ export function useForkThreadLinks(environmentId: EnvironmentId) {
     (href: string) => {
       const address = knownThreadAddress(href);
       if (!address) return false;
-      navigation.navigate("Thread", {
-        environmentId: String(address.environmentId),
-        threadId: String(address.threadId),
-        ...(messageLinks && address.messageId ? { message: String(address.messageId) } : {}),
+      selectDetail({
+        name: "Thread",
+        params: {
+          environmentId: String(address.environmentId),
+          threadId: String(address.threadId),
+          ...(messageLinks && address.messageId ? { message: String(address.messageId) } : {}),
+        },
       });
       return true;
     },
-    [knownThreadAddress, messageLinks, navigation],
+    [knownThreadAddress, messageLinks, selectDetail],
   );
   /** The Thread route param that opens a `t3-thread://` link at its message. */
   const messageParams = useCallback(
