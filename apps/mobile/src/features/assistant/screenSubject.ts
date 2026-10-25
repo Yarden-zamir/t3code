@@ -106,7 +106,7 @@ export function screenSubject(report: ScreenReport): ScreenSubject {
   const data = parseObject(report.structuredData);
   const host = webHost(report.webUri);
   const reportedId = data?.["@videoId"];
-  const videoId = typeof reportedId === "string" && reportedId.trim() ? reportedId : null;
+  const videoId = typeof reportedId === "string" && reportedId.trim() ? reportedId.trim() : null;
   if (videoId !== null || (host !== null && isOnHost(host, VIDEO_HOSTS))) {
     const positionSeconds = isoDurationSeconds(data?.["@videoTimeStamp"]);
     return {
