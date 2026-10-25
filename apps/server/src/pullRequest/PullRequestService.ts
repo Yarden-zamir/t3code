@@ -907,10 +907,9 @@ export const make = Effect.gen(function* () {
 
   // Fork: each read of another repository's change request lists and enriches every project, and
   // the pull request sweeps run these reads in parallel. One listing serves a sweep. A project
-  // added or re-pointed routes on the next sweep; shorten the TTL if routes need to change sooner.
+  // added or re-pointed routes on the next sweep or Refresh; shorten the TTL if routes need to change sooner.
   const routeProjects = yield* Cache.makeWith(
-    (filter: string) =>
-      listWorkspaceProjects(JSON.parse(filter) as Pick<PullRequestListInput, "host">),
+    (host: string | null) => listWorkspaceProjects(host === null ? {} : { host }),
     {
       capacity: 16,
       timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.seconds(30) : Duration.zero),
@@ -945,9 +944,7 @@ export const make = Effect.gen(function* () {
         // before narrowing those checkouts by host.
         return Cache.get(
           routeProjects,
-          JSON.stringify(
-            sourceControlDefinitions.findByRepositoryKey(referenceKey) ? {} : { host },
-          ),
+          sourceControlDefinitions.findByRepositoryKey(referenceKey) ? null : host,
         ).pipe(
           Effect.flatMap(({ supported }) => {
             const onHost = supported.filter((candidate) => candidate.host === host);
@@ -3392,6 +3389,7 @@ export const make = Effect.gen(function* () {
       everyFileRevisionEpoch = ++epochCounter;
       viewersByHost.clear();
       yield* Cache.invalidateAll(viewerFlights);
+      yield* Cache.invalidateAll(routeProjects);
     }
     if (options?.notifyReaders) {
       yield* SubscriptionRef.set(pullRequestRefreshes, ++epochCounter);

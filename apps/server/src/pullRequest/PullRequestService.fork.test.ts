@@ -125,5 +125,10 @@ it.effect("lists the projects once for several reads of another repository in on
     yield* TestClock.adjust("1 minute");
     yield* read(5);
     assert.strictEqual(listings, 2);
+
+    // Refresh routes a newly cloned repository at once.
+    yield* service.invalidate({});
+    yield* read(6);
+    assert.strictEqual(listings, 3);
   }),
 );
