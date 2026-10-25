@@ -25,6 +25,7 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { deepMerge } from "./Struct.ts";
+import { applyMessagePinsPatch } from "./messagePins.ts";
 import { fromLenientJson } from "./schemaJson.ts";
 import { createModelSelection, readCustomModelEntries } from "./model.ts";
 import {
@@ -395,6 +396,7 @@ export function applyServerSettingsPatch(
     threadCardLayouts: threadCardLayoutsPatch,
     // Fork: replaced whole, so deleted tabs and assignments do not come back.
     sidebarTabs: sidebarTabsPatch,
+    pinnedMessages: pinnedMessagesPatch,
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
     projectAutoPullOverrides: _legacyAutoPull,
     projectScriptOverrides: _legacyScripts,
@@ -488,6 +490,9 @@ export function applyServerSettingsPatch(
       ? {}
       : { threadCardLayouts: { ...current.threadCardLayouts, ...threadCardLayoutsPatch } }),
     ...(sidebarTabsPatch === undefined ? {} : { sidebarTabs: sidebarTabsPatch }),
+    ...(pinnedMessagesPatch === undefined
+      ? {}
+      : { pinnedMessages: applyMessagePinsPatch(current.pinnedMessages, pinnedMessagesPatch) }),
     favorites,
     providerModelPreferences: nextModelPreferences,
     ...(worktreeCleanupPatch === undefined

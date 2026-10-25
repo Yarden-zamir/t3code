@@ -4,11 +4,42 @@
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { ProjectId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import {
+  IsoDateTime,
+  MessageId,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+  TrimmedString,
+} from "./baseSchemas.ts";
 import { ProjectScript } from "./project.ts";
 import { PullRequestAuthorAssociation } from "./pullRequest.ts";
 import { SidebarTabs } from "./sidebarTabs.ts";
 import { StoredThreadCardLayout, ThreadCardLayouts } from "./slotLayout.ts";
+
+/** Fork: the most pinned messages that one environment keeps. */
+export const MESSAGE_PINS_MAX = 200;
+/** Fork: the longest message excerpt that a pin keeps. */
+export const MESSAGE_PIN_EXCERPT_MAX = 160;
+
+/**
+ * Fork: a pinned message. The excerpt and the thread title are copies from the time of the pin,
+ * so a list of pins shows them without a load of each thread, also for an archived thread.
+ */
+export const MessagePin = Schema.Struct({
+  threadId: ThreadId,
+  messageId: MessageId,
+  pinnedAt: IsoDateTime,
+  excerpt: Schema.String.check(Schema.isMaxLength(MESSAGE_PIN_EXCERPT_MAX)),
+  threadTitle: Schema.String,
+});
+export type MessagePin = typeof MessagePin.Type;
+
+/** Fork: the pinned messages of an environment, by `messagePinKey`. */
+export const PinnedMessages = Schema.Record(Schema.String, MessagePin).check(
+  Schema.isMaxProperties(MESSAGE_PINS_MAX),
+);
+export type PinnedMessages = typeof PinnedMessages.Type;
 
 /** Fork: the value of the `sidebarOwnerFilter` client setting. */
 export const SidebarOwnerFilter = Schema.Struct({
@@ -198,6 +229,8 @@ export const ForkClientSettingsFields = {
   ),
   /** Fork: background work status icons open a details popover; their descriptions render markdown links. */
   backgroundWorkDetails: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Fork: pin buttons on messages, and the lists of pins in thread details and the sidebar. */
+  messagePins: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Fork: a changelog of fork releases, upstream changes and Fork Sync runs from the update UI. */
   forkChangelogEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
@@ -326,6 +359,7 @@ export const ForkClientSettingsPatchFields = {
   terminalAppShortcutsFirst: Schema.optionalKey(Schema.Boolean),
   appToggleShortcuts: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   backgroundWorkDetails: Schema.optionalKey(Schema.Boolean),
+  messagePins: Schema.optionalKey(Schema.Boolean),
   forkChangelogEnabled: Schema.optionalKey(Schema.Boolean),
   checkNewerBeforeUpdateInstall: Schema.optionalKey(Schema.Boolean),
   installedAppEnabled: Schema.optionalKey(Schema.Boolean),
@@ -425,6 +459,11 @@ export const ForkServerSettingsFields = {
   pinnedProjectScriptIds: Schema.Record(ProjectId, Schema.Array(TrimmedNonEmptyString)).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  /**
+   * Fork: pinned messages. Stored on the server, so every client of this environment shows the
+   * same pins. The client setting `messagePins` shows them.
+   */
+  pinnedMessages: PinnedMessages.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   agentSessionImportWindowDays: AgentSessionImportWindowDays.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AGENT_SESSION_IMPORT_WINDOW_DAYS)),
   ),
@@ -499,6 +538,11 @@ export const ForkServerSettingsFields = {
    * turns the plus button into a menu on a server without file attachments.
    */
   mobileComposerCamera: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Fork: the long-press menu of a mobile message offers Pin and Unpin (`pinnedMessages`). A
+   * server setting, because the mobile app has no fork client settings.
+   */
+  mobileMessagePins: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Fork: the home thread list of the mobile app shows the `sidebarTabs` tabs. */
   mobileSidebarTabs: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
@@ -533,6 +577,12 @@ export const ForkServerSettingsPatchFields = {
   pinnedProjectScriptIds: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(Schema.Array(TrimmedNonEmptyString))),
   ),
+  /** Per-pin entry replacement: an entry adds that pin and `null` removes it. */
+  pinnedMessages: Schema.optionalKey(
+    Schema.Record(Schema.String, Schema.NullOr(MessagePin)).check(
+      Schema.isMaxProperties(MESSAGE_PINS_MAX),
+    ),
+  ),
   agentSessionImportWindowDays: Schema.optionalKey(AgentSessionImportWindowDays),
   agentSessionImportMaxMessages: Schema.optionalKey(AgentSessionImportMaxMessages),
   preferOriginRemote: Schema.optionalKey(Schema.Boolean),
@@ -545,6 +595,7 @@ export const ForkServerSettingsPatchFields = {
   mobilePublishedThemes: Schema.optionalKey(Schema.Boolean),
   mobileNewThreadProject: Schema.optionalKey(MobileNewThreadProject),
   mobileComposerCamera: Schema.optionalKey(Schema.Boolean),
+  mobileMessagePins: Schema.optionalKey(Schema.Boolean),
   mobileSidebarTabs: Schema.optionalKey(Schema.Boolean),
   terminalThreads: Schema.optionalKey(Schema.Boolean),
   terminalHistoryLines: Schema.optionalKey(TerminalHistoryLines),

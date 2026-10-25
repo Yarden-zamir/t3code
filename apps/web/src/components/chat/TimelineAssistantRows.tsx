@@ -71,7 +71,12 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             copyStreaming={row.assistantCopyStreaming}
           />
         ) : (
-          <ForkCopyMessageLink threadRef={ctx.threadRef} messageId={row.message.id} standalone />
+          <ForkCopyMessageLink
+            threadRef={ctx.threadRef}
+            messageId={row.message.id}
+            text={row.message.text}
+            standalone
+          />
         )}
       </div>
     </>
@@ -167,7 +172,7 @@ function AssistantMessageMeta({
         "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
         alwaysVisible
           ? "opacity-100"
-          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
+          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100 has-[[data-fork-pinned]]:opacity-100",
         className,
       )}
     >
@@ -181,7 +186,7 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
-      <ForkCopyMessageLink threadRef={ctx.threadRef} messageId={message.id} />
+      <ForkCopyMessageLink threadRef={ctx.threadRef} messageId={message.id} text={message.text} />
       {projectedItem?.item.type === "assistant_message" ? (
         <AssistantForkButton projectedItem={projectedItem} />
       ) : null}

@@ -13,6 +13,7 @@ import { environmentThreadShells } from "../../state/threads";
 import { copyPromptLink } from "../prompt-links/prompt-link-actions";
 import { CopyTextButton } from "./CopyTextButton";
 import { useForkMessageLinksEnabled } from "./forkMessageLinks";
+import { useForkMessagePin } from "./forkMessagePins";
 
 export function ForkMessageCopyButton({
   environmentId,
@@ -29,7 +30,8 @@ export function ForkMessageCopyButton({
   readonly menuOnly?: boolean;
 }) {
   const enabled = useForkMessageLinksEnabled(environmentId) && messageId !== null;
-  if ((!enabled && menuOnly) || (!enabled && !props.text)) return null;
+  const pin = useForkMessagePin({ environmentId, threadId, messageId, text: props.text });
+  if (!enabled && pin === null && (menuOnly || !props.text)) return null;
   // A Markdown link labelled by the thread title, so a paste in chat is a chip. Known limit: the
   // title is read without a subscription and stays old until the row renders again.
   const shell = appAtomRegistry.get(
@@ -41,6 +43,13 @@ export function ForkMessageCopyButton({
     ...(enabled ? [{ id: "copy-message-link", title: "Copy message link", image: "link" }] : []),
     ...(promptLink && linkText.length <= PROMPT_LINK_MAX_PROMPT_LENGTH
       ? [{ id: "copy-prompt-link", title: "Copy prompt link", image: "link" }]
+      : []),
+    ...(pin
+      ? [
+          pin.pinned
+            ? { id: "unpin-message", title: "Unpin message", image: "pin.slash" }
+            : { id: "pin-message", title: "Pin message", image: "pin" },
+        ]
       : []),
   ];
   const button = (
@@ -58,6 +67,9 @@ export function ForkMessageCopyButton({
       shouldOpenOnLongPress
       onPressAction={({ nativeEvent }) => {
         if (nativeEvent.event === "copy-prompt-link") void copyPromptLink(linkText);
+        if (nativeEvent.event === "pin-message" || nativeEvent.event === "unpin-message") {
+          pin?.toggle();
+        }
         if (nativeEvent.event === "copy-message-link") {
           void tryCopyTextWithHaptic(link, { target: "message link" }).then((copied) => {
             if (!copied) Dialog.alert("Could not copy message link", "Try again.");

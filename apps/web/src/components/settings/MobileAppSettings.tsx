@@ -82,6 +82,37 @@ export function MobileComposerCameraSettingsRow() {
   );
 }
 
+export function MobileMessagePinsSettingsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["mobileMessagePins"]);
+  const fallback = DEFAULT_SERVER_SETTINGS.mobileMessagePins;
+  return (
+    <SettingsRow
+      {...searchableSetting("mobile-message-pins")}
+      serverScoped
+      settingKeys={["mobileMessagePins"]}
+      description="A long press on a message in the mobile app offers Pin and Unpin. Pinned messages show in the sidebar and in thread details of the desktop and web app."
+      resetAction={
+        mixed || settings.mobileMessagePins !== fallback ? (
+          <SettingResetButton
+            label="message pins on mobile"
+            onClick={() => updateSettings({ mobileMessagePins: fallback })}
+          />
+        ) : null
+      }
+      control={
+        <ScopedSwitch
+          settingKeys={["mobileMessagePins"]}
+          checked={settings.mobileMessagePins}
+          onCheckedChange={(checked) => updateSettings({ mobileMessagePins: Boolean(checked) })}
+          aria-label="Message pins on mobile"
+        />
+      }
+    />
+  );
+}
+
 export function MobileNewThreadProjectSettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();

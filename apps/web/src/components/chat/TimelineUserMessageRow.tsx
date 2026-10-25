@@ -594,7 +594,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       </div>
       <UserMessageProjectedStatus row={row} />
       {!folded || expanded ? (
-        <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100 has-[[data-fork-pinned]]:opacity-100">
           <div className="flex shrink-0 items-center gap-2">
             {folded && senderThreadId ? (
               <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
@@ -610,7 +610,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               </TooltipPopup>
             </Tooltip>
             <div className="flex items-center gap-0.5">
-              <ForkCopyMessageLink threadRef={ctx.threadRef} messageId={row.message.id} />
+              <ForkCopyMessageLink
+                threadRef={ctx.threadRef}
+                messageId={row.message.id}
+                text={plainText}
+              />
               {typeof revertTurnCount === "number" && (
                 <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
               )}

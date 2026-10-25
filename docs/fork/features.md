@@ -468,6 +468,15 @@ A thread link that names a message opens the thread at that message. Use **Copy 
 - A message that the thread does not have shows "Message not found", and the thread stays open.
 - **Limits:** on mobile, a reply hidden in the fold of a prompt without a run shows as not found. Revisit when upstream pingdotgg/t3code#19203 merges; then use its scroll code.
 
+### Message pins
+
+Pin a message with the pin button beside its copy buttons, or with the command palette item "Pin or unpin message" for the message under the timeline cursor. Bind `timeline.pinMessage` in Settings > Keybindings if needed. A pinned message keeps its buttons visible. **Pins** in thread details lists the pins of the thread. A pin button next to Usage in the sidebar footer lists the pins of all connected environments; it shows only while one pin or more exists. A click on a pin opens the thread at that message.
+
+- **Settings:** client setting `messagePins` (off by default), Settings > General > Behavior > "Message pins". Server setting `mobileMessagePins` (off by default), Settings > Appearance > Mobile app > "Message pins on mobile": a long press on a message in the mobile app offers Pin and Unpin.
+- **Works on:** web and desktop. Mobile: Pin and Unpin only, no list.
+- **Storage:** the server setting `pinnedMessages` of the environment, so all its clients show the same pins. Restore defaults keeps the pins. The machine map does not sync them, because thread ids belong to one environment.
+- **Limits:** an environment keeps 200 pins. A pin keeps a 160-character excerpt and the thread title from the time of the pin. A pin of a thread that the sidebar does not list shows "Thread archived or deleted". "Message deleted" shows only for the open thread, when all its history is loaded. Agents have no MCP tool for pins.
+
 ### Thread addresses open the desktop app
 
 A thread address opened from outside T3 Code, for example from Slack or GitHub, hands the thread to the desktop app. The browser tab then shows "Continue here" and "Open in desktop app".

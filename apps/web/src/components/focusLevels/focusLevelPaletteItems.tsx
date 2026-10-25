@@ -10,10 +10,12 @@ import {
   PanelLeftIcon,
   PanelRightIcon,
   PencilIcon,
+  PinIcon,
   SearchIcon,
   SquareTerminalIcon,
   TextCursorInputIcon,
 } from "lucide-react";
+import { getClientSettings } from "../../hooks/useSettings";
 import type { CommandPaletteActionItem } from "../CommandPalette.logic";
 import { type FocusLevel, focusLevel } from "./focusLevels";
 import {
@@ -90,6 +92,25 @@ export function focusLevelPaletteItems(
             shortcutCommand: "timeline.copyMessageLink" as const,
             run: async () => {
               runRegisteredFocusLevelCommand("timeline.copyMessageLink");
+            },
+          },
+        ]
+      : []),
+    // An open thread timeline registers the command (`TimelineCursor`).
+    ...(getClientSettings().messagePins &&
+    !terminalThread &&
+    hasRegisteredFocusLevelCommand("timeline.pinMessage")
+      ? [
+          {
+            kind: "action" as const,
+            value: "action:timeline.pinMessage",
+            searchTerms: ["pin", "unpin", "message", "cursor"],
+            title: "Pin or unpin message",
+            description: "Pin the message under the timeline cursor",
+            icon: <PinIcon className={iconClassName} />,
+            shortcutCommand: "timeline.pinMessage" as const,
+            run: async () => {
+              runRegisteredFocusLevelCommand("timeline.pinMessage");
             },
           },
         ]

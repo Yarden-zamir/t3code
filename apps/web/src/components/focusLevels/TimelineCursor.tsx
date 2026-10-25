@@ -13,6 +13,7 @@ import {
 import { useClientSettings } from "../../hooks/useSettings";
 import { toastManager } from "../ui/toast";
 import { useForkCopyMessageLink } from "../chat/ForkCopyMessageLink";
+import { useForkToggleMessagePin } from "../chat/ForkMessagePins";
 import {
   type FocusLevelCommandHandler,
   registerFocusLevelCommands,
@@ -207,16 +208,20 @@ function asHtmlElement(node: unknown): HTMLElement | null {
 export function TimelineCursor(props: {
   readonly viewport: HTMLElement | null;
   readonly listRef: RefObject<LegendListRef | null>;
-  readonly rows: ReadonlyArray<{ readonly id: string; readonly message?: { readonly id: string } }>;
+  readonly rows: ReadonlyArray<{
+    readonly id: string;
+    readonly message?: { readonly id: string; readonly text?: string };
+  }>;
   readonly threadRef: ScopedThreadRef | null;
   readonly onCite:
     | ((citation: AssistantCitation, sourceAnchor: AssistantCitationSourceAnchor | null) => boolean)
     | undefined;
 }) {
   const copyMessageLink = useForkCopyMessageLink(props.threadRef);
-  const latest = useRef({ ...props, copyMessageLink });
+  const toggleMessagePin = useForkToggleMessagePin(props.threadRef);
+  const latest = useRef({ ...props, copyMessageLink, toggleMessagePin });
   useLayoutEffect(() => {
-    latest.current = { ...props, copyMessageLink };
+    latest.current = { ...props, copyMessageLink, toggleMessagePin };
   });
 
   const enabled = useClientSettings(selectKeyboardFocusLevels);
@@ -642,6 +647,18 @@ export function TimelineCursor(props: {
           return false;
         const row = latest.current.rows.find((row) => row.id === at.rowId);
         return latest.current.copyMessageLink(row?.message?.id);
+      },
+      "timeline.pinMessage": (event) => {
+        // Like Copy message link: the palette must use the message the user chose.
+        const at = cursor;
+        if (!at || event.repeat) return false;
+        if (
+          latest.current.threadRef?.threadId !== threadId ||
+          latest.current.threadRef?.environmentId !== environmentId
+        )
+          return false;
+        const row = latest.current.rows.find((row) => row.id === at.rowId);
+        return latest.current.toggleMessagePin(row?.message);
       },
       "timeline.jumpToLatest": () => {
         if (!active()) return false;

@@ -218,6 +218,33 @@ export function CurrentProjectTerminalOpensThreadSettingsRow() {
   );
 }
 
+/** Fork: `messagePins`. */
+export function MessagePinsSettingsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("message-pins")}
+      description="Pin a message with the pin button next to its copy buttons. Thread details list the pins of the thread. The sidebar lists all pins next to Usage. Every client of an environment shows its pins."
+      resetAction={
+        settings.messagePins !== DEFAULT_UNIFIED_SETTINGS.messagePins ? (
+          <SettingResetButton
+            label="message pins"
+            onClick={() => updateSettings({ messagePins: DEFAULT_UNIFIED_SETTINGS.messagePins })}
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.messagePins}
+          onCheckedChange={(checked) => updateSettings({ messagePins: Boolean(checked) })}
+          aria-label="Message pins"
+        />
+      }
+    />
+  );
+}
+
 /** Fork: `backgroundWorkDetails`. */
 export function BackgroundWorkDetailsSettingsRow() {
   const settings = useScopedSettings();

@@ -153,6 +153,13 @@ export const APPEARANCE_ITEMS = [
     environmentOnly: true,
   },
   {
+    id: "mobile-message-pins",
+    title: "Message pins on mobile",
+    to: "/settings/appearance",
+    searchTerms: ["mobile phone android app pin unpin pinned message long press menu"],
+    environmentOnly: true,
+  },
+  {
     id: "mobile-sidebar-tabs",
     title: "Sidebar tabs on mobile",
     to: "/settings/appearance",
@@ -237,6 +244,12 @@ export const BEHAVIOR_ITEMS = [
     title: "Background work details",
     to: "/settings/general",
     searchTerms: ["monitor background command agent task output file popover markdown links"],
+  },
+  {
+    id: "message-pins",
+    title: "Message pins",
+    to: "/settings/general",
+    searchTerms: ["pin unpin pinned message bookmark save list sidebar thread details"],
   },
   {
     id: "remember-back-forward-history",
