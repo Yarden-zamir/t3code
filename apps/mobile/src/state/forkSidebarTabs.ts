@@ -140,8 +140,7 @@ export function openSidebarTabEditor(
   tabId: string,
 ): void {
   appAtomRegistry.set(editedSidebarTabIdAtom, tabId);
-  navigation.navigate("SettingsSheet", {
-    screen: "SettingsContent",
-    params: { screen: "SettingsSidebarTab" },
-  });
+  // A root route: from the home list it opens as a detail of the current tab, as upstream pages
+  // pushed without the Settings list do.
+  navigation.navigate("SettingsSidebarTab");
 }

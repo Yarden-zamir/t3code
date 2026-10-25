@@ -51,7 +51,35 @@ const PullRequestListPreferences = Schema.Struct({
 });
 export type PullRequestListPreferences = typeof PullRequestListPreferences.Type;
 
+/**
+ * The page each workspace tab last showed, reopened when the tab returns with columns. `key` is
+ * that page's route key: reopening under the same key reuses the screen a tab kept mounted.
+ */
+const WorkspaceSelections = Schema.Struct({
+  threads: Schema.optional(
+    Schema.Struct({
+      environmentId: Schema.String,
+      threadId: Schema.String,
+      key: Schema.optional(Schema.String),
+    }),
+  ),
+  pullRequests: Schema.optional(
+    Schema.Struct({
+      environmentId: Schema.String,
+      projectId: Schema.String,
+      repository: Schema.String,
+      number: Schema.Number,
+      host: Schema.optional(Schema.String),
+      key: Schema.optional(Schema.String),
+    }),
+  ),
+  settings: Schema.optional(Schema.String),
+  settingsKey: Schema.optional(Schema.String),
+});
+export type WorkspaceSelections = typeof WorkspaceSelections.Type;
+
 const isThreadListFilters = Schema.is(ThreadListFilters);
+const isWorkspaceSelections = Schema.is(WorkspaceSelections);
 const isPullRequestListPreferences = Schema.is(PullRequestListPreferences);
 const isPublishedThemes = Schema.is(Schema.Array(EnvironmentTheme));
 
@@ -129,6 +157,7 @@ export interface Preferences {
   readonly appTokenClient?: AppTokenClient;
   /** Fork: the Android assistant panel and read aloud. */
   readonly voice?: VoicePreferences;
+  readonly workspaceSelections?: WorkspaceSelections;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -210,6 +239,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     appTokenDisabledEnvironmentIds?: ReadonlyArray<string>;
     appTokenClient?: AppTokenClient;
     voice?: VoicePreferences;
+    workspaceSelections?: WorkspaceSelections;
   } = {};
 
   if (Array.isArray(parsed.hiddenNavigationTabs)) {
@@ -381,6 +411,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   const voice = sanitizeVoicePreferences(parsed.voice);
   if (voice) preferences.voice = voice;
+  if (isWorkspaceSelections(parsed.workspaceSelections)) {
+    preferences.workspaceSelections = parsed.workspaceSelections;
+  }
   return preferences;
 }
 
