@@ -202,7 +202,6 @@ minimumReleaseAgeExclude:
   - "@opencode/protocol@2.0.28"
   - "@opencode/schema@2.0.28"
   - "@muse-code/sdk@1.4.6"
-  - "@cloudflare/workers-types@5.20261013.1"
   - "@expo/package-manager@1.14.2"
   - "@react-native/asset-utils@0.88.0"
   - "@react-native/babel-plugin-codegen@0.88.0"
