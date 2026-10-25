@@ -1,14 +1,8 @@
 /**
- * Fork: per-origin request headers on mobile, for example a Cloudflare Access
- * service token. The connection catalog stores them (`requestHeaders`), and the
- * catalog store pushes each loaded or saved list here, so the transports read
- * them without a round trip through the storage layer.
- *
- * Known limit: React Native fetch, expo-image and expo-file-system keep custom
- * headers when they follow a redirect to another origin, and React Native has
- * no working `redirect: "manual"`. Only the saved server or Cloudflare Access
- * in front of it can redirect today. Revisit if a server can redirect to a
- * third party.
+ * Fork: per-origin request headers on mobile, such as a Cloudflare Access service token. The
+ * catalog store pushes each saved list here, so transports skip a storage round trip. Limit: React
+ * Native fetch, expo-image and expo-file-system keep custom headers on a cross-origin redirect, and
+ * `redirect: "manual"` does not work. Revisit if a server can redirect to a third party.
  */
 import {
   type ConnectionTransientError,

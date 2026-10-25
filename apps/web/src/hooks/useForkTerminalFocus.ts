@@ -9,11 +9,10 @@ const OPEN_LAYER_SELECTOR =
   '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
 /**
- * Fork: gives keyboard focus to the terminal inside `containerRef` once, as soon as its surface
- * exists (the surface loads after mount). It takes focus from the button that opened the terminal
- * (a sidebar button, or the trigger that a closing palette focuses again), but not from a text
- * field that the user moved to in the meantime. While a dialog or a menu has focus, it waits: the
- * project picker that opened the terminal is often still closing when the surface appears.
+ * Fork: focuses the terminal in `containerRef` once its surface exists, which happens after mount.
+ * It takes focus from the button that opened the terminal, but not from a text field the user
+ * moved to. It waits while a dialog or menu has focus, because the picker that opened the
+ * terminal is often still closing.
  */
 export function useGrabTerminalFocus(containerRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
@@ -59,12 +58,10 @@ function returnFocusToTerminal(
 }
 
 /**
- * Fork: gives focus back to the terminal of a terminal thread when the element that had focus goes
- * away: a dialog or a menu closes, the command palette closes, or a control unmounts (Rename,
- * Wake now, a toast button). Focus that the user moved stays: a text field, the sidebar, the right
- * panel, a preview. A menu that never takes focus (the thread menu, native on desktop) calls the
- * returned function when it closes. Limit: Firefox and Safari report no focus loss for a removed
- * element; there the next printable key still goes to the shell (`typeIntoComposer` of the screen).
+ * Fork: returns focus to a terminal thread's terminal when the focused element goes away (dialog,
+ * menu, palette, unmounted control), but not when the user moved focus. A menu that never takes
+ * focus calls the returned function on close. Limit: Firefox and Safari report no focus loss for a
+ * removed element; there the next printable key still reaches the shell (`typeIntoComposer`).
  */
 export function useReturnFocusToTerminal(input: {
   readonly headerRef: RefObject<HTMLElement | null>;

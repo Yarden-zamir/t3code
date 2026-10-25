@@ -595,10 +595,9 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
   const zoomBy = (factor: number) =>
     setView(zoomAt(view.current, { x: size.width / 2, y: size.height / 2 }, factor));
 
-  // The first view: the one this device kept, or "Fit" on a first visit and when the kept view
-  // shows no card. It waits for the measured card sizes, which come before the first paint.
-  // Until the user zooms or pans, "Fit" runs again when a card or the map element changes size,
-  // for example when a machine comes online and its card grows. A drop of a card keeps the view.
+  // The first view: the kept view, or "Fit" on a first visit or when the kept view shows no card.
+  // It waits for the measured card sizes, which come before the first paint. Until the user zooms
+  // or pans, "Fit" runs again when a card or the map changes size; a dropped card keeps the view.
   // React never writes the transform, so each render puts it back.
   const measured =
     machines.length + clients.length + map.notes.length === 0 || Object.keys(sizes).length > 0;

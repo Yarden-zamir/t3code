@@ -1,9 +1,8 @@
 /**
- * The Cloudflare API calls of the portal (MM-1205). The token needs "Access: Service Tokens Edit"
- * and "Access: Apps and Policies Edit". The machine tunnels (MM-213) also need "Cloudflare Tunnel:
- * Edit" on the account and "DNS: Edit" on the zone of the machine hostnames. Client approvals
- * (MM-1208) also need "Access: Organizations, Identity Providers, and Groups Edit".
- * Field names come from the Cloudflare OpenAPI spec of the Access, Tunnel and DNS endpoints.
+ * Cloudflare API calls of the portal (MM-1205), with field names from the Cloudflare OpenAPI spec.
+ * The token needs "Access: Service Tokens Edit" and "Access: Apps and Policies Edit". Tunnels
+ * (MM-213) need "Cloudflare Tunnel: Edit" on the account and "DNS: Edit" on the machine host zone.
+ * Client approvals (MM-1208) need "Access: Organizations, Identity Providers, and Groups Edit".
  */
 import * as Schema from "effect/Schema";
 

@@ -1,12 +1,8 @@
 /**
- * Dev only: `?fixture=1` loads the map from `dev-fixture.local.json` instead of the portal, and
- * answers the API in memory. Writes never leave the page. Callers import this module only behind
- * `import.meta.env.DEV`, so a production build drops it.
- *
- * Copy a `machines_read` export to `apps/machine-map/dev-fixture.local.json` first. Git ignores
- * it, because a real export holds hostnames and emails. The export leaves out fields that the
- * portal adds, so this module fills them. `&demo=1` adds an expiry, a proposal and a queued
- * change, which the real map may not have. The emergency pause and Resume work in memory too.
+ * Dev only: `?fixture=1` loads the map from `dev-fixture.local.json` (a `machines_read` export) and
+ * answers the API in memory, so writes never leave the page. Import it only behind
+ * `import.meta.env.DEV`. Git ignores the file, because a real export holds hostnames and emails.
+ * `&demo=1` adds an expiry, a proposal and a queued change that the real map may not have.
  */
 import * as Schema from "effect/Schema";
 import {

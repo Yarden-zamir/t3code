@@ -158,8 +158,7 @@ function SettingsRouteLayout() {
       // Fork: each environment joins the machine map on its own.
       singleEnvironment={pathname === "/settings/providers" || pathname === "/settings/machines"}
       onChange={(next) => {
-        // Send every axis so the retain middleware sees an explicit target
-        // even when the choice is "all", which is the absence of a key.
+        // Send every axis so retain middleware recognizes "all" as an explicit target.
         void navigate({
           to: pathname,
           search: () => ({

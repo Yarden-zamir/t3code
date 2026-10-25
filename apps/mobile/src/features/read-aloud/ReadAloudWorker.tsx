@@ -64,11 +64,10 @@ export function useWaitsForNextReply(threadRef: ScopedThreadRef | null): boolean
 const useIsReadAloudHost = createSingletonHost("read-aloud-host");
 
 /**
- * Reads new replies aloud for the threads that ask for it. Each thread keeps its subscription
- * open only while it is listed. Mounted in the app root and in the assistant panel; one runs.
- * Limit: Android pauses JS timers in the background, so reading needs the app or the panel on
- * screen. Revisit if users ask for replies read with the screen off: that needs a native player
- * driven by the agent push notification.
+ * Reads new replies aloud for the threads that ask for it, subscribed while a thread is listed.
+ * Mounted in the app root and the assistant panel; one runs. Limit: Android pauses JS timers in the
+ * background, so reading needs the app or the panel on screen. Revisit if users want replies read
+ * with the screen off: that needs a native player driven by the agent push notification.
  */
 export function ReadAloudWorker() {
   return useIsReadAloudHost() ? <ReadAloudThreads /> : null;

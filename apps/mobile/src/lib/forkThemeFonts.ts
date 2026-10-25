@@ -1,10 +1,8 @@
 /**
  * Fork: the fonts that a published theme can pick on mobile. `app.config.ts` bundles them, and
- * `forkPublishedThemes.ts` maps a theme font family to them. Each native family name is the
- * font's PostScript name, so iOS and Android use the same names.
- *
- * Known limit: a theme font outside this list keeps the stock font. Add a font here when a
- * published theme names one that users want on the phone.
+ * `forkPublishedThemes.ts` maps theme font families to them. Native family names are PostScript
+ * names, so iOS and Android match. Limit: any other theme font keeps the stock font. Add a font
+ * here when users want it on the phone.
  */
 export const FORK_THEME_FONTS = [
   {

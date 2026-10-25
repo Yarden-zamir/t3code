@@ -42,12 +42,9 @@ function useNewThreadProjectMode(): MobileNewThreadProject {
 }
 
 /**
- * Fork: opens the draft that `mobileNewThreadProject` names, once, when the project picker opens
- * as the first screen of a new thread. The picker stays under the draft, so Back shows it.
- *
- * The draft opens before the first paint when its project is in the local project list, also
- * before a server connects: the last project, or the project of the last thread without a
- * project. Only the first thread without a project waits for the server to make that project.
+ * Fork: opens the `mobileNewThreadProject` draft once, when the project picker opens first for a
+ * new thread; Back shows the picker. A project in the local list opens before the first paint, also
+ * offline. Only the first thread without a project waits for the server to make that project.
  * A connected environment wins over an offline one (`newThreadStartChoice`).
  */
 export function useForkNewThreadStart(input: {

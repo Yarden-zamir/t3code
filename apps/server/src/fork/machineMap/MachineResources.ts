@@ -1,15 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no free-space query (statfs).
 /**
- * Fork: machine map resources (`apps/machine-map/SPEC.md`, MM-1501). One resource sample of this
- * machine for the portal. `MachineMap` takes a sample every minute while the portal connection is
- * open, so a server with the map off never samples.
- *
- * Each sample stays cheap: CPU and memory come from `HostResources`, the T3 process tree from the
- * native resource monitor that already runs, and the rest from small file reads, `statfs`, and
- * short commands: `ps` on macOS and Linux, plus `vm_stat`, `sysctl`, `netstat` and `pmset` (the
- * battery, MM-1510) on macOS, so at most five. CPU pressure (MM-1504) comes from the
- * `cpu.pressure` file of the cgroup of the server, which holds its agents, so niced work in other
- * units does not count.
+ * Fork: machine map resources (`apps/machine-map/SPEC.md`, MM-1501). `MachineMap` samples every
+ * minute while the portal connection is open. A sample stays cheap: `HostResources`, the native
+ * resource monitor, file reads, `statfs`, and at most five short commands (battery: MM-1510).
+ * CPU pressure (MM-1504) reads `cpu.pressure` of the server cgroup, so other units do not count.
  */
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";

@@ -218,12 +218,10 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     }
     const targetCwd = options?.cwd ?? gitCwd ?? activeProject.workspaceRoot;
     const showTerminal = shouldShowScriptTerminal(script);
-    // A background script gets its own terminal so it never types into a shell
-    // the user is not looking at. The session stays listed in the drawer.
-    // Limit: the command runs inside an interactive shell, so no exit status
-    // reaches the client and a failing command is not reported. Only open and
-    // write failures surface. Revisit when the terminal API reports per-command
-    // exit codes, or move background scripts to a server-side runner.
+    // A background script gets its own terminal so it never types into a shell the user
+    // is not looking at. Limit: the command runs in an interactive shell, so its exit status
+    // never reaches the client and only open and write failures surface. Revisit when the
+    // terminal API reports per-command exit codes.
     const reusableTerminalId =
       options?.preferNewTerminal ||
       !showTerminal ||

@@ -43,11 +43,10 @@ type Launch<Input> =
   | { readonly type: "readOnly"; readonly cwd: string; readonly worktreePath: string | null };
 
 /**
- * Fork: the server owns how the main terminal of a terminal thread starts. It takes the folder,
- * worktree, env and shell from the thread record, because a client with other values (an older
- * web or mobile bundle) would make `terminal.open` restart the running program and drop its
- * shell integration. Its drawer terminals keep the client's folder and get the thread's shell
- * when the client names none. A draft has no thread record yet, so its client names all of it.
+ * Fork: the main terminal of a terminal thread takes folder, worktree, env and shell from the
+ * thread record, because other values from an older client make `terminal.open` restart the
+ * program. Drawer terminals keep the client's folder and default to the thread's shell. A draft
+ * has no thread record yet, so its client names all of it.
  */
 const resolveLaunch = Effect.fn("TerminalThreadLaunch.resolve")(function* <
   Input extends LaunchInput,

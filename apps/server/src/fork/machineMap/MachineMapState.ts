@@ -1,10 +1,8 @@
 /**
- * Fork: machine map (`apps/machine-map/SPEC.md`). The local state of this machine: the last
- * desired state (MM-1304), the machine token (MM-1302), and the two auth decisions that the
- * upstream auth hooks call (MM-1305, MM-1307), and the pause lock (MM-718). The `machineMap` setting gates both decisions,
- * so with the setting off, auth is unchanged (MM-1301).
- *
- * It depends on no auth service, because `EnvironmentAuth` reads it.
+ * Fork: machine map local state: the last desired state (MM-1304), the machine token (MM-1302),
+ * the pause lock (MM-718) and the two auth decisions of the upstream auth hooks (MM-1305,
+ * MM-1307). With the `machineMap` setting off, auth is unchanged (MM-1301). It depends on no auth
+ * service, because `EnvironmentAuth` reads it.
  */
 import {
   ClientAccessMode,

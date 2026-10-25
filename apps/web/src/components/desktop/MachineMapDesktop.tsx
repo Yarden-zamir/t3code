@@ -45,13 +45,10 @@ import { armIdleInstall } from "./DesktopUpdateIdleInstall";
 import { noticeAccessEnded } from "../ForkAccessChangeNotices";
 
 /**
- * Fork: the desktop app's part of the machine map (apps/machine-map/SPEC.md). It reads the state
- * of its own server and only acts while that server reports `tokenHeaders`, which it sends only
- * to the local desktop app of a joined machine.
- *
- * - MM-306, MM-1401: one saved environment for each reachable machine, with the token headers.
- * - MM-403: applies the desired client settings and reports the current ones.
- * - MM-1402: runs `reloadWindows` and `installUpdate`, and reports the waiting update.
+ * Fork: the desktop app's part of the machine map (apps/machine-map/SPEC.md). It acts only while
+ * its server reports `tokenHeaders`, sent only to the local desktop app of a joined machine.
+ * MM-306, MM-1401: one saved environment per reachable machine. MM-403: client settings.
+ * MM-1402: runs `reloadWindows` and `installUpdate`, and reports the waiting update.
  */
 export function MachineMapDesktop() {
   const primary = usePrimaryEnvironment();

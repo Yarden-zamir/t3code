@@ -28,12 +28,9 @@ export function filterSentence(filter: {
 
 /**
  * Fork: one active filter, read as a sentence: "Owner is not qlik-trial". The operator is a
- * button when the filter can flip, and the cross removes the filter. A filter without a negative
- * form passes a null operator and reads "Review: approved".
- *
- * An exclusion hides items, so it must stay in view: the pull request page and the sidebar show
- * their active filters with this chip. If upstream T3 Code ships its own active-filter chips,
- * move both callers to those and delete this file.
+ * button when the filter can flip; a filter without a negative form reads "Review: approved".
+ * An exclusion hides items, so it must stay in view. If upstream ships its own active-filter
+ * chips, move both callers (pull request page, sidebar) to those and delete this file.
  */
 export function FilterChip({
   field,

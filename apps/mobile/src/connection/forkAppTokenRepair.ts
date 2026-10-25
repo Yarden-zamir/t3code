@@ -1,12 +1,8 @@
 /**
- * Fork: an app token client pairs again by itself (MM-921). A machine ends the sessions of a
- * client at each level change, at the expiry of its arrow and at a `clientAccess` change
- * (MM-912, MM-921). The app then holds a refused session, so it asks the machine for a new
- * pairing credential with its saved token headers and pairs again.
- *
- * At start and each time the app returns to the foreground, the repair also reads the machines
- * of the client from the portal (MM-914): it pairs with a machine that gained an arrow and
- * disables the environment of a machine whose arrow is `none`.
+ * Fork: an app token client pairs again by itself (MM-921). A machine ends client sessions at a
+ * level change, an arrow expiry or a `clientAccess` change (MM-912). The app then pairs again with
+ * its saved token headers. At start and on each return to the foreground, it reads its machines
+ * from the portal (MM-914): it pairs with new arrows and disables machines whose arrow is `none`.
  */
 import {
   cloudflareAccessServiceToken,

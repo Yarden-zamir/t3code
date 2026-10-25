@@ -1,10 +1,7 @@
 /**
- * Fork changelog contract (fork feature, behind the `forkChangelogEnabled` client setting).
- *
- * The server reads the fork releases, the commits of each release and the upstream commits that
- * fork main does not have yet from GitHub. It also starts the Fork Sync workflow and reports its
- * run. A fork commit is a commit that upstream main does not contain.
- *
+ * Fork changelog contract, behind the `forkChangelogEnabled` client setting. The server reads from
+ * GitHub the fork releases, their commits and the upstream commits that fork main lacks, and starts
+ * the Fork Sync workflow. A fork commit is a commit that upstream main does not contain.
  * @module forkChangelog
  */
 import * as Schema from "effect/Schema";

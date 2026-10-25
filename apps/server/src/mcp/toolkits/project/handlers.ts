@@ -43,9 +43,7 @@ function projectFailure(error: Project.ProjectServiceError) {
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }
 
-/**
- * Without this check a launch could point an agent at any directory on the machine.
- */
+/** Require project worktrees so launches cannot target arbitrary host directories. */
 const assertProjectWorktree = Effect.fn("mcp.assertProjectWorktree")(function* (
   workspaceRoot: string,
   worktreePath: string,
@@ -71,14 +69,10 @@ type ProjectSettingsInput = Pick<
 >;
 
 /**
- * These fields live in the project's settings override, which is what
- * `resolveProjectSettings`, `resolveProjectScripts` and the app read. The
- * aggregate's own fields only count before the legacy fold, so writing them
- * there is lost. A `null` model or env mode removes the override, so the
- * project inherits the environment value again.
- * Read-then-patch, like the app's editors: a concurrent override write to the
- * same project between the two steps is lost. Revisit if settings gain an
- * atomic per-project patch.
+ * These fields live in the project settings override that `resolveProjectSettings`,
+ * `resolveProjectScripts` and the app read. Aggregate fields count only before the legacy fold.
+ * A `null` model or env mode removes the override. Limit: read-then-patch loses a concurrent
+ * override write between the steps. Revisit if settings gain an atomic per-project patch.
  */
 const writeProjectSettings = Effect.fn("mcp.writeProjectSettings")(function* (
   projectId: ProjectId,
@@ -346,8 +340,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
       Effect.gen(function* () {
         const projects = yield* Project.ProjectService;
         if (workspaceRoot === undefined) {
-          // Project creation records no model default (only an update does), so
-          // reject what this mode would otherwise drop silently.
+          // Only updates record model defaults; reject defaults that creation would silently drop.
           if (
             scripts !== undefined ||
             input.createWorkspaceRootIfMissing !== undefined ||

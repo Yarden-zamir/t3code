@@ -157,11 +157,10 @@ const NO_SCRIPT_ACTIONS = {
 };
 
 /**
- * Fork: the screen of a terminal thread (`forkTerminalThreads.ts`), shown in place of ChatView.
- * The thread header of a normal thread above the main terminal `term-1`. The terminal drawer
- * (`terminal.toggle`) holds the other terminals of the thread. The right panel and the thread
- * panel are the ones of ChatView (`useThreadRightPanel`), without the parts that need a
- * composer.
+ * Fork: the screen of a terminal thread (`forkTerminalThreads.ts`), shown in place of ChatView:
+ * the thread header above the main terminal `term-1`. The drawer (`terminal.toggle`) holds the
+ * other terminals. The right panel and thread panel come from ChatView (`useThreadRightPanel`),
+ * without the parts that need a composer.
  */
 export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThreadRef }) {
   const { threadRef } = props;

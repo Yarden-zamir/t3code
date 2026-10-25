@@ -10,14 +10,10 @@ import type { ThreadFeedEntry } from "../../lib/threadActivity";
 import { useEnvironmentServerConfig } from "../../state/entities";
 
 /*
- * Fork: opens a thread at one message. A thread link with `#<messageId>`, a thread address with
- * `#<messageId>` or `?message=`, and an app link reach the Thread route with the `message` param.
- * The feed loads history through the message, opens its folded turn, scrolls to it and highlights
- * it briefly. A message that the thread does not have shows the note "Message not found".
- *
- * The open upstream PR pingdotgg/t3code#19203 ("link to a message in a thread from anywhere") does
- * the same with the `message` param. When it merges, replace this file with its feed code and keep
- * only the fork entry point: the fragment of a thread link.
+ * Fork: opens a thread at one message. Thread links and addresses with `#<messageId>` or
+ * `?message=`, and app links, reach the Thread route with the `message` param. The feed loads the
+ * message, opens its turn, scrolls to it and highlights it, or shows "Message not found". When
+ * pingdotgg/t3code#19203 merges, use its feed code and keep only the thread link fragment entry.
  */
 
 /** The highlight holds this long, then goes at once. No fade: a fade repaints every frame. */

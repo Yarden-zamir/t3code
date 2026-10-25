@@ -1,9 +1,8 @@
 /**
- * Fork: focus levels. The composer, timeline, right panel and sidebar are areas of the screen
- * that keyboard focus moves between. The DOM is the only state: the level is the area that
- * holds `document.activeElement`, found through markers that the areas already render.
- * Chat shortcut code low in the import graph imports this module, so it imports nothing from
- * the app; an app import here once closed an import cycle.
+ * Fork: focus levels are the screen areas (composer, timeline, right panel, sidebar) that keyboard
+ * focus moves between. The DOM is the only state: the level is the area that holds
+ * `document.activeElement`. Chat shortcut code low in the import graph imports this module, so it
+ * imports nothing from the app.
  */
 
 export type FocusLevel = "composer" | "timeline" | "rightPanel" | "sidebar";

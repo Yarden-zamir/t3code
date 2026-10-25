@@ -16,15 +16,10 @@ export type CloudflareAccessIdentity =
   | { readonly kind: "service-token"; readonly commonName: string };
 
 /**
- * Fork: Cloudflare Access login. Cloudflare signs every request that passes
- * Access with a JWT in `Cf-Access-Jwt-Assertion`. This trusts that header only
- * because the server listens on loopback and is reachable through the tunnel
- * alone. Revisit this before the server is exposed directly, because then
- * anybody can send a request without passing Access first.
- *
- * The returned check yields the verified identity or `undefined`. An email
- * that is not an allowed subject yields `undefined`. Every unexpected state
- * fails closed.
+ * Fork: Cloudflare Access login. This trusts the `Cf-Access-Jwt-Assertion` JWT only because the
+ * server listens on loopback behind the tunnel. Revisit before the server is exposed directly.
+ * The check yields the verified identity, or `undefined` for a subject that is not allowed.
+ * Every unexpected state fails closed.
  */
 export const makeCloudflareAccessVerifier = (
   config: CloudflareAccessConfig,

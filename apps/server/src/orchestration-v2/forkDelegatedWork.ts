@@ -11,15 +11,10 @@ import { latestRootProviderFailure } from "@t3tools/shared/orchestrationV2Thread
 type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>;
 
 /**
- * The failed run that a new message queues behind, when the queue waits only
- * because its provider failed. A message to that provider tries it again: it starts
- * the held queue first and waits behind it, so the queue keeps its order. If
- * the provider fails again, the queue is held again with the new message in
- * it, so a retry costs one run, as the new message alone did before.
- *
- * A message the user sends from a client keeps the upstream rule: it starts
- * first and releases the hold. Stop, worktree and usage-limit holds wait for
- * the user, as upstream decides.
+ * The failed run that a new message queues behind, when only a provider failure holds the queue.
+ * A message to that provider starts the held queue first and waits behind it, so order holds and a
+ * retry costs one run. A message the user sends from a client keeps the upstream rule: it starts
+ * first and releases the hold. Stop, worktree and usage-limit holds wait for the user.
  */
 export function forkProviderFailureRunToQueueBehind(input: {
   readonly command: MessageDispatch;
@@ -73,17 +68,10 @@ export function forkCommandReleasedQueue(
 }
 
 /**
- * Whether a message into a delegated child can become a follow-up task that
- * the parent hears back from. Besides a person or the parent writing to the
- * child, the child's own wakes count: a background command, a native
- * subagent, a nested delegated task that finished or asked a question, and
- * the restart notice of "Recover interrupted agents". Monitor updates report
- * progress, not new work. A child watches no pull request: its parent does.
- *
- * Upstream: https://github.com/pingdotgg/t3code/pull/23542 "notify parents
- * after delegated background runs" covers notification wakes with the same
- * shape. When that merges, use its `mayStartSubagentFollowup` and keep the
- * delegated-completion case here.
+ * Whether a message into a delegated child can become a follow-up task that the parent hears back
+ * from: a person or the parent writing, or a child wake (background command, native subagent,
+ * nested task that finished or asked, restart notice). Monitor updates do not count. When
+ * pingdotgg/t3code#23542 merges, use its `mayStartSubagentFollowup` and keep the delegated case.
  */
 export function forkMayStartSubagentFollowup(command: MessageDispatch): boolean {
   if (command.scheduledTaskId !== undefined || command.restartContinuationOfRunId !== undefined)

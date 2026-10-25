@@ -27,13 +27,10 @@ const publishedPalettes = new Map<
 >();
 
 /**
- * Fork: the palettes of the published themes, for the palette lookups by theme id in
- * `mobileTheme.ts`. Like web `setEnvironmentThemes`, one module store keeps those lookups pure
- * functions of the id. It only adds and replaces entries: a theme that no server offers never
- * reaches a lookup, because `availableMobileThemeIds` swaps its id for the stock theme first.
- *
- * Known limit: a view that memoizes on the theme id, such as the terminal, keeps the old colors
- * when a server republishes a theme under the same id, until the id or the appearance changes.
+ * Fork: published theme palettes for the lookups by theme id in `mobileTheme.ts`. Like web
+ * `setEnvironmentThemes`, one module store keeps those lookups pure. It only adds and replaces:
+ * `availableMobileThemeIds` swaps an id that no server offers for the stock theme. Limit: a view
+ * that memoizes on the id, such as the terminal, keeps old colors when a server republishes it.
  */
 export function registerPublishedMobileThemePalettes(palettes: PublishedPalettes): void {
   for (const [id, colors] of palettes) publishedPalettes.set(id, colors);

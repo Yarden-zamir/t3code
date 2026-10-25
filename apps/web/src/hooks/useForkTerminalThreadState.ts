@@ -11,11 +11,10 @@ import {
 import type { ThreadArchiveBlock } from "../components/threadActionMenu.logic";
 
 /**
- * Fork: what the thread menus and Archive read at click time for a thread. A program that runs in
- * the main terminal blocks archive like an agent run, because archive ends it. A terminal thread
- * has no messages to regenerate a title from. It has no Mark unread either: the server marks a
- * thread unread before its last message run, and a terminal thread shows its program ends and
- * bells without runs. Revisit if a user needs to mark a seen program end unread.
+ * Fork: thread menu and Archive state, read at click time. A program in the main terminal blocks
+ * archive like an agent run, because archive ends it. A terminal thread has no messages for a title
+ * and no Mark unread: the server marks unread before a run, and terminal threads have none.
+ * Revisit if a user needs to mark a seen program end unread.
  */
 export function readForkThreadMenuState(
   thread: Pick<EnvironmentThreadShell, "providerInstanceId" | "runtime" | "terminal">,

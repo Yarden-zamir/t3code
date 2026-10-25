@@ -130,11 +130,10 @@ export type AgentSessionImportMaxMessages = typeof AgentSessionImportMaxMessages
 export const DEFAULT_AGENT_SESSION_IMPORT_MAX_MESSAGES: AgentSessionImportMaxMessages = 200;
 
 /**
- * Fork: client access of the machine map (MM-916). `off`: a browser that passes Cloudflare
- * Access as the owner gets the owner access, as before. `observe`: the browser proves its key; a
- * key that an approved client holds gets that client's arrow, at most `standard`, and any other
- * key keeps the owner access and waits in the portal for approval. `enforce` (MM-918): only a key
- * of an approved client gets in, with the full level of its arrow.
+ * Fork: client access of the machine map (MM-916). `off`: an Access owner gets owner access.
+ * `observe`: an approved client key gets its client's arrow, at most `standard`; other keys keep
+ * owner access and wait for approval. `enforce` (MM-918): only approved client keys get in, with
+ * the full level of their arrow.
  */
 export const ClientAccessMode = Schema.Literals(["off", "observe", "enforce"]);
 export type ClientAccessMode = typeof ClientAccessMode.Type;

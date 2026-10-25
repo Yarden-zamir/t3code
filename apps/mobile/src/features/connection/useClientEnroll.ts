@@ -1,9 +1,7 @@
 /**
- * Fork: uses a portal invite (MM-913) from Add environment. The invite gives
- * this app its own Cloudflare Access service token; the app saves it for the
- * portal and every machine, then pairs with each machine. A machine that fails
- * does not stop the others, and the app keeps the token, so the app token repair
- * pairs it later.
+ * Fork: uses a portal invite (MM-913) from Add environment. The app saves the invite's Cloudflare
+ * Access service token for the portal and every machine, then pairs with each machine. A failed
+ * machine does not stop the others; the app token repair pairs it later with the kept token.
  */
 import { requestHeaderOrigin } from "@t3tools/client-runtime/connection";
 import { useAtomSet } from "@effect/atom-react";

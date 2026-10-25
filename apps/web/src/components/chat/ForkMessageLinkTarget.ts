@@ -30,14 +30,10 @@ import {
 } from "./MessagesTimeline.logic";
 
 /*
- * Fork: opens a thread at one message. A message link (`t3-thread://v1/<threadId>#<messageId>`),
- * a thread address with `#<messageId>` or `?message=<messageId>`, and an app link all reach the
- * thread route with the message in the fragment or the query. The timeline loads history through
- * the message, opens the fold that hides it, scrolls it near the top and highlights it briefly.
- *
- * The scroll follows `useLinkedMessageTarget` of the open upstream PR pingdotgg/t3code#19203
- * ("link to a message in a thread from anywhere"). When that PR merges, replace this file with its
- * hook and keep only the fork entry points: the fragment and the `t3-thread://` link.
+ * Fork: opens a thread at one message. A `t3-thread://v1/<threadId>#<messageId>` link, a thread
+ * address with `#<messageId>` or `?message=<messageId>`, and an app link reach the thread route.
+ * The timeline loads history, opens the fold, scrolls the message near the top and highlights it.
+ * When pingdotgg/t3code#19203 merges, use its `useLinkedMessageTarget` and keep the fork links.
  */
 
 declare module "@tanstack/react-router" {

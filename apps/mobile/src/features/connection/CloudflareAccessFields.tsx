@@ -233,11 +233,9 @@ function useSavedCloudflareAccess(
 }
 
 /**
- * Settings section that edits the service token of a saved environment. The
- * secret never loads into the form: an empty secret field keeps the saved one.
- * It uses the origin of the environment's main address; another route with its
- * own origin keeps whatever headers it already has. Revisit if routes on
- * several Access-protected origins become common.
+ * Edits the service token of a saved environment. The secret never loads into the form: an empty
+ * secret field keeps the saved one. It uses the origin of the main address; a route with another
+ * origin keeps its headers. Revisit if routes on several Access-protected origins become common.
  */
 function CloudflareAccessOriginSection(props: {
   readonly origin: string;

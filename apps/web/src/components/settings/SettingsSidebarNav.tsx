@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   ArchiveIcon,
+  FlaskConicalIcon,
   BlocksIcon,
   BotIcon,
   createLucideIcon,
@@ -94,6 +95,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/terminal": SquareTerminalIcon,
   "/settings/machines": NetworkIcon,
   "/settings/fork": GitForkIcon,
+  "/settings/beta": FlaskConicalIcon,
   "/settings/archived": ArchiveIcon,
 };
 

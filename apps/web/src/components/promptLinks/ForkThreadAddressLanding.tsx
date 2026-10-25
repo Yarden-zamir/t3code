@@ -32,16 +32,10 @@ function openedFromOutside(): boolean {
 const START = openedFromOutside() ? parseThreadAddress(window.location.href) : null;
 
 /**
- * Fork: with the server setting `threadLinksOpenDesktopApp` on, a thread address opened from
- * outside T3 Code (`openedFromOutside`) hands the thread to the desktop app at once and shows a page
- * to continue in the browser. Null in every other case, so the app renders as usual.
- *
- * Known limit: when the desktop app is not running, the link that starts it is lost (upstream
- * #18613). Revisit when #18422 merges upstream.
- *
- * Known limit: with `threadLinkChips` off, a thread address clicked in T3 web chat opens a new tab
- * with `rel="noopener noreferrer"`, so this page reads it as a link from outside and hands it to the
- * desktop app. Revisit if users keep `threadLinkChips` off while this setting is on.
+ * Fork: with `threadLinksOpenDesktopApp` on, a thread address from outside T3 Code opens in the
+ * desktop app, with a page to continue in the browser; else null. Limit: a closed desktop app
+ * loses the link; revisit when pingdotgg/t3code#18422 merges. Limit: with `threadLinkChips` off,
+ * web chat links open with `noopener`, read as outside; revisit if users combine the two settings.
  */
 export function useForkThreadAddressLanding(): ReactNode | null {
   const enabled = usePrimarySettings((settings) => settings.threadLinksOpenDesktopApp);

@@ -31,11 +31,9 @@ const threadPill = enrichedContextLinkCustomization(
 
 /**
  * Fork: thread links in a feed of `environmentId` while its server setting `threadLinkChips` is on.
- * A `t3-thread://` link and a web address of a thread in an environment that this app knows
- * (`parseThreadAddress`) get the attached-thread pill. Such a web address opens the thread here,
- * not in the phone browser. With the setting off, both return nothing and links stay as they are.
- * With `messageLinks` on, a link that names a message opens the thread at it (`messageParams`), and
- * its pill shows a message icon.
+ * A `t3-thread://` link or a known web thread address (`parseThreadAddress`) gets the attached
+ * thread pill and opens here, not in the browser. With `messageLinks` on, a message link opens the
+ * thread at it (`messageParams`) with a message icon. With the setting off, both return nothing.
  */
 export function useForkThreadLinks(environmentId: EnvironmentId) {
   const navigation = useNavigation();

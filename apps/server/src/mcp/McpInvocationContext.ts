@@ -90,11 +90,7 @@ export const clientModeCeiling = (client: McpClientCaller | undefined): ClientMo
   };
 };
 
-/**
- * A thread caller's omitted target falls back to its own thread; a client
- * caller has no own thread, so tools that act as the caller (delegate_task,
- * preview, worktree handoff) need `thread`.
- */
+/** Thread callers default to their own thread; client callers need thread for tools that act as the caller. */
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
   readonly capabilities: ReadonlySet<McpCapability>;

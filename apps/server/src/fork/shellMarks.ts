@@ -1,17 +1,8 @@
 /**
- * Fork: reads the marks that the shell integration of a terminal thread prints (OSC 133) and the
- * bell from the output of a terminal. Pure, so the manager and the provider adapter each own
- * one parser and neither depends on the other.
- *
- * - `prompt`: the shell shows its prompt (OSC 133;A).
- * - `continuation`: the shell waits for the rest of an unfinished command (OSC 133;A;k=s, the
- *   secondary prompt mark of kitty).
- * - `commandStart`: the shell runs a command (OSC 133;C), optionally with its command line
- *   (OSC 133;C;cmdline=<text>, as kitty names it).
- * - `commandEnd`: the command ended (OSC 133;D;<exit code>).
- * - `attention`: a bell, or an app notification (OSC 9, 99 or 777).
- *
- * Every other byte comes back as `text`, with the marks removed.
+ * Fork: parses the OSC 133 marks of the terminal thread shell integration and the bell from
+ * terminal output. Pure, so the manager and the provider adapter each own one parser. Kitty forms:
+ * `continuation` is OSC 133;A;k=s and `commandStart` can carry cmdline=<text>. `attention` is a
+ * bell or OSC 9, 99 or 777. Every other byte comes back as `text`, with the marks removed.
  */
 export type ShellItem =
   | { readonly type: "text"; readonly text: string }

@@ -1,18 +1,8 @@
 /**
- * Fork: machine map (`apps/machine-map/SPEC.md`). The portal connection of this server and
- * everything that rides on it:
- *
- * - MM-1303: one outbound WebSocket to `<portal>/connect`, with backoff after a failure.
- * - MM-603, MM-607, MM-1304: each desired state is saved, then applied. The saved one applies
- *   again at start, before the server accepts requests.
- * - MM-402, MM-404: server settings apply through the settings service. A change made on this
- *   machine outside the map goes to the portal as `localSettings`.
- * - MM-305, MM-1306: a level change of an arrow into this machine ends the sessions of its peer.
- * - MM-501, MM-1402: commands run here, or wait for the desktop app.
- * - MM-1001, MM-1002: status on connection and on change, at most once every 5 seconds.
- * - MM-1501: a resource sample on connection, every minute, and when the portal asks.
- * - MM-801, MM-805: agent tools that run through the portal.
- * - The client stream for the desktop app and web Settings (`machineMapClient.ts`).
+ * Fork: machine map (`apps/machine-map/SPEC.md`). The portal WebSocket (MM-1303) and what rides on
+ * it. A saved desired state applies again at start, before the server accepts requests (MM-603,
+ * MM-607, MM-1304). Also: settings (MM-402, MM-404), level changes (MM-305, MM-1306), commands
+ * (MM-501, MM-1402), status (MM-1001, MM-1002), resources (MM-1501), agent tools (MM-801, MM-805).
  */
 import {
   MACHINE_MAP_PROTOCOL,
@@ -808,11 +798,10 @@ const make = Effect.gen(function* () {
   // MM-304, MM-912: an arrow that expires ends its sessions at its expiry
 
   /**
-   * MM-916, MM-921: a change of the `clientAccess` mode in force ends the sessions that the old
-   * mode gave. Browser clients sign in again with the level of the new mode; a client that also
-   * holds an app token pairs again with it. Entering `enforce`, also at start, ends the owner
-   * sessions of Cloudflare Access.
-   * Known limit: those match on the label `cloudflare-access <subject>`. Revisit if it changes.
+   * MM-916, MM-921: a change of the `clientAccess` mode in force ends the sessions of the old mode.
+   * Browser clients sign in again; an app token client pairs again. Entering `enforce`, also at
+   * start, ends the Cloudflare Access owner sessions. Known limit: those match on the label
+   * `cloudflare-access <subject>`. Revisit if it changes.
    */
   const watchClientAccess = state.changes.pipe(
     // The mode in force: turning the map off ends `enforce` as well.
@@ -860,10 +849,9 @@ const make = Effect.gen(function* () {
 
   /**
    * Sleeps until the next arrow expiry of the saved desired state, then ends the sessions of that
-   * source, also while the portal is unreachable. A new desired state starts it again from its
-   * arrival, because `applyDesired` handled every expiry before that. After a restart it starts
-   * from the arrival of the saved state, so an expiry during the downtime ends its sessions too;
-   * one that ended them before the restart ends the newer sessions of that source once more.
+   * source, also while the portal is unreachable. A new desired state restarts it, because
+   * `applyDesired` handled earlier expiries. After a restart, an expiry in the downtime still ends
+   * its sessions; one that ended them before ends the newer sessions of that source again.
    */
   const watchExpiries = state.changes.pipe(
     Stream.map((local) =>

@@ -309,17 +309,10 @@ function judge(
 }
 
 /**
- * MM-1121 "Auto layout": a small force layout. Each line pulls its two cards toward its length,
- * two cards closer than their room push apart, and a pull toward the middle keeps the map
- * compact. `separate` then removes every overlap. The layout runs from the current places and from a few
- * fixed pseudo-random starts. It keeps the result with the fewest line crossings and lines through
- * cards, then the shortest lines. The current places win a tie, so a map that reads well keeps its
- * shape. Notes link to nothing, so they go beside the cards, where they cover no line. The result
- * is centered on `center` and has about the `shape` (width by height) of the view.
- *
- * Limit: the starts are a sample, not a search, so a dense map can keep a crossing that a
- * layered layout would remove. Revisit when maps grow past about 20 machines or the owner sees
- * crossings after "Auto layout": then use a layered layout library such as elkjs.
+ * MM-1121 "Auto layout": a force layout from the current places and a few fixed starts. It keeps
+ * the result with the fewest crossings and lines through cards, then the shortest lines. Current
+ * places win a tie. Limit: the starts are a sample, so a dense map can keep a crossing. Revisit
+ * past about 20 machines or on crossings after "Auto layout": use a layered layout such as elkjs.
  */
 export function autoLayout(
   cards: ReadonlyArray<LayoutCard>,

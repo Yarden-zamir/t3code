@@ -2,11 +2,10 @@ import type { GhosttyCell } from "./core";
 import type { GhosttyCellMetrics } from "./renderer";
 
 /**
- * Fork: the powerline outlines and half circles (U+E0B1, U+E0B3 to U+E0B7) are drawn as shapes
- * that fill the whole cell, as Ghostty does. A font draws them at its own size, so they do not
- * meet the segments next to them. The renderer already draws the solid triangles (U+E0B0, U+E0B2)
- * this way. Limit: not the diagonal and flame variants; revisit if a prompt theme uses U+E0B8 and
- * above.
+ * Fork: draws powerline outlines and half circles (U+E0B1, U+E0B3 to U+E0B7) as cell-filling
+ * shapes, as Ghostty does, so they meet the segments next to them; the renderer already does this
+ * for the solid triangles. Limit: not the diagonal and flame variants; revisit if a prompt theme
+ * uses U+E0B8 and above.
  */
 const FORK_POWERLINE_CODEPOINTS: ReadonlySet<number> = new Set([
   0xe0b1, 0xe0b3, 0xe0b4, 0xe0b5, 0xe0b6, 0xe0b7,

@@ -238,11 +238,9 @@ type WorktreeCreation =
     };
 
 /**
- * A draft in New worktree mode has no folder for its shell yet. Creating the worktree is an
- * explicit step, so switching the workspace back and forth leaves no worktrees behind. The server
- * prepares it as for a chat thread: fetch, branch, setup script, progress. Then the draft points
- * at the worktree, like a draft that picked an existing worktree. An async setup script keeps
- * running in a terminal of the draft's thread id, which the thread gets when the draft becomes one.
+ * A draft in New worktree mode has no shell folder yet. Worktree creation is an explicit step, so
+ * workspace switches leave no worktrees behind. The server prepares it as for a chat thread. An
+ * async setup script runs in a terminal under the draft's thread id; the thread keeps that id.
  */
 function NewWorktreePanel(props: {
   readonly draftId: DraftId;

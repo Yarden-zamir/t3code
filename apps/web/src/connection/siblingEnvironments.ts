@@ -12,20 +12,10 @@ import { connectPairing as connectPairingAtom } from "./onboarding";
 import { browserKeyProof } from "./browserKeyProof";
 
 /**
- * Fork: Cloudflare Access login for sibling environments. The page's own
- * server lists its siblings in `trustedBrowserOrigins`. For each sibling that
- * is not saved yet, the page asks the sibling for a pairing credential with
- * its Cloudflare cookie, then adds it through the normal pairing path.
- *
- * Limit: "not saved yet" also covers a sibling that the user removed, so a
- * removed sibling comes back on the next load. Revisit when a user wants to
- * hide a sibling without removing it from `trustedBrowserOrigins`.
- *
- * MM-922: the bearer of a browser client's sibling lasts 1 day and is not bound
- * to the browser key. When a saved sibling refuses it, the page pairs again with
- * its key, with a backoff per sibling, so a refusal never loops. Revisit when
- * upstream gives DPoP a bootstrap source that is not the T3 Connect cloud
- * session; then siblings can use key-bound DPoP tokens instead.
+ * Fork: Cloudflare Access login for siblings in `trustedBrowserOrigins`. An unsaved sibling pairs
+ * with its Cloudflare cookie. Limit: a removed sibling returns; revisit if users want to hide one.
+ * MM-922: a sibling bearer lasts 1 day and is not key-bound, so a refused one pairs again with
+ * backoff. Revisit when upstream DPoP can bootstrap without the T3 Connect cloud session.
  */
 
 export const CLOUDFLARE_ACCESS_PAIRING_PATH = "/api/auth/cloudflare-access/pairing-credential";

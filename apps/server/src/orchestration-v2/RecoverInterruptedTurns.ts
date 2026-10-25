@@ -1,16 +1,8 @@
 /**
- * Fork: `recoverInterruptedTurns`. Restart recovery sends each thread that a
- * restart or crash cut off the configured message, so its agent continues.
- *
- * It builds on the upstream restart continuation (`RestartContinuation.ts`):
- * the same outbox effect carries the cut run, and this module decides what to
- * send when the switch is on. It adds two things upstream does not do:
- *  - it wakes a thread whose turn had finished but whose background shells
- *    the restart killed (upstream wakes it only for other background work);
- *  - it never sends a second message after a recovery turn that a restart
- *    cut before it gave an answer.
- * It keeps the upstream limits: the chain cap and a project that turned
- * continuation off.
+ * Fork: `recoverInterruptedTurns`. On top of the upstream restart continuation
+ * (`RestartContinuation.ts`), it sends the configured message to each thread that a restart cut.
+ * Unlike upstream, it also wakes a finished turn whose background shells the restart killed, and
+ * never sends twice after a recovery turn cut before its answer. It keeps the upstream limits.
  */
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";

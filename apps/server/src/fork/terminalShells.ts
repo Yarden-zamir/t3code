@@ -1,13 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off -- one small synchronous read at server start.
 /**
- * Fork: the shells that a terminal thread can run. They are the models of the `terminal`
- * provider, and `terminal.open` takes one by name as `shell`. The driver and the terminal manager
- * read the same list, which `terminalShells` detects once per server process. Custom shells, any
- * executable with arguments, come from the settings of the `terminal` provider.
- *
- * Limit: a shell that is installed after the server starts shows after a server restart. A shell
- * whose name is not in TERMINAL_SHELL_NAMES does not show; a custom shell runs it. Revisit when
- * users ask for either.
+ * Fork: the shells of a terminal thread: the models of the `terminal` provider, which
+ * `terminal.open` takes by name as `shell`. `terminalShells` detects them once per server process,
+ * plus custom shells from the provider settings. Limit: a newly installed shell shows after a
+ * restart, and a name outside TERMINAL_SHELL_NAMES needs a custom shell. Revisit when users ask.
  */
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -202,10 +198,9 @@ export const customShellCandidate = Effect.fn("terminalShells.customShellCandida
 
 /**
  * Why a custom shell cannot start on this server, or undefined when its executable is found. The
- * provider lists it with the shell, so Settings can show it for a remote server too. Limit: it
- * checks the PATH of the server, which the terminal extends with the managed agent folders, and it
- * cannot check a relative path, which starts at the folder of each terminal. Revisit when a custom
- * shell runs from either.
+ * provider lists it with the shell, so Settings shows it for a remote server too. Limit: it checks
+ * the server PATH, not the terminal PATH with the managed agent folders, and no relative path,
+ * which starts at each terminal folder. Revisit when a custom shell runs from either.
  */
 export function customShellProblem(
   shell: TerminalCustomShell,
