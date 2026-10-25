@@ -12,6 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -67,9 +68,16 @@ const layerCleanup = Layer.mock(ResourceCleanupService.ResourceCleanupService)({
 });
 // The machine map pause (MM-718), as the portal's desired state sets it.
 const paused = Ref.makeUnsafe(false);
-const layerMachineMap = Layer.mock(MachineMapState.MachineMapState)({
-  lockedFor: () => Ref.get(paused),
-});
+const layerMachineMap = Layer.unwrap(
+  Effect.map(Queue.unbounded<never>(), (clientSeen) =>
+    Layer.mock(MachineMapState.MachineMapState)({
+      lockedFor: () => Ref.get(paused),
+      trustsPeerOrigin: () => false,
+      peerOrigins: () => [],
+      clientSeen,
+    }),
+  ),
+);
 const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "t3-guest-share-fork-" });
 const layerTest = GuestShareService.layer.pipe(
   Layer.provideMerge(
