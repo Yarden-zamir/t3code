@@ -71,6 +71,7 @@ it.effect("project settings written by t3_project_update are the ones the app re
               thread: {
                 id: launch.threadId,
                 projectId: launch.projectId,
+                title: launch.title,
                 modelSelection: launch.modelSelection,
               },
               runs: [],
@@ -225,6 +226,7 @@ const clientLaunchHarness = (input: {
             thread: {
               id: launch.threadId,
               projectId: launch.projectId,
+              title: launch.title,
               modelSelection: launch.modelSelection,
             },
             runs: [],
