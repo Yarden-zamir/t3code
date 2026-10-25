@@ -8,7 +8,6 @@ import { resolveForkSourcePoint } from "./forkNativeSource.ts";
 import {
   forkCommandReleasedQueue,
   forkIsChildWake,
-  forkMayStartSubagentFollowup,
   forkParentCancelledChild,
   forkProviderFailureRunToQueueBehind,
 } from "./forkDelegatedWork.ts";
@@ -128,6 +127,7 @@ import {
   type GuestShareCommand,
 } from "./GuestShareDecider.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
+import { withCommandMetrics } from "../observability/Metrics.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
@@ -629,6 +629,19 @@ function cancelledAppOwnedTask(
     updatedAt: now,
     completionDelivery: { state: "disposed", observedByRunId: null },
   };
+}
+
+// Provider wakes can start follow-up work; monitor updates only report progress.
+// Dispatch takes the parent's lock for follow-ups because intake writes the parent.
+function mayStartSubagentFollowup(
+  command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
+): boolean {
+  if (command.scheduledTaskId !== undefined || command.restartContinuationOfRunId !== undefined)
+    return false;
+  // Fork: a nested task that ended or asked wakes this child, and that can start a follow-up.
+  if (command.delegatedCompletion !== undefined) return true;
+  if (command.notification !== undefined) return command.notification.source.kind !== "monitor";
+  return command.createdBy === "user" || command.creationSource === "mcp";
 }
 
 function isBlockingRun(run: OrchestrationV2Run): boolean {
@@ -7379,7 +7392,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
   ) {
-    if (!forkMayStartSubagentFollowup(command)) return;
+    if (!mayStartSubagentFollowup(command)) return;
     const pending = yield* Ref.get(events);
     const message = pending
       .flatMap((event) =>
@@ -12591,7 +12604,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       storedEvents: committed.storedEvents,
       ...(committed.committed ? {} : { replayed: true as const }),
     } satisfies OrchestratorV2DispatchResult;
-  });
+  }, withCommandMetrics);
 
   // dispatchWithReceiptEffect owns the dispatch span; this wrapper selects the thread locks.
   const dispatchWithReceipt = Effect.fnUntraced(function* (command: OrchestrationV2ServerCommand) {
@@ -12599,7 +12612,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       commandThreadId(command),
       dispatchWithReceiptEffect(command),
     );
-    if (command.type !== "message.dispatch" || !forkMayStartSubagentFollowup(command))
+    if (command.type !== "message.dispatch" || !mayStartSubagentFollowup(command))
       return yield* dispatch;
     const parentThreadId = yield* appOwnedSubagentParentThreadId(command.threadId).pipe(
       Effect.mapError(

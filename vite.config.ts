@@ -3,6 +3,7 @@ import { defineConfig } from "vite-plus";
 import * as NodeURL from "node:url";
 import { viteCacheDir as forkViteCacheDir } from "./scripts/lib/fork-build-cache.cjs";
 import { remoteCacheUrl } from "./infra/task-cache/src/remoteCache.ts";
+import { cachedTestTasks } from "./scripts/lib/cached-tests.ts";
 
 const DOM_TEST_ENVIRONMENT_ALLOWLIST: Array<string> = [];
 
@@ -91,6 +92,7 @@ export default defineConfig({
   cacheDir: forkViteCacheDir(import.meta.url)!,
   run: {
     cache: taskCacheConfig,
+    tasks: cachedTestTasks(process.env.T3_CACHED_TESTS),
   },
   resolve: {
     alias: {

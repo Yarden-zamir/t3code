@@ -67,20 +67,6 @@ export function forkCommandReleasedQueue(
   );
 }
 
-/**
- * Whether a message into a delegated child can become a follow-up task that the parent hears back
- * from: a person or the parent writing, or a child wake (background command, native subagent,
- * nested task that finished or asked, restart notice). Monitor updates do not count. When
- * pingdotgg/t3code#23542 merges, use its `mayStartSubagentFollowup` and keep the delegated case.
- */
-export function forkMayStartSubagentFollowup(command: MessageDispatch): boolean {
-  if (command.scheduledTaskId !== undefined || command.restartContinuationOfRunId !== undefined)
-    return false;
-  if (command.delegatedCompletion !== undefined) return true;
-  if (command.notification !== undefined) return command.notification.source.kind !== "monitor";
-  return command.createdBy === "user" || command.creationSource === "mcp";
-}
-
 /** A wake that the child started itself, not a message that someone sent. */
 export function forkIsChildWake(command: MessageDispatch): boolean {
   return command.notification !== undefined || command.delegatedCompletion !== undefined;

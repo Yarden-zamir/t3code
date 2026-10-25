@@ -129,6 +129,7 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } f
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { useThreadHasUnsentDraft } from "../../composerDraftStore";
+import { useClientSettings } from "../../hooks/useSettings";
 
 // The fields thread rows show. Provider status pushes refresh `checkedAt`,
 // status and auth on every provider; leaving those out keeps each
@@ -215,7 +216,7 @@ function SidebarProviderStack(props: {
       acpRegistryIconUrl={currentEntry.acpRegistryIconUrl}
       showBadge={showInstanceBadge}
       size="compact"
-      iconClassName="opacity-60"
+      iconClassName="opacity-60 redesign:opacity-50 redesign:grayscale"
     />
   );
   if (stack.length === 1) {
@@ -664,6 +665,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     wokeAtDate !== null &&
     (lastVisitedDate === null || lastVisitedDate < wokeAtDate) &&
     thread.settledOverride !== "settled";
+  const projectIconColors = useClientSettings((s) => s.sidebarProjectIconColors);
   const shouldRecede = shouldRecedeSidebarThread({
     status,
     isUnread,
@@ -676,7 +678,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       ? {
           label: thread.goal?.status === "active" ? "Goal" : "Working",
           icon: "working" as const,
-          className: "text-info",
+          className: "text-info-foreground",
         }
       : status === "waiting"
         ? {
@@ -706,25 +708,25 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 ? {
                     label: "Limited",
                     icon: "failed" as const,
-                    className: "text-warning",
+                    className: "text-warning-foreground",
                   }
                 : status === "failed"
                   ? {
                       label: "Failed",
                       icon: "failed" as const,
-                      className: "text-error",
+                      className: "text-error-foreground",
                     }
                   : isWoke
                     ? {
                         label: "Woke",
                         icon: "woke" as const,
-                        className: "text-warning",
+                        className: "text-warning-foreground",
                       }
                     : isUnread
                       ? {
                           label: "Done",
                           icon: "done" as const,
-                          className: "text-success",
+                          className: "text-success-foreground",
                         }
                       : null;
   const isWokeStatus = topStatus?.icon === "woke";
@@ -914,11 +916,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const rowSurfaceClassName = cn(
     THREAD_CARD_SURFACE_CLASS,
-    variantAction === "unsettle" && "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70",
+    variantAction === "unsettle" &&
+      !props.isActive &&
+      "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70",
     props.isActive
       ? THREAD_CARD_ACTIVE_CLASS
       : isSelected || props.sweepAction !== null
-        ? "bg-sidebar-row-selected text-sidebar-foreground"
+        ? "bg-sidebar-row-selected text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
         : hasUnsentDraft
           ? cn(draftSurfaceClassName, "text-sidebar-foreground")
           : shouldRecede
@@ -996,12 +1000,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             ? cn(
                 "truncate",
                 shouldRecede
-                  ? "text-secondary-label"
+                  ? "text-secondary-label redesign:text-foreground/75 redesign:group-hover/sidebar-row:text-foreground redesign:group-focus-visible/sidebar-row:text-foreground"
                   : isUnread || isWoke || status === "input" || status === "request"
                     ? "text-foreground"
                     : status === "failed"
                       ? "text-foreground/95"
-                      : "text-foreground/90",
+                      : "text-foreground/90 redesign:text-foreground",
               )
             : cn(
                 "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
@@ -1328,7 +1332,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           className={cn(
             // Mouse clicks leave Settle focused; focus-within would pin controls over
             // the status label after the pointer leaves. Use focus-visible instead.
-            "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
+            "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
             snoozeMenuOpen && "pointer-events-auto static opacity-100",
           )}
         >
@@ -1384,7 +1388,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     </span>
   );
   const favicon = props.project ? (
-    <ProjectFavicon project={props.project} className="size-4 shrink-0" />
+    <ProjectFavicon
+      project={props.project}
+      className={cn(
+        "size-4 shrink-0",
+        // Repeated brand colors outshout titles; color returns on the row in focus.
+        !props.isActive &&
+          !projectIconColors &&
+          "redesign:opacity-60 redesign:grayscale redesign:group-focus-visible/sidebar-row:opacity-100 redesign:group-focus-visible/sidebar-row:grayscale-0 redesign:group-any-hover/sidebar-row:opacity-100 redesign:group-any-hover/sidebar-row:grayscale-0",
+      )}
+    />
   ) : null;
   const sweepDestination = props.sweepAction !== null ? dragDestination : null;
   const titleLine = (
@@ -1407,9 +1420,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       <EnvironmentMachineIcon
         aria-hidden
         kind={props.environmentMachine}
-        className="size-3 shrink-0 text-muted-foreground/40"
+        className="size-3 shrink-0 text-muted-foreground/40 redesign:text-inherit"
       />
-      <span className="min-w-0 flex-1 truncate text-muted-foreground/40">
+      <span className="min-w-0 flex-1 truncate text-muted-foreground/40 redesign:text-inherit">
         {props.scratchMachineLabel}
       </span>
     </>

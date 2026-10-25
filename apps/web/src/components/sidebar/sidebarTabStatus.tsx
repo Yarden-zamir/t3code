@@ -16,15 +16,15 @@ export interface SidebarTabStatus {
 }
 
 const TAB_STATUS: Record<SidebarV2TopStatusKind, Omit<SidebarTabStatus, "kind" | "slot">> = {
-  working: { label: "Working", className: "text-info" },
+  working: { label: "Working", className: "text-info-foreground" },
   waiting: { label: "Waiting", className: "text-muted-foreground" },
   approval: { label: "Approval", className: "text-warning-foreground" },
   input: { label: "Input", className: "text-indigo-600 dark:text-indigo-300" },
   request: { label: "Request", className: "text-guest-foreground" },
-  limited: { label: "Limited", className: "text-warning" },
-  failed: { label: "Failed", className: "text-error" },
-  woke: { label: "Woke", className: "text-warning" },
-  done: { label: "Done", className: "text-success" },
+  limited: { label: "Limited", className: "text-warning-foreground" },
+  failed: { label: "Failed", className: "text-error-foreground" },
+  woke: { label: "Woke", className: "text-warning-foreground" },
+  done: { label: "Done", className: "text-success-foreground" },
 };
 
 export const sidebarTabStatus = (kind: SidebarV2TopStatusKind): SidebarTabStatus => ({
