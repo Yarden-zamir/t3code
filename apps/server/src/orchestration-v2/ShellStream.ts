@@ -15,6 +15,7 @@ import type {
 import {
   isLiveSubagentShell,
   isOlderSettledThreadShell,
+  isTerminalThread,
   OrchestrationProjectShell as ProjectShellSchema,
   OrchestrationV2ThreadShell as ThreadShellSchema,
 } from "@t3tools/contracts";
@@ -155,7 +156,9 @@ export function omitOlderSettledShells(input: {
       thread.pinnedAt != null ||
       (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs) ||
       isLiveSubagentShell(thread) ||
-      ancestorIds.has(thread.id)
+      ancestorIds.has(thread.id) ||
+      // Fork: a settled terminal thread can still run a program, whose notices need its row.
+      isTerminalThread(thread)
     );
   });
   return {
