@@ -19,13 +19,19 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
   ])("finds the newest %s release behind a full page of nightlies", async (channel, version) => {
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-install-index-"));
     const target = NodePath.join(root, "home/runtime/versions", version);
+    const source = await NodeFSP.readFile(
+      NodePath.resolve(import.meta.dirname, "install.sh"),
+      "utf8",
+    );
+    // Fork: the installer names the fork repository, so the fixture serves whichever it names.
+    const repo = /^repo="([^"]+)"$/m.exec(source)?.[1];
+    if (repo === undefined) throw new Error("install.sh names no repo");
     const server = NodeHttp.createServer((request, response) => {
       const url = new URL(request.url ?? "/", "http://fixture");
       const body =
-        url.pathname === "/pingdotgg/t3code/releases/latest" &&
-        request.headers.accept === "application/json"
+        url.pathname === `/${repo}/releases/latest` && request.headers.accept === "application/json"
           ? { tag_name: "v1.2.3" }
-          : url.pathname === "/repos/pingdotgg/t3code/releases"
+          : url.pathname === `/repos/${repo}/releases`
             ? { "1": nightlies, "2": [{ tag_name: `v${version}` }, { tag_name: "v1.2.3" }] }[
                 url.searchParams.get("page") ?? ""
               ]
@@ -42,10 +48,6 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
       const address = server.address();
       if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
       const origin = `http://127.0.0.1:${address.port}`;
-      const source = await NodeFSP.readFile(
-        NodePath.resolve(import.meta.dirname, "install.sh"),
-        "utf8",
-      );
       const installer = NodePath.join(root, "install.sh");
       await NodeFSP.writeFile(installer, source.replace(/https:\/\/(api\.)?github\.com/g, origin));
       const { code, output } = await new Promise<{ code: number | null; output: string }>(
