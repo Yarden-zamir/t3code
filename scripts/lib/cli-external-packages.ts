@@ -61,19 +61,17 @@ export function findInlinedExternalPackages(source: string): {
   readonly inlined: ReadonlyArray<string>;
   readonly inlinedPackages: ReadonlyArray<string>;
 } {
-  // Rolldown's default `attachDebugInfo: "simple"` starts each inlined module with a `// <module id>` line.
+  // Rolldown marks each inlined module with a `//#region <path>` line; newer
+  // releases (vite-plus 1.4) emit a bare `// <path>` line instead.
+  const regionPattern = /^\/\/(?:#region)?[ \t]+(\S+)[ \t]*$/gm;
   const packagePattern = /node_modules\/((?:@[^/\s]+\/)?[^/\s]+)\//g;
 
   let regionCount = 0;
   const inlined = new Set<string>();
   const inlinedPackages = new Set<string>();
-  for (const line of source.split("\n")) {
-    if (!line.startsWith("// ")) continue;
-    const regionPath = line.slice("// ".length).trimEnd();
-    if (!regionPath.includes("/") || regionPath.includes(" ") || regionPath.includes("\t")) {
-      continue;
-    }
+  for (const region of source.matchAll(regionPattern)) {
     regionCount += 1;
+    const regionPath = region[1] ?? "";
     for (const candidate of regionPath.matchAll(packagePattern)) {
       const name = candidate[1];
       if (name === undefined || name === ".pnpm") continue;

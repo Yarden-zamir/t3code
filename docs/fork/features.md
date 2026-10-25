@@ -607,7 +607,7 @@ Control tooltips show the keys of the control as chips, such as "Stash ⌘S", fo
 
 ### Find in settings
 
-On a Settings page, `mod+f` opens a find box in the header. The rows of that page that do not match hide, and a section without a match hides with its header. Enter jumps to the first match. Escape or another page closes the box and shows all rows again.
+On a Settings page, `mod+f` opens a find box in the header. The rows of that page that do not match hide, and a section without a match hides with its header. Enter jumps to the first match. Escape in the box or another page closes the box and shows all rows again. Escape elsewhere closes Settings.
 
 - **Setting:** client setting `settingsFind` (off by default, because it takes `mod+f` from the search of all settings, which keeps `/`). Settings > Keybindings > Keyboard > "Find in settings". The key is the keybinding command `settings.find`, with the `when` condition `settingsPageOpen`. Rebind it in Settings > Keybindings. While the box can open, the command palette has "Find in settings".
 - **Works on:** web, desktop. On the list pages Archive, Scheduled tasks, Projects and Open source licenses, `mod+f` stays with the search of all settings. The mobile app has no settings search, so this does not apply there.
