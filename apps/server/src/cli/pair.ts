@@ -146,7 +146,11 @@ export class ServePortOccupiedError extends Schema.TaggedError<ServePortOccupied
 
 // Fork: a loopback server with tunnel pairing on pairs through its tunnel URL.
 export const resolveDirectPairingBaseUrl = (state: PersistedServerRuntimeState): string =>
-  state.devUrl ?? state.tunnelPairingUrl ?? resolveHeadlessConnectionString(state.host, state.port);
+  state.devUrl ??
+  state.tunnelPairingUrl ??
+  resolveHeadlessConnectionString(state.host, state.port, {
+    privateNetworkOnly: state.privateNetworkOnly,
+  });
 
 export class DevServerNotProxiableError extends Schema.TaggedError<DevServerNotProxiableError>()(
   "DevServerNotProxiableError",
@@ -532,6 +536,10 @@ export const pairCommand = Command.make("pair", {
         if (isLoopbackHost(new URL(pairingBaseUrl).hostname)) {
           notes.push(
             "This URL is only reachable from this machine. Re-run with --tailscale, or restart the server with a reachable --host.",
+          );
+        } else if (target.state.privateNetworkOnly) {
+          notes.push(
+            "This URL works only from this machine's local network. From elsewhere, re-run with --tailscale or use T3 Connect.",
           );
         }
         if (target.variant === "dev" && target.state.devUrl === undefined) {

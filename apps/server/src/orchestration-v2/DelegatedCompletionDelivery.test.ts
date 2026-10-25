@@ -2036,7 +2036,7 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
         completionWake: "always",
         continuationPending: true,
         runStatus: "completed",
-        lostWork: [{ kind: "monitor", label: "Gate attempt 9" }],
+        lostWork: [{ kind: "monitor", label: "Gate attempt 9", awaited: true }],
         now,
       });
       yield* orchestrator.recoverDelegatedTasks;
