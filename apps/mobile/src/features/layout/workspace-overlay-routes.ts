@@ -29,6 +29,8 @@ const LISTED_OVERLAY_ROUTES: ReadonlySet<string> = new Set([
   "SettingsWaitlist",
   "ThreadAgents",
   "ThreadBackgroundWork",
+  // Fork: the new terminal thread sheet.
+  "ForkNewTerminalThread",
   "ThreadPullRequests",
   "ThreadQueue",
   "ThreadReviewComment",

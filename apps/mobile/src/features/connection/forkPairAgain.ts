@@ -7,15 +7,13 @@
 import { useNavigation } from "@react-navigation/native";
 import { useCallback } from "react";
 
+import { openSettings } from "../settings/settings-navigation";
+
 /** Opens Add environment, where a new pairing link or invite pairs the environment again. */
 export function usePairAgain(): () => void {
   const navigation = useNavigation();
   return useCallback(
-    () =>
-      navigation.navigate("SettingsSheet", {
-        screen: "SettingsContent",
-        params: { screen: "SettingsEnvironmentNew" },
-      }),
+    () => openSettings(navigation, "SettingsEnvironmentNew"),
     [navigation],
   );
 }
