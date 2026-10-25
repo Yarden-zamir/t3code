@@ -30,7 +30,6 @@ import {
   createPastedTextComposerAttachment,
   pickComposerFiles,
   type DraftComposerAttachment,
-  type DraftComposerFileAttachment,
 } from "../../lib/composerImages";
 import { withCameraLauncher } from "../../lib/forkComposerCamera";
 import { beginForegroundHandoff } from "../../lib/foreground-handoff";
@@ -241,7 +240,7 @@ function keepUnsentDraft(draft: Omit<UnsentDraft, "savedAt"> | null): void {
 async function prepareAssistantMessage(input: {
   readonly text: string;
   readonly imageUris: ReadonlyArray<string>;
-  readonly files: ReadonlyArray<DraftComposerFileAttachment>;
+  readonly files: ReadonlyArray<DraftComposerAttachment>;
   readonly screenText: string | null;
   /** Undefined when the server takes no file uploads. */
   readonly maxUploadBytes: number | undefined;
@@ -310,7 +309,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
   const [addedPhotos, setAddedPhotos] = useState<
     ReadonlyArray<{ readonly id: string; readonly uri: string }>
   >([]);
-  const [addedFiles, setAddedFiles] = useState<ReadonlyArray<DraftComposerFileAttachment>>([]);
+  const [addedFiles, setAddedFiles] = useState<ReadonlyArray<DraftComposerAttachment>>([]);
   // Pills the settings leave off can still be asked for once from "+".
   const [askedFor, setAskedFor] = useState({ recentPhoto: false, location: false });
   const [recentPhoto, setRecentPhoto] = useState<RecentPhoto | null>(null);
