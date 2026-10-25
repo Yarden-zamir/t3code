@@ -95,6 +95,14 @@ vi.mock("../components/ui/AppText", () => ({
   AppText: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
 }));
 vi.mock("../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+// Fork: the feed's thread links, message links and read-aloud button load native modules.
+vi.mock("../components/ui/Toast", () => ({ Toast: () => null }));
+vi.mock("../features/read-aloud/ReadAloudButton", () => ({ ReadAloudButton: () => null }));
+vi.mock("../features/threads/ForkMessageCopyButton", () => ({ ForkMessageCopyButton: () => null }));
+vi.mock("../connection/catalog", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return { environmentCatalog: { catalogValueAtom: Atom.make({ entries: new Map() }) } };
+});
 vi.mock("../components/ui/Button", () => ({
   Button: (props: { label: string; onPress(): void; disabled?: boolean }) =>
     createElement("button", { onClick: props.onPress, disabled: props.disabled }, props.label),
@@ -165,6 +173,8 @@ vi.mock("../state/threads", () => ({ environmentThreadShells: {}, threadEnvironm
 vi.mock("../state/entities", () => ({
   useLiveThreadLinkLabels: (text: string) => text,
   useThreadChipIcons: () => new Map(),
+  // Fork: the feed's thread and message links read their settings from it.
+  useEnvironmentServerConfig: () => null,
 }));
 vi.mock("../state/use-thread-selection", () => ({
   useThreadSelection: () => ({ selectedThread: null }),
