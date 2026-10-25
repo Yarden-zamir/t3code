@@ -1,12 +1,23 @@
 import type { KeybindingCommand, ScopedThreadRef } from "@t3tools/contracts";
-import { formatThreadLinkHref } from "@t3tools/shared/threadLinks";
+import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { Link } from "lucide";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { readThreadShell } from "../../state/entities";
 import { runRegisteredFocusLevelCommand } from "../focusLevels/useFocusLevelShortcuts";
 import { toastManager } from "../ui/toast";
 import { useForkMessageLinks } from "./ForkMessageLinkTarget";
 import { MessageCopyButton } from "./MessageCopyButton";
+
+/**
+ * Fork: a Markdown link to a message, labelled by the thread title, so a paste in chat is a chip.
+ * Known limit: it reads the title without a subscription, so a button keeps an old title until its
+ * row renders again. Revisit if renamed threads copy stale labels in practice.
+ */
+function messageLinkMarkdown(threadRef: ScopedThreadRef, messageId: string): string {
+  const title = readThreadShell(threadRef)?.title ?? "";
+  return formatThreadLink(threadRef.threadId, title, messageId);
+}
 
 export function ForkCopyMessageLink(props: {
   readonly threadRef: ScopedThreadRef | null;
@@ -17,7 +28,7 @@ export function ForkCopyMessageLink(props: {
   if (!enabled || !props.threadRef) return null;
   const button = (
     <MessageCopyButton
-      text={formatThreadLinkHref(props.threadRef.threadId, props.messageId)}
+      text={messageLinkMarkdown(props.threadRef, props.messageId)}
       label="Copy message link"
       icon={Link}
       variant="ghost"
@@ -46,7 +57,7 @@ export function useForkCopyMessageLink(threadRef: ScopedThreadRef | null) {
   });
   return (messageId: string | undefined) => {
     if (!enabled || !threadRef || !messageId) return false;
-    copyToClipboard(formatThreadLinkHref(threadRef.threadId, messageId));
+    copyToClipboard(messageLinkMarkdown(threadRef, messageId));
     return true;
   };
 }

@@ -54,7 +54,12 @@ import {
 } from "@t3tools/contracts";
 import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
-import { parseThreadLinkHref, resolveThreadLinkRef } from "@t3tools/shared/threadLinks";
+import {
+  formatThreadLink,
+  parseThreadLinkHref,
+  resolveThreadLinkRef,
+} from "@t3tools/shared/threadLinks";
+import { threadLinkMessageId } from "@t3tools/shared/threadMessageLinks";
 import {
   parseComposerContextHref,
   collectComposerContextReferences,
@@ -2494,9 +2499,15 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         else if (actionId === "copy-skill") copyTextWithHaptic(`$${skill.name}`);
         return;
       }
-      if (resolveLinkedThread(href)) {
+      const thread = resolveLinkedThread(href);
+      if (thread) {
         if (actionId === "open-thread") onMarkdownLinkPress(href);
-        else if (actionId === "copy-thread-link") copyTextWithHaptic(href);
+        else if (actionId === "copy-thread-link") {
+          // Fork: a Markdown link, so a paste in chat is a chip, the same as "Copy message link".
+          const title = appAtomRegistry.get(environmentThreadShells.threadShellAtom(thread))?.title;
+          const messageId = threadLinkMessageId(href) ?? undefined;
+          copyTextWithHaptic(formatThreadLink(thread.threadId, title ?? "", messageId));
+        }
         return;
       }
       const target = resolveFileChipTarget(href, props.workspaceRoot);
