@@ -231,7 +231,7 @@ thread you opened last, open with the keyboard or with the speech dialog, and st
 the thread right after you speak. **After sending** closes the panel, opens the
 thread, or shows the reply in the panel so you can answer from there. The panel can
 also read the first reply aloud. **Edge glow** sets how long the glow around the
-screen stays. It also sets the project of new threads.
+screen stays. **Settings → Voice** also sets the project of new threads.
 T3 Code replaces your current assistant while it is selected. To go back, pick the
 other assistant on the same Android page.
 

@@ -402,10 +402,9 @@ export function ImageContextEditor(props: {
     },
     onResponderRelease: () => {
       setCropDrag(null);
-      setCurrent((points) => {
-        if (points && points.length >= 4) setStrokes((done) => [...done, points]);
-        return null;
-      });
+      const finished = current;
+      if (finished && finished.length >= 4) setStrokes((done) => [...done, finished]);
+      setCurrent(null);
     },
   };
   const changed = strokes.length > 0 || !isFullCrop(crop);
@@ -617,7 +616,11 @@ export function OpenInAppHandle(props: {
         accessibilityRole="button"
         accessibilityLabel={props.label}
         accessibilityState={{ disabled: props.disabled }}
-        onAccessibilityTap={props.disabled ? undefined : props.onOpen}
+        // TalkBack sends a double tap as the activate action, not as a touch.
+        accessibilityActions={props.disabled ? undefined : [{ name: "activate" }]}
+        onAccessibilityAction={(event) => {
+          if (!props.disabled && event.nativeEvent.actionName === "activate") props.onOpen();
+        }}
         className={cn("h-6 w-14 items-center justify-center", props.disabled ? "opacity-40" : "")}
         style={{ transform: [{ translateY: offset }] }}
         {...responder}

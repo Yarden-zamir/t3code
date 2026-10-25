@@ -662,7 +662,12 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
       connected: environment.connectionState === "connected",
     }));
   const targetMachine = machines.find((machine) => machine.environmentId === targetEnvironmentId);
-  const ready = !busy && (targetThread !== null || (selectedProject !== null && draftKey !== null));
+  // Until the conversation thread is listed, a reply waits: a new thread target would split it.
+  const conversationPending = conversationRef !== null && targetThread === null;
+  const ready =
+    !busy &&
+    !conversationPending &&
+    (targetThread !== null || (selectedProject !== null && draftKey !== null));
   const hasContent = (messageText: string) =>
     joinMessageText(messageText, inlineContext).length > 0 ||
     attachedImageUris.length > 0 ||
@@ -757,7 +762,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
    * thread opens its draft screen with it.
    */
   const openInApp = async () => {
-    if (busy) return;
+    if (busy || conversationPending) return;
     const content = hasContent(text) ? await settlePromise(() => prepare(text)) : null;
     if (content && AsyncResult.isFailure(content)) {
       return fail(content, "The context could not be attached.");
@@ -964,7 +969,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
         >
           <OpenInAppHandle
             label={targetThread ? "Open the thread in the app" : "Continue in the app"}
-            disabled={busy || (targetThread === null && draftKey === null)}
+            disabled={busy || conversationPending || (targetThread === null && draftKey === null)}
             onOpen={() => void openInApp()}
           />
           <View className="flex-row items-center justify-between gap-2">

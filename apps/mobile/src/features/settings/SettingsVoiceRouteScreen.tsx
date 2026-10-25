@@ -186,7 +186,7 @@ export function SettingsVoiceRouteScreen() {
               />
               <SettingsSwitchRow
                 label="Read the first reply aloud"
-                subtitle="The panel stays open until it read the agent's reply aloud."
+                subtitle="The panel stays open until it reads the agent's reply aloud."
                 value={voice.assistantSpeakFirstReply}
                 onValueChange={(value) => updateVoice({ assistantSpeakFirstReply: value })}
               />
