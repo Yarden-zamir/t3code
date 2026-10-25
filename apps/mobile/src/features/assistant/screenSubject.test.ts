@@ -105,6 +105,9 @@ describe("screenSubject", () => {
     expect(screenSubject(report({ appLabel: "App", structuredData: "not json" })).type).toBe(
       "screen",
     );
+    expect(screenSubject(report({ appLabel: "App", structuredData: '{"@videoId":""}' })).type).toBe(
+      "screen",
+    );
   });
 });
 
@@ -112,6 +115,9 @@ describe("isoDurationSeconds", () => {
   it("reads hours, minutes and fractional seconds, and rejects other text", () => {
     expect(isoDurationSeconds("PT1H6M52.5S")).toBe(4012.5);
     expect(isoDurationSeconds("PT37M49S")).toBe(2269);
+    expect(isoDurationSeconds("PT0S")).toBe(0);
+    expect(isoDurationSeconds("PT")).toBeNull();
+    expect(isoDurationSeconds(`PT${"9".repeat(400)}S`)).toBeNull();
     expect(isoDurationSeconds("P1D")).toBeNull();
     expect(isoDurationSeconds("PT5X")).toBeNull();
     expect(isoDurationSeconds(42)).toBeNull();

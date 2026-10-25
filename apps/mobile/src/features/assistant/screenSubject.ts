@@ -86,7 +86,7 @@ export function isoDurationSeconds(value: unknown): number | null {
     else return null;
     number = "";
   }
-  return number === "" ? seconds : null;
+  return number === "" && value.length > 2 && Number.isFinite(seconds) ? seconds : null;
 }
 
 /** "6:52" or "1:06:52". */
@@ -105,7 +105,8 @@ export function screenSubject(report: ScreenReport): ScreenSubject {
   const app = report.appLabel ?? report.sourcePackage ?? "this app";
   const data = parseObject(report.structuredData);
   const host = webHost(report.webUri);
-  const videoId = typeof data?.["@videoId"] === "string" ? data["@videoId"] : null;
+  const reportedId = data?.["@videoId"];
+  const videoId = typeof reportedId === "string" && reportedId.trim() ? reportedId : null;
   if (videoId !== null || (host !== null && isOnHost(host, VIDEO_HOSTS))) {
     const positionSeconds = isoDurationSeconds(data?.["@videoTimeStamp"]);
     return {
