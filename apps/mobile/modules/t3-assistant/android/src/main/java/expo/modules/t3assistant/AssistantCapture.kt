@@ -27,6 +27,15 @@ object AssistantCapture {
     /** Text and an image that another app shared to "Ask T3 Code". */
     val sharedText: String? = null,
     val sharedImageUri: String? = null,
+    /** What the app reports about its screen, to name it. */
+    val appLabel: String? = null,
+    val activityClass: String? = null,
+    val structuredData: String? = null,
+    val clipMimeType: String? = null,
+    val clipLabel: String? = null,
+    val isHomeApp: Boolean = false,
+    /** The whole web page, from Chrome. It arrives after the screen text. */
+    val pageText: String? = null,
   )
 
   private val main = Handler(Looper.getMainLooper())
@@ -72,8 +81,16 @@ object AssistantCapture {
     webUri: String?,
     screenText: String?,
     selectedText: String?,
+    report: ScreenReport,
   ) = update {
     it.copy(
+      // Android calls once per window; the first window that reports a field keeps it.
+      appLabel = it.appLabel ?: report.appLabel,
+      activityClass = it.activityClass ?: report.activityClass,
+      structuredData = it.structuredData ?: report.structuredData,
+      clipMimeType = it.clipMimeType ?: report.clipMimeType,
+      clipLabel = it.clipLabel ?: report.clipLabel,
+      isHomeApp = it.isHomeApp || report.isHomeApp,
       sourcePackage = it.sourcePackage ?: sourcePackage,
       webUri = it.webUri ?: webUri,
       selectedText = it.selectedText ?: selectedText,
@@ -82,6 +99,20 @@ object AssistantCapture {
         .ifEmpty { null },
     )
   }
+
+  /** A late read for an earlier press is dropped. */
+  fun setPageText(pressId: Long, text: String) = update {
+    if (it.id == pressId) it.copy(pageText = text) else it
+  }
+
+  data class ScreenReport(
+    val appLabel: String?,
+    val activityClass: String?,
+    val structuredData: String?,
+    val clipMimeType: String?,
+    val clipLabel: String?,
+    val isHomeApp: Boolean,
+  )
 
   fun setScreenshot(uri: String, width: Int, height: Int) = update {
     it.copy(screenshotUri = uri, screenshotWidth = width, screenshotHeight = height)

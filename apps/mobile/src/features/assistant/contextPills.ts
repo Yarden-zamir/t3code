@@ -120,9 +120,9 @@ export function inlineContextText(input: {
     .join("\n\n");
 }
 
-/** The screen text file, headed by the app it came from. */
-export function screenTextDocument(sourcePackage: string | null, text: string): string {
-  return sourcePackage ? `App: ${sourcePackage}\n\n${text}` : text;
+/** The screen text file, headed by what the screen shows. */
+export function screenTextDocument(header: string | null, text: string): string {
+  return header ? `${header}\n\n${text}` : text;
 }
 
 export function joinMessageText(userText: string, contextText: string): string {

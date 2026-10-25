@@ -222,6 +222,10 @@ location. Tap a pill to attach it or leave it out. Hold a pill to read and edit 
 text, or to crop or draw on an image. The clipboard, the photo and the location are
 left out until you tap them, and password fields are never included. The **+** pill
 adds photos, a new photo from the camera, files, your newest photo, or your location.
+The screen text pill names what is on screen, such as "Video · YouTube · 6:52",
+"Chat · WhatsApp", or "Page · theverge.com". On a Chrome page it holds the whole
+page, and on a video the link opens at the moment you were watching. On the home
+screen, the screenshot and the screen text are left out until you tap them.
 
 If you close the panel without sending, your text comes back when you open it
 again within a minute.
