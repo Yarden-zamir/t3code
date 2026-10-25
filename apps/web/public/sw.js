@@ -1,9 +1,7 @@
-// Fork: the service worker of the installed web app (client setting `installedAppEnabled`,
-// registered by `src/installedApp.ts`). It caches only the offline page. Pages and build files
-// come from the network and the HTTP cache, so a new server build shows at once and a Cloudflare
-// Access redirect reaches the browser. RPC and WebSocket traffic never passes through it.
-// `src/webPush.ts` also registers this file once per environment, with the scope
-// `/push/<environmentId>/`, to receive the Web Push messages of that environment's server.
+// Fork: the installed web app's service worker (`installedAppEnabled`, `src/installedApp.ts`).
+// It caches only the offline page, so new builds and Cloudflare Access redirects reach the page.
+// RPC and WebSocket traffic never passes through it. `src/webPush.ts` registers it per
+// environment with the scope `/push/<environmentId>/` for that server's Web Push messages.
 
 const CACHE = "t3code-offline-v1";
 const OFFLINE_PAGE = "/offline.html";
