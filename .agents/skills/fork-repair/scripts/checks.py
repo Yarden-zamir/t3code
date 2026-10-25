@@ -24,6 +24,11 @@ def lintable(paths: list[str]) -> list[str]:
     return sorted({path for path in paths if path.endswith(LINT_SUFFIXES)})
 
 
+def lint_errors(log_text: str) -> list[str]:
+    """The error lines of a `vp lint` log; its hundreds of warnings would hide them."""
+    return [line for line in log_text.splitlines() if ": error" in line]
+
+
 def steps(vp: str, branch: str, fork_files: list[str]) -> list[tuple[str, list[str]]]:
     result = [
         ("typecheck", [vp, "run", "typecheck"]),
@@ -55,7 +60,8 @@ def main() -> None:
         print(f"{'pass' if code == 0 else f'fail (exit {code})':<16} {name:<12} {log}")
         if code != 0:
             failed.append(name)
-            print(common.tail(log, args.lines))
+            errors = lint_errors(log.read_text()) if name == "lint" else []
+            print("\n".join(errors) if errors else common.tail(log, args.lines))
     if failed:
         print(f"Failed: {', '.join(failed)}")
         sys.exit(1)

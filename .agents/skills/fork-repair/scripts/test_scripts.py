@@ -132,3 +132,11 @@ def test_sync_branches_lint_fork_files_and_fix_branches_run_fork_check():
     fix = [name for name, _ in checks.steps("vp", "fork-fix/x", ["a.ts"])]
     assert sync[-1] == "lint" and "fork:check" not in sync
     assert fix[-1] == "fork:check" and "lint" not in fix
+
+
+def test_lint_errors_keep_only_error_lines():
+    log = "a.ts:1:1: warning x(y): noise\nb.ts:2:3: error: Identifier `x` has already been declared\nc.ts:4:5: error t3code(z): cut it"
+    assert checks.lint_errors(log) == [
+        "b.ts:2:3: error: Identifier `x` has already been declared",
+        "c.ts:4:5: error t3code(z): cut it",
+    ]
