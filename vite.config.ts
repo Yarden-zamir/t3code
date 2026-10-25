@@ -290,6 +290,16 @@ export default defineConfig({
         rules: { "t3code/no-polling-loop-in-tests": "warn" },
       },
       {
+        // Fork: adopted heads keep their own comments, some over the 4-line cap. Remove a file
+        // here when its head or upstream main shortens them.
+        files: [
+          "apps/server/src/mcp/linkOrigin.ts",
+          "apps/server/src/peer/PeerForwarding.ts",
+          "apps/server/src/peer/RemoteDelegation.ts",
+        ],
+        rules: { "t3code/no-low-value-comments": "warn" },
+      },
+      {
         files: ["apps/**/src/**", "packages/**/src/**"],
         excludeFiles: DOM_TEST_ENVIRONMENT_ALLOWLIST,
         rules: { "t3code/no-dom-test-environment": "error" },

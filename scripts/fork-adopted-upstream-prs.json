@@ -27,7 +27,7 @@
     "headRef": "t3code/peer/forwarding",
     "mergedHead": "641ee467aa5ceb9126f7c52e2b8b002bf258e0a4",
     "reason": "Linked environments stack. Agents call T3 tools on another machine with its environmentId (MM-1921).",
-    "forkRules": "Fork runs skip PeerForwarding.test.ts until upstream main has the link migrations. See apps/server/src/fork/excludedUpstreamTests.ts. Keep the provide of PeerForwarding.layer in server.ts."
+    "forkRules": "Fork runs skip PeerForwarding.test.ts until upstream main has the link migrations. See apps/server/src/fork/excludedUpstreamTests.ts. Keep the provide of PeerForwarding.layer in server.ts. vite.config.ts keeps t3code/no-low-value-comments at warn for PeerForwarding.ts until its comments fit the 4-line cap."
   },
   {
     "number": 16695,
@@ -35,7 +35,7 @@
     "headRef": "t3code/peer/link-origin",
     "mergedHead": "e7be3191310fe8c8ee8493338a2e98665a999d4d",
     "reason": "Linked environments stack. Work that another machine starts stays within the access of its arrow (MM-1921).",
-    "forkRules": "Migration 069_PeerLinkFence stays out of Migrations.ts until upstream main has it. See docs/fork/operations.md \"Migrations\"."
+    "forkRules": "Migration 069_PeerLinkFence stays out of Migrations.ts until upstream main has it. See docs/fork/operations.md \"Migrations\". vite.config.ts keeps t3code/no-low-value-comments at warn for linkOrigin.ts until its comments fit the 4-line cap."
   },
   {
     "number": 16698,
@@ -50,6 +50,6 @@
     "headRef": "t3code/peer/remote-delegate",
     "mergedHead": "70a2a7bdd25d1c3729a864517727914fc3b01d2b",
     "reason": "Top of the linked environments stack. delegate_task with target.environmentId runs on another machine (MM-1910).",
-    "forkRules": "Fork runs skip RemoteDelegation.test.ts until upstream main has the link migrations. See apps/server/src/fork/excludedUpstreamTests.ts. vite.config.ts keeps t3code/no-polling-loop-in-tests at warn for RemoteDelegation.test.ts until its polling loops are converted."
+    "forkRules": "Fork runs skip RemoteDelegation.test.ts until upstream main has the link migrations. See apps/server/src/fork/excludedUpstreamTests.ts. vite.config.ts keeps t3code/no-polling-loop-in-tests at warn for RemoteDelegation.test.ts until its polling loops are converted, and t3code/no-low-value-comments at warn for RemoteDelegation.ts until its comments fit the 4-line cap."
   }
 ]
