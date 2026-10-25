@@ -125,17 +125,18 @@ describe("sidebar tab assignments", () => {
     ).toEqual({ [sidebarTabThreadKey(conductor)]: DEFAULT_SIDEBAR_TAB_ID });
   });
 
-  it("prunes entries of gone threads only, also when the rules agree with an entry", () => {
-    const value = settings([monitors], {
+  it("prunes entries of a tab that cannot hold threads only", () => {
+    const value = settings([monitors, all], {
       [sidebarTabThreadKey(other)]: "monitors",
-      "environment-mac:deleted-thread": "monitors",
-      "environment-offline:thread": "monitors",
+      // Shells leave out older settled threads: a thread the client does not hold keeps its drag.
+      "environment-mac:older-settled-thread": "monitors",
       [sidebarTabThreadKey(conductor)]: "monitors",
+      "environment-mac:in-a-view": "all",
     });
     // The rules put Conductor in Monitors now, but a title or status can change: the drag holds.
-    expect(pruneSidebarTabAssignments(value, [conductor, other]).assignments).toEqual({
+    expect(pruneSidebarTabAssignments(value).assignments).toEqual({
       [sidebarTabThreadKey(other)]: "monitors",
-      "environment-offline:thread": "monitors",
+      "environment-mac:older-settled-thread": "monitors",
       [sidebarTabThreadKey(conductor)]: "monitors",
     });
   });

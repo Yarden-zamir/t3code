@@ -290,7 +290,7 @@ export function useSidebarTabs(input: {
   const update = (change: (current: SidebarTabs) => SidebarTabs) => {
     if (primaryEnvironmentId === null || !ready) return;
     const current = latestSettingsRef.current;
-    const next = pruneSidebarTabAssignments(change(current), liveThreads);
+    const next = pruneSidebarTabAssignments(change(current));
     if (JSON.stringify(next) === JSON.stringify(current)) return;
     latestSettingsRef.current = next;
     void persist({

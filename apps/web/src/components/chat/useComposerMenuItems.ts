@@ -30,7 +30,7 @@ import {
   type EnvironmentQueryTarget,
 } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
-import { useComposerPathSearch, useDebouncedValue } from "~/state/queries";
+import { useComposerPathSearch, useDebouncedValue, useThreadSearch } from "~/state/queries";
 import {
   matchesPullRequestQuery,
   rankPullRequestMatches,
@@ -96,6 +96,16 @@ export function useComposerMenuItems({
   // Fork: MM-1907. Threads of the machines that this machine's agent reads, named per machine.
   const readableThreadEnvironments = useReadableThreadEnvironments(
     isPathTrigger ? environmentId : null,
+  );
+  // Mounts older settled threads matching the mention, which shells may leave out.
+  useThreadSearch(
+    !isPathTrigger
+      ? []
+      : readableThreadEnvironments.length === 0
+        ? [environmentId]
+        : readableThreadEnvironments.map((environment) => environment.environmentId),
+    pathTriggerQuery,
+    { titlesOnly: true },
   );
   const workspaceEntries = useComposerPathSearch({
     environmentId,
