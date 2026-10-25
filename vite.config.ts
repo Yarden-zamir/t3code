@@ -294,8 +294,11 @@ export default defineConfig({
         // here when its head or upstream main shortens them.
         files: [
           "apps/server/src/mcp/linkOrigin.ts",
+          "apps/server/src/mcp/threadAccess.ts",
+          "apps/server/src/orchestration-v2/ThreadLaunchService.ts",
           "apps/server/src/peer/PeerForwarding.ts",
           "apps/server/src/peer/RemoteDelegation.ts",
+          "packages/contracts/src/orchestrationV2.ts",
         ],
         rules: { "t3code/no-low-value-comments": "warn" },
       },
