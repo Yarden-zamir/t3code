@@ -125,7 +125,7 @@ export interface PanelMenuItem {
 /** The list the "+" pill opens: every pill on the panel, then the ways to add more. */
 export function PanelMenu(props: { readonly items: ReadonlyArray<PanelMenuItem> }) {
   return (
-    <View>
+    <ScrollView className="max-h-80" keyboardShouldPersistTaps="handled">
       {props.items.map((item) => (
         <Pressable
           key={item.key}
@@ -144,7 +144,7 @@ export function PanelMenu(props: { readonly items: ReadonlyArray<PanelMenuItem> 
           ) : null}
         </Pressable>
       ))}
-    </View>
+    </ScrollView>
   );
 }
 
