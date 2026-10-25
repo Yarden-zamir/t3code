@@ -716,14 +716,19 @@ function ThreadRouteContent(
         launch: { cwd: launch.cwd, worktreePath: launch.worktreePath, env: { ...launch.env } },
       });
     }
+    const terminalRoute = {
+      environmentId: String(selectedThread.environmentId),
+      threadId: String(selectedThread.id),
+      terminalId: DEFAULT_TERMINAL_ID,
+    };
+    // The inspector has no terminal route, so the parent stack takes it: push keeps the parent thread.
     navigation.dispatch(
-      StackActions.replace("ThreadTerminal", {
-        environmentId: String(selectedThread.environmentId),
-        threadId: String(selectedThread.id),
-        terminalId: DEFAULT_TERMINAL_ID,
-      }),
+      props.inspectorPresentation
+        ? StackActions.push("ThreadTerminal", terminalRoute)
+        : StackActions.replace("ThreadTerminal", terminalRoute),
     );
   }, [
+    props.inspectorPresentation,
     canOperateTerminal,
     canReadTerminal,
     navigation,
