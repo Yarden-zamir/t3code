@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 import { CircleAlertIcon, CircleCheckIcon, MessageCircleQuestionIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 
+import { addThreadToast, closeThreadToasts } from "../forkInAppNotifications";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { showInstalledAppNotification } from "../installedApp";
 import { environmentShell } from "../state/shell";
@@ -43,6 +44,12 @@ export function ForkTerminalThreadNotifications(props: {
   });
   // The attention that each thread had last time; the first sight of a thread only records it.
   const seen = useRef<Map<string, string> | null>(null);
+
+  // Fork: `inAppNotificationClosesOnOpen` for agent and terminal threads of this environment.
+  useEffect(() => {
+    if (activeEnvironmentId !== environmentId || !activeThreadId) return;
+    closeThreadToasts(environmentId, activeThreadId as ThreadId);
+  }, [activeEnvironmentId, activeThreadId, environmentId]);
 
   useEffect(() => {
     if (sessions === null || threads === null) return;
@@ -127,19 +134,23 @@ function notifyTerminalThread(input: {
   }
   const focused = document.visibilityState === "visible" && document.hasFocus();
   if (input.inAppNotificationsEnabled && focused && !input.viewing) {
-    const toastId = toastManager.add({
-      type: toastType,
-      title,
-      description: threadTitle,
-      data: { hideCopyButton: true, leadingIcon: icon },
-      actionProps: {
-        children: "Open thread",
-        onClick: () => {
-          toastManager.close(toastId);
-          openThread();
+    const toastId = addThreadToast(
+      { environmentId, threadId },
+      input.outcome === "done" ? "completion" : "attention",
+      {
+        type: toastType,
+        title,
+        description: threadTitle,
+        data: { hideCopyButton: true, leadingIcon: icon },
+        actionProps: {
+          children: "Open thread",
+          onClick: () => {
+            if (toastId !== null) toastManager.close(toastId);
+            openThread();
+          },
         },
       },
-    });
+    );
     return;
   }
   if (

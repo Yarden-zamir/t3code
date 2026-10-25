@@ -1143,6 +1143,7 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        <Fork.ForkSettingsSlot place="general-in-app-notifications" />
         <SettingsRow
           {...searchableSetting("time-format")}
           description="System default follows your browser or OS clock preference."

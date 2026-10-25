@@ -21,6 +21,7 @@ export const FORK_SETTING_PLACES = {
   },
   "general-organization": { to: "/settings/general", section: "Organization" },
   "general-notifications": { to: "/settings/general", section: "Behavior" },
+  "general-in-app-notifications": { to: "/settings/general", section: "Behavior" },
   "general-behavior": { to: "/settings/general", section: "Behavior" },
   "general-projects-and-threads": { to: "/settings/general", section: "Projects & threads" },
   "general-about": { to: "/settings/general", section: "About" },
@@ -209,6 +210,15 @@ const FORK_SETTING_GROUPS = [
   {
     title: "Web app and look",
     entries: [
+      {
+        ids: [
+          "in-app-notification-seconds",
+          "in-app-notification-completions",
+          "in-app-notification-attention-stays",
+          "in-app-notification-closes-on-open",
+        ],
+        place: "general-in-app-notifications",
+      },
       { ids: ["installed-app"], place: "general-notifications" },
       { ids: ["web-push"], place: "general-notifications" },
       { ids: ["thread-card-layout"], place: "appearance-thread-cards" },

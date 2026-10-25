@@ -28,6 +28,7 @@ import {
 } from "./ForkSettingsRows";
 import { RestoreWorktreesSettingsRow, WorktreeArtifactSettingsRows } from "./ForkWorktreeSettings";
 import { GlobalScriptsSettingsRows } from "./GlobalScriptsSettings";
+import { InAppNotificationSettingsRows } from "./InAppNotificationSettingsRows";
 import { InstalledAppSettingsRow } from "./InstalledAppSettingsRow";
 import { KeybindingSyncSettingsRow } from "./KeybindingSyncSettingsRow";
 import { MachineMapSettingsRows } from "./MachineMapSettingsRows";
@@ -87,6 +88,7 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "access-change-notices": AccessChangeNoticesSettingsRow,
   "tunnel-pairing": TunnelPairingSettingsRow,
   "restart-reconnect-warning-grace": RestartReconnectWarningGraceSettingsRow,
+  "in-app-notification-seconds": InAppNotificationSettingsRows,
   "installed-app": InstalledAppSettingsRow,
   "web-push": WebPushSettingsRow,
   "fork-auto-update": ForkAutoUpdateSettingsRow,

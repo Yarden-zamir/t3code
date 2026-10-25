@@ -181,6 +181,30 @@ export const GLOBAL_SCRIPTS_ITEMS = [
 
 export const NOTIFICATION_ITEMS = [
   {
+    id: "in-app-notification-seconds",
+    title: "In-app notification time",
+    to: "/settings/general",
+    searchTerms: ["notification toast popup duration seconds how long timeout dismiss"],
+  },
+  {
+    id: "in-app-notification-completions",
+    title: "Notify when a thread finishes",
+    to: "/settings/general",
+    searchTerms: ["notification toast popup completion done finished quiet only attention"],
+  },
+  {
+    id: "in-app-notification-attention-stays",
+    title: "Keep notifications that need you",
+    to: "/settings/general",
+    searchTerms: ["notification toast popup sticky persistent input approval failure stay"],
+  },
+  {
+    id: "in-app-notification-closes-on-open",
+    title: "Close notifications of an opened thread",
+    to: "/settings/general",
+    searchTerms: ["notification toast popup dismiss clear open thread visited"],
+  },
+  {
     id: "installed-app",
     title: "Installed app",
     to: "/settings/general",

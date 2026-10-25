@@ -68,6 +68,16 @@ export const TooltipShortcutLimit = Schema.Int.check(
   Schema.isBetween({ minimum: MIN_TOOLTIP_SHORTCUT_LIMIT, maximum: MAX_TOOLTIP_SHORTCUT_LIMIT }),
 );
 
+export const MIN_IN_APP_NOTIFICATION_SECONDS = 1;
+export const MAX_IN_APP_NOTIFICATION_SECONDS = 300;
+/** How long an in-app thread notification stays on screen while the app has focus. */
+export const InAppNotificationSeconds = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_IN_APP_NOTIFICATION_SECONDS,
+    maximum: MAX_IN_APP_NOTIFICATION_SECONDS,
+  }),
+);
+
 export const MAX_TERMINAL_KEY_MAPPINGS = 64;
 /**
  * Fork: a key that a terminal sends as the bytes in `send`, in place of its own encoding. `key`
@@ -290,6 +300,25 @@ export const ForkClientSettingsFields = {
    * Settings page. Off by default, because it takes `mod+f` from the search of all settings.
    */
   settingsFind: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Fork: how long an in-app thread notification shows. 5 is the toast default. */
+  inAppNotificationSeconds: InAppNotificationSeconds.pipe(
+    Schema.withDecodingDefault(Effect.succeed(5)),
+  ),
+  /** Fork: a thread that finishes shows an in-app notification. Off shows only threads that need you. */
+  inAppNotificationCompletions: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  /**
+   * Fork: a notification that asks for input or approval, or tells of a failure, stays until you
+   * close it. Off, because it changes how long these notifications show.
+   */
+  inAppNotificationAttentionStays: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  /** Fork: opening a thread closes its in-app notifications. Off, because it changes when they close. */
+  inAppNotificationClosesOnOpen: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
 };
 
 export const ForkClientSettingsPatchFields = {
@@ -321,6 +350,10 @@ export const ForkClientSettingsPatchFields = {
   rememberBackForwardHistory: Schema.optionalKey(Schema.Boolean),
   restartReconnectWarningGrace: Schema.optionalKey(Schema.Boolean),
   settingsFind: Schema.optionalKey(Schema.Boolean),
+  inAppNotificationSeconds: Schema.optionalKey(InAppNotificationSeconds),
+  inAppNotificationCompletions: Schema.optionalKey(Schema.Boolean),
+  inAppNotificationAttentionStays: Schema.optionalKey(Schema.Boolean),
+  inAppNotificationClosesOnOpen: Schema.optionalKey(Schema.Boolean),
 };
 
 /**

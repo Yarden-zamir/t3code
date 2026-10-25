@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useEffectEvent, useRef } from "react";
 
+import { addThreadToast } from "../forkInAppNotifications";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { showInstalledAppNotification } from "../installedApp";
 import { useEnvironmentIds } from "../state/environments";
@@ -171,34 +172,39 @@ function EnvironmentNotifications({
       document.hasFocus() &&
       (activeEnvironmentId !== environmentId || activeThreadId !== thread.id)
     ) {
-      const toastId = toastManager.add({
-        type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
-        title,
-        description: thread.title,
-        data: {
-          hideCopyButton: true,
-          leadingIcon:
-            kind === "completion" ? (
-              <CircleCheckIcon aria-hidden className="size-4 text-success-foreground" />
-            ) : status === "approval" ? (
-              <ShieldQuestionIcon aria-hidden className="size-4 text-warning-foreground" />
-            ) : status === "failed" ? (
-              <CircleAlertIcon aria-hidden className="size-4 text-destructive-foreground" />
-            ) : (
-              <MessageCircleQuestionIcon aria-hidden className="size-4 text-info-foreground" />
-            ),
-        },
-        actionProps: {
-          children: "Open thread",
-          onClick: () => {
-            toastManager.close(toastId);
-            void navigate({
-              to: "/$environmentId/$threadId",
-              params: { environmentId, threadId: thread.id },
-            });
+      // Fork: `addThreadToast` applies the in-app notification settings.
+      const toastId = addThreadToast(
+        { environmentId, threadId: thread.id },
+        kind === "completion" ? "completion" : "attention",
+        {
+          type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
+          title,
+          description: thread.title,
+          data: {
+            hideCopyButton: true,
+            leadingIcon:
+              kind === "completion" ? (
+                <CircleCheckIcon aria-hidden className="size-4 text-success-foreground" />
+              ) : status === "approval" ? (
+                <ShieldQuestionIcon aria-hidden className="size-4 text-warning-foreground" />
+              ) : status === "failed" ? (
+                <CircleAlertIcon aria-hidden className="size-4 text-destructive-foreground" />
+              ) : (
+                <MessageCircleQuestionIcon aria-hidden className="size-4 text-info-foreground" />
+              ),
+          },
+          actionProps: {
+            children: "Open thread",
+            onClick: () => {
+              if (toastId !== null) toastManager.close(toastId);
+              void navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId, threadId: thread.id },
+              });
+            },
           },
         },
-      });
+      );
       return;
     }
     if (

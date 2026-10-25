@@ -671,6 +671,15 @@ Each server web app, such as `https://t3-vps.yarden-zamir.com`, installs as an a
 - The app icon shows the same count as the browser tab icon.
 - The service worker caches only the offline page. A new build thus shows at once, and Cloudflare Access can ask for a new sign-in.
 
+### In-app notification options
+
+In-app notifications of threads can show for a chosen time, skip finished threads, stay open when a thread needs you, and close when you open their thread.
+
+- **Setting:** client settings `inAppNotificationSeconds` (5 by default), `inAppNotificationCompletions` (on by default), `inAppNotificationAttentionStays` and `inAppNotificationClosesOnOpen` (both off by default). Settings > General > Behavior, below "In-app notifications".
+- **Works on:** web, desktop. The options apply to agent threads and terminal threads.
+- "Keep notifications that need you" covers input, approval, a usage limit and a failure. Finished threads keep the chosen time.
+- **Limits:** the mobile app has no in-app notifications. Revisit if it gets them.
+
 ### Web Push
 
 A phone gets thread notifications while the installed app is closed, from each server that the page connects to.
