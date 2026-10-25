@@ -2,13 +2,15 @@ import { defineRule, type ESTree } from "@oxlint/plugins";
 import * as Option from "effect/Option";
 
 import budget from "../../scripts/effect-budget.json" with { type: "json" };
+// Fork: fork files and fork-added effects budget here, so upstream's file merges cleanly.
+import forkBudget from "../../scripts/fork-effect-budget.json" with { type: "json" };
 import { getPropertyName, unwrapExpression } from "../utils.ts";
 
 const BUDGET_FILE = "scripts/effect-budget.json";
 const EFFECT_HOOKS = new Set(["useEffect", "useLayoutEffect", "useInsertionEffect"]);
 const EFFECT_HOOK_TEXT = /use(?:Layout|Insertion)?Effect/;
 const UNBUDGETED_FILE = /\.test\.[cm]?[jt]sx?$|[\\/](?:test|__tests__)[\\/]/;
-const budgets: Readonly<Record<string, number>> = budget;
+const budgets: Readonly<Record<string, number>> = { ...budget, ...forkBudget };
 
 const isEffectHookCall = (node: ESTree.CallExpression): boolean => {
   const callee = unwrapExpression(node.callee);
