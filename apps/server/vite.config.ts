@@ -131,7 +131,10 @@ export default mergeConfig(
       // Parallel sqlite/git/worktree/orchestration tests introduce load-sensitive flakes.
       fileParallelism: false,
       sequence: { sequencer: WeightedShardSequencer },
-      setupFiles: ["./src/testUtils/gitConfig.setup.ts"],
+      setupFiles: [
+        "./src/testUtils/gitConfig.setup.ts",
+        "./src/testUtils/managedServiceEnv.setup.ts",
+      ],
       // Fork: appended to the root excludes, like the setup files.
       exclude: FORK_EXCLUDED_UPSTREAM_TESTS,
       hookTimeout: 120_000,

@@ -31,7 +31,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 /** The clickable card surface. Carries `data-testid="sidebar-row-card"` in both users. */
 export const THREAD_CARD_SURFACE_CLASS =
   "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
-export const THREAD_CARD_ACTIVE_CLASS = "bg-sidebar-row-active text-sidebar-foreground";
+export const THREAD_CARD_ACTIVE_CLASS =
+  "bg-sidebar-row-active text-sidebar-foreground light:shadow-xs light:ring-1 light:ring-inset light:ring-sidebar-border/70";
 export const THREAD_CARD_IDLE_CLASS =
   "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover";
 /** Padding of the card content; a custom layout adds no height of its own. */
@@ -41,7 +42,7 @@ export const THREAD_CARD_TITLE_CLASS =
   "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none";
 /** The element that carries `data-sidebar-status`; themes draw it as a sticker. */
 export const THREAD_CARD_STATUS_LABEL_CLASS =
-  "flex items-center self-center justify-self-end tabular-nums text-secondary-label transition-opacity";
+  "flex items-center self-center justify-self-end tabular-nums text-secondary-label";
 export const THREAD_CARD_PIN_CLASS = "size-3 shrink-0 text-muted-foreground/65";
 
 type ThreadCardStatusIcon =
@@ -79,7 +80,7 @@ export function ThreadCardStatusBadge(props: { status: ThreadCardStatus; trailin
 function threadCardProjectLabelClassName(recede: boolean): string {
   return cn(
     "min-w-0 truncate text-secondary-label text-xs",
-    recede ? "font-normal" : "font-medium",
+    recede ? "font-normal" : "font-medium redesign:font-normal",
   );
 }
 
@@ -88,7 +89,7 @@ export function ThreadCardBranch(props: { branch: string; leading: ReactNode }) 
   return (
     <>
       {props.leading}
-      <span className="flex min-w-0 flex-1 text-muted-foreground/40">
+      <span className="flex min-w-0 flex-1 text-muted-foreground/40 redesign:text-inherit">
         <MiddleTruncate value={props.branch} showTitle={false} />
       </span>
     </>
