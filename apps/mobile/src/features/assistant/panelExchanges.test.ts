@@ -1,7 +1,7 @@
 import { MessageId, RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { panelExchanges } from "./assistantConversation";
+import { panelExchanges } from "./panelExchanges";
 
 function run(id: string, status: "completed" | "failed" | "running", prompt: string) {
   return { id: RunId.make(id), status, userMessageId: MessageId.make(prompt) };
