@@ -20,6 +20,7 @@ const TAB_STATUS: Record<SidebarV2TopStatusKind, Omit<SidebarTabStatus, "kind" |
   waiting: { label: "Waiting", className: "text-muted-foreground" },
   approval: { label: "Approval", className: "text-warning-foreground" },
   input: { label: "Input", className: "text-indigo-600 dark:text-indigo-300" },
+  request: { label: "Request", className: "text-guest-foreground" },
   limited: { label: "Limited", className: "text-warning" },
   failed: { label: "Failed", className: "text-error" },
   woke: { label: "Woke", className: "text-warning" },

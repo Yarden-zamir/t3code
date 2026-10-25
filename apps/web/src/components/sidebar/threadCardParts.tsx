@@ -51,6 +51,7 @@ type ThreadCardStatusIcon =
   | "approval"
   | "failed"
   | "done"
+  | "request"
   | "woke";
 
 export interface ThreadCardStatus {

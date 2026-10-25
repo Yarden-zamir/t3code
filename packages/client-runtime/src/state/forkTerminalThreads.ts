@@ -195,14 +195,20 @@ export function terminalThreadStatusLabel(
   return (attention.exitCode ?? 0) === 0 ? "Completed" : "Error";
 }
 
-type RowStatus = "approval" | "input" | "working" | "waiting" | "failed" | "limited" | "ready";
+type RowStatus =
+  | "approval"
+  | "input"
+  | "working"
+  | "waiting"
+  | "failed"
+  | "limited"
+  | "request"
+  | "ready";
 
 /**
- * The status of a terminal thread row in a thread list. A bell shows Input, also over a message
- * run that works, because a message that runs a program can ring it. Otherwise message runs keep
- * their own status, so the terminal only fills in an idle row: a failed session or a program that
- * exited with a non-zero code shows Failed, and a starting session or a running program shows
- * Working. `Completed` is the unread dot.
+ * A terminal thread row's status. A bell shows Input, also over a working message run. Otherwise
+ * the terminal fills in only an idle row: a failed session or a non-zero exit shows Failed, and a
+ * starting session or a running program shows Working. `Completed` is the unread dot.
  */
 export function terminalThreadRowStatus<Status extends RowStatus>(
   status: Status,
