@@ -44,25 +44,17 @@ function useShortcutNavigation(): void {
 }
 
 function useRecentThreadShortcutSync(state: NavigationState): void {
-  // Launcher shortcuts are Android-only. A null ref on iOS keeps this hook
-  // (mounted in the root stack layout) from subscribing the root to the
-  // active thread's shell, which would re-render every screen on each
-  // title/status/session change.
+  // iOS subscriptions for Android-only shortcuts would re-render every screen on active-thread updates.
   const threadRef = useMemo(
     () => (Platform.OS === "android" ? activeThreadRef(state) : null),
     [state],
   );
   const threadShell = useThreadShell(threadRef);
-  // null until the persisted list loads; recording waits on it so the first
-  // thread opened after a cold start cannot clobber older entries.
+  // Wait for persisted recents before recording visits, or cold starts overwrite older entries.
   const [recents, setRecents] = useState<ReadonlyArray<RecentThreadShortcut> | null>(null);
-  // Gates storage writes: a failed load falls back to an empty in-memory
-  // list (so the launcher still gets the "New task" item), but persisting
-  // that fallback would erase valid history over a transient read error.
-  // Real thread opens flip this on — by then the list is the new truth.
+  // Do not persist failed-load fallbacks; only a real visit makes the list authoritative.
   const persistableRef = useRef(false);
-  // Saves are fire-and-forget; chaining them keeps an older list from
-  // finishing after (and overwriting) a newer one.
+  // Serialize saves so older lists cannot overwrite newer ones.
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
