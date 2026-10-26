@@ -947,6 +947,7 @@ it.effect(
               (input) => input,
               (_, modes) =>
                 Effect.succeed({ modes: `${modes.runtimeMode}/${modes.interactionMode}` }),
+              "stamped",
             ),
           }),
         ).pipe(
