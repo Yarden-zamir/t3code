@@ -57,7 +57,7 @@ import {
 import { createElement, useSyncExternalStore, type ComponentType, type SVGProps } from "react";
 
 import { cn } from "~/lib/utils";
-import { getActiveThemeIcons, subscribeToActiveThemeIcons } from "../themePalette";
+import { getActiveThemeIcons, subscribeToActiveThemeIcons } from "../forkThemeStyle";
 
 /** A filled dot, the default icon of a tab. */
 function DotIcon(props: SVGProps<SVGSVGElement>) {
