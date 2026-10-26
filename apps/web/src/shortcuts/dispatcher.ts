@@ -3,7 +3,7 @@ import type { KeybindingCommand, ResolvedKeybindingsConfig } from "@t3tools/cont
 import { resolveShortcutCommand, type ShortcutMatchContext } from "../keybindings";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
-import { isTerminalFocused } from "../lib/terminalFocus";
+import { isTerminalFocused, isTerminalThreadAppChord } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -49,7 +49,7 @@ function readFocusContext(event: KeyboardEvent): Partial<ShortcutMatchContext> {
     // Fork: a Cmd chord in a terminal thread's main terminal goes to the app.
     terminalFocus: isTerminalFocused(event),
     previewFocus: isPreviewFocused(),
-    editableFocus: isEditableFocused(event.target),
+    editableFocus: !isTerminalThreadAppChord(event) && isEditableFocused(event.target),
     modelPickerOpen: isModelPickerOpen(),
   };
 }
