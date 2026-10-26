@@ -270,27 +270,27 @@ export function guestAppProblem(
 
 /**
  * Why the portal must not make guest apps on the host that a machine reported, or null. A machine
- * reports its own hostname, so the portal accepts only a plain name in the zone of the machine
- * hostnames, not the portal host and not the host of another machine.
+ * reports its own hostname and other services share the zone, so the portal accepts only the
+ * tunnel host that it made (MM-213), or one `t3-<name>` label right under `MACHINE_DOMAIN`.
  */
 export function guestHostProblem(
   hostname: string,
   machineDomain: string | undefined,
+  portalTunnelHost: string | null,
   portalHost: string,
   otherHostnames: ReadonlyArray<string>,
 ): string | null {
   if (machineDomain === undefined || machineDomain === "")
     return "Set MACHINE_DOMAIN in wrangler.jsonc first.";
   const name = hostname.toLowerCase();
-  const labels = name.split(".");
-  const plain = labels.every(
-    (label) =>
-      label !== "" &&
-      !label.startsWith("-") &&
-      [...label].every((c) => c === "-" || (c >= "a" && c <= "z") || (c >= "0" && c <= "9")),
-  );
-  if (!plain || !name.endsWith(`.${machineDomain.toLowerCase()}`))
-    return `The reported host ${hostname} is not a plain name in ${machineDomain}.`;
+  const suffix = `.${machineDomain.toLowerCase()}`;
+  const label = name.endsWith(suffix) ? name.slice(0, -suffix.length) : "";
+  const machineLabel =
+    label.startsWith("t3-") &&
+    !label.endsWith("-") &&
+    [...label].every((c) => c === "-" || (c >= "a" && c <= "z") || (c >= "0" && c <= "9"));
+  if (name !== portalTunnelHost?.toLowerCase() && !machineLabel)
+    return `The reported host ${hostname} is not a machine host: t3-<name>${suffix}.`;
   if (name === portalHost.toLowerCase()) return `The reported host ${hostname} is the portal host.`;
   if (otherHostnames.some((other) => other.toLowerCase() === name))
     return `Another machine reports the host ${hostname} too.`;

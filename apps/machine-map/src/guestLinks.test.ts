@@ -39,11 +39,19 @@ it("keeps valid guest rules in one form and refuses what Cloudflare would refuse
   }
 });
 
-it("lets guest apps only on a plain host of the machine zone that no one else claims", () => {
-  const check = (host: string, others: ReadonlyArray<string> = []) =>
-    guestHostProblem(host, "example.com", "t3.example.com", others);
+it("lets guest apps only on a machine host that no one else claims", () => {
+  const check = (host: string, tunnel: string | null = null, others: ReadonlyArray<string> = []) =>
+    guestHostProblem(host, "example.com", tunnel, "t3.example.com", others);
   expect(check("t3-vps.example.com")).toBeNull();
-  for (const bad of ["t3.example.com", "*.example.com", "t3-vps.example.com/api", "evil.org"])
+  expect(check("box.example.com", "box.example.com")).toBeNull();
+  for (const bad of [
+    "riffle.example.com",
+    "t3.example.com",
+    "t3-.example.com",
+    "t3-a.b.example.com",
+    "t3-vps.example.com/api",
+    "t3-vps.evil.org",
+  ])
     expect(check(bad), bad).not.toBeNull();
-  expect(check("t3-vps.example.com", ["T3-VPS.example.com"])).not.toBeNull();
+  expect(check("t3-vps.example.com", null, ["T3-VPS.example.com"])).not.toBeNull();
 });

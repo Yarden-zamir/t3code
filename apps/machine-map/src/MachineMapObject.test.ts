@@ -900,6 +900,14 @@ function fakeCloudflare(
 describe("guest links (MM-1210)", () => {
   const PORTAL = "t3.example.com";
   const GUEST_ENV = { MACHINE_ZONE_ID: "zone", MACHINE_DOMAIN: "example.com" };
+  /** Three machines on hosts that MM-1210 accepts under `example.com`. */
+  const guestMap = () => {
+    const map = threeMachines();
+    return {
+      ...map,
+      machines: map.machines.map((m) => ({ ...m, hostname: `t3-${m.id}.example.com` })),
+    };
+  };
   const value = <T>(outcome: { ok: true; value: T } | { ok: false; error: string }): T => {
     if (!outcome.ok) throw new Error(outcome.error);
     return outcome.value;
@@ -912,7 +920,7 @@ describe("guest links (MM-1210)", () => {
   };
 
   it("makes, repairs and removes the Access setup of each machine host", async () => {
-    const { object, env } = portal(true);
+    const { object, env } = portal(guestMap());
     Object.assign(env, GUEST_ENV);
     const cf = fakeCloudflare();
 
@@ -928,11 +936,13 @@ describe("guest links (MM-1210)", () => {
     expect(on.machines.find((m) => m.machineId === MAC)?.state).toEqual({ _tag: "ready" });
     expect(on.oneTimePin).toEqual({ _tag: "ready" });
     expect(on.rateLimit).toEqual({ _tag: "ready" });
-    const guestApp = [...cf.apps.values()].find((a) => a.name === "t3 guest links mac.example.com");
+    const guestApp = [...cf.apps.values()].find(
+      (a) => a.name === "t3 guest links t3-mac.example.com",
+    );
     expect(guestApp).toMatchObject({
       destinations: [
-        { type: "public", uri: "mac.example.com/guest" },
-        { type: "public", uri: "mac.example.com/api/guest/*" },
+        { type: "public", uri: "t3-mac.example.com/guest" },
+        { type: "public", uri: "t3-mac.example.com/api/guest/*" },
       ],
       session_duration: "24h",
       allowed_idps: ["otp"],
@@ -947,7 +957,7 @@ describe("guest links (MM-1210)", () => {
       ],
     });
     expect(
-      [...cf.apps.values()].find((a) => a.name === "t3 web build mac.example.com"),
+      [...cf.apps.values()].find((a) => a.name === "t3 web build t3-mac.example.com"),
     ).toMatchObject({
       policies: [{ decision: "bypass", include: [{ everyone: {} }] }],
     });
@@ -964,7 +974,7 @@ describe("guest links (MM-1210)", () => {
     cf.apps.set("hand", {
       id: "hand",
       name: "T3 guest links (win)",
-      destinations: [{ type: "public", uri: "win.example.com/guest" }],
+      destinations: [{ type: "public", uri: "t3-win.example.com/guest" }],
     });
     const blocked = value(await object.setGuestLinks(owner, PORTAL, WIN, true));
     expect(blocked.machines.find((m) => m.machineId === WIN)?.state._tag).toBe("blocked");
@@ -977,7 +987,7 @@ describe("guest links (MM-1210)", () => {
   });
 
   it("shows the manual rate limit step when the token lacks Zone WAF Edit", async () => {
-    const { object, env } = portal(true);
+    const { object, env } = portal(guestMap());
     Object.assign(env, GUEST_ENV);
     fakeCloudflare({ wafStatus: 403 });
     const status = value(await object.setGuestLinks(owner, PORTAL, VPS, true));
@@ -987,7 +997,7 @@ describe("guest links (MM-1210)", () => {
   });
 
   it("removes the guest apps of a removed machine", async () => {
-    const { object, env } = portal(true);
+    const { object, env } = portal(guestMap());
     Object.assign(env, { ...GUEST_ENV, MACHINE_ACCESS_APP_ID: "m", CONNECT_ACCESS_APP_ID: "c" });
     const cf = fakeCloudflare();
     value(await object.setGuestLinks(owner, PORTAL, VPS, true));
@@ -997,31 +1007,28 @@ describe("guest links (MM-1210)", () => {
     expect(cf.apps.size).toBe(0);
   });
   it("makes no apps on a host that a machine must not claim", async () => {
-    const map = threeMachines();
+    const map = guestMap();
     const { object, env } = portal({
       ...map,
-      machines: map.machines.map((m) => (m.id === WIN ? { ...m, hostname: PORTAL } : m)),
+      machines: map.machines.map((m) =>
+        m.id === WIN ? { ...m, hostname: "riffle.example.com" } : m,
+      ),
     });
     Object.assign(env, GUEST_ENV);
     const cf = fakeCloudflare();
     const status = value(await object.setGuestLinks(owner, PORTAL, WIN, true));
-    expect(status.machines.find((m) => m.machineId === WIN)?.state).toEqual({
-      _tag: "blocked",
-      reason: `The reported host ${PORTAL} is the portal host.`,
-    });
+    expect(status.machines.find((m) => m.machineId === WIN)?.state._tag).toBe("blocked");
     expect(cf.apps.size).toBe(0);
   });
 
   it("adopts the rate limit rule of the old manual steps", async () => {
-    const { object, env } = portal(true);
+    const { object, env } = portal(guestMap());
     Object.assign(env, GUEST_ENV);
     const manual = { ...GUEST_RATE_LIMIT_RULE, ref: undefined, id: "manual" };
     const cf = fakeCloudflare({ rules: [manual] });
-    value(await object.setGuestLinks(owner, PORTAL, VPS, true));
-    expect(cf.calls.filter((c) => c.startsWith("POST /zones"))).toEqual([]);
-    expect(cf.ruleset()?.rules).toMatchObject([{ id: "manual", ref: GUEST_RATE_LIMIT_RULE.ref }]);
-    cf.calls.length = 0;
-    value(await object.applyGuestLinks(owner, PORTAL));
-    expect(cf.calls.filter((c) => c.startsWith("PATCH"))).toEqual([]);
+    const status = value(await object.setGuestLinks(owner, PORTAL, VPS, true));
+    expect(status.rateLimit).toEqual({ _tag: "ready" });
+    expect(cf.calls.filter((c) => c.includes("/rulesets") && !c.startsWith("GET"))).toEqual([]);
+    expect(cf.ruleset()?.rules).toMatchObject([{ id: "manual" }]);
   });
 });

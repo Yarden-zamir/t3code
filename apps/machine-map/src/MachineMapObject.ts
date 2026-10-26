@@ -2760,7 +2760,9 @@ export class MachineMapObject extends DurableObject<Env> {
       this.#broadcast(this.#rotationsEvent());
       // MM-1213: the last machine with guest links takes the rate limit rule with it.
       if (api) {
-        const failed = await this.#syncGuestRateLimit(api, this.#guestHosts("").length > 0);
+        const failed = await this.#guestSerial(() =>
+          this.#syncGuestRateLimit(api, this.#guestHosts("").length > 0),
+        );
         if (failed !== null) console.error(failed);
       }
       return { machineId, tokenDeleted };
@@ -3127,7 +3129,14 @@ export class MachineMapObject extends DurableObject<Env> {
       if (m.hostname === null || !guestLinksOn(this.#map, this.#reportedSettings(m.id), m.id))
         return [];
       const others = hostnames.filter((h) => h.id !== m.id).map((h) => h.hostname);
-      const problem = guestHostProblem(m.hostname, this.env.MACHINE_DOMAIN, portalHost, others);
+      const tunnelHost = this.#tunnelRow(m.id)?.hostname ?? null;
+      const problem = guestHostProblem(
+        m.hostname,
+        this.env.MACHINE_DOMAIN,
+        tunnelHost,
+        portalHost,
+        others,
+      );
       return [{ id: m.id, name: m.name, hostname: m.hostname, problem }];
     });
   }
@@ -3172,8 +3181,11 @@ export class MachineMapObject extends DurableObject<Env> {
   #guestApply: Promise<unknown> = Promise.resolve();
 
   #applyGuestLinks(portalHost: string): Promise<Array<string>> {
-    const run = () => this.#applyGuestLinksNow(portalHost);
-    const next = this.#guestApply.then(run, run);
+    return this.#guestSerial(() => this.#applyGuestLinksNow(portalHost));
+  }
+
+  #guestSerial<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.#guestApply.then(work, work);
     this.#guestApply = next.catch(() => undefined);
     return next;
   }
@@ -3205,15 +3217,16 @@ export class MachineMapObject extends DurableObject<Env> {
     try {
       pinId = await api.oneTimePinId();
     } catch (error) {
-      if (!isPermissionRefusal(error)) throw error;
+      if (!isPermissionRefusal(error))
+        errors.push(`Could not read the login methods: ${errorMessage(error)}`);
       return errors;
     }
     if (pinId === null) {
       try {
         pinId = await api.createOneTimePin();
       } catch (error) {
-        if (!isPermissionRefusal(error)) throw error;
-        this.#pinCreateRefused = true;
+        if (isPermissionRefusal(error)) this.#pinCreateRefused = true;
+        else errors.push(`Could not add the One-time PIN login: ${errorMessage(error)}`);
         return errors;
       }
     }

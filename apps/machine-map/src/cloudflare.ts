@@ -826,7 +826,8 @@ export class CloudflareApi {
         `/zones/${zoneId}/rulesets/phases/http_ratelimit/entrypoint`,
         decodeRateLimitRuleset,
       );
-      // A rule from the old manual steps has no `ref`, and the Free plan allows one rule: adopt it.
+      // A rule from the old manual steps has no `ref`, and the Free plan allows one rule: adopt it
+      // by its expression. Apply never needs to set the `ref` of an adopted rule.
       const rules = ruleset.rules ?? [];
       const rule =
         rules.find((r) => r.ref === GUEST_RATE_LIMIT_RULE.ref) ??
@@ -855,7 +856,7 @@ export class CloudflareApi {
     }
     const rules = `/zones/${zoneId}/rulesets/${rulesetId}/rules`;
     if (rule === null) await this.#request("POST", rules, ignoreResult, GUEST_RATE_LIMIT_RULE);
-    else if (rule.ref !== GUEST_RATE_LIMIT_RULE.ref || guestRateLimitProblem(rule) !== null)
+    else if (guestRateLimitProblem(rule) !== null)
       await this.#request("PATCH", `${rules}/${rule.id}`, ignoreResult, GUEST_RATE_LIMIT_RULE);
   }
 
