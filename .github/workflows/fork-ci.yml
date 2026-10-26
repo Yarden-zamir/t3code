@@ -236,12 +236,18 @@ jobs:
           if ((${#filters[@]} == 0)); then echo "No affected package in the $GROUP group."; exit 0; fi
           vp run --parallel --concurrency-limit 4 "${filters[@]}" test
 
+  # On one 4 vCPU runner, the web suite took 3 to 6.5 minutes, most of it in
+  # module import per test file. ci.yml runs it on one 8 vCPU runner.
   test_web:
-    name: Test Web
+    name: Test Web ${{ matrix.shard }}
     needs: changes
     if: needs.changes.outputs.test_web == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -251,8 +257,10 @@ jobs:
           sparse-checkout-cone-mode: false
       - uses: ./.github/actions/setup-ci-deps
       # The browser project runs React tests in headless Chromium.
-      - run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
-      - run: vp run --filter @t3tools/web test
+      - uses: ./.github/actions/fork-setup-chromium
+        with:
+          playwright-package: apps/web/node_modules/playwright
+      - run: vp run --filter @t3tools/web test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
   test_server:
     name: Test Server ${{ matrix.shard }}
@@ -272,7 +280,9 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
       - uses: ./.github/actions/setup-ci-deps
-      - run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+      - uses: ./.github/actions/fork-setup-chromium
+        with:
+          playwright-package: apps/server/node_modules/playwright-core
       - run: vp run --filter t3 test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
   rust:
