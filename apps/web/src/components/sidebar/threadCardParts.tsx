@@ -32,7 +32,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export const THREAD_CARD_SURFACE_CLASS =
   "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 export const THREAD_CARD_ACTIVE_CLASS =
-  "bg-sidebar-row-active text-sidebar-foreground light:shadow-xs light:ring-1 light:ring-inset light:ring-sidebar-border/70";
+  "bg-sidebar-row-active text-sidebar-foreground light:shadow-xs light:ring-1 light:ring-inset light:ring-sidebar-border/70 redesign:light:shadow-none";
 export const THREAD_CARD_IDLE_CLASS =
   "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover";
 /** Padding of the card content; a custom layout adds no height of its own. */

@@ -1,4 +1,3 @@
-import { PermissionUpdateNotice } from "../components/PermissionUpdateNotice";
 import { ForkAccessChangeNotices } from "../components/ForkAccessChangeNotices";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -39,20 +38,14 @@ import { DesktopUpdateIdleInstall } from "../components/desktop/DesktopUpdateIdl
 import { MachineMapDesktop } from "../components/desktop/MachineMapDesktop";
 import { ClientPendingSurface } from "../components/auth/ClientPendingSurface";
 import { MachinePausedSurface, MachinePauseWatcher } from "../components/auth/MachinePausedSurface";
-import { DesktopUpdateLaunchNotice } from "../components/sidebar/updateEverythingRun";
-import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationToast";
-import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
 import { InstalledAppCoordinator } from "../components/InstalledAppCoordinator";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { PullRequestGuideRunCoordinator } from "../components/pullRequest/guide/PullRequestGuideRunCoordinator";
-import { HostFreezeToastCoordinator } from "../components/HostFreezeToastCoordinator";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
-import { ProviderAuthCallbackCoordinator } from "../components/settings/ProviderAuthCallbackCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
-import { useDefaultThemeAdoption } from "../hooks/useDefaultTheme";
 import { useEnvironmentThemeSync } from "../hooks/useEnvironmentTheme";
 import { Button } from "../components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -161,6 +154,18 @@ function RootRouteNotFoundView() {
 }
 
 function RootRouteView() {
+  // Above every branch: app services raise toasts for the whole page, so the surface they write to
+  // must not unmount when the root switches branches (for example /welcome to the app shell).
+  return (
+    <ToastProvider>
+      <AnchoredToastProvider>
+        <RootRouteBranch />
+      </AnchoredToastProvider>
+    </ToastProvider>
+  );
+}
+
+function RootRouteBranch() {
   useEffect(() => installDesktopPasteAsText(window.desktopBridge, window), []);
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
@@ -213,20 +218,17 @@ function RootRouteView() {
 
   if (pathname === "/welcome") {
     return (
-      <ToastProvider>
-        <AnchoredToastProvider>
-          <BrowserChromeThemeSync key={pathname} />
-          <EnvironmentThemeSync />
-          <ProviderAuthCallbackCoordinator />
-          <CustomSnoozeDialogHost />
-          <GuestShareDialogHost />
-          <CommandPalette>
-            <AppSidebarLayout>
-              <Outlet />
-            </AppSidebarLayout>
-          </CommandPalette>
-        </AnchoredToastProvider>
-      </ToastProvider>
+      <>
+        <BrowserChromeThemeSync key={pathname} />
+        <EnvironmentThemeSync />
+        <CustomSnoozeDialogHost />
+        <GuestShareDialogHost />
+        <CommandPalette>
+          <AppSidebarLayout>
+            <Outlet />
+          </AppSidebarLayout>
+        </CommandPalette>
+      </>
     );
   }
 
@@ -250,59 +252,49 @@ function RootRouteView() {
   );
 
   return (
-    <ToastProvider>
-      <AnchoredToastProvider>
-        <BrowserChromeThemeSync key={pathname} />
-        <EnvironmentThemeSync />
-        <ProviderAuthCallbackCoordinator />
-        <ChatGptWelcomeCoordinator />
-        <FirstRunGate
-          enabled={primaryEnvironmentAuthenticated}
-          hostedStatic={authGateState.status === "hosted-static"}
-        >
-          {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
-          {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
-          {primaryEnvironmentAuthenticated ? <DesktopWebLinkCoordinator /> : null}
-          {isElectron ? <RunningThreadKeepAlive /> : null}
-          {isElectron ? <DesktopUpdateIdleInstall /> : null}
-          {isElectron && primaryEnvironmentAuthenticated ? <MachineMapDesktop /> : null}
-          {primaryEnvironmentAuthenticated ? <MachinePauseWatcher /> : null}
-          <RelayClientInstallDialog />
-          <ConnectOnboardingDialog />
-          <SshPasswordPromptDialog />
-          <SnapShotCoordinator />
-          <ThreadNotificationCoordinator />
-          {isElectron ? null : <InstalledAppCoordinator />}
-          <ReopenClosedViewShortcut />
-          <ConfirmDialogHost />
-          <CustomSnoozeDialogHost />
-          <GuestShareDialogHost />
-          <SlowRpcRequestToastCoordinator />
-          <HostFreezeToastCoordinator />
-          <PermissionUpdateNotice />
-          <ForkAccessChangeNotices />
-          {primaryEnvironmentAuthenticated ? <LegacyThreadMigrationToast /> : null}
-          <ProjectCloneToastCoordinator />
-          <AddProjectToMachineDialogHost />
-          <PullRequestGuideRunCoordinator />
-          <HostedStaticEnvironmentBootstrap />
-          {primaryEnvironmentAuthenticated ? (
-            <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
-          ) : null}
-          {isElectron ? <DesktopUpdateLaunchNotice /> : null}
-          {appShell}
-          {/* Keep the theme editor above the router so drafts survive navigation. */}
-          <ThemeEditorHost />
-        </FirstRunGate>
-      </AnchoredToastProvider>
-    </ToastProvider>
+    <>
+      <BrowserChromeThemeSync key={pathname} />
+      <EnvironmentThemeSync />
+      <ChatGptWelcomeCoordinator />
+      <FirstRunGate
+        enabled={primaryEnvironmentAuthenticated}
+        hostedStatic={authGateState.status === "hosted-static"}
+      >
+        {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
+        {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
+        {primaryEnvironmentAuthenticated ? <DesktopWebLinkCoordinator /> : null}
+        {isElectron ? <RunningThreadKeepAlive /> : null}
+        {isElectron ? <DesktopUpdateIdleInstall /> : null}
+        {isElectron && primaryEnvironmentAuthenticated ? <MachineMapDesktop /> : null}
+        {primaryEnvironmentAuthenticated ? <MachinePauseWatcher /> : null}
+        <RelayClientInstallDialog />
+        <ConnectOnboardingDialog />
+        <SshPasswordPromptDialog />
+        <SnapShotCoordinator />
+        {isElectron ? null : <InstalledAppCoordinator />}
+        <ReopenClosedViewShortcut />
+        <ConfirmDialogHost />
+        <CustomSnoozeDialogHost />
+        <GuestShareDialogHost />
+        <SlowRpcRequestToastCoordinator />
+        <ForkAccessChangeNotices />
+        <ProjectCloneToastCoordinator />
+        <AddProjectToMachineDialogHost />
+        <PullRequestGuideRunCoordinator />
+        <HostedStaticEnvironmentBootstrap />
+        {primaryEnvironmentAuthenticated ? (
+          <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
+        ) : null}
+        {appShell}
+        {/* Keep the theme editor above the router so drafts survive navigation. */}
+        <ThemeEditorHost />
+      </FirstRunGate>
+    </>
   );
 }
 
 function EnvironmentThemeSync() {
   useEnvironmentThemeSync();
-  // Sync palettes before adopting the environment theme so it is already in the library.
-  useDefaultThemeAdoption();
   return null;
 }
 

@@ -1,23 +1,41 @@
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import { createBrowserHistory, createHashHistory } from "@tanstack/react-router";
 
 import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables, fontSettingOrThemeFont } from "./appearanceFonts";
+import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRetention";
+import { startBackgroundThreadAnnouncements } from "./components/BackgroundThreadAnnouncer";
+import { startSshPasswordPromptQueue } from "./components/desktop/SshPasswordPromptDialog";
+import { startHostFreezeToasts } from "./components/HostFreezeToastCoordinator";
+import { startLegacyThreadMigrationToast } from "./components/LegacyThreadMigrationToast";
+import { startPermissionUpdateNotices } from "./components/PermissionUpdateNotice";
 import { startAgentOpenedPreviews } from "./components/preview/agentOpenedPreviews";
+import { startMainAppLocationTracking } from "./components/sidebar/mainAppLocation";
+import { startDesktopUpdateLaunchNotice } from "./components/sidebar/updateEverythingRun";
+import { startThreadNotifications } from "./components/ThreadNotificationCoordinator";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
 import { resolveServerBackedAppDisplayName } from "./branding.logic";
 import { isElectron } from "./env";
 import { restoreNavigationHistory } from "./forkNavigationHistory";
-import { getClientSettings, subscribeClientSettings } from "./hooks/useSettings";
+import { useComposerDraftStore } from "./composerDraftStore";
+import { startDefaultThemeAdoption } from "./hooks/useDefaultTheme";
+import {
+  getClientSettings,
+  startModelPreferencesMigration,
+  subscribeClientSettings,
+} from "./hooks/useSettings";
+import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
 import {
   syncDocumentElectronPlatformClasses,
   syncDocumentWindowControlsOverlayClass,
 } from "./lib/windowControlsOverlay";
-import { prepareProviderAuthDelivery } from "./providerAuthDelivery";
+import { startProviderAuthDelivery } from "./providerAuthDelivery";
 import { getRouter, type AppRouter } from "./router";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 import { primaryServerConfigAtom } from "./state/server";
 import { getActiveThemeFonts, subscribeToActiveThemeFonts } from "./themePalette";
+import { resolveThreadRouteTarget } from "./threadRoutes";
 
 /** Writes appearance settings onto the document, touching only the groups that changed. */
 function startClientAppearance(): void {
@@ -93,13 +111,31 @@ function startDocumentTitle(): void {
   );
 }
 
+/** Chat overlays belong to the thread they were opened in, so leaving its route drops them. */
+function startThreadOverlayRetention(router: AppRouter): void {
+  router.subscribe("onResolved", () => {
+    const target = resolveThreadRouteTarget(router.state.matches.at(-1)?.params ?? {});
+    const draftSession =
+      target?.kind === "draft"
+        ? useComposerDraftStore.getState().getDraftSession(target.draftId)
+        : null;
+    const threadRef =
+      target?.kind === "server"
+        ? target.threadRef
+        : draftSession
+          ? scopeThreadRef(draftSession.environmentId, draftSession.threadId)
+          : null;
+    retainThreadOverlaysForThread(threadRef ? scopedThreadKey(threadRef) : null);
+  });
+}
+
 /**
  * Starts every app-lifetime service once, before the first render, and returns the router.
  * They run for the life of the page, so their disposers are dropped here.
  */
 export function startAppServices(): AppRouter {
   // Ahead of the history: the provider auth code must leave the address before anything reads it.
-  prepareProviderAuthDelivery();
+  startProviderAuthDelivery();
 
   // Fork: settings load after the router starts, so the stored history stands for the setting.
   if (isElectron) restoreNavigationHistory();
@@ -113,7 +149,20 @@ export function startAppServices(): AppRouter {
 
   startClientAppearance();
   startDocumentTitle();
+  startDefaultThemeAdoption();
+  startModelPreferencesMigration();
   startAgentOpenedPreviews();
+  startThreadOverlayRetention(router);
+  startMainAppLocationTracking(router);
+  startBackgroundThreadAnnouncements(appAtomRegistry, router);
+  startThreadVisitedMigration(appAtomRegistry);
+  startSshPasswordPromptQueue();
+
+  startHostFreezeToasts();
+  startLegacyThreadMigrationToast();
+  startPermissionUpdateNotices(router);
+  startThreadNotifications(appAtomRegistry, router);
+  if (isElectron) startDesktopUpdateLaunchNotice();
 
   return router;
 }

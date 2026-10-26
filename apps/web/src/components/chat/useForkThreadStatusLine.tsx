@@ -50,6 +50,7 @@ export function useForkThreadStatusLine(input: {
     now: new Date().toISOString(),
   }));
   if (snoozeClockState.shell !== thread) {
+    // oxlint-disable-next-line react/purity -- Reseeds the snooze clock only in the render-phase adjustment that runs when the shell changes.
     setSnoozeClockState({ shell: thread, now: new Date().toISOString() });
   }
   const snoozeClock = snoozeClockState.now;
