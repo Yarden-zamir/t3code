@@ -6,13 +6,6 @@ export interface Env {
   readonly TEAM_DOMAIN: string;
   readonly OWNER_EMAILS: string;
   readonly ACCOUNT_ID: string;
-  /** The Access app of the machine hostnames. MM-201 adds new machine tokens to its policy. */
-  readonly MACHINE_ACCESS_APP_ID: string;
-  /** Audience of the Access app of the portal pages and API. */
-  readonly PAGE_AUD: string;
-  /** Audience of the Access app of `/connect`. */
-  readonly CONNECT_AUD: string;
-  readonly CONNECT_ACCESS_APP_ID: string;
   /** MM-213: machine tunnels get the hostname `t3-<slug>.<MACHINE_DOMAIN>` in this DNS zone. */
   readonly MACHINE_DOMAIN?: string;
   readonly MACHINE_ZONE_ID?: string;
@@ -21,7 +14,10 @@ export interface Env {
    * separated, for example the client id of the desktop service token.
    */
   readonly MACHINE_ACCESS_SUBJECTS?: string;
-  /** MM-1205. Optional: without it, "Add machine" takes an existing machine token (MM-210). */
+  /**
+   * MM-1205. The first start needs it to find the Access apps of the portal (MM-1216). Without it
+   * later, "Add machine" takes an existing machine token (MM-210).
+   */
   readonly CF_API_TOKEN?: string;
   /** MM-1201: AES-GCM key for secrets that wait for their machine. */
   readonly SECRET_KEY?: string;

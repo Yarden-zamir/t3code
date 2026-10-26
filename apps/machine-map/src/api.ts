@@ -414,6 +414,44 @@ export interface GuestLinksStatus {
   readonly errors: ReadonlyArray<string>;
 }
 
+/** MM-1218: the state of one Cloudflare part that the portal relies on. */
+export type CloudflarePartState =
+  | { readonly _tag: "ready"; readonly note: string | null }
+  | { readonly _tag: "off"; readonly note: string | null }
+  /** Repair fixes it. */
+  | { readonly _tag: "changed"; readonly reason: string }
+  /** Repair makes it. */
+  | { readonly _tag: "missing"; readonly reason: string }
+  /** The owner does it in Cloudflare (MM-1209). The page has a guide for each `step`. */
+  | {
+      readonly _tag: "manual";
+      readonly reason: string | null;
+      readonly step: CloudflareStep | GuestCloudflareStep | null;
+    };
+
+export interface CloudflarePart {
+  readonly key: string;
+  readonly label: string;
+  readonly hint: string;
+  readonly state: CloudflarePartState;
+}
+
+/** MM-1218: one permission of the portal token. `granted` is null when the read gave another error. */
+export interface TokenPermissionCheck {
+  readonly permission: string;
+  readonly granted: boolean | null;
+}
+
+/** GET /api/cloudflare (MM-1218). POST /api/cloudflare/repair answers with it too. */
+export interface CloudflareStatus {
+  /** Why the portal cannot read Cloudflare at all, or null. */
+  readonly problem: string | null;
+  readonly parts: ReadonlyArray<CloudflarePart>;
+  readonly permissions: ReadonlyArray<TokenPermissionCheck>;
+  /** What failed in the last Repair. Empty for GET. */
+  readonly errors: ReadonlyArray<string>;
+}
+
 /** GET /api/passkey (MM-1207): the Cloudflare page where the owner registers a passkey. */
 export interface PasskeyResponse {
   readonly enrollUrl: string;

@@ -8,7 +8,7 @@ const CONFIG = `{
   "vars": {
     // The account.
     "ACCOUNT_ID": "account",
-    "PAGE_AUD": "REPLACE_ME",
+    "TEAM_DOMAIN": "REPLACE_ME",
   },
 }`;
 
@@ -16,13 +16,13 @@ it("reads the values and the route host, and treats REPLACE_ values as not set",
   const vars = readVars(CONFIG);
   expect(vars.get("ACCOUNT_ID")).toBe("account");
   expect(isSet(vars.get("ACCOUNT_ID"))).toBe(true);
-  expect(isSet(vars.get("PAGE_AUD"))).toBe(false);
+  expect(isSet(vars.get("TEAM_DOMAIN"))).toBe(false);
   expect(readRouteHost(CONFIG)).toBe("t3.example.com");
 });
 
 it("changes only the value lines and keeps the comments", () => {
-  const next = writeRoute(writeVar(CONFIG, "PAGE_AUD", "new-aud"), "t3.other.org");
-  expect(readVars(next).get("PAGE_AUD")).toBe("new-aud");
+  const next = writeRoute(writeVar(CONFIG, "TEAM_DOMAIN", "team.example.com"), "t3.other.org");
+  expect(readVars(next).get("TEAM_DOMAIN")).toBe("team.example.com");
   expect(readRouteHost(next)).toBe("t3.other.org");
   expect(next).toContain("// The account.");
   expect(next.split("\n")).toHaveLength(CONFIG.split("\n").length);

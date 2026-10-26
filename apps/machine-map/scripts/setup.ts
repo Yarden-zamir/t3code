@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// MM-1215: the first-time setup of the portal. README "First-time setup" has the usage. Each run
-// changes only what differs, and it never deploys: the workflow does that from main.
+// MM-1215: the first-time setup of the portal, for what the portal cannot do before it runs: the
+// Access app that locks the host to the owner emails, the values of wrangler.jsonc and the
+// secrets. The Cloudflare view of the portal does the rest (MM-1218). README "First-time setup"
+// has the usage. Each run changes only what differs, and it never deploys.
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
@@ -9,12 +11,13 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import * as NodeUtil from "node:util";
 
+import { discoverAccessApp } from "../src/accessApps.ts";
 import {
+  allowsOnlyOwners,
+  checkTokenPermissions,
   CloudflareApi,
   CloudflareApiError,
-  isPermissionRefusal,
   ownerPolicy,
-  type GuestApp,
 } from "../src/cloudflare.ts";
 import { isSet, readRouteHost, readVars, writeRoute, writeVar } from "./wranglerConfig.ts";
 
@@ -50,75 +53,42 @@ function printLinks(): void {
   );
 }
 
-// Access apps: found by the stored id or audience first, then by hostname, so the apps of a
-// setup by hand count too. A stored value that matches no app stops the run: a new app would get
-// a new audience and lock the owner out after the next deploy.
-
-const normalHost = (uri: string): string => {
-  let host = uri.trim().toLowerCase();
-  while (host.endsWith("/")) host = host.slice(0, -1);
-  return host;
-};
-
-const appHosts = (app: GuestApp) =>
-  [...(app.destinations ?? []).flatMap((d) => (d.uri ? [d.uri] : [])), app.domain ?? ""]
-    .filter((uri) => uri !== "")
-    .map(normalHost);
-
 class SetupStop extends Error {}
 
-async function ensureApp(
+/**
+ * The Access app of the portal host, with the owner emails and a session of 30 days (MM-103). It
+ * uses the one app that covers the host, as the portal does (MM-1216), so it also uses an app made
+ * by hand. It never changes an app that exists.
+ */
+async function ensurePagesApp(
   api: CloudflareApi,
-  apps: ReadonlyArray<GuestApp>,
-  label: string,
-  uri: string,
-  stored: { readonly id?: string | undefined; readonly aud?: string | undefined },
-  body: Record<string, unknown>,
-): Promise<{ readonly id: string; readonly aud: string }> {
-  const byStored = apps.find(
-    (app) =>
-      (isSet(stored.id) && app.id === stored.id) || (isSet(stored.aud) && app.aud === stored.aud),
-  );
-  if (byStored === undefined && (isSet(stored.id) || isSet(stored.aud)))
-    throw new SetupStop(
-      `${label}: wrangler.jsonc names an app that this account does not have. Check ACCOUNT_ID, or set the value to REPLACE_ME to make a new app.`,
-    );
-  if (byStored !== undefined && !appHosts(byStored).includes(normalHost(uri)))
-    throw new SetupStop(
-      `${label}: the app "${byStored.name}" in wrangler.jsonc covers ${appHosts(byStored).join(", ")}, not ${uri}. Set its value to REPLACE_ME to make an app for ${uri}.`,
-    );
-  const found = byStored ?? apps.find((app) => appHosts(app).includes(normalHost(uri)));
-  if (found) {
-    console.log(`ok       ${label}: the app "${found.name}" covers ${uri}`);
-    return { id: found.id, aud: await api.accessAppAud(found.id) };
-  }
-  const id = await api.createAccessApp({
-    type: "self_hosted",
-    domain: uri,
-    destinations: [{ type: "public", uri }],
-    app_launcher_visible: false,
-    ...body,
+  host: string,
+  owners: ReadonlyArray<string>,
+): Promise<void> {
+  const found = discoverAccessApp(await api.accessApps(), "pages", host, {
+    machineDomain: null,
+    added: [],
+    reported: [],
   });
-  console.log(`created  ${label}: ${uri}`);
-  return { id, aud: await api.accessAppAud(id) };
-}
-
-/** Owner emails change only in wrangler.jsonc: an app that exists keeps its policy. */
-function warnOwners(app: GuestApp | undefined, label: string, owners: ReadonlyArray<string>) {
-  const wanted = JSON.stringify(
-    ownerPolicy(owners)
-      .include.map((r) => JSON.stringify(r))
-      .toSorted(),
-  );
-  const matches = (app?.policies ?? []).some(
-    (policy) =>
-      policy.decision === "allow" &&
-      JSON.stringify(policy.include.map((r) => JSON.stringify(r)).toSorted()) === wanted,
-  );
-  if (app !== undefined && !matches)
-    console.log(
-      `warning  ${label}: no policy of "${app.name}" lists exactly the owner emails. Check it in the Zero Trust dashboard.`,
-    );
+  if (found._tag === "many") throw new SetupStop(found.reason);
+  if (found._tag === "found") {
+    console.log(`ok       portal pages: the app "${found.app.name}" covers ${host}`);
+    if (!allowsOnlyOwners(found.app, owners))
+      console.log(
+        `warning  portal pages: no policy of "${found.app.name}" lists exactly the owner emails. Check it in the Zero Trust dashboard.`,
+      );
+    return;
+  }
+  await api.createAccessApp({
+    type: "self_hosted",
+    name: "t3 portal pages",
+    domain: host,
+    destinations: [{ type: "public", uri: host }],
+    app_launcher_visible: false,
+    session_duration: "720h",
+    policies: [ownerPolicy(owners)],
+  });
+  console.log(`created  portal pages: ${host}`);
 }
 
 // Secrets go through the owner's `wrangler login`, never through the portal token.
@@ -197,26 +167,10 @@ const newVapidKey = () =>
     }),
   );
 
-// The final check: what each token can read, and what a visitor without a login meets.
+// The final check: what the token can read, and what a visitor without a login meets.
 
-async function probe(label: string, permission: string, run: () => Promise<unknown>) {
-  try {
-    await run();
-    console.log(`ok       ${label}`);
-    return true;
-  } catch (error) {
-    if (!isPermissionRefusal(error)) throw error;
-    console.log(`missing  ${label}: add "${permission}" to the portal token`);
-    return false;
-  }
-}
-
-async function visit(host: string, path: string, method = "GET"): Promise<"access" | "worker"> {
-  const response = await fetch(`https://${host}${path}`, {
-    method,
-    redirect: "manual",
-    ...(method === "POST" ? { headers: { "Content-Type": "application/json" }, body: "{}" } : {}),
-  });
+async function visit(host: string, path: string): Promise<"access" | "worker"> {
+  const response = await fetch(`https://${host}${path}`, { redirect: "manual" });
   const location = response.headers.get("location") ?? "";
   return location.includes(".cloudflareaccess.com") ||
     location.includes("/cdn-cgi/access/") ||
@@ -227,42 +181,25 @@ async function visit(host: string, path: string, method = "GET"): Promise<"acces
 
 async function check(api: CloudflareApi, host: string, zoneId: string): Promise<boolean> {
   console.log("\nCheck (read access only; a read does not prove edit access):");
-  const results = [
-    await probe("Access service tokens", "Access: Service Tokens Edit", () =>
-      api.findServiceTokenId("permission-check"),
-    ),
-    await probe("Access apps", "Access: Apps and Policies Edit", () => api.accessApps()),
-    await probe(
-      "Zero Trust organization and login methods",
-      "Access: Organizations, Identity Providers, and Groups Edit",
-      () => api.oneTimePinId(),
-    ),
-    await probe("Cloudflare Tunnel", "Cloudflare Tunnel: Edit", () =>
-      api.findTunnelByName("permission-check"),
-    ),
-    await probe("DNS", "DNS: Edit", () => api.findDnsRecord(zoneId, host)),
-    await probe("Zone WAF", "Zone WAF Edit", () => api.guestRateLimit(zoneId)),
-  ];
-  const revoke = await api.canRevokeSessions();
-  console.log(
-    revoke
-      ? "ok       Access session revoke"
-      : 'missing  Access session revoke: add "Access: Organizations Revoke"',
-  );
-  const paths: ReadonlyArray<readonly [string, string, "access" | "worker"]> = [
-    ["/", "GET", "access"],
-    ["/api/history", "GET", "access"],
-    ["/connect", "GET", "access"],
-    ["/enroll", "POST", "worker"],
-  ];
-  for (const [path, method, want] of paths) {
-    const seen = await visit(host, path, method).catch(() => "unreachable" as const);
-    results.push(seen === want);
+  const permissions = await checkTokenPermissions(api, zoneId, host);
+  for (const { permission, granted } of permissions)
     console.log(
-      `${seen === want ? "ok      " : "wrong   "} ${method} ${path} without a login: ${seen}, want ${want}`,
+      granted === true
+        ? `ok       ${permission}`
+        : granted === false
+          ? `missing  ${permission}: add it to the portal token`
+          : `unknown  ${permission}: Cloudflare gave another error`,
+    );
+  const results = permissions.map((p) => p.granted === true);
+  // `/enroll` opens only after Repair in the Cloudflare view, so it is not checked here.
+  for (const path of ["/", "/api/history", "/connect"]) {
+    const seen = await visit(host, path).catch(() => "unreachable" as const);
+    results.push(seen === "access");
+    console.log(
+      `${seen === "access" ? "ok      " : "wrong   "} GET ${path} without a login: ${seen}, want access`,
     );
   }
-  return results.every(Boolean) && revoke;
+  return results.every(Boolean);
 }
 
 async function main(): Promise<number> {
@@ -335,69 +272,13 @@ async function main(): Promise<number> {
     console.log("created  login method: One-time PIN");
   }
 
-  // A stored value counts only for the account that the run uses.
-  const sameAccount = vars.get("ACCOUNT_ID") === accountId;
-  const stored = (key: string) => (sameAccount ? vars.get(key) : undefined);
-  const apps = await api.accessApps();
-  const pages = await ensureApp(
-    api,
-    apps,
-    "portal pages",
-    host,
-    { aud: stored("PAGE_AUD") },
-    {
-      name: "t3 portal pages",
-      session_duration: "720h",
-      policies: [ownerPolicy(owners)],
-    },
-  );
-  // The portal adds the policy of the machine tokens (MM-201). Until then, the app lets no one in.
-  const connect = await ensureApp(
-    api,
-    apps,
-    "machine connections",
-    `${host}/connect`,
-    { id: stored("CONNECT_ACCESS_APP_ID"), aud: stored("CONNECT_AUD") },
-    { name: "t3 portal connect" },
-  );
-  await ensureApp(
-    api,
-    apps,
-    "enrollment",
-    `${host}/enroll`,
-    {},
-    {
-      name: "t3 portal enroll",
-      policies: [{ name: "t3 join codes", decision: "bypass", include: [{ everyone: {} }] }],
-    },
-  );
-  const machines = await ensureApp(
-    api,
-    apps,
-    "machine hostnames",
-    `t3-*.${machineDomain}`,
-    { id: stored("MACHINE_ACCESS_APP_ID") },
-    { name: "t3 machine hosts", session_duration: "720h", policies: [ownerPolicy(owners)] },
-  );
-  warnOwners(
-    apps.find((app) => app.id === pages.id),
-    "portal pages",
-    owners,
-  );
-  warnOwners(
-    apps.find((app) => app.id === machines.id),
-    "machine hostnames",
-    owners,
-  );
+  await ensurePagesApp(api, host, owners);
 
   const wanted: ReadonlyArray<readonly [string, string]> = [
+    ["account_id", accountId],
     ["ACCOUNT_ID", accountId],
     ["TEAM_DOMAIN", teamDomain],
     ["OWNER_EMAILS", owners.join(",")],
-    ["MACHINE_ACCESS_APP_ID", machines.id],
-    ["PAGE_AUD", pages.aud],
-    ["CONNECT_AUD", connect.aud],
-    ["CONNECT_ACCESS_APP_ID", connect.id],
     ["MACHINE_DOMAIN", machineDomain],
     ["MACHINE_ZONE_ID", zoneId],
   ];
@@ -437,7 +318,11 @@ async function main(): Promise<number> {
   if (!secrets.has("CF_API_TOKEN") || values["replace-token"])
     putSecret(accountId, "CF_API_TOKEN", token);
 
-  return (await check(api, host, zoneId)) && config === before ? 0 : 1;
+  const checked = await check(api, host, zoneId);
+  console.log(
+    `\nOpen https://${host}/#/cloudflare and select Repair. It makes the other Access apps (MM-1219).`,
+  );
+  return checked && config === before ? 0 : 1;
 }
 
 async function run(): Promise<number> {

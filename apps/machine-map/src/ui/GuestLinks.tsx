@@ -85,7 +85,13 @@ const checkCommand = (hostname: string) =>
   `node scripts/fork-guest-access-check.ts https://${hostname}`;
 
 /** MM-1209: the Cloudflare steps that "Apply" cannot do with the API token. */
-function GuestStepGuide({ step }: { step: GuestCloudflareStep }) {
+export function GuestStepGuide({
+  step,
+  action = ACTION,
+}: {
+  step: GuestCloudflareStep;
+  action?: string;
+}) {
   if (step === "oneTimePin") {
     return (
       <div className="v">
@@ -97,13 +103,13 @@ function GuestStepGuide({ step }: { step: GuestCloudflareStep }) {
           </li>
           <li>Go to Integrations &gt; Identity providers.</li>
           <li>If One-time PIN is not in the list, select Add new, then One-time PIN.</li>
-          <li>Come back and select Apply.</li>
+          <li>Come back and select {action}.</li>
         </ol>
         <p className="hint">
           Guests log in with a code that Cloudflare sends to their email.{" "}
           <External href={ONE_TIME_PIN_DOCS}>Cloudflare docs: One-time PIN</External>
         </p>
-        <PermissionLine step="oneTimePin" action={ACTION} />
+        <PermissionLine step="oneTimePin" action={action} />
       </div>
     );
   }
@@ -128,7 +134,7 @@ function GuestStepGuide({ step }: { step: GuestCloudflareStep }) {
         Without the permission, the portal cannot read the rule, so this step stays here.{" "}
         <External href={RATE_LIMIT_DOCS}>Cloudflare docs: create a rate limiting rule</External>
       </p>
-      <PermissionLine step="rateLimit" action={ACTION} />
+      <PermissionLine step="rateLimit" action={action} />
     </div>
   );
 }

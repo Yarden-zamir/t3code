@@ -53,7 +53,7 @@ jobs:
       - run: vp run --filter @t3tools/machine-map test
       - name: Deploy
         working-directory: apps/machine-map
+        # wrangler.jsonc names the account in `account_id`.
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: 2b654a284959a6a3b93fe33940d70db0
         run: vp run deploy

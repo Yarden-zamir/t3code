@@ -58,10 +58,18 @@ export const ownerEmails = (env: Env): ReadonlyArray<string> =>
     .map((email) => email.trim().toLowerCase())
     .filter((email) => email.length > 0);
 
-/** The owner email of a page or API request, or null when the request is not the owner's. */
-export async function ownerEmail(request: Request, env: Env): Promise<string | null> {
+/**
+ * The owner email of a page or API request, or null when the request is not the owner's. `aud` is
+ * the stored audience of the portal pages app (MM-1217); null fails closed.
+ */
+export async function ownerEmail(
+  request: Request,
+  env: Env,
+  aud: string | null,
+): Promise<string | null> {
   if (fakeAccess(request, env)) return ownerEmails(env)[0] ?? null;
-  const claims = decodeOwnerClaims(await verify(request, env, env.PAGE_AUD));
+  if (aud === null) return null;
+  const claims = decodeOwnerClaims(await verify(request, env, aud));
   if (Option.isNone(claims)) return null;
   const email = claims.value.email.trim().toLowerCase();
   return ownerEmails(env).includes(email) ? email : null;
@@ -110,8 +118,13 @@ export async function clientTokenId(
 }
 
 /** The client id of the machine token that signed a `/connect` request, or null. */
-export async function machineClientId(request: Request, env: Env): Promise<string | null> {
+export async function machineClientId(
+  request: Request,
+  env: Env,
+  aud: string | null,
+): Promise<string | null> {
   if (fakeAccess(request, env)) return request.headers.get("X-Dev-Machine-Client-Id");
-  const claims = decodeMachineClaims(await verify(request, env, env.CONNECT_AUD));
+  if (aud === null) return null;
+  const claims = decodeMachineClaims(await verify(request, env, aud));
   return Option.isSome(claims) ? claims.value.common_name : null;
 }

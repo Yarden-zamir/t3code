@@ -66,6 +66,9 @@ import type {
   EnrolledEvent,
   EnrollResponse,
   CallsEvent,
+  CloudflarePart,
+  CloudflarePartState,
+  CloudflareStatus,
   GuestLinksStatus,
   GuestMachineStatus,
   GuestPartState,
@@ -118,17 +121,35 @@ import {
 } from "@t3tools/contracts/sidebarTabs";
 import { sendPush, vapidKey, type PushTarget, type VapidKey } from "@t3tools/shared/webPush";
 import {
+  allowsOnlyOwners,
   approvalsAppProblem,
+  checkTokenPermissions,
   CLIENT_POLICY_NAME,
   CloudflareApi,
   CloudflareApiError,
   goneIsDone,
   isMfaNotAllowed,
   isPermissionRefusal,
+  MACHINE_POLICY_NAME,
+  policyTokenIds,
   tunnelTarget,
   type ApprovalsApp,
   type GuestApp,
 } from "./cloudflare.ts";
+import {
+  ACCESS_PART_LABEL,
+  ACCESS_PARTS,
+  accessAppBody,
+  bypassesEveryone,
+  coversMachineHost,
+  discoverAccessApp,
+  storedAppHolds,
+  StoredAccessApps,
+  type AccessPart,
+  type AppRef,
+  type Discovery,
+  type MachineHosts,
+} from "./accessApps.ts";
 import type { Env } from "./env.ts";
 import {
   arrowChange,
@@ -304,6 +325,42 @@ type PauseRecord = typeof PauseRecord.Type;
 const decodePause = decodeJson(PauseRecord);
 const decodeApprovalsApp = decodeJson(Schema.Struct({ id: Schema.String, aud: Schema.String }));
 const decodeGuestRules = decodeJson(GuestRules);
+const decodeStoredAccessApps = decodeJson(StoredAccessApps);
+
+/** MM-1217: an audience that the Worker checks, or why the portal does not know it. */
+export type AudienceLookup = { readonly aud: string } | { readonly reason: string };
+
+/** The result of one read of the Access apps of the account (MM-1216). */
+type AccessRead = { readonly apps: ReadonlyArray<GuestApp> } | { readonly error: string };
+
+/** MM-1218: what a Cloudflare part of the view shows, by the hint under its label. */
+const ACCESS_PART_HINT: Record<AccessPart, string> = {
+  pages: "Locks the portal host to the owner emails. The setup script makes it (MM-1215).",
+  connect: "Lets in only machine tokens on /connect (MM-104).",
+  enroll: "Leaves /enroll open, because the join code is the credential (MM-204).",
+  machines: "Covers the machine hostnames and holds the machine and app tokens (MM-201, MM-911).",
+};
+
+const ready = (note: string | null = null): CloudflarePartState => ({ _tag: "ready", note });
+const manual = (reason: string): CloudflarePartState => ({ _tag: "manual", reason, step: null });
+
+/** MM-1218: a part of the Guests setup as a part of the Cloudflare view. */
+function guestPartState(state: GuestPartState): CloudflarePartState {
+  switch (state._tag) {
+    case "off":
+      return { _tag: "off", note: null };
+    case "ready":
+      return ready();
+    case "needsApply":
+      return { _tag: "changed", reason: state.reason };
+    case "cloudflareStep":
+      return { _tag: "manual", reason: null, step: state.step };
+    case "blocked":
+      return manual(state.reason);
+    case "noHostname":
+      return { _tag: "off", note: "The machine reported no tunnel host yet." };
+  }
+}
 
 /** MM-1210: the guest and build apps that the portal made on the host of one machine. */
 interface GuestAppsRow extends Record<string, SqlStorageValue> {
@@ -2033,15 +2090,130 @@ export class MachineMapObject extends DurableObject<Env> {
     return found;
   }
 
-  #accessAppIds(): Array<string> {
-    const ids = [this.env.MACHINE_ACCESS_APP_ID, this.env.CONNECT_ACCESS_APP_ID];
-    if (!ids.every(configured)) {
+  // MM-1216: the Access apps of the portal, stored once and again only on change.
+
+  /** The stored apps of `host`. Apps stored for another host do not count. */
+  #storedAccessApps(host: string | null = null): StoredAccessApps["apps"] {
+    const row = this.#sql<{ value: string }>("SELECT value FROM meta WHERE key = 'access_apps'")[0];
+    const stored = row ? decodeStoredAccessApps(row.value) : null;
+    return stored !== null && (host === null || stored.host === host) ? stored.apps : {};
+  }
+
+  #accessApp(part: AccessPart): AppRef {
+    const app = this.#storedAccessApps()[part];
+    if (app === undefined)
       throw new PortalError(
         503,
-        "Set MACHINE_ACCESS_APP_ID and CONNECT_ACCESS_APP_ID in wrangler.jsonc first.",
+        `The portal does not know its Access app "${ACCESS_PART_LABEL[part]}" yet. Open the Cloudflare view and select Repair (MM-1219).`,
       );
+    return app;
+  }
+
+  #accessAppIds(): Array<string> {
+    return [this.#accessApp("machines").id, this.#accessApp("connect").id];
+  }
+
+  /** When the portal last read its Access apps. Lost on hibernation, so a wake reads again. */
+  #accessReadAt = 0;
+  #accessRead: Promise<AccessRead> | null = null;
+  /** Why each part that the last read did not store is missing. */
+  #accessGaps: Partial<Record<AccessPart, Exclude<Discovery, { _tag: "found" }>>> = {};
+
+  #machineHosts(): MachineHosts {
+    const domain = this.env.MACHINE_DOMAIN;
+    return {
+      machineDomain: configured(domain) ? domain : null,
+      added: this.#sql<{ hostname: string }>(
+        "SELECT hostname FROM machine_tunnels WHERE access_host_added = 1",
+      ).map((row) => row.hostname),
+      reported: this.#map.machines.flatMap((m) => (m.hostname === null ? [] : [m.hostname])),
+    };
+  }
+
+  /** One read at a time: requests that come during a read share it. */
+  #readAccessApps(host: string): Promise<AccessRead> {
+    this.#accessRead ??= this.#readAccessAppsNow(host).finally(() => {
+      this.#accessRead = null;
+    });
+    return this.#accessRead;
+  }
+
+  /**
+   * Reads every Access app with the portal token. A stored app stays while it exists and covers
+   * its path. A missing part takes the one app that fits it. It writes only on change, because
+   * the free plan limits Durable Object writes (MM-1216). A failed read keeps what is stored.
+   */
+  async #readAccessAppsNow(host: string): Promise<AccessRead> {
+    this.#accessReadAt = Date.now();
+    const api = this.#cloudflare();
+    if (!api)
+      return {
+        error: "The portal needs the CF_API_TOKEN secret to find its Access apps (MM-1205).",
+      };
+    try {
+      const apps = await api.accessApps();
+      const current = this.#storedAccessApps(host);
+      const next: { -readonly [P in AccessPart]?: AppRef } = {};
+      const gaps: Partial<Record<AccessPart, Exclude<Discovery, { _tag: "found" }>>> = {};
+      const machineHosts = this.#machineHosts();
+      for (const part of ACCESS_PARTS) {
+        const kept = current[part];
+        const app = kept === undefined ? undefined : apps.find((a) => a.id === kept.id);
+        if (kept !== undefined && storedAppHolds(app, part, host)) {
+          next[part] = { id: kept.id, aud: app?.aud ?? kept.aud };
+          continue;
+        }
+        const found = discoverAccessApp(apps, part, host, machineHosts);
+        if (found._tag !== "found") {
+          gaps[part] = found;
+          continue;
+        }
+        next[part] = {
+          id: found.app.id,
+          aud: found.app.aud ?? (await api.accessAppAud(found.app.id)),
+        };
+      }
+      this.#accessGaps = gaps;
+      this.#saveMeta("access_apps", JSON.stringify({ host, apps: next }));
+      return { apps };
+    } catch (error) {
+      return {
+        error: isPermissionRefusal(error)
+          ? `The CF_API_TOKEN cannot read Access apps. Add "${CLOUDFLARE_STEP_PERMISSION.appLauncher}" to the token (MM-1205).`
+          : `Cloudflare did not list the Access apps: ${errorMessage(error)}`,
+      };
     }
-    return ids;
+  }
+
+  /**
+   * MM-1217: the audiences that the Worker checks on `host`. While one is missing, the portal reads
+   * Cloudflare at most once a minute and the Worker refuses. Once an hour it reads again in the
+   * background, so a deleted or moved app stops counting. No owner: the Worker asks before its check.
+   */
+  async accessAudiences(
+    host: string,
+  ): Promise<{ readonly pages: AudienceLookup; readonly connect: AudienceLookup }> {
+    const age = Date.now() - this.#accessReadAt;
+    const before = this.#storedAccessApps(host);
+    let failed: string | null = null;
+    if (before.pages !== undefined && before.connect !== undefined) {
+      if (age > HOUR_MS) void this.#readAccessApps(host);
+    } else if (age > MINUTE_MS) {
+      const read = await this.#readAccessApps(host);
+      if ("error" in read) failed = read.error;
+    }
+    const apps = this.#storedAccessApps(host);
+    const lookup = (part: "pages" | "connect"): AudienceLookup => {
+      const app = apps[part];
+      if (app !== undefined) return { aud: app.aud };
+      return {
+        reason:
+          failed ??
+          this.#accessGaps[part]?.reason ??
+          `The portal did not find its Access app "${ACCESS_PART_LABEL[part]}" yet. Try again in a minute.`,
+      };
+    };
+    return { pages: lookup("pages"), connect: lookup("connect") };
   }
 
   /** MM-1201: the secret and the tunnel grant wait for the machine encrypted. */
@@ -2147,7 +2319,7 @@ export class MachineMapObject extends DurableObject<Env> {
       }
       await api.ensureIngress(tunnel.id, hostname, MACHINE_SERVICE);
       if (!record) made.dnsRecordId = (await api.createTunnelCname(zoneId, hostname, tunnel.id)).id;
-      made.hostAdded = await api.addAppHostname(this.env.MACHINE_ACCESS_APP_ID, hostname);
+      made.hostAdded = await api.addAppHostname(this.#accessApp("machines").id, hostname);
       return {
         row: {
           tunnel_id: tunnel.id,
@@ -2191,7 +2363,7 @@ export class MachineMapObject extends DurableObject<Env> {
       });
     if (row.access_host_added === 1) {
       await step("remove the Access hostname", () =>
-        api.removeAppHostname(this.env.MACHINE_ACCESS_APP_ID, row.hostname),
+        api.removeAppHostname(this.#accessApp("machines").id, row.hostname),
       );
     }
     const zoneId = this.env.MACHINE_ZONE_ID;
@@ -2206,10 +2378,8 @@ export class MachineMapObject extends DurableObject<Env> {
 
   /** The tunnel token and the Access login of a machine. It holds a secret: never log it. */
   async #tunnelGrant(api: CloudflareApi, row: MachineTunnelRow): Promise<MachineTunnelGrant> {
-    const [token, aud] = await Promise.all([
-      api.tunnelToken(row.tunnel_id),
-      api.accessAppAud(this.env.MACHINE_ACCESS_APP_ID),
-    ]);
+    const { aud } = this.#accessApp("machines");
+    const token = await api.tunnelToken(row.tunnel_id);
     const [first, ...rest] = [
       ...ownerEmails(this.env),
       ...(this.env.MACHINE_ACCESS_SUBJECTS ?? "")
@@ -3018,37 +3188,275 @@ export class MachineMapObject extends DurableObject<Env> {
    * app. A step that only the owner can do in Cloudflare comes back as a status, before any change.
    */
   setUpApprovals(owner: OwnerContext, host: string) {
-    return this.#run(owner, async (): Promise<ApprovalsStatus> => {
-      const api = this.#cloudflare();
-      if (!api) throw new PortalError(503, "Approvals need the CF_API_TOKEN secret (MM-1205).");
-      const owners = ownerEmails(this.env);
-      if ((await api.ensureOrganizationMfa()) === "cannotEdit")
-        return { _tag: "cloudflareStep", step: "allowPasskey" };
-      if ((await api.ensureAppLauncher(owners)) === "cannotCreate")
-        return { _tag: "cloudflareStep", step: "appLauncher" };
-      try {
-        const app = await api.ensureApprovalsApp(host, owners);
-        this.#sql(
-          "INSERT OR REPLACE INTO meta (key, value) VALUES ('approvals_app', ?)",
-          JSON.stringify({ id: app.id, aud: app.aud }),
+    return this.#run(owner, () => this.#setUpApprovalsNow(host));
+  }
+
+  /** The work of "Set up approvals". Repair in the Cloudflare view runs it too (MM-1219). */
+  async #setUpApprovalsNow(host: string): Promise<ApprovalsStatus> {
+    const api = this.#cloudflare();
+    if (!api) throw new PortalError(503, "Approvals need the CF_API_TOKEN secret (MM-1205).");
+    const owners = ownerEmails(this.env);
+    if ((await api.ensureOrganizationMfa()) === "cannotEdit")
+      return { _tag: "cloudflareStep", step: "allowPasskey" };
+    if ((await api.ensureAppLauncher(owners)) === "cannotCreate")
+      return { _tag: "cloudflareStep", step: "appLauncher" };
+    try {
+      const app = await api.ensureApprovalsApp(host, owners);
+      // Written only on change, like every stored Cloudflare value (MM-1216).
+      this.#saveMeta("approvals_app", JSON.stringify({ id: app.id, aud: app.aud }));
+      // MM-914: the app of `/client` comes with it, so native apps can read their machines.
+      this.#saveMeta("client_app_aud", await api.ensureClientTokensApp(host));
+    } catch (error) {
+      // The organization allows a method now, but Cloudflare can still refuse the MFA app.
+      if (isMfaNotAllowed(error)) return { _tag: "cloudflareStep", step: "allowPasskey" };
+      if (isPermissionRefusal(error))
+        throw new PortalError(
+          403,
+          `The CF_API_TOKEN cannot create Access apps. Add "${CLOUDFLARE_STEP_PERMISSION.appLauncher}" to the token (MM-1205), then select Set up approvals again.`,
         );
-        // MM-914: the app of `/client` comes with it, so native apps can read their machines.
-        this.#sql(
-          "INSERT OR REPLACE INTO meta (key, value) VALUES ('client_app_aud', ?)",
-          await api.ensureClientTokensApp(host),
-        );
-      } catch (error) {
-        // The organization allows a method now, but Cloudflare can still refuse the MFA app.
-        if (isMfaNotAllowed(error)) return { _tag: "cloudflareStep", step: "allowPasskey" };
-        if (isPermissionRefusal(error))
-          throw new PortalError(
-            403,
-            `The CF_API_TOKEN cannot create Access apps. Add "${CLOUDFLARE_STEP_PERMISSION.appLauncher}" to the token (MM-1205), then select Set up approvals again.`,
-          );
-        throw error;
-      }
-      return (await this.#approvalsProblem(host)) ?? this.#approvalsReady();
+      throw error;
+    }
+    return (await this.#approvalsProblem(host)) ?? this.#approvalsReady();
+  }
+
+  // MM-1218, MM-1219: the Cloudflare view. `host` is the portal host of the page.
+
+  /** GET /api/cloudflare. */
+  cloudflareStatus(owner: OwnerContext, host: string) {
+    return this.#run(owner, () => this.#cloudflareStatus(host, []));
+  }
+
+  /** "Repair": makes and fixes what the portal may, with the code of each existing button. */
+  repairCloudflare(owner: OwnerContext, host: string) {
+    return this.#run(owner, async () =>
+      this.#cloudflareStatus(host, await this.#accessSerial(() => this.#repairCloudflare(host))),
+    );
+  }
+
+  /** Repairs run one at a time, so two pages never make the same app twice. */
+  #accessRepair: Promise<unknown> = Promise.resolve();
+
+  #accessSerial<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.#accessRepair.then(work, work);
+    this.#accessRepair = next.catch(() => undefined);
+    return next;
+  }
+
+  async #cloudflareStatus(host: string, errors: ReadonlyArray<string>): Promise<CloudflareStatus> {
+    const api = this.#cloudflare();
+    const read = await this.#readAccessApps(host);
+    const stored = this.#storedAccessApps(host);
+    const parts: Array<CloudflarePart> = ACCESS_PARTS.map((part) => ({
+      key: part,
+      label: ACCESS_PART_LABEL[part],
+      hint: ACCESS_PART_HINT[part],
+      state: "error" in read ? manual(read.error) : this.#accessPartState(part, read.apps, stored),
+    }));
+    parts.push({
+      key: "approvals",
+      label: "Approvals",
+      hint: "The passkey path /api/grant, the /client app and the App Launcher (MM-1207, MM-1208).",
+      state: await this.#approvalsPartState(host),
     });
+    if (api !== null) parts.push(...(await this.#guestParts(host)));
+    return {
+      problem: api === null ? "The portal needs the CF_API_TOKEN secret (MM-1205)." : null,
+      parts,
+      permissions:
+        api === null
+          ? []
+          : await checkTokenPermissions(
+              api,
+              configured(this.env.MACHINE_ZONE_ID) ? this.env.MACHINE_ZONE_ID : null,
+              host,
+            ),
+      errors,
+    };
+  }
+
+  #accessPartState(
+    part: AccessPart,
+    apps: ReadonlyArray<GuestApp>,
+    stored: StoredAccessApps["apps"],
+  ): CloudflarePartState {
+    const ref = stored[part];
+    const app = ref === undefined ? undefined : apps.find((a) => a.id === ref.id);
+    if (app === undefined) {
+      const gap = this.#accessGaps[part];
+      const reason = gap?.reason ?? `No Access app for ${ACCESS_PART_LABEL[part]}.`;
+      if (part === "pages")
+        return manual(`${reason} Run scripts/setup.ts, which locks the host to the owner emails.`);
+      return gap?._tag === "many" ? manual(reason) : { _tag: "missing", reason };
+    }
+    const owners = ownerEmails(this.env);
+    const notOwners = manual(
+      `No Allow policy of "${app.name}" lists exactly the owner emails. Check it in the Zero Trust dashboard.`,
+    );
+    const machineTokens = this.#sql<{ token_id: string }>("SELECT token_id FROM machine_tokens");
+    const lacking = (ids: ReadonlyArray<string>, policy: string) => {
+      const held = new Set(policyTokenIds(app, policy));
+      return ids.filter((id) => !held.has(id)).length;
+    };
+    switch (part) {
+      case "pages":
+        return allowsOnlyOwners(app, owners) ? ready() : notOwners;
+      case "enroll":
+        return bypassesEveryone(app)
+          ? ready()
+          : manual(`"${app.name}" has no Bypass policy for everyone, so joins fail.`);
+      case "connect": {
+        const count = lacking(
+          machineTokens.map((row) => row.token_id),
+          MACHINE_POLICY_NAME,
+        );
+        return count === 0
+          ? ready()
+          : { _tag: "changed", reason: `${count} machine tokens are not in its policy.` };
+      }
+      case "machines": {
+        if (!allowsOnlyOwners(app, owners)) return notOwners;
+        const domain = configured(this.env.MACHINE_DOMAIN) ? this.env.MACHINE_DOMAIN : null;
+        const tokens =
+          lacking(
+            machineTokens.map((row) => row.token_id),
+            MACHINE_POLICY_NAME,
+          ) +
+          lacking(
+            this.#sql<{ token_id: string }>("SELECT token_id FROM client_app_tokens").map(
+              (row) => row.token_id,
+            ),
+            CLIENT_POLICY_NAME,
+          );
+        const hosts = this.#sql<{ hostname: string }>(
+          "SELECT hostname FROM machine_tunnels",
+        ).filter((row) => !coversMachineHost(app, row.hostname, domain)).length;
+        if (tokens === 0 && hosts === 0) return ready();
+        const reasons = [
+          tokens > 0 ? `${tokens} tokens are not in its policies.` : "",
+          hosts > 0 ? `It does not cover ${hosts} tunnel hostnames.` : "",
+        ];
+        return { _tag: "changed", reason: reasons.filter((r) => r !== "").join(" ") };
+      }
+    }
+  }
+
+  async #approvalsPartState(host: string): Promise<CloudflarePartState> {
+    const problem = await this.#approvalsProblem(host);
+    if (problem === null) {
+      const status = await this.#approvalsReady();
+      return ready(status._tag === "ready" ? status.warning : null);
+    }
+    return problem._tag === "missing"
+      ? { _tag: "missing", reason: problem.reason }
+      : { _tag: "manual", reason: null, step: problem.step };
+  }
+
+  /** The One-time PIN login, the guest apps of each machine and the rate limit (MM-1210). */
+  async #guestParts(host: string): Promise<Array<CloudflarePart>> {
+    let status: GuestLinksStatus;
+    try {
+      status = await this.#guestStatus(host, []);
+    } catch (error) {
+      const reason = error instanceof PortalError ? error.message : errorMessage(error);
+      return [{ key: "guests", label: "Guest links", hint: "", state: manual(reason) }];
+    }
+    const machines = status.machines.filter((m) => m.state._tag !== "off");
+    return [
+      {
+        key: "oneTimePin",
+        label: "One-time PIN login",
+        hint: "The login method of guests (MM-1210).",
+        state: guestPartState(status.oneTimePin),
+      },
+      ...(machines.length === 0
+        ? [
+            {
+              key: "guests",
+              label: "Guest apps",
+              hint: "The Access apps of guest links on each machine host (MM-1210).",
+              state: {
+                _tag: "off",
+                note: "No machine has guest links on. Turn them on in the Guests view.",
+              } as const,
+            },
+          ]
+        : machines.map((m) => ({
+            key: `guests:${m.machineId}`,
+            label: `Guest apps of ${findMachine(this.#map, m.machineId)?.name ?? m.machineId}`,
+            hint: m.hostname ?? "No hostname yet.",
+            state: guestPartState(m.state),
+          }))),
+      {
+        key: "rateLimit",
+        label: "Rate limit on /api/guest/",
+        hint: "The zone rule t3_guest_routes (MM-1213).",
+        state: guestPartState(status.rateLimit),
+      },
+    ];
+  }
+
+  /**
+   * Makes the missing portal apps, adds the known tokens and tunnel hostnames, then runs "Set up
+   * approvals" and the guests "Apply". Each step goes on after a failure and reports it.
+   */
+  async #repairCloudflare(host: string): Promise<Array<string>> {
+    const api = this.#cloudflare();
+    if (api === null) return [];
+    const errors: Array<string> = [];
+    const step = async (what: string, work: () => Promise<unknown>) => {
+      try {
+        await work();
+      } catch (error) {
+        const text = error instanceof PortalError ? error.message : guestErrorText(error);
+        errors.push(`${what}: ${text}`);
+      }
+    };
+    await step("Access apps", async () => {
+      const read = await this.#readAccessApps(host);
+      if ("error" in read) throw new PortalError(503, read.error);
+      const stored = this.#storedAccessApps(host);
+      const domain = this.env.MACHINE_DOMAIN;
+      for (const part of ["connect", "enroll", "machines"] as const) {
+        // Only a part without any fitting app. Two fitting apps stay a manual step.
+        if (stored[part] !== undefined || this.#accessGaps[part]?._tag !== "none") continue;
+        if (!configured(domain))
+          throw new PortalError(503, "Set MACHINE_DOMAIN in wrangler.jsonc.");
+        await api.createAccessApp(accessAppBody(part, host, domain, ownerEmails(this.env)));
+      }
+      const again = await this.#readAccessApps(host);
+      if ("error" in again) throw new PortalError(503, again.error);
+    });
+    await step("Tokens and tunnel hostnames", () => this.#repairAccessPolicies(api));
+    await step("Set up approvals", () => this.#setUpApprovalsNow(host));
+    errors.push(...(await this.#applyGuestLinks(host)));
+    return errors;
+  }
+
+  /** Adds each known token and tunnel hostname that the apps of MM-201 and MM-213 lack. */
+  async #repairAccessPolicies(api: CloudflareApi): Promise<void> {
+    const machinesApp = this.#accessApp("machines").id;
+    const connectApp = this.#accessApp("connect").id;
+    for (const machine of this.#map.machines) {
+      const tokenId = await this.#tokenId(api, machine);
+      if (tokenId === null) continue;
+      for (const appId of [machinesApp, connectApp]) await api.addTokenToApp(appId, tokenId);
+    }
+    for (const row of this.#sql<{ token_id: string }>("SELECT token_id FROM client_app_tokens"))
+      await api.addTokenToApp(machinesApp, row.token_id, CLIENT_POLICY_NAME);
+    const app = await api.guestApp(machinesApp);
+    if (app === null) return;
+    const domain = configured(this.env.MACHINE_DOMAIN) ? this.env.MACHINE_DOMAIN : null;
+    for (const row of this.#sql<{ hostname: string }>("SELECT hostname FROM machine_tunnels")) {
+      if (!coversMachineHost(app, row.hostname, domain))
+        await api.addAppHostname(machinesApp, row.hostname);
+    }
+  }
+
+  /** Writes a meta value only when it differs, to spare the daily write budget. */
+  #saveMeta(key: string, value: string): void {
+    const row = this.#sql<{ value: string }>("SELECT value FROM meta WHERE key = ?", key)[0];
+    if (row?.value !== value)
+      this.#sql("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, value);
   }
 
   // MM-1210: guest links. `portalHost` is the host of the page, which no guest app may cover.
@@ -3666,10 +4074,7 @@ export class MachineMapObject extends DurableObject<Env> {
 
   /** The Access app of the machine hostnames, which holds the app tokens (MM-911). */
   #machineAccessAppId(): string {
-    const [appId] = this.#accessAppIds();
-    // `#accessAppIds` throws for an unset id, so this only satisfies the type.
-    if (appId === undefined) throw new PortalError(503, "Set MACHINE_ACCESS_APP_ID first.");
-    return appId;
+    return this.#accessApp("machines").id;
   }
 
   /**

@@ -13,7 +13,14 @@ import {
   type MapRevision,
 } from "@t3tools/contracts/machineMap";
 
-import type { GuestLinksStatus, GuestRules, PauseView, WriteResult } from "../api.ts";
+import type {
+  CloudflarePartState,
+  CloudflareStatus,
+  GuestLinksStatus,
+  GuestRules,
+  PauseView,
+  WriteResult,
+} from "../api.ts";
 import { EMPTY_GUEST_RULES, GUEST_SETTING, guestLinksOn } from "../guestLinks.ts";
 import { applyChanges, findArrow, findClientArrow } from "../rules/map.ts";
 import {
@@ -276,6 +283,67 @@ function fixtureGuests(snapshot: PortalSnapshot): GuestLinksStatus {
   };
 }
 
+/**
+ * MM-1218: a Cloudflare view without Cloudflare. It shows each state once. Repair turns the parts
+ * that it fixes ready and keeps the manual steps.
+ */
+let cloudflareRepaired = false;
+function fixtureCloudflare(): CloudflareStatus {
+  const ready: CloudflarePartState = { _tag: "ready", note: null };
+  const repairable = (state: CloudflarePartState) => (cloudflareRepaired ? ready : state);
+  const part = (key: string, label: string, hint: string, state: CloudflarePartState) => ({
+    key,
+    label,
+    hint,
+    state,
+  });
+  return {
+    problem: null,
+    parts: [
+      part("pages", "Portal pages", "Locks the portal host to the owner emails.", ready),
+      part("connect", "Machine connections", "Lets in only machine tokens on /connect.", ready),
+      part(
+        "enroll",
+        "Enrollment",
+        "Leaves /enroll open for join codes.",
+        repairable({ _tag: "missing", reason: "No Access app covers the enrollment path." }),
+      ),
+      part(
+        "machines",
+        "Machine hostnames",
+        "Covers the machine hostnames.",
+        repairable({ _tag: "changed", reason: "1 tokens are not in its policies." }),
+      ),
+      part(
+        "approvals",
+        "Approvals",
+        "The passkey path, the /client app and the App Launcher.",
+        ready,
+      ),
+      part("oneTimePin", "One-time PIN login", "The login method of guests.", ready),
+      part("guests", "Guest apps", "The Access apps of guest links.", {
+        _tag: "off",
+        note: "No machine has guest links on.",
+      }),
+      part("rateLimit", "Rate limit on /api/guest/", "The zone rule t3_guest_routes.", {
+        _tag: "manual",
+        reason: null,
+        step: "rateLimit",
+      }),
+    ],
+    permissions: [
+      { permission: "Access: Service Tokens Edit", granted: true },
+      { permission: "Access: Apps and Policies Edit", granted: true },
+      { permission: "Access: Organizations, Identity Providers, and Groups Edit", granted: true },
+      { permission: "Access: Organizations Revoke", granted: true },
+      { permission: "Cloudflare Tunnel: Edit", granted: true },
+      { permission: "DNS: Edit", granted: true },
+      { permission: "Zone WAF Edit", granted: false },
+    ],
+    errors: [],
+  };
+}
+
 /** The writes that the redesigns use. Every other path says that it needs the live portal. */
 export async function fixtureApi(method: string, path: string, body: unknown): Promise<unknown> {
   if (!current) throw new Error("The fixture is not loaded yet.");
@@ -340,6 +408,11 @@ export async function fixtureApi(method: string, path: string, body: unknown): P
     return result._tag === "applied" ? { revision: result.revision } : { revision: null };
   }
   if (path === "/api/guests" || path === "/api/guests/apply") return fixtureGuests(current);
+  if (path === "/api/cloudflare") return fixtureCloudflare();
+  if (method === "POST" && path === "/api/cloudflare/repair") {
+    cloudflareRepaired = true;
+    return fixtureCloudflare();
+  }
   if (method === "POST" && path === "/api/guests/rules" && isRecord(body) && isRecord(body.rules)) {
     const rules = body.rules;
     const strings = (key: keyof GuestRules) =>

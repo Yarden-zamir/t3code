@@ -4,7 +4,7 @@
  */
 import * as Schema from "effect/Schema";
 
-import { CLOUDFLARE_STEP_PERMISSION } from "./api.ts";
+import { CLOUDFLARE_STEP_PERMISSION, type TokenPermissionCheck } from "./api.ts";
 import { GUEST_RATE_LIMIT_RULE, guestRateLimitProblem } from "./guestLinks.ts";
 
 const decodeEnvelope = Schema.decodeUnknownSync(
@@ -159,6 +159,7 @@ const decodeEmailRule = Schema.decodeUnknownOption(
 const GuestAppFields = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
+  type: Schema.optionalKey(Schema.String),
   aud: Schema.optionalKey(Schema.String),
   domain: Schema.optionalKey(Schema.String),
   session_duration: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -169,6 +170,7 @@ const GuestAppFields = Schema.Struct({
   policies: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
+        name: Schema.optionalKey(Schema.String),
         decision: Schema.String,
         include: Schema.Array(Schema.Unknown),
         exclude: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.Unknown))),
@@ -242,7 +244,7 @@ export type ApprovalsApp = ReturnType<typeof decodeApprovalsApp>;
 export const tunnelTarget = (tunnelId: string): string => `${tunnelId}.cfargotunnel.com`;
 
 /** The app policy that holds every machine token. */
-const MACHINE_POLICY_NAME = "t3 machine map tokens";
+export const MACHINE_POLICY_NAME = "t3 machine map tokens";
 /**
  * MM-911: the policy of the machine hostnames app that holds the app tokens of native clients.
  * It is never on the `/connect` app, so a client token cannot connect as a machine. The portal
@@ -950,5 +952,69 @@ const ruleTokenId = (rule: unknown): string | null => {
   return decoded._tag === "Some" ? decoded.value.service_token.token_id : null;
 };
 
-const tokenIds = (policy: Policy): Array<string> =>
+const tokenIds = (policy: Pick<Policy, "include">): Array<string> =>
   policy.include.map(ruleTokenId).filter((id): id is string => id !== null);
+
+/** The token ids in the policy `name` of an app from `accessApps`. */
+export const policyTokenIds = (app: GuestApp, name: string): ReadonlyArray<string> =>
+  (app.policies ?? []).filter((policy) => policy.name === name).flatMap(tokenIds);
+
+/** A destination as Cloudflare compares it: lower case, without a trailing `/` or `/*`. */
+export const normalHost = (uri: string): string => {
+  let host = uri.trim().toLowerCase();
+  if (host.endsWith("/*")) host = host.slice(0, -2);
+  while (host.endsWith("/")) host = host.slice(0, -1);
+  return host;
+};
+
+/** Every hostname and path that an Access app covers, normalized. */
+export const appHosts = (app: GuestApp): ReadonlyArray<string> =>
+  [...(app.destinations ?? []).flatMap((d) => (d.uri ? [d.uri] : [])), app.domain ?? ""]
+    .filter((uri) => uri !== "")
+    .map(normalHost);
+
+/** Some Allow policy of the app lists exactly the owner emails. */
+export function allowsOnlyOwners(app: GuestApp, owners: ReadonlyArray<string>): boolean {
+  const key = (include: ReadonlyArray<unknown>) =>
+    JSON.stringify(include.map((rule) => JSON.stringify(rule)).toSorted());
+  const wanted = key(ownerPolicy(owners).include);
+  return (app.policies ?? []).some(
+    (policy) => policy.decision === "allow" && key(policy.include) === wanted,
+  );
+}
+
+/**
+ * MM-1218: reads one thing with each permission of the portal token. A read does not prove edit
+ * rights. `granted` is null when Cloudflare gave another error.
+ */
+export async function checkTokenPermissions(
+  api: CloudflareApi,
+  zoneId: string | null,
+  host: string,
+): Promise<ReadonlyArray<TokenPermissionCheck>> {
+  const probe = async (permission: string, run: () => Promise<unknown>) => {
+    try {
+      await run();
+      return { permission, granted: true };
+    } catch (error) {
+      return { permission, granted: isPermissionRefusal(error) ? false : null };
+    }
+  };
+  const zone = (permission: string, run: (zoneId: string) => Promise<unknown>) =>
+    zoneId === null
+      ? Promise.resolve({ permission, granted: null })
+      : probe(permission, () => run(zoneId));
+  return Promise.all([
+    probe("Access: Service Tokens Edit", () => api.findServiceTokenId("permission-check")),
+    probe("Access: Apps and Policies Edit", () => api.accessApps()),
+    probe("Access: Organizations, Identity Providers, and Groups Edit", () =>
+      api.identityProviders(),
+    ),
+    api
+      .canRevokeSessions()
+      .then((granted) => ({ permission: "Access: Organizations Revoke", granted })),
+    probe("Cloudflare Tunnel: Edit", () => api.findTunnelByName("permission-check")),
+    zone("DNS: Edit", (id) => api.findDnsRecord(id, host)),
+    zone("Zone WAF Edit", (id) => api.guestRateLimit(id)),
+  ]);
+}

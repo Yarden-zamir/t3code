@@ -843,6 +843,10 @@ function fakeCloudflare(
   options: {
     readonly wafStatus?: number;
     readonly rules?: ReadonlyArray<Record<string, unknown>>;
+    /** The status of the Access app list. */
+    readonly appsStatus?: number;
+    /** Refuse every other call with 403, as a token without that permission. */
+    readonly refuseOthers?: boolean;
   } = {},
 ) {
   const apps = new Map<string, Record<string, unknown>>();
@@ -869,17 +873,32 @@ function fakeCloudflare(
       return ok({ id: "otp" });
     }
     if (path === "/accounts/account/access/apps") {
+      if (options.appsStatus) return refuse(options.appsStatus);
       if (method === "GET") return ok([...apps.values()]);
       const id = `app-${++next}`;
-      apps.set(id, { ...body, id });
+      const policies = body.policies?.map((p: object) => ({ ...p, id: `policy-${++next}` }));
+      apps.set(id, { ...body, id, aud: `aud-${id}`, ...(policies ? { policies } : {}) });
       return ok({ id });
+    }
+    if (path === "/accounts/account/access/service_tokens") return ok([]);
+    const [policyApp, policyId] = path.split("/access/apps/")[1]?.split("/policies") ?? [];
+    if (policyApp !== undefined && policyId !== undefined) {
+      const app = apps.get(policyApp);
+      if (!app) return refuse(404);
+      const policies = (app.policies ?? []) as Array<Record<string, unknown>>;
+      if (method === "GET") return ok(policies);
+      if (method === "POST") app.policies = [...policies, { ...body, id: `policy-${++next}` }];
+      if (method === "PUT")
+        app.policies = policies.map((p) => (`/${p.id}` === policyId ? { ...body, id: p.id } : p));
+      return ok({});
     }
     const appId = path.split("/access/apps/")[1];
     if (appId !== undefined) {
       const app = apps.get(appId);
       if (!app) return refuse(404);
       if (method === "DELETE") apps.delete(appId);
-      return ok(app);
+      if (method === "PUT") apps.set(appId, { ...body, id: appId, aud: app.aud });
+      return ok(apps.get(appId) ?? app);
     }
     if (path.startsWith("/zones/zone/rulesets")) {
       if (options.wafStatus) return refuse(options.wafStatus);
@@ -892,6 +911,7 @@ function fakeCloudflare(
       if (method === "PATCH" && ruleset) ruleset.rules = [{ ...body, id: path.split("/").pop() }];
       return ok(ruleset);
     }
+    if (options.refuseOthers) return refuse(403);
     throw new Error(`Unexpected Cloudflare call ${method} ${path}`);
   });
   return { apps, providers, calls, ruleset: () => ruleset };
@@ -998,7 +1018,7 @@ describe("guest links (MM-1210)", () => {
 
   it("removes the guest apps of a removed machine", async () => {
     const { object, env } = portal(guestMap());
-    Object.assign(env, { ...GUEST_ENV, MACHINE_ACCESS_APP_ID: "m", CONNECT_ACCESS_APP_ID: "c" });
+    Object.assign(env, GUEST_ENV);
     const cf = fakeCloudflare();
     value(await object.setGuestLinks(owner, PORTAL, VPS, true));
     expect(cf.apps.size).toBe(2);
@@ -1030,5 +1050,164 @@ describe("guest links (MM-1210)", () => {
     expect(status.rateLimit).toEqual({ _tag: "ready" });
     expect(cf.calls.filter((c) => c.includes("/rulesets") && !c.startsWith("GET"))).toEqual([]);
     expect(cf.ruleset()?.rules).toMatchObject([{ id: "manual" }]);
+  });
+});
+
+describe("Access apps of the portal (MM-1216 to MM-1219)", () => {
+  const HOST = "t3.example.com";
+  const ownerApp = {
+    id: "pages",
+    name: "t3 portal pages",
+    type: "self_hosted",
+    aud: "aud-pages",
+    destinations: [{ type: "public", uri: HOST }],
+    policies: [
+      { name: "t3 owner", decision: "allow", include: [{ email: { email: owner.email } }] },
+    ],
+  };
+  const connectApp = {
+    id: "connect",
+    name: "t3 portal connect",
+    type: "self_hosted",
+    aud: "aud-connect",
+    destinations: [{ type: "public", uri: `${HOST}/connect` }],
+  };
+  const stored = (db: NodeSqlite.DatabaseSync) =>
+    db.prepare("SELECT value FROM meta WHERE key = 'access_apps'").get()?.value;
+
+  it("fails closed until it finds the app of its own host, then stores it once", async () => {
+    const { object, db, env } = portal(true);
+    Object.assign(env, { MACHINE_DOMAIN: "example.com" });
+    const cf = fakeCloudflare();
+    // An app on another host, or one that covers the host only by a wildcard, never counts.
+    cf.apps.set("other", {
+      ...ownerApp,
+      id: "other",
+      aud: "aud-other",
+      destinations: [{ type: "public", uri: "t3.other.com" }],
+    });
+    cf.apps.set("wild", {
+      ...ownerApp,
+      id: "wild",
+      aud: "aud-wild",
+      destinations: [{ type: "public", uri: "*.example.com" }],
+    });
+    const empty = await object.accessAudiences(HOST);
+    expect(empty.pages).toHaveProperty("reason");
+    expect(empty.connect).toHaveProperty("reason");
+    expect(JSON.parse(String(stored(db))).apps).toEqual({});
+
+    cf.apps.set("pages", ownerApp);
+    cf.apps.set("connect", connectApp);
+    // While a value is missing, the portal reads Cloudflare at most once a minute.
+    expect((await object.accessAudiences(HOST)).pages).toHaveProperty("reason");
+    vi.setSystemTime(Date.parse(NOW) + 61_000);
+    expect(await object.accessAudiences(HOST)).toEqual({
+      pages: { aud: "aud-pages" },
+      connect: { aud: "aud-connect" },
+    });
+
+    // Known values: no Cloudflare call and no write until the hourly read.
+    const calls = cf.calls.length;
+    const value = stored(db);
+    await object.accessAudiences(HOST);
+    expect(cf.calls.length).toBe(calls);
+    expect(stored(db)).toBe(value);
+    // The values of one host never count on another host.
+    expect((await object.accessAudiences("t3.other.com")).pages).toHaveProperty("reason");
+  });
+
+  it("keeps the stored app against a second app, and drops a deleted app at the hourly read", async () => {
+    const { object, env } = portal(true);
+    Object.assign(env, { MACHINE_DOMAIN: "example.com" });
+    const cf = fakeCloudflare();
+    cf.apps.set("pages", ownerApp);
+    cf.apps.set("connect", connectApp);
+    await object.accessAudiences(HOST);
+    cf.apps.set("twin", { ...ownerApp, id: "twin", aud: "aud-twin" });
+    vi.setSystemTime(Date.parse(NOW) + 2 * 3_600_000);
+    await object.cloudflareStatus(owner, HOST);
+    expect((await object.accessAudiences(HOST)).pages).toEqual({ aud: "aud-pages" });
+
+    // Deleted: the one app left on the host takes its place. With none left, the portal refuses.
+    cf.apps.delete("pages");
+    await object.cloudflareStatus(owner, HOST);
+    expect((await object.accessAudiences(HOST)).pages).toEqual({ aud: "aud-twin" });
+    cf.apps.delete("twin");
+    const status = await object.cloudflareStatus(owner, HOST);
+    if (!status.ok) throw new Error(status.error);
+    expect(status.value.parts.find((p) => p.key === "pages")?.state).toMatchObject({
+      _tag: "manual",
+    });
+    expect((await object.accessAudiences(HOST)).pages).toHaveProperty("reason");
+  });
+
+  it("keeps the stored values when the token cannot read Access apps", async () => {
+    const { object, env } = portal(true);
+    Object.assign(env, { MACHINE_DOMAIN: "example.com" });
+    const cf = fakeCloudflare();
+    cf.apps.set("pages", ownerApp);
+    cf.apps.set("connect", connectApp);
+    await object.accessAudiences(HOST);
+    fakeCloudflare({ appsStatus: 403, refuseOthers: true });
+    vi.setSystemTime(Date.parse(NOW) + 2 * 3_600_000);
+    const status = await object.cloudflareStatus(owner, HOST);
+    if (!status.ok) throw new Error(status.error);
+    expect(status.value.parts.find((p) => p.key === "connect")?.state).toMatchObject({
+      _tag: "manual",
+      reason: expect.stringContaining("cannot read Access apps"),
+    });
+    expect(status.value.permissions).toContainEqual({
+      permission: "Access: Apps and Policies Edit",
+      granted: false,
+    });
+    expect((await object.accessAudiences(HOST)).connect).toEqual({ aud: "aud-connect" });
+  });
+
+  it("Repair makes the missing apps and adds the machine tokens and tunnel hostnames", async () => {
+    const { object, db, env } = portal(true);
+    Object.assign(env, { MACHINE_DOMAIN: "example.com" });
+    const cf = fakeCloudflare();
+    cf.apps.set("pages", ownerApp);
+    db.prepare("INSERT INTO machine_tokens VALUES (?, ?)").run(MAC, "mac-token");
+    db.prepare(
+      "INSERT INTO machine_tunnels VALUES (?, 'tunnel', 'mac.example.org', 1, NULL, 1)",
+    ).run(MAC);
+    const before = await object.cloudflareStatus(owner, HOST);
+    if (!before.ok) throw new Error(before.error);
+    expect(before.value.parts.find((p) => p.key === "connect")?.state._tag).toBe("missing");
+
+    const repaired = await object.repairCloudflare(owner, HOST);
+    if (!repaired.ok) throw new Error(repaired.error);
+    for (const key of ["pages", "connect", "enroll", "machines"])
+      expect(repaired.value.parts.find((p) => p.key === key)?.state).toEqual({
+        _tag: "ready",
+        note: null,
+      });
+    const byName = (name: string) => [...cf.apps.values()].find((a) => a.name === name);
+    expect(byName("t3 portal enroll")).toMatchObject({
+      destinations: [{ type: "public", uri: `${HOST}/enroll` }],
+      policies: [{ decision: "bypass", include: [{ everyone: {} }] }],
+    });
+    expect(byName("t3 portal connect")?.policies).toMatchObject([
+      {
+        name: "t3 machine map tokens",
+        decision: "non_identity",
+        include: [{ service_token: { token_id: "mac-token" } }],
+      },
+    ]);
+    // The tunnel hostname is not under t3-*.example.com, so the app names it.
+    expect(byName("t3 machine hosts")?.destinations).toContainEqual({
+      type: "public",
+      uri: "mac.example.org",
+    });
+    expect(await object.accessAudiences(HOST)).toEqual({
+      pages: { aud: "aud-pages" },
+      connect: { aud: `aud-${byName("t3 portal connect")?.id}` },
+    });
+    // A second Repair makes no twin.
+    const count = cf.apps.size;
+    await object.repairCloudflare(owner, HOST);
+    expect(cf.apps.size).toBe(count);
   });
 });

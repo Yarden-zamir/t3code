@@ -25,6 +25,7 @@ import { DialogHost, Palette } from "./dialogs.tsx";
 import { EmergencyButton, PausedBanner } from "./emergency.tsx";
 import { COMMAND_LABEL, DANGEROUS_COMMANDS, machineName } from "./format.ts";
 import { CloseIcon, UndoIcon } from "./icons.tsx";
+import { CloudflareView } from "./CloudflareView.tsx";
 import { GuestsView } from "./GuestLinks.tsx";
 import { MapView } from "./MapView.tsx";
 import { Panel } from "./panels.tsx";
@@ -471,6 +472,8 @@ export function App() {
         return <ClientsView />;
       case "guests":
         return <GuestsView />;
+      case "cloudflare":
+        return <CloudflareView />;
     }
   })();
 

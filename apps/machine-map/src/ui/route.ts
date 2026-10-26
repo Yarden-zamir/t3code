@@ -11,6 +11,7 @@ export const VIEWS = [
   "inbox",
   "clients",
   "guests",
+  "cloudflare",
 ] as const;
 export type View = (typeof VIEWS)[number];
 
@@ -25,6 +26,7 @@ export const VIEW_LABEL: Record<View, string> = {
   inbox: "Inbox",
   clients: "Clients",
   guests: "Guests",
+  cloudflare: "Cloudflare",
 };
 
 export type Selection =

@@ -82,7 +82,13 @@ export function PasskeyStepUp() {
 }
 
 /** The Zero Trust dashboard steps that "Set up approvals" cannot do with the API token. */
-function CloudflareStepGuide({ step }: { step: CloudflareStep }) {
+export function CloudflareStepGuide({
+  step,
+  action = "Set up approvals",
+}: {
+  step: CloudflareStep;
+  action?: string;
+}) {
   if (step === "appLauncher") {
     return (
       <div className="v">
@@ -95,13 +101,13 @@ function CloudflareStepGuide({ step }: { step: CloudflareStep }) {
           <li>Go to Access controls &gt; Access settings.</li>
           <li>Under App Launcher, select Manage.</li>
           <li>Add an Allow policy that includes the owner emails, then Save.</li>
-          <li>Come back and select Set up approvals again.</li>
+          <li>Come back and select {action} again.</li>
         </ol>
         <p className="hint">
           Cloudflare needs the App Launcher to register a passkey.{" "}
           <External href={APP_LAUNCHER_DOCS}>Cloudflare docs: App Launcher</External>
         </p>
-        <PermissionLine step="appLauncher" />
+        <PermissionLine step="appLauncher" action={action} />
       </div>
     );
   }
@@ -121,7 +127,7 @@ function CloudflareStepGuide({ step }: { step: CloudflareStep }) {
         <li>
           Do not turn on "Apply global MFA settings by default". Only the approval path needs MFA.
         </li>
-        <li>Come back and select Set up approvals again.</li>
+        <li>Come back and select {action} again.</li>
       </ol>
       <EnrollLine
         lead="After setup, Cloudflare asks you to register the passkey at the first approval, or"
@@ -130,7 +136,7 @@ function CloudflareStepGuide({ step }: { step: CloudflareStep }) {
       <p className="hint">
         <External href={INDEPENDENT_MFA_DOCS}>Cloudflare docs: turn on independent MFA</External>
       </p>
-      <PermissionLine step="allowPasskey" />
+      <PermissionLine step="allowPasskey" action={action} />
     </div>
   );
 }

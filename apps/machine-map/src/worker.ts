@@ -26,7 +26,12 @@ import {
 } from "./api.ts";
 import { APPROVALS_MAX_SECONDS, APPROVALS_PATH, CLIENT_PATH, INVITE_PATH } from "./cloudflare.ts";
 import type { Env } from "./env.ts";
-import { MACHINE_CLIENT_ID_HEADER, type Outcome, type OwnerContext } from "./MachineMapObject.ts";
+import {
+  MACHINE_CLIENT_ID_HEADER,
+  type AudienceLookup,
+  type Outcome,
+  type OwnerContext,
+} from "./MachineMapObject.ts";
 import { fetchNewestRelease } from "./releases.ts";
 import { describeUserAgent } from "./rules/device.ts";
 import { sha256Hex } from "./sealedSecret.ts";
@@ -42,6 +47,31 @@ const toResponse = <T>(outcome: Outcome<T>): Response =>
   outcome.ok ? json(outcome.value) : fail(outcome.status, outcome.error);
 
 const mapObject = (env: Env) => env.MAP.getByName("map");
+
+type Audiences = { readonly pages: AudienceLookup; readonly connect: AudienceLookup };
+const AUDIENCE_CACHE_MS = 60_000;
+/**
+ * MM-1217: the stored audiences of the last minute, so a request does not wait on the Durable
+ * Object twice. Only a complete answer stays. Limit: a deleted app counts up to a minute longer in
+ * this isolate. Revisit if that minute matters.
+ */
+let audienceCache: {
+  readonly host: string;
+  readonly atMs: number;
+  readonly value: Audiences;
+} | null = null;
+
+async function audiences(env: Env, host: string): Promise<Audiences> {
+  const cached = audienceCache;
+  if (cached !== null && cached.host === host && Date.now() - cached.atMs < AUDIENCE_CACHE_MS)
+    return cached.value;
+  const value = await mapObject(env).accessAudiences(host);
+  audienceCache =
+    "aud" in value.pages && "aud" in value.connect ? { host, atMs: Date.now(), value } : null;
+  return value;
+}
+
+const audOf = (lookup: AudienceLookup): string | null => ("aud" in lookup ? lookup.aud : null);
 
 /** API paths of the form `/api/<resource>/<id>/...`. */
 const ID_RESOURCES = new Set(["commands", "proposals", "machines", "presets", "pending"]);
@@ -140,9 +170,13 @@ const integer = (value: string | null): number | null => {
 };
 
 async function api(request: Request, env: Env, url: URL): Promise<Response> {
-  const owner = await ownerContext(request, await ownerEmail(request, env));
-  // MM-102: fail closed.
-  if (!owner) return fail(403, "Only the owner can use the portal.");
+  const { pages } = await audiences(env, url.host);
+  const owner = await ownerContext(request, await ownerEmail(request, env, audOf(pages)));
+  // MM-102, MM-1217: fail closed, also while the portal does not know its audience.
+  if (!owner)
+    return "reason" in pages
+      ? fail(503, pages.reason)
+      : fail(403, "Only the owner can use the portal.");
   const stub = mapObject(env);
   const parts = url.pathname
     .split("/")
@@ -246,6 +280,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       return toResponse(await stub.guestLinksStatus(owner, url.host));
     case "POST /guests/apply":
       return toResponse(await stub.applyGuestLinks(owner, url.host));
+    case "GET /cloudflare":
+      return toResponse(await stub.cloudflareStatus(owner, url.host));
+    case "POST /cloudflare/repair":
+      return toResponse(await stub.repairCloudflare(owner, url.host));
     case "POST /guests/rules": {
       const body = await readBody(request, GuestRulesRequest);
       return body instanceof Response
@@ -334,8 +372,12 @@ export default {
     }
     if (url.pathname === "/connect") {
       // MM-104: only a valid machine token JWT of the /connect Access app connects.
-      const clientId = await machineClientId(request, env);
-      if (!clientId) return fail(403, "A machine token is required.");
+      const { connect } = await audiences(env, url.host);
+      const clientId = await machineClientId(request, env, audOf(connect));
+      if (!clientId)
+        return "reason" in connect
+          ? fail(503, connect.reason)
+          : fail(403, "A machine token is required.");
       if (request.headers.get("Upgrade") !== "websocket")
         return fail(426, "Expected a WebSocket upgrade.");
       const forwarded = new Request(new URL("/connect", url), request);

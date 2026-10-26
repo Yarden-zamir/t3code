@@ -6,7 +6,7 @@ The portal is one Cloudflare Worker with one Durable Object, at `t3.yarden-zamir
 
 ## First-time setup
 
-`scripts/setup.ts` does the setup (MM-1215). It finds or creates the Access apps, writes `wrangler.jsonc` and sets the missing secrets. It does not change an app or a secret that exists. Run it again at any time. Run it from this folder.
+`scripts/setup.ts` does the part of the setup that the portal cannot do before it runs (MM-1215). It locks the portal host to the owner emails with an Access app, writes `wrangler.jsonc` and sets the missing secrets. It does not change an app or a secret that exists. Run it again at any time. Run it from this folder. The Cloudflare view of the portal does the rest (MM-1218).
 
 Before the first run, do these steps in the Cloudflare dashboard once:
 
@@ -25,14 +25,14 @@ On each link, choose the account. The link selects all zones: narrow "DNS: Edit"
 | Permission                                                 | Scope                     | What the portal does with it                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Access: Service Tokens Edit                                | Account                   | "Add machine" creates the machine token, "Rotate token" works, and "Remove machine" deletes the token (MM-1205).                                                                                                                                                                                                                                                             |
-| Access: Apps and Policies Edit                             | Account                   | The portal adds machine and app tokens to the policies of the Access apps. "Set up approvals" creates the approval app, the `/client` app and the App Launcher app.                                                                                                                                                                                                          |
+| Access: Apps and Policies Edit                             | Account                   | The portal finds its Access apps (MM-1216) and adds machine and app tokens to their policies. Repair in the Cloudflare view creates the missing apps (MM-1219). "Set up approvals" creates the approval app, the `/client` app and the App Launcher app.                                                                                                                     |
 | Access: Organizations, Identity Providers, and Groups Edit | Account                   | Approvals read the Zero Trust organization (MM-1207). "Set up approvals" allows the passkey MFA methods. Edit includes Read. Edit can also change every other organization setting, such as login design and session lengths. With only Read, do the MFA step by hand. "Apply" in the Guests view adds the One-time PIN login (MM-1210), and needs at least Read to find it. |
 | Access: Organizations Revoke                               | Account                   | "Sign out everywhere" ends Access sessions (MM-903). Without it, it ends only T3 sessions, and "Set up approvals" names the missing permission.                                                                                                                                                                                                                              |
 | Cloudflare Tunnel: Edit                                    | Account                   | "Add machine" creates the machine tunnel (MM-213).                                                                                                                                                                                                                                                                                                                           |
 | DNS: Edit                                                  | Zone of `MACHINE_ZONE_ID` | "Add machine" adds the CNAME of the tunnel.                                                                                                                                                                                                                                                                                                                                  |
 | Zone WAF Edit                                              | Zone of `MACHINE_ZONE_ID` | "Apply" in the Guests view adds and removes the rate limit rule of the guest routes (MM-1213).                                                                                                                                                                                                                                                                               |
 
-Without the tunnel and DNS permissions, "Add machine" makes no tunnel and the join dialog says why. With the token, the Clients view lists Access sessions. Without the token, "Add machine" takes the client id and secret of an existing machine token (MM-210). Then delete removed tokens in the Zero Trust dashboard yourself. When the token lacks a permission for a step, the portal shows the manual step with links and the name of the permission (MM-1209).
+Without the tunnel and DNS permissions, "Add machine" makes no tunnel and the join dialog says why. With the token, the Clients view lists Access sessions. The first start needs the token, because the portal finds its Access apps with it (MM-1216). If you remove the token later, "Add machine" takes the client id and secret of an existing machine token (MM-210). Then delete removed tokens in the Zero Trust dashboard yourself. When the token lacks a permission for a step, the portal shows the manual step with links and the name of the permission (MM-1209).
 
 ### 2. Run the setup
 
@@ -46,34 +46,42 @@ CF_API_TOKEN=<portal token> CLOUDFLARE_DEPLOY_TOKEN=<deploy token> node scripts/
 The values in `wrangler.jsonc` are the defaults of the three options. The setup does these steps:
 
 1. It finds the account, the zone of `--machine-domain` and the team domain of the Zero Trust organization. With more than one account, pass `--account-id`. It adds the One-time PIN login when the organization has no login method, so the owner can sign in.
-2. It finds or creates the Access apps. It finds an app by the id or the audience in `wrangler.jsonc`, else by its hostname, so it also uses apps made by hand. When `wrangler.jsonc` names an app that the account does not have, it stops, because a new app gets a new audience. It warns when an app that exists does not allow exactly the owner emails:
-   - The portal pages and API, for the host, with the owner emails and a session of 30 days (MM-103).
-   - The machine connections, for `<host>/connect`. The portal adds the policy of the machine tokens (MM-201, MM-104).
-   - The enrollment, for `<host>/enroll`, with a Bypass policy for everyone. The join code is the credential (MM-204). This app also covers `/enroll/client` (MM-913).
-   - The machine hostnames, for `t3-*.<machine domain>`, with the owner emails. It uses the app of `MACHINE_ACCESS_APP_ID` when that is set. The portal adds each machine token to its `t3 machine map tokens` policy and each app token of a native client to its `t3 client tokens` policy (MM-911). It edits no other policy. It also adds and removes the hostname of each machine tunnel (MM-213). That update sends back the whole app with its policies, and the portal checks that the app keeps each policy.
-3. It writes the values to `wrangler.jsonc`: the account, the team domain, the owner emails, the app ids and audiences, the machine domain and zone, and the route of the host.
+2. It finds or creates the Access app of the portal pages and API, for the host, with the owner emails and a session of 30 days (MM-103). It uses the one app that covers the host, so it also uses an app made by hand. It stops when two apps cover the host. It warns when the app does not allow exactly the owner emails.
+3. It writes the values to `wrangler.jsonc`: the account (`account_id` for the deploy and `ACCOUNT_ID` for the Worker), the team domain, the owner emails, the machine domain and zone, and the route of the host. The Access app ids and audiences are not in `wrangler.jsonc`: the portal stores them (MM-1216).
 4. It sets the missing Worker secrets: a new `SECRET_KEY` (MM-1201), a new `VAPID_JWK` (MM-1807) and `CF_API_TOKEN`. It keeps a secret that exists. `--replace-token` sets `CF_API_TOKEN` again. With `CLOUDFLARE_DEPLOY_TOKEN`, it first sets that GitHub secret with `gh`, on the repository of the `origin` remote or of `--repo`. It does this before the first deploy, which needs it.
-5. It checks what the portal token can read, and what a visitor without a login meets on the host.
+5. It checks what the portal token can read, and what a visitor without a login meets on the host. Then it names the Cloudflare view.
 
 When `wrangler.jsonc` changed, commit it and merge it to main. The workflow deploys the portal, see [Deploy](#deploy). Then run the setup again: before the first deploy the Worker does not exist, so it cannot hold secrets yet. The setup exits with 0 when everything is right.
 
-The Worker refuses every owner and machine request while a value in `wrangler.jsonc` starts with `REPLACE_`.
+The Worker refuses every owner and machine request while `TEAM_DOMAIN` starts with `REPLACE_`, and while the portal does not know the audience of its Access apps (MM-1217). The answer says why.
 
 These steps stay manual:
 
 - Making the two tokens. Cloudflare makes an API token only for a person in the dashboard, or for another token that may make tokens. The link fills in the permissions.
 - `wrangler login`. It is a browser login of the owner.
 - The zone and Zero Trust steps above. Cloudflare asks the person for the team name and the payment method.
-- In a new fork: turn on GitHub Actions, and change `CLOUDFLARE_ACCOUNT_ID` in `.github/workflows/fork-machine-map-deploy.yml` to your account.
+- In a new fork: turn on GitHub Actions. The deploy takes the account from `account_id` in `wrangler.jsonc`.
 - The merge to main. Only the workflow deploys.
-- Registering the passkey of approvals (step 3). Cloudflare asks the person for it.
+- Registering the passkey of approvals (step 4). Cloudflare asks the person for it.
 - `MACHINE_ACCESS_SUBJECTS` (optional, MM-213). Access subjects that a joined machine allows next to the owner emails, comma separated, for example the client id of the desktop service token. Set it with `./node_modules/.bin/wrangler secret put MACHINE_ACCESS_SUBJECTS`.
 
 A new `SECRET_KEY` makes waiting join codes and rotations unreadable. A new `VAPID_JWK` turns off the push subscription of every device. The setup never replaces either.
 
-### 3. Set up approvals (MM-1207, MM-1208)
+### 3. Repair in the Cloudflare view (MM-1218, MM-1219)
 
-Open `https://t3.yarden-zamir.com`, go to Clients, and select "Invite an app". Select "Set up approvals" in the dialog. A waiting sign-in shows the same button. It does these steps itself, and skips each step that is done already:
+Open `https://t3.yarden-zamir.com/#/cloudflare`. At the first request, the portal finds the app of its host and the app of `/connect` with its token and stores them (MM-1216). The view lists each Cloudflare part, its state and each permission of the token. Select Repair. It does these steps, and skips each step that is done already:
+
+- It creates the Access app of `<host>/connect`. The portal adds the policy of the machine tokens (MM-201, MM-104).
+- It creates the Access app of `<host>/enroll`, with a Bypass policy for everyone. The join code is the credential (MM-204). This app also covers `/enroll/client` (MM-913).
+- It creates the Access app of the machine hostnames, for `t3-*.<machine domain>`, with the owner emails. The portal adds each machine token to its `t3 machine map tokens` policy and each app token of a native client to its `t3 client tokens` policy (MM-911). It edits no other policy. It also adds and removes the hostname of each machine tunnel (MM-213). That update sends back the whole app with its policies, and the portal checks that the app keeps each policy.
+- It adds each known token and tunnel hostname that these apps lack.
+- It runs "Set up approvals" (step 4) and "Apply" of the Guests view.
+
+It never creates an app where one app fits already, so it uses the apps of a setup by hand. When two apps fit, or when an app needs a change that the portal must not make, the view shows a manual step.
+
+### 4. Set up approvals (MM-1207, MM-1208)
+
+Repair runs this step. To run it alone, open `https://t3.yarden-zamir.com`, go to Clients, and select "Invite an app". Select "Set up approvals" in the dialog. A waiting sign-in shows the same button. It does these steps itself, and skips each step that is done already:
 
 - It allows "Biometrics" (a passkey such as Touch ID or Face ID) and "Security key" in **Access controls** > **Access settings** > **Allow multi-factor authentication (MFA)**. It keeps the other organization settings and does not turn on **Apply global MFA settings by default**.
 - It creates the App Launcher app with an Allow policy for the owner emails. Cloudflare needs the App Launcher to register a passkey.
@@ -120,7 +128,8 @@ MM-1401 and MM-1402 hold the rules. The desktop app acts only while its own serv
 
 ## Code
 
-- `scripts/setup.ts`: the first-time setup (MM-1215). `scripts/wranglerConfig.ts` changes the values of `wrangler.jsonc` and keeps its comments.
+- `scripts/setup.ts`: the first-time setup (MM-1215).
+- `src/accessApps.ts`: how the portal finds the Access apps of its host (MM-1216). `scripts/wranglerConfig.ts` changes the values of `wrangler.jsonc` and keeps its comments.
 - `src/worker.ts`: routes, Cloudflare Access checks, request decoding.
 - `src/MachineMapObject.ts`: the Durable Object. It stores the map in SQLite, keeps the sockets, runs the alarms and calls Cloudflare.
 - `src/rules/`: pure rules with tests: changes and their inverse, desired state, map roles, owner-only raises, arrow capabilities, queue, presets and the changes of the emergency pause.
