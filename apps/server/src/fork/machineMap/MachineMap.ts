@@ -88,6 +88,8 @@ import {
   type SendToPortal,
 } from "./portalConnection.ts";
 
+const isClientAccessMode = Schema.is(ClientAccessMode);
+
 /** MM-1001: the status goes out at most this often. */
 const STATUS_MIN_INTERVAL = Duration.seconds(5);
 /** Host load can change without any event, so the status is checked this often too. */
@@ -693,14 +695,14 @@ const make = Effect.gen(function* () {
       }).pipe(
         Effect.flip,
         // Only an interrupt (a new key, or shutdown) ends the loop; anything else retries.
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.failCause(cause)
-            : Effect.succeed({
-                reason: "failed",
-                message: Cause.pretty(cause).slice(0, 300),
-                closeCode: null,
-              }),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (cause) =>
+            Effect.succeed({
+              reason: "failed",
+              message: Cause.pretty(cause).slice(0, 300),
+              closeCode: null,
+            }),
         ),
       );
       yield* markOffline;
@@ -782,12 +784,12 @@ const make = Effect.gen(function* () {
           }
           if (next.key !== null) yield* runConnection(next.portalUrl);
         }).pipe(
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.failCause(cause)
-              : Effect.logWarning("Machine map connection stopped.", {
-                  cause: Cause.pretty(cause),
-                }),
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterruptsOnly(cause),
+            (cause) =>
+              Effect.logWarning("Machine map connection stopped.", {
+                cause: Cause.pretty(cause),
+              }),
           ),
         ),
       ),
@@ -917,7 +919,7 @@ const make = Effect.gen(function* () {
         }
         if (Object.keys(changed).length > 0) {
           // MM-919: the way back in must reach the portal also across a restart (`hello`).
-          const clientAccess = Schema.is(ClientAccessMode)(changed.clientAccess)
+          const clientAccess = isClientAccessMode(changed.clientAccess)
             ? changed.clientAccess
             : undefined;
           if (clientAccess !== undefined) {
