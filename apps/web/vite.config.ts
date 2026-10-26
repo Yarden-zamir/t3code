@@ -375,7 +375,9 @@ export default defineConfig(() => {
               },
               {
                 name: "icons",
-                test: /\/(?:components\/chat\/PierreEntryIcon\.tsx|pierre-icons\.ts|mediaPreview\.ts)$/,
+                // Fork: video.ts too. In another chunk, its extension list was still unset
+                // when this chunk ran, and the app failed to start.
+                test: /\/(?:components\/chat\/PierreEntryIcon\.tsx|pierre-icons\.ts|mediaPreview\.ts|shared\/src\/video\.ts)$/,
                 includeDependenciesRecursively: false,
               },
             ],
