@@ -296,10 +296,7 @@ const make = Effect.gen(function* () {
               project: { title: "" },
               thread,
             })?.phase ?? null);
-      const transition = attentionTransition(
-        phases.get(threadId),
-        phase,
-      );
+      const transition = attentionTransition(phases.get(threadId), phase);
       phases.set(threadId, phase);
       if (transition === null || thread === null) return;
       yield* deliverToAll(
