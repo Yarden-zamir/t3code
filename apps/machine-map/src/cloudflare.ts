@@ -182,6 +182,10 @@ const decodeIdentityProviders = Schema.decodeUnknownSync(
   Schema.Array(Schema.Struct({ id: Schema.String, type: Schema.String })),
 );
 const decodeCreated = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String }));
+const decodeNamed = Schema.decodeUnknownSync(
+  Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
+);
+const decodeAuthDomain = Schema.decodeUnknownSync(Schema.Struct({ auth_domain: Schema.String }));
 const RateLimitRule = Schema.Struct({
   id: Schema.String,
   ref: Schema.optionalKey(Schema.String),
@@ -870,6 +874,27 @@ export class CloudflareApi {
         ignoreResult,
       ),
     );
+  }
+  // MM-1215: first-time setup (`scripts/setup.ts`)
+
+  /** The accounts that the token can use. */
+  accounts(): Promise<ReadonlyArray<{ readonly id: string; readonly name: string }>> {
+    return this.#request("GET", "/accounts", decodeNamed);
+  }
+
+  /** The id of the zone `name`, or null when the token cannot see it. */
+  async zoneId(name: string): Promise<string | null> {
+    const zones = await this.#request(
+      "GET",
+      `/zones?name=${encodeURIComponent(name)}`,
+      decodeNamed,
+    );
+    return zones.find((zone) => zone.name === name)?.id ?? null;
+  }
+
+  /** The team domain of the Zero Trust organization, for example `team.cloudflareaccess.com`. */
+  async teamDomain(): Promise<string> {
+    return decodeAuthDomain(await this.#organization()).auth_domain;
   }
 }
 
