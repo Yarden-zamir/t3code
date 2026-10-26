@@ -361,12 +361,15 @@ const layerCapabilities = Layer.effectContext(
       deviceId: Effect.succeedNone,
     });
     const primaryAuth = ClientCapabilities.PrimaryEnvironmentAuth.of({
-      refreshBearerToken: (rejected) =>
-        Effect.tryPromise({
-          try: () => readDesktopPrimaryBearerToken(rejected),
-          catch: (cause) =>
-            new ConnectionTransientError({ reason: "remote-unavailable", detail: String(cause) }),
-        }).pipe(Effect.map(Option.fromNullishOr)),
+      refreshBearerToken: Effect.fn("ClientCapabilities.PrimaryEnvironmentAuth.refreshBearerToken")(
+        function (rejected) {
+          return Effect.tryPromise({
+            try: () => readDesktopPrimaryBearerToken(rejected),
+            catch: (cause) =>
+              new ConnectionTransientError({ reason: "remote-unavailable", detail: String(cause) }),
+          }).pipe(Effect.map(Option.fromNullishOr));
+        },
+      ),
       bearerToken: Effect.tryPromise({
         try: () => readDesktopPrimaryBearerToken(),
         catch: (cause) =>

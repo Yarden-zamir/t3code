@@ -16,13 +16,23 @@ const refused = (message: string) =>
 export const layer = Layer.succeed(
   PeerLinks.PeerLinks,
   PeerLinks.PeerLinks.of({
-    link: () => refused(MANUAL_LINK_REFUSAL),
-    unlink: () => refused(MANUAL_LINK_REFUSAL),
+    link: Effect.fn("PeerLinks.link")(function () {
+      return refused(MANUAL_LINK_REFUSAL);
+    }),
+    unlink: Effect.fn("PeerLinks.unlink")(function () {
+      return refused(MANUAL_LINK_REFUSAL);
+    }),
     list: refused(
       "Links to other machines come from the machine map. See them in Settings > Connections, or with t3_environment_links.",
     ),
-    get: () => refused(MANUAL_LINK_REFUSAL),
-    resolve: () => refused(MANUAL_LINK_REFUSAL),
-    recordOutcome: () => Effect.void,
+    get: Effect.fn("PeerLinks.get")(function () {
+      return refused(MANUAL_LINK_REFUSAL);
+    }),
+    resolve: Effect.fn("PeerLinks.resolve")(function () {
+      return refused(MANUAL_LINK_REFUSAL);
+    }),
+    recordOutcome: Effect.fn("PeerLinks.recordOutcome")(function () {
+      return Effect.void;
+    }),
   }),
 );

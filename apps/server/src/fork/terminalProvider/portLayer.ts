@@ -38,19 +38,22 @@ export const layer = Layer.effect(
       Ref.get(summaries).pipe(Effect.map((current) => current.get(keyOf(input))));
 
     return TerminalPort.of({
-      workspaceRootOf: (projectId) =>
-        projects.get(projectId).pipe(
+      workspaceRootOf: Effect.fn("TerminalPort.workspaceRootOf")(function (projectId) {
+        return projects.get(projectId).pipe(
           Effect.map((project) => (Option.isSome(project) ? project.value.workspaceRoot : null)),
           Effect.orElseSucceed(() => null),
-        ),
-      isRunning: (input) =>
-        summaryOf(input).pipe(
+        );
+      }),
+      isRunning: Effect.fn("TerminalPort.isRunning")(function (input) {
+        return summaryOf(input).pipe(
           Effect.map((summary) => summary?.status === "running" || summary?.status === "starting"),
-        ),
-      shellState: (input) =>
-        summaryOf(input).pipe(
+        );
+      }),
+      shellState: Effect.fn("TerminalPort.shellState")(function (input) {
+        return summaryOf(input).pipe(
           Effect.map((summary) => (summary?.status === "running" ? summary.shell : undefined)),
-        ),
+        );
+      }),
       // A shell that cannot start leaves the session in `error` and does not fail the open, so
       // the open listens for the reason that the manager publishes.
       open: Effect.fn("TerminalPort.open")(
@@ -76,12 +79,13 @@ export const layer = Layer.effect(
             Effect.mapError((cause) => new TerminalPortError({ operation: "open", cause })),
           ),
       ),
-      write: (input) =>
-        manager
+      write: Effect.fn("TerminalPort.write")(function (input) {
+        return manager
           .write(input)
-          .pipe(Effect.mapError((cause) => new TerminalPortError({ operation: "write", cause }))),
-      subscribe: (input, listener) =>
-        manager.subscribe((event) => {
+          .pipe(Effect.mapError((cause) => new TerminalPortError({ operation: "write", cause })));
+      }),
+      subscribe: Effect.fn("TerminalPort.subscribe")(function (input, listener) {
+        return manager.subscribe((event) => {
           if (event.threadId !== input.threadId || event.terminalId !== input.terminalId) {
             return Effect.void;
           }
@@ -96,7 +100,8 @@ export const layer = Layer.effect(
           )
             return listener({ type: "ended" });
           return Effect.void;
-        }),
+        });
+      }),
     });
   }),
 );

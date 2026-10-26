@@ -376,8 +376,12 @@ const make = Effect.gen(function* () {
     new PeerLinkError({ reason, message });
 
   const peerLinks = PeerLinks.PeerLinks.of({
-    link: () => manualRefused,
-    unlink: () => manualRefused,
+    link: Effect.fn("MachinePeers.link")(function () {
+      return manualRefused;
+    }),
+    unlink: Effect.fn("MachinePeers.unlink")(function () {
+      return manualRefused;
+    }),
     list: Effect.gen(function* () {
       const looked = yield* arrowLinks(yield* onMap, true);
       const paused = "The machine map is paused.";
@@ -410,13 +414,14 @@ const make = Effect.gen(function* () {
       });
       return [...linked, ...unanswered];
     }).pipe(Effect.withSpan("MachinePeers.listLinks")),
-    get: (environmentId) =>
-      onMap.pipe(
+    get: Effect.fn("MachinePeers.getLink")(function (environmentId) {
+      return onMap.pipe(
         Effect.flatMap((local) => findLink(local, environmentId)),
         Effect.flatMap(({ found }) =>
           found === undefined ? Effect.succeedNone : Effect.asSome(toPeerLink(found)),
         ),
-      ),
+      );
+    }),
     resolve: Effect.fn("MachinePeers.resolveLink")(function* (environmentId) {
       // MM-1904: a session of another machine never lends it the arrows of this machine.
       const scope = yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext);
@@ -523,8 +528,8 @@ const make = Effect.gen(function* () {
         token: session.accessToken,
       };
     }),
-    recordOutcome: (environmentId, outcome) =>
-      DateTime.now.pipe(
+    recordOutcome: Effect.fn("MachinePeers.recordOutcome")(function (environmentId, outcome) {
+      return DateTime.now.pipe(
         Effect.map((now) => {
           const previous = outcomes.get(environmentId);
           outcomes.set(
@@ -534,7 +539,8 @@ const make = Effect.gen(function* () {
               : { lastReachedAt: previous?.lastReachedAt ?? null, lastError: outcome.error },
           );
         }),
-      ),
+      );
+    }),
   });
 
   /**
