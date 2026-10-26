@@ -31,6 +31,15 @@ vi.mock("../../env", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../env")>()),
   isElectron: true,
 }));
+// Fork: the fork changelog (on by default) keeps the popover for every update; these cases are upstream's.
+vi.mock("./ForkSidebarUpdate", () => ({
+  useForkChangelog: () => ({ enabled: false, open: false, setOpen: () => {} }),
+  useIdleInstallArmed: () => false,
+  openIdleInstallPromptIfWorkRuns: () => false,
+  prepareNewestUpdateInstall: async () => true,
+  ForkUpdatePopoverChanges: () => null,
+  ForkChangelogDialogHost: () => null,
+}));
 vi.mock("./useUpdateEverything", () => ({
   useUpdateEverything: () => ({ hasUpdates: false, summary: "", lines: [], restarts: [] }),
 }));
