@@ -1,3 +1,4 @@
+import * as DocumentText from "../provider/DocumentText.ts";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -14,7 +15,6 @@ import {
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import { McpSchema, McpServer } from "effect/ai";
@@ -157,7 +157,7 @@ const boxLaunches = (seen: Ref.Ref<Seen>) =>
 const boxProjects = (seen: Ref.Ref<Seen>) =>
   Layer.merge(
     Layer.mock(ProjectService.ProjectService)({
-      getById: () => Effect.succeed(Option.none()),
+      getById: () => Effect.succeedNone,
       create: (input) =>
         Ref.update(seen, (current) => ({
           ...current,
@@ -200,6 +200,7 @@ const serveBox = (seen: Ref.Ref<Seen>, linkSession: Ref.Ref<string>) =>
       McpHttpServer.layerProjectRegistration,
       McpHttpServer.layerThreadToolkit,
     ).pipe(
+      Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
       Layer.provide(NodeCrypto.layer),
       Layer.provide(boxThreads(seen, linkSession)),
       Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
@@ -262,7 +263,7 @@ const makeLaptop = Effect.gen(function* () {
         Layer.provide(NodeServices.layer),
       ),
     ),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
     Layer.provide(PeerForwarding.layer),
     Layer.provide(Layer.succeedContext(linking)),
     Layer.provide(NodeCrypto.layer),

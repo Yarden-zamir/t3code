@@ -34,6 +34,7 @@ export const makeCloudflareAccessVerifier = (
   ): Effect.Effect<CloudflareAccessIdentity | undefined> => {
     const token = request.headers[CLOUDFLARE_ACCESS_JWT_HEADER];
     if (typeof token !== "string" || token.length === 0) {
+      // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
       return Effect.succeed(undefined);
     }
     return Effect.tryPromise(() =>

@@ -28,8 +28,8 @@ export function SlotLayoutView<Element extends string>(props: {
   return (
     <div className={cn("flex flex-col gap-0.5", props.className)}>
       {props.layout.rows.map((row, rowIndex) => (
-        // Rows have no identity apart from their position in the layout.
         <div
+          // oxlint-disable-next-line react/no-array-index-key -- Rows have no identity apart from their position in the layout.
           key={rowIndex}
           className="flex h-5 min-w-0 items-center gap-1.5 text-secondary-label text-xs"
         >

@@ -41,7 +41,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
     Layer.succeed(
       ConnectionProfileStore.ConnectionProfileStore,
       ConnectionProfileStore.ConnectionProfileStore.of({
-        get: () => Effect.succeed(Option.none()),
+        get: () => Effect.succeedNone,
         put: () => Effect.void,
         remove: () => Effect.void,
       }),
@@ -49,7 +49,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
     Layer.succeed(
       ConnectionCredentialStore.ConnectionCredentialStore,
       ConnectionCredentialStore.ConnectionCredentialStore.of({
-        get: () => Effect.succeed(Option.none()),
+        get: () => Effect.succeedNone,
         put: () => Effect.void,
         remove: () => Effect.void,
       }),
@@ -57,7 +57,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
     Layer.succeed(
       ClientCapabilities.PrimaryEnvironmentAuth,
       ClientCapabilities.PrimaryEnvironmentAuth.of({
-        bearerToken: Effect.succeed(Option.some(options.primaryBearerToken)),
+        bearerToken: Effect.succeedSome(options.primaryBearerToken),
         refreshBearerToken: options.refreshBearerToken,
       }),
     ),

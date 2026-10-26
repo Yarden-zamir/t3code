@@ -292,7 +292,7 @@ const make = Effect.gen(function* () {
           ),
         );
     },
-    (effect, origin, input, clientName) =>
+    (effect, origin) =>
       effect.pipe(
         // Endpoint errors are mapped above; what is left is the transport or an
         // answer this version cannot decode.
@@ -418,7 +418,7 @@ const make = Effect.gen(function* () {
     readRow(environmentId).pipe(
       Effect.flatMap(
         Option.match({
-          onNone: () => Effect.succeed(Option.none()),
+          onNone: () => Effect.succeedNone,
           onSome: (row) => Effect.asSome(toLink(row)),
         }),
       ),

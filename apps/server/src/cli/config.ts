@@ -264,6 +264,7 @@ export const sharedServerCommandFlags = {
 // so a typo never leaves pairing silently off or pointed at the wrong place.
 const resolveTunnelPairingUrl = (raw: string | undefined) => {
   const trimmed = raw?.trim();
+  // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
   if (trimmed === undefined || trimmed.length === 0) return Effect.succeed(undefined);
   const url = URL.parse(trimmed);
   return url !== null && url.protocol === "https:" && (url.pathname === "/" || url.pathname === "")
@@ -318,6 +319,7 @@ export const resolveCloudflareAccess = (raw: {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
   if (teamDomain === "" && aud === "" && subjects.length === 0) {
+    // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
     return Effect.succeed(undefined);
   }
   const fail = (cause: string) => Effect.fail(new CliError.UserError({ cause }));

@@ -73,6 +73,7 @@ import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
+import * as DocumentText from "../../provider/DocumentText.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as SourceControlRepositoryService from "../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
@@ -267,7 +268,7 @@ const vpsLaunches = (seen: Ref.Ref<Seen>) =>
 
 const vpsProjects = (seen: Ref.Ref<Seen>) =>
   Layer.mock(ProjectService.ProjectService)({
-    getById: () => Effect.succeed(Option.none()),
+    getById: () => Effect.succeedNone,
     listPage: () => Effect.succeed({ projects: [], nextCursor: null }),
     update: () =>
       Ref.update(seen, (current) => ({
@@ -288,6 +289,7 @@ const serveVps = (seen: Ref.Ref<Seen>, mapNow: Ref.Ref<MapNow>, vpsRun: VpsRun) 
       McpHttpServer.layerProjectRegistration,
       McpHttpServer.layerThreadToolkit,
     ).pipe(
+      Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
       Layer.provide(NodeCrypto.layer),
       Layer.provide(vpsThreads(seen, vpsRun)),
       Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
@@ -324,7 +326,7 @@ const serveVps = (seen: Ref.Ref<Seen>, mapNow: Ref.Ref<MapNow>, vpsRun: VpsRun) 
         activeDesired: Ref.get(mapNow).pipe(Effect.map(desiredOnVps)),
         lockedFor: () => Effect.succeed(false),
         trustsPeerOrigin: () => false,
-        machineGrant: () => Effect.succeed(undefined),
+        machineGrant: () => Effect.void,
       } as unknown as MachineMapState.MachineMapState["Service"]),
     ),
   );
@@ -514,7 +516,7 @@ const makeMac = (
           Layer.provide(NodeServices.layer),
         ),
       ),
-      Layer.provide(NodeServices.layer),
+      Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
       Layer.provide(
         MachineCallHistory.layer.pipe(
           Layer.provide(
@@ -1059,6 +1061,7 @@ const setupDelegation = (initial: MapNow) =>
     );
     const here = yield* McpHttpServer.layerOrchestratorToolkit.pipe(
       Layer.provideMerge(McpServer.McpServer.layer),
+      Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
       Layer.provideMerge(
         RemoteDelegation.layer.pipe(
           Layer.provideMerge(PeerForwarding.layer),

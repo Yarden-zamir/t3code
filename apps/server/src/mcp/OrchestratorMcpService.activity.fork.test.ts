@@ -7,7 +7,6 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "vite-plus/test";
 
@@ -43,7 +42,7 @@ it("scheduleTask from a client without a thread uses the project model from proj
         Layer.mock(ProjectService.ProjectService)({
           // The aggregate field is empty, as on a server that folded project settings.
           getById: () =>
-            Effect.succeed(Option.some({ id: projectId, defaultModelSelection: null } as never)),
+            Effect.succeedSome({ id: projectId, defaultModelSelection: null } as never),
         }),
         Layer.mock(SecretRequests.SecretRequests)({}),
         Layer.mock(ScheduledTaskService.ScheduledTaskService)({

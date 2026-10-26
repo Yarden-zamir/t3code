@@ -196,7 +196,7 @@ export function SlotLayoutBuilder<Element extends string>(props: {
         <div className="flex min-w-0 flex-col gap-3">
           <div className="flex flex-col gap-2">
             {layout.rows.map((row, rowIndex) => (
-              // Rows have no identity apart from their position in the layout.
+              // oxlint-disable-next-line react/no-array-index-key -- Rows have no identity apart from their position; drop zone ids use the same index.
               <div key={rowIndex} className="flex items-stretch gap-2">
                 <DropZone id={groupId(rowIndex, "start")} label="Left" className="flex-1">
                   <SortableContext items={[...row.start]} strategy={rectSortingStrategy}>

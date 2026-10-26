@@ -35,7 +35,6 @@ import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
 import { splitEnvironmentSections } from "./environmentSections";
 import { useForkClientInvite } from "./forkClientInvite";
-import { openSettings } from "../settings/settings-navigation";
 import { leaveSettingsPage } from "../settings/settings-navigation";
 import { workspaceHasColumns } from "../workspace/workspace-selection-store";
 

@@ -301,7 +301,7 @@ const make = Effect.gen(function* () {
         const cached = identities.get(target.origin);
         const probe =
           cached !== undefined && !refresh
-            ? Effect.succeed(Option.some(cached))
+            ? Effect.succeedSome(cached)
             : identityOf(target, local.token).pipe(Effect.option);
         return probe.pipe(
           Effect.map((found) => {

@@ -1,5 +1,4 @@
 import {
-  AuthStandardClientScopes,
   type AuthSessionState,
   MACHINE_LEVEL_SCOPES,
   MachineId,

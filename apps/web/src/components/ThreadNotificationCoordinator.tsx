@@ -19,6 +19,7 @@ import { useEffect, useEffectEvent, useRef } from "react";
 import { addThreadToast } from "../forkInAppNotifications";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { showInstalledAppNotification } from "../installedApp";
+import { isWindowsPlatform } from "../lib/utils";
 import { useEnvironmentIds } from "../state/environments";
 import { useDelegatedUnderParent } from "../state/entities";
 import { environmentShell } from "../state/shell";
@@ -219,6 +220,8 @@ function EnvironmentNotifications({
         body: thread.title,
         tag: threadNotificationTag(environmentId, thread.id),
         silent: true,
+        // Windows drops clicks after a toast moves into Notification Center.
+        requireInteraction: kind === "completion" && isWindowsPlatform(navigator.platform),
       });
       onNotification(environmentId, notification);
       notification.addEventListener("click", () => {

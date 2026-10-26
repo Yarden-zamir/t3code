@@ -57,7 +57,7 @@ The rules of the linked environments stack:
 
 - The fork does not use upstream's manual links. `MachinePeers` gives `PeerLinks` and `PeerMcpClient` the machine map arrows (MM-1921).
 - The migrations `068_PeerLinks` and `069_PeerLinkFence` are not in the fork. See [Migrations](#migrations).
-- Fork runs skip the upstream tests that need their table. `apps/server/src/fork/excludedUpstreamTests.ts` lists them with the reason. `MachinePeers.test.ts` covers the same forwarding and delegation over arrow links. Remove those entries when upstream main has the migration.
+- Fork runs skip the upstream tests that need their table. `apps/server/src/fork/excludedUpstreamTests.ts` lists them with the reason. `MachinePeers.test.ts` covers the same forwarding and delegation over arrow links. Remove those entries when upstream main has the migration. `apps/web/src/forkExcludedUpstreamTests.ts` lists the upstream web browser tests that Fork CI's smaller runner cannot run in time.
 - The fork hooks in upstream files: the provide of `PeerForwarding.layer` in `server.ts`, the refusal layer in `cli/environment.ts`, and the peer link RPC handlers in `fork/forkWs.ts`. With those handlers in `ws.ts`, the handler object is too deep a type, and the server layers lose their types.
 - When an upstream merge conflicts in a file that only the stack touches, take upstream's version, then apply the fork hooks again.
 

@@ -30,6 +30,15 @@ def integrity_changes(diff: str) -> tuple[frozenset[str], frozenset[str]]:
     return frozenset(removed), frozenset(added)
 
 
+Changes = tuple[frozenset[str], frozenset[str]]
+
+
+def matches_merged_side(ours: Changes, theirs: Changes) -> bool:
+    """The same additions, and removals that upstream also made. A package that upstream dropped
+    stays when a fork dependency still uses it, at its old integrity."""
+    return ours[1] == theirs[1] and ours[0] <= theirs[0]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--rebuild", action="store_true", help="rebuild a lockfile that merged without a conflict")
@@ -52,12 +61,15 @@ def main() -> None:
     base = common.git("merge-base", "HEAD", "MERGE_HEAD", cwd=root)
     theirs = integrity_changes(common.git("diff", base, "MERGE_HEAD", "--", LOCKFILE, cwd=root))
     print(f"Rebuilt {LOCKFILE}: {len(ours[0])} integrity lines removed, {len(ours[1])} added.")
-    if ours != theirs:
+    if not matches_merged_side(ours, theirs):
         print("The integrity changes differ from the merged side. Compare them before you stage:")
         print(f"  git diff HEAD -- {LOCKFILE}")
         print(f"  git diff {base[:12]} MERGE_HEAD -- {LOCKFILE}")
         sys.exit(1)
     common.git("add", LOCKFILE, cwd=root)
+    kept = len(theirs[0] - ours[0])
+    if kept:
+        print(f"{kept} packages that upstream removed stay, because fork dependencies still use them.")
     print(f"The integrity changes match the merged side. Staged {LOCKFILE}.")
 
 

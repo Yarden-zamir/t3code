@@ -420,12 +420,10 @@ const make = Effect.gen(function* () {
         );
       }).pipe(
         Effect.timeout("30 seconds"),
-        Effect.catch(() =>
-          Effect.succeed({
-            ...kept("Artifact inspection or removal failed; checkout kept"),
-            failed: true,
-          }),
-        ),
+        Effect.orElseSucceed(() => ({
+          ...kept("Artifact inspection or removal failed; checkout kept"),
+          failed: true,
+        })),
       );
     });
   return ForkWorktreeArtifacts.of({ evict });
@@ -663,13 +661,7 @@ export const makeSweep = Effect.fn("ForkWorktreeArtifacts.makeSweep")(function* 
               bytes: null,
               artifactBreakdown: result.artifactBreakdown,
             });
-          }).pipe(
-            Effect.catch(() =>
-              Effect.sync(() => {
-                keep("inspection failed");
-              }),
-            ),
-          ),
+          }),
         );
       }
     }).pipe(

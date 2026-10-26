@@ -25,6 +25,7 @@ import {
 } from "react";
 
 import { APP_VERSION } from "../../branding";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { useClientSettings } from "../../hooks/useSettings";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import {
@@ -37,7 +38,6 @@ import {
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatChatTimestampTooltip, formatRelativeTimeLabel } from "../../timestampFormat";
-import { useRelativeTimeTick } from "../settings/settingsLayout";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { PullRequestActorAvatar } from "../pullRequest/pullRequestPresentation";
@@ -72,7 +72,8 @@ interface ChangelogClock {
 const ChangelogClockContext = createContext<ChangelogClock | null>(null);
 
 export function ChangelogClockProvider({ children }: { readonly children: ReactNode }) {
-  const nowMs = useRelativeTimeTick(60_000);
+  const nowMinute = useNowMinute();
+  const nowMs = Date.parse(`${nowMinute}:00.000Z`);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const clock = { nowMs, timestampFormat };
   return <ChangelogClockContext value={clock}>{children}</ChangelogClockContext>;

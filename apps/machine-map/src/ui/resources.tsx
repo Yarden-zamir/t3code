@@ -229,6 +229,7 @@ function Chart({
         )}
         {lines.flatMap((line, i) =>
           chartLines(history.at, line.values, history.stepMs, frame).map((points, j) => (
+            // oxlint-disable-next-line react/no-array-index-key -- Segments have no identity and keep time order; a content key remounts each one on every sample.
             <polyline key={`${i}:${j}`} className={line.className} points={points} />
           )),
         )}
@@ -299,15 +300,19 @@ function ProcessTable({
       ) : (
         <table className="procs">
           <tbody>
-            {processes.slice(0, PROCESS_LIMIT).map((process, i) => (
-              <tr key={`${process.name}:${i}`}>
-                <td className="mono">{process.name}</td>
-                <td className="num">
-                  {process.cpuPercent === null ? "-" : `${Math.round(process.cpuPercent)}%`}
-                </td>
-                <td className="num">{formatBytes(process.memoryBytes)}</td>
-              </tr>
-            ))}
+            {processes.slice(0, PROCESS_LIMIT).map((process, i, shown) => {
+              // A name can repeat, so the key also counts the rows above with the same name.
+              const repeat = shown.slice(0, i).filter((other) => other.name === process.name);
+              return (
+                <tr key={`${process.name}:${repeat.length}`}>
+                  <td className="mono">{process.name}</td>
+                  <td className="num">
+                    {process.cpuPercent === null ? "-" : `${Math.round(process.cpuPercent)}%`}
+                  </td>
+                  <td className="num">{formatBytes(process.memoryBytes)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -712,9 +717,11 @@ function Sparkline({ history, now }: { history: ResourceHistory; now: number }) 
       aria-label="CPU and memory, last hour"
     >
       {chartLines(history.at, history.memory, history.stepMs, frame).map((points, i) => (
+        // oxlint-disable-next-line react/no-array-index-key -- Segments have no identity and keep time order; a content key remounts each one on every sample.
         <polyline key={`m${i}`} className="line memory" points={points} />
       ))}
       {chartLines(history.at, history.cpu, history.stepMs, frame).map((points, i) => (
+        // oxlint-disable-next-line react/no-array-index-key -- Segments have no identity and keep time order; a content key remounts each one on every sample.
         <polyline key={`c${i}`} className="line" points={points} />
       ))}
     </svg>

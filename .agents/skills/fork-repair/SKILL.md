@@ -48,6 +48,10 @@ options.
   `git fetch --no-tags upstream main` first.
 - The scripts call the existing `scripts/fork-*.ts` tools. They only run steps in order and
   report results.
+- When an adopted pull request gets a new head, compare it with the listed one:
+  `git range-diff <old base>..<old head> <new base>..<new head>`. A rebase head often carries
+  only lint and API fixes. For an adopted file that the fork does not change, take the new
+  head's version: keeping the fork side drops those fixes. Never take its migrations.
 
 ## Keep this skill current
 

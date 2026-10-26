@@ -126,6 +126,15 @@ def test_integrity_changes_ignore_peer_key_lines():
     assert lockfile.integrity_changes(fork) != lockfile.integrity_changes(fork.replace("sha512-new", "sha512-other"))
 
 
+def test_lockfile_keeps_packages_that_fork_dependencies_still_use():
+    upstream = (frozenset({"old-a", "old-b"}), frozenset({"new"}))
+    assert lockfile.matches_merged_side(upstream, upstream)
+    # A fork dependency still uses old-b: only old-a goes.
+    assert lockfile.matches_merged_side((frozenset({"old-a"}), frozenset({"new"})), upstream)
+    assert not lockfile.matches_merged_side((frozenset({"old-c"}), frozenset({"new"})), upstream)
+    assert not lockfile.matches_merged_side((frozenset(), frozenset({"other"})), upstream)
+
+
 def test_sync_branches_lint_fork_files_and_fix_branches_run_fork_check():
     assert checks.lintable(["a.ts", "b.md", "c.tsx", "a.ts", "d.mjs"]) == ["a.ts", "c.tsx", "d.mjs"]
     sync = [name for name, _ in checks.steps("vp", "fork-sync/x", ["a.ts"])]

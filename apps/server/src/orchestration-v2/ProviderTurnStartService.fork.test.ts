@@ -14,7 +14,6 @@ import {
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 
@@ -121,9 +120,7 @@ function startWithMissingWorktree(
         Layer.mock(GitWorkflow.GitWorkflowService)({ pruneWorktrees, createWorktree }),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
-            Effect.succeed(
-              Option.some({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
-            ),
+            Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadRecords: () => Effect.succeed(projection),

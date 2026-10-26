@@ -18,6 +18,7 @@ import * as Stream from "effect/Stream";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ServerConfig from "../../../config.ts";
+import * as DocumentText from "../../../provider/DocumentText.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
@@ -91,7 +92,7 @@ it.effect("project settings written by t3_project_update are the ones the app re
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
       Layer.mock(GitVcsDriver.GitVcsDriver)({}),
       Layer.succeed(ServerSettings.ServerSettingsService, settingsService),
-      NodeServices.layer,
+      DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer)),
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-project-actions-" }).pipe(
         Layer.provide(NodeServices.layer),
       ),
@@ -249,7 +250,7 @@ const clientLaunchHarness = (input: {
     }),
     Layer.mock(PeerForwarding.PeerForwarding)({}),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
-    NodeServices.layer,
+    DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer)),
   ).pipe(
     Layer.provideMerge(GitVcsDriver.layer),
     Layer.provideMerge(VcsProcess.layer),
