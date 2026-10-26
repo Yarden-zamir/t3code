@@ -6,7 +6,9 @@ import {
 } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useEnvironments } from "../state/environments";
+import { environmentPresentations } from "../state/presentation";
 import { serverEnvironment } from "../state/server";
 import { useEnvironmentScope } from "../state/session";
 
@@ -31,6 +33,16 @@ export function useTerminalThreadEnvironmentIds(): ReadonlySet<EnvironmentId> {
       .filter((environment) => environment.serverConfig?.settings.terminalThreads === true)
       .map((environment) => environment.environmentId),
   );
+}
+
+/** Fork: whether a connected environment has `terminalThreads` on, read at event time. */
+export function readTerminalThreadsAvailable(): boolean {
+  for (const presentation of appAtomRegistry
+    .get(environmentPresentations.presentationsAtom)
+    .values()) {
+    if (presentation.serverConfig?.settings.terminalThreads === true) return true;
+  }
+  return false;
 }
 
 /** Fork: a draft can switch to Terminal mode: the server allows it and so do the grants. */
