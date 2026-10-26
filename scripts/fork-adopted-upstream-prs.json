@@ -33,7 +33,7 @@
     "number": 16695,
     "title": "feat(server): work a linked environment starts stays within its link",
     "headRef": "t3code/peer/link-origin",
-    "mergedHead": "e7be3191310fe8c8ee8493338a2e98665a999d4d",
+    "mergedHead": "47ede02f8832b3b9a08283ca672fbade49a05bf0",
     "reason": "Linked environments stack. Work that another machine starts stays within the access of its arrow (MM-1921).",
     "forkRules": "Migration 069_PeerLinkFence stays out of Migrations.ts until upstream main has it. See docs/fork/operations.md \"Migrations\". vite.config.ts keeps t3code/no-low-value-comments at warn for linkOrigin.ts until its comments fit the 4-line cap."
   },
