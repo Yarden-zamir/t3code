@@ -6,7 +6,6 @@ import {
   GUEST_COMMAND_OUTPUT_ROUTE,
   GUEST_ITEM_ROUTE,
   GUEST_SHARE_PARAM,
-  guestToolOutputImageUrl,
   OrchestrationV2CommandOutputFrame,
   OrchestrationV2GetTurnItemResult,
 } from "@t3tools/contracts";
@@ -100,5 +99,4 @@ export const guestTurnItemSource = (shareId: string): TurnItemSource => ({
   detail: ({ itemId, revision }) =>
     guestItemDetailAtom(JSON.stringify([shareId, itemId, revision])),
   commandOutput: ({ itemId }) => guestCommandOutputAtom(JSON.stringify([shareId, itemId])),
-  toolOutputImageUrl: (itemId, index) => guestToolOutputImageUrl(shareId, itemId, index),
 });
