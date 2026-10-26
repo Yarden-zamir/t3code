@@ -5,8 +5,9 @@
 //
 //   node scripts/fork-guest-access-check.ts https://t3-vps.yarden-zamir.com
 //
-// Without credentials, every path must stop at Cloudflare Access: the owner paths at the owner
-// app, and the guest paths at the guest app. Set `T3_GUEST_ACCESS_COOKIE` to the value of the
+// Without credentials, the public web build files must be open (a Bypass app), and every other
+// path must stop at Cloudflare Access: the owner paths at the owner app, the guest paths at the
+// guest app. Set `T3_GUEST_ACCESS_COOKIE` to the value of the
 // `CF_Authorization` cookie of a guest login (not the owner's) to also check that the guest app
 // opens only the guest paths, and that the server refuses guest routes without a guest link.
 
@@ -22,7 +23,7 @@ interface Check {
 }
 
 const OWNER_PATHS = ["/", "/settings", "/api/auth/session", "/ws", "/.well-known/t3/environment"];
-const GUEST_PAGE_PATHS = ["/guest", "/manifest.webmanifest", "/favicon.ico"];
+const BUILD_PATHS = ["/manifest.webmanifest", "/favicon.ico", "/apple-touch-icon.png"];
 const GUEST_API_PATHS = [
   "/api/guest/session?share=check",
   "/api/guest/stream?share=check",
@@ -63,7 +64,13 @@ if (origin === undefined || !URL.canParse(origin)) {
 const guestCookie = NodeProcess.env.T3_GUEST_ACCESS_COOKIE;
 
 const checks: ReadonlyArray<Check> = [
-  ...[...OWNER_PATHS, ...GUEST_PAGE_PATHS, ...GUEST_API_PATHS].map((path) => ({
+  ...BUILD_PATHS.map((path) => ({
+    path,
+    cookie: false,
+    want: "open" as const,
+    why: "no login, public build file",
+  })),
+  ...[...OWNER_PATHS, "/guest", ...GUEST_API_PATHS].map((path) => ({
     path,
     cookie: false,
     want: "access" as const,

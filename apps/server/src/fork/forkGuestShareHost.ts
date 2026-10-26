@@ -8,8 +8,8 @@ import type { CloudManagedEndpointRuntime } from "../cloud/ManagedEndpointRuntim
 import * as ServerConfig from "../config.ts";
 
 /**
- * The host of new guest links, and the host each guest request must still arrive on: the T3
- * Connect host while Connect serves this machine, else the tunnel host, else none.
+ * The host of new guest links, which a share must still match to work: the T3 Connect host while
+ * Connect serves this machine, else the tunnel host, else none.
  */
 export const guestShareHostname = Effect.fn("ForkGuestShare.hostname")(function* (
   managedEndpoint: CloudManagedEndpointRuntime["Service"],

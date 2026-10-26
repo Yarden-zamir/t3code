@@ -357,7 +357,7 @@ Use these steps only when the join dialog says "No tunnel", for example when the
 
 ## Guest links through Cloudflare Access
 
-A guest link on a tunnel host needs its own Cloudflare Access application for the paths of the guest page. See [Guest links over the tunnel](features.md#guest-links-over-the-tunnel). These steps are for `t3-vps.yarden-zamir.com`. For another machine, use its tunnel host.
+A guest link on a tunnel host needs two more Cloudflare Access applications: an Allow application for the guest page and routes, and a Bypass application for the public web build files. See [Guest links over the tunnel](features.md#guest-links-over-the-tunnel). These steps are for `t3-vps.yarden-zamir.com`. For another machine, use its tunnel host.
 
 The guest page loads only these paths. A real load of the page and the guest code give the list.
 
@@ -374,13 +374,15 @@ The page opens no WebSocket and calls no other route. `GuestPage.browser.test.ts
 
 All guest requests go to the same origin, with the browser's cookies. So the Access cookie of the guest login also covers `/api/guest/*`.
 
+The build files (`/assets/*` and the three files in the root) are the public open-source web build and hold no data. The owner page loads the same files. The `CF_Authorization` cookie of a host holds the token of one application at a time, and a script cannot follow a redirect to the Access login. So an Allow application on the build files breaks the owner page, and a Bypass application does not.
+
 ### Add the guest Access application
 
 1. In Cloudflare Zero Trust, open Settings > Authentication > Login methods. If "One-time PIN" is not in the list, add it.
 2. Open Access > Applications (Access controls > Applications in the new dashboard). Click "Add an application", then "Self-hosted".
 3. Set the name `T3 guest links (t3-vps)` and the session duration `24 hours`, the life of a guest link.
 4. Add a public hostname with subdomain `t3-vps`, domain `yarden-zamir.com` and path `guest`.
-5. Add one more public hostname on the same host for each path: `api/guest/*`, `assets/*`, `apple-touch-icon.png`, `favicon.ico` and `manifest.webmanifest`.
+5. Add one more public hostname on the same host with the path `api/guest/*`.
 6. Add a policy with the name `Guests` and the action **Allow**. Do not use Bypass.
 7. Choose the rules of the policy. Include rules allow a visitor that matches one of them. Require rules must all match.
    - Default: Include "Emails ending in" `@qlik.com`. Also Include "Emails" with the owner email from `T3CODE_CLOUDFLARE_ACCESS_SUBJECTS`, so that the owner can open guest links too.
@@ -388,8 +390,11 @@ All guest requests go to the same origin, with the browser's cookies. So the Acc
    - Strict: Include "Emails ending in" `@qlik.com` and the owner email, and Require "IP ranges" with the Qlik network ranges.
 8. Under login methods, turn off "Accept all available identity providers" and select only "One-time PIN".
 9. Save the application.
+10. Add one more self-hosted application with the name `T3 web build (t3-vps)`. Give it a public hostname on the same host for each path: `assets/*`, `apple-touch-icon.png`, `favicon.ico` and `manifest.webmanifest`. Add one policy with the action **Bypass** and the Include rule "Everyone". Save it.
 
-Do not change the owner Access application "T3 Code servers". It keeps every other path of the host. Access uses the application with the most specific path, so the guest application applies only to the paths above.
+Do not change the owner Access application "T3 Code servers". It keeps every other path of the host. Access uses the application with the most specific path, so the two new applications apply only to the paths above.
+
+The guest application has its own token, which replaces the owner token in the cookie of the host. If the owner opens a guest link in the owner browser, the next owner page asks for the owner login again. Open guest links in a private window.
 
 ### Limit the guest request rate
 
@@ -398,8 +403,10 @@ Do not change the owner Access application "T3 Code servers". It keeps every oth
 3. Under "If incoming requests match", click "Edit expression" and enter:
 
    ```text
-   (http.host eq "t3-vps.yarden-zamir.com" and starts_with(http.request.uri.path, "/api/guest/"))
+   starts_with(http.request.uri.path, "/api/guest/")
    ```
+
+   The Free plan allows only the path field in this expression, so the rule covers the guest routes of every host in the zone.
 
 4. Count by IP. Set 100 requests per 10 seconds.
 5. Set the action Block for 10 seconds. Save the rule.
@@ -409,7 +416,7 @@ One open guest page sends one stream request, plus one request for each row or i
 ### Turn it on and check it
 
 1. Turn on Settings > Beta > Guest links for the VPS, or call `machines_set_setting` with `guestSharingEnabled: true` for the VPS.
-2. Without a login, run the check. Every path must stop at Access:
+2. Without a login, run the check. The build files must be open, and every other path must stop at Access:
 
    ```sh
    node scripts/fork-guest-access-check.ts https://t3-vps.yarden-zamir.com
