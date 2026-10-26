@@ -33,7 +33,6 @@ import type { ReactNode } from "react";
 import {
   useEffect,
   useEffectEvent,
-  useLayoutEffect,
   useRef,
   useState,
   type RefObject,
