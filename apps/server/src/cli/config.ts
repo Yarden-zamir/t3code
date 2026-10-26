@@ -306,11 +306,11 @@ export const resolveTrustedBrowserOrigins = (raw: string | undefined) =>
 
 // Fork: Cloudflare Access login. All three values turn it on, none turn it off,
 // and a partial set fails startup so a missing value never weakens the check.
-export const resolveCloudflareAccess = (raw: {
+export const resolveCloudflareAccess = Effect.fn("config.resolveCloudflareAccess")(function* (raw: {
   readonly teamDomain: string | undefined;
   readonly aud: string | undefined;
   readonly subjects: string | undefined;
-}) => {
+}) {
   const teamDomain = raw.teamDomain?.trim() ?? "";
   const aud = raw.aud?.trim() ?? "";
   const subjects = (raw.subjects ?? "")
@@ -318,28 +318,25 @@ export const resolveCloudflareAccess = (raw: {
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
-  if (teamDomain === "" && aud === "" && subjects.length === 0) {
-    // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-    return Effect.succeed(undefined);
-  }
-  const fail = (cause: string) => Effect.fail(new CliError.UserError({ cause }));
+  if (teamDomain === "" && aud === "" && subjects.length === 0) return undefined;
   if (teamDomain === "" || aud === "" || subjects.length === 0) {
-    return fail(
-      "T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN, T3CODE_CLOUDFLARE_ACCESS_AUD and T3CODE_CLOUDFLARE_ACCESS_SUBJECTS must be set together.",
-    );
+    return yield* new CliError.UserError({
+      cause:
+        "T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN, T3CODE_CLOUDFLARE_ACCESS_AUD and T3CODE_CLOUDFLARE_ACCESS_SUBJECTS must be set together.",
+    });
   }
   const teamUrl = URL.parse(`https://${teamDomain}`);
   if (teamUrl === null || teamUrl.host !== teamDomain || teamUrl.username !== "") {
-    return fail(
-      `T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN must be a host such as team.cloudflareaccess.com, got ${teamDomain}.`,
-    );
+    return yield* new CliError.UserError({
+      cause: `T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN must be a host such as team.cloudflareaccess.com, got ${teamDomain}.`,
+    });
   }
-  return Effect.succeed({
+  return {
     teamDomain,
     aud,
     subjects,
-  } satisfies ServerConfig.CloudflareAccessConfig);
-};
+  } satisfies ServerConfig.CloudflareAccessConfig;
+});
 
 const resolveOptionPrecedence = <Value>(
   ...values: ReadonlyArray<Option.Option<Value>>

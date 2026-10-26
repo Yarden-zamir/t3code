@@ -220,7 +220,9 @@ export const make = Effect.gen(function* () {
 
   return ForkChangelog.of({
     listReleases,
-    releaseChanges: ({ tag }) => Cache.get(releaseChangesCache, tag),
+    releaseChanges: Effect.fn("ForkChangelog.releaseChanges")(function ({ tag }) {
+      return Cache.get(releaseChangesCache, tag);
+    }),
     upstreamPending,
     syncStatus,
     startSync,

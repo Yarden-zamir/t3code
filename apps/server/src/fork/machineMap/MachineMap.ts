@@ -1406,8 +1406,12 @@ const make = Effect.gen(function* () {
     callMapTool,
     readPanel,
     shareSettings,
-    reportExec: (report) => sendOrQueue({ _tag: "execRan", report }).pipe(Effect.asVoid),
-    reportCall: (report) => sendOrQueue({ _tag: "callForwarded", report }).pipe(Effect.asVoid),
+    reportExec: Effect.fn("MachineMap.reportExec")(function (report) {
+      return sendOrQueue({ _tag: "execRan", report }).pipe(Effect.asVoid);
+    }),
+    reportCall: Effect.fn("MachineMap.reportCall")(function (report) {
+      return sendOrQueue({ _tag: "callForwarded", report }).pipe(Effect.asVoid);
+    }),
   });
 });
 

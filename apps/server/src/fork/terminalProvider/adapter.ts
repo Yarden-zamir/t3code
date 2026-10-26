@@ -205,8 +205,12 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: options.instanceId,
     driver: TERMINAL_DRIVER,
-    getCapabilities: () => Effect.succeed(TerminalProviderCapabilities),
-    planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
+    getCapabilities: Effect.fn("TerminalProvider.getCapabilities")(function () {
+      return Effect.succeed(TerminalProviderCapabilities);
+    }),
+    planSelectionTransition: Effect.fn("TerminalProvider.planSelectionTransition")(function () {
+      return Effect.succeed({ type: "apply_on_next_turn" });
+    }),
     openSession: Effect.fn("TerminalProvider.openSession")(function* (input) {
       yield* options.ensureEnabled.pipe(
         Effect.mapError(

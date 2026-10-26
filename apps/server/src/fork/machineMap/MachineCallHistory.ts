@@ -68,31 +68,41 @@ const make = Effect.gen(function* () {
     return yield* exit;
   });
 
+  // Forwarders retain the `MachineCallHistory.reported` and upstream operation spans.
   return PeerForwarding.PeerForwarding.of({
     ...upstream,
-    call: (scope, tool, environmentId, params) =>
-      reported(scope, environmentId, tool.name, upstream.call(scope, tool, environmentId, params)),
-    readThread: (scope, environmentId, input) =>
-      reported(
+    call: Effect.fnUntraced(function* (scope, tool, environmentId, params) {
+      return yield* reported(
+        scope,
+        environmentId,
+        tool.name,
+        upstream.call(scope, tool, environmentId, params),
+      );
+    }),
+    readThread: Effect.fnUntraced(function* (scope, environmentId, input) {
+      return yield* reported(
         scope,
         environmentId,
         "t3_thread_read",
         upstream.readThread(scope, environmentId, input),
-      ),
-    interruptThread: (scope, environmentId, input) =>
-      reported(
+      );
+    }),
+    interruptThread: Effect.fnUntraced(function* (scope, environmentId, input) {
+      return yield* reported(
         scope,
         environmentId,
         "t3_thread_interrupt",
         upstream.interruptThread(scope, environmentId, input),
-      ),
-    waitForThread: (scope, environmentId, input) =>
-      reported(
+      );
+    }),
+    waitForThread: Effect.fnUntraced(function* (scope, environmentId, input) {
+      return yield* reported(
         scope,
         environmentId,
         "t3_thread_wait",
         upstream.waitForThread(scope, environmentId, input),
-      ),
+      );
+    }),
   });
 });
 

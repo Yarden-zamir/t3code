@@ -512,15 +512,15 @@ const make = Effect.gen(function* () {
       // `false` means it is still running there: follow again straight away.
       Effect.repeat({ while: (done) => !done }),
       Effect.catchTags({
-        OrchestratorMcpFailure: (error) =>
-          Effect.gen(function* () {
-            const reason = yield* finalReason(parentThreadId, taskId, error);
-            if (reason === undefined) return yield* error;
-            // Gone there, or no link to reach it by: nothing left to stop there.
-            const { task } = yield* readTask(parentThreadId, taskId);
-            const stopCount = task?.remoteChild?.stopCount;
-            yield* complete(parentThreadId, taskId, "failed", reason, "stopped", stopCount);
-          }),
+        // An inline handler in a retry loop, so the operations it calls own the spans.
+        OrchestratorMcpFailure: Effect.fnUntraced(function* (error) {
+          const reason = yield* finalReason(parentThreadId, taskId, error);
+          if (reason === undefined) return yield* error;
+          // Gone there, or no link to reach it by: nothing left to stop there.
+          const { task } = yield* readTask(parentThreadId, taskId);
+          const stopCount = task?.remoteChild?.stopCount;
+          yield* complete(parentThreadId, taskId, "failed", reason, "stopped", stopCount);
+        }),
       }),
       Effect.retry(backoff),
       Effect.ignoreCause({ log: true }),
