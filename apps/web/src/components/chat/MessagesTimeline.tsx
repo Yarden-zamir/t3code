@@ -716,10 +716,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
     listRef,
     listReady: findListReady,
     viewport: timelineViewportElement,
-    historyLoading: citationHistoryLoading,
+    historyLoading: citationHistory._tag === "loading",
     historyControls,
     foldInput: { timelineEntries, latestRun, runningRunId, isWorking, runlessWorkActive },
-    expandRun: expandCitedRun,
+    expandRun: (runId) =>
+      setExpandedRunIds((current) => (current.has(runId) ? current : new Set(current).add(runId))),
     expandAttempt: (attemptId) =>
       setExpandedAttemptIds((current) =>
         current.has(attemptId) ? current : new Set(current).add(attemptId),
