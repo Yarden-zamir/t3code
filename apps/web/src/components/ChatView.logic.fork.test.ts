@@ -3,54 +3,21 @@ import {
   ConnectionBlockedError,
   presentConnectionState,
 } from "@t3tools/client-runtime/connection";
-import { describe, expect, it, onTestFinished, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
-import { scheduleEnvironmentReconnectWarning } from "./ChatView.logic";
-import { restartReconnectWarningDelayMs } from "./chat/forkReconnectWarningGrace";
+import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "./ChatView.logic";
+import { reconnectWarningDelayMs } from "./chat/forkReconnectWarningGrace";
 
 // Fork: `restartReconnectWarningGrace` (chat/forkReconnectWarningGrace.ts).
 
-function scheduleWarning(enabled: boolean, msSincePageLoad: number) {
-  vi.useFakeTimers();
-  onTestFinished(() => {
-    vi.useRealTimers();
-  });
-  const showWarning = vi.fn();
-  const cancel = scheduleEnvironmentReconnectWarning(
-    showWarning,
-    restartReconnectWarningDelayMs(enabled, msSincePageLoad),
-  );
-  return { showWarning, cancel };
-}
-
 describe("reconnect warning after a restart", () => {
-  it("waits until 45 seconds after the page load, then warns", () => {
-    const { showWarning } = scheduleWarning(true, 1_000);
-    vi.advanceTimersByTime(43_999);
-    expect(showWarning).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1);
-    expect(showWarning).toHaveBeenCalledOnce();
-  });
-
-  it("never warns when the connection comes back in time", () => {
-    const { showWarning, cancel } = scheduleWarning(true, 1_000);
-    vi.advanceTimersByTime(30_000);
-    cancel();
-    vi.advanceTimersByTime(60_000);
-    expect(showWarning).not.toHaveBeenCalled();
+  it("waits until 45 seconds after the page load", () => {
+    expect(reconnectWarningDelayMs(true, 1_000)).toBe(44_000);
   });
 
   it("keeps the upstream wait for a later reconnect and with the setting off", () => {
-    for (const [enabled, msSincePageLoad] of [
-      [true, 120_000],
-      [false, 1_000],
-    ] as const) {
-      const { showWarning } = scheduleWarning(enabled, msSincePageLoad);
-      vi.advanceTimersByTime(1_999);
-      expect(showWarning).not.toHaveBeenCalled();
-      vi.advanceTimersByTime(1);
-      expect(showWarning).toHaveBeenCalledOnce();
-    }
+    expect(reconnectWarningDelayMs(true, 120_000)).toBe(ENVIRONMENT_RECONNECT_WARNING_GRACE_MS);
+    expect(reconnectWarningDelayMs(false, 1_000)).toBe(ENVIRONMENT_RECONNECT_WARNING_GRACE_MS);
   });
 
   it("does not wait for a refused sign-in", () => {

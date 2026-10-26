@@ -1,3 +1,5 @@
+import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "../ChatView.logic";
+
 /**
  * Fork: after an update, a remote server needs up to 40 seconds to accept a connection again.
  * The wait counts from page load, not composer mount, which repeats on each thread switch.
@@ -12,4 +14,15 @@ export function restartReconnectWarningDelayMs(
   msSincePageLoad: number = performance.now(),
 ): number {
   return enabled ? Math.max(0, RESTART_RECONNECT_WARNING_GRACE_MS - msSincePageLoad) : 0;
+}
+
+/** The wait before the reconnect warning: upstream's grace, or longer right after a restart. */
+export function reconnectWarningDelayMs(
+  restartGraceEnabled: boolean,
+  msSincePageLoad: number = performance.now(),
+): number {
+  return Math.max(
+    ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
+    restartReconnectWarningDelayMs(restartGraceEnabled, msSincePageLoad),
+  );
 }
