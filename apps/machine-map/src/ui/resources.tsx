@@ -252,23 +252,29 @@ const lastValue = (values: ReadonlyArray<number | null>): number | null => {
 
 /** The history of one machine and range, with the live sample on top for hour and day. */
 function useHistory(machineId: string, range: ResourceRange, sample: ResourceSample | null) {
-  const [history, setHistory] = useState<ResourceHistory | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const path = `${machinePath(machineId)}/resources?range=${range}`;
+  // Keyed by request path so a new machine or range drops the previous result.
+  const [loaded, setLoaded] = useState<
+    | { readonly path: string; readonly history: ResourceHistory; readonly error: null }
+    | { readonly path: string; readonly history: null; readonly error: string }
+    | null
+  >(null);
+  const current = loaded?.path === path ? loaded : null;
+  const history = current?.history ?? null;
+  const error = current?.error ?? null;
   useEffect(() => {
     let stale = false;
-    setHistory(null);
-    setError(null);
-    callApi<ResourceHistory>("GET", `${machinePath(machineId)}/resources?range=${range}`)
-      .then((loaded) => {
-        if (!stale) setHistory(loaded);
+    callApi<ResourceHistory>("GET", path)
+      .then((result) => {
+        if (!stale) setLoaded({ path, history: result, error: null });
       })
       .catch((cause: unknown) => {
-        if (!stale) setError(errorText(cause));
+        if (!stale) setLoaded({ path, history: null, error: errorText(cause) });
       });
     return () => {
       stale = true;
     };
-  }, [machineId, range]);
+  }, [path]);
   const shown = useMemo(
     () =>
       history !== null && sample !== null && range !== "month"

@@ -145,7 +145,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
         : base;
     };
     return { light: resolve("light"), dark: resolve("dark") };
-    // Fork: `paletteVersion` changes when a server republishes a theme under the same id.
+    // oxlint-disable-next-line react/memo-dependencies -- Fork: `paletteVersion` changes when a server republishes a theme under the same id.
   }, [themeIds, systemColorPalettes, paletteVersion]);
   const themeVariables = themeVariablesByAppearance[themeAppearance];
   const scopedVariables = useMemo(

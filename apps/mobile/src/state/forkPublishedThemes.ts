@@ -72,6 +72,7 @@ export function usePublishedMobileThemes(input: {
   const [paletteVersion, setPaletteVersion] = useState(0);
   useLayoutEffect(() => {
     registerPublishedMobileThemePalettes(new Map(themes.map((theme) => [theme.id, theme.colors])));
+    // oxlint-disable-next-line react/set-state-in-effect -- The module palette registry is external state; the bump re-runs lookups after it changes.
     setPaletteVersion((version) => version + 1);
   }, [themes]);
 
