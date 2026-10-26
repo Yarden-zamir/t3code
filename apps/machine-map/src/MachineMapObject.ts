@@ -2720,8 +2720,6 @@ export class MachineMapObject extends DurableObject<Env> {
         }
         const tunnelRow = this.#tunnelRow(machineId);
         if (tunnelRow) await this.#tearDownTunnel(api, tunnelRow);
-        const guestRow = this.#guestRows().find((row) => row.machine_id === machineId);
-        if (guestRow) await this.#removeGuestApps(api, guestRow);
       }
       this.#commit(ownerActor(owner), `Removed ${machine.name}`, [
         { _tag: "removeMachine", machineId },
@@ -2743,7 +2741,6 @@ export class MachineMapObject extends DurableObject<Env> {
           "rotations",
           "machine_tokens",
           "machine_tunnels",
-          "guest_apps",
         ]) {
           this.#sql(`DELETE FROM ${table} WHERE machine_id = ?`, machineId);
         }
@@ -2758,11 +2755,14 @@ export class MachineMapObject extends DurableObject<Env> {
       for (const ws of this.ctx.getWebSockets(machineTag(machineId)))
         ws.close(4004, "This machine left the map.");
       this.#broadcast(this.#rotationsEvent());
-      // MM-1213: the last machine with guest links takes the rate limit rule with it.
+      // MM-1210, MM-1213: in the Apply queue, after the machine left the map, so a running Apply
+      // cannot make its apps again. The last machine with guest links takes the rule with it.
       if (api) {
-        const failed = await this.#guestSerial(() =>
-          this.#syncGuestRateLimit(api, this.#guestHosts("").length > 0),
-        );
+        const failed = await this.#guestSerial(async () => {
+          const row = this.#guestRows().find((r) => r.machine_id === machineId);
+          if (row) await this.#removeGuestApps(api, row);
+          return this.#syncGuestRateLimit(api, this.#guestHosts("").length > 0);
+        });
         if (failed !== null) console.error(failed);
       }
       return { machineId, tokenDeleted };
