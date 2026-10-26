@@ -1179,8 +1179,10 @@ export class MachineMapObject extends DurableObject<Env> {
       console.error("bad machine message", machine.id, errorMessage(error));
       return;
     }
-    if (parsed._tag === "resources" && message.length > MAX_SAMPLE_MESSAGE_BYTES) {
-      console.error("sample too big", machine.id, message.length);
+    // Bytes, not characters: the sample also rides in the socket attachment, which has a byte cap.
+    const bytes = parsed._tag === "resources" ? new TextEncoder().encode(message).byteLength : 0;
+    if (bytes > MAX_SAMPLE_MESSAGE_BYTES) {
+      console.error("sample too big", machine.id, bytes);
       return;
     }
     if (await this.#onMachineMessage(ws, machine, parsed)) await this.#scheduleAlarm();
@@ -1476,13 +1478,12 @@ export class MachineMapObject extends DurableObject<Env> {
     const samples = attachment.samples;
     if (!samples) return;
     this.#health.store(attachment.machineId, samples.points, samples.latest);
-    try {
+    // A closed socket keeps its attachment, but storing the same points again changes nothing.
+    if (ws.readyState === WebSocket.OPEN) {
       ws.serializeAttachment({
         kind: "machine",
         machineId: attachment.machineId,
       } satisfies Attachment);
-    } catch {
-      // The socket is already closed; storing the same points again changes nothing.
     }
   }
 
