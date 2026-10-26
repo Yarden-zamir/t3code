@@ -16,7 +16,7 @@
   "apps/web/src/components/AppOverlay.tsx": 2,
   "apps/web/src/components/ForkAccessChangeNotices.tsx": 3,
   "apps/web/src/components/ForkNavigationHistory.tsx": 1,
-  "apps/web/src/components/ForkShellTerminal.tsx": 2,
+  "apps/web/src/components/ForkShellTerminal.tsx": 1,
   "apps/web/src/components/ForkTerminalThreadNotifications.tsx": 2,
   "apps/web/src/components/ForkTerminalThreadScreen.tsx": 4,
   "apps/web/src/components/GlobalScriptShortcuts.tsx": 3,

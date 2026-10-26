@@ -16,7 +16,6 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../appearanceFonts";
 import { terminalThreadOpenInput } from "../forkTerminalThreadOpen";
 import { useGrabTerminalFocus } from "../hooks/useForkTerminalFocus";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import { observeResize } from "../lib/observeResize";
 import { cn } from "../lib/utils";
 import { providersIgnoringCheckedAtAtom } from "../state/server";
 import { useEnvironmentScope } from "../state/session";
@@ -96,21 +95,6 @@ export function ForkShellTerminal(props: {
     });
   };
 
-  // The viewport refits on a change of these numbers, so a sidebar or window resize refits it.
-  const [layout, setLayout] = useState({ height: 0, epoch: 0 });
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    return observeResize(container, (entries) => {
-      const entry = entries.at(-1);
-      if (!entry) return;
-      setLayout((current) => ({
-        height: Math.round(entry.contentRect.height),
-        epoch: current.epoch + 1,
-      }));
-    });
-  }, []);
-
   return (
     <div
       ref={containerRef}
@@ -149,8 +133,6 @@ export function ForkShellTerminal(props: {
         onInput={props.onInput}
         autoFocus
         visible
-        resizeEpoch={layout.epoch}
-        drawerHeight={layout.height}
         keybindings={props.keybindings}
       />
       {readOnly ? (
