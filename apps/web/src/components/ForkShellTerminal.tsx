@@ -45,7 +45,6 @@ export function ForkShellTerminal(props: {
   readonly shell: string | undefined;
   /** A draft in Terminal mode, whose shell the server discards once no view holds it. */
   readonly draft?: boolean;
-  readonly focusRequestId: number;
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly onInput?: (data: string) => void;
   readonly className?: string;
@@ -148,7 +147,6 @@ export function ForkShellTerminal(props: {
         onSessionExited={() => {}}
         onStatusChange={setStatus}
         onInput={props.onInput}
-        focusRequestId={props.focusRequestId}
         autoFocus
         visible
         resizeEpoch={layout.epoch}

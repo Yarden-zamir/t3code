@@ -49,6 +49,8 @@ import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
 import {
+  focusActiveDrawerTerminal,
+  focusTerminal,
   isTerminalFocused,
   isTerminalThreadAppChord,
   isTerminalThreadShellKey,
@@ -182,7 +184,6 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
   const [layoutElement, setLayoutElement] = useState<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
-  const [panelFocusRequestId, setPanelFocusRequestId] = useState(0);
   const rightPanel = useThreadRightPanel({
     threadRef,
     routeThreadRef: threadRef,
@@ -197,7 +198,6 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
     container: layoutElement,
     terminalLabelsById: workspace.terminalLabelsById,
     gitCwd: workspace.gitCwd,
-    setTerminalFocusRequestId: setPanelFocusRequestId,
     onDiffPanelOpen: undefined,
   });
   const threadShortcuts = useThreadShortcuts(threadRef, workspace.linkedPullRequest?.url ?? null);
@@ -393,7 +393,6 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
             workspaceRoot={project.workspaceRoot}
             worktreePath={thread.worktreePath}
             shell={terminalThreadShell(thread.modelSelection.model)}
-            focusRequestId={drawer.mainFocusRequestId}
             keybindings={keybindings}
             readOnly={!terminalThreadsEnabled}
           />
@@ -448,7 +447,6 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
           // No composer under the drawer, so it may take the whole column.
           composerHeight={0}
           launchContext={null}
-          focusRequestId={drawer.focusRequestId}
           splitShortcutLabel={terminalShortcutLabel("terminal.split")}
           splitVerticalShortcutLabel={terminalShortcutLabel("terminal.splitVertical")}
           newShortcutLabel={terminalShortcutLabel("terminal.new")}
@@ -469,7 +467,6 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
         onSendAnnotation={undefined}
         terminal={{
           launchContext: null,
-          focusRequestId: panelFocusRequestId,
           keybindings,
           onAddTerminalContext: undefined,
           splitShortcutLabel: terminalShortcutLabel("terminal.split"),
@@ -741,15 +738,12 @@ function useTerminalThreadDrawer(threadRef: ScopedThreadRef) {
       session.target.terminalId !== DEFAULT_TERMINAL_ID &&
       !panelTerminalIds.has(session.target.terminalId),
   );
-  const [focusRequestId, setFocusRequestId] = useState(0);
   // The drawer never holds the thread's own shell. An older client state can list it; that entry
   // goes, and the shell keeps running.
   const drawerListsMainTerminal = uiState.terminalIds.includes(DEFAULT_TERMINAL_ID);
   useEffect(() => {
     if (drawerListsMainTerminal) store().closeTerminal(threadRef, DEFAULT_TERMINAL_ID);
   }, [drawerListsMainTerminal, store, threadRef]);
-  // Closing the drawer gives focus back to the main terminal.
-  const [mainFocusRequestId, setMainFocusRequestId] = useState(1);
 
   const launch = (place: "new" | "split" | "splitVertical") => {
     if (!canOperate) return false;
@@ -765,7 +759,7 @@ function useTerminalThreadDrawer(threadRef: ScopedThreadRef) {
         place: (terminalId) =>
           store().ensureTerminal(threadRef, terminalId, { open: true, active: true }),
       })?.result;
-      setFocusRequestId((value) => value + 1);
+      focusActiveDrawerTerminal(threadRef);
       return;
     }
     store().setTerminalOpen(threadRef, true);
@@ -778,30 +772,36 @@ function useTerminalThreadDrawer(threadRef: ScopedThreadRef) {
             : store().splitTerminalVertical(threadRef, terminalId),
     });
     if (!launched) return;
-    setFocusRequestId((value) => value + 1);
+    focusTerminal(threadRef, launched.terminalId);
     void launched.result;
   };
+
+  const focusMain = () => focusTerminal(threadRef, DEFAULT_TERMINAL_ID);
 
   const toggle = () => {
     if (uiState.terminalOpen) {
       store().setTerminalOpen(threadRef, false);
-      setMainFocusRequestId((value) => value + 1);
+      // Closing the drawer gives focus back to the main terminal.
+      focusMain();
       return;
     }
     if (!canRead && !canOperate) return false;
     if (uiState.terminalIds.length > 0 || !canOperate) {
       store().setTerminalOpen(threadRef, true);
+      focusActiveDrawerTerminal(threadRef);
       return;
     }
     // Sessions that another client started exist before this drawer knows them. Reuse one.
     const existing = drawerSessions[0]?.target.terminalId;
     if (existing !== undefined) {
       store().ensureTerminal(threadRef, existing, { open: true, active: true });
+      focusActiveDrawerTerminal(threadRef);
       return;
     }
     void terminalActions.launchTerminal({
       place: (terminalId) => store().ensureTerminal(threadRef, terminalId, { open: true }),
     })?.result;
+    focusActiveDrawerTerminal(threadRef);
   };
 
   const requestCloseActive = () => {
@@ -815,7 +815,7 @@ function useTerminalThreadDrawer(threadRef: ScopedThreadRef) {
           return;
         terminalActions.closeTerminalSession(terminalId);
         store().closeTerminal(threadRef, terminalId);
-        setFocusRequestId((value) => value + 1);
+        focusActiveDrawerTerminal(threadRef);
       },
     );
   };
@@ -823,9 +823,7 @@ function useTerminalThreadDrawer(threadRef: ScopedThreadRef) {
   return {
     available: canRead || canOperate,
     open: uiState.terminalOpen,
-    focusRequestId,
-    mainFocusRequestId,
-    focusMain: () => setMainFocusRequestId((value) => value + 1),
+    focusMain,
     toggle,
     launch,
     requestCloseActive,
@@ -839,7 +837,6 @@ function MainTerminal(props: {
   readonly workspaceRoot: string;
   readonly worktreePath: string | null;
   readonly shell: string | undefined;
-  readonly focusRequestId: number;
   readonly keybindings: ResolvedKeybindingsConfig;
   /** The server setting is off: the saved output shows, and no shell starts. */
   readonly readOnly: boolean;
@@ -895,7 +892,6 @@ function MainTerminal(props: {
       workspaceRoot={props.workspaceRoot}
       worktreePath={props.worktreePath}
       shell={props.shell}
-      focusRequestId={props.focusRequestId}
       keybindings={props.keybindings}
       className="p-2"
       {...(props.readOnly

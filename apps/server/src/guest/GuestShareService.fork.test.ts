@@ -32,6 +32,7 @@ import * as ProviderReplayHarness from "../orchestration-v2/testkit/ProviderRepl
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as GuestShareService from "./GuestShareService.ts";
 
 const instanceId = ProviderInstanceId.make("codex");
@@ -91,6 +92,7 @@ const layerTest = GuestShareService.layer.pipe(
   Layer.provideMerge(ServerSettings.layerTest({ guestSharingEnabled: true })),
   Layer.provide(layerConnect),
   Layer.provide(layerMachineMap),
+  Layer.provide(Layer.mock(AnalyticsService.AnalyticsService)({ record: () => Effect.void })),
   Layer.provide(ServerSecretStore.layer),
   Layer.provideMerge(layerConfig),
   Layer.provideMerge(NodeServices.layer),

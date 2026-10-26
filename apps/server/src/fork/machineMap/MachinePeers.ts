@@ -414,7 +414,7 @@ const make = Effect.gen(function* () {
       onMap.pipe(
         Effect.flatMap((local) => findLink(local, environmentId)),
         Effect.flatMap(({ found }) =>
-          found === undefined ? Effect.succeedNone : Effect.map(toPeerLink(found), Option.some),
+          found === undefined ? Effect.succeedNone : Effect.asSome(toPeerLink(found)),
         ),
       ),
     resolve: Effect.fn("MachinePeers.resolveLink")(function* (environmentId) {

@@ -13,15 +13,7 @@ import {
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import {
-  type ComponentProps,
-  type Dispatch,
-  type ReactNode,
-  type SetStateAction,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ComponentProps, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { previewRuntimeTabId } from "../../browser/previewRuntimeTabId";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
@@ -30,6 +22,7 @@ import { useRightPanelSurfaceClose } from "../../hooks/useRightPanelSurfaceClose
 import { useStableCallback } from "../../hooks/useStableCallback";
 import type { ShortcutMatchContext } from "../../keybindings";
 import { confirmTerminalClose } from "../../lib/terminalCloseConfirm";
+import { focusActivePanelTerminal, focusTerminal } from "../../lib/terminalFocus";
 import { cn } from "../../lib/utils";
 import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
 import {
@@ -101,7 +94,6 @@ export function useThreadRightPanel(input: {
   readonly container: HTMLElement | null;
   readonly terminalLabelsById: ReadonlyMap<string, string>;
   readonly gitCwd: string | null;
-  readonly setTerminalFocusRequestId: Dispatch<SetStateAction<number>>;
   readonly onDiffPanelOpen: (() => void) | undefined;
 }) {
   const {
@@ -113,7 +105,6 @@ export function useThreadRightPanel(input: {
     serverConfig,
     linkedPullRequest: linkedThreadPullRequest,
     terminalLabelsById: activeTerminalLabelsById,
-    setTerminalFocusRequestId,
     onDiffPanelOpen,
   } = input;
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
@@ -308,11 +299,9 @@ export function useThreadRightPanel(input: {
     gitCwd: input.gitCwd,
     activeProjectCwd: activeProject?.workspaceRoot ?? null,
     explicitDiffOpenRef,
-    setTerminalFocusRequestId,
     onDiffPanelOpen,
     closeRightPanelSurface,
   });
-  const requestTerminalFocus = () => setTerminalFocusRequestId((value) => value + 1);
   const { toggleRightPanelStable, toggleRightPanelMaximizedStable } = actions;
   const addTerminalSurface = () => {
     if (!activeThreadRef) return;
@@ -321,7 +310,7 @@ export function useThreadRightPanel(input: {
         useRightPanelStore.getState().openTerminal(activeThreadRef, terminalId),
     });
     if (!launched) return;
-    requestTerminalFocus();
+    focusTerminal(activeThreadRef, launched.terminalId);
     void launched.result;
   };
   const addTerminalSurfaceStable = useStableCallback(addTerminalSurface);
@@ -341,7 +330,7 @@ export function useThreadRightPanel(input: {
           .splitTerminal(activeThreadRef, surfaceId, terminalId, direction),
     });
     if (!launched) return;
-    requestTerminalFocus();
+    focusTerminal(activeThreadRef, launched.terminalId);
     void launched.result;
   };
   const splitPanelTerminalStable = useStableCallback(splitPanelTerminal);
@@ -354,7 +343,7 @@ export function useThreadRightPanel(input: {
     useRightPanelStore
       .getState()
       .activateTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId);
-    requestTerminalFocus();
+    focusTerminal(activeThreadRef, terminalId);
   };
   const activatePanelTerminalStable = useStableCallback(activatePanelTerminal);
   const closePanelTerminal = (terminalId: string) => {
@@ -369,7 +358,9 @@ export function useThreadRightPanel(input: {
     useRightPanelStore
       .getState()
       .closeTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId);
-    requestTerminalFocus();
+    // Closing a surface's last terminal falls back to a neighbouring surface,
+    // which can be another terminal surface.
+    focusActivePanelTerminal(activeThreadRef);
   };
   const closePanelTerminalStable = useStableCallback(closePanelTerminal);
   const requestClosePanelTerminal = (terminalId: string) => {

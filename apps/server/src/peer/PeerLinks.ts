@@ -419,7 +419,7 @@ const make = Effect.gen(function* () {
       Effect.flatMap(
         Option.match({
           onNone: () => Effect.succeed(Option.none()),
-          onSome: (row) => Effect.map(toLink(row), Option.some),
+          onSome: (row) => Effect.asSome(toLink(row)),
         }),
       ),
     );

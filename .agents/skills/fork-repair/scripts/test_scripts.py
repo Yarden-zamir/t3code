@@ -130,8 +130,8 @@ def test_sync_branches_lint_fork_files_and_fix_branches_run_fork_check():
     assert checks.lintable(["a.ts", "b.md", "c.tsx", "a.ts", "d.mjs"]) == ["a.ts", "c.tsx", "d.mjs"]
     sync = [name for name, _ in checks.steps("vp", "fork-sync/x", ["a.ts"])]
     fix = [name for name, _ in checks.steps("vp", "fork-fix/x", ["a.ts"])]
-    assert sync[-1] == "lint" and "fork:check" not in sync
-    assert fix[-1] == "fork:check" and "lint" not in fix
+    assert sync[-2:] == ["format", "lint"] and "fork:check" not in sync
+    assert fix[-1] == "fork:check" and "lint" not in fix and "format" not in fix
 
 
 def test_lint_errors_keep_only_error_lines():

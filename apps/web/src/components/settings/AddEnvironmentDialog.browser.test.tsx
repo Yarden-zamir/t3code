@@ -87,7 +87,7 @@ it("saves request headers before pairing and restores them when pairing fails", 
     ],
   });
   expect(restored?.input).toEqual({
-    origin: (saved?.input as { origin: string }).origin,
+    origin: (saved?.input as { origin: string } | undefined)?.origin,
     headers: [{ name: "X-Previous", value: "kept" }],
   });
 });
