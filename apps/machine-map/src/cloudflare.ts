@@ -1,12 +1,11 @@
 /**
  * Cloudflare API calls of the portal (MM-1205), with field names from the Cloudflare OpenAPI spec.
- * The token needs "Access: Service Tokens Edit" and "Access: Apps and Policies Edit". Tunnels
- * (MM-213) need "Cloudflare Tunnel: Edit" on the account and "DNS: Edit" on the machine host zone.
- * Client approvals (MM-1208) need "Access: Organizations, Identity Providers, and Groups Edit".
+ * The README lists the token permissions that each portal step needs.
  */
 import * as Schema from "effect/Schema";
 
 import { CLOUDFLARE_STEP_PERMISSION } from "./api.ts";
+import { GUEST_RATE_LIMIT_RULE } from "./guestLinks.ts";
 
 const decodeEnvelope = Schema.decodeUnknownSync(
   Schema.Struct({
@@ -155,6 +154,54 @@ const decodeOrganization = Schema.decodeUnknownSync(
 const decodeEmailRule = Schema.decodeUnknownOption(
   Schema.Struct({ email: Schema.Struct({ email: Schema.String }) }),
 );
+
+/** MM-1210: the fields of an Access app that the guest links check reads. */
+const GuestAppFields = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  session_duration: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  allowed_idps: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.String))),
+  destinations: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ type: Schema.String, uri: Schema.optionalKey(Schema.String) })),
+  ),
+  policies: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        decision: Schema.String,
+        include: Schema.Array(Schema.Unknown),
+        exclude: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.Unknown))),
+        require: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.Unknown))),
+      }),
+    ),
+  ),
+});
+export type GuestApp = typeof GuestAppFields.Type;
+const decodeGuestApp = Schema.decodeUnknownSync(GuestAppFields);
+const decodeGuestApps = Schema.decodeUnknownSync(Schema.Array(GuestAppFields));
+const decodeIdentityProviders = Schema.decodeUnknownSync(
+  Schema.Array(Schema.Struct({ id: Schema.String, type: Schema.String })),
+);
+const decodeCreated = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String }));
+const RateLimitRule = Schema.Struct({
+  id: Schema.String,
+  ref: Schema.optionalKey(Schema.String),
+  expression: Schema.optionalKey(Schema.String),
+  action: Schema.optionalKey(Schema.String),
+  enabled: Schema.optionalKey(Schema.Boolean),
+  ratelimit: Schema.optionalKey(
+    Schema.Struct({
+      period: Schema.optionalKey(Schema.Number),
+      requests_per_period: Schema.optionalKey(Schema.Number),
+      mitigation_timeout: Schema.optionalKey(Schema.Number),
+    }),
+  ),
+});
+export type RateLimitRule = typeof RateLimitRule.Type;
+const RateLimitRuleset = Schema.Struct({
+  id: Schema.String,
+  rules: Schema.optionalKey(Schema.Array(RateLimitRule)),
+});
+const decodeRateLimitRuleset = Schema.decodeUnknownSync(RateLimitRuleset);
 
 const UNIT_SECONDS: Readonly<Record<string, number>> = { h: 3600, m: 60, s: 1, ms: 0.001 };
 
@@ -723,6 +770,99 @@ export class CloudflareApi {
       );
     }
     return true;
+  }
+
+  // MM-1210: guest links
+
+  /** The id of the One-time PIN login method of the account, or null when it has none. */
+  async oneTimePinId(): Promise<string | null> {
+    const providers = await this.#call(
+      "GET",
+      "/access/identity_providers",
+      decodeIdentityProviders,
+    );
+    return providers.find((provider) => provider.type === "onetimepin")?.id ?? null;
+  }
+
+  async createOneTimePin(): Promise<string> {
+    const created = await this.#call("POST", "/access/identity_providers", decodeCreated, {
+      name: "One-time PIN",
+      type: "onetimepin",
+      config: {},
+    });
+    return created.id;
+  }
+
+  /** Every Access app of the account. One page holds 1000 apps, the most the API returns. */
+  accessApps(): Promise<ReadonlyArray<GuestApp>> {
+    return this.#call("GET", "/access/apps?per_page=1000", decodeGuestApps);
+  }
+
+  /** One Access app, or null when it is gone. */
+  async guestApp(appId: string): Promise<GuestApp | null> {
+    try {
+      return await this.#call("GET", `/access/apps/${appId}`, decodeGuestApp);
+    } catch (error) {
+      if (error instanceof CloudflareApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async createAccessApp(body: unknown): Promise<string> {
+    return (await this.#call("POST", "/access/apps", decodeCreated, body)).id;
+  }
+
+  async deleteAccessApp(appId: string): Promise<void> {
+    await goneIsDone(this.#call("DELETE", `/access/apps/${appId}`, ignoreResult));
+  }
+
+  /** The rate limit rule of the guest routes, with the id of its ruleset. Null parts are missing. */
+  async guestRateLimit(
+    zoneId: string,
+  ): Promise<{ readonly rulesetId: string | null; readonly rule: RateLimitRule | null }> {
+    try {
+      const ruleset = await this.#request(
+        "GET",
+        `/zones/${zoneId}/rulesets/phases/http_ratelimit/entrypoint`,
+        decodeRateLimitRuleset,
+      );
+      const rule = ruleset.rules?.find((r) => r.ref === GUEST_RATE_LIMIT_RULE.ref) ?? null;
+      return { rulesetId: ruleset.id, rule };
+    } catch (error) {
+      // A zone without any rate limit rule has no entrypoint ruleset yet.
+      if (error instanceof CloudflareApiError && error.status === 404)
+        return { rulesetId: null, rule: null };
+      throw error;
+    }
+  }
+
+  /** Adds the guest rate limit rule, or writes it again over a changed one. Keeps other rules. */
+  async ensureGuestRateLimit(zoneId: string): Promise<void> {
+    const { rulesetId, rule } = await this.guestRateLimit(zoneId);
+    if (rulesetId === null) {
+      await this.#request("POST", `/zones/${zoneId}/rulesets`, ignoreResult, {
+        name: "default",
+        kind: "zone",
+        phase: "http_ratelimit",
+        rules: [GUEST_RATE_LIMIT_RULE],
+      });
+      return;
+    }
+    const rules = `/zones/${zoneId}/rulesets/${rulesetId}/rules`;
+    if (rule === null) await this.#request("POST", rules, ignoreResult, GUEST_RATE_LIMIT_RULE);
+    else await this.#request("PATCH", `${rules}/${rule.id}`, ignoreResult, GUEST_RATE_LIMIT_RULE);
+  }
+
+  async removeGuestRateLimit(zoneId: string): Promise<void> {
+    const { rulesetId, rule } = await this.guestRateLimit(zoneId);
+    if (rulesetId === null || rule === null) return;
+    await goneIsDone(
+      this.#request(
+        "DELETE",
+        `/zones/${zoneId}/rulesets/${rulesetId}/rules/${rule.id}`,
+        ignoreResult,
+      ),
+    );
   }
 }
 

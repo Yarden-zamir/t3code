@@ -836,3 +836,153 @@ describe("storage use of machine messages (MM-1001, MM-1503)", () => {
     ]);
   });
 });
+
+/** MM-1210: an in-memory Cloudflare API with the Access apps, login methods and rate limit rules. */
+function fakeCloudflare(options: { readonly wafStatus?: number } = {}) {
+  const apps = new Map<string, Record<string, unknown>>();
+  const providers: Array<{ id: string; type: string }> = [];
+  let ruleset: { id: string; rules: Array<Record<string, unknown>> } | null = null;
+  let next = 0;
+  const ok = (result: unknown) => Response.json({ success: true, errors: [], result });
+  const refuse = (status: number) =>
+    Response.json(
+      { success: false, errors: [{ code: 10000, message: "no" }], result: null },
+      { status },
+    );
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    const method = init.method ?? "GET";
+    const path = new URL(url).pathname.replace("/client/v4", "");
+    const body = init.body === undefined ? undefined : JSON.parse(String(init.body));
+    if (path === "/accounts/account/access/identity_providers") {
+      if (method === "GET") return ok(providers);
+      providers.push({ id: "otp", type: body.type });
+      return ok({ id: "otp" });
+    }
+    if (path === "/accounts/account/access/apps") {
+      if (method === "GET") return ok([...apps.values()]);
+      const id = `app-${++next}`;
+      apps.set(id, { ...body, id });
+      return ok({ id });
+    }
+    const appId = path.split("/access/apps/")[1];
+    if (appId !== undefined) {
+      const app = apps.get(appId);
+      if (!app) return refuse(404);
+      if (method === "DELETE") apps.delete(appId);
+      return ok(app);
+    }
+    if (path.startsWith("/zones/zone/rulesets")) {
+      if (options.wafStatus) return refuse(options.wafStatus);
+      if (path.endsWith("/entrypoint")) return ruleset ? ok(ruleset) : refuse(404);
+      if (path === "/zones/zone/rulesets") {
+        ruleset = { id: "ruleset", rules: body.rules.map((r: object) => ({ ...r, id: "rule" })) };
+        return ok(ruleset);
+      }
+      if (method === "DELETE" && ruleset) ruleset.rules = [];
+      return ok(ruleset);
+    }
+    throw new Error(`Unexpected Cloudflare call ${method} ${path}`);
+  });
+  return { apps, providers, ruleset: () => ruleset };
+}
+
+describe("guest links (MM-1210)", () => {
+  const value = <T>(outcome: { ok: true; value: T } | { ok: false; error: string }): T => {
+    if (!outcome.ok) throw new Error(outcome.error);
+    return outcome.value;
+  };
+  const rules = {
+    emails: [],
+    emailDomains: ["@Example.com"],
+    ipRanges: [],
+    requireIpRanges: ["10.0.0.1"],
+  };
+
+  it("makes, repairs and removes the Access setup of each machine host", async () => {
+    const { object, env } = portal(true);
+    Object.assign(env, { MACHINE_ZONE_ID: "zone" });
+    const cf = fakeCloudflare();
+
+    const saved = value(await object.setGuestRules(owner, rules));
+    expect(saved.rules).toEqual({
+      ...rules,
+      emailDomains: ["example.com"],
+      requireIpRanges: ["10.0.0.1/32"],
+    });
+    expect(cf.apps.size).toBe(0);
+
+    const on = value(await object.setGuestLinks(owner, MAC, true));
+    expect(on.machines.find((m) => m.machineId === MAC)?.state).toEqual({ _tag: "ready" });
+    expect(on.oneTimePin).toEqual({ _tag: "ready" });
+    expect(on.rateLimit).toEqual({ _tag: "ready" });
+    const guestApp = [...cf.apps.values()].find((a) => a.name === "t3 guest links mac.example.com");
+    expect(guestApp).toMatchObject({
+      destinations: [
+        { type: "public", uri: "mac.example.com/guest" },
+        { type: "public", uri: "mac.example.com/api/guest/*" },
+      ],
+      session_duration: "24h",
+      allowed_idps: ["otp"],
+      policies: [
+        {
+          decision: "allow",
+          include: [{ email: { email: owner.email } }, { email_domain: { domain: "example.com" } }],
+          require: [{ ip: { ip: "10.0.0.1/32" } }],
+        },
+      ],
+    });
+    expect(
+      [...cf.apps.values()].find((a) => a.name === "t3 web build mac.example.com"),
+    ).toMatchObject({
+      policies: [{ decision: "bypass", include: [{ everyone: {} }] }],
+    });
+
+    // A dashboard edit shows as drift, and Apply makes the app again.
+    if (guestApp) guestApp.session_duration = "720h";
+    const drifted = value(await object.guestLinksStatus(owner));
+    expect(drifted.machines.find((m) => m.machineId === MAC)?.state._tag).toBe("needsApply");
+    const repaired = value(await object.applyGuestLinks(owner));
+    expect(repaired.machines.find((m) => m.machineId === MAC)?.state).toEqual({ _tag: "ready" });
+    expect(cf.apps.size).toBe(2);
+
+    // The portal never adds a twin of an app that it did not make.
+    cf.apps.set("hand", {
+      id: "hand",
+      name: "T3 guest links (win)",
+      destinations: [{ type: "public", uri: "win.example.com/guest" }],
+    });
+    const blocked = value(await object.setGuestLinks(owner, WIN, true));
+    expect(blocked.machines.find((m) => m.machineId === WIN)?.state._tag).toBe("blocked");
+    expect(blocked.errors).toHaveLength(1);
+
+    value(await object.setGuestLinks(owner, MAC, false));
+    value(await object.setGuestLinks(owner, WIN, false));
+    expect([...cf.apps.keys()]).toEqual(["hand"]);
+    expect(cf.ruleset()?.rules).toEqual([]);
+  });
+
+  it("shows the manual rate limit step when the token lacks Zone WAF Edit", async () => {
+    const { object, env } = portal(true);
+    Object.assign(env, { MACHINE_ZONE_ID: "zone" });
+    fakeCloudflare({ wafStatus: 403 });
+    const status = value(await object.setGuestLinks(owner, VPS, true));
+    expect(status.rateLimit).toEqual({ _tag: "cloudflareStep", step: "rateLimit" });
+    expect(status.machines.find((m) => m.machineId === VPS)?.state).toEqual({ _tag: "ready" });
+    expect(status.errors).toEqual([]);
+  });
+
+  it("removes the guest apps of a removed machine", async () => {
+    const { object, env } = portal(true);
+    Object.assign(env, {
+      MACHINE_ZONE_ID: "zone",
+      MACHINE_ACCESS_APP_ID: "m",
+      CONNECT_ACCESS_APP_ID: "c",
+    });
+    const cf = fakeCloudflare();
+    value(await object.setGuestLinks(owner, VPS, true));
+    expect(cf.apps.size).toBe(2);
+    vi.spyOn(CloudflareApi.prototype, "findServiceTokenId").mockResolvedValue(null);
+    value(await object.removeMachine(owner, VPS));
+    expect(cf.apps.size).toBe(0);
+  });
+});
