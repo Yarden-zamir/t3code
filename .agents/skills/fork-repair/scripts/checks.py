@@ -41,6 +41,8 @@ def steps(vp: str, branch: str, fork_files: list[str]) -> list[tuple[str, list[s
         # Fork CI runs `vp check`, which fails on formatting before lint.
         result.append(("format", [vp, "fmt", "--check", *fork_files]))
         result.append(("lint", [vp, "lint", *fork_files]))
+        # Fork CI's lint job also runs knip, which finds exports that a merge left unused.
+        result.append(("knip", [vp, "run", "knip:check"]))
     return result
 
 
