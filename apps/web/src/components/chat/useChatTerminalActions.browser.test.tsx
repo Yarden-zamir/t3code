@@ -3,6 +3,7 @@ import { EnvironmentId, ProjectId, ThreadId, type ProjectScript } from "@t3tools
 import { expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
+import { registerTerminalFocusTarget } from "../../lib/terminalFocus";
 import { selectThreadTerminalUiState } from "../../terminalUiStateStore";
 
 const terminal = vi.hoisted(() => ({
@@ -34,6 +35,7 @@ import { useChatTerminalActions } from "./useChatTerminalActions";
 
 const environmentId = EnvironmentId.make("environment-1");
 const threadId = ThreadId.make("thread-1");
+const threadRef = { environmentId, threadId };
 
 function setup() {
   terminal.launches = [];
@@ -53,7 +55,6 @@ function script(overrides: Partial<ProjectScript>): ProjectScript {
 
 function Harness(props: {
   readonly onReady: (actions: ReturnType<typeof useChatTerminalActions>) => void;
-  readonly setTerminalFocusRequestId: () => void;
 }) {
   const actions = useChatTerminalActions({
     environmentId,
@@ -65,7 +66,7 @@ function Harness(props: {
     },
     activeThread: { worktreePath: null } as unknown as EnvironmentThreadShell,
     activeThreadId: threadId,
-    activeThreadRef: { environmentId, threadId },
+    activeThreadRef: threadRef,
     activeProject: {
       id: ProjectId.make("project-1"),
       workspaceRoot: "/repo",
@@ -77,7 +78,6 @@ function Harness(props: {
     panelTerminalIds: new Set(),
     canReuseTerminal: true,
     gitCwd: null,
-    setTerminalFocusRequestId: props.setTerminalFocusRequestId,
     setTerminalUiLaunchContext: () => {},
     setThreadError: () => {},
   });
@@ -86,35 +86,47 @@ function Harness(props: {
 }
 
 async function runScript(projectScript: ProjectScript) {
-  const setTerminalFocusRequestId = vi.fn();
+  const focused: string[] = [];
+  using targets = new DisposableStack();
+  for (const terminalId of ["default", "new-terminal"]) {
+    targets.defer(
+      registerTerminalFocusTarget({
+        threadRef,
+        terminalId,
+        focus: () => {
+          focused.push(terminalId);
+          return true;
+        },
+      }),
+    );
+  }
   const harness: { actions?: ReturnType<typeof useChatTerminalActions> } = {};
   await using _screen = await render(
     <Harness
       onReady={(actions) => {
         harness.actions = actions;
       }}
-      setTerminalFocusRequestId={setTerminalFocusRequestId}
     />,
   );
   if (!harness.actions) throw new Error("The harness did not render.");
   await harness.actions.runProjectScriptStable(projectScript);
-  return { setTerminalFocusRequestId };
+  return { focused };
 }
 
 it("runs a background script in a new terminal without taking focus", async () => {
   setup();
-  const { setTerminalFocusRequestId } = await runScript(script({ runInBackground: true }));
+  const { focused } = await runScript(script({ runInBackground: true }));
 
   expect(terminal.launches).toEqual([{ terminalId: undefined }]);
   expect(terminal.writes.map((write) => write.terminalId)).toEqual(["new-terminal"]);
-  expect(setTerminalFocusRequestId).not.toHaveBeenCalled();
+  expect(focused).toEqual([]);
 });
 
 it("runs a visible script in the idle active terminal and focuses it", async () => {
   setup();
-  const { setTerminalFocusRequestId } = await runScript(script({}));
+  const { focused } = await runScript(script({}));
 
   expect(terminal.launches).toEqual([{ terminalId: "default" }]);
   expect(terminal.writes.map((write) => write.terminalId)).toEqual(["default"]);
-  expect(setTerminalFocusRequestId).toHaveBeenCalledOnce();
+  expect(focused).toEqual(["default"]);
 });

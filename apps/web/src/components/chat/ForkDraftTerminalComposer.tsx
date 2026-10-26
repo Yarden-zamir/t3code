@@ -601,7 +601,6 @@ export function ForkDraftTerminalComposer(props: {
             worktreePath={worktreePath}
             shell={shell}
             draft
-            focusRequestId={0}
             keybindings={props.keybindings}
             onInput={onInput}
             endedMessage="The shell exited before a command ran."
