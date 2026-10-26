@@ -139,8 +139,9 @@ function wrangler(
   });
   return {
     ok: result.status === 0,
-    stdout: result.stdout,
-    out: `${result.stdout}${result.stderr}${result.error?.message ?? ""}`,
+    // A missing binary leaves both outputs undefined.
+    stdout: result.stdout ?? "",
+    out: `${result.stdout ?? ""}${result.stderr ?? ""}${result.error?.message ?? ""}`,
   };
 }
 
@@ -314,7 +315,7 @@ async function main(): Promise<number> {
     (givenAccount === undefined && accounts.length === 1 ? accounts[0] : undefined);
   if (account === undefined) {
     console.error(
-      `The token sees ${accounts.length} accounts, and ACCOUNT_ID is not one of them. Pass --account-id.`,
+      `The token sees ${accounts.length} accounts, and ${givenAccount === undefined ? "ACCOUNT_ID" : "the --account-id value"} is not one of them. Pass --account-id with one of them.`,
     );
     return 2;
   }
@@ -421,7 +422,7 @@ async function main(): Promise<number> {
       { input: deployToken, encoding: "utf8" },
     );
     if (set.status !== 0)
-      throw new SetupStop(`gh secret set failed: ${set.stderr}${set.error?.message ?? ""}`);
+      throw new SetupStop(`gh secret set failed: ${set.stderr ?? ""}${set.error?.message ?? ""}`);
     console.log(`set      GitHub secret CLOUDFLARE_DEPLOY_TOKEN of ${repo}`);
   }
 
