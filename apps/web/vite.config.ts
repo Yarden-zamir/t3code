@@ -2,6 +2,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeZlib from "node:zlib";
 import { viteCacheDir as forkViteCacheDir } from "../../scripts/lib/fork-build-cache.cjs";
+import { FORK_EXCLUDED_UPSTREAM_BROWSER_TESTS } from "./src/forkExcludedUpstreamTests.ts";
 
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
@@ -126,6 +127,7 @@ const browserTestProject = {
   test: {
     name: "browser",
     include: ["src/**/*.browser.test.{ts,tsx}"],
+    exclude: FORK_EXCLUDED_UPSTREAM_BROWSER_TESTS,
     hookTimeout: 15_000,
     testTimeout: 15_000,
     setupFiles: ["./test/browserSetup.ts"],
