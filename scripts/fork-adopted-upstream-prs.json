@@ -41,7 +41,7 @@
     "number": 16698,
     "title": "feat(web,mobile): linked environments in Connections",
     "headRef": "t3code/peer/links-ui",
-    "mergedHead": "f580fefde9a4e31cfd5ff263ea43b0d392601b31",
+    "mergedHead": "ab3252d2bd4d32722a88ee641006c0b8ebc03f65",
     "reason": "Linked environments stack. Settings > Connections shows the arrow links read-only (MM-1921)."
   },
   {
