@@ -137,6 +137,7 @@ function useFetchedTurnItem(
     output: {
       output: turnItemOutputText(item),
       images: turnItemOutputImages(item),
+      imageUrl: source?.toolOutputImageUrl,
       environmentId,
       pending: item === wireItem && detail.isPending,
       error:
@@ -153,6 +154,7 @@ function useFetchedTurnItem(
 interface ToolOutputState {
   readonly output: string | null;
   readonly images: ReturnType<typeof turnItemOutputImages>;
+  readonly imageUrl?: TurnItemSource["toolOutputImageUrl"];
   readonly environmentId: EnvironmentId;
   readonly pending: boolean;
   readonly error: string | null;
@@ -166,6 +168,7 @@ function ToolOutput(props: ToolOutputState) {
       key={resource.index}
       environmentId={props.environmentId}
       resource={resource}
+      fallbackSrc={props.imageUrl?.(resource.itemId, resource.index)}
       alt="Tool output image"
       maxHeightRem={16}
       onImageExpand={props.onImageExpand}

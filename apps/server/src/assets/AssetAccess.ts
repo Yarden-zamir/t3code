@@ -249,7 +249,7 @@ export const readMcpAppHtml = Effect.fn("AssetAccess.readMcpAppHtml")(function* 
   return bytes;
 });
 
-const readToolOutputImage = Effect.fn("AssetAccess.readToolOutputImage")(function* (input: {
+export const readToolOutputImage = Effect.fn("AssetAccess.readToolOutputImage")(function* (input: {
   readonly threadId: ThreadId;
   readonly itemId: TurnItemId;
   readonly index: number;

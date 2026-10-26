@@ -46,7 +46,7 @@ const encodeOutputFrame = Schema.encodeEffect(
 );
 const encodeItem = Schema.encodeEffect(Schema.toCodecJson(OrchestrationV2GetTurnItemResult));
 
-const errorResponse = (error: GuestShareAccessError) =>
+export const errorResponse = (error: GuestShareAccessError) =>
   HttpServerResponse.json(
     { reason: error.reason, message: error.message },
     {
