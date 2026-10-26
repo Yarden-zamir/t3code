@@ -385,12 +385,12 @@ The guest application has its own token, which replaces the owner token in the c
 1. Open the Guests view of the portal.
 2. Fill in the rules. They apply to every machine. Include rules (emails, email domains, IP ranges) allow a visitor that matches one of them. Required IP ranges must also match. The owner emails always get in. For example, for people from the Qlik network only, add the Qlik network ranges under "IP ranges". For Qlik people on the Qlik network, add `qlik.com` under "Email domains" and the ranges under "Required IP ranges".
 3. Select "Save and apply".
-4. Turn on the switch of each machine that serves guest links. The switch sets `guestSharingEnabled` for that machine and makes the Access applications of its host. The host is the hostname that the machine reports, also for a tunnel made by hand.
+4. Turn on the switch of each machine that serves guest links. The switch sets `guestSharingEnabled` for that machine and makes the Access applications of its host. The host is the hostname that the machine reports, also for a tunnel made by hand. It must be a name in the zone of `MACHINE_DOMAIN`.
 5. If the view shows a Cloudflare step, do it, or add the named permission to the API token of the portal. Then select Apply.
 
 "Apply" repairs a changed application and removes the applications of a machine with guest links off. It also keeps the zone rate limit rule `t3_guest_routes`: 100 requests per 10 seconds per IP address on `/api/guest/`, then a block of 10 seconds. One open guest page sends one stream request, plus one request for each row or image that the guest opens, so a normal guest stays far below the limit. The Free plan allows only the path field in the expression, period 10 and timeout 10, so the rule covers the guest routes of every host in the zone.
 
-If an application that the portal did not make covers a guest path, the view names it as blocked. Delete it in the Zero Trust dashboard, then select Apply. The applications of the old manual steps were named `T3 guest links (<host>)` and `T3 web build (<host>)`.
+If an application that the portal did not make covers a guest path, the view names it as blocked. Delete it in the Zero Trust dashboard, then select Apply. The applications of the old manual steps were named `T3 guest links (<host>)` and `T3 web build (<host>)`. Apply takes over the rate limit rule of the old manual steps, because its expression is the same.
 
 ### Check it
 

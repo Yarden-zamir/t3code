@@ -79,30 +79,48 @@ export function guestLinksOn(
 
 const unique = (values: ReadonlyArray<string>): Array<string> => [...new Set(values)];
 
-const ipv4Valid = (address: string): boolean => {
+const isDigits = (text: string): boolean =>
+  text !== "" && [...text].every((c) => c >= "0" && c <= "9");
+
+/** The four numbers of an IPv4 address, or null. */
+const ipv4Parts = (address: string): Array<number> | null => {
   const parts = address.split(".");
-  return (
-    parts.length === 4 &&
-    parts.every(
-      (part) => part !== "" && [...part].every((c) => c >= "0" && c <= "9") && Number(part) <= 255,
-    )
-  );
+  return parts.length === 4 && parts.every((p) => isDigits(p) && Number(p) <= 255)
+    ? parts.map(Number)
+    : null;
 };
 
 const HEX = "0123456789abcdef";
-const ipv6Valid = (address: string): boolean =>
-  address.includes(":") && [...address.toLowerCase()].every((c) => c === ":" || HEX.includes(c));
+const ipv6Valid = (address: string): boolean => {
+  const halves = address.split("::");
+  if (halves.length > 2) return false;
+  const groups = halves.flatMap((half) => (half === "" ? [] : half.split(":")));
+  const groupsOk = groups.every(
+    (g) => g.length >= 1 && g.length <= 4 && [...g].every((c) => HEX.includes(c)),
+  );
+  return groupsOk && (halves.length === 2 ? groups.length <= 7 : groups.length === 8);
+};
 
-/** An IPv4 or IPv6 range in CIDR form. A bare address becomes a range of one address. */
+/**
+ * An IPv4 or IPv6 range in CIDR form, as Cloudflare stores it: an IPv4 range starts at its network
+ * address, and a bare address is a range of one address. Limit: an IPv6 range keeps its address
+ * as given, in lower case. Revisit if Cloudflare reports such a range in another form.
+ */
 function ipRange(text: string): string | null {
-  const [address = "", prefix, extra] = text.split("/");
+  const [rawAddress = "", prefix, extra] = text.split("/");
+  const address = rawAddress.toLowerCase();
   if (extra !== undefined) return null;
-  const v4 = ipv4Valid(address);
-  if (!v4 && !ipv6Valid(address)) return null;
-  const max = v4 ? 32 : 128;
-  if (prefix === undefined) return `${address}/${max}`;
-  const bits = Number(prefix);
-  return prefix !== "" && Number.isInteger(bits) && bits >= 0 && bits <= max ? text : null;
+  const v4 = ipv4Parts(address);
+  if (v4 === null && !ipv6Valid(address)) return null;
+  const max = v4 === null ? 128 : 32;
+  if (prefix !== undefined && (!isDigits(prefix) || Number(prefix) > max)) return null;
+  const bits = prefix === undefined ? max : Number(prefix);
+  if (v4 === null) return `${address}/${bits}`;
+  const value = v4.reduce((total, part) => total * 256 + part, 0);
+  const size = 2 ** (32 - bits);
+  const network = Math.floor(value / size) * size;
+  const parts = [24, 16, 8, 0].map((shift) => Math.floor(network / 2 ** shift) % 256);
+  return `${parts.join(".")}/${bits}`;
 }
 
 /** The rules in a stable form, or the first entry that Cloudflare would refuse. */
@@ -138,28 +156,40 @@ export function normalizeGuestRules(
         return range === null ? [] : [range];
       }),
     );
-  return {
-    rules: {
-      emails,
-      emailDomains,
-      ipRanges: valid(rules.ipRanges),
-      requireIpRanges: valid(rules.requireIpRanges),
-    },
+  const normalized = {
+    emails,
+    emailDomains,
+    ipRanges: valid(rules.ipRanges),
+    requireIpRanges: valid(rules.requireIpRanges),
   };
+  if (
+    normalized.requireIpRanges.length > 0 &&
+    emails.length + emailDomains.length + normalized.ipRanges.length === 0
+  )
+    return { error: "Required IP ranges need at least one email, email domain or IP range." };
+  return { rules: normalized };
 }
 
-/** The policy of a guest app: the owner emails and the rules include, the required ranges require. */
-export function guestPolicy(rules: GuestRules, owners: ReadonlyArray<string>) {
-  return {
-    name: "t3 guests",
+/**
+ * The policies of a guest app. The owners have their own policy, because Access applies the
+ * `require` rules of a policy to each of its include rules.
+ */
+export function guestPolicies(rules: GuestRules, owners: ReadonlyArray<string>) {
+  if (owners.length === 0) throw new Error("Set OWNER_EMAILS in wrangler.jsonc first.");
+  const guests = [
+    ...rules.emails.map((email) => ({ email: { email } })),
+    ...rules.emailDomains.map((domain) => ({ email_domain: { domain } })),
+    ...rules.ipRanges.map((ip) => ({ ip: { ip } })),
+  ];
+  const ownerPolicy = {
+    name: "t3 owner",
     decision: "allow",
-    include: [
-      ...unique([...owners, ...rules.emails]).map((email) => ({ email: { email } })),
-      ...rules.emailDomains.map((domain) => ({ email_domain: { domain } })),
-      ...rules.ipRanges.map((ip) => ({ ip: { ip } })),
-    ],
-    require: rules.requireIpRanges.map((ip) => ({ ip: { ip } })),
+    include: owners.map((email) => ({ email: { email } })),
+    require: [] as Array<{ ip: { ip: string } }>,
   };
+  if (guests.length === 0) return [ownerPolicy];
+  const require = rules.requireIpRanges.map((ip) => ({ ip: { ip } }));
+  return [ownerPolicy, { name: "t3 guests", decision: "allow", include: guests, require }];
 }
 
 const BUILD_POLICY = {
@@ -176,7 +206,7 @@ const BUILD_POLICY = {
 export function guestAppBody(
   kind: GuestAppKind,
   hostname: string,
-  policy: ReturnType<typeof guestPolicy>,
+  policies: ReturnType<typeof guestPolicies>,
   oneTimePinId: string,
 ) {
   const uris = guestAppPaths(kind).map((path) => `${hostname}/${path}`);
@@ -193,7 +223,7 @@ export function guestAppBody(
     session_duration: GUEST_SESSION,
     allowed_idps: [oneTimePinId],
     auto_redirect_to_identity: true,
-    policies: [policy],
+    policies,
   };
 }
 
@@ -222,19 +252,48 @@ export function guestAppProblem(
     if (!sameSet(app.allowed_idps ?? [], body.allowed_idps))
       return `The app "${app.name}" allows another login method.`;
   }
-  const policies = app.policies ?? [];
-  const [wanted] = body.policies;
-  const [policy] = policies;
-  if (
-    policies.length !== 1 ||
-    policy === undefined ||
-    wanted === undefined ||
-    policy.decision !== wanted.decision ||
-    !sameSet(policy.include, wanted.include) ||
-    !sameSet(policy.require ?? [], wanted.require) ||
-    (policy.exclude ?? []).length > 0
-  )
+  const shape = (policy: {
+    readonly decision: string;
+    readonly include: ReadonlyArray<unknown>;
+    readonly require?: ReadonlyArray<unknown> | null | undefined;
+    readonly exclude?: ReadonlyArray<unknown> | null | undefined;
+  }) => ({
+    decision: policy.decision,
+    include: policy.include.map((rule) => JSON.stringify(rule)).toSorted(),
+    require: (policy.require ?? []).map((rule) => JSON.stringify(rule)).toSorted(),
+    exclude: (policy.exclude ?? []).length,
+  });
+  if (!sameSet((app.policies ?? []).map(shape), body.policies.map(shape)))
     return `The app "${app.name}" has other rules.`;
+  return null;
+}
+
+/**
+ * Why the portal must not make guest apps on the host that a machine reported, or null. A machine
+ * reports its own hostname, so the portal accepts only a plain name in the zone of the machine
+ * hostnames, not the portal host and not the host of another machine.
+ */
+export function guestHostProblem(
+  hostname: string,
+  machineDomain: string | undefined,
+  portalHost: string,
+  otherHostnames: ReadonlyArray<string>,
+): string | null {
+  if (machineDomain === undefined || machineDomain === "")
+    return "Set MACHINE_DOMAIN in wrangler.jsonc first.";
+  const name = hostname.toLowerCase();
+  const labels = name.split(".");
+  const plain = labels.every(
+    (label) =>
+      label !== "" &&
+      !label.startsWith("-") &&
+      [...label].every((c) => c === "-" || (c >= "a" && c <= "z") || (c >= "0" && c <= "9")),
+  );
+  if (!plain || !name.endsWith(`.${machineDomain.toLowerCase()}`))
+    return `The reported host ${hostname} is not a plain name in ${machineDomain}.`;
+  if (name === portalHost.toLowerCase()) return `The reported host ${hostname} is the portal host.`;
+  if (otherHostnames.some((other) => other.toLowerCase() === name))
+    return `Another machine reports the host ${hostname} too.`;
   return null;
 }
 

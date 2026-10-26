@@ -243,20 +243,20 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     case "POST /clients/approvals":
       return toResponse(await stub.setUpApprovals(owner, url.host));
     case "GET /guests":
-      return toResponse(await stub.guestLinksStatus(owner));
+      return toResponse(await stub.guestLinksStatus(owner, url.host));
     case "POST /guests/apply":
-      return toResponse(await stub.applyGuestLinks(owner));
+      return toResponse(await stub.applyGuestLinks(owner, url.host));
     case "POST /guests/rules": {
       const body = await readBody(request, GuestRulesRequest);
       return body instanceof Response
         ? body
-        : toResponse(await stub.setGuestRules(owner, body.rules));
+        : toResponse(await stub.setGuestRules(owner, url.host, body.rules));
     }
     case "POST /machines/:id/guest-links": {
       const body = await readBody(request, GuestMachineRequest);
       return body instanceof Response
         ? body
-        : toResponse(await stub.setGuestLinks(owner, MachineId.make(id), body.enabled));
+        : toResponse(await stub.setGuestLinks(owner, url.host, MachineId.make(id), body.enabled));
     }
     case "POST /clients/invites/cancel": {
       const body = await readBody(request, RemoveClientRequest);

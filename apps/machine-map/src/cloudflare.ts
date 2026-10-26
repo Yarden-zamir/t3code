@@ -5,7 +5,7 @@
 import * as Schema from "effect/Schema";
 
 import { CLOUDFLARE_STEP_PERMISSION } from "./api.ts";
-import { GUEST_RATE_LIMIT_RULE } from "./guestLinks.ts";
+import { GUEST_RATE_LIMIT_RULE, guestRateLimitProblem } from "./guestLinks.ts";
 
 const decodeEnvelope = Schema.decodeUnknownSync(
   Schema.Struct({
@@ -826,7 +826,12 @@ export class CloudflareApi {
         `/zones/${zoneId}/rulesets/phases/http_ratelimit/entrypoint`,
         decodeRateLimitRuleset,
       );
-      const rule = ruleset.rules?.find((r) => r.ref === GUEST_RATE_LIMIT_RULE.ref) ?? null;
+      // A rule from the old manual steps has no `ref`, and the Free plan allows one rule: adopt it.
+      const rules = ruleset.rules ?? [];
+      const rule =
+        rules.find((r) => r.ref === GUEST_RATE_LIMIT_RULE.ref) ??
+        rules.find((r) => r.expression === GUEST_RATE_LIMIT_RULE.expression) ??
+        null;
       return { rulesetId: ruleset.id, rule };
     } catch (error) {
       // A zone without any rate limit rule has no entrypoint ruleset yet.
@@ -850,7 +855,8 @@ export class CloudflareApi {
     }
     const rules = `/zones/${zoneId}/rulesets/${rulesetId}/rules`;
     if (rule === null) await this.#request("POST", rules, ignoreResult, GUEST_RATE_LIMIT_RULE);
-    else await this.#request("PATCH", `${rules}/${rule.id}`, ignoreResult, GUEST_RATE_LIMIT_RULE);
+    else if (rule.ref !== GUEST_RATE_LIMIT_RULE.ref || guestRateLimitProblem(rule) !== null)
+      await this.#request("PATCH", `${rules}/${rule.id}`, ignoreResult, GUEST_RATE_LIMIT_RULE);
   }
 
   async removeGuestRateLimit(zoneId: string): Promise<void> {
