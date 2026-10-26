@@ -38,6 +38,8 @@ def steps(vp: str, branch: str, fork_files: list[str]) -> list[tuple[str, list[s
     if branch.startswith("fork-fix/"):
         result.append(("fork:check", [vp, "run", "fork:check"]))
     elif fork_files:
+        # Fork CI runs `vp check`, which fails on formatting before lint.
+        result.append(("format", [vp, "fmt", "--check", *fork_files]))
         result.append(("lint", [vp, "lint", *fork_files]))
     return result
 
