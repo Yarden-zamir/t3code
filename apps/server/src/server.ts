@@ -184,6 +184,7 @@ import * as AbandonedTerminalDrafts from "./fork/AbandonedTerminalDrafts.ts";
 import * as TerminalThreadMove from "./fork/TerminalThreadMove.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkPreviewServerGroups from "./fork/PreviewServerGroups.ts";
+import * as ForkGuestShare from "./fork/forkGuestShare.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
 import * as MachineExec from "./fork/machineMap/MachineExec.ts";
 import * as MachineExecRoute from "./fork/machineMap/machineExecRoute.ts";
@@ -803,6 +804,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerAssetRoute,
     ServerHttp.layerAttachmentUploadRoute,
     GuestHttp.layer,
+    ForkGuestShare.toolOutputImageRoute,
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
     ServerHttp.layerStaticAndDevRoute,

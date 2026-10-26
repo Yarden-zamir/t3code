@@ -34,6 +34,8 @@ export interface TurnItemSource {
     readonly threadId: ThreadId;
     readonly itemId: TurnItemId;
   }) => Atom.Atom<AsyncResult.AsyncResult<CommandOutputView, unknown>>;
+  /** Fork: where the guest page loads a tool output image. Unset, it loads from the environment. */
+  readonly toolOutputImageUrl?: ((itemId: TurnItemId, index: number) => string) | undefined;
 }
 
 export interface TimelineRowSharedState {

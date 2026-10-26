@@ -59,6 +59,7 @@ import {
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as MachineMapState from "../fork/machineMap/MachineMapState.ts";
+import * as ForkGuestShareHost from "../fork/forkGuestShareHost.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { guestShareView, guestThreadModel } from "./guestView.ts";
 import {
@@ -262,9 +263,7 @@ const make = Effect.gen(function* () {
       return decodeSessionClaims(base64UrlDecodeUtf8(parts.payload));
     });
 
-  const connectHostname = managedEndpoint.inspectConnector.pipe(
-    Effect.map((facts) => facts?.hostname ?? null),
-  );
+  const connectHostname = yield* ForkGuestShareHost.guestShareHostname(managedEndpoint);
   // Fork: the machine map pause (MM-718) closes guest access the way the beta switch does.
   const machineMap = yield* Effect.serviceOption(MachineMapState.MachineMapState);
   const machinePaused = Option.isNone(machineMap)

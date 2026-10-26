@@ -15,6 +15,7 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import { ForkGuestLinksNote } from "./ForkGuestLinksNote";
 
 /** Features that are still settling in. Some are on by default; each can be turned off here. */
 export function BetaSettingsPanel() {
@@ -111,7 +112,7 @@ function GuestLinksRow() {
           <Link to="/settings/connections" className="underline underline-offset-2">
             Connections
           </Link>
-          . While it is off, every guest link stops working.
+          .<ForkGuestLinksNote /> While it is off, every guest link stops working.
         </>
       }
       control={
