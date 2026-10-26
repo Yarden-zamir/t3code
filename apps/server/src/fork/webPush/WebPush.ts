@@ -72,17 +72,15 @@ const ACTIVE_PHASES: ReadonlySet<AgentAwarenessPhase> = new Set([
 /**
  * The phase change that needs a notification, or null. A thread first seen since start never
  * notifies, so a restart does not repeat alerts. Completion or failure notifies only after an
- * active phase, because a new session reads `completed` before its first turn. A silent run
- * (an idle compaction) notifies only on failure, as in `ThreadNotificationCoordinator`.
+ * active phase, because a new session reads `completed` before its first turn. Shells leave out
+ * silent idle compactions unless they fail, so those notify only on failure.
  */
 export function attentionTransition(
   previous: AgentAwarenessPhase | null | undefined,
   next: AgentAwarenessPhase | null,
-  silent = false,
 ): "waiting_for_approval" | "waiting_for_input" | "completed" | "failed" | null {
   if (previous === undefined || next === previous) return null;
   if (next === "waiting_for_approval" || next === "waiting_for_input") return next;
-  if (next === "completed" && silent) return null;
   if ((next === "completed" || next === "failed") && previous !== null) {
     return ACTIVE_PHASES.has(previous) ? next : null;
   }
@@ -301,7 +299,6 @@ const make = Effect.gen(function* () {
       const transition = attentionTransition(
         phases.get(threadId),
         phase,
-        thread?.latestRunSilent === true,
       );
       phases.set(threadId, phase);
       if (transition === null || thread === null) return;
