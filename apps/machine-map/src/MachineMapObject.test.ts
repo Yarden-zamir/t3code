@@ -216,8 +216,9 @@ it("supersedes a waiting rotation when the owner makes a join code", async () =>
   expect(db.prepare("SELECT * FROM rotations").all()).toEqual([]);
 });
 
+const decodeMapDocument = Schema.decodeUnknownSync(MachineMapDocument);
 const readMap = (db: NodeSqlite.DatabaseSync) =>
-  Schema.decodeUnknownSync(MachineMapDocument)(
+  decodeMapDocument(
     JSON.parse(String(db.prepare("SELECT value FROM meta WHERE key = 'map'").get()?.value)),
   );
 

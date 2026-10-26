@@ -4,6 +4,8 @@ import * as Schema from "effect/Schema";
 import { ApproveClientRequest, ChangesRequest, InviteRequest } from "./api.ts";
 
 const decodeInvite = Schema.decodeUnknownSync(InviteRequest);
+const decodeApproveClient = Schema.decodeUnknownSync(ApproveClientRequest);
+const decodeChanges = Schema.decodeSync(ChangesRequest);
 
 it("keeps the saved-state precondition on each approval-path request", () => {
   const client = { _tag: "new", name: "Phone" };
@@ -11,7 +13,7 @@ it("keeps the saved-state precondition on each approval-path request", () => {
     "before",
   );
   expect(
-    Schema.decodeUnknownSync(ApproveClientRequest)({
+    decodeApproveClient({
       thumbprint: "key",
       client,
       arrows: [],
@@ -19,7 +21,7 @@ it("keeps the saved-state precondition on each approval-path request", () => {
     }).expectedState,
   ).toBe("before");
   expect(
-    Schema.decodeSync(ChangesRequest)({
+    decodeChanges({
       summary: "Enforce",
       changes: [
         {
