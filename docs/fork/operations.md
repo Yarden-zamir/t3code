@@ -383,7 +383,7 @@ The build files (`/assets/*` and the three files in the root) are the public ope
 3. Set the name `T3 guest links (t3-vps)` and the session duration `24 hours`, the life of a guest link.
 4. Add a public hostname with subdomain `t3-vps`, domain `yarden-zamir.com` and path `guest`.
 5. Add one more public hostname on the same host with the path `api/guest/*`.
-6. Add a policy with the name `Guests` and the action **Allow**. Do not use Bypass.
+6. Add a policy with the name `Guests` and the action **Allow**. Do not use Bypass for this application.
 7. Choose the rules of the policy. Include rules allow a visitor that matches one of them. Require rules must all match.
    - Default: Include "Emails ending in" `@qlik.com`. Also Include "Emails" with the owner email from `T3CODE_CLOUDFLARE_ACCESS_SUBJECTS`, so that the owner can open guest links too.
    - Qlik network: Include "IP ranges" with the Qlik network ranges. Keep the owner email rule.

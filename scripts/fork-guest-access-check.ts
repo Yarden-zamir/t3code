@@ -7,9 +7,11 @@
 //
 // Without credentials, the public web build files must be open (a Bypass app), and every other
 // path must stop at Cloudflare Access: the owner paths at the owner app, the guest paths at the
-// guest app. Set `T3_GUEST_ACCESS_COOKIE` to the value of the
-// `CF_Authorization` cookie of a guest login (not the owner's) to also check that the guest app
-// opens only the guest paths, and that the server refuses guest routes without a guest link.
+// guest app.
+//
+// Set `T3_GUEST_ACCESS_COOKIE` to the value of the `CF_Authorization` cookie of a guest login (not
+// the owner's) to also check that the guest app opens only the guest paths, and that the server
+// refuses guest routes without a guest link.
 
 import * as NodeProcess from "node:process";
 
@@ -23,7 +25,13 @@ interface Check {
 }
 
 const OWNER_PATHS = ["/", "/settings", "/api/auth/session", "/ws", "/.well-known/t3/environment"];
-const BUILD_PATHS = ["/manifest.webmanifest", "/favicon.ico", "/apple-touch-icon.png"];
+// A missing asset name still shows whether `/assets/*` passes Access: the server answers it itself.
+const BUILD_PATHS = [
+  "/assets/check.js",
+  "/manifest.webmanifest",
+  "/favicon.ico",
+  "/apple-touch-icon.png",
+];
 const GUEST_API_PATHS = [
   "/api/guest/session?share=check",
   "/api/guest/stream?share=check",
