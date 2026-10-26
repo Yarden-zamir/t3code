@@ -6,6 +6,7 @@ import {
   authScopeRequiredResponse,
   AssetCreateUrlInput,
   AuthAccessReadScope,
+  AuthAccessWriteScope,
   ServerSettingsPatch,
   ProviderInstanceMutation,
   requiredScopesForServerSettingsPatch,

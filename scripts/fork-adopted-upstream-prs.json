@@ -17,7 +17,7 @@
     "number": 16655,
     "title": "feat(server): link to another environment",
     "headRef": "t3code/peer/links",
-    "mergedHead": "197930788c33a086de927374a30e02da4c6336c4",
+    "mergedHead": "25835af4375ebc2a7eaff8643ad6102ba22a7800",
     "reason": "Linked environments stack. The machine map arrows are the links (MM-1921).",
     "forkRules": "Migration 068_PeerLinks stays out of Migrations.ts until upstream main has it. See docs/fork/operations.md \"Migrations\". Fork runs skip PeerLinks.test.ts until upstream main has the migration. See apps/server/src/fork/excludedUpstreamTests.ts. The fork has no manual links: MachinePeers gives the arrows to PeerLinks. Keep the refusal layer in cli/environment.ts and the peer link RPC handlers in fork/forkWs.ts."
   },
