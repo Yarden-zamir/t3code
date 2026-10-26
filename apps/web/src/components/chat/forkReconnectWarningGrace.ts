@@ -9,7 +9,7 @@ import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "../ChatView.logic";
 const RESTART_RECONNECT_WARNING_GRACE_MS = 45_000;
 
 /** The least wait before the reconnect warning, in milliseconds. 0 keeps the upstream wait. */
-export function restartReconnectWarningDelayMs(
+function restartReconnectWarningDelayMs(
   enabled: boolean,
   msSincePageLoad: number = performance.now(),
 ): number {
