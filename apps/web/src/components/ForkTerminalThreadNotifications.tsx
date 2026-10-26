@@ -1,23 +1,48 @@
-import { useAtomValue } from "@effect/atom-react";
-import { DEFAULT_TERMINAL_ID, type EnvironmentId, type ThreadId } from "@t3tools/contracts";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import {
+  AuthTerminalReadScope,
+  DEFAULT_TERMINAL_ID,
+  sessionGrantsScope,
+  type EnvironmentId,
+  type TerminalSummary,
+  type ThreadId,
+} from "@t3tools/contracts";
+import type { AnyRouter } from "@tanstack/react-router";
 import * as Option from "effect/Option";
+import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 import { CircleAlertIcon, CircleCheckIcon, MessageCircleQuestionIcon } from "lucide-react";
-import { useEffect, useRef } from "react";
 
 import { addThreadToast, closeThreadToasts } from "../forkInAppNotifications";
-import { getClientSettings, useClientSettings } from "../hooks/useSettings";
+import { getClientSettings } from "../hooks/useSettings";
 import { showInstalledAppNotification } from "../installedApp";
+import { environmentSession } from "../state/session";
 import { environmentShell } from "../state/shell";
-import { useKnownTerminalSessions } from "../state/terminalSessions";
+import { terminalEnvironment } from "../state/terminal";
 import {
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
   threadNotificationTag,
 } from "../threadNotifications";
-import type { OnNotification } from "./ThreadNotificationCoordinator";
+import type { TrackNotification } from "./ThreadNotificationCoordinator";
 import { toastManager } from "./ui/toast";
+
+// Null while terminal reads are not granted or the metadata loads or fails, so that only real
+// metadata counts as the first sight.
+const terminalSummariesAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get): ReadonlyArray<TerminalSummary> | null => {
+    const session = get(environmentSession.sessionStateAtom(environmentId));
+    const sessionValue = Option.getOrNull(AsyncResult.value(session));
+    if (
+      session._tag === "Failure" ||
+      sessionValue === null ||
+      !sessionGrantsScope(sessionValue, AuthTerminalReadScope)
+    ) {
+      return null;
+    }
+    const metadata = get(terminalEnvironment.metadata({ environmentId, input: null }));
+    return metadata._tag === "Failure" ? null : Option.getOrNull(AsyncResult.value(metadata));
+  }).pipe(Atom.withLabel(`fork-terminal-thread-notification-summaries:${environmentId}`)),
+);
 
 /**
  * Fork: notifications for terminal threads (`forkTerminalThreads.ts`), which have no agent runs
@@ -25,42 +50,40 @@ import { toastManager } from "./ui/toast";
  * or fails with a non-zero exit code. Same sound, toast and desktop rules as agent threads
  * (`ThreadNotificationCoordinator`), copied here so that the upstream presenter stays unchanged.
  */
-export function ForkTerminalThreadNotifications(props: {
+export function watchForkTerminalThreadNotifications(input: {
+  readonly registry: AtomRegistry.AtomRegistry;
+  readonly router: AnyRouter;
   readonly environmentId: EnvironmentId;
-  readonly onNotification: OnNotification;
-}) {
-  const { environmentId, onNotification } = props;
-  const sessions = useKnownTerminalSessions({ environmentId, threadId: null });
-  const shell = useAtomValue(environmentShell.stateValueAtom(environmentId));
-  const threads =
-    shell.status === "live" && Option.isSome(shell.snapshot) ? shell.snapshot.value.threads : null;
-  const mode = useClientSettings((settings) => settings.notificationMode);
-  const inAppNotificationsEnabled = useClientSettings(
-    (settings) => settings.inAppNotificationsEnabled,
-  );
-  const navigate = useNavigate();
-  const { environmentId: activeEnvironmentId, threadId: activeThreadId } = useParams({
-    strict: false,
-  });
+  readonly trackNotification: TrackNotification;
+}): () => void {
+  const { registry, router, environmentId, trackNotification } = input;
+  const shellAtom = environmentShell.stateValueAtom(environmentId);
+  const summariesAtom = terminalSummariesAtom(environmentId);
+  const activeThreadId = () => {
+    const params = (router.state.matches.at(-1)?.params ?? {}) as {
+      environmentId?: string;
+      threadId?: string;
+    };
+    return params.environmentId === environmentId ? (params.threadId ?? null) : null;
+  };
   // The attention that each thread had last time; the first sight of a thread only records it.
-  const seen = useRef<Map<string, string> | null>(null);
+  let seen: Map<string, string> | null = null;
 
-  // Fork: `inAppNotificationClosesOnOpen` for agent and terminal threads of this environment.
-  useEffect(() => {
-    if (activeEnvironmentId !== environmentId || !activeThreadId) return;
-    closeThreadToasts(environmentId, activeThreadId as ThreadId);
-  }, [activeEnvironmentId, activeThreadId, environmentId]);
-
-  useEffect(() => {
-    if (sessions === null || threads === null) return;
-    const firstSight = seen.current === null;
-    const previous = seen.current ?? new Map<string, string>();
+  const observe = () => {
+    const summaries = registry.get(summariesAtom);
+    const shell = registry.get(shellAtom);
+    const threads =
+      shell.status === "live" && Option.isSome(shell.snapshot)
+        ? shell.snapshot.value.threads
+        : null;
+    if (summaries === null || threads === null) return;
+    const firstSight = seen === null;
+    const previous = seen ?? new Map<string, string>();
     const next = new Map<string, string>();
-    for (const session of sessions) {
-      const summary = session.state.summary;
-      if (session.target.terminalId !== DEFAULT_TERMINAL_ID || !summary?.attention) continue;
-      const threadId = session.target.threadId as ThreadId;
+    for (const summary of summaries) {
       const attention = summary.attention;
+      if (summary.terminalId !== DEFAULT_TERMINAL_ID || !attention) continue;
+      const threadId = summary.threadId as ThreadId;
       next.set(threadId, attention.at);
       if (firstSight || previous.get(threadId) === attention.at) continue;
       const thread = threads.find((candidate) => candidate.id === threadId);
@@ -71,27 +94,26 @@ export function ForkTerminalThreadNotifications(props: {
         threadId,
         threadTitle: thread.title,
         outcome: attention.kind === "bell" ? "input" : failed ? "failed" : "done",
-        mode,
-        inAppNotificationsEnabled,
-        viewing: activeEnvironmentId === environmentId && activeThreadId === threadId,
-        navigate,
-        onNotification,
+        viewing: activeThreadId() === threadId,
+        router,
+        trackNotification,
       });
     }
-    seen.current = next;
-  }, [
-    activeEnvironmentId,
-    activeThreadId,
-    environmentId,
-    inAppNotificationsEnabled,
-    mode,
-    navigate,
-    onNotification,
-    sessions,
-    threads,
-  ]);
+    seen = next;
+  };
 
-  return null;
+  const unsubscribes = [
+    registry.subscribe(summariesAtom, observe),
+    registry.subscribe(shellAtom, observe, { immediate: true }),
+    // Fork: `inAppNotificationClosesOnOpen` for agent and terminal threads of this environment.
+    router.subscribe("onResolved", () => {
+      const threadId = activeThreadId();
+      if (threadId) closeThreadToasts(environmentId, threadId as ThreadId);
+    }),
+  ];
+  return () => {
+    for (const unsubscribe of unsubscribes) unsubscribe();
+  };
 }
 
 const OUTCOME_PRESENTATION = {
@@ -117,23 +139,22 @@ function notifyTerminalThread(input: {
   readonly threadId: ThreadId;
   readonly threadTitle: string;
   readonly outcome: keyof typeof OUTCOME_PRESENTATION;
-  readonly mode: ReturnType<typeof getClientSettings>["notificationMode"];
-  readonly inAppNotificationsEnabled: boolean;
   readonly viewing: boolean;
-  readonly navigate: ReturnType<typeof useNavigate>;
-  readonly onNotification: OnNotification;
+  readonly router: AnyRouter;
+  readonly trackNotification: TrackNotification;
 }) {
-  const { environmentId, threadId, threadTitle, mode, navigate, onNotification } = input;
+  const { environmentId, threadId, threadTitle, router, trackNotification } = input;
+  const { notificationMode: mode, inAppNotificationsEnabled } = getClientSettings();
   const { title, toastType, icon } = OUTCOME_PRESENTATION[input.outcome];
   const openThread = () =>
-    void navigate({ to: "/$environmentId/$threadId", params: { environmentId, threadId } });
+    void router.navigate({ to: "/$environmentId/$threadId", params: { environmentId, threadId } });
   if (hasNotificationSound(mode)) {
     void playNotificationSound(input.outcome === "input" ? "input" : "completion", () =>
       hasNotificationSound(getClientSettings().notificationMode),
     );
   }
   const focused = document.visibilityState === "visible" && document.hasFocus();
-  if (input.inAppNotificationsEnabled && focused && !input.viewing) {
+  if (inAppNotificationsEnabled && focused && !input.viewing) {
     const toastId = addThreadToast(
       { environmentId, threadId },
       input.outcome === "done" ? "completion" : "attention",
@@ -163,7 +184,7 @@ function notifyTerminalThread(input: {
   const tag = threadNotificationTag(environmentId, threadId);
   try {
     const notification = new Notification(title, { body: threadTitle, tag, silent: true });
-    onNotification(environmentId, notification);
+    trackNotification(environmentId, notification);
     notification.addEventListener("click", () => {
       notification.close();
       window.focus();
@@ -178,7 +199,7 @@ function notifyTerminalThread(input: {
       openThread,
     )
       .then((shown) => {
-        if (shown) onNotification(environmentId, shown, "replacedByTag");
+        if (shown) trackNotification(environmentId, shown, "replacedByTag");
       })
       .catch(() => undefined);
   }

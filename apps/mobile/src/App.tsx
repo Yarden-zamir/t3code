@@ -1,4 +1,4 @@
-import { PermissionUpdateNotice } from "./features/connection/PermissionUpdateNotice";
+import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
 import { ForkAccessChangeNotices } from "./features/connection/ForkAccessChangeNotices";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
@@ -33,6 +33,12 @@ import { environmentShell } from "./state/shell";
 import { OverlayPortalHost } from "./components/ui/OverlayPortal";
 import { initialShortcutHref } from "./features/shortcuts/useAppShortcuts";
 import { shouldHandleAppLink, restoreDraftLinkState } from "./lib/appLinking";
+import { hasCloudPublicConfig } from "./features/cloud/publicConfig";
+import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-editor-state";
+import {
+  disposeOnFoundationReplace,
+  type FoundationHotModule,
+} from "./lib/foundation-fast-refresh";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
@@ -60,7 +66,7 @@ void hydrateWorkspaceSelections();
 const appLinking = {
   prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
   config: { initialRouteName: "Home" },
-  filter: shouldHandleAppLink,
+  filter: (url: string) => shouldHandleAppLink(url, hasCloudPublicConfig()),
   // A launcher shortcut that starts the app becomes the first screen. A navigation sent once the
   // app runs comes too early on a cold start: React Navigation drops it before it is ready.
   getInitialURL: async () => {
@@ -77,14 +83,24 @@ const appLinking = {
     (workspaceDetailLinkAction(state) as ReturnType<typeof getActionFromState>) ??
     getActionFromState(state, options),
   getStateFromPath: (path: string, options: Parameters<typeof getStateFromPath>[1]) =>
-    restoreSettingsLinkState(
-      restoreDraftLinkState(getStateFromPath(path, options), path),
-      settingsLinkPage(),
+    takeScheduledTaskNewLink(
+      restoreSettingsLinkState(
+        restoreDraftLinkState(getStateFromPath(path, options), path),
+        settingsLinkPage(),
+      ),
     ),
 };
 
 const Navigation = createStaticNavigation(RootStack);
 const navigationRef = createNavigationContainerRef();
+
+declare const module: { readonly hot?: FoundationHotModule } | undefined;
+
+const disposePermissionUpdateNotice = installPermissionUpdateNotice();
+disposeOnFoundationReplace(
+  typeof module === "undefined" ? undefined : module.hot,
+  disposePermissionUpdateNotice,
+);
 
 function SplashScreenCoordinator() {
   const { isReady } = useAppearancePreferences();
@@ -128,7 +144,6 @@ function AppContent() {
     <>
       <SplashScreenCoordinator />
       <SubscriptionUsageCoordinator />
-      <PermissionUpdateNotice />
       <ForkAccessChangeNotices />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>

@@ -58,7 +58,6 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     isElectron && canManageLocalBackend ? desktopWslStateAtom : null,
   );
   const cloudPublicConfig = hasCloudPublicConfig() === true;
-  const redesignEnabled = useClientSettings((settings) => settings.redesignEnabled);
   const wslSettingsRowVisible =
     isWslSettingsRowVisible({ state: desktopWsl.data, error: desktopWsl.error }) === true;
   const sidebarTabsEnabled = useClientSettings(selectSidebarTabsEnabled) === true;
@@ -74,7 +73,6 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     hasThreadAutoSettlement,
     managedTunnelActive,
     hasPeerLinkHost,
-    redesignEnabled,
   });
   // Fork: the "Single-thread tabs" row renders only while sidebar tabs are on.
   return sidebarTabsEnabled
