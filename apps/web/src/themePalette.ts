@@ -1,5 +1,8 @@
+import type { EnvironmentTheme } from "@t3tools/contracts";
 import * as Equal from "effect/Equal";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { Atom } from "effect/reactivity";
 import "culori/css";
 import { converter, parse } from "culori/fn";
 import {
@@ -17,19 +20,15 @@ import {
   type ThemeColorRole,
   type ThemeColors,
   type ThemeDefinition,
-  type ThemeStyle,
   type ThemeVariants,
 } from "@t3tools/shared/themePalettes";
 
+import { applyThemeStyle, publishedThemeStyle } from "./forkThemeStyle";
+import { appAtomRegistry, subscribeAtomChanges } from "./rpc/atomRegistry";
+import { primaryServerEnvironmentThemesAtom } from "./state/server";
+
 export { EMBER_THEME, GROVE_THEME, IRIS_THEME, OCEAN_THEME, T3_CHAT_THEME, THEME_COLOR_ROLES };
-export type {
-  ThemeAppearance,
-  ThemeColorRole,
-  ThemeColors,
-  ThemeDefinition,
-  ThemeStyle,
-  ThemeVariants,
-};
+export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
 
 const T3_CHAT_THEME_ID = "t3-chat" as const;
 const GROVE_THEME_ID = "grove" as const;
@@ -62,9 +61,6 @@ export type ThemeFile = Readonly<{
   collection?: ThemeCollection;
   managed?: boolean;
 }>;
-
-// Do not persist server-published palettes; they become stale when the environment theme changes.
-let environmentThemeDefinitions: ReadonlyArray<ThemeDefinition> = [];
 
 const customThemeListeners = new Set<() => void>();
 type CustomThemeLibrarySnapshot =
@@ -128,7 +124,7 @@ function parseThemeCollection(value: unknown): ThemeCollection | undefined {
     : undefined;
 }
 
-export function lenientThemeColorOverrides(
+function lenientThemeColorOverrides(
   value: Readonly<Record<string, unknown>>,
 ): Partial<Record<ThemeColorRole, string>> {
   const overrides: Partial<Record<ThemeColorRole, string>> = {};
@@ -244,16 +240,94 @@ export function getCustomThemes(): ReadonlyArray<ThemeDefinition> {
   return snapshot.status === "ready" ? snapshot.themes : EMPTY_CUSTOM_THEMES;
 }
 
-export function getEnvironmentThemes(): ReadonlyArray<ThemeDefinition> {
-  return environmentThemeDefinitions;
+function publishedThemeColors(
+  theme: EnvironmentTheme,
+  appearance: ThemeAppearance,
+  colors: Readonly<Record<string, string>> | undefined,
+): ThemeColors {
+  // A variant builds on that appearance's stock defaults: the generator follows
+  // the seed canvas's luminance, so dark seeds would give a light variant
+  // unreadable colors.
+  const base =
+    appearance === theme.appearance && theme.canvas !== undefined && theme.accent !== undefined
+      ? createVividThemeColors(appearance, theme.canvas, theme.accent)
+      : getDefaultThemeColors(appearance);
+  return { ...base, ...lenientThemeColorOverrides(colors ?? {}) };
 }
 
-/** Returns structural change; reconnects recreate arrays with identical colors. */
-export function setEnvironmentThemes(themes: ReadonlyArray<ThemeDefinition>): boolean {
-  if (Equal.equals(environmentThemeDefinitions, themes)) return false;
-  environmentThemeDefinitions = themes;
-  notifyCustomThemeListeners();
-  return true;
+function environmentThemeDefinition(theme: EnvironmentTheme): ThemeDefinition {
+  const variants: Partial<Record<ThemeAppearance, ThemeColors>> = {};
+  for (const [variantAppearance, variantColors] of Object.entries(theme.variants ?? {})) {
+    if (variantAppearance === theme.appearance) continue;
+    variants[variantAppearance as ThemeAppearance] = publishedThemeColors(
+      theme,
+      variantAppearance as ThemeAppearance,
+      variantColors,
+    );
+  }
+
+  const style = publishedThemeStyle(theme);
+  return {
+    id: theme.id,
+    label: theme.name,
+    ...(style !== undefined ? { style } : {}),
+    appearance: theme.appearance,
+    colors: publishedThemeColors(theme, theme.appearance, theme.colors),
+    ...(Object.keys(variants).length > 0 ? { variants } : {}),
+    // Only the pure seeded form is guided-generator output. An exported file,
+    // or seeds carrying explicit role overrides, must open Duplicate in the
+    // advanced editor -- the guided one regenerates from canvas and accent and
+    // would discard whatever the machine hand-tuned.
+    ...(theme.canvas !== undefined &&
+    theme.accent !== undefined &&
+    theme.colors === undefined &&
+    theme.variants === undefined
+      ? { managed: true }
+      : {}),
+  };
+}
+
+/**
+ * Published palettes this client can render. Reserved ids are dropped here rather
+ * than rendered: a published `t3-iris.json` would show this palette on its
+ * card while "Use" resolved the built-in, and a published `dark.json` would
+ * capture everyone whose stored preference is the stock `"dark"`.
+ */
+export function publishedThemeDefinitions(
+  themes: ReadonlyArray<EnvironmentTheme>,
+): ReadonlyArray<ThemeDefinition> {
+  return themes
+    .filter((theme) => {
+      if (isReservedThemeId(theme.id)) return false;
+      if (theme.canvas !== undefined && theme.accent !== undefined) return true;
+      const otherAppearance = theme.appearance === "dark" ? "light" : "dark";
+      return [theme.colors, theme.variants?.[otherAppearance]].some(
+        (colors) =>
+          colors !== undefined && Object.keys(lenientThemeColorOverrides(colors)).length > 0,
+      );
+    })
+    .map(environmentThemeDefinition);
+}
+
+// Every reconnect snapshot delivers a fresh but usually identical array; keeping the
+// previous one skips regenerating palettes and repainting the document for it.
+const publishedThemesAtom = Atom.make((get): ReadonlyArray<EnvironmentTheme> => {
+  const next = get(primaryServerEnvironmentThemesAtom);
+  const previous = Option.getOrNull(get.self<ReadonlyArray<EnvironmentTheme>>());
+  return previous !== null && Equal.equals(previous, next) ? previous : next;
+}).pipe(Atom.withLabel("web-published-environment-themes"));
+
+/**
+ * The environment's palettes are not saved: they are republished by the server
+ * on every change and would go stale the moment the machine's theme moved on.
+ * Kept alive because theme lookups read it outside React on every repaint.
+ */
+export const environmentThemeDefinitionsAtom = Atom.make((get) =>
+  publishedThemeDefinitions(get(publishedThemesAtom)),
+).pipe(Atom.keepAlive, Atom.withLabel("web-environment-theme-definitions"));
+
+function getEnvironmentThemes(): ReadonlyArray<ThemeDefinition> {
+  return appAtomRegistry.get(environmentThemeDefinitionsAtom);
 }
 
 export function isReservedThemeId(themeId: string): boolean {
@@ -270,8 +344,14 @@ export function getStoredCustomThemeCollection(
 
 export function subscribeToCustomThemes(listener: () => void): () => void {
   customThemeListeners.add(listener);
+  const unsubscribeEnvironment = subscribeAtomChanges(environmentThemeDefinitionsAtom, () =>
+    listener(),
+  );
   if (typeof window === "undefined") {
-    return () => customThemeListeners.delete(listener);
+    return () => {
+      customThemeListeners.delete(listener);
+      unsubscribeEnvironment();
+    };
   }
   const handleStorage = (event: StorageEvent) => {
     if (event.key === CUSTOM_THEMES_STORAGE_KEY || event.key === null) {
@@ -282,6 +362,7 @@ export function subscribeToCustomThemes(listener: () => void): () => void {
 
   return () => {
     customThemeListeners.delete(listener);
+    unsubscribeEnvironment();
     window.removeEventListener("storage", handleStorage);
   };
 }
@@ -1030,7 +1111,7 @@ export function getThemeDefinition(theme: ThemePreference): ThemeDefinition | nu
   return (
     BUILT_IN_THEME_DEFINITIONS.find((definition) => definition.id === themeId) ??
     getCustomThemes().find((definition) => definition.id === themeId) ??
-    environmentThemeDefinitions.find((definition) => definition.id === themeId) ??
+    getEnvironmentThemes().find((definition) => definition.id === themeId) ??
     null
   );
 }
@@ -1457,101 +1538,6 @@ export function applyThemeColorPreview(colors: ThemeColors, appearance: ThemeApp
     if (isThemeColor(value)) root.style.setProperty(APP_THEME_VARIABLES[role], value);
   }
   setThemePreviewAppearance(appearance);
-}
-
-/** Id of the style element that holds the active theme's user CSS. */
-export const THEME_USER_CSS_ELEMENT_ID = "t3-theme-user-css";
-let userCssElement: HTMLStyleElement | null = null;
-
-type ThemeFonts = NonNullable<ThemeStyle["fonts"]>;
-const NO_THEME_FONTS: ThemeFonts = {};
-let activeThemeFonts: ThemeFonts = NO_THEME_FONTS;
-const activeThemeFontListeners = new Set<() => void>();
-
-/** Fonts the active theme suggests. Empty when the theme has none. */
-export function getActiveThemeFonts(): ThemeFonts {
-  return activeThemeFonts;
-}
-
-export function subscribeToActiveThemeFonts(listener: () => void): () => void {
-  activeThemeFontListeners.add(listener);
-  return () => activeThemeFontListeners.delete(listener);
-}
-
-// Fork: the icon pack of the active theme, read by `AppIcon`.
-type ThemeIcons = NonNullable<ThemeStyle["icons"]>;
-const NO_THEME_ICONS: ThemeIcons = {};
-let activeThemeIcons: ThemeIcons = NO_THEME_ICONS;
-const activeThemeIconListeners = new Set<() => void>();
-
-/** Icons of the active theme, by slot. Empty when the theme has none. */
-export function getActiveThemeIcons(): ThemeIcons {
-  return activeThemeIcons;
-}
-
-export function subscribeToActiveThemeIcons(listener: () => void): () => void {
-  activeThemeIconListeners.add(listener);
-  return () => activeThemeIconListeners.delete(listener);
-}
-
-/**
- * Root custom properties and attributes for each style field. The attribute
- * gates the matching rules in fork-theme.css, so a theme without the field gets
- * none of them and renders as stock.
- */
-const THEME_STYLE_PROPERTIES = [
-  ["radius", "--radius", "themeRadius"],
-  ["borderWidth", "--theme-border-width", "themeBorderWidth"],
-  ["shadow", "--theme-shadow", "themeShadow"],
-  ["canvasPatternColor", "--theme-canvas-pattern-color", null],
-] as const satisfies ReadonlyArray<
-  readonly [keyof ThemeStyle, `--${string}`, keyof DOMStringMap | null]
->;
-
-/**
- * Writes the theme's optional style fields onto the root, and clears every
- * field the theme does not set. Undefined clears all of them.
- */
-function applyThemeStyle(root: HTMLElement, style: ThemeStyle | undefined): void {
-  for (const [field, variable, attribute] of THEME_STYLE_PROPERTIES) {
-    const value = style?.[field];
-    if (value === undefined) {
-      root.style.removeProperty(variable);
-      if (attribute !== null) delete root.dataset[attribute];
-    } else {
-      root.style.setProperty(variable, value);
-      if (attribute !== null) root.dataset[attribute] = "";
-    }
-  }
-
-  const pattern = style?.canvasPattern;
-  if (pattern === undefined || pattern === "none") delete root.dataset.canvasPattern;
-  else root.dataset.canvasPattern = pattern;
-
-  const fonts = style?.fonts ?? NO_THEME_FONTS;
-  if (!Equal.equals(fonts, activeThemeFonts)) {
-    activeThemeFonts = fonts;
-    for (const listener of activeThemeFontListeners) listener();
-  }
-
-  const icons = style?.icons ?? NO_THEME_ICONS;
-  if (!Equal.equals(icons, activeThemeIcons)) {
-    activeThemeIcons = icons;
-    for (const listener of activeThemeIconListeners) listener();
-  }
-
-  // The style element goes last in <head>, so user CSS wins over the app
-  // stylesheet at equal specificity. It is removed when the theme has none.
-  const css = style?.css;
-  if (css === undefined) {
-    userCssElement?.remove();
-    userCssElement = null;
-    return;
-  }
-  userCssElement ??= document.createElement("style");
-  userCssElement.id = THEME_USER_CSS_ELEMENT_ID;
-  if (userCssElement.textContent !== css) userCssElement.textContent = css;
-  if (userCssElement !== document.head.lastElementChild) document.head.append(userCssElement);
 }
 
 export function applyThemePalette(theme: ThemePreference, appearance?: ThemeAppearance): void {
