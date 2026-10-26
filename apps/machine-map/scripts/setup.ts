@@ -83,6 +83,10 @@ async function ensureApp(
     throw new SetupStop(
       `${label}: wrangler.jsonc names an app that this account does not have. Check ACCOUNT_ID, or set the value to REPLACE_ME to make a new app.`,
     );
+  if (byStored !== undefined && !appHosts(byStored).includes(normalHost(uri)))
+    throw new SetupStop(
+      `${label}: the app "${byStored.name}" in wrangler.jsonc covers ${appHosts(byStored).join(", ")}, not ${uri}. Set its value to REPLACE_ME to make an app for ${uri}.`,
+    );
   const found = byStored ?? apps.find((app) => appHosts(app).includes(normalHost(uri)));
   if (found) {
     console.log(`ok       ${label}: the app "${found.name}" covers ${uri}`);
@@ -123,7 +127,7 @@ function wrangler(
   accountId: string,
   args: ReadonlyArray<string>,
   input?: string,
-): { ok: boolean; out: string } {
+): { ok: boolean; stdout: string; out: string } {
   const env: NodeJS.ProcessEnv = { ...NodeProcess.env, CLOUDFLARE_ACCOUNT_ID: accountId };
   delete env.CF_API_TOKEN;
   delete env.CLOUDFLARE_API_TOKEN;
@@ -133,7 +137,11 @@ function wrangler(
     input,
     encoding: "utf8",
   });
-  return { ok: result.status === 0, out: `${result.stdout}${result.stderr}` };
+  return {
+    ok: result.status === 0,
+    stdout: result.stdout,
+    out: `${result.stdout}${result.stderr}${result.error?.message ?? ""}`,
+  };
 }
 
 /** The secret names of the Worker, or null when the Worker does not exist yet. */
@@ -144,8 +152,13 @@ function workerSecrets(accountId: string): ReadonlySet<string> | null {
     if (listed.out.includes("10007")) return null;
     throw new SetupStop(`wrangler secret list failed. Run wrangler login first.\n${listed.out}`);
   }
-  const parsed: unknown = JSON.parse(listed.out.slice(listed.out.indexOf("[")));
-  if (!Array.isArray(parsed)) throw new Error("wrangler secret list gave no list.");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(listed.stdout);
+  } catch {
+    throw new SetupStop(`wrangler secret list gave no JSON list:\n${listed.out}`);
+  }
+  if (!Array.isArray(parsed)) throw new SetupStop("wrangler secret list gave no list.");
   return new Set(
     parsed.flatMap((entry: unknown) =>
       typeof entry === "object" &&
@@ -160,7 +173,7 @@ function workerSecrets(accountId: string): ReadonlySet<string> | null {
 
 function putSecret(accountId: string, name: string, value: string): void {
   const put = wrangler(accountId, ["secret", "put", name], value);
-  if (!put.ok) throw new Error(`wrangler secret put ${name} failed: ${put.out}`);
+  if (!put.ok) throw new SetupStop(`wrangler secret put ${name} failed: ${put.out}`);
   console.log(`set      secret ${name}`);
 }
 
@@ -293,10 +306,12 @@ async function main(): Promise<number> {
   }
 
   const accounts = await new CloudflareApi(token, "").accounts();
-  const storedAccount = values["account-id"] ?? vars.get("ACCOUNT_ID");
+  const givenAccount = values["account-id"];
+  const storedAccount = givenAccount ?? vars.get("ACCOUNT_ID");
+  // An account given with --account-id must exist. Only a stored one falls back to the only account.
   const account =
     accounts.find((a) => a.id === storedAccount) ??
-    (accounts.length === 1 ? accounts[0] : undefined);
+    (givenAccount === undefined && accounts.length === 1 ? accounts[0] : undefined);
   if (account === undefined) {
     console.error(
       `The token sees ${accounts.length} accounts, and ACCOUNT_ID is not one of them. Pass --account-id.`,
@@ -405,7 +420,8 @@ async function main(): Promise<number> {
       ["secret", "set", "CLOUDFLARE_DEPLOY_TOKEN", "--repo", repo],
       { input: deployToken, encoding: "utf8" },
     );
-    if (set.status !== 0) throw new Error(`gh secret set failed: ${set.stderr}`);
+    if (set.status !== 0)
+      throw new SetupStop(`gh secret set failed: ${set.stderr}${set.error?.message ?? ""}`);
     console.log(`set      GitHub secret CLOUDFLARE_DEPLOY_TOKEN of ${repo}`);
   }
 
