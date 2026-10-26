@@ -209,7 +209,7 @@ describe("auto-settlement search availability", () => {
     expect(searchSettings("auto-settle", items).map((item) => item.id)).toEqual([
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
-      // Fork: General > Organization "Auto-settle waits for background commands".
+      // Fork: Threads > Auto-settle "Auto-settle waits for background commands".
       "auto-settle-waits-for-background-commands",
       "days-before-auto-settle",
       "keep-threads-with-pull-requests",

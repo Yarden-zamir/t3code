@@ -24,7 +24,7 @@ Restore a missing worktree at its saved path before starting the next turn. If i
 
 - **Setting:** `restoreWorktreesOnResume` (server setting, off by default). Settings > Worktrees > Creation > "Restore worktrees on resume".
 - **Works on:** server, for web, desktop, mobile, agent tools and scheduled turns.
-- **Limits:** a conflicting path stops recovery. Only this checkout's Git registration is repaired; no broad prune runs. When its branch exists, its saved index and refs, including staged changes, stay. Existing branches are never reset. Deleted-branch recovery requires a reachable origin with a discoverable default branch; its old index is not restored. Dependencies require a configured project setup script. When this setting is off, upstream's recovery runs unchanged: for a managed worktree path, it runs `git worktree prune` and adds the worktree again, without project setup. Pending dependency restoration after artifact eviction still runs.
+- **Limits:** a conflicting path stops recovery. Only this checkout's Git registration is repaired; no broad prune runs. When its branch exists, its saved index and refs, including staged changes, stay. Existing branches are never reset. Deleted-branch recovery requires a reachable origin with a discoverable default branch; its old index is not restored. Dependencies require a configured project setup script. When this setting is off, upstream's recovery runs unchanged: for a managed worktree path, it runs `git worktree prune` and adds the worktree again, without project setup. It creates a deleted branch from the current branch of the project, and a failed recovery fails the turn. Pending dependency restoration after artifact eviction still runs.
 
 ### Auto-settle waits for background commands
 
