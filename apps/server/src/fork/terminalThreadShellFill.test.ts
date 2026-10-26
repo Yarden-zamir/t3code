@@ -7,7 +7,6 @@ import {
   TerminalThreadsOffError,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { expect } from "vite-plus/test";
 
@@ -42,7 +41,7 @@ const services = (
               },
         ),
     },
-    projects: { get: () => Effect.succeed(Option.some({ workspaceRoot: "/repo" })) },
+    projects: { get: () => Effect.succeedSome({ workspaceRoot: "/repo" }) },
     settings: {
       getSettings: Effect.succeed({ terminalThreads: options.terminalThreads ?? true }),
     },

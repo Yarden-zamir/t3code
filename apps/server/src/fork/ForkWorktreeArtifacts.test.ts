@@ -11,7 +11,6 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Config from "../config.ts";
@@ -677,9 +676,7 @@ it.effect(
         Effect.provideService(Projects.ProjectStoreV2, {
           listShells: () => Effect.succeed([project]),
           get: () =>
-            Effect.succeed(
-              Option.some({ ...project, scripts: setupConfigured ? project.scripts : [] }),
-            ),
+            Effect.succeedSome({ ...project, scripts: setupConfigured ? project.scripts : [] }),
         } as unknown as Projects.ProjectStoreV2["Service"]),
         Effect.provideService(Settings.ServerSettingsService, {
           getSettings: Effect.sync(() => settings),

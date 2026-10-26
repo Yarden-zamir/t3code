@@ -65,6 +65,7 @@ export class TerminalPort extends Context.Service<
  */
 export const unavailableTerminalPort: TerminalPort["Service"] = {
   isRunning: () => Effect.succeed(false),
+  // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
   shellState: () => Effect.succeed(undefined),
   workspaceRootOf: () => Effect.succeed(null),
   open: () =>

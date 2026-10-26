@@ -98,7 +98,8 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
 
   return (request) =>
     verifyCloudflareAccess === undefined
-      ? Effect.succeed(undefined)
+      ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
+        Effect.succeed(undefined)
       : verifyCloudflareAccess(request).pipe(
           // MM-718: an Access subject is never the local desktop app, so the pause locks it.
           // A session made now would only be refused on its first use.
@@ -115,7 +116,8 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
           ),
           Effect.flatMap((identity) =>
             identity === undefined
-              ? Effect.succeed(undefined)
+              ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
+                Effect.succeed(undefined)
               : identity.kind === "owner"
                 ? ownerBrowserAccessFor(request, identity.subject).pipe(
                     Effect.flatMap((access) =>
@@ -136,11 +138,13 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
                     ),
                   )
                 : Option.isNone(machineMap)
-                  ? Effect.succeed(undefined)
+                  ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
+                    Effect.succeed(undefined)
                   : machineMap.value.machineGrant(identity.commonName).pipe(
                       Effect.flatMap((grant) =>
                         grant === undefined
-                          ? Effect.succeed(undefined)
+                          ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
+                            Effect.succeed(undefined)
                           : issuePairingCredentialForSubject({
                               ...grant,
                               ttl: Duration.minutes(2),

@@ -472,7 +472,6 @@ export function App() {
   })();
 
   return (
-    // oxlint-disable-next-line react/jsx-no-constructed-context-values -- Every state change renders the whole page, so a memo saves nothing.
     <PortalContext.Provider value={portal}>
       <div className={`app${state.pause ? " paused" : ""}`}>
         <header className="top">

@@ -56,7 +56,12 @@ describe("resource messages next to the base protocol (MM-1502)", () => {
     expect(fromMachine({ _tag: "applied", revision: 3 })).toEqual({ _tag: "applied", revision: 3 });
     expect(fromPortal({ _tag: "sampleResources" })).toEqual({ _tag: "sampleResources" });
     // A sample of an older server has no CPU pressure fields. It still decodes.
-    const { cpuBusyPercent, cpuStealPercent, cpuPressurePercent, ...older } = sample;
+    const {
+      cpuBusyPercent: _cpuBusyPercent,
+      cpuStealPercent: _cpuStealPercent,
+      cpuPressurePercent: _cpuPressurePercent,
+      ...older
+    } = sample;
     expect(fromMachine({ _tag: "resources", sample: older })).toMatchObject({
       sample: { cpuBusyPercent: null, cpuPressurePercent: null },
     });

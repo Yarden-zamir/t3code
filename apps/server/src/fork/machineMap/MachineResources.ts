@@ -174,7 +174,7 @@ const make = Effect.gen(function* () {
                 Effect.orElseSucceed(() => ""),
               );
             const [capacity, status, energyNow, energyFull, power, chargeNow, chargeFull, current] =
-              yield* Effect.all(
+              yield* Effect.forEach(
                 [
                   "capacity",
                   "status",
@@ -184,7 +184,8 @@ const make = Effect.gen(function* () {
                   "charge_now",
                   "charge_full",
                   "current_now",
-                ].map(read),
+                ],
+                read,
                 { concurrency: "unbounded" },
               );
             const energy = energyNow !== "";

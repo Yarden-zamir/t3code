@@ -1086,6 +1086,7 @@ function ApprovalDialog({
         {current ? (
           <ul className="list small break">
             {current.map((text, i) => (
+              // oxlint-disable-next-line react/no-array-index-key -- Changes have no id, and the list stays fixed while the dialog is open.
               <li key={i}>{text}</li>
             ))}
           </ul>
@@ -1095,6 +1096,7 @@ function ApprovalDialog({
         <h3>Requested</h3>
         <ul className="list small break">
           {action.request.changes.map((c, i) => (
+            // oxlint-disable-next-line react/no-array-index-key -- Changes have no id, and the list stays fixed while the dialog is open.
             <li key={i}>{describeChange(c, portal.snapshot.map)}</li>
           ))}
         </ul>

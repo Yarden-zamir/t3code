@@ -264,6 +264,7 @@ export function ForkThreadCardLayout(props: {
   const providerIcons = providerInstance ? (
     <View className="flex-row items-center">
       {providerDrivers.slice(0, -1).map((driver, index) => (
+        // oxlint-disable-next-line react/no-array-index-key -- Provider history can repeat a driver; these decorative icons have no local state.
         <View key={`${driver}:${index}`} className="-mr-1 opacity-30">
           <ProviderIcon provider={driver} size={12} />
         </View>
@@ -451,6 +452,7 @@ export function ForkThreadCardLayout(props: {
   return (
     <View className="gap-1">
       {cardLayout.rows.map((layoutRow, rowIndex) => (
+        // oxlint-disable-next-line react/no-array-index-key -- Rows have no identity apart from their position in the layout.
         <View key={rowIndex} className="flex-row items-center gap-2">
           <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
             {layoutRow.start.map((element) => (

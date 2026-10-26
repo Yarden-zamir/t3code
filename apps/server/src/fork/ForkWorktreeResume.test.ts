@@ -20,7 +20,6 @@ import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as Config from "../config.ts";
@@ -107,13 +106,11 @@ const fixture = Effect.gen(function* () {
           IdAllocator.layer,
           Layer.mock(Projects.ProjectService)({
             getById: () =>
-              Effect.succeed(
-                Option.some({
-                  id: input.thread.projectId,
-                  workspaceRoot: repository,
-                  scripts: [],
-                } as never),
-              ),
+              Effect.succeedSome({
+                id: input.thread.projectId,
+                workspaceRoot: repository,
+                scripts: [],
+              } as never),
           }),
           Layer.mock(EventSink.EventSinkV2)({
             writeIfRunCurrent: (request) =>

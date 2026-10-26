@@ -13,7 +13,6 @@ import {
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -113,7 +112,7 @@ const makeLayer = (input: {
         }),
         Layer.mock(ThreadLaunch.ThreadLaunchService)({}),
         Layer.mock(ProjectService.ProjectService)({
-          getById: () => Effect.succeed(Option.none()),
+          getById: () => Effect.succeedNone,
         }),
         Layer.mock(ScheduledTasks.ScheduledTaskService)({
           list: () =>
