@@ -74,6 +74,8 @@ export function QueuedRunsControl({
     Pick<ChatMessage, "id" | "inputIntent" | "text" | "attachments">
   >;
   readonly editingRunId: RunId | null;
+  /** Set while something else holds the composer, such as an open question. */
+  readonly editBlockedReason: string | null;
   readonly onEditQueuedRun: (request: EditQueuedRunRequest) => void;
   readonly onCancelEdit: () => void;
   /** The composer's Resume: continues the usage-limited run, then the queue. */
@@ -215,6 +217,7 @@ export function QueuedRunsControl({
         !latest ||
         latest.context?.guest !== undefined ||
         props.editingRunId !== null ||
+        props.editBlockedReason !== null ||
         busyRunId !== null
       ) {
         return false;
@@ -472,38 +475,44 @@ export function QueuedRunsControl({
                     ) : (
                       <>
                         <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Button
-                                size="icon-xs"
-                                variant="ghost-muted"
-                                aria-label="Edit queued message"
-                                disabled={
-                                  item.runId === null || !item.editable || busyRunId !== null
+                          {/* The span keeps the tooltip, and its reason, on a disabled button. */}
+                          <TooltipTrigger render={<span className="flex shrink-0" />}>
+                            <Button
+                              size="icon-xs"
+                              variant="ghost-muted"
+                              aria-label="Edit queued message"
+                              disabled={
+                                item.runId === null ||
+                                !item.editable ||
+                                busyRunId !== null ||
+                                props.editBlockedReason !== null
+                              }
+                              onClick={() => {
+                                if (item.runId !== null && item.messageId !== null) {
+                                  props.onEditQueuedRun({
+                                    runId: item.runId,
+                                    messageId: item.messageId,
+                                    text: item.text,
+                                    attachments: item.attachments,
+                                  });
                                 }
-                                onClick={() => {
-                                  if (item.runId !== null && item.messageId !== null) {
-                                    props.onEditQueuedRun({
-                                      runId: item.runId,
-                                      messageId: item.messageId,
-                                      text: item.text,
-                                      attachments: item.attachments,
-                                    });
-                                  }
-                                }}
-                              />
-                            }
-                          >
-                            <PencilIcon />
+                              }}
+                            >
+                              <PencilIcon />
+                            </Button>
                           </TooltipTrigger>
                           <TooltipPopup>
-                            Edit in the composer
-                            {item.serverIndex === queued.length - 1 ? (
-                              <ShortcutHint
-                                command="thread.editQueuedMessage"
-                                context={{ composerFocus: true }}
-                              />
-                            ) : null}
+                            {props.editBlockedReason ?? (
+                              <>
+                                Edit in the composer
+                                {item.serverIndex === queued.length - 1 ? (
+                                  <ShortcutHint
+                                    command="thread.editQueuedMessage"
+                                    context={{ composerFocus: true }}
+                                  />
+                                ) : null}
+                              </>
+                            )}
                           </TooltipPopup>
                         </Tooltip>
                         <Tooltip>

@@ -14,17 +14,19 @@ type ForkSettingPlaceDefinition = {
  * scope like their upstream neighbors; elsewhere a server row locks through `SettingsRow`.
  */
 export const FORK_SETTING_PLACES = {
-  "general-global-scripts": {
-    to: "/settings/general",
+  "general-notifications": { to: "/settings/general", section: "Notifications" },
+  "general-in-app-notifications": { to: "/settings/general", section: "Notifications" },
+  "general-sidebar": { to: "/settings/general", section: "Sidebar" },
+  "general-display": { to: "/settings/general", section: "Display" },
+  "threads-new-projects": { to: "/settings/threads", section: "New projects" },
+  "threads-global-scripts": {
+    to: "/settings/threads",
     section: "Global scripts",
     forkSection: true,
   },
-  "general-organization": { to: "/settings/general", section: "Organization" },
-  "general-notifications": { to: "/settings/general", section: "Behavior" },
-  "general-in-app-notifications": { to: "/settings/general", section: "Behavior" },
-  "general-behavior": { to: "/settings/general", section: "Behavior" },
-  "general-projects-and-threads": { to: "/settings/general", section: "Projects & threads" },
-  "general-about": { to: "/settings/general", section: "About" },
+  "threads-auto-settle": { to: "/settings/threads", section: "Auto-settle" },
+  "maintenance-updates": { to: "/settings/maintenance", section: "Updates" },
+  "about-app": { to: "/settings/about", section: "App" },
   "appearance-interface": { to: "/settings/appearance", section: "Interface" },
   "appearance-thread-cards": {
     to: "/settings/appearance",
@@ -43,7 +45,7 @@ export const FORK_SETTING_PLACES = {
     section: "Machine map",
     forkSection: true,
   },
-  "integrations-browser": { to: "/settings/integrations", section: "Browser" },
+  "browser-browsing": { to: "/settings/browser", section: "Browsing" },
   "source-control-fork-checkouts": {
     to: "/settings/source-control",
     section: "Fork checkouts",
@@ -54,8 +56,12 @@ export const FORK_SETTING_PLACES = {
     section: "Pull request watch",
     forkSection: true,
   },
-  "storage-worktrees": { to: "/settings/storage", section: "Worktrees", hideAtProjectScope: true },
-  "connections-local": { to: "/settings/connections", section: null },
+  "worktrees-creation": {
+    to: "/settings/worktrees",
+    section: "Creation",
+    hideAtProjectScope: true,
+  },
+  "access-local": { to: "/settings/access", section: null },
   "connections-warnings": {
     to: "/settings/connections",
     section: "Connection warnings",
@@ -103,7 +109,7 @@ const FORK_SETTING_GROUPS = [
   {
     title: "Remote access",
     entries: [
-      { ids: ["tunnel-pairing"], place: "connections-local" },
+      { ids: ["tunnel-pairing"], place: "access-local" },
       { ids: ["restart-reconnect-warning-grace"], place: "connections-warnings" },
     ],
   },
@@ -124,22 +130,22 @@ const FORK_SETTING_GROUPS = [
         change:
           "Fork: installs fork releases, never downgrades, and offers Install when idle while agents or terminal programs run.",
       },
-      { ids: ["fork-auto-update"], place: "general-about" },
-      { ids: ["fork-changelog"], place: "general-about" },
-      { ids: ["check-newer-before-update-install"], place: "general-about" },
+      { ids: ["fork-auto-update"], place: "maintenance-updates" },
+      { ids: ["fork-changelog"], place: "about-app" },
+      { ids: ["check-newer-before-update-install"], place: "about-app" },
     ],
   },
   {
     title: "Agents",
     entries: [
-      { ids: ["recover-interrupted-turns"], place: "general-behavior" },
+      { ids: ["recover-interrupted-turns"], place: "maintenance-updates" },
       {
         ids: ["continue-threads-after-server-update"],
         change:
           "Fork: while Recover interrupted agents is on, cut-off threads continue also when this is off.",
         linkOnly: true,
       },
-      { ids: ["background-work-details"], place: "general-behavior" },
+      { ids: ["background-work-details"], place: "general-display" },
       { ids: ["prefer-origin-remote"], place: "source-control-fork-checkouts" },
       {
         ids: [
@@ -151,27 +157,27 @@ const FORK_SETTING_GROUPS = [
       },
       {
         ids: ["agent-session-import-window", "agent-session-import-max-messages"],
-        place: "general-projects-and-threads",
+        place: "threads-new-projects",
       },
     ],
   },
   {
     title: "Threads",
     entries: [
-      { ids: ["restore-worktrees-on-resume"], place: "storage-worktrees" },
-      { ids: ["auto-settle-waits-for-background-commands"], place: "general-organization" },
+      { ids: ["restore-worktrees-on-resume"], place: "worktrees-creation" },
+      { ids: ["auto-settle-waits-for-background-commands"], place: "threads-auto-settle" },
       {
         ids: ["worktree-artifact-eviction", "worktree-artifact-eviction-days"],
-        place: "storage-worktrees",
+        place: "worktrees-creation",
       },
-      { ids: ["sidebar-tabs", "sidebar-tab-single-thread"], place: "general-organization" },
-      { ids: ["snooze-quick-options"], place: "general-organization" },
-      { ids: ["message-pins"], place: "general-behavior" },
+      { ids: ["sidebar-tabs", "sidebar-tab-single-thread"], place: "general-sidebar" },
+      { ids: ["snooze-quick-options"], place: "general-sidebar" },
+      { ids: ["message-pins"], place: "general-display" },
       { ids: ["mobile-new-thread-project"], place: "appearance-mobile-app" },
       { ids: ["mobile-composer-camera"], place: "appearance-mobile-app" },
       { ids: ["mobile-message-pins"], place: "appearance-mobile-app" },
       { ids: ["mobile-sidebar-tabs"], place: "appearance-mobile-app" },
-      { ids: ["storage-worktree-path-template"], place: "storage-worktrees" },
+      { ids: ["storage-worktree-path-template"], place: "worktrees-creation" },
       {
         ids: ["storage-worktrees-location"],
         change: "Fork: a worktree path template, when set, replaces this location.",
@@ -181,14 +187,14 @@ const FORK_SETTING_GROUPS = [
   {
     title: "Filters",
     entries: [
-      { ids: ["repository-owner-filters"], place: "general-organization" },
-      { ids: ["pull-request-filter-chips"], place: "general-organization" },
+      { ids: ["repository-owner-filters"], place: "general-sidebar" },
+      { ids: ["pull-request-filter-chips"], place: "general-sidebar" },
     ],
   },
   {
     title: "Scripts and keyboard",
     entries: [
-      { ids: ["global-scripts"], place: "general-global-scripts" },
+      { ids: ["global-scripts"], place: "threads-global-scripts" },
       { ids: ["app-toggle-shortcuts"], place: "keybindings-keyboard" },
       { ids: ["keyboard-focus-levels"], place: "keybindings-keyboard" },
       { ids: ["focus-level-highlight"], place: "keybindings-keyboard" },
@@ -227,10 +233,10 @@ const FORK_SETTING_GROUPS = [
       { ids: ["thread-link-chips"], place: "appearance-thread-links" },
       { ids: ["thread-links-open-desktop-app"], place: "appearance-thread-links" },
       { ids: ["message-links"], place: "appearance-thread-links" },
-      { ids: ["preview-local-server-groups"], place: "integrations-browser" },
+      { ids: ["preview-local-server-groups"], place: "browser-browsing" },
       { ids: ["mobile-published-themes"], place: "appearance-mobile-app" },
       { ids: ["back-forward-buttons"], place: "appearance-interface" },
-      { ids: ["remember-back-forward-history"], place: "general-behavior" },
+      { ids: ["remember-back-forward-history"], place: "general-display" },
     ],
   },
 ] as const satisfies ReadonlyArray<{
