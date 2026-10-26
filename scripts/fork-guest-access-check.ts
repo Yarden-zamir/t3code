@@ -32,11 +32,7 @@ const BUILD_PATHS = [
   "/favicon.ico",
   "/apple-touch-icon.png",
 ];
-const GUEST_API_PATHS = [
-  "/api/guest/session?share=check",
-  "/api/guest/stream?share=check",
-  "/api/guest/tool-output-image?share=check&item=check&index=0",
-];
+const GUEST_API_PATHS = ["/api/guest/session?share=check", "/api/guest/stream?share=check"];
 
 /** Access answers with a redirect to its login, or with its own 401 or 403. */
 async function classify(response: Response): Promise<Seen> {

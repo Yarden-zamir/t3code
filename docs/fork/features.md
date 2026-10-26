@@ -73,7 +73,7 @@ A desktop server that listens on loopback makes pairing links with its tunnel UR
 
 ### Guest links over the tunnel
 
-Upstream guest links ([Guest links](../user/guest-links.md)) need T3 Connect, and fork builds have no T3 Connect. Without T3 Connect, a guest link uses the host of the server's Cloudflare tunnel. The guest page also shows the images of tool output, for example browser screenshots.
+Upstream guest links ([Guest links](../user/guest-links.md)) need T3 Connect, and fork builds have no T3 Connect. Without T3 Connect, a guest link uses the host of the server's Cloudflare tunnel.
 
 - **Setting:** the upstream beta `guestSharingEnabled` (off by default), Settings > Beta > Guest links. The tunnel address is `T3CODE_TUNNEL_PAIRING_URL`, or the tunnel of a machine map join.
 - **Works on:** server. The guest uses any browser. The owner creates links from web, desktop and mobile, as upstream.
