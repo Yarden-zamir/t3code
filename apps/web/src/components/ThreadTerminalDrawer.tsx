@@ -506,6 +506,7 @@ export function TerminalViewport(props: TerminalViewportProps) {
     props.worktreePath ?? null,
     runtimeEnvSignature(props.runtimeEnv),
     props.shell ?? null,
+    props.draft === true,
   ]);
   return <TerminalSessionViewport key={sessionKey} {...props} />;
 }
@@ -617,7 +618,7 @@ function TerminalSessionViewport({
       ...(shell ? { shell } : {}),
     },
     draft,
-  });
+  );
   // Attaching starts with the viewport, while the WASM surface is still loading;
   // the surface reads the session itself, so output chunks never re-render here.
   useAtomMount(terminalSessionAtom);
