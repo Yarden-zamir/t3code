@@ -1,34 +1,33 @@
-import * as NodeFS from "node:fs";
-import * as NodePath from "node:path";
 import { expect, it } from "vite-plus/test";
 
 import { isSet, readRouteHost, readVars, writeRoute, writeVar } from "./wranglerConfig.ts";
 
-const config = NodeFS.readFileSync(
-  NodePath.join(import.meta.dirname, "..", "wrangler.jsonc"),
-  "utf8",
-);
+const CONFIG = `{
+  "name": "t3-machine-map",
+  "routes": [{ "pattern": "t3.example.com", "custom_domain": true }],
+  "vars": {
+    // The account.
+    "ACCOUNT_ID": "account",
+    "PAGE_AUD": "REPLACE_ME",
+  },
+}`;
 
-it("reads the values of the real wrangler.jsonc", () => {
-  const vars = readVars(config);
-  for (const key of [
-    "ACCOUNT_ID",
-    "TEAM_DOMAIN",
-    "PAGE_AUD",
-    "CONNECT_ACCESS_APP_ID",
-    "MACHINE_ZONE_ID",
-  ])
-    expect(isSet(vars.get(key)), key).toBe(true);
-  expect(readRouteHost(config)).toBe("t3.yarden-zamir.com");
-  expect(isSet("REPLACE_ME")).toBe(false);
+it("reads the values and the route host, and treats REPLACE_ values as not set", () => {
+  const vars = readVars(CONFIG);
+  expect(vars.get("ACCOUNT_ID")).toBe("account");
+  expect(isSet(vars.get("ACCOUNT_ID"))).toBe(true);
+  expect(isSet(vars.get("PAGE_AUD"))).toBe(false);
+  expect(readRouteHost(CONFIG)).toBe("t3.example.com");
 });
 
 it("changes only the value lines and keeps the comments", () => {
-  const next = writeRoute(writeVar(config, "PAGE_AUD", "new-aud"), "t3.example.com");
+  const next = writeRoute(writeVar(CONFIG, "PAGE_AUD", "new-aud"), "t3.other.org");
   expect(readVars(next).get("PAGE_AUD")).toBe("new-aud");
-  expect(readRouteHost(next)).toBe("t3.example.com");
-  expect(next.split("\n").filter((line) => line.trim().startsWith("//"))).toEqual(
-    config.split("\n").filter((line) => line.trim().startsWith("//")),
-  );
-  expect(next.split("\n")).toHaveLength(config.split("\n").length);
+  expect(readRouteHost(next)).toBe("t3.other.org");
+  expect(next).toContain("// The account.");
+  expect(next.split("\n")).toHaveLength(CONFIG.split("\n").length);
+});
+
+it("refuses a route that it cannot rewrite on one line", () => {
+  expect(() => writeRoute(CONFIG.replace('"pattern": ', '"zone": '), "x")).toThrow();
 });

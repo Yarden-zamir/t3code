@@ -9,7 +9,13 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import * as NodeUtil from "node:util";
 
-import { CloudflareApi, isPermissionRefusal, type GuestApp } from "../src/cloudflare.ts";
+import {
+  CloudflareApi,
+  CloudflareApiError,
+  isPermissionRefusal,
+  ownerPolicy,
+  type GuestApp,
+} from "../src/cloudflare.ts";
 import { isSet, readRouteHost, readVars, writeRoute, writeVar } from "./wranglerConfig.ts";
 
 const WRANGLER_CONFIG = NodePath.join(import.meta.dirname, "..", "wrangler.jsonc");
@@ -44,18 +50,40 @@ function printLinks(): void {
   );
 }
 
-// Access apps: found by their hostnames, so the apps of a setup by hand count too.
+// Access apps: found by the stored id or audience first, then by hostname, so the apps of a
+// setup by hand count too. A stored value that matches no app stops the run: a new app would get
+// a new audience and lock the owner out after the next deploy.
 
-const uris = (app: GuestApp) => (app.destinations ?? []).flatMap((d) => (d.uri ? [d.uri] : []));
+const normalHost = (uri: string): string => {
+  let host = uri.trim().toLowerCase();
+  while (host.endsWith("/")) host = host.slice(0, -1);
+  return host;
+};
+
+const appHosts = (app: GuestApp) =>
+  [...(app.destinations ?? []).flatMap((d) => (d.uri ? [d.uri] : [])), app.domain ?? ""]
+    .filter((uri) => uri !== "")
+    .map(normalHost);
+
+class SetupStop extends Error {}
 
 async function ensureApp(
   api: CloudflareApi,
   apps: ReadonlyArray<GuestApp>,
   label: string,
   uri: string,
+  stored: { readonly id?: string | undefined; readonly aud?: string | undefined },
   body: Record<string, unknown>,
 ): Promise<{ readonly id: string; readonly aud: string }> {
-  const found = apps.find((app) => uris(app).includes(uri));
+  const byStored = apps.find(
+    (app) =>
+      (isSet(stored.id) && app.id === stored.id) || (isSet(stored.aud) && app.aud === stored.aud),
+  );
+  if (byStored === undefined && (isSet(stored.id) || isSet(stored.aud)))
+    throw new SetupStop(
+      `${label}: wrangler.jsonc names an app that this account does not have. Check ACCOUNT_ID, or set the value to REPLACE_ME to make a new app.`,
+    );
+  const found = byStored ?? apps.find((app) => appHosts(app).includes(normalHost(uri)));
   if (found) {
     console.log(`ok       ${label}: the app "${found.name}" covers ${uri}`);
     return { id: found.id, aud: await api.accessAppAud(found.id) };
@@ -71,10 +99,32 @@ async function ensureApp(
   return { id, aud: await api.accessAppAud(id) };
 }
 
+/** Owner emails change only in wrangler.jsonc: an app that exists keeps its policy. */
+function warnOwners(app: GuestApp | undefined, label: string, owners: ReadonlyArray<string>) {
+  const wanted = JSON.stringify(
+    ownerPolicy(owners)
+      .include.map((r) => JSON.stringify(r))
+      .toSorted(),
+  );
+  const matches = (app?.policies ?? []).some(
+    (policy) =>
+      policy.decision === "allow" &&
+      JSON.stringify(policy.include.map((r) => JSON.stringify(r)).toSorted()) === wanted,
+  );
+  if (app !== undefined && !matches)
+    console.log(
+      `warning  ${label}: no policy of "${app.name}" lists exactly the owner emails. Check it in the Zero Trust dashboard.`,
+    );
+}
+
 // Secrets go through the owner's `wrangler login`, never through the portal token.
 
-function wrangler(args: ReadonlyArray<string>, input?: string): { ok: boolean; out: string } {
-  const env = { ...NodeProcess.env };
+function wrangler(
+  accountId: string,
+  args: ReadonlyArray<string>,
+  input?: string,
+): { ok: boolean; out: string } {
+  const env: NodeJS.ProcessEnv = { ...NodeProcess.env, CLOUDFLARE_ACCOUNT_ID: accountId };
   delete env.CF_API_TOKEN;
   delete env.CLOUDFLARE_API_TOKEN;
   const result = NodeChildProcess.spawnSync(WRANGLER, args, {
@@ -86,9 +136,14 @@ function wrangler(args: ReadonlyArray<string>, input?: string): { ok: boolean; o
   return { ok: result.status === 0, out: `${result.stdout}${result.stderr}` };
 }
 
-function workerSecrets(): ReadonlySet<string> | null {
-  const listed = wrangler(["secret", "list", "--format", "json"]);
-  if (!listed.ok) return null;
+/** The secret names of the Worker, or null when the Worker does not exist yet. */
+function workerSecrets(accountId: string): ReadonlySet<string> | null {
+  const listed = wrangler(accountId, ["secret", "list", "--format", "json"]);
+  if (!listed.ok) {
+    // Cloudflare error 10007: the Worker does not exist. Any other failure is a real error.
+    if (listed.out.includes("10007")) return null;
+    throw new SetupStop(`wrangler secret list failed. Run wrangler login first.\n${listed.out}`);
+  }
   const parsed: unknown = JSON.parse(listed.out.slice(listed.out.indexOf("[")));
   if (!Array.isArray(parsed)) throw new Error("wrangler secret list gave no list.");
   return new Set(
@@ -103,10 +158,22 @@ function workerSecrets(): ReadonlySet<string> | null {
   );
 }
 
-function putSecret(name: string, value: string): void {
-  const put = wrangler(["secret", "put", name], value);
+function putSecret(accountId: string, name: string, value: string): void {
+  const put = wrangler(accountId, ["secret", "put", name], value);
   if (!put.ok) throw new Error(`wrangler secret put ${name} failed: ${put.out}`);
   console.log(`set      secret ${name}`);
+}
+
+/** `owner/name` of the `origin` remote on GitHub, so a fork never writes to its upstream. */
+function originRepo(): string {
+  const url = NodeChildProcess.execFileSync("git", ["remote", "get-url", "origin"], {
+    encoding: "utf8",
+  }).trim();
+  const mark = "github.com";
+  const at = url.indexOf(mark);
+  if (at === -1) throw new SetupStop(`origin is not on GitHub: ${url}. Pass --repo owner/name.`);
+  const path = url.slice(at + mark.length + 1);
+  return path.endsWith(".git") ? path.slice(0, -4) : path;
 }
 
 const newVapidKey = () =>
@@ -192,6 +259,8 @@ async function main(): Promise<number> {
       "owner-email": { type: "string", multiple: true },
       "machine-domain": { type: "string" },
       "replace-token": { type: "boolean", default: false },
+      "account-id": { type: "string" },
+      repo: { type: "string" },
     },
   });
   if (positionals[0] === "links") {
@@ -223,55 +292,91 @@ async function main(): Promise<number> {
     return 2;
   }
 
-  let accountId = vars.get("ACCOUNT_ID");
-  if (!isSet(accountId)) {
-    const accounts = await new CloudflareApi(token, "").accounts();
-    const [only] = accounts;
-    if (accounts.length !== 1 || only === undefined) {
-      console.error(
-        `The token sees ${accounts.length} accounts. Set ACCOUNT_ID in wrangler.jsonc.`,
-      );
-      return 2;
-    }
-    accountId = only.id;
+  const accounts = await new CloudflareApi(token, "").accounts();
+  const storedAccount = values["account-id"] ?? vars.get("ACCOUNT_ID");
+  const account =
+    accounts.find((a) => a.id === storedAccount) ??
+    (accounts.length === 1 ? accounts[0] : undefined);
+  if (account === undefined) {
+    console.error(
+      `The token sees ${accounts.length} accounts, and ACCOUNT_ID is not one of them. Pass --account-id.`,
+    );
+    return 2;
   }
+  const accountId = account.id;
   const api = new CloudflareApi(token, accountId);
   const zoneId = await api.zoneId(machineDomain);
   if (zoneId === null) {
-    console.error(`The token cannot see the zone ${machineDomain}. Add "DNS: Edit" for it.`);
+    console.error(
+      `No zone ${machineDomain}. Give the zone apex as --machine-domain, and give the token "DNS: Edit" on it.`,
+    );
     return 2;
   }
-  const ownerPolicy = {
-    name: "t3 owner",
-    decision: "allow",
-    include: owners.map((email) => ({ email: { email } })),
-  };
+  const teamDomain = await api.teamDomain();
+  // A new Zero Trust organization has no login method, and the owner could not sign in.
+  if ((await api.identityProviders()).length === 0) {
+    await api.createOneTimePin();
+    console.log("created  login method: One-time PIN");
+  }
+
+  // A stored value counts only for the account that the run uses.
+  const sameAccount = vars.get("ACCOUNT_ID") === accountId;
+  const stored = (key: string) => (sameAccount ? vars.get(key) : undefined);
   const apps = await api.accessApps();
-  const pages = await ensureApp(api, apps, "portal pages", host, {
-    name: "t3 portal pages",
-    session_duration: "720h",
-    policies: [ownerPolicy],
-  });
+  const pages = await ensureApp(
+    api,
+    apps,
+    "portal pages",
+    host,
+    { aud: stored("PAGE_AUD") },
+    {
+      name: "t3 portal pages",
+      session_duration: "720h",
+      policies: [ownerPolicy(owners)],
+    },
+  );
   // The portal adds the policy of the machine tokens (MM-201). Until then, the app lets no one in.
-  const connect = await ensureApp(api, apps, "machine connections", `${host}/connect`, {
-    name: "t3 portal connect",
-  });
-  await ensureApp(api, apps, "enrollment", `${host}/enroll`, {
-    name: "t3 portal enroll",
-    policies: [{ name: "t3 join codes", decision: "bypass", include: [{ everyone: {} }] }],
-  });
-  const existingMachines = vars.get("MACHINE_ACCESS_APP_ID");
-  const machines = isSet(existingMachines)
-    ? { id: existingMachines }
-    : await ensureApp(api, apps, "machine hostnames", `t3-*.${machineDomain}`, {
-        name: "t3 machine hosts",
-        session_duration: "720h",
-        policies: [ownerPolicy],
-      });
+  const connect = await ensureApp(
+    api,
+    apps,
+    "machine connections",
+    `${host}/connect`,
+    { id: stored("CONNECT_ACCESS_APP_ID"), aud: stored("CONNECT_AUD") },
+    { name: "t3 portal connect" },
+  );
+  await ensureApp(
+    api,
+    apps,
+    "enrollment",
+    `${host}/enroll`,
+    {},
+    {
+      name: "t3 portal enroll",
+      policies: [{ name: "t3 join codes", decision: "bypass", include: [{ everyone: {} }] }],
+    },
+  );
+  const machines = await ensureApp(
+    api,
+    apps,
+    "machine hostnames",
+    `t3-*.${machineDomain}`,
+    { id: stored("MACHINE_ACCESS_APP_ID") },
+    { name: "t3 machine hosts", session_duration: "720h", policies: [ownerPolicy(owners)] },
+  );
+  warnOwners(
+    apps.find((app) => app.id === pages.id),
+    "portal pages",
+    owners,
+  );
+  warnOwners(
+    apps.find((app) => app.id === machines.id),
+    "machine hostnames",
+    owners,
+  );
 
   const wanted: ReadonlyArray<readonly [string, string]> = [
     ["ACCOUNT_ID", accountId],
-    ["TEAM_DOMAIN", await api.teamDomain()],
+    ["TEAM_DOMAIN", teamDomain],
     ["OWNER_EMAILS", owners.join(",")],
     ["MACHINE_ACCESS_APP_ID", machines.id],
     ["PAGE_AUD", pages.aud],
@@ -291,26 +396,42 @@ async function main(): Promise<number> {
     );
   }
 
-  const secrets = workerSecrets();
+  // The first deploy needs this secret, so it comes before the Worker exists.
+  const deployToken = NodeProcess.env.CLOUDFLARE_DEPLOY_TOKEN;
+  if (deployToken) {
+    const repo = values.repo ?? originRepo();
+    const set = NodeChildProcess.spawnSync(
+      "gh",
+      ["secret", "set", "CLOUDFLARE_DEPLOY_TOKEN", "--repo", repo],
+      { input: deployToken, encoding: "utf8" },
+    );
+    if (set.status !== 0) throw new Error(`gh secret set failed: ${set.stderr}`);
+    console.log(`set      GitHub secret CLOUDFLARE_DEPLOY_TOKEN of ${repo}`);
+  }
+
+  const secrets = workerSecrets(accountId);
   if (secrets === null) {
     console.log(`\n${SECRETS_LATER}`);
     return 1;
   }
   if (!secrets.has("SECRET_KEY"))
-    putSecret("SECRET_KEY", NodeCrypto.randomBytes(32).toString("base64"));
-  if (!secrets.has("VAPID_JWK")) putSecret("VAPID_JWK", newVapidKey());
-  if (!secrets.has("CF_API_TOKEN") || values["replace-token"]) putSecret("CF_API_TOKEN", token);
-  const deployToken = NodeProcess.env.CLOUDFLARE_DEPLOY_TOKEN;
-  if (deployToken) {
-    const set = NodeChildProcess.spawnSync("gh", ["secret", "set", "CLOUDFLARE_DEPLOY_TOKEN"], {
-      input: deployToken,
-      encoding: "utf8",
-    });
-    if (set.status !== 0) throw new Error(`gh secret set failed: ${set.stderr}`);
-    console.log("set      GitHub secret CLOUDFLARE_DEPLOY_TOKEN");
-  }
+    putSecret(accountId, "SECRET_KEY", NodeCrypto.randomBytes(32).toString("base64"));
+  if (!secrets.has("VAPID_JWK")) putSecret(accountId, "VAPID_JWK", newVapidKey());
+  if (!secrets.has("CF_API_TOKEN") || values["replace-token"])
+    putSecret(accountId, "CF_API_TOKEN", token);
 
   return (await check(api, host, zoneId)) && config === before ? 0 : 1;
 }
 
-NodeProcess.exit(await main());
+async function run(): Promise<number> {
+  try {
+    return await main();
+  } catch (error) {
+    // A Cloudflare refusal names the call; a stack trace adds nothing for the owner.
+    if (!(error instanceof SetupStop) && !(error instanceof CloudflareApiError)) throw error;
+    console.error(error.message);
+    return 2;
+  }
+}
+
+NodeProcess.exit(await run());

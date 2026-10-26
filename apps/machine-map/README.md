@@ -6,7 +6,12 @@ The portal is one Cloudflare Worker with one Durable Object, at `t3.yarden-zamir
 
 ## First-time setup
 
-`scripts/setup.ts` does the setup (MM-1215). Each run makes Cloudflare, `wrangler.jsonc` and the Worker secrets match, and changes nothing that is right already. Run it from this folder.
+`scripts/setup.ts` does the setup (MM-1215). It finds or creates the Access apps, writes `wrangler.jsonc` and sets the missing secrets. It does not change an app or a secret that exists. Run it again at any time. Run it from this folder.
+
+Before the first run, do these steps in the Cloudflare dashboard once:
+
+- Add the zone of the machine hostnames to Cloudflare.
+- Turn on Zero Trust: choose a team name and the Free plan. The Free plan asks for a payment method.
 
 ### 1. Make the tokens
 
@@ -15,7 +20,7 @@ Run `node scripts/setup.ts links`. It prints two Cloudflare dashboard links with
 - The portal token, for the Worker secret `CF_API_TOKEN` (MM-1205). The dashboard link has no key for "Access: Service Tokens Edit", so add that permission by hand.
 - The deploy token, for the GitHub secret `CLOUDFLARE_DEPLOY_TOKEN`, with "Workers Scripts: Edit" and "Workers Routes: Edit".
 
-On each link, choose the account and the zone of the machine hostnames, then create the token. The portal token needs these permissions:
+On each link, choose the account. The link selects all zones: narrow "DNS: Edit" and "Zone WAF Edit" to the zone of the machine hostnames. Then create the token. The portal token needs these permissions:
 
 | Permission                                                 | Scope                     | What the portal does with it                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -40,14 +45,14 @@ CF_API_TOKEN=<portal token> CLOUDFLARE_DEPLOY_TOKEN=<deploy token> node scripts/
 
 The values in `wrangler.jsonc` are the defaults of the three options. The setup does these steps:
 
-1. It finds the account, the zone of `--machine-domain` and the team domain of the Zero Trust organization.
-2. It finds or creates the Access apps. It finds an app by its hostname, so it also uses apps made by hand:
+1. It finds the account, the zone of `--machine-domain` and the team domain of the Zero Trust organization. With more than one account, pass `--account-id`. It adds the One-time PIN login when the organization has no login method, so the owner can sign in.
+2. It finds or creates the Access apps. It finds an app by the id or the audience in `wrangler.jsonc`, else by its hostname, so it also uses apps made by hand. When `wrangler.jsonc` names an app that the account does not have, it stops, because a new app gets a new audience. It warns when an app that exists does not allow exactly the owner emails:
    - The portal pages and API, for the host, with the owner emails and a session of 30 days (MM-103).
    - The machine connections, for `<host>/connect`. The portal adds the policy of the machine tokens (MM-201, MM-104).
    - The enrollment, for `<host>/enroll`, with a Bypass policy for everyone. The join code is the credential (MM-204). This app also covers `/enroll/client` (MM-913).
-   - The machine hostnames, for `t3-*.<machine domain>`, with the owner emails. It skips this app when `MACHINE_ACCESS_APP_ID` is set already. The portal adds each machine token to its `t3 machine map tokens` policy and each app token of a native client to its `t3 client tokens` policy (MM-911). It edits no other policy. It also adds and removes the hostname of each machine tunnel (MM-213). That update sends back the whole app with its policies, and the portal checks that the app keeps each policy.
+   - The machine hostnames, for `t3-*.<machine domain>`, with the owner emails. It uses the app of `MACHINE_ACCESS_APP_ID` when that is set. The portal adds each machine token to its `t3 machine map tokens` policy and each app token of a native client to its `t3 client tokens` policy (MM-911). It edits no other policy. It also adds and removes the hostname of each machine tunnel (MM-213). That update sends back the whole app with its policies, and the portal checks that the app keeps each policy.
 3. It writes the values to `wrangler.jsonc`: the account, the team domain, the owner emails, the app ids and audiences, the machine domain and zone, and the route of the host.
-4. It sets the missing Worker secrets: a new `SECRET_KEY` (MM-1201), a new `VAPID_JWK` (MM-1807) and `CF_API_TOKEN`. It keeps a secret that exists. `--replace-token` sets `CF_API_TOKEN` again. With `CLOUDFLARE_DEPLOY_TOKEN`, it also sets that GitHub secret with `gh`.
+4. It sets the missing Worker secrets: a new `SECRET_KEY` (MM-1201), a new `VAPID_JWK` (MM-1807) and `CF_API_TOKEN`. It keeps a secret that exists. `--replace-token` sets `CF_API_TOKEN` again. With `CLOUDFLARE_DEPLOY_TOKEN`, it first sets that GitHub secret with `gh`, on the repository of the `origin` remote or of `--repo`. It does this before the first deploy, which needs it.
 5. It checks what the portal token can read, and what a visitor without a login meets on the host.
 
 When `wrangler.jsonc` changed, commit it and merge it to main. The workflow deploys the portal, see [Deploy](#deploy). Then run the setup again: before the first deploy the Worker does not exist, so it cannot hold secrets yet. The setup exits with 0 when everything is right.
@@ -58,6 +63,8 @@ These steps stay manual:
 
 - Making the two tokens. Cloudflare makes an API token only for a person in the dashboard, or for another token that may make tokens. The link fills in the permissions.
 - `wrangler login`. It is a browser login of the owner.
+- The zone and Zero Trust steps above. Cloudflare asks the person for the team name and the payment method.
+- In a new fork: turn on GitHub Actions, and change `CLOUDFLARE_ACCOUNT_ID` in `.github/workflows/fork-machine-map-deploy.yml` to your account.
 - The merge to main. Only the workflow deploys.
 - Registering the passkey of approvals (step 3). Cloudflare asks the person for it.
 - `MACHINE_ACCESS_SUBJECTS` (optional, MM-213). Access subjects that a joined machine allows next to the owner emails, comma separated, for example the client id of the desktop service token. Set it with `./node_modules/.bin/wrangler secret put MACHINE_ACCESS_SUBJECTS`.

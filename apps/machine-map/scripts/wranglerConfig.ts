@@ -44,7 +44,9 @@ export function writeVar(text: string, key: string, value: string): string {
 export function writeRoute(text: string, host: string): string {
   const lines = text.split("\n");
   const index = lines.findIndex((line) => line.trim().startsWith('"routes":'));
-  if (index === -1) throw new Error('wrangler.jsonc has no "routes" line.');
+  // A route over several lines would need a JSONC parser that keeps comments.
+  if (index === -1 || !lines[index]?.includes('"pattern":'))
+    throw new Error('wrangler.jsonc needs its route on one "routes" line with a "pattern".');
   lines[index] = `  "routes": [{ "pattern": ${JSON.stringify(host)}, "custom_domain": true }],`;
   return lines.join("\n");
 }
