@@ -31,6 +31,7 @@
         "sign-macos.ts",
         "verify-windows-desktop-artifact.ts",
         "fork-build-cache-prune.ts",
+        "fork-guest-access-check.ts",
       ],
       "ignoreDependencies": ["agent-device", "esbuild"],
       // The `t3` npm package's files: copied into the package, never imported.
