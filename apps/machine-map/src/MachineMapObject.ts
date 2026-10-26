@@ -66,6 +66,9 @@ import type {
   EnrolledEvent,
   EnrollResponse,
   CallsEvent,
+  GuestLinksStatus,
+  GuestMachineStatus,
+  GuestPartState,
   ExecsEvent,
   JoinCodeRequest,
   JoinCodeResponse,
@@ -92,7 +95,21 @@ import type {
   HealthEvent,
   ResourceSampleEvent,
 } from "./api.ts";
-import { CLOUDFLARE_STEP_PERMISSION, PauseState } from "./api.ts";
+import { CLOUDFLARE_STEP_PERMISSION, GuestRules, PauseState } from "./api.ts";
+import {
+  EMPTY_GUEST_RULES,
+  foreignGuestApp,
+  GUEST_SETTING,
+  guestAppBody,
+  guestAppName,
+  guestAppProblem,
+  guestLinksOn,
+  guestHostProblem,
+  guestPolicies,
+  guestRateLimitProblem,
+  normalizeGuestRules,
+  type GuestAppKind,
+} from "./guestLinks.ts";
 import { configured, ownerEmails } from "./access.ts";
 import { HEALTH_TABLES, HealthStore, TimedResourcePoint } from "./healthStore.ts";
 import {
@@ -110,6 +127,7 @@ import {
   isPermissionRefusal,
   tunnelTarget,
   type ApprovalsApp,
+  type GuestApp,
 } from "./cloudflare.ts";
 import type { Env } from "./env.ts";
 import {
@@ -220,6 +238,16 @@ const approvalsProblemText = (problem: ApprovalsProblem): string =>
     ? problem.reason
     : "Do the Cloudflare step of Set up approvals first (MM-1208).";
 
+/** MM-1210: an Access app that the portal did not make covers a guest path. */
+const foreignAppText = (app: GuestApp): string =>
+  `The Access app "${app.name}" covers a guest path, and the portal did not make it. Delete it in the Zero Trust dashboard, then select Apply again.`;
+
+/** MM-1209: a missing permission names the permission, never the raw Cloudflare error. */
+const guestErrorText = (error: unknown): string =>
+  isPermissionRefusal(error)
+    ? `The CF_API_TOKEN cannot edit Access apps. Add "${CLOUDFLARE_STEP_PERMISSION.appLauncher}" to the token (MM-1205).`
+    : errorMessage(error);
+
 /** Header from the Worker with the client id of a verified machine token. */
 export const MACHINE_CLIENT_ID_HEADER = "X-Map-Machine-Client-Id";
 
@@ -275,6 +303,16 @@ const PauseRecord = Schema.Struct({ state: PauseState, before: PausedAccess });
 type PauseRecord = typeof PauseRecord.Type;
 const decodePause = decodeJson(PauseRecord);
 const decodeApprovalsApp = decodeJson(Schema.Struct({ id: Schema.String, aud: Schema.String }));
+const decodeGuestRules = decodeJson(GuestRules);
+
+/** MM-1210: the guest and build apps that the portal made on the host of one machine. */
+interface GuestAppsRow extends Record<string, SqlStorageValue> {
+  readonly machine_id: string;
+  readonly hostname: string;
+  readonly guest_app_id: string | null;
+  readonly build_app_id: string | null;
+}
+const GUEST_APP_COLUMN = { guest: "guest_app_id", build: "build_app_id" } as const;
 /** MM-913: an invite of a native app works this long. */
 const INVITE_MINUTES = 15;
 const decodeHelloProtocol = Schema.decodeUnknownOption(
@@ -521,6 +559,7 @@ export class MachineMapObject extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, sign_in_id TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS exec_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS call_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS guest_apps (machine_id TEXT PRIMARY KEY, hostname TEXT NOT NULL, guest_app_id TEXT, build_app_id TEXT);
     `);
     this.ctx.storage.sql.exec(HEALTH_TABLES);
     this.#dropManageSetting();
@@ -2716,6 +2755,16 @@ export class MachineMapObject extends DurableObject<Env> {
       for (const ws of this.ctx.getWebSockets(machineTag(machineId)))
         ws.close(4004, "This machine left the map.");
       this.#broadcast(this.#rotationsEvent());
+      // MM-1210, MM-1213: in the Apply queue, after the machine left the map, so a running Apply
+      // cannot make its apps again. The last machine with guest links takes the rule with it.
+      if (api) {
+        const failed = await this.#guestSerial(async () => {
+          const row = this.#guestRows().find((r) => r.machine_id === machineId);
+          if (row) await this.#removeGuestApps(api, row);
+          return this.#syncGuestRateLimit(api, this.#guestHosts("").length > 0);
+        });
+        if (failed !== null) console.error(failed);
+      }
       return { machineId, tokenDeleted };
     });
   }
@@ -3000,6 +3049,356 @@ export class MachineMapObject extends DurableObject<Env> {
       }
       return (await this.#approvalsProblem(host)) ?? this.#approvalsReady();
     });
+  }
+
+  // MM-1210: guest links. `portalHost` is the host of the page, which no guest app may cover.
+
+  /** GET /api/guests. */
+  guestLinksStatus(owner: OwnerContext, portalHost: string) {
+    return this.#run(owner, () => this.#guestStatus(portalHost, []));
+  }
+
+  /** Saves the rules for every machine, then applies them. */
+  setGuestRules(owner: OwnerContext, portalHost: string, rules: GuestRules) {
+    return this.#run(owner, async () => {
+      const normalized = normalizeGuestRules(rules);
+      if ("error" in normalized) throw new PortalError(400, normalized.error);
+      this.#sql(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('guest_rules', ?)",
+        JSON.stringify(normalized.rules),
+      );
+      return this.#guestStatus(portalHost, await this.#applyGuestLinks(portalHost));
+    });
+  }
+
+  /** Turns guest links on or off for one machine as a map revision, then applies the setup. */
+  setGuestLinks(owner: OwnerContext, portalHost: string, machineId: MachineId, enabled: boolean) {
+    return this.#run(owner, async () => {
+      const machine = findMachine(this.#map, machineId);
+      if (!machine) throw new PortalError(404, `Unknown machine ${machineId}.`);
+      if (guestLinksOn(this.#map, this.#reportedSettings(machineId), machineId) !== enabled) {
+        this.#commit(
+          ownerActor(owner),
+          `Guest links ${enabled ? "on" : "off"} for ${machine.name}`,
+          [
+            {
+              _tag: "setSetting",
+              machineId,
+              scope: "server",
+              key: GUEST_SETTING,
+              present: true,
+              value: enabled,
+            },
+          ],
+        );
+      }
+      return this.#guestStatus(portalHost, await this.#applyGuestLinks(portalHost));
+    });
+  }
+
+  /** "Apply": makes Cloudflare match the rules and the machines with guest links on. */
+  applyGuestLinks(owner: OwnerContext, portalHost: string) {
+    return this.#run(owner, async () =>
+      this.#guestStatus(portalHost, await this.#applyGuestLinks(portalHost)),
+    );
+  }
+
+  #guestRules(): GuestRules {
+    const row = this.#sql<{ value: string }>("SELECT value FROM meta WHERE key = 'guest_rules'")[0];
+    return row ? decodeGuestRules(row.value) : EMPTY_GUEST_RULES;
+  }
+
+  #guestRows(): Array<GuestAppsRow> {
+    return this.#sql<GuestAppsRow>("SELECT * FROM guest_apps");
+  }
+
+  /**
+   * Each machine with guest links on and a hostname, with the reason the portal must not make apps
+   * on that host (MM-1210), or null.
+   */
+  #guestHosts(portalHost: string): Array<{
+    readonly id: MachineId;
+    readonly name: string;
+    readonly hostname: string;
+    readonly problem: string | null;
+  }> {
+    const hostnames = this.#map.machines.flatMap((m) =>
+      m.hostname === null ? [] : [{ id: m.id, hostname: m.hostname }],
+    );
+    return this.#map.machines.flatMap((m) => {
+      if (m.hostname === null || !guestLinksOn(this.#map, this.#reportedSettings(m.id), m.id))
+        return [];
+      const others = hostnames.filter((h) => h.id !== m.id).map((h) => h.hostname);
+      const tunnelHost = this.#tunnelRow(m.id)?.hostname ?? null;
+      const problem = guestHostProblem(
+        m.hostname,
+        this.env.MACHINE_DOMAIN,
+        tunnelHost,
+        portalHost,
+        others,
+      );
+      return [{ id: m.id, name: m.name, hostname: m.hostname, problem }];
+    });
+  }
+
+  /** Deletes the apps of one row, then the row. A 404 counts as done. */
+  async #removeGuestApps(api: CloudflareApi, row: GuestAppsRow): Promise<void> {
+    for (const id of [row.guest_app_id, row.build_app_id]) {
+      if (id !== null) await api.deleteAccessApp(id);
+    }
+    this.#sql("DELETE FROM guest_apps WHERE machine_id = ?", row.machine_id);
+  }
+
+  /** The rate limit rule exists while a machine has guest links on (MM-1213). */
+  async #syncGuestRateLimit(api: CloudflareApi, needed: boolean): Promise<string | null> {
+    const zoneId = this.env.MACHINE_ZONE_ID;
+    if (!configured(zoneId)) return null;
+    try {
+      if (needed) await api.ensureGuestRateLimit(zoneId);
+      else await api.removeGuestRateLimit(zoneId);
+      return null;
+    } catch (error) {
+      // A missing permission shows as the Cloudflare step of the status.
+      return isPermissionRefusal(error)
+        ? null
+        : `Could not set the rate limit rule: ${errorMessage(error)}`;
+    }
+  }
+
+  /** Every Access app, for the checks by name and by path. A refusal names the permission. */
+  async #accessApps(api: CloudflareApi): Promise<ReadonlyArray<GuestApp>> {
+    try {
+      return await api.accessApps();
+    } catch (error) {
+      if (isPermissionRefusal(error)) throw new PortalError(403, guestErrorText(error));
+      throw error;
+    }
+  }
+
+  /** The last Apply could not add the One-time PIN login, so the status shows the manual step. */
+  #pinCreateRefused = false;
+  /** Applies run one at a time, so two pages never make the same app twice. */
+  #guestApply: Promise<unknown> = Promise.resolve();
+
+  #applyGuestLinks(portalHost: string): Promise<Array<string>> {
+    return this.#guestSerial(() => this.#applyGuestLinksNow(portalHost));
+  }
+
+  #guestSerial<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.#guestApply.then(work, work);
+    this.#guestApply = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
+   * Makes or repairs the apps of every guest host, removes the apps of every other row, and adds
+   * or removes the rate limit rule. Returns what failed. A missing permission is no failure: the
+   * status shows it.
+   */
+  async #applyGuestLinksNow(portalHost: string): Promise<Array<string>> {
+    const api = this.#cloudflare();
+    if (!api) return [];
+    const errors: Array<string> = [];
+    const all = this.#guestHosts(portalHost);
+    const hosts = all.filter((host) => host.problem === null);
+    for (const row of this.#guestRows()) {
+      const host = hosts.find((h) => h.id === row.machine_id);
+      if (host?.hostname === row.hostname) continue;
+      try {
+        await this.#removeGuestApps(api, row);
+      } catch (error) {
+        errors.push(`Could not remove the guest apps of ${row.hostname}: ${guestErrorText(error)}`);
+      }
+    }
+    const rateLimitError = await this.#syncGuestRateLimit(api, all.length > 0);
+    if (rateLimitError !== null) errors.push(rateLimitError);
+    if (hosts.length === 0) return errors;
+    let pinId: string | null;
+    try {
+      pinId = await api.oneTimePinId();
+    } catch (error) {
+      if (!isPermissionRefusal(error))
+        errors.push(`Could not read the login methods: ${errorMessage(error)}`);
+      return errors;
+    }
+    if (pinId === null) {
+      try {
+        pinId = await api.createOneTimePin();
+      } catch (error) {
+        if (isPermissionRefusal(error)) this.#pinCreateRefused = true;
+        else errors.push(`Could not add the One-time PIN login: ${errorMessage(error)}`);
+        return errors;
+      }
+    }
+    this.#pinCreateRefused = false;
+    const policies = guestPolicies(this.#guestRules(), ownerEmails(this.env));
+    let apps = await this.#accessApps(api);
+    for (const host of hosts) {
+      for (const kind of ["guest", "build"] as const) {
+        try {
+          const body = guestAppBody(kind, host.hostname, policies, pinId);
+          const current = await this.#guestApp(api, apps, host.id, kind, host.hostname);
+          if (current !== null && guestAppProblem(current, body) === null) {
+            this.#saveGuestApp(host.id, host.hostname, kind, current.id);
+            continue;
+          }
+          if (current !== null) {
+            await api.deleteAccessApp(current.id);
+            apps = apps.filter((app) => app.id !== current.id);
+          }
+          const foreign = foreignGuestApp(apps, kind, host.hostname);
+          if (foreign !== null) {
+            errors.push(foreignAppText(foreign));
+            continue;
+          }
+          this.#saveGuestApp(host.id, host.hostname, kind, await api.createAccessApp(body));
+        } catch (error) {
+          errors.push(`${host.name}: ${guestErrorText(error)}`);
+        }
+      }
+    }
+    return errors;
+  }
+
+  /**
+   * The app of `kind` that the portal made for the host: by the stored id, or else by its name,
+   * so a lost row does not make a twin.
+   */
+  async #guestApp(
+    api: CloudflareApi,
+    apps: ReadonlyArray<GuestApp>,
+    machineId: MachineId,
+    kind: GuestAppKind,
+    hostname: string,
+  ): Promise<GuestApp | null> {
+    const row = this.#guestRows().find((r) => r.machine_id === machineId);
+    const stored = row?.hostname === hostname ? row[GUEST_APP_COLUMN[kind]] : null;
+    const id = stored ?? apps.find((app) => app.name === guestAppName(kind, hostname))?.id ?? null;
+    return id === null ? null : api.guestApp(id);
+  }
+
+  #saveGuestApp(machineId: MachineId, hostname: string, kind: GuestAppKind, appId: string): void {
+    this.#sql(
+      "INSERT INTO guest_apps (machine_id, hostname) VALUES (?, ?) ON CONFLICT (machine_id) DO NOTHING",
+      machineId,
+      hostname,
+    );
+    this.#sql(
+      `UPDATE guest_apps SET hostname = ?, ${GUEST_APP_COLUMN[kind]} = ? WHERE machine_id = ?`,
+      hostname,
+      appId,
+      machineId,
+    );
+  }
+
+  /** What Cloudflare holds now, compared with the rules and the machines. */
+  async #guestStatus(portalHost: string, errors: ReadonlyArray<string>): Promise<GuestLinksStatus> {
+    const rules = this.#guestRules();
+    const hosts = this.#guestHosts(portalHost);
+    const rows = this.#guestRows();
+    const api = this.#cloudflare();
+    const machineStatus = (
+      state: (machine: {
+        id: MachineId;
+        hostname: string | null;
+        enabled: boolean;
+      }) => Promise<GuestPartState>,
+    ) =>
+      Promise.all(
+        this.#map.machines.map(async (m): Promise<GuestMachineStatus> => {
+          const enabled = guestLinksOn(this.#map, this.#reportedSettings(m.id), m.id);
+          const machine = { id: m.id, hostname: m.hostname, enabled };
+          return { machineId: m.id, hostname: m.hostname, enabled, state: await state(machine) };
+        }),
+      );
+    if (!api) {
+      const problem = "Guest links need the CF_API_TOKEN secret (MM-1205).";
+      return {
+        rules,
+        problem,
+        oneTimePin: { _tag: "off" },
+        rateLimit: { _tag: "off" },
+        machines: await machineStatus(async (m) =>
+          m.enabled ? { _tag: "needsApply", reason: problem } : { _tag: "off" },
+        ),
+        errors,
+      };
+    }
+    const needed = hosts.some((host) => host.problem === null);
+    const [pin, rateLimit, apps] = await Promise.all([
+      this.#oneTimePin(api, needed),
+      this.#rateLimitState(api, hosts.length > 0),
+      needed ? this.#accessApps(api) : Promise.resolve([]),
+    ]);
+    const policies = guestPolicies(rules, ownerEmails(this.env));
+    const machines = await machineStatus(async (m): Promise<GuestPartState> => {
+      const row = rows.find((r) => r.machine_id === m.id);
+      if (!m.enabled)
+        return row
+          ? { _tag: "needsApply", reason: "Guest links are off. Apply removes its Access apps." }
+          : { _tag: "off" };
+      if (m.hostname === null) return { _tag: "noHostname" };
+      const problem = hosts.find((host) => host.id === m.id)?.problem ?? null;
+      if (problem !== null) return { _tag: "blocked", reason: problem };
+      for (const kind of ["guest", "build"] as const) {
+        const current = await this.#guestApp(api, apps, m.id, kind, m.hostname);
+        if (current === null) {
+          const foreign = foreignGuestApp(apps, kind, m.hostname);
+          if (foreign !== null) return { _tag: "blocked", reason: foreignAppText(foreign) };
+          return { _tag: "needsApply", reason: "Its Access apps are missing." };
+        }
+        if (pin.id === null)
+          return { _tag: "needsApply", reason: "The One-time PIN login is missing." };
+        const drift = guestAppProblem(current, guestAppBody(kind, m.hostname, policies, pin.id));
+        if (drift !== null) return { _tag: "needsApply", reason: drift };
+      }
+      return { _tag: "ready" };
+    });
+    return { rules, problem: null, oneTimePin: pin.state, rateLimit, machines, errors };
+  }
+
+  async #oneTimePin(
+    api: CloudflareApi,
+    needed: boolean,
+  ): Promise<{ readonly state: GuestPartState; readonly id: string | null }> {
+    try {
+      const id = await api.oneTimePinId();
+      if (id !== null) return { state: { _tag: "ready" }, id };
+      if (!needed) return { state: { _tag: "off" }, id };
+      if (this.#pinCreateRefused)
+        return { state: { _tag: "cloudflareStep", step: "oneTimePin" }, id };
+      const reason = "The One-time PIN login method is missing.";
+      return { state: { _tag: "needsApply", reason }, id };
+    } catch (error) {
+      if (!isPermissionRefusal(error)) throw error;
+      // Apply reads the login methods even when someone added One-time PIN by hand.
+      const reason = `The CF_API_TOKEN cannot read the login methods. Add "${CLOUDFLARE_STEP_PERMISSION.oneTimePin}" (or at least its Read) to the token (MM-1205).`;
+      return { state: { _tag: "blocked", reason }, id: null };
+    }
+  }
+
+  async #rateLimitState(api: CloudflareApi, needed: boolean): Promise<GuestPartState> {
+    const zoneId = this.env.MACHINE_ZONE_ID;
+    if (!configured(zoneId))
+      return needed
+        ? {
+            _tag: "blocked",
+            reason: "Set MACHINE_ZONE_ID in wrangler.jsonc for the rate limit rule.",
+          }
+        : { _tag: "off" };
+    try {
+      const { rule } = await api.guestRateLimit(zoneId);
+      if (!needed)
+        return rule
+          ? { _tag: "needsApply", reason: "No machine has guest links. Apply removes the rule." }
+          : { _tag: "off" };
+      if (rule === null) return { _tag: "needsApply", reason: "The rate limit rule is missing." };
+      const problem = guestRateLimitProblem(rule);
+      return problem === null ? { _tag: "ready" } : { _tag: "needsApply", reason: problem };
+    } catch (error) {
+      if (isPermissionRefusal(error)) return { _tag: "cloudflareStep", step: "rateLimit" };
+      throw error;
+    }
   }
 
   /** The audience that the Worker checks on the approval path (MM-1207). No owner: it runs first. */

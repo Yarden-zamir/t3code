@@ -345,11 +345,74 @@ export type ApprovalsStatus =
  */
 export type CloudflareStep = "allowPasskey" | "appLauncher";
 
+/**
+ * MM-1210: `oneTimePin` adds the One-time PIN login method. `rateLimit` adds the rate limit rule
+ * of the guest routes to the zone.
+ */
+export type GuestCloudflareStep = "oneTimePin" | "rateLimit";
+
 /** MM-1205: the token permission that lets the portal do each step itself. */
-export const CLOUDFLARE_STEP_PERMISSION: Readonly<Record<CloudflareStep, string>> = {
+export const CLOUDFLARE_STEP_PERMISSION: Readonly<
+  Record<CloudflareStep | GuestCloudflareStep, string>
+> = {
   allowPasskey: "Access: Organizations, Identity Providers, and Groups Edit",
   appLauncher: "Access: Apps and Policies Edit",
+  oneTimePin: "Access: Organizations, Identity Providers, and Groups Edit",
+  rateLimit: "Zone WAF Edit",
 };
+
+/**
+ * MM-1210: who may open a guest link, for every machine. A guest who matches one entry of
+ * `emails`, `emailDomains` or `ipRanges` gets in, and must also come from one of
+ * `requireIpRanges` when it is not empty. The owner emails always get in.
+ */
+export const GuestRules = Schema.Struct({
+  emails: Schema.Array(Text),
+  emailDomains: Schema.Array(Text),
+  ipRanges: Schema.Array(Text),
+  requireIpRanges: Schema.Array(Text),
+});
+export type GuestRules = typeof GuestRules.Type;
+
+/** POST /api/guests/rules (MM-1210). */
+export const GuestRulesRequest = Schema.Struct({ rules: GuestRules });
+export type GuestRulesRequest = typeof GuestRulesRequest.Type;
+
+/** POST /api/machines/:id/guest-links (MM-1210). */
+export const GuestMachineRequest = Schema.Struct({ enabled: Schema.Boolean });
+export type GuestMachineRequest = typeof GuestMachineRequest.Type;
+
+/** MM-1210: the state of one part of the guest links setup. */
+export type GuestPartState =
+  | { readonly _tag: "off" }
+  | { readonly _tag: "ready" }
+  /** "Apply" fixes it. */
+  | { readonly _tag: "needsApply"; readonly reason: string }
+  /** The owner does a step in Cloudflare first, because the token lacks a permission (MM-1209). */
+  | { readonly _tag: "cloudflareStep"; readonly step: GuestCloudflareStep }
+  /** The owner does something in Cloudflare that the portal must not do, for example a delete. */
+  | { readonly _tag: "blocked"; readonly reason: string }
+  | { readonly _tag: "noHostname" };
+
+export interface GuestMachineStatus {
+  readonly machineId: MachineId;
+  readonly hostname: string | null;
+  /** The value of `guestSharingEnabled` on the map, or as the machine reported it. */
+  readonly enabled: boolean;
+  readonly state: GuestPartState;
+}
+
+/** GET /api/guests (MM-1210). The POST routes answer with it too. */
+export interface GuestLinksStatus {
+  readonly rules: GuestRules;
+  /** Why the portal cannot do the setup at all, or null. */
+  readonly problem: string | null;
+  readonly oneTimePin: GuestPartState;
+  readonly rateLimit: GuestPartState;
+  readonly machines: ReadonlyArray<GuestMachineStatus>;
+  /** What failed in the last "Apply". Empty for GET. */
+  readonly errors: ReadonlyArray<string>;
+}
 
 /** GET /api/passkey (MM-1207): the Cloudflare page where the owner registers a passkey. */
 export interface PasskeyResponse {

@@ -8,19 +8,27 @@ import {
   type ApprovalsStatus,
   CLOUDFLARE_STEP_PERMISSION,
   type CloudflareStep,
+  type GuestCloudflareStep,
   type PasskeyResponse,
 } from "../api.ts";
 import { callApi, PASSKEY_STEP_TEXT } from "./apiClient.ts";
 
-const ZERO_TRUST_DASHBOARD = "https://one.dash.cloudflare.com/";
+export const ZERO_TRUST_DASHBOARD = "https://one.dash.cloudflare.com/";
 const INDEPENDENT_MFA_DOCS =
   "https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/independent-mfa/#turn-on-independent-mfa";
 const APP_LAUNCHER_DOCS =
   "https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/app-launcher/";
 
-const PermissionLine = ({ step }: { step: CloudflareStep }) => (
+/** MM-1209: the token permission that lets `action` do the step itself. */
+export const PermissionLine = ({
+  step,
+  action = "Set up approvals",
+}: {
+  step: CloudflareStep | GuestCloudflareStep;
+  action?: string;
+}) => (
   <p className="hint">
-    To let Set up approvals do this step itself, add "{CLOUDFLARE_STEP_PERMISSION[step]}" to the
+    To let {action} do this step itself, add "{CLOUDFLARE_STEP_PERMISSION[step]}" to the
     CF_API_TOKEN.
   </p>
 );
@@ -47,7 +55,7 @@ function useEnrollUrl(): string | null {
   return url;
 }
 
-const External = ({ href, children }: { href: string; children: string }) => (
+export const External = ({ href, children }: { href: string; children: string }) => (
   <a href={href} target="_blank" rel="noreferrer">
     {children}
   </a>
