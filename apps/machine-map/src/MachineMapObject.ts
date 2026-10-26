@@ -23,6 +23,7 @@ import {
   MachineId,
   MachineMapDocument,
   MachinePresence,
+  MachineStatus,
   MachineToPortal,
   MachineTunnelGrant,
   MapProposal,
@@ -44,11 +45,11 @@ import {
 import {
   HealthThresholds,
   MachineResourcesMessage,
+  ResourceSample,
   type HealthAlert,
   type HealthAlertKind,
   type PortalResourcesRequest,
   type ResourceRange,
-  type ResourceSample,
   type ResourcesOverview,
 } from "@t3tools/contracts/machineMapResources";
 
@@ -93,7 +94,7 @@ import type {
 } from "./api.ts";
 import { CLOUDFLARE_STEP_PERMISSION, PauseState } from "./api.ts";
 import { configured, ownerEmails } from "./access.ts";
-import { HEALTH_TABLES, HealthStore } from "./healthStore.ts";
+import { HEALTH_TABLES, HealthStore, TimedResourcePoint } from "./healthStore.ts";
 import {
   moveLegacySidebarTabKeys,
   renameLegacySidebarTabCommands,
@@ -123,14 +124,17 @@ import {
   usesText,
 } from "./rules/access.ts";
 import {
+  addToBlock,
   alertChanges,
   HOUR_MS,
   historyOf,
   MAX_SAMPLE_MESSAGE_BYTES,
+  mergePoints,
   MINUTE_MS,
   minuteStart,
   offlineConditions,
   offlineDueAt,
+  pointOf,
   RANGE,
   RESOURCE_ALERT_KINDS,
   resourceConditions,
@@ -222,9 +226,25 @@ export const MACHINE_CLIENT_ID_HEADER = "X-Map-Machine-Client-Id";
 const PAGE_TAG = "page";
 const machineTag = (id: MachineId) => `machine:${id}`;
 
+/**
+ * MM-1503: the minute points of the open block and the latest sample. They live on the machine
+ * socket, which keeps them through hibernation without a row write, until the block closes.
+ */
+const UnstoredSamples = Schema.Struct({
+  points: Schema.Array(TimedResourcePoint),
+  latest: ResourceSample,
+});
+type UnstoredSamples = typeof UnstoredSamples.Type;
+
+const MachineAttachment = Schema.Struct({
+  kind: Schema.Literal("machine"),
+  machineId: MachineId,
+  samples: Schema.optionalKey(UnstoredSamples),
+});
+type MachineAttachment = typeof MachineAttachment.Type;
 const Attachment = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("page") }),
-  Schema.Struct({ kind: Schema.Literal("machine"), machineId: MachineId }),
+  MachineAttachment,
 ]);
 type Attachment = typeof Attachment.Type;
 
@@ -288,6 +308,28 @@ const offline: MachinePresence = {
   appliedRevision: null,
   status: null,
 };
+
+/** MM-1001: the last-seen time of a connected machine is written at least this often. */
+const LAST_SEEN_WRITE_MS = 5 * MINUTE_MS;
+const statusEquivalence = Schema.toEquivalence(MachineStatus);
+
+/**
+ * MM-1001: whether a presence needs its row. Uptime, CPU and memory change with almost every
+ * status, so alone they wait in memory, and the last-seen time waits up to LAST_SEEN_WRITE_MS.
+ */
+function presenceNeedsWrite(saved: MachinePresence, next: MachinePresence, nowMs: number): boolean {
+  if (saved.lastSeenAt === null || nowMs - Date.parse(saved.lastSeenAt) >= LAST_SEEN_WRITE_MS)
+    return true;
+  if (saved.online !== next.online || saved.appliedRevision !== next.appliedRevision) return true;
+  if (saved.status === null || next.status === null) return saved.status !== next.status;
+  const steady = (status: MachineStatus): MachineStatus => ({
+    ...status,
+    uptimeSeconds: 0,
+    cpuPercent: null,
+    memoryPercent: null,
+  });
+  return !statusEquivalence(steady(saved.status), steady(next.status));
+}
 
 /** MM-1204: at most this many enroll attempts per address in one window. */
 const ENROLL_LIMIT = 10;
@@ -424,6 +466,8 @@ export class MachineMapObject extends DurableObject<Env> {
   #thresholds: Readonly<Record<string, HealthThresholds>>;
   /** MM-1501: when the portal last asked each machine for a sample. Lost on hibernation. */
   readonly #sampleRequests = new Map<MachineId, number>();
+  /** MM-1001: presence newer than its row, by `presenceNeedsWrite`. Lost on hibernation. */
+  readonly #unsavedPresence = new Map<MachineId, MachinePresence>();
   readonly #health: HealthStore;
   /** MM-1807: read once from `VAPID_JWK`. */
   #vapid: Promise<VapidKey | null> | undefined;
@@ -688,7 +732,7 @@ export class MachineMapObject extends DurableObject<Env> {
     );
   }
 
-  #storedPresence(id: MachineId): MachinePresence {
+  #savedPresence(id: MachineId): MachinePresence {
     const row = this.#sql<{ data: string }>(
       "SELECT data FROM presence WHERE machine_id = ?",
       id,
@@ -696,12 +740,16 @@ export class MachineMapObject extends DurableObject<Env> {
     return row ? decodePresence(row.data) : offline;
   }
 
+  #knownPresence(id: MachineId): MachinePresence {
+    return this.#unsavedPresence.get(id) ?? this.#savedPresence(id);
+  }
+
   /** MM-105: the last known state, with `online` from the open sockets. */
   #presence(id: MachineId, closing?: WebSocket): MachinePresence {
     const online = this.ctx
       .getWebSockets(machineTag(id))
       .some((ws) => ws !== closing && ws.readyState === WebSocket.OPEN);
-    return { ...this.#storedPresence(id), online };
+    return { ...this.#knownPresence(id), online };
   }
 
   #savePresence(id: MachineId, presence: MachinePresence, closing?: WebSocket): void {
@@ -710,7 +758,18 @@ export class MachineMapObject extends DurableObject<Env> {
       id,
       JSON.stringify(presence),
     );
+    this.#unsavedPresence.delete(id);
     this.#broadcast({ _tag: "presence", machineId: id, presence: this.#presence(id, closing) });
+  }
+
+  /** MM-1001: a status or an applied revision. Pages hear of each one; the row only of a change. */
+  #updatePresence(id: MachineId, presence: MachinePresence): void {
+    if (presenceNeedsWrite(this.#savedPresence(id), presence, Date.now())) {
+      this.#savePresence(id, presence);
+      return;
+    }
+    this.#unsavedPresence.set(id, presence);
+    this.#broadcast({ _tag: "presence", machineId: id, presence: this.#presence(id) });
   }
 
   #reportedSettings(id: MachineId): ScopedSettingValues {
@@ -1088,11 +1147,12 @@ export class MachineMapObject extends DurableObject<Env> {
       // MM-104, MM-208: an unknown or removed machine token never connects.
       if (!clientId || !machine) return new Response("Unknown machine token.", { status: 403 });
       for (const old of this.ctx.getWebSockets(machineTag(machine.id))) {
+        this.#storeSamples(old);
         old.close(4000, "Replaced by a new connection.");
       }
       this.ctx.acceptWebSocket(server, [machineTag(machine.id)]);
       server.serializeAttachment({ kind: "machine", machineId: machine.id } satisfies Attachment);
-      this.#savePresence(machine.id, { ...this.#storedPresence(machine.id), lastSeenAt: nowIso() });
+      this.#savePresence(machine.id, { ...this.#knownPresence(machine.id), lastSeenAt: nowIso() });
       return new Response(null, { status: 101, webSocket: client });
     }
     return new Response("Not found.", { status: 404 });
@@ -1119,12 +1179,13 @@ export class MachineMapObject extends DurableObject<Env> {
       console.error("bad machine message", machine.id, errorMessage(error));
       return;
     }
-    if (parsed._tag === "resources" && message.length > MAX_SAMPLE_MESSAGE_BYTES) {
-      console.error("sample too big", machine.id, message.length);
+    // Bytes, not characters: the sample also rides in the socket attachment, which has a byte cap.
+    const bytes = parsed._tag === "resources" ? new TextEncoder().encode(message).byteLength : 0;
+    if (bytes > MAX_SAMPLE_MESSAGE_BYTES) {
+      console.error("sample too big", machine.id, bytes);
       return;
     }
-    await this.#onMachineMessage(machine, parsed);
-    await this.#scheduleAlarm();
+    if (await this.#onMachineMessage(ws, machine, parsed)) await this.#scheduleAlarm();
   }
 
   override async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
@@ -1136,7 +1197,8 @@ export class MachineMapObject extends DurableObject<Env> {
     }
     if (attachment.kind !== "machine" || !findMachine(this.#map, attachment.machineId)) return;
     const id = attachment.machineId;
-    this.#savePresence(id, { ...this.#storedPresence(id), lastSeenAt: nowIso() }, ws);
+    this.#storeSamples(ws);
+    this.#savePresence(id, { ...this.#knownPresence(id), lastSeenAt: nowIso() }, ws);
     // MM-1505: the samples stop, so a resource alert would only show old news.
     this.#applyAlerts(id, {}, RESOURCE_ALERT_KINDS, Date.now());
     await this.#scheduleAlarm();
@@ -1149,7 +1211,12 @@ export class MachineMapObject extends DurableObject<Env> {
 
   // Machines
 
-  async #onMachineMessage(machine: MachineRecord, message: MachineMessage): Promise<void> {
+  /** Handles one machine message. True when it can change an alarm time (`#scheduleAlarm`). */
+  async #onMachineMessage(
+    ws: WebSocket,
+    machine: MachineRecord,
+    message: MachineMessage,
+  ): Promise<boolean> {
     const id = machine.id;
     switch (message._tag) {
       case "hello": {
@@ -1170,25 +1237,26 @@ export class MachineMapObject extends DurableObject<Env> {
         this.#sendDesired(id);
         await this.#sendRotation(id);
         this.#deliverCommands(id);
-        return;
+        return true;
       }
+      // The machine is online, so no offline time moves, and a delivery keeps the expiry.
       case "status": {
-        this.#savePresence(id, {
-          ...this.#storedPresence(id),
+        this.#updatePresence(id, {
+          ...this.#knownPresence(id),
           lastSeenAt: nowIso(),
           status: message.status,
         });
         this.#recordHostname(machine, message.status.hostname);
         this.#deliverCommands(id);
-        return;
+        return false;
       }
       case "applied": {
-        this.#savePresence(id, {
-          ...this.#storedPresence(id),
+        this.#updatePresence(id, {
+          ...this.#knownPresence(id),
           lastSeenAt: nowIso(),
           appliedRevision: message.revision,
         });
-        return;
+        return false;
       }
       case "localSettings": {
         const reported = this.#reportedSettings(id);
@@ -1216,12 +1284,12 @@ export class MachineMapObject extends DurableObject<Env> {
         if (message.scope === "server" && clientAccess !== undefined) {
           this.#recordLocalClientAccess(machine, clientAccess);
         }
-        return;
+        return true;
       }
       case "commandResult": {
         const command = this.#command(message.commandId);
-        if (!command || command.machineId !== id) return;
-        if (command.status !== "queued" && command.status !== "delivered") return;
+        if (!command || command.machineId !== id) return false;
+        if (command.status !== "queued" && command.status !== "delivered") return false;
         this.#saveCommand({
           ...command,
           status: message.ok ? "succeeded" : "failed",
@@ -1229,7 +1297,7 @@ export class MachineMapObject extends DurableObject<Env> {
           result: message.result,
           error: message.error,
         });
-        return;
+        return true;
       }
       case "toolCall": {
         const actor: MapActor = {
@@ -1256,30 +1324,32 @@ export class MachineMapObject extends DurableObject<Env> {
             error: errorMessage(error),
           });
         }
-        return;
+        return true;
       }
       case "resources": {
-        this.#recordSample(id, message.sample);
-        return;
+        // MM-1503: the first stored point starts the hourly prune.
+        const first = !this.#health.hasPoints();
+        this.#recordSample(ws, message.sample);
+        return first;
       }
       case "clientSeen": {
         this.#recordClientSeen(machine, message);
-        return;
+        return true;
       }
       case "execRan": {
         this.#recordExec(machine, message.report);
-        return;
+        return false;
       }
       case "callForwarded": {
         this.#recordCall(machine, message.report);
-        return;
+        return false;
       }
       case "rotated": {
         const row = this.#sql<{ token_client_id: string }>(
           "SELECT token_client_id FROM rotations WHERE machine_id = ?",
           id,
         )[0];
-        if (!row || row.token_client_id !== message.tokenClientId) return;
+        if (!row || row.token_client_id !== message.tokenClientId) return false;
         this.#sql("DELETE FROM rotations WHERE machine_id = ?", id);
         this.#broadcast(this.#rotationsEvent());
         // MM-207: the machine saved the new secret, so the old one stops now.
@@ -1290,7 +1360,7 @@ export class MachineMapObject extends DurableObject<Env> {
             console.error("could not end the previous secret", id, errorMessage(error));
           });
         }
-        return;
+        return true;
       }
     }
   }
@@ -1370,21 +1440,65 @@ export class MachineMapObject extends DurableObject<Env> {
    * MM-1503: the portal clock places the point, so a machine with a wrong clock cannot write into
    * the future.
    */
-  #recordSample(machineId: MachineId, sample: ResourceSample): void {
+  #recordSample(ws: WebSocket, sample: ResourceSample): void {
     const nowMs = Date.now();
-    this.#health.record(machineId, sample, nowMs);
+    const attachment = this.#machineAttachment(ws);
+    const machineId = attachment.machineId;
+    const { finished, unstored } = addToBlock(attachment.samples?.points ?? [], {
+      atMs: minuteStart(nowMs),
+      point: pointOf(sample),
+    });
+    if (finished.length > 0) this.#health.store(machineId, finished, sample);
+    ws.serializeAttachment({
+      ...attachment,
+      samples: { points: unstored, latest: sample },
+    } satisfies Attachment);
     this.#broadcast({ _tag: "resourceSample", machineId, sample });
     this.#checkResources(machineId, nowMs);
+  }
+
+  #machineAttachment(ws: WebSocket): MachineAttachment {
+    const attachment = decodeAttachment(ws.deserializeAttachment());
+    if (attachment.kind !== "machine") throw new Error("Expected a machine socket.");
+    return attachment;
+  }
+
+  /** MM-1503: the samples that the socket of a connected machine holds and SQLite does not. */
+  #unstoredSamples(machineId: MachineId): UnstoredSamples | undefined {
+    // A replaced socket can still be closing; its block is already stored.
+    const ws = this.ctx
+      .getWebSockets(machineTag(machineId))
+      .find((socket) => socket.readyState === WebSocket.OPEN);
+    return ws ? this.#machineAttachment(ws).samples : undefined;
+  }
+
+  /** MM-1503: a closing or replaced socket hands its open block to SQLite. */
+  #storeSamples(ws: WebSocket): void {
+    const attachment = this.#machineAttachment(ws);
+    const samples = attachment.samples;
+    if (!samples) return;
+    this.#health.store(attachment.machineId, samples.points, samples.latest);
+    // A closed socket keeps its attachment, but storing the same points again changes nothing.
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.serializeAttachment({
+        kind: "machine",
+        machineId: attachment.machineId,
+      } satisfies Attachment);
+    }
+  }
+
+  /** Minute points of one machine from `fromMs` on, stored and unstored, oldest first. */
+  #minutePoints(machineId: MachineId, fromMs: number) {
+    const unstored = (this.#unstoredSamples(machineId)?.points ?? []).filter(
+      (p) => p.atMs >= fromMs,
+    );
+    return mergePoints(this.#health.points(machineId, "minute", fromMs), unstored);
   }
 
   #checkResources(machineId: MachineId, nowMs: number): void {
     const thresholds = thresholdsFor(this.#thresholds, machineId);
     const minutes = Math.max(thresholds.cpuMinutes, thresholds.swapMinutes);
-    const points = this.#health.points(
-      machineId,
-      "minute",
-      minuteStart(nowMs) - minutes * MINUTE_MS,
-    );
+    const points = this.#minutePoints(machineId, minuteStart(nowMs) - minutes * MINUTE_MS);
     this.#applyAlerts(
       machineId,
       resourceConditions(points, thresholds),
@@ -1444,6 +1558,10 @@ export class MachineMapObject extends DurableObject<Env> {
   #overview(alerts: "active" | "page"): ResourcesOverview {
     const ids = new Set<string>(this.#map.machines.map((m) => m.id));
     const latest = this.#health.latest(ids);
+    for (const machine of this.#map.machines) {
+      const unstored = this.#unstoredSamples(machine.id);
+      if (unstored) latest[machine.id] = unstored.latest;
+    }
     return { latest, alerts: this.#alerts(alerts), thresholds: this.#thresholds };
   }
 
@@ -1504,10 +1622,13 @@ export class MachineMapObject extends DurableObject<Env> {
 
   #resourceHistory(machineId: MachineId, range: ResourceRange) {
     const spec = RANGE[range];
+    const fromMs = Date.now() - spec.spanMs;
     return historyOf(
       machineId,
       range,
-      this.#health.points(machineId, spec.step, Date.now() - spec.spanMs),
+      spec.step === "minute"
+        ? this.#minutePoints(machineId, fromMs)
+        : this.#health.points(machineId, "hour", fromMs),
     );
   }
 
@@ -2090,6 +2211,8 @@ export class MachineMapObject extends DurableObject<Env> {
       ...this.#healthAlarmTimes(),
     ];
     const at = earliest(times);
+    // Each set or delete of the alarm writes a row.
+    if (at === (await this.ctx.storage.getAlarm())) return;
     if (at === null) await this.ctx.storage.deleteAlarm();
     else await this.ctx.storage.setAlarm(at);
   }
@@ -2583,6 +2706,7 @@ export class MachineMapObject extends DurableObject<Env> {
           this.#sql(`DELETE FROM ${table} WHERE machine_id = ?`, machineId);
         }
       });
+      this.#unsavedPresence.delete(machineId);
       this.#health.removeMachine(machineId);
       if (Object.hasOwn(this.#thresholds, machineId)) {
         const { [machineId]: _removed, ...rest } = this.#thresholds;
