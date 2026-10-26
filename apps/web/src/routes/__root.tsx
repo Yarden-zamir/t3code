@@ -41,7 +41,6 @@ import { MachinePausedSurface, MachinePauseWatcher } from "../components/auth/Ma
 import { InstalledAppCoordinator } from "../components/InstalledAppCoordinator";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
-import { PullRequestGuideRunCoordinator } from "../components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
@@ -280,7 +279,6 @@ function RootRouteBranch() {
         <ForkAccessChangeNotices />
         <ProjectCloneToastCoordinator />
         <AddProjectToMachineDialogHost />
-        <PullRequestGuideRunCoordinator />
         <HostedStaticEnvironmentBootstrap />
         {primaryEnvironmentAuthenticated ? (
           <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
