@@ -1,7 +1,7 @@
 import * as NodeSqlite from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { MachineMapDocument } from "@t3tools/contracts/machineMap";
+import { MACHINE_MAP_PROTOCOL, MachineMapDocument } from "@t3tools/contracts/machineMap";
 
 import { CloudflareApi } from "./cloudflare.ts";
 import type { Env } from "./env.ts";
@@ -71,7 +71,15 @@ function portal(machines: boolean | MachineMapDocument = false, connectMac = fal
   const send = vi.fn();
   // What the portal sends to the machine MAC, for example the result of an agent tool.
   const sendToMac = vi.fn();
-  const setAlarm = vi.fn(async (_at: number) => {});
+  let alarmAt: number | null = null;
+  const setAlarm = vi.fn(async (at: number) => {
+    alarmAt = at;
+  });
+  const deleteAlarm = vi.fn(async () => {
+    alarmAt = null;
+  });
+  // Machine sockets that a test opens with `machineSocket`, by machine id.
+  const machineSockets = new Map<string, WebSocket>();
   const ctx = {
     setWebSocketAutoResponse: vi.fn(),
     getWebSockets: (tag: string) =>
@@ -79,7 +87,7 @@ function portal(machines: boolean | MachineMapDocument = false, connectMac = fal
         ? [{ send }]
         : connectMac && tag === `machine:${MAC}`
           ? [{ send: sendToMac }]
-          : [],
+          : [...machineSockets].flatMap(([id, ws]) => (tag === `machine:${id}` ? [ws] : [])),
     waitUntil: (_work: Promise<unknown>) => {},
     storage: {
       sql: {
@@ -94,7 +102,8 @@ function portal(machines: boolean | MachineMapDocument = false, connectMac = fal
       },
       transactionSync: (work: () => unknown) => work(),
       setAlarm,
-      deleteAlarm: vi.fn(async () => {}),
+      getAlarm: async () => alarmAt,
+      deleteAlarm,
     },
   } as unknown as DurableObjectState;
   const env = {
@@ -105,7 +114,17 @@ function portal(machines: boolean | MachineMapDocument = false, connectMac = fal
     DEV_FAKE_ACCESS: "1",
     ...(machines === false ? {} : { CF_API_TOKEN: "test-only" }),
   } as Env;
-  return { db, ctx, env, object: new MachineMapObject(ctx, env), send, sendToMac, setAlarm };
+  return {
+    db,
+    ctx,
+    env,
+    object: new MachineMapObject(ctx, env),
+    send,
+    sendToMac,
+    setAlarm,
+    deleteAlarm,
+    machineSockets,
+  };
 }
 
 it("reads push registration without restoring a subscription deleted by sign-out", async () => {
@@ -671,5 +690,148 @@ it("records a forwarded call for History without arguments, once per call", asyn
   expect(send.mock.calls.map(([text]) => JSON.parse(text)).at(-1)).toEqual({
     _tag: "calls",
     calls: [{ ...report, from: MAC }],
+  });
+});
+
+describe("storage use of machine messages (MM-1001, MM-1503)", () => {
+  /** A machine socket that keeps its attachment through hibernation, like the runtime. */
+  const machineSocket = (machineId: string) => {
+    let attachment: unknown = { kind: "machine", machineId };
+    return {
+      readyState: WebSocket.OPEN,
+      send: vi.fn(),
+      close: vi.fn(),
+      serializeAttachment: (value: unknown) => {
+        attachment = structuredClone(value);
+      },
+      deserializeAttachment: () => attachment,
+    } as unknown as WebSocket;
+  };
+  const status = (change: {
+    cpuPercent?: number;
+    uptimeSeconds?: number;
+    runningTurns?: number;
+  }) => ({
+    t3Version: "0.0.45",
+    build: "release",
+    hostname: null,
+    uptimeSeconds: 0,
+    runningTurns: 0,
+    waitingThreads: 0,
+    scheduledTasks: 0,
+    updateWaiting: null,
+    cpuPercent: 10,
+    memoryPercent: 50,
+    commands: [],
+    clients: [],
+    ...change,
+  });
+  const sample = (cpuPercent: number) => ({
+    at: NOW,
+    cpuPercent,
+    cpuBusyPercent: cpuPercent,
+    cpuStealPercent: null,
+    cpuPressurePercent: null,
+    cpuCount: 4,
+    load: null,
+    memoryUsedBytes: 1,
+    memoryTotalBytes: 2,
+    swapUsedBytes: null,
+    swapTotalBytes: null,
+    swapBytesPerSecond: null,
+    diskUsedBytes: null,
+    diskTotalBytes: null,
+    netInBytesPerSecond: null,
+    netOutBytesPerSecond: null,
+    t3: null,
+    agents: null,
+    topCpu: null,
+    topMemory: null,
+    battery: null,
+  });
+  /** A connected MAC, and the SQL rows written and alarm writes since the last `usage()`. */
+  async function connectedMac() {
+    const harness = portal(true);
+    const socket = machineSocket(MAC);
+    harness.machineSockets.set(MAC, socket);
+    const message = (body: unknown) =>
+      harness.object.webSocketMessage(socket, JSON.stringify(body));
+    await message({
+      _tag: "hello",
+      protocol: MACHINE_MAP_PROTOCOL,
+      appliedRevision: 0,
+      status: status({}),
+      settings: { server: {}, client: {} },
+    });
+    const totalChanges = () => Number(harness.db.prepare("SELECT total_changes() AS n").get()?.n);
+    let rows = totalChanges();
+    // `setAlarm` and `deleteAlarm` each write a row.
+    const alarmCalls = () =>
+      harness.setAlarm.mock.calls.length + harness.deleteAlarm.mock.calls.length;
+    let alarms = alarmCalls();
+    const usage = () => {
+      const now = { rows: totalChanges() - rows, alarms: alarmCalls() - alarms };
+      rows = totalChanges();
+      alarms = alarmCalls();
+      return now;
+    };
+    return { ...harness, socket, message, usage };
+  }
+  const advance = (ms: number) => vi.setSystemTime(new Date(Date.now() + ms));
+
+  it("writes presence only on a real change, and plans no alarm for a status", async () => {
+    const { message, usage, send } = await connectedMac();
+    send.mockClear();
+    for (let i = 1; i <= 100; i++) {
+      advance(5_000);
+      await message({ _tag: "status", status: status({ cpuPercent: i, uptimeSeconds: i * 5 }) });
+    }
+    // One refresh of the last-seen time after 5 minutes.
+    expect(usage()).toEqual({ rows: 1, alarms: 0 });
+    // Pages still get every status.
+    const presence = send.mock.calls
+      .map(([text]) => JSON.parse(text))
+      .filter((event) => event._tag === "presence");
+    expect(presence).toHaveLength(100);
+    expect(presence.at(-1).presence.status.cpuPercent).toBe(100);
+
+    await message({ _tag: "status", status: status({ runningTurns: 1 }) });
+    expect(usage()).toEqual({ rows: 1, alarms: 0 });
+    for (let i = 0; i < 100; i++) await message({ _tag: "applied", revision: 0 });
+    expect(usage()).toEqual({ rows: 0, alarms: 0 });
+  });
+
+  it("stores minute points in 10-minute blocks that survive hibernation and a close", async () => {
+    vi.setSystemTime(new Date("2026-10-20T09:00:00.000Z"));
+    const { message, usage, ctx, env, socket, machineSockets, db } = await connectedMac();
+    for (let i = 0; i < 30; i++) {
+      await message({ _tag: "resources", sample: sample(i) });
+      advance(60_000);
+    }
+    // Two stored blocks: their minute points, the hour point and the latest sample.
+    expect(usage()).toEqual({ rows: 6, alarms: 1 });
+
+    // A woken object reads the unstored minutes from the socket.
+    const woken = new MachineMapObject(ctx, env);
+    const hour = await woken.resources(owner, MAC, "hour");
+    if (!hour.ok) throw new Error(hour.error);
+    expect(hour.value.cpu).toEqual(Array.from({ length: 30 }, (_, i) => i));
+
+    machineSockets.delete(MAC);
+    await woken.webSocketClose(socket, 1000, "Bye.");
+    const restarted = new MachineMapObject(ctx, env);
+    const stored = await restarted.resources(owner, MAC, "hour");
+    if (!stored.ok) throw new Error(stored.error);
+    expect(stored.value.cpu).toEqual(Array.from({ length: 30 }, (_, i) => i));
+
+    // MM-1504: the close stored the exact last-seen time, so DOWN starts after 15 minutes.
+    advance(15 * 60_000 - 1);
+    await restarted.alarm();
+    expect(db.prepare("SELECT machine_id FROM health_alerts WHERE active = 1").all()).toEqual([]);
+    advance(1);
+    await restarted.alarm();
+    expect(db.prepare("SELECT machine_id FROM health_alerts WHERE active = 1").all()).toEqual([
+      { machine_id: MAC },
+    ]);
   });
 });

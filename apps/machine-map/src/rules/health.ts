@@ -68,6 +68,40 @@ export const percentOf = (used: number | null, total: number | null): number | n
 export const minuteStart = (atMs: number) => atMs - (atMs % MINUTE_MS);
 export const hourStart = (atMs: number) => atMs - (atMs % HOUR_MS);
 
+/**
+ * MM-1503: SQLite keeps the minute points of a machine in one row per block of 10 minutes, to
+ * stay under the daily row writes of the free plan. The open block waits on the machine socket.
+ */
+export const BLOCK_MS = 10 * MINUTE_MS;
+export const blockStart = (atMs: number) => atMs - (atMs % BLOCK_MS);
+
+/** Points of both lists by time, oldest first. A point of `newer` replaces one at the same time. */
+export function mergePoints(
+  older: ReadonlyArray<TimedPoint>,
+  newer: ReadonlyArray<TimedPoint>,
+): Array<TimedPoint> {
+  const times = new Set(newer.map((p) => p.atMs));
+  return [...older.filter((p) => !times.has(p.atMs)), ...newer].toSorted((a, b) => a.atMs - b.atMs);
+}
+
+/**
+ * MM-1503: adds the point of a new sample to the unstored points of the open block. A point in a
+ * later block closes the open block: its points come back in `finished`, for SQLite.
+ */
+export function addToBlock(
+  unstored: ReadonlyArray<TimedPoint>,
+  next: TimedPoint,
+): { readonly finished: ReadonlyArray<TimedPoint>; readonly unstored: ReadonlyArray<TimedPoint> } {
+  const open = blockStart(next.atMs);
+  return {
+    finished: unstored.filter((p) => blockStart(p.atMs) !== open),
+    unstored: mergePoints(
+      unstored.filter((p) => blockStart(p.atMs) === open),
+      [next],
+    ),
+  };
+}
+
 export function pointOf(sample: ResourceSample): ResourcePoint {
   return {
     cpu: sample.cpuPercent,

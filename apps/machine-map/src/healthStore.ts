@@ -1,6 +1,6 @@
 /**
- * MM-1503, MM-1505: the SQLite tables of resources and health in the Durable Object: minute and
- * hour points, the latest sample of each machine, and alerts. The rules live in `rules/health.ts`.
+ * MM-1503, MM-1505: the SQLite tables of resources and health in the Durable Object: blocks of
+ * minute points, hour points, the latest sample of each machine, and alerts. The rules live in `rules/health.ts`.
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -9,14 +9,17 @@ import { HealthAlert, ResourceSample } from "@t3tools/contracts/machineMapResour
 
 import {
   averagePoints,
+  BLOCK_MS,
+  blockStart,
+  HOUR_MS,
   HOUR_RETENTION_MS,
   hourStart,
   MAX_ENDED_ALERTS,
   MAX_HOUR_POINTS,
   MAX_MINUTE_POINTS,
+  mergePoints,
+  MINUTE_MS,
   MINUTE_RETENTION_MS,
-  minuteStart,
-  pointOf,
   type TimedPoint,
 } from "./rules/health.ts";
 
@@ -53,15 +56,23 @@ const ResourcePoint = Schema.Struct({
   agentCpu: Schema.NullOr(Schema.Number),
 });
 
+/** A minute point with its time, as a block row and the machine socket hold it. */
+export const TimedResourcePoint = Schema.Struct({ atMs: Schema.Number, point: ResourcePoint });
+
 const decodeJson = <T>(schema: Schema.ConstraintDecoder<T>) => {
   const decode = Schema.decodeUnknownSync(schema);
   return (text: string): T => decode(JSON.parse(text));
 };
 const decodePoint = decodeJson(ResourcePoint);
+const decodeBlock = decodeJson(Schema.Array(TimedResourcePoint));
 const decodeSample = decodeJson(ResourceSample);
 const decodeAlert = decodeJson(HealthAlert);
 
-const STEP_CODE = { minute: "m", hour: "h" } as const;
+/** `b` rows hold a block of minute points, `h` rows one hour point. */
+const BLOCK_STEP = "b";
+const HOUR_STEP = "h";
+/** MM-1503: the size cap of the blocks of one machine. */
+const MAX_BLOCKS = Math.ceil(MAX_MINUTE_POINTS / (BLOCK_MS / MINUTE_MS));
 
 export const HEALTH_TABLES = `
   CREATE TABLE IF NOT EXISTS resource_points (machine_id TEXT NOT NULL, step TEXT NOT NULL, at_ms INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (machine_id, step, at_ms));
@@ -78,43 +89,75 @@ export class HealthStore {
   }
 
   /**
-   * MM-1503: one minute point per machine and minute, and the average of the hour so far as its
-   * hour point. A second sample in the same minute replaces the first.
+   * MM-1503: adds minute points to their blocks, sets the hour point of each touched hour to the
+   * average of its minute points, and keeps `latest` as the latest sample. A stored point at the
+   * same minute is replaced, so storing the same points twice changes nothing.
    */
-  record(machineId: MachineId, sample: ResourceSample, nowMs: number): void {
-    const hour = hourStart(nowMs);
+  store(machineId: MachineId, points: ReadonlyArray<TimedPoint>, latest: ResourceSample): void {
+    const blocks = new Map<number, Array<TimedPoint>>();
+    for (const p of points) {
+      const start = blockStart(p.atMs);
+      blocks.set(start, [...(blocks.get(start) ?? []), p]);
+    }
     this.#sql.transaction(() => {
-      this.#sql.run(
-        "INSERT OR REPLACE INTO resource_points (machine_id, step, at_ms, data) VALUES (?, 'm', ?, ?)",
-        machineId,
-        minuteStart(nowMs),
-        JSON.stringify(pointOf(sample)),
-      );
-      const minutes = this.points(machineId, "minute", hour).map((p) => p.point);
-      this.#sql.run(
-        "INSERT OR REPLACE INTO resource_points (machine_id, step, at_ms, data) VALUES (?, 'h', ?, ?)",
-        machineId,
-        hour,
-        JSON.stringify(averagePoints(minutes)),
-      );
+      for (const [start, fresh] of blocks) {
+        const row = this.#sql.run<{ data: string }>(
+          "SELECT data FROM resource_points WHERE machine_id = ? AND step = ? AND at_ms = ?",
+          machineId,
+          BLOCK_STEP,
+          start,
+        )[0];
+        this.#put(
+          machineId,
+          BLOCK_STEP,
+          start,
+          mergePoints(row ? decodeBlock(row.data) : [], fresh),
+        );
+      }
+      for (const hour of new Set(points.map((p) => hourStart(p.atMs)))) {
+        const minutes = this.points(machineId, "minute", hour)
+          .filter((p) => p.atMs < hour + HOUR_MS)
+          .map((p) => p.point);
+        this.#put(machineId, HOUR_STEP, hour, averagePoints(minutes));
+      }
       this.#sql.run(
         "INSERT OR REPLACE INTO resource_latest (machine_id, data) VALUES (?, ?)",
         machineId,
-        JSON.stringify(sample),
+        JSON.stringify(latest),
       );
     });
   }
 
-  /** Points of one machine from `fromMs` on, oldest first. */
+  #put(machineId: MachineId, step: string, atMs: number, data: unknown): void {
+    this.#sql.run(
+      "INSERT OR REPLACE INTO resource_points (machine_id, step, at_ms, data) VALUES (?, ?, ?, ?)",
+      machineId,
+      step,
+      atMs,
+      JSON.stringify(data),
+    );
+  }
+
+  /** Stored points of one machine from `fromMs` on, oldest first. */
   points(machineId: MachineId, step: "minute" | "hour", fromMs: number): Array<TimedPoint> {
+    if (step === "hour") {
+      return this.#sql
+        .run<{ at_ms: number; data: string }>(
+          "SELECT at_ms, data FROM resource_points WHERE machine_id = ? AND step = ? AND at_ms >= ? ORDER BY at_ms",
+          machineId,
+          HOUR_STEP,
+          fromMs,
+        )
+        .map((row) => ({ atMs: row.at_ms, point: decodePoint(row.data) }));
+    }
     return this.#sql
-      .run<{ at_ms: number; data: string }>(
-        "SELECT at_ms, data FROM resource_points WHERE machine_id = ? AND step = ? AND at_ms >= ? ORDER BY at_ms",
+      .run<{ data: string }>(
+        "SELECT data FROM resource_points WHERE machine_id = ? AND step = ? AND at_ms >= ? ORDER BY at_ms",
         machineId,
-        STEP_CODE[step],
-        fromMs,
+        BLOCK_STEP,
+        blockStart(fromMs),
       )
-      .map((row) => ({ atMs: row.at_ms, point: decodePoint(row.data) }));
+      .flatMap((row) => decodeBlock(row.data).filter((p) => p.atMs >= fromMs));
   }
 
   hasPoints(): boolean {
@@ -176,15 +219,18 @@ export class HealthStore {
    */
   prune(nowMs: number, machineIds: ReadonlyArray<string>): void {
     this.#sql.transaction(() => {
+      // A block goes when its newest minute passes the retention.
       this.#sql.run(
-        "DELETE FROM resource_points WHERE (step = 'm' AND at_ms < ?) OR (step = 'h' AND at_ms < ?)",
-        nowMs - MINUTE_RETENTION_MS,
+        "DELETE FROM resource_points WHERE (step != ? AND at_ms < ?) OR (step = ? AND at_ms < ?)",
+        HOUR_STEP,
+        nowMs - MINUTE_RETENTION_MS - BLOCK_MS,
+        HOUR_STEP,
         nowMs - HOUR_RETENTION_MS,
       );
       for (const machineId of machineIds) {
         for (const [step, cap] of [
-          ["m", MAX_MINUTE_POINTS],
-          ["h", MAX_HOUR_POINTS],
+          [BLOCK_STEP, MAX_BLOCKS],
+          [HOUR_STEP, MAX_HOUR_POINTS],
         ] as const) {
           this.#sql.run(
             `DELETE FROM resource_points WHERE machine_id = ? AND step = ? AND at_ms NOT IN
