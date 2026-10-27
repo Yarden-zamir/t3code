@@ -23,7 +23,7 @@ export const layer = Layer.succeed(
       return refused(MANUAL_LINK_REFUSAL);
     }),
     list: refused(
-      "Links to other machines come from the machine map. See them in Settings > Connections, or with t3_environment_links.",
+      "Links to other machines come from the machine map. See them in Settings > Environments, or with t3_environment_links.",
     ),
     get: Effect.fn("PeerLinks.get")(function () {
       return refused(MANUAL_LINK_REFUSAL);

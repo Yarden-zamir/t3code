@@ -6,7 +6,7 @@ until you send or dismiss it.
 
 ## Share a thread
 
-Guest links are a beta. Turn on **Settings → Beta → Guest links** for the machine that runs the
+Guest links are a beta. Turn on **Settings → Labs → Guest links** for the machine that runs the
 thread. They also need [T3 Connect](./remote-access.md): sign in and link that machine, because the
 link points at its T3 Connect address. The machine must stay online while the guest uses it.
 In the Yarden-zamir fork, a machine without T3 Connect uses its Cloudflare tunnel address instead;
