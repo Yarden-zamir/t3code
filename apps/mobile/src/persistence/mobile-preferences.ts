@@ -103,6 +103,7 @@ const AppTokenClient = Schema.Struct({
 });
 export type AppTokenClient = typeof AppTokenClient.Type;
 const isAppTokenClient = Schema.is(AppTokenClient);
+const isAppliedClientSettings = Schema.is(Schema.Record(Schema.String, Schema.String));
 
 export interface Preferences {
   readonly navigationTabOrder?: readonly string[];
@@ -156,6 +157,8 @@ export interface Preferences {
   readonly appTokenDisabledEnvironmentIds?: ReadonlyArray<string>;
   /** Fork: the app token client of this phone (MM-913) and its machine list (MM-914). */
   readonly appTokenClient?: AppTokenClient;
+  /** Fork, MM-416: the shared client values that the app applied last. */
+  readonly machineMapAppliedClientSettings?: Readonly<Record<string, string>>;
   /** Fork: the Android assistant panel and read aloud. */
   readonly voice?: VoicePreferences;
   readonly workspaceSelections?: WorkspaceSelections;
@@ -239,6 +242,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     sidebarTabId?: string;
     appTokenDisabledEnvironmentIds?: ReadonlyArray<string>;
     appTokenClient?: AppTokenClient;
+    machineMapAppliedClientSettings?: Readonly<Record<string, string>>;
     voice?: VoicePreferences;
     workspaceSelections?: WorkspaceSelections;
   } = {};
@@ -409,6 +413,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (isAppTokenClient(parsed.appTokenClient)) {
     preferences.appTokenClient = parsed.appTokenClient;
+  }
+  if (isAppliedClientSettings(parsed.machineMapAppliedClientSettings)) {
+    preferences.machineMapAppliedClientSettings = parsed.machineMapAppliedClientSettings;
   }
   const voice = sanitizeVoicePreferences(parsed.voice);
   if (voice) preferences.voice = voice;

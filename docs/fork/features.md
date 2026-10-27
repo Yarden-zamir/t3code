@@ -186,6 +186,8 @@ Settings > Machines joins or leaves the map with a code. It shows the connection
 
 The desktop app adds each machine that its server can use as an environment, with the machine token headers, and removes it when the arrow drops to `none` (MM-1401). It applies the shared client settings, and runs the commands Reload windows and Install update (MM-1402). Environments that you saved by hand stay as they are.
 
+A browser that a machine serves, and the mobile app, also take the shared client settings. A change on the device stays until the shared value changes again. The mobile app takes only the settings that it has: follow-up behavior, math rendering, plan mode and the working shelf (MM-416).
+
 When a machine refuses the connection, the app pairs again with a backoff: at least 30 seconds between two pairings of one machine, and up to 10 minutes after repeated failures. The target gives a machine its live session again, so a new pairing adds no session (MM-1305). Machine, client and Cloudflare Access sessions without a connection for 7 days end. The Clients view shows one row for each machine, client or sign-in on a machine (MM-903).
 
 ### Settings and theme sync

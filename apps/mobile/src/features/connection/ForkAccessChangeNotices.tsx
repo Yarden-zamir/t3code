@@ -1,13 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
-import { createEnvironmentRpcSubscriptionAtomFamily } from "@t3tools/client-runtime/state/runtime";
-import { type EnvironmentId, WS_METHODS } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect } from "react";
 
 import * as Dialog from "../../components/ui/Dialog";
-import { connectionAtomRuntime } from "../../connection/runtime";
 import { useEnvironments } from "../../state/environments";
+import { machineMapState } from "../../state/forkMachineMap";
 import { serverEnvironment } from "../../state/server";
 import { environmentSession } from "../../state/session";
 import {
@@ -20,13 +19,6 @@ import {
 setAccessChangeNoticePresenter((notice) =>
   Dialog.alert(notice.title, notice.description, [{ text: "OK" }]),
 );
-
-const machineMapState = createEnvironmentRpcSubscriptionAtomFamily(connectionAtomRuntime, {
-  label: "mobile:fork-access-change:machine-map-state",
-  tag: WS_METHODS.machineMapSubscribe,
-  // Notices turned off end the stream at once, not after the idle time.
-  idleTtlMs: 0,
-});
 
 /** Only while notices are on: the map subscription sends the whole state on each change. */
 function EnvironmentLinkWatcher(props: { readonly environmentId: EnvironmentId }) {
