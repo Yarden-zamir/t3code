@@ -94,7 +94,7 @@ describe("reduceCommandPaletteUiState", () => {
       openIntent: null,
       session: 0,
     };
-    state = reduceCommandPaletteUiState(state, { _tag: "OpenNewThreadIn" });
+    state = reduceCommandPaletteUiState(state, { _tag: "OpenNewThreadIn", threadKind: "chat" });
     expect(state).toMatchObject({ open: true, openIntent: { kind: "new-thread-in" }, session: 1 });
     state = reduceCommandPaletteUiState(state, { _tag: "ToggleMode", mode: "files" });
     expect(state).toMatchObject({ mode: "files", openIntent: null, session: 1 });
