@@ -361,14 +361,15 @@ const make = Effect.gen(function* () {
     lockedFor,
     awaitLockFor,
     updateSaved,
-    rememberCommand: (commandId) =>
-      updateSaved((saved) => ({
+    rememberCommand: Effect.fn("MachineMapState.rememberCommand")(function (commandId) {
+      return updateSaved((saved) => ({
         ...saved,
         handledCommandIds: [
           ...saved.handledCommandIds.filter((id) => id !== commandId),
           commandId,
         ].slice(-HANDLED_COMMANDS_KEPT),
-      })).pipe(Effect.asVoid),
+      })).pipe(Effect.asVoid);
+    }),
     setToken,
     trustsPeerOrigin: (origin) => peerOrigins.has(origin),
     peerOrigins: () => [...peerOrigins].toSorted(),
@@ -377,21 +378,23 @@ const make = Effect.gen(function* () {
     ),
     browserGrant,
     clientSeen,
-    machineGrant: (tokenClientId) =>
-      Effect.all([activeDesired, Clock.currentTimeMillis]).pipe(
+    machineGrant: Effect.fn("MachineMapState.machineGrant")(function (tokenClientId) {
+      return Effect.all([activeDesired, Clock.currentTimeMillis]).pipe(
         Effect.map(([desired, nowMs]) =>
           desired === null
             ? undefined
             : (machineGrantFor(desired, tokenClientId, nowMs) ??
               clientGrantFor(desired, tokenClientId, nowMs)),
         ),
-      ),
-    mcpClient: (session) =>
-      Effect.all([activeDesired, Clock.currentTimeMillis]).pipe(
+      );
+    }),
+    mcpClient: Effect.fn("MachineMapState.mcpClient")(function (session) {
+      return Effect.all([activeDesired, Clock.currentTimeMillis]).pipe(
         Effect.map(([desired, nowMs]) =>
           desired === null ? undefined : machineMcpClientFor(desired, session, nowMs),
         ),
-      ),
+      );
+    }),
   });
 });
 

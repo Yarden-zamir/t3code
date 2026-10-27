@@ -24,7 +24,7 @@ export const WORKTREE_ITEMS = [
   {
     id: "worktree-artifact-eviction",
     title: "Evict worktree artifacts",
-    to: "/settings/storage",
+    to: "/settings/worktrees",
     scope: "environment-defaults",
     environmentOnly: true,
     searchTerms: ["storage cleanup disk node_modules caches build dependencies worktrees"],
@@ -32,7 +32,7 @@ export const WORKTREE_ITEMS = [
   {
     id: "worktree-artifact-eviction-days",
     title: "Artifact eviction inactivity days",
-    to: "/settings/storage",
+    to: "/settings/worktrees",
     scope: "environment-defaults",
     environmentOnly: true,
     searchTerms: ["storage cleanup disk inactive days worktrees"],
@@ -40,7 +40,7 @@ export const WORKTREE_ITEMS = [
   {
     id: "restore-worktrees-on-resume",
     title: "Restore worktrees on resume",
-    to: "/settings/storage",
+    to: "/settings/worktrees",
     scope: "environment-defaults",
     environmentOnly: true,
     searchTerms: [
@@ -50,7 +50,7 @@ export const WORKTREE_ITEMS = [
   {
     id: "storage-worktree-path-template",
     title: "Worktree path template",
-    to: "/settings/storage",
+    to: "/settings/worktrees",
     scope: "environment-defaults",
     searchTerms: [
       "worktree path template location directory folder branch bare container repository sibling",
@@ -62,7 +62,7 @@ export const ORGANIZATION_ITEMS = [
   {
     id: "auto-settle-waits-for-background-commands",
     title: "Auto-settle waits for background commands",
-    to: "/settings/general",
+    to: "/settings/threads",
     scope: "environment-defaults",
     environmentOnly: true,
     requiresThreadAutoSettlement: true,
@@ -184,7 +184,7 @@ export const GLOBAL_SCRIPTS_ITEMS = [
   {
     id: "global-scripts",
     title: "Global scripts",
-    to: "/settings/general",
+    to: "/settings/threads",
     scope: "environment-defaults",
     searchTerms: [
       "scripts commands every project pin pinned buttons background overlay preview global hotkey shortcut accelerator",
@@ -239,7 +239,7 @@ export const BEHAVIOR_ITEMS = [
   {
     id: "recover-interrupted-turns",
     title: "Recover interrupted agents",
-    to: "/settings/general",
+    to: "/settings/maintenance",
     scope: "environment-defaults",
     searchTerms: [
       "recover continue resume restart crash update quit interrupted agent subagent message background",
@@ -269,14 +269,14 @@ export const AGENT_SESSION_IMPORT_ITEMS = [
   {
     id: "agent-session-import-window",
     title: "Session import window",
-    to: "/settings/general",
+    to: "/settings/threads",
     scope: "environment-defaults",
     searchTerms: ["import claude code codex history days recent sessions"],
   },
   {
     id: "agent-session-import-max-messages",
     title: "Imported messages per session",
-    to: "/settings/general",
+    to: "/settings/threads",
     scope: "environment-defaults",
     searchTerms: ["import claude code codex history message limit transcript"],
   },
@@ -326,19 +326,19 @@ export const ABOUT_ITEMS = [
   {
     id: "fork-changelog",
     title: "Fork changelog",
-    to: "/settings/general",
+    to: "/settings/about",
     searchTerms: ["changelog release notes versions upstream fork sync workflow"],
   },
   {
     id: "check-newer-before-update-install",
     title: "Check for a newer update before install",
-    to: "/settings/general",
+    to: "/settings/about",
     searchTerms: ["desktop update install newer release download restart"],
   },
   {
     id: "fork-auto-update",
     title: "Server auto-update",
-    to: "/settings/general",
+    to: "/settings/maintenance",
     scope: "environment-defaults",
     searchTerms: ["fork release install update idle background service headless server automatic"],
   },
@@ -381,7 +381,7 @@ export const CONNECTIONS_ITEMS = [
   {
     id: "tunnel-pairing",
     title: "Allow pairing through a tunnel",
-    to: "/settings/connections",
+    to: "/settings/access",
     searchTerms: [
       "tunnel cloudflared pairing loopback trusted browser origins cookies cloudflare access login team domain audience aud emails service token",
     ],
@@ -443,7 +443,7 @@ export const PREVIEW_ITEMS = [
   {
     id: "preview-local-server-groups",
     title: "All local servers in the browser",
-    to: "/settings/integrations",
+    to: "/settings/browser",
     searchTerms: ["preview local servers ports listeners dev server worktree project localhost"],
     environmentOnly: true,
   },

@@ -3,6 +3,7 @@ package expo.modules.t3assistant
 import android.app.assist.AssistStructure
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -12,6 +13,7 @@ import android.service.voice.VoiceInteractionSession.AssistState
 import android.text.InputType
 import android.util.Log
 import java.io.File
+import org.json.JSONObject
 import kotlin.concurrent.thread
 
 /**
@@ -38,12 +40,68 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context) {
 
   override fun onHandleAssist(state: AssistState) {
     val structure = state.assistStructure
+    val content = state.assistContent
+    val packageName = structure?.activityComponent?.packageName
+    val structuredData = content?.structuredData?.take(MAX_STRUCTURED_DATA_CHARS)
+    val clip = content?.clipData
+    val focused = state.isFocused
     AssistantCapture.addScreen(
-      sourcePackage = structure?.activityComponent?.packageName,
-      webUri = state.assistContent?.webUri?.toString(),
+      sourcePackage = packageName,
+      webUri = content?.webUri?.toString(),
       screenText = structure?.let(::screenText),
       selectedText = structure?.let(::selectedText),
+      report = if (!focused) null else AssistantCapture.ScreenReport(
+        appLabel = packageName?.let(::appLabel),
+        activityClass = structure?.activityComponent?.className,
+        structuredData = structuredData,
+        clipMimeType = clip?.description?.takeIf { it.mimeTypeCount > 0 }?.getMimeType(0),
+        clipLabel = clip?.description?.label?.toString(),
+        isHomeApp = packageName != null && packageName == homePackage(),
+      ),
     )
+    val pressId = AssistantCapture.current?.id ?: return
+    if (!focused || packageName == null) return
+    structuredData?.let { pageContentUri(it, packageName) }?.let { readPageText(pressId, it) }
+  }
+
+  private fun appLabel(packageName: String): String? = runCatching {
+    context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(packageName, 0)).toString()
+  }.getOrNull()
+
+  private fun homePackage(): String? = runCatching {
+    val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+    context.packageManager.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+  }.getOrNull()
+
+  /**
+   * Chrome links the page text in its structured data, readable by the default assistant. The
+   * app on screen writes that data, so only its own page content provider is read, never a file.
+   */
+  private fun pageContentUri(structuredData: String, packageName: String): Uri? = runCatching {
+    JSONObject(structuredData).optJSONObject("page_metadata")?.optString("content_uri")
+      ?.takeIf(String::isNotBlank)?.let(Uri::parse)
+      ?.takeIf { it.scheme == "content" && it.authority == "$packageName$PAGE_CONTENT_AUTHORITY_SUFFIX" }
+  }.getOrNull()
+
+  /** Chrome keeps the link valid for 60 seconds and takes up to 10 to extract, so read now. */
+  private fun readPageText(pressId: Long, uri: Uri) {
+    thread(name = "t3-assistant-page") {
+      try {
+        val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+          val buffer = CharArray(MAX_PAGE_TEXT_CHARS)
+          var read = 0
+          while (read < buffer.size) {
+            val count = reader.read(buffer, read, buffer.size - read)
+            if (count < 0) break
+            read += count
+          }
+          String(buffer, 0, read)
+        }
+        text?.trim()?.takeIf(String::isNotEmpty)?.let { AssistantCapture.setPageText(pressId, it) }
+      } catch (error: Exception) {
+        Log.w(TAG, "Could not read the page text", error)
+      }
+    }
   }
 
   override fun onHandleScreenshot(screenshot: Bitmap?) {
@@ -103,5 +161,8 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context) {
     const val TAG = "T3Assistant"
     const val SCREENSHOT_QUALITY = 85
     const val MAX_SCREEN_TEXT_CHARS = 20_000
+    const val MAX_STRUCTURED_DATA_CHARS = 4_000
+    const val MAX_PAGE_TEXT_CHARS = 100_000
+    const val PAGE_CONTENT_AUTHORITY_SUFFIX = ".PageContentProvider"
   }
 }

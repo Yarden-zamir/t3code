@@ -13,7 +13,8 @@ import {
   type MapRevision,
 } from "@t3tools/contracts/machineMap";
 
-import type { PauseView, WriteResult } from "../api.ts";
+import type { GuestLinksStatus, GuestRules, PauseView, WriteResult } from "../api.ts";
+import { EMPTY_GUEST_RULES, GUEST_SETTING, guestLinksOn } from "../guestLinks.ts";
 import { applyChanges, findArrow, findClientArrow } from "../rules/map.ts";
 import {
   applyPresetChanges,
@@ -241,6 +242,40 @@ const decodeMapChanges = Schema.decodeUnknownSync(Schema.Array(MapChange));
 const pathTail = (path: string, prefix: string): ReadonlyArray<string> | null =>
   path.startsWith(prefix) ? path.slice(prefix.length).split("/").map(decodeURIComponent) : null;
 
+let guestRules: GuestRules = EMPTY_GUEST_RULES;
+
+/**
+ * MM-1210: a guest links state without Cloudflare. Machines with guest links on are ready, and the
+ * rate limit shows its manual step, so the page shows each kind of row.
+ */
+function fixtureGuests(snapshot: PortalSnapshot): GuestLinksStatus {
+  const machines = snapshot.map.machines.map((m) => {
+    const enabled = guestLinksOn(
+      snapshot.map,
+      snapshot.reportedSettings[m.id] ?? { server: {}, client: {} },
+      m.id,
+    );
+    return {
+      machineId: m.id,
+      hostname: m.hostname,
+      enabled,
+      state: !enabled
+        ? ({ _tag: "off" } as const)
+        : m.hostname === null
+          ? ({ _tag: "noHostname" } as const)
+          : ({ _tag: "ready" } as const),
+    };
+  });
+  return {
+    rules: guestRules,
+    problem: null,
+    oneTimePin: { _tag: "ready" },
+    rateLimit: { _tag: "cloudflareStep", step: "rateLimit" },
+    machines,
+    errors: [],
+  };
+}
+
 /** The writes that the redesigns use. Every other path says that it needs the live portal. */
 export async function fixtureApi(method: string, path: string, body: unknown): Promise<unknown> {
   if (!current) throw new Error("The fixture is not loaded yet.");
@@ -303,6 +338,33 @@ export async function fixtureApi(method: string, path: string, body: unknown): P
     const result = commit(RESUME_SUMMARY, changes);
     emit({ _tag: "pause", pause: null });
     return result._tag === "applied" ? { revision: result.revision } : { revision: null };
+  }
+  if (path === "/api/guests" || path === "/api/guests/apply") return fixtureGuests(current);
+  if (method === "POST" && path === "/api/guests/rules" && isRecord(body) && isRecord(body.rules)) {
+    const rules = body.rules;
+    const strings = (key: keyof GuestRules) =>
+      list(rules[key], key).filter((v): v is string => typeof v === "string");
+    guestRules = {
+      emails: strings("emails"),
+      emailDomains: strings("emailDomains"),
+      ipRanges: strings("ipRanges"),
+      requireIpRanges: strings("requireIpRanges"),
+    };
+    return fixtureGuests(current);
+  }
+  const [guestMachine, guestAction] = pathTail(path, "/api/machines/") ?? [];
+  if (method === "POST" && guestMachine && guestAction === "guest-links" && isRecord(body)) {
+    commit(`Guest links ${body.enabled === true ? "on" : "off"}`, [
+      {
+        _tag: "setSetting",
+        machineId: MachineId.make(guestMachine),
+        scope: "server",
+        key: GUEST_SETTING,
+        present: true,
+        value: body.enabled === true,
+      },
+    ]);
+    return fixtureGuests(current);
   }
   const [name, presetAction] = pathTail(path, "/api/presets/") ?? [];
   if (method === "POST" && name && presetAction === "apply") {

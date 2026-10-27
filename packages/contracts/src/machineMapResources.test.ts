@@ -34,15 +34,13 @@ const sample: ResourceSample = {
 };
 
 const decodeRead = Schema.decodeUnknownSync(MachinesReadResult);
+const decodeMachineToPortal = Schema.decodeUnknownOption(MachineToPortal);
+const decodePortalToMachine = Schema.decodeUnknownOption(PortalToMachine);
 
 describe("resource messages next to the base protocol (MM-1502)", () => {
   it("an older portal and an older server fail to decode them, so they ignore them", () => {
-    expect(Schema.decodeUnknownOption(MachineToPortal)({ _tag: "resources", sample })._tag).toBe(
-      "None",
-    );
-    expect(Schema.decodeUnknownOption(PortalToMachine)({ _tag: "sampleResources" })._tag).toBe(
-      "None",
-    );
+    expect(decodeMachineToPortal({ _tag: "resources", sample })._tag).toBe("None");
+    expect(decodePortalToMachine({ _tag: "sampleResources" })._tag).toBe("None");
   });
 
   it("the new unions decode both the old and the new messages", () => {

@@ -355,6 +355,60 @@ Use these steps only when the join dialog says "No tunnel", for example when the
    systemctl --user daemon-reload && systemctl --user restart t3code.service
    ```
 
+## Guest links through Cloudflare Access
+
+A guest link on a tunnel host needs two more Cloudflare Access applications: an Allow application for the guest page and routes, and a Bypass application for the public web build files. See [Guest links over the tunnel](features.md#guest-links-over-the-tunnel). The Guests view of the machine map portal makes them for each machine host (MM-1210 to MM-1214 in [SPEC.md](../../apps/machine-map/SPEC.md)).
+
+The guest page loads only these paths. A real load of the page and the guest code give the list.
+
+| Path                    | What                                                                     |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `/guest`                | The page. The server answers with `index.html`.                          |
+| `/api/guest/*`          | The guest routes: join, session, messages, stream, items, files, images. |
+| `/assets/*`             | The web build: scripts, styles, fonts, workers.                          |
+| `/apple-touch-icon.png` | The start screen logo.                                                   |
+| `/favicon.ico`          | The tab icon.                                                            |
+| `/manifest.webmanifest` | The app manifest. Without it, the browser only logs an error.            |
+
+The page opens no WebSocket and calls no other route. `GuestPage.browser.test.tsx` and `runtime.browser.test.ts` check that it opens no environment connection. When this list changes, change `GUEST_PATHS` and `GUEST_BUILD_PATHS` in `apps/machine-map/src/guestLinks.ts` and `scripts/fork-guest-access-check.ts` too.
+
+All guest requests go to the same origin, with the browser's cookies. So the Access cookie of the guest login also covers `/api/guest/*`.
+
+The build files (`/assets/*` and the three files in the root) are the public open-source web build and hold no data. The owner page loads the same files. The `CF_Authorization` cookie of a host holds the token of one application at a time, and a script cannot follow a redirect to the Access login. So an Allow application on the build files breaks the owner page, and a Bypass application does not.
+
+The owner Access application "T3 Code servers" keeps every other path of the host. Access uses the application with the most specific path, so the two guest applications apply only to the paths above. The portal never changes the owner application.
+
+The guest application has its own token, which replaces the owner token in the cookie of the host. If the owner opens a guest link in the owner browser, the next owner page asks for the owner login again. Open guest links in a private window.
+
+### Set it up in the portal
+
+1. Open the Guests view of the portal.
+2. Fill in the rules. They apply to every machine. Include rules (emails, email domains, IP ranges) allow a visitor that matches one of them. Required IP ranges must also match. The owner emails always get in. For example, for people from the Qlik network only, add the Qlik network ranges under "IP ranges". For Qlik people on the Qlik network, add `qlik.com` under "Email domains" and the ranges under "Required IP ranges".
+3. Select "Save and apply".
+4. Turn on the switch of each machine that serves guest links. The switch sets `guestSharingEnabled` for that machine and makes the Access applications of its host. The host is the hostname that the machine reports, also for a tunnel made by hand. It must be the tunnel host that the portal made, or `t3-<name>.<MACHINE_DOMAIN>`.
+5. If the view shows a Cloudflare step, do it, or add the named permission to the API token of the portal. Then select Apply.
+
+"Apply" repairs a changed application and removes the applications of a machine with guest links off. It also keeps the zone rate limit rule `t3_guest_routes`: 100 requests per 10 seconds per IP address on `/api/guest/`, then a block of 10 seconds. One open guest page sends one stream request, plus one request for each row or image that the guest opens, so a normal guest stays far below the limit. The Free plan allows only the path field in the expression, period 10 and timeout 10, so the rule covers the guest routes of every host in the zone.
+
+If an application that the portal did not make covers a guest path, the view names it as blocked. Delete it in the Zero Trust dashboard, then select Apply. The applications of the old manual steps were named `T3 guest links (<host>)` and `T3 web build (<host>)`. Apply takes over the rate limit rule of the old manual steps, because its expression is the same.
+
+### Check it
+
+1. Without a login, run the check. The build files must be open, and every other path must stop at Access. The Guests view shows this command for each ready machine:
+
+   ```sh
+   node scripts/fork-guest-access-check.ts https://t3-vps.yarden-zamir.com
+   ```
+
+2. Open a guest link in a private window and log in with a one-time PIN. Copy the value of the `CF_Authorization` cookie of the host from the developer tools. Run the check again with it. The owner paths must still stop at Access, and the server must refuse the guest routes with its own 403:
+
+   ```sh
+   T3_GUEST_ACCESS_COOKIE='<cookie value>' node scripts/fork-guest-access-check.ts https://t3-vps.yarden-zamir.com
+   ```
+
+- If the page says that the link is not valid after the Access login, open the guest link again. The Access login can drop the part of the link after `#`.
+- A guest Access login does not open the owner paths. Access checks each application on its own, and the server accepts only the audience tag and the subjects of the owner login (`T3CODE_CLOUDFLARE_ACCESS_*`).
+
 ## Central build caches
 
 Set `T3_FORK_CENTRAL_BUILD_CACHE=1` before running Vite tools or Expo prebuild. It defaults off. Set `XDG_CACHE_HOME` to choose a base outside the checkout; otherwise the base is `~/.cache`.

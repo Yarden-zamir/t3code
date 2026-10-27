@@ -23,6 +23,7 @@ import {
   MachineId,
   MachineMapDocument,
   MachinePresence,
+  MachineStatus,
   MachineToPortal,
   MachineTunnelGrant,
   MapProposal,
@@ -44,11 +45,11 @@ import {
 import {
   HealthThresholds,
   MachineResourcesMessage,
+  ResourceSample,
   type HealthAlert,
   type HealthAlertKind,
   type PortalResourcesRequest,
   type ResourceRange,
-  type ResourceSample,
   type ResourcesOverview,
 } from "@t3tools/contracts/machineMapResources";
 
@@ -65,6 +66,9 @@ import type {
   EnrolledEvent,
   EnrollResponse,
   CallsEvent,
+  GuestLinksStatus,
+  GuestMachineStatus,
+  GuestPartState,
   ExecsEvent,
   JoinCodeRequest,
   JoinCodeResponse,
@@ -91,9 +95,23 @@ import type {
   HealthEvent,
   ResourceSampleEvent,
 } from "./api.ts";
-import { CLOUDFLARE_STEP_PERMISSION, PauseState } from "./api.ts";
+import { CLOUDFLARE_STEP_PERMISSION, GuestRules, PauseState } from "./api.ts";
+import {
+  EMPTY_GUEST_RULES,
+  foreignGuestApp,
+  GUEST_SETTING,
+  guestAppBody,
+  guestAppName,
+  guestAppProblem,
+  guestLinksOn,
+  guestHostProblem,
+  guestPolicies,
+  guestRateLimitProblem,
+  normalizeGuestRules,
+  type GuestAppKind,
+} from "./guestLinks.ts";
 import { configured, ownerEmails } from "./access.ts";
-import { HEALTH_TABLES, HealthStore } from "./healthStore.ts";
+import { HEALTH_TABLES, HealthStore, TimedResourcePoint } from "./healthStore.ts";
 import {
   moveLegacySidebarTabKeys,
   renameLegacySidebarTabCommands,
@@ -109,6 +127,7 @@ import {
   isPermissionRefusal,
   tunnelTarget,
   type ApprovalsApp,
+  type GuestApp,
 } from "./cloudflare.ts";
 import type { Env } from "./env.ts";
 import {
@@ -123,14 +142,17 @@ import {
   usesText,
 } from "./rules/access.ts";
 import {
+  addToBlock,
   alertChanges,
   HOUR_MS,
   historyOf,
   MAX_SAMPLE_MESSAGE_BYTES,
+  mergePoints,
   MINUTE_MS,
   minuteStart,
   offlineConditions,
   offlineDueAt,
+  pointOf,
   RANGE,
   RESOURCE_ALERT_KINDS,
   resourceConditions,
@@ -216,15 +238,41 @@ const approvalsProblemText = (problem: ApprovalsProblem): string =>
     ? problem.reason
     : "Do the Cloudflare step of Set up approvals first (MM-1208).";
 
+/** MM-1210: an Access app that the portal did not make covers a guest path. */
+const foreignAppText = (app: GuestApp): string =>
+  `The Access app "${app.name}" covers a guest path, and the portal did not make it. Delete it in the Zero Trust dashboard, then select Apply again.`;
+
+/** MM-1209: a missing permission names the permission, never the raw Cloudflare error. */
+const guestErrorText = (error: unknown): string =>
+  isPermissionRefusal(error)
+    ? `The CF_API_TOKEN cannot edit Access apps. Add "${CLOUDFLARE_STEP_PERMISSION.appLauncher}" to the token (MM-1205).`
+    : errorMessage(error);
+
 /** Header from the Worker with the client id of a verified machine token. */
 export const MACHINE_CLIENT_ID_HEADER = "X-Map-Machine-Client-Id";
 
 const PAGE_TAG = "page";
 const machineTag = (id: MachineId) => `machine:${id}`;
 
+/**
+ * MM-1503: the minute points of the open block and the latest sample. They live on the machine
+ * socket, which keeps them through hibernation without a row write, until the block closes.
+ */
+const UnstoredSamples = Schema.Struct({
+  points: Schema.Array(TimedResourcePoint),
+  latest: ResourceSample,
+});
+type UnstoredSamples = typeof UnstoredSamples.Type;
+
+const MachineAttachment = Schema.Struct({
+  kind: Schema.Literal("machine"),
+  machineId: MachineId,
+  samples: Schema.optionalKey(UnstoredSamples),
+});
+type MachineAttachment = typeof MachineAttachment.Type;
 const Attachment = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("page") }),
-  Schema.Struct({ kind: Schema.Literal("machine"), machineId: MachineId }),
+  MachineAttachment,
 ]);
 type Attachment = typeof Attachment.Type;
 
@@ -255,6 +303,16 @@ const PauseRecord = Schema.Struct({ state: PauseState, before: PausedAccess });
 type PauseRecord = typeof PauseRecord.Type;
 const decodePause = decodeJson(PauseRecord);
 const decodeApprovalsApp = decodeJson(Schema.Struct({ id: Schema.String, aud: Schema.String }));
+const decodeGuestRules = decodeJson(GuestRules);
+
+/** MM-1210: the guest and build apps that the portal made on the host of one machine. */
+interface GuestAppsRow extends Record<string, SqlStorageValue> {
+  readonly machine_id: string;
+  readonly hostname: string;
+  readonly guest_app_id: string | null;
+  readonly build_app_id: string | null;
+}
+const GUEST_APP_COLUMN = { guest: "guest_app_id", build: "build_app_id" } as const;
 /** MM-913: an invite of a native app works this long. */
 const INVITE_MINUTES = 15;
 const decodeHelloProtocol = Schema.decodeUnknownOption(
@@ -288,6 +346,28 @@ const offline: MachinePresence = {
   appliedRevision: null,
   status: null,
 };
+
+/** MM-1001: the last-seen time of a connected machine is written at least this often. */
+const LAST_SEEN_WRITE_MS = 5 * MINUTE_MS;
+const statusEquivalence = Schema.toEquivalence(MachineStatus);
+
+/**
+ * MM-1001: whether a presence needs its row. Uptime, CPU and memory change with almost every
+ * status, so alone they wait in memory, and the last-seen time waits up to LAST_SEEN_WRITE_MS.
+ */
+function presenceNeedsWrite(saved: MachinePresence, next: MachinePresence, nowMs: number): boolean {
+  if (saved.lastSeenAt === null || nowMs - Date.parse(saved.lastSeenAt) >= LAST_SEEN_WRITE_MS)
+    return true;
+  if (saved.online !== next.online || saved.appliedRevision !== next.appliedRevision) return true;
+  if (saved.status === null || next.status === null) return saved.status !== next.status;
+  const steady = (status: MachineStatus): MachineStatus => ({
+    ...status,
+    uptimeSeconds: 0,
+    cpuPercent: null,
+    memoryPercent: null,
+  });
+  return !statusEquivalence(steady(saved.status), steady(next.status));
+}
 
 /** MM-1204: at most this many enroll attempts per address in one window. */
 const ENROLL_LIMIT = 10;
@@ -424,6 +504,8 @@ export class MachineMapObject extends DurableObject<Env> {
   #thresholds: Readonly<Record<string, HealthThresholds>>;
   /** MM-1501: when the portal last asked each machine for a sample. Lost on hibernation. */
   readonly #sampleRequests = new Map<MachineId, number>();
+  /** MM-1001: presence newer than its row, by `presenceNeedsWrite`. Lost on hibernation. */
+  readonly #unsavedPresence = new Map<MachineId, MachinePresence>();
   readonly #health: HealthStore;
   /** MM-1807: read once from `VAPID_JWK`. */
   #vapid: Promise<VapidKey | null> | undefined;
@@ -477,6 +559,7 @@ export class MachineMapObject extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, sign_in_id TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS exec_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS call_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS guest_apps (machine_id TEXT PRIMARY KEY, hostname TEXT NOT NULL, guest_app_id TEXT, build_app_id TEXT);
     `);
     this.ctx.storage.sql.exec(HEALTH_TABLES);
     this.#dropManageSetting();
@@ -688,7 +771,7 @@ export class MachineMapObject extends DurableObject<Env> {
     );
   }
 
-  #storedPresence(id: MachineId): MachinePresence {
+  #savedPresence(id: MachineId): MachinePresence {
     const row = this.#sql<{ data: string }>(
       "SELECT data FROM presence WHERE machine_id = ?",
       id,
@@ -696,12 +779,16 @@ export class MachineMapObject extends DurableObject<Env> {
     return row ? decodePresence(row.data) : offline;
   }
 
+  #knownPresence(id: MachineId): MachinePresence {
+    return this.#unsavedPresence.get(id) ?? this.#savedPresence(id);
+  }
+
   /** MM-105: the last known state, with `online` from the open sockets. */
   #presence(id: MachineId, closing?: WebSocket): MachinePresence {
     const online = this.ctx
       .getWebSockets(machineTag(id))
       .some((ws) => ws !== closing && ws.readyState === WebSocket.OPEN);
-    return { ...this.#storedPresence(id), online };
+    return { ...this.#knownPresence(id), online };
   }
 
   #savePresence(id: MachineId, presence: MachinePresence, closing?: WebSocket): void {
@@ -710,7 +797,18 @@ export class MachineMapObject extends DurableObject<Env> {
       id,
       JSON.stringify(presence),
     );
+    this.#unsavedPresence.delete(id);
     this.#broadcast({ _tag: "presence", machineId: id, presence: this.#presence(id, closing) });
+  }
+
+  /** MM-1001: a status or an applied revision. Pages hear of each one; the row only of a change. */
+  #updatePresence(id: MachineId, presence: MachinePresence): void {
+    if (presenceNeedsWrite(this.#savedPresence(id), presence, Date.now())) {
+      this.#savePresence(id, presence);
+      return;
+    }
+    this.#unsavedPresence.set(id, presence);
+    this.#broadcast({ _tag: "presence", machineId: id, presence: this.#presence(id) });
   }
 
   #reportedSettings(id: MachineId): ScopedSettingValues {
@@ -1088,11 +1186,12 @@ export class MachineMapObject extends DurableObject<Env> {
       // MM-104, MM-208: an unknown or removed machine token never connects.
       if (!clientId || !machine) return new Response("Unknown machine token.", { status: 403 });
       for (const old of this.ctx.getWebSockets(machineTag(machine.id))) {
+        this.#storeSamples(old);
         old.close(4000, "Replaced by a new connection.");
       }
       this.ctx.acceptWebSocket(server, [machineTag(machine.id)]);
       server.serializeAttachment({ kind: "machine", machineId: machine.id } satisfies Attachment);
-      this.#savePresence(machine.id, { ...this.#storedPresence(machine.id), lastSeenAt: nowIso() });
+      this.#savePresence(machine.id, { ...this.#knownPresence(machine.id), lastSeenAt: nowIso() });
       return new Response(null, { status: 101, webSocket: client });
     }
     return new Response("Not found.", { status: 404 });
@@ -1119,12 +1218,13 @@ export class MachineMapObject extends DurableObject<Env> {
       console.error("bad machine message", machine.id, errorMessage(error));
       return;
     }
-    if (parsed._tag === "resources" && message.length > MAX_SAMPLE_MESSAGE_BYTES) {
-      console.error("sample too big", machine.id, message.length);
+    // Bytes, not characters: the sample also rides in the socket attachment, which has a byte cap.
+    const bytes = parsed._tag === "resources" ? new TextEncoder().encode(message).byteLength : 0;
+    if (bytes > MAX_SAMPLE_MESSAGE_BYTES) {
+      console.error("sample too big", machine.id, bytes);
       return;
     }
-    await this.#onMachineMessage(machine, parsed);
-    await this.#scheduleAlarm();
+    if (await this.#onMachineMessage(ws, machine, parsed)) await this.#scheduleAlarm();
   }
 
   override async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
@@ -1136,7 +1236,8 @@ export class MachineMapObject extends DurableObject<Env> {
     }
     if (attachment.kind !== "machine" || !findMachine(this.#map, attachment.machineId)) return;
     const id = attachment.machineId;
-    this.#savePresence(id, { ...this.#storedPresence(id), lastSeenAt: nowIso() }, ws);
+    this.#storeSamples(ws);
+    this.#savePresence(id, { ...this.#knownPresence(id), lastSeenAt: nowIso() }, ws);
     // MM-1505: the samples stop, so a resource alert would only show old news.
     this.#applyAlerts(id, {}, RESOURCE_ALERT_KINDS, Date.now());
     await this.#scheduleAlarm();
@@ -1149,7 +1250,12 @@ export class MachineMapObject extends DurableObject<Env> {
 
   // Machines
 
-  async #onMachineMessage(machine: MachineRecord, message: MachineMessage): Promise<void> {
+  /** Handles one machine message. True when it can change an alarm time (`#scheduleAlarm`). */
+  async #onMachineMessage(
+    ws: WebSocket,
+    machine: MachineRecord,
+    message: MachineMessage,
+  ): Promise<boolean> {
     const id = machine.id;
     switch (message._tag) {
       case "hello": {
@@ -1170,25 +1276,26 @@ export class MachineMapObject extends DurableObject<Env> {
         this.#sendDesired(id);
         await this.#sendRotation(id);
         this.#deliverCommands(id);
-        return;
+        return true;
       }
+      // The machine is online, so no offline time moves, and a delivery keeps the expiry.
       case "status": {
-        this.#savePresence(id, {
-          ...this.#storedPresence(id),
+        this.#updatePresence(id, {
+          ...this.#knownPresence(id),
           lastSeenAt: nowIso(),
           status: message.status,
         });
         this.#recordHostname(machine, message.status.hostname);
         this.#deliverCommands(id);
-        return;
+        return false;
       }
       case "applied": {
-        this.#savePresence(id, {
-          ...this.#storedPresence(id),
+        this.#updatePresence(id, {
+          ...this.#knownPresence(id),
           lastSeenAt: nowIso(),
           appliedRevision: message.revision,
         });
-        return;
+        return false;
       }
       case "localSettings": {
         const reported = this.#reportedSettings(id);
@@ -1216,12 +1323,12 @@ export class MachineMapObject extends DurableObject<Env> {
         if (message.scope === "server" && clientAccess !== undefined) {
           this.#recordLocalClientAccess(machine, clientAccess);
         }
-        return;
+        return true;
       }
       case "commandResult": {
         const command = this.#command(message.commandId);
-        if (!command || command.machineId !== id) return;
-        if (command.status !== "queued" && command.status !== "delivered") return;
+        if (!command || command.machineId !== id) return false;
+        if (command.status !== "queued" && command.status !== "delivered") return false;
         this.#saveCommand({
           ...command,
           status: message.ok ? "succeeded" : "failed",
@@ -1229,7 +1336,7 @@ export class MachineMapObject extends DurableObject<Env> {
           result: message.result,
           error: message.error,
         });
-        return;
+        return true;
       }
       case "toolCall": {
         const actor: MapActor = {
@@ -1256,30 +1363,32 @@ export class MachineMapObject extends DurableObject<Env> {
             error: errorMessage(error),
           });
         }
-        return;
+        return true;
       }
       case "resources": {
-        this.#recordSample(id, message.sample);
-        return;
+        // MM-1503: the first stored point starts the hourly prune.
+        const first = !this.#health.hasPoints();
+        this.#recordSample(ws, message.sample);
+        return first;
       }
       case "clientSeen": {
         this.#recordClientSeen(machine, message);
-        return;
+        return true;
       }
       case "execRan": {
         this.#recordExec(machine, message.report);
-        return;
+        return false;
       }
       case "callForwarded": {
         this.#recordCall(machine, message.report);
-        return;
+        return false;
       }
       case "rotated": {
         const row = this.#sql<{ token_client_id: string }>(
           "SELECT token_client_id FROM rotations WHERE machine_id = ?",
           id,
         )[0];
-        if (!row || row.token_client_id !== message.tokenClientId) return;
+        if (!row || row.token_client_id !== message.tokenClientId) return false;
         this.#sql("DELETE FROM rotations WHERE machine_id = ?", id);
         this.#broadcast(this.#rotationsEvent());
         // MM-207: the machine saved the new secret, so the old one stops now.
@@ -1290,7 +1399,7 @@ export class MachineMapObject extends DurableObject<Env> {
             console.error("could not end the previous secret", id, errorMessage(error));
           });
         }
-        return;
+        return true;
       }
     }
   }
@@ -1370,21 +1479,65 @@ export class MachineMapObject extends DurableObject<Env> {
    * MM-1503: the portal clock places the point, so a machine with a wrong clock cannot write into
    * the future.
    */
-  #recordSample(machineId: MachineId, sample: ResourceSample): void {
+  #recordSample(ws: WebSocket, sample: ResourceSample): void {
     const nowMs = Date.now();
-    this.#health.record(machineId, sample, nowMs);
+    const attachment = this.#machineAttachment(ws);
+    const machineId = attachment.machineId;
+    const { finished, unstored } = addToBlock(attachment.samples?.points ?? [], {
+      atMs: minuteStart(nowMs),
+      point: pointOf(sample),
+    });
+    if (finished.length > 0) this.#health.store(machineId, finished, sample);
+    ws.serializeAttachment({
+      ...attachment,
+      samples: { points: unstored, latest: sample },
+    } satisfies Attachment);
     this.#broadcast({ _tag: "resourceSample", machineId, sample });
     this.#checkResources(machineId, nowMs);
+  }
+
+  #machineAttachment(ws: WebSocket): MachineAttachment {
+    const attachment = decodeAttachment(ws.deserializeAttachment());
+    if (attachment.kind !== "machine") throw new Error("Expected a machine socket.");
+    return attachment;
+  }
+
+  /** MM-1503: the samples that the socket of a connected machine holds and SQLite does not. */
+  #unstoredSamples(machineId: MachineId): UnstoredSamples | undefined {
+    // A replaced socket can still be closing; its block is already stored.
+    const ws = this.ctx
+      .getWebSockets(machineTag(machineId))
+      .find((socket) => socket.readyState === WebSocket.OPEN);
+    return ws ? this.#machineAttachment(ws).samples : undefined;
+  }
+
+  /** MM-1503: a closing or replaced socket hands its open block to SQLite. */
+  #storeSamples(ws: WebSocket): void {
+    const attachment = this.#machineAttachment(ws);
+    const samples = attachment.samples;
+    if (!samples) return;
+    this.#health.store(attachment.machineId, samples.points, samples.latest);
+    // A closed socket keeps its attachment, but storing the same points again changes nothing.
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.serializeAttachment({
+        kind: "machine",
+        machineId: attachment.machineId,
+      } satisfies Attachment);
+    }
+  }
+
+  /** Minute points of one machine from `fromMs` on, stored and unstored, oldest first. */
+  #minutePoints(machineId: MachineId, fromMs: number) {
+    const unstored = (this.#unstoredSamples(machineId)?.points ?? []).filter(
+      (p) => p.atMs >= fromMs,
+    );
+    return mergePoints(this.#health.points(machineId, "minute", fromMs), unstored);
   }
 
   #checkResources(machineId: MachineId, nowMs: number): void {
     const thresholds = thresholdsFor(this.#thresholds, machineId);
     const minutes = Math.max(thresholds.cpuMinutes, thresholds.swapMinutes);
-    const points = this.#health.points(
-      machineId,
-      "minute",
-      minuteStart(nowMs) - minutes * MINUTE_MS,
-    );
+    const points = this.#minutePoints(machineId, minuteStart(nowMs) - minutes * MINUTE_MS);
     this.#applyAlerts(
       machineId,
       resourceConditions(points, thresholds),
@@ -1444,6 +1597,10 @@ export class MachineMapObject extends DurableObject<Env> {
   #overview(alerts: "active" | "page"): ResourcesOverview {
     const ids = new Set<string>(this.#map.machines.map((m) => m.id));
     const latest = this.#health.latest(ids);
+    for (const machine of this.#map.machines) {
+      const unstored = this.#unstoredSamples(machine.id);
+      if (unstored) latest[machine.id] = unstored.latest;
+    }
     return { latest, alerts: this.#alerts(alerts), thresholds: this.#thresholds };
   }
 
@@ -1504,10 +1661,13 @@ export class MachineMapObject extends DurableObject<Env> {
 
   #resourceHistory(machineId: MachineId, range: ResourceRange) {
     const spec = RANGE[range];
+    const fromMs = Date.now() - spec.spanMs;
     return historyOf(
       machineId,
       range,
-      this.#health.points(machineId, spec.step, Date.now() - spec.spanMs),
+      spec.step === "minute"
+        ? this.#minutePoints(machineId, fromMs)
+        : this.#health.points(machineId, "hour", fromMs),
     );
   }
 
@@ -2090,6 +2250,8 @@ export class MachineMapObject extends DurableObject<Env> {
       ...this.#healthAlarmTimes(),
     ];
     const at = earliest(times);
+    // Each set or delete of the alarm writes a row.
+    if (at === (await this.ctx.storage.getAlarm())) return;
     if (at === null) await this.ctx.storage.deleteAlarm();
     else await this.ctx.storage.setAlarm(at);
   }
@@ -2583,6 +2745,7 @@ export class MachineMapObject extends DurableObject<Env> {
           this.#sql(`DELETE FROM ${table} WHERE machine_id = ?`, machineId);
         }
       });
+      this.#unsavedPresence.delete(machineId);
       this.#health.removeMachine(machineId);
       if (Object.hasOwn(this.#thresholds, machineId)) {
         const { [machineId]: _removed, ...rest } = this.#thresholds;
@@ -2592,6 +2755,16 @@ export class MachineMapObject extends DurableObject<Env> {
       for (const ws of this.ctx.getWebSockets(machineTag(machineId)))
         ws.close(4004, "This machine left the map.");
       this.#broadcast(this.#rotationsEvent());
+      // MM-1210, MM-1213: in the Apply queue, after the machine left the map, so a running Apply
+      // cannot make its apps again. The last machine with guest links takes the rule with it.
+      if (api) {
+        const failed = await this.#guestSerial(async () => {
+          const row = this.#guestRows().find((r) => r.machine_id === machineId);
+          if (row) await this.#removeGuestApps(api, row);
+          return this.#syncGuestRateLimit(api, this.#guestHosts("").length > 0);
+        });
+        if (failed !== null) console.error(failed);
+      }
       return { machineId, tokenDeleted };
     });
   }
@@ -2876,6 +3049,356 @@ export class MachineMapObject extends DurableObject<Env> {
       }
       return (await this.#approvalsProblem(host)) ?? this.#approvalsReady();
     });
+  }
+
+  // MM-1210: guest links. `portalHost` is the host of the page, which no guest app may cover.
+
+  /** GET /api/guests. */
+  guestLinksStatus(owner: OwnerContext, portalHost: string) {
+    return this.#run(owner, () => this.#guestStatus(portalHost, []));
+  }
+
+  /** Saves the rules for every machine, then applies them. */
+  setGuestRules(owner: OwnerContext, portalHost: string, rules: GuestRules) {
+    return this.#run(owner, async () => {
+      const normalized = normalizeGuestRules(rules);
+      if ("error" in normalized) throw new PortalError(400, normalized.error);
+      this.#sql(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('guest_rules', ?)",
+        JSON.stringify(normalized.rules),
+      );
+      return this.#guestStatus(portalHost, await this.#applyGuestLinks(portalHost));
+    });
+  }
+
+  /** Turns guest links on or off for one machine as a map revision, then applies the setup. */
+  setGuestLinks(owner: OwnerContext, portalHost: string, machineId: MachineId, enabled: boolean) {
+    return this.#run(owner, async () => {
+      const machine = findMachine(this.#map, machineId);
+      if (!machine) throw new PortalError(404, `Unknown machine ${machineId}.`);
+      if (guestLinksOn(this.#map, this.#reportedSettings(machineId), machineId) !== enabled) {
+        this.#commit(
+          ownerActor(owner),
+          `Guest links ${enabled ? "on" : "off"} for ${machine.name}`,
+          [
+            {
+              _tag: "setSetting",
+              machineId,
+              scope: "server",
+              key: GUEST_SETTING,
+              present: true,
+              value: enabled,
+            },
+          ],
+        );
+      }
+      return this.#guestStatus(portalHost, await this.#applyGuestLinks(portalHost));
+    });
+  }
+
+  /** "Apply": makes Cloudflare match the rules and the machines with guest links on. */
+  applyGuestLinks(owner: OwnerContext, portalHost: string) {
+    return this.#run(owner, async () =>
+      this.#guestStatus(portalHost, await this.#applyGuestLinks(portalHost)),
+    );
+  }
+
+  #guestRules(): GuestRules {
+    const row = this.#sql<{ value: string }>("SELECT value FROM meta WHERE key = 'guest_rules'")[0];
+    return row ? decodeGuestRules(row.value) : EMPTY_GUEST_RULES;
+  }
+
+  #guestRows(): Array<GuestAppsRow> {
+    return this.#sql<GuestAppsRow>("SELECT * FROM guest_apps");
+  }
+
+  /**
+   * Each machine with guest links on and a hostname, with the reason the portal must not make apps
+   * on that host (MM-1210), or null.
+   */
+  #guestHosts(portalHost: string): Array<{
+    readonly id: MachineId;
+    readonly name: string;
+    readonly hostname: string;
+    readonly problem: string | null;
+  }> {
+    const hostnames = this.#map.machines.flatMap((m) =>
+      m.hostname === null ? [] : [{ id: m.id, hostname: m.hostname }],
+    );
+    return this.#map.machines.flatMap((m) => {
+      if (m.hostname === null || !guestLinksOn(this.#map, this.#reportedSettings(m.id), m.id))
+        return [];
+      const others = hostnames.filter((h) => h.id !== m.id).map((h) => h.hostname);
+      const tunnelHost = this.#tunnelRow(m.id)?.hostname ?? null;
+      const problem = guestHostProblem(
+        m.hostname,
+        this.env.MACHINE_DOMAIN,
+        tunnelHost,
+        portalHost,
+        others,
+      );
+      return [{ id: m.id, name: m.name, hostname: m.hostname, problem }];
+    });
+  }
+
+  /** Deletes the apps of one row, then the row. A 404 counts as done. */
+  async #removeGuestApps(api: CloudflareApi, row: GuestAppsRow): Promise<void> {
+    for (const id of [row.guest_app_id, row.build_app_id]) {
+      if (id !== null) await api.deleteAccessApp(id);
+    }
+    this.#sql("DELETE FROM guest_apps WHERE machine_id = ?", row.machine_id);
+  }
+
+  /** The rate limit rule exists while a machine has guest links on (MM-1213). */
+  async #syncGuestRateLimit(api: CloudflareApi, needed: boolean): Promise<string | null> {
+    const zoneId = this.env.MACHINE_ZONE_ID;
+    if (!configured(zoneId)) return null;
+    try {
+      if (needed) await api.ensureGuestRateLimit(zoneId);
+      else await api.removeGuestRateLimit(zoneId);
+      return null;
+    } catch (error) {
+      // A missing permission shows as the Cloudflare step of the status.
+      return isPermissionRefusal(error)
+        ? null
+        : `Could not set the rate limit rule: ${errorMessage(error)}`;
+    }
+  }
+
+  /** Every Access app, for the checks by name and by path. A refusal names the permission. */
+  async #accessApps(api: CloudflareApi): Promise<ReadonlyArray<GuestApp>> {
+    try {
+      return await api.accessApps();
+    } catch (error) {
+      if (isPermissionRefusal(error)) throw new PortalError(403, guestErrorText(error));
+      throw error;
+    }
+  }
+
+  /** The last Apply could not add the One-time PIN login, so the status shows the manual step. */
+  #pinCreateRefused = false;
+  /** Applies run one at a time, so two pages never make the same app twice. */
+  #guestApply: Promise<unknown> = Promise.resolve();
+
+  #applyGuestLinks(portalHost: string): Promise<Array<string>> {
+    return this.#guestSerial(() => this.#applyGuestLinksNow(portalHost));
+  }
+
+  #guestSerial<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.#guestApply.then(work, work);
+    this.#guestApply = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
+   * Makes or repairs the apps of every guest host, removes the apps of every other row, and adds
+   * or removes the rate limit rule. Returns what failed. A missing permission is no failure: the
+   * status shows it.
+   */
+  async #applyGuestLinksNow(portalHost: string): Promise<Array<string>> {
+    const api = this.#cloudflare();
+    if (!api) return [];
+    const errors: Array<string> = [];
+    const all = this.#guestHosts(portalHost);
+    const hosts = all.filter((host) => host.problem === null);
+    for (const row of this.#guestRows()) {
+      const host = hosts.find((h) => h.id === row.machine_id);
+      if (host?.hostname === row.hostname) continue;
+      try {
+        await this.#removeGuestApps(api, row);
+      } catch (error) {
+        errors.push(`Could not remove the guest apps of ${row.hostname}: ${guestErrorText(error)}`);
+      }
+    }
+    const rateLimitError = await this.#syncGuestRateLimit(api, all.length > 0);
+    if (rateLimitError !== null) errors.push(rateLimitError);
+    if (hosts.length === 0) return errors;
+    let pinId: string | null;
+    try {
+      pinId = await api.oneTimePinId();
+    } catch (error) {
+      if (!isPermissionRefusal(error))
+        errors.push(`Could not read the login methods: ${errorMessage(error)}`);
+      return errors;
+    }
+    if (pinId === null) {
+      try {
+        pinId = await api.createOneTimePin();
+      } catch (error) {
+        if (isPermissionRefusal(error)) this.#pinCreateRefused = true;
+        else errors.push(`Could not add the One-time PIN login: ${errorMessage(error)}`);
+        return errors;
+      }
+    }
+    this.#pinCreateRefused = false;
+    const policies = guestPolicies(this.#guestRules(), ownerEmails(this.env));
+    let apps = await this.#accessApps(api);
+    for (const host of hosts) {
+      for (const kind of ["guest", "build"] as const) {
+        try {
+          const body = guestAppBody(kind, host.hostname, policies, pinId);
+          const current = await this.#guestApp(api, apps, host.id, kind, host.hostname);
+          if (current !== null && guestAppProblem(current, body) === null) {
+            this.#saveGuestApp(host.id, host.hostname, kind, current.id);
+            continue;
+          }
+          if (current !== null) {
+            await api.deleteAccessApp(current.id);
+            apps = apps.filter((app) => app.id !== current.id);
+          }
+          const foreign = foreignGuestApp(apps, kind, host.hostname);
+          if (foreign !== null) {
+            errors.push(foreignAppText(foreign));
+            continue;
+          }
+          this.#saveGuestApp(host.id, host.hostname, kind, await api.createAccessApp(body));
+        } catch (error) {
+          errors.push(`${host.name}: ${guestErrorText(error)}`);
+        }
+      }
+    }
+    return errors;
+  }
+
+  /**
+   * The app of `kind` that the portal made for the host: by the stored id, or else by its name,
+   * so a lost row does not make a twin.
+   */
+  async #guestApp(
+    api: CloudflareApi,
+    apps: ReadonlyArray<GuestApp>,
+    machineId: MachineId,
+    kind: GuestAppKind,
+    hostname: string,
+  ): Promise<GuestApp | null> {
+    const row = this.#guestRows().find((r) => r.machine_id === machineId);
+    const stored = row?.hostname === hostname ? row[GUEST_APP_COLUMN[kind]] : null;
+    const id = stored ?? apps.find((app) => app.name === guestAppName(kind, hostname))?.id ?? null;
+    return id === null ? null : api.guestApp(id);
+  }
+
+  #saveGuestApp(machineId: MachineId, hostname: string, kind: GuestAppKind, appId: string): void {
+    this.#sql(
+      "INSERT INTO guest_apps (machine_id, hostname) VALUES (?, ?) ON CONFLICT (machine_id) DO NOTHING",
+      machineId,
+      hostname,
+    );
+    this.#sql(
+      `UPDATE guest_apps SET hostname = ?, ${GUEST_APP_COLUMN[kind]} = ? WHERE machine_id = ?`,
+      hostname,
+      appId,
+      machineId,
+    );
+  }
+
+  /** What Cloudflare holds now, compared with the rules and the machines. */
+  async #guestStatus(portalHost: string, errors: ReadonlyArray<string>): Promise<GuestLinksStatus> {
+    const rules = this.#guestRules();
+    const hosts = this.#guestHosts(portalHost);
+    const rows = this.#guestRows();
+    const api = this.#cloudflare();
+    const machineStatus = (
+      state: (machine: {
+        id: MachineId;
+        hostname: string | null;
+        enabled: boolean;
+      }) => Promise<GuestPartState>,
+    ) =>
+      Promise.all(
+        this.#map.machines.map(async (m): Promise<GuestMachineStatus> => {
+          const enabled = guestLinksOn(this.#map, this.#reportedSettings(m.id), m.id);
+          const machine = { id: m.id, hostname: m.hostname, enabled };
+          return { machineId: m.id, hostname: m.hostname, enabled, state: await state(machine) };
+        }),
+      );
+    if (!api) {
+      const problem = "Guest links need the CF_API_TOKEN secret (MM-1205).";
+      return {
+        rules,
+        problem,
+        oneTimePin: { _tag: "off" },
+        rateLimit: { _tag: "off" },
+        machines: await machineStatus(async (m) =>
+          m.enabled ? { _tag: "needsApply", reason: problem } : { _tag: "off" },
+        ),
+        errors,
+      };
+    }
+    const needed = hosts.some((host) => host.problem === null);
+    const [pin, rateLimit, apps] = await Promise.all([
+      this.#oneTimePin(api, needed),
+      this.#rateLimitState(api, hosts.length > 0),
+      needed ? this.#accessApps(api) : Promise.resolve([]),
+    ]);
+    const policies = guestPolicies(rules, ownerEmails(this.env));
+    const machines = await machineStatus(async (m): Promise<GuestPartState> => {
+      const row = rows.find((r) => r.machine_id === m.id);
+      if (!m.enabled)
+        return row
+          ? { _tag: "needsApply", reason: "Guest links are off. Apply removes its Access apps." }
+          : { _tag: "off" };
+      if (m.hostname === null) return { _tag: "noHostname" };
+      const problem = hosts.find((host) => host.id === m.id)?.problem ?? null;
+      if (problem !== null) return { _tag: "blocked", reason: problem };
+      for (const kind of ["guest", "build"] as const) {
+        const current = await this.#guestApp(api, apps, m.id, kind, m.hostname);
+        if (current === null) {
+          const foreign = foreignGuestApp(apps, kind, m.hostname);
+          if (foreign !== null) return { _tag: "blocked", reason: foreignAppText(foreign) };
+          return { _tag: "needsApply", reason: "Its Access apps are missing." };
+        }
+        if (pin.id === null)
+          return { _tag: "needsApply", reason: "The One-time PIN login is missing." };
+        const drift = guestAppProblem(current, guestAppBody(kind, m.hostname, policies, pin.id));
+        if (drift !== null) return { _tag: "needsApply", reason: drift };
+      }
+      return { _tag: "ready" };
+    });
+    return { rules, problem: null, oneTimePin: pin.state, rateLimit, machines, errors };
+  }
+
+  async #oneTimePin(
+    api: CloudflareApi,
+    needed: boolean,
+  ): Promise<{ readonly state: GuestPartState; readonly id: string | null }> {
+    try {
+      const id = await api.oneTimePinId();
+      if (id !== null) return { state: { _tag: "ready" }, id };
+      if (!needed) return { state: { _tag: "off" }, id };
+      if (this.#pinCreateRefused)
+        return { state: { _tag: "cloudflareStep", step: "oneTimePin" }, id };
+      const reason = "The One-time PIN login method is missing.";
+      return { state: { _tag: "needsApply", reason }, id };
+    } catch (error) {
+      if (!isPermissionRefusal(error)) throw error;
+      // Apply reads the login methods even when someone added One-time PIN by hand.
+      const reason = `The CF_API_TOKEN cannot read the login methods. Add "${CLOUDFLARE_STEP_PERMISSION.oneTimePin}" (or at least its Read) to the token (MM-1205).`;
+      return { state: { _tag: "blocked", reason }, id: null };
+    }
+  }
+
+  async #rateLimitState(api: CloudflareApi, needed: boolean): Promise<GuestPartState> {
+    const zoneId = this.env.MACHINE_ZONE_ID;
+    if (!configured(zoneId))
+      return needed
+        ? {
+            _tag: "blocked",
+            reason: "Set MACHINE_ZONE_ID in wrangler.jsonc for the rate limit rule.",
+          }
+        : { _tag: "off" };
+    try {
+      const { rule } = await api.guestRateLimit(zoneId);
+      if (!needed)
+        return rule
+          ? { _tag: "needsApply", reason: "No machine has guest links. Apply removes the rule." }
+          : { _tag: "off" };
+      if (rule === null) return { _tag: "needsApply", reason: "The rate limit rule is missing." };
+      const problem = guestRateLimitProblem(rule);
+      return problem === null ? { _tag: "ready" } : { _tag: "needsApply", reason: problem };
+    } catch (error) {
+      if (isPermissionRefusal(error)) return { _tag: "cloudflareStep", step: "rateLimit" };
+      throw error;
+    }
   }
 
   /** The audience that the Worker checks on the approval path (MM-1207). No owner: it runs first. */

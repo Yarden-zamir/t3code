@@ -9,6 +9,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Cloudflare Access login](docs/fork/features.md#cloudflare-access-login):** the server accepts the Cloudflare Access JWT as the owner login.
 - **[Request headers per environment](docs/fork/features.md#request-headers-per-environment):** a saved environment sends its own headers, for example a Cloudflare Access service token.
 - **[Tunnel pairing](docs/fork/features.md#tunnel-pairing):** a desktop server on loopback makes pairing links with its tunnel URL.
+- **[Guest links over the tunnel](docs/fork/features.md#guest-links-over-the-tunnel):** guest links work through the Cloudflare tunnel without T3 Connect.
 - **[Trusted sibling environments](docs/fork/features.md#trusted-sibling-environments):** one browser page pairs with and reaches the other hosts.
 - **[Quiet reconnect after restart](docs/fork/features.md#quiet-reconnect-after-restart):** right after the app starts, the composer waits before it warns that a server is reconnecting (off by default).
 
@@ -228,6 +229,7 @@ We are (mostly) not accepting contributions yet. Small fixes may be considered. 
 
 Full docs live in [docs/](./docs). There's no docs site yet.
 
+- [FAQ](./docs/user/faq.md)
 - [Install and first run](./docs/user/install.md)
 - [Permission modes](./docs/user/permission-modes.md)
 - [Keyboard shortcuts](./docs/user/keybindings.md)

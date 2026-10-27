@@ -32,7 +32,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export const THREAD_CARD_SURFACE_CLASS =
   "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 export const THREAD_CARD_ACTIVE_CLASS =
-  "bg-sidebar-row-active text-sidebar-foreground light:shadow-xs light:ring-1 light:ring-inset light:ring-sidebar-border/70";
+  "bg-sidebar-row-active text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70";
 export const THREAD_CARD_IDLE_CLASS =
   "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover";
 /** Padding of the card content; a custom layout adds no height of its own. */
@@ -77,19 +77,14 @@ export function ThreadCardStatusBadge(props: { status: ThreadCardStatus; trailin
   );
 }
 
-function threadCardProjectLabelClassName(recede: boolean): string {
-  return cn(
-    "min-w-0 truncate text-secondary-label text-xs",
-    recede ? "font-normal" : "font-medium redesign:font-normal",
-  );
-}
+const THREAD_CARD_PROJECT_LABEL_CLASS = "min-w-0 truncate font-normal text-secondary-label text-xs";
 
 /** The branch name with its leading icon (worktree or machine). */
 export function ThreadCardBranch(props: { branch: string; leading: ReactNode }) {
   return (
     <>
       {props.leading}
-      <span className="flex min-w-0 flex-1 text-muted-foreground/40 redesign:text-inherit">
+      <span className="flex min-w-0 flex-1">
         <MiddleTruncate value={props.branch} showTitle={false} />
       </span>
     </>
@@ -105,16 +100,8 @@ export function ThreadCardDiff(props: { insertions: number; deletions: number })
   );
 }
 
-export function ThreadCardProjectLabel(props: {
-  name: string;
-  recede: boolean;
-  className?: string;
-}) {
-  return (
-    <span className={cn(threadCardProjectLabelClassName(props.recede), props.className)}>
-      {props.name}
-    </span>
-  );
+export function ThreadCardProjectLabel(props: { name: string; className?: string }) {
+  return <span className={cn(THREAD_CARD_PROJECT_LABEL_CLASS, props.className)}>{props.name}</span>;
 }
 
 /** What each card element shows for one thread; null leaves the element out. */

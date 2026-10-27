@@ -931,6 +931,8 @@ function ApprovalDialog({
     if (
       dialog.mode === "return" &&
       dialog.state._tag === "ready" &&
+      // The lint reports the whole dependency list on this line, its first missing dependency.
+      // oxlint-disable-next-line react/exhaustive-effect-dependencies -- One attempt per dialog (`attempted`); it waits for the portal's pending write, and the listed fields release or change that wait.
       action?._tag === "approve" &&
       portal.pending === null
     )
@@ -939,6 +941,7 @@ function ApprovalDialog({
     try {
       finishApproval();
     } catch {
+      // oxlint-disable-next-line react/set-state-in-effect -- Reports a failure of the external tab storage that the effect just wrote.
       setPhase("failed");
       setMessage(
         "The browser could not clear the saved approval. Allow tab storage and try again.",

@@ -83,6 +83,7 @@ import {
   startNewThreadForProject,
 } from "./ChatView.logic";
 import { ChatCanvas } from "./chat/ChatCanvas";
+import { createChatCanvasStore } from "./chat/canvasStore";
 import { composerShortcutCommands } from "./chat/composerShortcuts";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ComposerBannerStack } from "./chat/ComposerBannerStack";
@@ -184,6 +185,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
   const [layoutElement, setLayoutElement] = useState<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
+  const [chatCanvasStore] = useState(createChatCanvasStore);
   const rightPanel = useThreadRightPanel({
     threadRef,
     routeThreadRef: threadRef,
@@ -386,7 +388,12 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
         </header>
         <TerminalThreadError threadRef={threadRef} thread={thread} />
         {/* The canvas places the floating preview that closing the right panel leaves. */}
-        <ChatCanvas composerOverlayElement={null}>
+        <ChatCanvas
+          store={chatCanvasStore}
+          threadRef={threadRef}
+          preview={rightPanel.canvasPreview}
+          composerOverlayElement={null}
+        >
           <MainTerminal
             threadRef={threadRef}
             title={thread.title}
@@ -403,7 +410,6 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
         <ThreadDetailsPanel
           anchor={headerRef}
           handle={threadPanelPopoverHandle}
-          onPresentationChange={rightPanel.setThreadPanelPresentation}
           environmentId={thread.environmentId}
           threadId={thread.id}
           projectId={thread.projectId}

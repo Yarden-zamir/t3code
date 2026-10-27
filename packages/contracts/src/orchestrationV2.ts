@@ -534,6 +534,37 @@ export function isCompactionCommandMessage(message: CompactionMessageFields): bo
   );
 }
 
+export type OrchestrationV2GoalCommand =
+  | { readonly type: "show" }
+  | { readonly type: "clear" }
+  | { readonly type: "pause" }
+  | { readonly type: "resume" }
+  | { readonly type: "set"; readonly objective: string };
+
+/** Reads a `/goal` control message. Messages with attachments are ordinary prompts. */
+export function parseGoalCommand(message: {
+  readonly text: string;
+  readonly attachments?: ReadonlyArray<unknown> | undefined;
+}): OrchestrationV2GoalCommand | null {
+  if ((message.attachments?.length ?? 0) > 0) return null;
+  const match = /^\/goal(?:\s+([\s\S]*))?$/u.exec(message.text.trim());
+  if (match === null) return null;
+  const argument = (match[1] ?? "").trim();
+  switch (argument.toLowerCase()) {
+    case "":
+    case "edit":
+      return { type: "show" };
+    case "clear":
+      return { type: "clear" };
+    case "pause":
+      return { type: "pause" };
+    case "resume":
+      return { type: "resume" };
+    default:
+      return { type: "set", objective: argument };
+  }
+}
+
 /** Why T3 Code sent this `/compact` on its own, or undefined for one someone asked for. */
 export function idleCompactionOf(
   message: CompactionMessageFields,
@@ -3349,22 +3380,19 @@ const OrchestrationV2InternalCommand = Schema.Union([
     status: Schema.Literals(["completed", "failed", "cancelled", "interrupted"]),
     result: Schema.String,
     /**
-     * What this report says about stopping there: `ran-out` when the task's
-     * run ended there by itself, `stopped` when a stop from here reached it.
-     * Either sets `remoteChild.stoppedThere` on a task this report completes;
-     * on a task already cancelled or stopped here, only `stopped` does, since
-     * a run that ended by itself leaves the stop owed for what may follow it.
+     * `ran-out`: the run there ended by itself; `stopped`: a stop from here reached it. Either
+     * sets `remoteChild.stoppedThere` on a task this report completes. On a task already
+     * cancelled or stopped here only `stopped` does, since a run that ended by itself leaves
+     * the stop owed for whatever follows it.
      */
     stoppedThere: Schema.optional(Schema.Literals(["ran-out", "stopped"])),
     /** The stop generation this report acknowledges; absent for the original unnumbered stop. */
     stopCount: Schema.optional(NonNegativeInt),
   }),
   /**
-   * Owes a stop to the thread there of a remote task that already has its
-   * result, as Stop on a parent stops a finished child here: whatever runs on
-   * that thread now is stopped. The task keeps its status, result and
-   * completion delivery; its follower sends the stop and reports it with
-   * `delegated_task.remote.complete`.
+   * Owes a stop to the thread there of a remote task that already has its result, as Stop on
+   * a parent stops a finished child here. The task keeps its status, result and completion
+   * delivery; its follower sends the stop and reports it with `delegated_task.remote.complete`.
    */
   Schema.Struct({
     type: Schema.Literal("delegated_task.remote.stop"),

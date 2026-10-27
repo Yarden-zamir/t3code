@@ -490,6 +490,7 @@ export function ForkDraftTerminalComposer(props: {
         command: summary?.command,
         branch,
         worktreePath,
+        // oxlint-disable-next-line react/purity -- runs in an effect event (oxc#27309)
         createdAt: new Date().toISOString(),
       }),
     });

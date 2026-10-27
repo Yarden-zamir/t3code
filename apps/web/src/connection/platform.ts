@@ -361,12 +361,15 @@ const layerCapabilities = Layer.effectContext(
       deviceId: Effect.succeedNone,
     });
     const primaryAuth = ClientCapabilities.PrimaryEnvironmentAuth.of({
-      refreshBearerToken: (rejected) =>
-        Effect.tryPromise({
-          try: () => readDesktopPrimaryBearerToken(rejected),
-          catch: (cause) =>
-            new ConnectionTransientError({ reason: "remote-unavailable", detail: String(cause) }),
-        }).pipe(Effect.map(Option.fromNullishOr)),
+      refreshBearerToken: Effect.fn("ClientCapabilities.PrimaryEnvironmentAuth.refreshBearerToken")(
+        function (rejected) {
+          return Effect.tryPromise({
+            try: () => readDesktopPrimaryBearerToken(rejected),
+            catch: (cause) =>
+              new ConnectionTransientError({ reason: "remote-unavailable", detail: String(cause) }),
+          }).pipe(Effect.map(Option.fromNullishOr));
+        },
+      ),
       bearerToken: Effect.tryPromise({
         try: () => readDesktopPrimaryBearerToken(),
         catch: (cause) =>
@@ -797,25 +800,28 @@ const layerPlatformConnectionSource = Layer.effect(
 const layerEnvironmentOwnedDataCleanup = Layer.succeed(
   Persistence.EnvironmentOwnedDataCleanup,
   Persistence.EnvironmentOwnedDataCleanup.of({
-    clear: (environmentId) =>
-      Effect.sync(() => {
+    clear: Effect.fn("Persistence.EnvironmentOwnedDataCleanup.clear")(function (environmentId) {
+      return Effect.sync(() => {
         clearComposerDraftsEnvironment(environmentId);
-      }),
+      });
+    }),
   }),
 );
 
 const layerRpcRequestObserver = Layer.succeed(
   EnvironmentRpcRequestObserver,
   EnvironmentRpcRequestObserver.of({
-    observe: ({ environmentId, environmentLabel, method }) =>
-      Effect.sync(() => {
+    // Every RPC passes through this observer; the request owns its span.
+    observe: Effect.fnUntraced(function* ({ environmentId, environmentLabel, method }) {
+      return yield* Effect.sync(() => {
         nextObservedRpcRequestId += 1;
         const requestId = `${environmentId}:${nextObservedRpcRequestId}`;
         trackRpcRequestSent(requestId, method, `${method} · ${environmentLabel}`);
         return Effect.sync(() => {
           acknowledgeRpcRequest(requestId);
         });
-      }),
+      });
+    }),
   }),
 );
 

@@ -1,7 +1,7 @@
 import * as NodeSqlite from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { MachineMapDocument } from "@t3tools/contracts/machineMap";
+import { MACHINE_MAP_PROTOCOL, MachineMapDocument } from "@t3tools/contracts/machineMap";
 
 import { CloudflareApi } from "./cloudflare.ts";
 import type { Env } from "./env.ts";
@@ -9,6 +9,7 @@ import { MachineMapObject, type OwnerContext } from "./MachineMapObject.ts";
 import { emptyMap } from "./rules/map.ts";
 import { arrowChange } from "./rules/access.ts";
 import { MAC, threeMachines, VPS, WIN } from "./rules/testMap.ts";
+import { GUEST_RATE_LIMIT_RULE } from "./guestLinks.ts";
 import { APPROVAL_CHANGED, captureApproval } from "./rules/approval.ts";
 
 vi.mock("cloudflare:workers", () => ({
@@ -71,7 +72,15 @@ function portal(machines: boolean | MachineMapDocument = false, connectMac = fal
   const send = vi.fn();
   // What the portal sends to the machine MAC, for example the result of an agent tool.
   const sendToMac = vi.fn();
-  const setAlarm = vi.fn(async (_at: number) => {});
+  let alarmAt: number | null = null;
+  const setAlarm = vi.fn(async (at: number) => {
+    alarmAt = at;
+  });
+  const deleteAlarm = vi.fn(async () => {
+    alarmAt = null;
+  });
+  // Machine sockets that a test opens with `machineSocket`, by machine id.
+  const machineSockets = new Map<string, WebSocket>();
   const ctx = {
     setWebSocketAutoResponse: vi.fn(),
     getWebSockets: (tag: string) =>
@@ -79,7 +88,7 @@ function portal(machines: boolean | MachineMapDocument = false, connectMac = fal
         ? [{ send }]
         : connectMac && tag === `machine:${MAC}`
           ? [{ send: sendToMac }]
-          : [],
+          : [...machineSockets].flatMap(([id, ws]) => (tag === `machine:${id}` ? [ws] : [])),
     waitUntil: (_work: Promise<unknown>) => {},
     storage: {
       sql: {
@@ -94,7 +103,8 @@ function portal(machines: boolean | MachineMapDocument = false, connectMac = fal
       },
       transactionSync: (work: () => unknown) => work(),
       setAlarm,
-      deleteAlarm: vi.fn(async () => {}),
+      getAlarm: async () => alarmAt,
+      deleteAlarm,
     },
   } as unknown as DurableObjectState;
   const env = {
@@ -105,7 +115,17 @@ function portal(machines: boolean | MachineMapDocument = false, connectMac = fal
     DEV_FAKE_ACCESS: "1",
     ...(machines === false ? {} : { CF_API_TOKEN: "test-only" }),
   } as Env;
-  return { db, ctx, env, object: new MachineMapObject(ctx, env), send, sendToMac, setAlarm };
+  return {
+    db,
+    ctx,
+    env,
+    object: new MachineMapObject(ctx, env),
+    send,
+    sendToMac,
+    setAlarm,
+    deleteAlarm,
+    machineSockets,
+  };
 }
 
 it("reads push registration without restoring a subscription deleted by sign-out", async () => {
@@ -216,8 +236,9 @@ it("supersedes a waiting rotation when the owner makes a join code", async () =>
   expect(db.prepare("SELECT * FROM rotations").all()).toEqual([]);
 });
 
+const decodeMapDocument = Schema.decodeUnknownSync(MachineMapDocument);
 const readMap = (db: NodeSqlite.DatabaseSync) =>
-  Schema.decodeUnknownSync(MachineMapDocument)(
+  decodeMapDocument(
     JSON.parse(String(db.prepare("SELECT value FROM meta WHERE key = 'map'").get()?.value)),
   );
 
@@ -671,5 +692,343 @@ it("records a forwarded call for History without arguments, once per call", asyn
   expect(send.mock.calls.map(([text]) => JSON.parse(text)).at(-1)).toEqual({
     _tag: "calls",
     calls: [{ ...report, from: MAC }],
+  });
+});
+
+describe("storage use of machine messages (MM-1001, MM-1503)", () => {
+  /** A machine socket that keeps its attachment through hibernation, like the runtime. */
+  const machineSocket = (machineId: string) => {
+    let attachment: unknown = { kind: "machine", machineId };
+    return {
+      readyState: WebSocket.OPEN,
+      send: vi.fn(),
+      close: vi.fn(),
+      serializeAttachment: (value: unknown) => {
+        attachment = structuredClone(value);
+      },
+      deserializeAttachment: () => attachment,
+    } as unknown as WebSocket;
+  };
+  const status = (change: {
+    cpuPercent?: number;
+    uptimeSeconds?: number;
+    runningTurns?: number;
+  }) => ({
+    t3Version: "0.0.45",
+    build: "release",
+    hostname: null,
+    uptimeSeconds: 0,
+    runningTurns: 0,
+    waitingThreads: 0,
+    scheduledTasks: 0,
+    updateWaiting: null,
+    cpuPercent: 10,
+    memoryPercent: 50,
+    commands: [],
+    clients: [],
+    ...change,
+  });
+  const sample = (cpuPercent: number) => ({
+    at: NOW,
+    cpuPercent,
+    cpuBusyPercent: cpuPercent,
+    cpuStealPercent: null,
+    cpuPressurePercent: null,
+    cpuCount: 4,
+    load: null,
+    memoryUsedBytes: 1,
+    memoryTotalBytes: 2,
+    swapUsedBytes: null,
+    swapTotalBytes: null,
+    swapBytesPerSecond: null,
+    diskUsedBytes: null,
+    diskTotalBytes: null,
+    netInBytesPerSecond: null,
+    netOutBytesPerSecond: null,
+    t3: null,
+    agents: null,
+    topCpu: null,
+    topMemory: null,
+    battery: null,
+  });
+  /** A connected MAC, and the SQL rows written and alarm writes since the last `usage()`. */
+  async function connectedMac() {
+    const harness = portal(true);
+    const socket = machineSocket(MAC);
+    harness.machineSockets.set(MAC, socket);
+    const message = (body: unknown) =>
+      harness.object.webSocketMessage(socket, JSON.stringify(body));
+    await message({
+      _tag: "hello",
+      protocol: MACHINE_MAP_PROTOCOL,
+      appliedRevision: 0,
+      status: status({}),
+      settings: { server: {}, client: {} },
+    });
+    const totalChanges = () => Number(harness.db.prepare("SELECT total_changes() AS n").get()?.n);
+    let rows = totalChanges();
+    // `setAlarm` and `deleteAlarm` each write a row.
+    const alarmCalls = () =>
+      harness.setAlarm.mock.calls.length + harness.deleteAlarm.mock.calls.length;
+    let alarms = alarmCalls();
+    const usage = () => {
+      const now = { rows: totalChanges() - rows, alarms: alarmCalls() - alarms };
+      rows = totalChanges();
+      alarms = alarmCalls();
+      return now;
+    };
+    return { ...harness, socket, message, usage };
+  }
+  const advance = (ms: number) => vi.setSystemTime(new Date(Date.now() + ms));
+
+  it("writes presence only on a real change, and plans no alarm for a status", async () => {
+    const { message, usage, send } = await connectedMac();
+    send.mockClear();
+    for (let i = 1; i <= 100; i++) {
+      advance(5_000);
+      await message({ _tag: "status", status: status({ cpuPercent: i, uptimeSeconds: i * 5 }) });
+    }
+    // One refresh of the last-seen time after 5 minutes.
+    expect(usage()).toEqual({ rows: 1, alarms: 0 });
+    // Pages still get every status.
+    const presence = send.mock.calls
+      .map(([text]) => JSON.parse(text))
+      .filter((event) => event._tag === "presence");
+    expect(presence).toHaveLength(100);
+    expect(presence.at(-1).presence.status.cpuPercent).toBe(100);
+
+    await message({ _tag: "status", status: status({ runningTurns: 1 }) });
+    expect(usage()).toEqual({ rows: 1, alarms: 0 });
+    for (let i = 0; i < 100; i++) await message({ _tag: "applied", revision: 0 });
+    expect(usage()).toEqual({ rows: 0, alarms: 0 });
+  });
+
+  it("stores minute points in 10-minute blocks that survive hibernation and a close", async () => {
+    vi.setSystemTime(new Date("2026-10-20T09:00:00.000Z"));
+    const { message, usage, ctx, env, socket, machineSockets, db } = await connectedMac();
+    for (let i = 0; i < 30; i++) {
+      await message({ _tag: "resources", sample: sample(i) });
+      advance(60_000);
+    }
+    // Two stored blocks: their minute points, the hour point and the latest sample.
+    expect(usage()).toEqual({ rows: 6, alarms: 1 });
+
+    // A woken object reads the unstored minutes from the socket.
+    const woken = new MachineMapObject(ctx, env);
+    const hour = await woken.resources(owner, MAC, "hour");
+    if (!hour.ok) throw new Error(hour.error);
+    expect(hour.value.cpu).toEqual(Array.from({ length: 30 }, (_, i) => i));
+
+    machineSockets.delete(MAC);
+    await woken.webSocketClose(socket, 1000, "Bye.");
+    const restarted = new MachineMapObject(ctx, env);
+    const stored = await restarted.resources(owner, MAC, "hour");
+    if (!stored.ok) throw new Error(stored.error);
+    expect(stored.value.cpu).toEqual(Array.from({ length: 30 }, (_, i) => i));
+
+    // MM-1504: the close stored the exact last-seen time, so DOWN starts after 15 minutes.
+    advance(15 * 60_000 - 1);
+    await restarted.alarm();
+    expect(db.prepare("SELECT machine_id FROM health_alerts WHERE active = 1").all()).toEqual([]);
+    advance(1);
+    await restarted.alarm();
+    expect(db.prepare("SELECT machine_id FROM health_alerts WHERE active = 1").all()).toEqual([
+      { machine_id: MAC },
+    ]);
+  });
+});
+
+/** MM-1210: an in-memory Cloudflare API with the Access apps, login methods and rate limit rules. */
+function fakeCloudflare(
+  options: {
+    readonly wafStatus?: number;
+    readonly rules?: ReadonlyArray<Record<string, unknown>>;
+  } = {},
+) {
+  const apps = new Map<string, Record<string, unknown>>();
+  const providers: Array<{ id: string; type: string }> = [];
+  let ruleset: { id: string; rules: Array<Record<string, unknown>> } | null = options.rules
+    ? { id: "ruleset", rules: [...options.rules] }
+    : null;
+  const calls: Array<string> = [];
+  let next = 0;
+  const ok = (result: unknown) => Response.json({ success: true, errors: [], result });
+  const refuse = (status: number) =>
+    Response.json(
+      { success: false, errors: [{ code: 10000, message: "no" }], result: null },
+      { status },
+    );
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    const method = init.method ?? "GET";
+    const path = new URL(url).pathname.replace("/client/v4", "");
+    const body = init.body === undefined ? undefined : JSON.parse(String(init.body));
+    calls.push(`${method} ${path}`);
+    if (path === "/accounts/account/access/identity_providers") {
+      if (method === "GET") return ok(providers);
+      providers.push({ id: "otp", type: body.type });
+      return ok({ id: "otp" });
+    }
+    if (path === "/accounts/account/access/apps") {
+      if (method === "GET") return ok([...apps.values()]);
+      const id = `app-${++next}`;
+      apps.set(id, { ...body, id });
+      return ok({ id });
+    }
+    const appId = path.split("/access/apps/")[1];
+    if (appId !== undefined) {
+      const app = apps.get(appId);
+      if (!app) return refuse(404);
+      if (method === "DELETE") apps.delete(appId);
+      return ok(app);
+    }
+    if (path.startsWith("/zones/zone/rulesets")) {
+      if (options.wafStatus) return refuse(options.wafStatus);
+      if (path.endsWith("/entrypoint")) return ruleset ? ok(ruleset) : refuse(404);
+      if (path === "/zones/zone/rulesets") {
+        ruleset = { id: "ruleset", rules: body.rules.map((r: object) => ({ ...r, id: "rule" })) };
+        return ok(ruleset);
+      }
+      if (method === "DELETE" && ruleset) ruleset.rules = [];
+      if (method === "PATCH" && ruleset) ruleset.rules = [{ ...body, id: path.split("/").pop() }];
+      return ok(ruleset);
+    }
+    throw new Error(`Unexpected Cloudflare call ${method} ${path}`);
+  });
+  return { apps, providers, calls, ruleset: () => ruleset };
+}
+
+describe("guest links (MM-1210)", () => {
+  const PORTAL = "t3.example.com";
+  const GUEST_ENV = { MACHINE_ZONE_ID: "zone", MACHINE_DOMAIN: "example.com" };
+  /** Three machines on hosts that MM-1210 accepts under `example.com`. */
+  const guestMap = () => {
+    const map = threeMachines();
+    return {
+      ...map,
+      machines: map.machines.map((m) => ({ ...m, hostname: `t3-${m.id}.example.com` })),
+    };
+  };
+  const value = <T>(outcome: { ok: true; value: T } | { ok: false; error: string }): T => {
+    if (!outcome.ok) throw new Error(outcome.error);
+    return outcome.value;
+  };
+  const rules = {
+    emails: [],
+    emailDomains: ["@Example.com"],
+    ipRanges: [],
+    requireIpRanges: ["10.0.0.1"],
+  };
+
+  it("makes, repairs and removes the Access setup of each machine host", async () => {
+    const { object, env } = portal(guestMap());
+    Object.assign(env, GUEST_ENV);
+    const cf = fakeCloudflare();
+
+    const saved = value(await object.setGuestRules(owner, PORTAL, rules));
+    expect(saved.rules).toEqual({
+      ...rules,
+      emailDomains: ["example.com"],
+      requireIpRanges: ["10.0.0.1/32"],
+    });
+    expect(cf.apps.size).toBe(0);
+
+    const on = value(await object.setGuestLinks(owner, PORTAL, MAC, true));
+    expect(on.machines.find((m) => m.machineId === MAC)?.state).toEqual({ _tag: "ready" });
+    expect(on.oneTimePin).toEqual({ _tag: "ready" });
+    expect(on.rateLimit).toEqual({ _tag: "ready" });
+    const guestApp = [...cf.apps.values()].find(
+      (a) => a.name === "t3 guest links t3-mac.example.com",
+    );
+    expect(guestApp).toMatchObject({
+      destinations: [
+        { type: "public", uri: "t3-mac.example.com/guest" },
+        { type: "public", uri: "t3-mac.example.com/api/guest/*" },
+      ],
+      session_duration: "24h",
+      allowed_idps: ["otp"],
+      // The required range applies only to the guests, never to the owner (MM-1211).
+      policies: [
+        { decision: "allow", include: [{ email: { email: owner.email } }], require: [] },
+        {
+          decision: "allow",
+          include: [{ email_domain: { domain: "example.com" } }],
+          require: [{ ip: { ip: "10.0.0.1/32" } }],
+        },
+      ],
+    });
+    expect(
+      [...cf.apps.values()].find((a) => a.name === "t3 web build t3-mac.example.com"),
+    ).toMatchObject({
+      policies: [{ decision: "bypass", include: [{ everyone: {} }] }],
+    });
+
+    // A dashboard edit shows as drift, and Apply makes the app again.
+    if (guestApp) guestApp.session_duration = "720h";
+    const drifted = value(await object.guestLinksStatus(owner, PORTAL));
+    expect(drifted.machines.find((m) => m.machineId === MAC)?.state._tag).toBe("needsApply");
+    const repaired = value(await object.applyGuestLinks(owner, PORTAL));
+    expect(repaired.machines.find((m) => m.machineId === MAC)?.state).toEqual({ _tag: "ready" });
+    expect(cf.apps.size).toBe(2);
+
+    // The portal never adds a twin of an app that it did not make.
+    cf.apps.set("hand", {
+      id: "hand",
+      name: "T3 guest links (win)",
+      destinations: [{ type: "public", uri: "t3-win.example.com/guest" }],
+    });
+    const blocked = value(await object.setGuestLinks(owner, PORTAL, WIN, true));
+    expect(blocked.machines.find((m) => m.machineId === WIN)?.state._tag).toBe("blocked");
+    expect(blocked.errors).toHaveLength(1);
+
+    value(await object.setGuestLinks(owner, PORTAL, MAC, false));
+    value(await object.setGuestLinks(owner, PORTAL, WIN, false));
+    expect([...cf.apps.keys()]).toEqual(["hand"]);
+    expect(cf.ruleset()?.rules).toEqual([]);
+  });
+
+  it("shows the manual rate limit step when the token lacks Zone WAF Edit", async () => {
+    const { object, env } = portal(guestMap());
+    Object.assign(env, GUEST_ENV);
+    fakeCloudflare({ wafStatus: 403 });
+    const status = value(await object.setGuestLinks(owner, PORTAL, VPS, true));
+    expect(status.rateLimit).toEqual({ _tag: "cloudflareStep", step: "rateLimit" });
+    expect(status.machines.find((m) => m.machineId === VPS)?.state).toEqual({ _tag: "ready" });
+    expect(status.errors).toEqual([]);
+  });
+
+  it("removes the guest apps of a removed machine", async () => {
+    const { object, env } = portal(guestMap());
+    Object.assign(env, { ...GUEST_ENV, MACHINE_ACCESS_APP_ID: "m", CONNECT_ACCESS_APP_ID: "c" });
+    const cf = fakeCloudflare();
+    value(await object.setGuestLinks(owner, PORTAL, VPS, true));
+    expect(cf.apps.size).toBe(2);
+    vi.spyOn(CloudflareApi.prototype, "findServiceTokenId").mockResolvedValue(null);
+    value(await object.removeMachine(owner, VPS));
+    expect(cf.apps.size).toBe(0);
+  });
+  it("makes no apps on a host that a machine must not claim", async () => {
+    const map = guestMap();
+    const { object, env } = portal({
+      ...map,
+      machines: map.machines.map((m) =>
+        m.id === WIN ? { ...m, hostname: "riffle.example.com" } : m,
+      ),
+    });
+    Object.assign(env, GUEST_ENV);
+    const cf = fakeCloudflare();
+    const status = value(await object.setGuestLinks(owner, PORTAL, WIN, true));
+    expect(status.machines.find((m) => m.machineId === WIN)?.state._tag).toBe("blocked");
+    expect(cf.apps.size).toBe(0);
+  });
+
+  it("adopts the rate limit rule of the old manual steps", async () => {
+    const { object, env } = portal(guestMap());
+    Object.assign(env, GUEST_ENV);
+    const manual = { ...GUEST_RATE_LIMIT_RULE, ref: undefined, id: "manual" };
+    const cf = fakeCloudflare({ rules: [manual] });
+    const status = value(await object.setGuestLinks(owner, PORTAL, VPS, true));
+    expect(status.rateLimit).toEqual({ _tag: "ready" });
+    expect(cf.calls.filter((c) => c.includes("/rulesets") && !c.startsWith("GET"))).toEqual([]);
+    expect(cf.ruleset()?.rules).toMatchObject([{ id: "manual" }]);
   });
 });

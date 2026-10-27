@@ -727,7 +727,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
       removeEventListener("pagehide", listener);
       latestFlush.current();
     };
-  }, []);
+  }, [latestFlush]);
 
   const startPan = (event: PointerEvent<HTMLDivElement>) => {
     pan.current = {
@@ -1042,7 +1042,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
     const listener = (event: WheelEvent) => latestWheel.current(event);
     element.addEventListener("wheel", listener, { passive: false });
     return () => element.removeEventListener("wheel", listener);
-  }, []);
+  }, [latestWheel]);
 
   // A finger that lifts outside the map never reaches its handlers. Forget it there too, so a
   // later single finger does not count as a pinch.
@@ -1063,7 +1063,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
       removeEventListener("pointerup", forget);
       removeEventListener("pointercancel", forget);
     };
-  }, []);
+  }, [pan, pinch, touches]);
 
   /** MM-1116: Space held over the map pans with a drag. "0" fits every card. */
   const onKey = (event: globalThis.KeyboardEvent) => {
@@ -1115,7 +1115,7 @@ export function MapView({ map, readOnly }: { map: MachineMapDocument; readOnly: 
       removeEventListener("keyup", listener);
       removeEventListener("blur", release);
     };
-  }, []);
+  }, [latestKey]);
 
   /** MM-1103: a tap on the empty map ends the focus and closes the add menu. */
   const onMapClick = (event: MouseEvent<HTMLDivElement>) => {

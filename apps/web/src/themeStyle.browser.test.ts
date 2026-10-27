@@ -1,13 +1,21 @@
-import { describe, expect, it } from "vite-plus/test";
+import type { EnvironmentTheme } from "@t3tools/contracts";
+import { describe, expect, it, vi } from "vite-plus/test";
 
-import { environmentThemeDefinition } from "./hooks/useEnvironmentTheme";
-import {
-  applyThemePalette,
-  getActiveThemeFonts,
-  setEnvironmentThemes,
-  THEME_USER_CSS_ELEMENT_ID,
-} from "./themePalette";
+const publishedThemes = vi.hoisted(() => ({
+  atom: null as unknown as import("effect/reactivity").Atom.Writable<
+    ReadonlyArray<EnvironmentTheme>
+  >,
+}));
+vi.mock(import("./state/server"), async () => {
+  const { Atom } = await import("effect/reactivity");
+  publishedThemes.atom = Atom.make<ReadonlyArray<EnvironmentTheme>>([]);
+  return { primaryServerEnvironmentThemesAtom: publishedThemes.atom } as never;
+});
+
 import { fontSettingOrThemeFont } from "./appearanceFonts";
+import { getActiveThemeFonts, THEME_USER_CSS_ELEMENT_ID } from "./forkThemeStyle";
+import { appAtomRegistry } from "./rpc/atomRegistry";
+import { applyThemePalette, publishedThemeDefinitions } from "./themePalette";
 
 const PLAIN_THEME = {
   id: "plain",
@@ -33,11 +41,11 @@ function userCss(): string | null {
   return document.getElementById(THEME_USER_CSS_ELEMENT_ID)?.textContent ?? null;
 }
 
-function withEnvironmentThemes(themes: Parameters<typeof setEnvironmentThemes>[0]): Disposable {
-  setEnvironmentThemes(themes);
+function withEnvironmentThemes(themes: ReadonlyArray<EnvironmentTheme>): Disposable {
+  appAtomRegistry.set(publishedThemes.atom, themes);
   return {
     [Symbol.dispose]() {
-      setEnvironmentThemes([]);
+      appAtomRegistry.set(publishedThemes.atom, []);
       applyThemePalette("system");
     },
   };
@@ -45,11 +53,11 @@ function withEnvironmentThemes(themes: Parameters<typeof setEnvironmentThemes>[0
 
 describe("theme style fields", () => {
   it("leaves the root untouched for a theme without style fields", () => {
-    using _themes = withEnvironmentThemes([environmentThemeDefinition(PLAIN_THEME)]);
+    using _themes = withEnvironmentThemes([PLAIN_THEME]);
     applyThemePalette("plain");
 
     const root = document.documentElement;
-    expect(environmentThemeDefinition(PLAIN_THEME).style).toBeUndefined();
+    expect(publishedThemeDefinitions([PLAIN_THEME])[0]?.style).toBeUndefined();
     expect(root.style.getPropertyValue("--radius")).toBe("");
     expect(root.style.getPropertyValue("--theme-border-width")).toBe("");
     expect(root.style.getPropertyValue("--theme-shadow")).toBe("");
@@ -60,10 +68,7 @@ describe("theme style fields", () => {
   });
 
   it("applies the fields and user CSS of the active theme only", () => {
-    using _themes = withEnvironmentThemes([
-      environmentThemeDefinition(PLAIN_THEME),
-      environmentThemeDefinition(STYLED_THEME),
-    ]);
+    using _themes = withEnvironmentThemes([PLAIN_THEME, STYLED_THEME]);
     applyThemePalette("styled");
 
     const root = document.documentElement;

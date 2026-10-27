@@ -14,15 +14,13 @@ import { MachineMapToolkit } from "./tools.ts";
  * role or the arrows of this machine, so a machine session gets none of these tools.
  */
 const refuseMachineCaller = McpInvocationContext.McpInvocationContext.pipe(
-  Effect.flatMap((scope) =>
-    isMachineRequestNamespace(scope.requestNamespace)
-      ? Effect.fail(
-          new OrchestratorMcpFailure({
-            code: "capability_denied",
-            message: "Machine map tools are not available to another machine.",
-          }),
-        )
-      : Effect.succeed(scope),
+  Effect.filterOrFail(
+    (scope) => !isMachineRequestNamespace(scope.requestNamespace),
+    () =>
+      new OrchestratorMcpFailure({
+        code: "capability_denied",
+        message: "Machine map tools are not available to another machine.",
+      }),
   ),
 );
 

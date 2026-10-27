@@ -1,0 +1,43 @@
+name: Setup Chromium for tests
+description: Install Playwright's headless Chromium from cache. Fork copy of the ci.yml steps.
+inputs:
+  playwright-package:
+    description: Directory of the playwright or playwright-core package that the tests use
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Resolve Playwright version
+      id: playwright_version
+      shell: bash
+      env:
+        PLAYWRIGHT_PACKAGE: ${{ inputs.playwright-package }}
+      run: echo "version=$(jq -r .version "$PLAYWRIGHT_PACKAGE/package.json")" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Chromium
+      id: chromium_cache
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-chromium-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright_version.outputs.version }}
+
+    - name: Install Chromium
+      if: steps.chromium_cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        PLAYWRIGHT_PACKAGE: ${{ inputs.playwright-package }}
+      run: node "$PLAYWRIGHT_PACKAGE/cli.js" install --only-shell chromium
+
+    # The runner image has the libraries of Chromium. `install --with-deps` also
+    # upgraded them and added fonts through apt, and the Azure Ubuntu mirror
+    # sometimes sends that at 26 kB/s: 5 to 15 minutes per job.
+    - name: Install missing Chromium system dependencies
+      shell: bash
+      env:
+        PLAYWRIGHT_PACKAGE: ${{ inputs.playwright-package }}
+      run: |
+        browser=$(find "$HOME/.cache/ms-playwright" -name chrome-headless-shell -type f -print -quit)
+        test -n "$browser"
+        if ldd "$browser" | grep '=> not found'; then
+          node "$PLAYWRIGHT_PACKAGE/cli.js" install-deps chromium
+        fi

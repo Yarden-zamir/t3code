@@ -6,11 +6,12 @@ import type { HealthAlert, ResourceSample } from "@t3tools/contracts/machineMapR
 
 import { HEALTH_TABLES, HealthStore } from "./healthStore.ts";
 import {
+  BLOCK_MS,
   HOUR_MS,
   MAX_ENDED_ALERTS,
-  MAX_MINUTE_POINTS,
   MINUTE_MS,
   MINUTE_RETENTION_MS,
+  pointOf,
 } from "./rules/health.ts";
 
 const MAC = MachineId.make("mac");
@@ -62,6 +63,8 @@ const sample = (cpuPercent: number): ResourceSample => ({
   battery: null,
 });
 
+const at = (atMs: number, cpu: number) => ({ atMs, point: pointOf(sample(cpu)) });
+
 const alert = (id: string, startedAt: number, endedAt: number | null): HealthAlert => ({
   id,
   machineId: MAC,
@@ -73,13 +76,13 @@ const alert = (id: string, startedAt: number, endedAt: number | null): HealthAle
 });
 
 describe("HealthStore (MM-1503, MM-1505)", () => {
-  it("keeps one minute point per minute and the hour point as the mean so far", () => {
-    const { store } = memoryStore();
-    store.record(MAC, sample(10), T0 + 1_000);
-    // A second sample in the same minute replaces the first.
-    store.record(MAC, sample(20), T0 + 30_000);
-    store.record(MAC, sample(60), T0 + MINUTE_MS + 5_000);
-    expect(store.points(MAC, "minute", 0).map((p) => [p.atMs, p.point.cpu])).toEqual([
+  it("merges minute points into 10-minute blocks and sets the hour point to the mean", () => {
+    const { db, store } = memoryStore();
+    store.store(MAC, [at(T0, 10)], sample(10));
+    // A point at a stored minute replaces it.
+    store.store(MAC, [at(T0, 20), at(T0 + MINUTE_MS, 60)], sample(60));
+    const minutes = () => store.points(MAC, "minute", 0).map((p) => [p.atMs, p.point.cpu]);
+    expect(minutes()).toEqual([
       [T0, 20],
       [T0 + MINUTE_MS, 60],
     ]);
@@ -87,35 +90,33 @@ describe("HealthStore (MM-1503, MM-1505)", () => {
       { atMs: T0, point: expect.objectContaining({ cpu: 40, cpuMax: 60, memory: 50 }) },
     ]);
     expect(store.latest(new Set([MAC, VPS]))).toEqual({ [MAC]: sample(60) });
+    // The next block is a second row. Storing the same points again changes nothing.
+    store.store(MAC, [at(T0 + BLOCK_MS, 30)], sample(30));
+    store.store(MAC, [at(T0 + BLOCK_MS, 30)], sample(30));
+    expect(minutes()).toEqual([
+      [T0, 20],
+      [T0 + MINUTE_MS, 60],
+      [T0 + BLOCK_MS, 30],
+    ]);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM resource_points WHERE step = 'b'").get()).toEqual({
+      n: 2,
+    });
+    expect(store.points(MAC, "minute", T0 + MINUTE_MS).map((p) => p.atMs)).toEqual([
+      T0 + MINUTE_MS,
+      T0 + BLOCK_MS,
+    ]);
   });
 
-  it("prunes minute points after 24 hours and caps each machine", () => {
-    const { db, store } = memoryStore();
-    const insert = db.prepare(
-      "INSERT INTO resource_points (machine_id, step, at_ms, data) VALUES (?, 'm', ?, ?)",
-    );
-    const data = JSON.stringify({
-      cpu: 1,
-      cpuMax: 1,
-      memory: null,
-      disk: null,
-      swap: null,
-      agents: null,
-      agentCpu: null,
-    });
+  it("prunes blocks after 24 hours", () => {
+    const { store } = memoryStore();
     const now = T0 + 48 * HOUR_MS;
-    // Older than 24 hours: gone.
-    insert.run(MAC, now - MINUTE_RETENTION_MS - MINUTE_MS, data);
-    // More fresh points than the cap: only the newest stay.
-    for (let i = 0; i < MAX_MINUTE_POINTS + 10; i += 1) insert.run(VPS, now - i * 1_000, data);
-    store.record(MAC, sample(5), now);
-    store.prune(now, [MAC, VPS]);
+    // A block whose newest minute is older than 24 hours: gone.
+    store.store(MAC, [at(now - MINUTE_RETENTION_MS - BLOCK_MS - MINUTE_MS, 1)], sample(1));
+    store.store(MAC, [at(now, 5)], sample(5));
+    store.prune(now, [MAC]);
     expect(store.points(MAC, "minute", 0).map((p) => p.atMs)).toEqual([now]);
-    const vps = store.points(VPS, "minute", 0);
-    expect(vps).toHaveLength(MAX_MINUTE_POINTS);
-    expect(vps.at(-1)?.atMs).toBe(now);
-    // The hour point of `now` stays: it is within 30 days.
-    expect(store.points(MAC, "hour", 0)).toHaveLength(1);
+    // Hour points stay 30 days.
+    expect(store.points(MAC, "hour", 0)).toHaveLength(2);
   });
 
   it("keeps active alerts, drops ended ones past 30 days or over the cap", () => {
@@ -136,7 +137,7 @@ describe("HealthStore (MM-1503, MM-1505)", () => {
 
   it("forgets a removed machine", () => {
     const { store } = memoryStore();
-    store.record(MAC, sample(5), T0);
+    store.store(MAC, [at(T0, 5)], sample(5));
     store.saveAlert(alert("a", T0, null));
     store.removeMachine(MAC);
     expect(store.hasPoints()).toBe(false);

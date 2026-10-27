@@ -13,8 +13,8 @@ import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
-import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import type { RemoteEnvironmentRequestError } from "../rpc/http.ts";
+import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
 import { followStreamInEnvironment } from "./environmentStreams.ts";
 
@@ -38,18 +38,19 @@ function initialConfigOption<E>(
 }
 
 const DEFAULT_SESSION_STATE_TIMEOUT_MS = 6_000;
+const MAX_SESSION_STATE_TIMEOUT_MS = 60_000;
 
 /**
  * A host that just restarted can drop or time out this request while it starts. The session atom
  * fetches again only when the prepared connection changes, so a failure that is not retried here
- * stays while the connection is up and reads as "no permission".
+ * stays while the connection is up and reads as "no permission". A timeout waits longer instead,
+ * in `fetchEnvironmentSessionState`.
  */
 function isTemporarySessionFailure(error: RemoteEnvironmentRequestError): boolean {
   switch (error._tag) {
     case "RemoteEnvironmentAuthFetchError":
       // The same error also reports a refused authorization; only a transport failure is temporary.
       return HttpClientError.isHttpClientError(error.cause);
-    case "RemoteEnvironmentAuthTimeoutError":
     case "EnvironmentInternalError":
       return true;
     case "RemoteEnvironmentAuthUndeclaredStatusError":
@@ -69,17 +70,29 @@ export const fetchEnvironmentSessionState = Effect.fn(
   >;
   readonly timeoutMs?: number;
 }) {
-  return yield* executeAuthenticatedEnvironmentHttpRequest({
-    ...input,
-    group: "auth",
-    method: "GET",
-    url: (urls) => urls.session(),
-    timeoutMs: input.timeoutMs ?? DEFAULT_SESSION_STATE_TIMEOUT_MS,
-    request: ({ client, headers }) => client.session({ headers }),
-    // This endpoint returns 200 with authenticated:false for expired credentials.
-    isUnauthorizedResponse: (response) => !response.authenticated,
-  }).pipe(
-    // 5 retries wait 1 + 2 + 4 + 8 + 16 seconds, longer than a host restart takes.
+  const request = (
+    timeoutMs: number,
+  ): Effect.Effect<AuthSessionState, RemoteEnvironmentRequestError, HttpClient.HttpClient> =>
+    executeAuthenticatedEnvironmentHttpRequest({
+      ...input,
+      group: "auth",
+      method: "GET",
+      url: (urls) => urls.session(),
+      timeoutMs,
+      request: ({ client, headers }) => client.session({ headers }),
+      // This endpoint returns 200 with authenticated:false for expired credentials.
+      isUnauthorizedResponse: (response) => !response.authenticated,
+    }).pipe(
+      // A timeout says nothing about grants; failing would show a busy host as read-only.
+      Effect.catchTags({
+        RemoteEnvironmentAuthTimeoutError: (error) => {
+          const nextTimeoutMs = Math.min(timeoutMs * 2, MAX_SESSION_STATE_TIMEOUT_MS);
+          return nextTimeoutMs > timeoutMs ? request(nextTimeoutMs) : Effect.fail(error);
+        },
+      }),
+    );
+  return yield* request(input.timeoutMs ?? DEFAULT_SESSION_STATE_TIMEOUT_MS).pipe(
+    // Fork: 5 retries wait 1 + 2 + 4 + 8 + 16 seconds, longer than a host restart takes.
     Effect.retry({
       while: isTemporarySessionFailure,
       times: 5,

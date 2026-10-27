@@ -54,12 +54,12 @@ const layerOrchestration = Layer.mergeAll(
     { databaseLayer: layerDatabase, runEffectWorker: false },
   ),
 );
+// The T3 Connect host, or null for a fork build that has no T3 Connect.
+const connectHost = Ref.makeUnsafe<string | null>("env.t3.test");
 const layerConnect = Layer.mock(CloudManagedEndpointRuntime)({
-  inspectConnector: Effect.succeed({
-    readyConnections: 1,
-    hostname: "env.t3.test",
-    protocol: "http2",
-  }),
+  inspectConnector: Effect.map(Ref.get(connectHost), (hostname) =>
+    hostname === null ? null : { readyConnections: 1, hostname, protocol: "http2" },
+  ),
 });
 const layerCleanup = Layer.mock(ResourceCleanupService.ResourceCleanupService)({
   cleanupScheduledTasks: () => Effect.void,
@@ -79,44 +79,59 @@ const layerMachineMap = Layer.unwrap(
     }),
   ),
 );
-const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "t3-guest-share-fork-" });
-const layerTest = GuestShareService.layer.pipe(
-  Layer.provideMerge(
-    CommandOutputHub.layer.pipe(
-      Layer.provideMerge(layerOrchestration.pipe(Layer.provide(layerCleanup))),
+const layerConfigWith = (tunnelPairingUrl: string | undefined) =>
+  Layer.effect(
+    ServerConfig.ServerConfig,
+    Effect.map(ServerConfig.ServerConfig, (config) => ({ ...config, tunnelPairingUrl })),
+  ).pipe(
+    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-guest-share-fork-" })),
+    Layer.provide(NodeServices.layer),
+  );
+const layerTestWith = (tunnelPairingUrl: string | undefined) =>
+  GuestShareService.layer.pipe(
+    Layer.provideMerge(
+      CommandOutputHub.layer.pipe(
+        Layer.provideMerge(layerOrchestration.pipe(Layer.provide(layerCleanup))),
+      ),
     ),
-  ),
-  Layer.provide(
-    Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
-  ),
-  Layer.provideMerge(ServerSettings.layerTest({ guestSharingEnabled: true })),
-  Layer.provide(layerConnect),
-  Layer.provide(layerMachineMap),
-  Layer.provide(Layer.mock(AnalyticsService.AnalyticsService)({ record: () => Effect.void })),
-  Layer.provide(ServerSecretStore.layer),
-  Layer.provideMerge(layerConfig),
-  Layer.provideMerge(NodeServices.layer),
-);
+    Layer.provide(
+      Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+    ),
+    Layer.provideMerge(ServerSettings.layerTest({ guestSharingEnabled: true })),
+    Layer.provide(layerConnect),
+    Layer.provide(layerMachineMap),
+    Layer.provide(Layer.mock(AnalyticsService.AnalyticsService)({ record: () => Effect.void })),
+    Layer.provide(ServerSecretStore.layer),
+    Layer.provideMerge(layerConfigWith(tunnelPairingUrl)),
+    Layer.provideMerge(NodeServices.layer),
+  );
+const layerTest = layerTestWith(undefined);
+const layerTunnel = layerTestWith("https://t3-vps.example.test");
+
+const createThread = Effect.fn(function* (threadId: ThreadId) {
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  yield* orchestrator.dispatch({
+    type: "thread.create",
+    commandId: CommandId.make(`create:${threadId}`),
+    threadId,
+    projectId: ProjectId.make("project:guest-share-fork"),
+    title: "Review me",
+    modelSelection: { instanceId, model: "gpt-5.1-codex" },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    createdBy: "user",
+    creationSource: "web",
+  });
+});
 
 it.effect("refuses every guest request while the machine map pauses the machine", () =>
   Effect.gen(function* () {
     yield* Ref.set(paused, false);
+    yield* Ref.set(connectHost, "env.t3.test");
     const threadId = ThreadId.make("thread:guest-share-paused");
-    const orchestrator = yield* Orchestrator.OrchestratorV2;
-    yield* orchestrator.dispatch({
-      type: "thread.create",
-      commandId: CommandId.make(`create:${threadId}`),
-      threadId,
-      projectId: ProjectId.make("project:guest-share-paused"),
-      title: "Review me",
-      modelSelection: { instanceId, model: "gpt-5.1-codex" },
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      branch: null,
-      worktreePath: null,
-      createdBy: "user",
-      creationSource: "web",
-    });
+    yield* createThread(threadId);
     const guestShares = yield* GuestShareService.GuestShareService;
     const { url } = yield* guestShares.create({ threadId });
     const credential = url.slice(url.indexOf("#") + 1);
@@ -134,5 +149,39 @@ it.effect("refuses every guest request while the machine map pauses the machine"
     // The end of the pause lets the same guest back in.
     yield* Ref.set(paused, false);
     assert.isTrue(Exit.isSuccess(yield* Effect.exit(guestShares.check(session))));
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "makes links on the tunnel host without T3 Connect, and ends them when the host changes",
+  () =>
+    Effect.gen(function* () {
+      yield* Ref.set(paused, false);
+      yield* Ref.set(connectHost, null);
+      const threadId = ThreadId.make("thread:guest-share-tunnel");
+      yield* createThread(threadId);
+      const guestShares = yield* GuestShareService.GuestShareService;
+      const { url, share } = yield* guestShares.create({ threadId });
+      assert.isTrue(url.startsWith("https://t3-vps.example.test/guest#"));
+      assert.equal(share.host, "t3-vps.example.test");
+      const credential = url.slice(url.indexOf("#") + 1);
+      const { token: session } = yield* guestShares.redeem({ credential, name: "Sam" });
+      yield* guestShares.check(session);
+
+      // T3 Connect comes up on another host, so the link no longer matches the machine's host.
+      yield* Ref.set(connectHost, "env.t3.test");
+      assert.equal((yield* Effect.flip(guestShares.check(session))).reason, "inactive");
+    }).pipe(Effect.provide(layerTunnel)),
+);
+
+it.effect("refuses a link without T3 Connect and without a tunnel", () =>
+  Effect.gen(function* () {
+    yield* Ref.set(paused, false);
+    yield* Ref.set(connectHost, null);
+    const threadId = ThreadId.make("thread:guest-share-no-host");
+    yield* createThread(threadId);
+    const guestShares = yield* GuestShareService.GuestShareService;
+    const error = yield* Effect.flip(guestShares.create({ threadId }));
+    assert.equal(error.reason, "connect_unavailable");
   }).pipe(Effect.provide(layerTest)),
 );

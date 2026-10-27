@@ -568,36 +568,41 @@ export const layerMcpClientAuthenticator = Layer.effect(
             ),
           );
     return McpHttpServer.McpClientAuthenticator.of({
-      authenticate: (request) =>
-        environmentAuth.authenticateMcpClient(request).pipe(
-          Effect.map((client) => ({ client, requestNamespace: `client:${client.sessionId}` })),
-          Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
-            machineClient(request, error),
-          ),
-          Effect.flatMap(({ client, requestNamespace }) =>
-            Clock.currentTimeMillis.pipe(
-              Effect.map((issuedAt): McpInvocationContext.McpInvocationScope => ({
-                environmentId,
-                requestNamespace,
-                thread: undefined,
-                client: {
-                  sessionId: client.sessionId,
-                  label: client.label,
-                  access: client.access,
-                  linked: client.peerLink,
-                },
-                capabilities: new Set<McpInvocationContext.McpCapability>(MACHINE_MCP_CAPABILITIES),
-                issuedAt,
-              })),
+      authenticate: Effect.fn("McpHttpServer.McpClientAuthenticator.authenticate")(
+        function (request) {
+          return environmentAuth.authenticateMcpClient(request).pipe(
+            Effect.map((client) => ({ client, requestNamespace: `client:${client.sessionId}` })),
+            Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
+              machineClient(request, error),
             ),
-          ),
-          Effect.catch((error) =>
-            (EnvironmentAuth.isServerAuthCredentialError(error)
-              ? Effect.void
-              : Effect.logWarning("MCP client authentication failed.", { cause: error })
-            ).pipe(Effect.as(undefined)),
-          ),
-        ),
+            Effect.flatMap(({ client, requestNamespace }) =>
+              Clock.currentTimeMillis.pipe(
+                Effect.map((issuedAt): McpInvocationContext.McpInvocationScope => ({
+                  environmentId,
+                  requestNamespace,
+                  thread: undefined,
+                  client: {
+                    sessionId: client.sessionId,
+                    label: client.label,
+                    access: client.access,
+                    linked: client.peerLink,
+                  },
+                  capabilities: new Set<McpInvocationContext.McpCapability>(
+                    MACHINE_MCP_CAPABILITIES,
+                  ),
+                  issuedAt,
+                })),
+              ),
+            ),
+            Effect.catch((error) =>
+              (EnvironmentAuth.isServerAuthCredentialError(error)
+                ? Effect.void
+                : Effect.logWarning("MCP client authentication failed.", { cause: error })
+              ).pipe(Effect.as(undefined)),
+            ),
+          );
+        },
+      ),
     });
   }),
 );

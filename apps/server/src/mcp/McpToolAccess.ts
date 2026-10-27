@@ -183,9 +183,10 @@ export const writesThreads = <P, A, E, R>(
   options?: {
     /**
      * Fork (MM-1923): the write neither runs nor stops code, such as a rename, so another
-     * machine reaches a terminal thread without exec. Leave it unset for anything else.
+     * machine reaches a terminal thread without exec. Leave it unset for anything else. A
+     * function decides per call, for a tool whose actions differ.
      */
-    readonly metadataOnly?: true;
+    readonly metadataOnly?: true | ((params: NoInfer<P>) => boolean);
   },
 ) =>
   declare(
@@ -200,7 +201,8 @@ export const writesThreads = <P, A, E, R>(
           if (target !== null && target.deletedAt === null) {
             yield* assertTargetWithinLimits(caller.limits, target);
             yield* assertSameLink(caller, target);
-            if (options?.metadataOnly !== true)
+            const metadataOnly = options?.metadataOnly;
+            if (metadataOnly !== true && (metadataOnly === undefined || !metadataOnly(params)))
               yield* refuseTerminalThreadWithoutExec(
                 caller.scope.requestNamespace,
                 target.modelSelection,
@@ -271,6 +273,29 @@ export const startsThreads = <P, A, E, R>(
         return yield* handle(params, yield* started(caller, params));
       }),
     (params: P) => Effect.flatMap(writingCaller, (caller) => started(caller, params)),
+  );
+};
+
+/** One tool with two access rules, picked per call, such as create versus update. */
+export const either = <P, A, E, R, A2, E2, R2>(
+  useFirst: (params: P) => boolean,
+  first: Declaration<(params: P) => Effect.Effect<A, E, R>>,
+  second: Declaration<(params: P) => Effect.Effect<A2, E2, R2>>,
+) => {
+  const remotes = [remoteCheckOf(first), remoteCheckOf(second)] as ReadonlyArray<
+    RemoteCheck<P> | undefined
+  >;
+  return declare(
+    (params: P): Effect.Effect<A | A2, E | E2, R | R2> =>
+      useFirst(params) ? checkedHandler(first)(params) : checkedHandler(second)(params),
+    (params) =>
+      remotes[useFirst(params) ? 0 : 1]?.(params) ??
+      Effect.fail(
+        new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: "This action acts as the calling thread, which is here. Omit environmentId.",
+        }),
+      ),
   );
 };
 

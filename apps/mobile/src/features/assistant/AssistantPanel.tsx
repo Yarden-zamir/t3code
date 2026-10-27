@@ -58,7 +58,7 @@ import {
   flattenQueuedThreadMessages,
   type QueuedThreadMessage,
 } from "../../state/thread-outbox";
-import { ThreadOutboxDrainWorker, useIsThreadOutboxHost } from "../../state/thread-outbox-worker";
+import { useIsAppServicesHost } from "../../state/app-services-host";
 import { useThreadOutboxMessages } from "../../state/use-thread-outbox";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { useVoicePreferences } from "../../state/voice-preferences";
@@ -78,6 +78,7 @@ import { lastOpenedThread } from "./assistantTargets";
 import { AssistantConversation } from "./AssistantConversation";
 import { AssistantTargetPicker, type AssistantTarget } from "./AssistantTargetPicker";
 import {
+  CONTEXT_PILL_ICONS,
   ContextPills,
   EdgeGlow,
   FileContextView,
@@ -91,6 +92,7 @@ import {
   type PanelMachine,
   type PanelMenuItem,
 } from "./AssistantPanelParts";
+import { screenSubject, screenSubjectHeader, screenSubjectLabel } from "./screenSubject";
 import {
   CONTEXT_PILL_ORDER,
   contextPillLabel,
@@ -158,16 +160,12 @@ export function AssistantPanelRoot() {
 }
 
 /**
- * The app root runs the relay sign-in and the outbox sender when it is mounted. On a cold
- * start only this panel is mounted, so it runs them until the app root mounts.
+ * The app root runs the relay sign-in when it is mounted. On a cold start only this panel is
+ * mounted, so it runs it until the app root mounts. The outbox is a module service.
  */
 function AppServicesWhenAlone() {
-  if (!useIsThreadOutboxHost()) return null;
-  return (
-    <CloudAuthProvider>
-      <ThreadOutboxDrainWorker />
-    </CloudAuthProvider>
-  );
+  if (!useIsAppServicesHost()) return null;
+  return <CloudAuthProvider>{null}</CloudAuthProvider>;
 }
 
 type Phase =
@@ -521,13 +519,26 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
       cancelled = true;
     };
   }, [wantsLocation]);
+  const subject = capture?.sourcePackage
+    ? screenSubject({
+        appLabel: capture.appLabel,
+        sourcePackage: capture.sourcePackage,
+        activityClass: capture.activityClass,
+        webUri: capture.webUri,
+        structuredData: capture.structuredData,
+        clipMimeType: capture.clipMimeType,
+        clipLabel: capture.clipLabel,
+        isHomeApp: capture.isHomeApp,
+      })
+    : null;
+  const pageText = voice.assistantFullPageText ? (capture?.pageText ?? null) : null;
   const originalContext: Record<FoundContextPillKind, string | null> = {
     sharedText: capture?.sharedText ?? null,
     sharedImage: capture?.sharedImageUri ?? null,
     selection: capture?.selectedText ?? null,
     screenshot: capture?.screenshotUri ?? null,
-    screenText: capture?.screenText ?? null,
-    link: capture?.webUri ?? null,
+    screenText: pageText ?? capture?.screenText ?? null,
+    link: (subject?.type === "video" ? subject.linkAtPosition : null) ?? capture?.webUri ?? null,
     recentPhoto: wantsRecentPhoto ? (recentPhoto?.uri ?? null) : null,
     location: wantsLocation ? location : null,
     clipboard: clipboard.available ? (clipboard.text ?? "") : null,
@@ -538,8 +549,9 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     sharedImage: true,
     selection: true,
     link: true,
-    screenshot: voice.assistantAttachScreenshot,
-    screenText: voice.assistantAttachScreenText,
+    // A home screen is a grid of app icons, which rarely helps the agent.
+    screenshot: voice.assistantAttachScreenshot && subject?.type !== "home",
+    screenText: voice.assistantAttachScreenText && subject?.type !== "home",
     // Private, so they wait for a tap, unless they were asked for from "+".
     recentPhoto: askedFor.recentPhoto,
     location: askedFor.location,
@@ -569,9 +581,11 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     id: kind,
     kind,
     label:
-      isImageContextPill(kind) || kind === "clipboard"
-        ? contextPillLabel(kind, "")
-        : contextPillLabel(kind, contextValue(kind)),
+      kind === "screenText" && subject
+        ? screenSubjectLabel(subject)
+        : isImageContextPill(kind) || kind === "clipboard"
+          ? contextPillLabel(kind, "")
+          : contextPillLabel(kind, contextValue(kind)),
     attached: isAttached(kind),
     thumbnailUri:
       kind === "sharedImage" || kind === "screenshot" || kind === "recentPhoto"
@@ -604,7 +618,10 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
   const attachedFiles = addedFiles.filter((file) => isAttached(file.id));
   const attachedScreenText = attachedText("screenText");
   const screenText = attachedScreenText?.trim()
-    ? screenTextDocument(capture?.sourcePackage ?? null, attachedScreenText)
+    ? screenTextDocument(
+        subject && capture ? screenSubjectHeader(subject, capture) : null,
+        attachedScreenText,
+      )
     : null;
   const inlineContext = inlineContextText({
     sharedText: attachedText("sharedText"),
@@ -893,7 +910,15 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
     setAddedFiles((current) => [...current, ...picked.value.files]);
     if (picked.value.error) setPhase({ type: "failed", message: picked.value.error });
   };
+  // The menu stays open while pills are toggled, so several can change in one visit.
   const addItems: ReadonlyArray<PanelMenuItem> = [
+    ...pills.map((pill) => ({
+      key: `pill:${pill.id}`,
+      icon: CONTEXT_PILL_ICONS[pill.kind],
+      label: pill.label,
+      checked: pill.attached,
+      onPress: () => void togglePill(pill.id),
+    })),
     { key: "photos", icon: "photo", label: "Photos", onPress: () => void pickPhotos(false) },
     { key: "camera", icon: "camera", label: "Take a photo", onPress: () => void pickPhotos(true) },
     ...(maxUploadBytes === undefined
@@ -1117,7 +1142,11 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
           ) : pillView !== null && isFoundPill(pillView) && !isImageContextPill(pillView) ? (
             <TextContextEditor
               title={CONTEXT_PILL_TITLES[pillView]}
-              subtitle={pillView === "screenText" ? (capture?.sourcePackage ?? null) : null}
+              subtitle={
+                pillView === "screenText"
+                  ? `${contextPillLabel("screenText", contextValue("screenText"))}${pageText ? " · whole page" : ""}`
+                  : null
+              }
               value={contextValue(pillView)}
               edited={editedText[pillView] !== undefined}
               onChange={(value) => setEditedText((current) => ({ ...current, [pillView]: value }))}

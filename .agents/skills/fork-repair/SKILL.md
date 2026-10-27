@@ -18,21 +18,21 @@ This skill does not replace them.
 Run each script from the root of the checkout that you repair. Run `<script> --help` for all
 options.
 
-| Command                                                                    | Use                                                                                                                                                                                                                         |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `uv run .agents/skills/fork-repair/scripts/failed_run.py <run id or URL>`  | Print the failed jobs of a run and the output of each failed step. For Fork Sync, also print the newest comment of the issue "Fork sync: upstream merge failed".                                                            |
-| `uv run .agents/skills/fork-repair/scripts/worktree.py create sync`        | Create the worktree `fork-sync-<UTC stamp>` on branch `fork-sync/<UTC stamp>` from `origin/main`, and install.                                                                                                              |
-| `uv run .agents/skills/fork-repair/scripts/worktree.py create fix <topic>` | Create the worktree `fork-fix-<UTC stamp>` on branch `fork-fix/<UTC stamp>-<topic>` from `origin/main`, and install.                                                                                                        |
-| `uv run .agents/skills/fork-repair/scripts/worktree.py remove <folder>`    | Remove a repair worktree and its local branch. It prints the uncommitted files and unpushed commits that it discards.                                                                                                       |
-| `uv run .agents/skills/fork-repair/scripts/lockfile.py`                    | In a merge with a `pnpm-lock.yaml` conflict: rebuild the fork lockfile, and stage it when its integrity changes match the merged side.                                                                                      |
-| `uv run .agents/skills/fork-repair/scripts/lockfile.py --rebuild`          | The same, when git merged `pnpm-lock.yaml` without a conflict but `vp i --frozen-lockfile` fails with `ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY`.                                                                               |
-| `uv run .agents/skills/fork-repair/scripts/route_tree.py`                  | In a merge that conflicts in `apps/web/src/routeTree.gen.ts` or moves route files: regenerate the route tree as the Vite router plugin does, and stage it.                                                                  |
-| `uv run .agents/skills/fork-repair/scripts/shared_files.py`                | List the files that upstream and the fork both changed since the merge base, and write the upstream diff of each file to its own file.                                                                                      |
-| `uv run .agents/skills/fork-repair/scripts/shared_files.py --last-merge`   | The same review for the last upstream merge on `origin/main`.                                                                                                                                                               |
-| `uv run .agents/skills/fork-repair/scripts/fork_tests.py`                  | Run the fork tests in chunks of 20 (`--chunk <n>`). A chunk that runs out of memory (exit 137) runs again once in smaller chunks. Prints one re-run command.                                                                |
-| `uv run .agents/skills/fork-repair/scripts/fork_tests.py --files <file>`   | Run the test files listed in a file, for example the `failed.txt` of an earlier run.                                                                                                                                        |
-| `uv run .agents/skills/fork-repair/scripts/fork_tests.py --exclude <path>` | Skip the test files under a path prefix. `--only <path>` keeps only those files. Both repeat, and both also apply to `--files`.                                                                                             |
-| `uv run .agents/skills/fork-repair/scripts/checks.py`                      | Run typecheck, the migration check and the adopted pull request check, then `vp run fork:check` on a `fork-fix/` branch, or `vp fmt --check` and `vp lint` on the files that differ from upstream on a `fork-sync/` branch. |
+| Command                                                                    | Use                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `uv run .agents/skills/fork-repair/scripts/failed_run.py <run id or URL>`  | Print the failed jobs of a run and the output of each failed step. For Fork Sync, also print the newest comment of the issue "Fork sync: upstream merge failed".                                                                                    |
+| `uv run .agents/skills/fork-repair/scripts/worktree.py create sync`        | Create the worktree `fork-sync-<UTC stamp>` on branch `fork-sync/<UTC stamp>` from `origin/main`, and install.                                                                                                                                      |
+| `uv run .agents/skills/fork-repair/scripts/worktree.py create fix <topic>` | Create the worktree `fork-fix-<UTC stamp>` on branch `fork-fix/<UTC stamp>-<topic>` from `origin/main`, and install.                                                                                                                                |
+| `uv run .agents/skills/fork-repair/scripts/worktree.py remove <folder>`    | Remove a repair worktree and its local branch. It prints the uncommitted files and unpushed commits that it discards.                                                                                                                               |
+| `uv run .agents/skills/fork-repair/scripts/lockfile.py`                    | In a merge with a `pnpm-lock.yaml` conflict: rebuild the fork lockfile, and stage it when its integrity changes match the merged side.                                                                                                              |
+| `uv run .agents/skills/fork-repair/scripts/lockfile.py --rebuild`          | The same, when git merged `pnpm-lock.yaml` without a conflict but `vp i --frozen-lockfile` fails with `ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY`.                                                                                                       |
+| `uv run .agents/skills/fork-repair/scripts/route_tree.py`                  | In a merge that conflicts in `apps/web/src/routeTree.gen.ts` or moves route files: regenerate the route tree as the Vite router plugin does, and stage it.                                                                                          |
+| `uv run .agents/skills/fork-repair/scripts/shared_files.py`                | List the files that upstream and the fork both changed since the merge base, and write the upstream diff of each file to its own file.                                                                                                              |
+| `uv run .agents/skills/fork-repair/scripts/shared_files.py --last-merge`   | The same review for the last upstream merge on `origin/main`.                                                                                                                                                                                       |
+| `uv run .agents/skills/fork-repair/scripts/fork_tests.py`                  | Run the fork tests in chunks of 20 (`--chunk <n>`). A chunk that runs out of memory (exit 137) runs again once in smaller chunks. Prints one re-run command.                                                                                        |
+| `uv run .agents/skills/fork-repair/scripts/fork_tests.py --files <file>`   | Run the test files listed in a file, for example the `failed.txt` of an earlier run.                                                                                                                                                                |
+| `uv run .agents/skills/fork-repair/scripts/fork_tests.py --exclude <path>` | Skip the test files under a path prefix. `--only <path>` keeps only those files. Both repeat, and both also apply to `--files`.                                                                                                                     |
+| `uv run .agents/skills/fork-repair/scripts/checks.py`                      | Run typecheck, the migration check and the adopted pull request check, then `vp run fork:check` on a `fork-fix/` branch, or `vp fmt --check` and `vp lint` on the files that differ from upstream and `vp run knip:check` on a `fork-sync/` branch. |
 
 - `worktree.py` reads the container (the folder that holds `.bare/`) from git. It works on the
   VPS (`/root/Github/t3code`) and on the Mac (`/Users/kcw/Github/t3code`).
@@ -52,6 +52,20 @@ options.
   `git range-diff <old base>..<old head> <new base>..<new head>`. A rebase head often carries
   only lint and API fixes. For an adopted file that the fork does not change, take the new
   head's version: keeping the fork side drops those fixes. Never take its migrations.
+- A rebased head conflicts only because its base moved. Keep the fork side of each conflict
+  (`git checkout --ours --pathspec-from-file=<list>`), then read `git diff --cached --stat HEAD`.
+  It shows what the merge still adds:
+  - a migration the fork left out: remove its file and its line in the migration test;
+  - a hunk that repeats code fork main already has, such as a field or a test that the fork
+    keeps in a `.fork.test.ts` file: restore that file with `git checkout HEAD -- <file>`;
+  - the commits that changed in the range diff: apply them, for example with
+    `git diff <old head> <new head> -- <files> > <patch>` and `git apply --3way --index <patch>`.
+
+- `apps/server/src/provider/agentContextBudget.json` holds the fork's measured agent context,
+  which the fork tools and instructions make larger than upstream's. When upstream changes it
+  or the fork changes tool text, run
+  `env -u T3_SERVICE_LAUNCHER_CONTEXT vp test run src/provider/AgentContextBudget.test.ts` in
+  `apps/server` and write its "Received" values to the file.
 
 ## Keep this skill current
 

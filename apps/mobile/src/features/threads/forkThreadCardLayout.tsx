@@ -412,6 +412,7 @@ export function ForkThreadCardLayout(props: {
             : metaItem({ icon: "cpu", label: "Subagent of another thread" });
       case "limitReset": {
         if (info.limitResetAt === null) return null;
+        // oxlint-disable-next-line react/purity -- A relative label that refreshes with `info`; see the stale-time note on renderLayoutElement.
         const resetIn = snoozeWakeLabel(info.limitResetAt, { now: new Date().toISOString() });
         return metaItem({
           icon: "clock",

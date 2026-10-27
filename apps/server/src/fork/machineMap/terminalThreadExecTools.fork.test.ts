@@ -150,7 +150,8 @@ it.effect.each([
   ["t3_thread_update", { threadId, action: "rename", title: "Logs" }],
   ["t3_thread_organize", { threadId, action: "settle" }],
   ["t3_thread_organize", { threadId, action: "archive" }],
-  ["t3_queue_cancel", { threadId, queuedRunId }],
+  ["t3_queue", { threadId, action: "cancel", queuedRunId }],
+  ["t3_queue", { threadId, action: "reorder", queuedRunId, beforeRunId: null }],
 ] as const)("a metadata write %s %o passes through a standard arrow", ([name, args]) =>
   call(name, args, false).pipe(
     Effect.map((outcome) => expect(outcome).toBe("passed")),
@@ -161,8 +162,8 @@ it.effect.each([
 it.effect.each([
   ["t3_thread_send", { threadId, message: "rm -rf build" }],
   ["t3_thread_interrupt", { threadId }],
-  ["t3_queue_promote_to_steer", { threadId, queuedRunId, targetRunId: "run:active" }],
-  ["t3_queue_edit", { threadId, queuedRunId, text: "rm -rf build" }],
+  ["t3_queue", { threadId, action: "promote_to_steer", queuedRunId, targetRunId: "run:active" }],
+  ["t3_queue", { threadId, action: "edit", queuedRunId, text: "rm -rf build" }],
   ["run_scheduled_task_now", { taskId: terminalTask.id }],
 ] as const)("%s %o needs exec", ([name, args]) =>
   Effect.gen(function* () {

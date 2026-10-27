@@ -290,13 +290,17 @@ const makeLaptop = Effect.gen(function* () {
           } as never),
       }),
     ),
-    Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
-    Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
-    Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
-    Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
-    Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
-    Layer.provide(ServerSettings.layerTest()),
-    Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+        Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
+        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(SecretRequests.SecretRequests)({}),
+        ServerSettings.layerTest(),
+        Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+      ),
+    ),
     Layer.fresh,
   );
   const here = yield* Layer.build(layerHere);
@@ -574,7 +578,7 @@ it.effect("runs any tool that takes a linked environment there", () =>
       yield* linkTo(a.links, b, "auto");
       yield* Ref.set(linkSession, (yield* b.linkedSessions)[0]!.sessionId);
 
-      const there = yield* a.call("thread:laptop-full", "t3_thread_configuration", {
+      const there = yield* a.call("thread:laptop-full", "t3_thread_configure", {
         environmentId: box.environmentId,
         threadId: boxThread,
       });
@@ -588,7 +592,7 @@ it.effect("runs any tool that takes a linked environment there", () =>
       expect((yield* Ref.get(seen)).stops).toEqual([`thread.archive ${boxThread}`]);
 
       // This environment's own id keeps the call here.
-      const own = yield* a.call("thread:laptop-full", "t3_thread_configuration", {
+      const own = yield* a.call("thread:laptop-full", "t3_thread_configure", {
         environmentId: laptop.environmentId,
       });
       expect(own.structuredContent).toMatchObject({
