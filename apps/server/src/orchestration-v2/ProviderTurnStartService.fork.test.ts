@@ -89,6 +89,7 @@ function startWithMissingWorktree(
   const openSession = vi.fn(() => Effect.die("Provider must not open before setup succeeds"));
   const pruneWorktrees = vi.fn(() => Effect.void);
   const createWorktree = vi.fn(() => Effect.succeed({} as never));
+  const listLocalBranchNames = vi.fn(() => Effect.succeed(["feature/restore"]));
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
       Layer.succeed(ForkWorktreeResume.ForkWorktreeResume, { prepare: prepareWorktree }),
@@ -117,7 +118,11 @@ function startWithMissingWorktree(
           worktreesDir: managedWorktreesDir,
         } as ServerConfig.ServerConfig["Service"]),
         ServerSettings.layerTest(),
-        Layer.mock(GitWorkflow.GitWorkflowService)({ pruneWorktrees, createWorktree }),
+        Layer.mock(GitWorkflow.GitWorkflowService)({
+          pruneWorktrees,
+          createWorktree,
+          listLocalBranchNames,
+        }),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
             Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
