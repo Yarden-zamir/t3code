@@ -10,9 +10,12 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
+  CommonActions,
+  createPathConfigForStaticNavigation,
   createStaticNavigation,
   getActionFromState,
   getStateFromPath,
+  type NavigationAction,
   type NavigationState,
 } from "@react-navigation/native";
 
@@ -22,18 +25,29 @@ import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet
 import * as Dialog from "./components/ui/Dialog";
 import { CloudAuthProvider } from "./features/cloud/CloudAuthProvider";
 import { prepareNativeShowcaseCapture } from "./features/showcase/nativeShowcaseScene";
-import { IncomingShareProvider } from "./features/sharing/IncomingShareProvider";
+import {
+  presentPendingIncomingShare,
+  startIncomingShareInbox,
+} from "./features/sharing/IncomingShareProvider";
+import {
+  installAgentNotificationNavigation,
+  setAgentNotificationPathname,
+} from "./features/agent-awareness/notificationNavigation";
+import {
+  installAppShortcuts,
+  recordAppShortcutNavigationState,
+} from "./features/shortcuts/appShortcutsRuntime";
 import {
   AppearancePreferencesProvider,
+  installAppearanceRuntime,
   useAppearancePreferences,
 } from "./features/settings/appearance/AppearancePreferencesProvider";
-import { RootStack } from "./Stack";
+import { RootStack, workspaceLocationFromState } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { subscribeComposerDraftModelReconciliation } from "./state/use-composer-drafts";
 import { environmentThreadShells } from "./state/threads";
 import { environmentShell } from "./state/shell";
 import { OverlayPortalHost } from "./components/ui/OverlayPortal";
-import { initialShortcutHref } from "./features/shortcuts/useAppShortcuts";
 import { shouldHandleAppLink, restoreDraftLinkState } from "./lib/appLinking";
 import { hasCloudPublicConfig } from "./features/cloud/publicConfig";
 import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-editor-state";
@@ -55,7 +69,12 @@ import {
 } from "./features/workspace/workspace-selection-store";
 import { workspaceDetailLinkAction } from "./features/workspace/workspace-detail-selection";
 import { NativeLayoutMetricsProvider } from "./native/native-layout-metrics";
-import { attachRootNavigation, rootNavigationRef } from "./lib/rootNavigation";
+import {
+  attachRootNavigation,
+  flushRootNavigationQueue,
+  linkToRootPath,
+  rootNavigationRef,
+} from "./lib/rootNavigation";
 import { pruneNewTaskBranchCheckouts } from "./features/threads/NewTaskDraftRouteScreen";
 
 import "../global.css";
@@ -67,18 +86,25 @@ if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 void hydrateWorkspaceSelections();
 
+const linkingConfig = {
+  initialRouteName: "Home",
+  screens: createPathConfigForStaticNavigation(RootStack, { initialRouteName: "Home" }) ?? {},
+} as const;
+
+function getAppStateFromPath(path: string, options: Parameters<typeof getStateFromPath>[1]) {
+  return takeScheduledTaskNewLink(
+    restoreSettingsLinkState(
+      restoreDraftLinkState(getStateFromPath(path, options), path),
+      settingsLinkPage(),
+    ),
+  );
+}
+
 const appLinking = {
   prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
   config: { initialRouteName: "Home" },
   filter: (url: string) => shouldHandleAppLink(url, hasCloudPublicConfig()),
-  // A launcher shortcut that starts the app becomes the first screen. A navigation sent once the
-  // app runs comes too early on a cold start: React Navigation drops it before it is ready.
-  getInitialURL: async () => {
-    const href = initialShortcutHref();
-    // The href starts with "/"; the scheme prefix ends with "//".
-    if (href !== null) return Linking.createURL(href.slice(1));
-    return (await Linking.getInitialURL()) ?? (await launchWorkspaceURL());
-  },
+  getInitialURL: async () => (await Linking.getInitialURL()) ?? (await launchWorkspaceURL()),
   getActionFromState: (
     state: Parameters<typeof getActionFromState>[0],
     options: Parameters<typeof getActionFromState>[1],
@@ -86,24 +112,33 @@ const appLinking = {
     // Our router handles the selection; React Navigation's type only lists its own actions.
     (workspaceDetailLinkAction(state) as ReturnType<typeof getActionFromState>) ??
     getActionFromState(state, options),
-  getStateFromPath: (path: string, options: Parameters<typeof getStateFromPath>[1]) =>
-    takeScheduledTaskNewLink(
-      restoreSettingsLinkState(
-        restoreDraftLinkState(getStateFromPath(path, options), path),
-        settingsLinkPage(),
-      ),
-    ),
+  getStateFromPath: getAppStateFromPath,
 };
+
+function appLinkAction(href: string): NavigationAction {
+  const state = getAppStateFromPath(href, linkingConfig);
+  if (!state) throw new Error(`Failed to parse the href to a navigation state (${href}).`);
+  return appLinking.getActionFromState(state, linkingConfig) ?? CommonActions.reset(state);
+}
+
+function linkToAppPath(href: string): void {
+  linkToRootPath(href, appLinkAction);
+}
 
 const Navigation = createStaticNavigation(RootStack);
 
 function handleNavigationStateChange(state: NavigationState | undefined): void {
   recordWorkspaceSelections(state);
-  if (state) pruneNewTaskBranchCheckouts(state);
+  presentPendingIncomingShare();
+  if (!state) return;
+  setAgentNotificationPathname(workspaceLocationFromState(state).pathname);
+  recordAppShortcutNavigationState(state);
+  pruneNewTaskBranchCheckouts(state);
 }
 
 function handleNavigationReady(): void {
   handleNavigationStateChange(rootNavigationRef.getRootState());
+  flushRootNavigationQueue();
 }
 
 declare const module: { readonly hot?: FoundationHotModule } | undefined;
@@ -116,10 +151,14 @@ const appServiceDisposers = [
     threadRefsAtom: environmentThreadShells.threadRefsAtom,
     shellStateAtom: environmentShell.stateAtom,
   }),
+  installAppearanceRuntime(),
   installSubscriptionUsageRefresh(),
   installPermissionUpdateNotice(),
   installThreadOutboxDelivery(),
   installComposerAttachmentUploads(),
+  startIncomingShareInbox(),
+  installAgentNotificationNavigation(linkToAppPath),
+  installAppShortcuts(linkToAppPath),
 ];
 disposeOnFoundationReplace(typeof module === "undefined" ? undefined : module.hot, () => {
   for (const dispose of appServiceDisposers) dispose();
@@ -163,15 +202,13 @@ function AppContent() {
             {/* native-stack needs the theme's dark flag to select dark native headers. */}
             <GlobalVoiceInputControl>
               <NativeLayoutMetricsProvider>
-                <IncomingShareProvider>
-                  <Navigation
-                    ref={attachRootNavigation}
-                    linking={appLinking}
-                    onReady={handleNavigationReady}
-                    theme={navigationTheme}
-                    onStateChange={handleNavigationStateChange}
-                  />
-                </IncomingShareProvider>
+                <Navigation
+                  ref={attachRootNavigation}
+                  linking={appLinking}
+                  onReady={handleNavigationReady}
+                  theme={navigationTheme}
+                  onStateChange={handleNavigationStateChange}
+                />
                 <Dialog.Host />
                 <ThreadArrangementHost />
                 <ProjectChipIconRasterizer />

@@ -168,9 +168,7 @@ function sampleNodes(
         className="size-4 shrink-0"
       />
     ),
-    project: (
-      <ThreadCardProjectLabel name={sample.project.name} recede={false} className="shrink" />
-    ),
+    project: <ThreadCardProjectLabel name={sample.project.name} className="shrink" />,
     branch:
       sample.branch === null ? null : (
         <ThreadCardBranch

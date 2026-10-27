@@ -499,7 +499,7 @@ A thread address opened from outside T3 Code, for example from Slack or GitHub, 
 
 What New thread opens in the mobile app.
 
-- **Setting:** server setting `mobileNewThreadProject`: `picker` (default, the project list), `last` (a draft in the project of the last new thread on the phone) or `none` (a draft without a project). Settings > Appearance > Mobile app. In the mobile Settings: Server settings > New threads, or Fork.
+- **Setting:** server setting `mobileNewThreadProject`: `picker` (default, the project list), `last` (a draft in the project of the last new thread on the phone) or `none` (a draft without a project). Settings > Appearance > Mobile app. In the mobile Settings: Threads, or Fork.
 - **Works on:** mobile.
 - Back from the draft shows the project list. A share, a prompt link and "Choose a project" in the draft keep the project list.
 - The "New task" launcher shortcut on Android opens the same draft, also when the app was closed.
