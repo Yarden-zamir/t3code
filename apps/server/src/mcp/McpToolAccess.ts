@@ -183,9 +183,10 @@ export const writesThreads = <P, A, E, R>(
   options?: {
     /**
      * Fork (MM-1923): the write neither runs nor stops code, such as a rename, so another
-     * machine reaches a terminal thread without exec. Leave it unset for anything else.
+     * machine reaches a terminal thread without exec. Leave it unset for anything else. A
+     * function decides per call, for a tool whose actions differ.
      */
-    readonly metadataOnly?: true;
+    readonly metadataOnly?: true | ((params: P) => boolean);
   },
 ) =>
   declare(
@@ -200,7 +201,8 @@ export const writesThreads = <P, A, E, R>(
           if (target !== null && target.deletedAt === null) {
             yield* assertTargetWithinLimits(caller.limits, target);
             yield* assertSameLink(caller, target);
-            if (options?.metadataOnly !== true)
+            const metadataOnly = options?.metadataOnly;
+            if (metadataOnly !== true && (metadataOnly === undefined || !metadataOnly(params)))
               yield* refuseTerminalThreadWithoutExec(
                 caller.scope.requestNamespace,
                 target.modelSelection,
@@ -273,6 +275,32 @@ export const startsThreads = <P, A, E, R>(
     (params: P) => Effect.flatMap(writingCaller, (caller) => started(caller, params)),
   );
 };
+
+/** One tool with two access rules, picked per call, such as create versus update. */
+export const either = <P, A, E, R, A2, E2, R2>(
+  useFirst: (params: P) => boolean,
+  first: Declaration<(params: P) => Effect.Effect<A, E, R>>,
+  second: Declaration<(params: P) => Effect.Effect<A2, E2, R2>>,
+) => {
+  const firstRemote = remoteCheckOf(first) as RemoteCheck<P> | undefined;
+  const secondRemote = remoteCheckOf(second) as RemoteCheck<P> | undefined;
+  return declare(
+    (params: P): Effect.Effect<A | A2, E | E2, R | R2> =>
+      useFirst(params) ? checkedHandler(first)(params) : checkedHandler(second)(params),
+    // Fork: a linked environment runs the side this call picks, with that side's check here.
+    firstRemote === undefined && secondRemote === undefined
+      ? undefined
+      : (params: P) => {
+          const remote = useFirst(params) ? firstRemote : secondRemote;
+          return remote === undefined ? Effect.fail(actsHereOnly) : remote(params);
+        },
+  );
+};
+
+const actsHereOnly = new OrchestratorMcpFailure({
+  code: "invalid_request",
+  message: "This action acts as its calling thread, which is here, so it takes no environmentId.",
+});
 
 const fullAccessRequired =
   "Changing projects or environment settings needs a live full-access/default calling thread or a full-access client.";
