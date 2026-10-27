@@ -900,7 +900,7 @@ export const MapToolInputs = {
     ),
     scope: SettingScope.annotate({
       description:
-        "server: T3 server settings (settings.json). client: client settings of desktop apps, browsers and the mobile app (MM-403, MM-416).",
+        "server: T3 server settings (settings.json). client: settings of all client apps.",
     }),
     key: TrimmedNonEmptyString.annotate({
       description:
