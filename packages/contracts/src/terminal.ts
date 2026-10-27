@@ -143,6 +143,8 @@ export const TerminalSummary = Schema.Struct({
   shell: Schema.optionalKey(TerminalShellState),
   /** The program and subcommand of the last command (`terminalCommandTitle`). */
   command: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(TERMINAL_COMMAND_MAX_LENGTH))),
+  /** Fork: when the last command ended, also a short one that raises no `attention`. */
+  commandEndedAt: Schema.optionalKey(Schema.String),
 });
 export type TerminalSummary = typeof TerminalSummary.Type;
 

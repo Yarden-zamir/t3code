@@ -17,6 +17,7 @@ const fresh = (): ShellStateHolder => ({
     attention: null,
     command: null,
     commandStartedAt: 0,
+    commandEndedAt: null,
   },
 });
 const t0 = "2026-10-23T10:00:00.000Z";
@@ -49,6 +50,23 @@ describe("applyShellItems", () => {
       applyShellItems(session, [{ type: "commandEnd", exitCode: 127 }, { type: "prompt" }], t1),
     ).toBe(true);
     expect(session.fork).toMatchObject({ shell: "prompt", attention: null });
+  });
+
+  it("reports the end of every command, also a short one, so a draft can become a thread", () => {
+    const session = fresh();
+    applyShellItems(session, [{ type: "prompt" }], t0);
+    expect(session.fork.commandEndedAt).toBeNull();
+    // A fast command starts and ends in one chunk of output.
+    applyShellItems(
+      session,
+      [
+        { type: "commandStart", commandLine: "ls" },
+        { type: "commandEnd", exitCode: 0 },
+        { type: "prompt" },
+      ],
+      t1,
+    );
+    expect(session.fork).toMatchObject({ attention: null, commandEndedAt: t1 });
   });
 
   it("raises no attention for a bell at the prompt, such as a completion beep", () => {

@@ -44,16 +44,18 @@ export const makeForkTerminalSession = (shellName: string | null): ForkTerminalS
   shellMarks: null,
   command: null,
   commandStartedAt: 0,
+  commandEndedAt: null,
   shellName,
   customShell: false,
 });
 
 export const forkSummaryFields = (
   fork: ForkTerminalSession,
-): Pick<TerminalSummary, "attention" | "shell" | "command"> => ({
+): Pick<TerminalSummary, "attention" | "shell" | "command" | "commandEndedAt"> => ({
   ...(fork.attention === null ? {} : { attention: fork.attention }),
   ...(fork.shell === null ? {} : { shell: fork.shell }),
   ...(fork.command === null ? {} : { command: fork.command }),
+  ...(fork.commandEndedAt === null ? {} : { commandEndedAt: fork.commandEndedAt }),
 });
 
 /**
@@ -71,6 +73,7 @@ export function resetForkSessionForStart(session: ForkSessionHost): void {
   session.fork.attention = null;
   session.fork.shell = null;
   session.fork.command = null;
+  session.fork.commandEndedAt = null;
   resetForkShellMarks(session);
 }
 
