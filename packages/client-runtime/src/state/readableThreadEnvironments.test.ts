@@ -47,6 +47,7 @@ it.effect("a send waits for the readable machines instead of reading only its ow
       ready: Effect.void,
       probe: Effect.void,
       closed: Effect.never,
+      inboundFrames: Effect.succeed(0),
     };
     const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
       target: TARGET,
