@@ -2,6 +2,7 @@ import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@t3tools/c
 
 import { requestConfirmDialog } from "./confirmDialog";
 import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
+import { dismissForkContextMenu, requestForkContextMenu } from "./forkContextMenu";
 import { readBrowserClientSettings, writeBrowserClientSettings } from "./clientPersistenceStorage";
 
 let cachedApi: LocalApi | undefined;
@@ -44,6 +45,8 @@ function createBrowserLocalApi(): LocalApi {
         items: readonly ContextMenuItem<T>[],
         position?: { x: number; y: number },
       ): Promise<T | null> => {
+        const forkMenu = requestForkContextMenu(items, position); // Fork: `richContextMenu`.
+        if (forkMenu) return forkMenu;
         if (window.desktopBridge) {
           return window.desktopBridge.showContextMenu(items, position) as Promise<T | null>;
         }
@@ -51,6 +54,7 @@ function createBrowserLocalApi(): LocalApi {
       },
       // Unlike native menus, the DOM fallback needs dismissal when underlying state disappears.
       close: async () => {
+        dismissForkContextMenu();
         if (!window.desktopBridge) {
           dismissContextMenu();
         }
