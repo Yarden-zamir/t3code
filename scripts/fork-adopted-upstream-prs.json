@@ -42,13 +42,13 @@
     "title": "feat(web,mobile): linked environments in Connections",
     "headRef": "t3code/peer/links-ui",
     "mergedHead": "ab3252d2bd4d32722a88ee641006c0b8ebc03f65",
-    "reason": "Linked environments stack. Settings > Connections shows the arrow links read-only (MM-1921)."
+    "reason": "Linked environments stack. Settings > Environments shows the arrow links read-only (MM-1921)."
   },
   {
     "number": 16719,
     "title": "feat(server): delegate_task to a linked environment",
     "headRef": "t3code/peer/remote-delegate",
-    "mergedHead": "8674123e797a459f16f15b911445227348ca7e2d",
+    "mergedHead": "6b9cfd5ada0529da96b8175abbcf266fc0935512",
     "reason": "Top of the linked environments stack. delegate_task with target.environmentId runs on another machine (MM-1910).",
     "forkRules": "Fork runs skip RemoteDelegation.test.ts until upstream main has the link migrations. See apps/server/src/fork/excludedUpstreamTests.ts. vite.config.ts keeps t3code/no-polling-loop-in-tests at warn for RemoteDelegation.test.ts until its polling loops are converted, and t3code/no-low-value-comments at warn for RemoteDelegation.ts, threadAccess.ts, ThreadLaunchService.ts and packages/contracts/src/orchestrationV2.ts (its remote task code) until their comments fit the 4-line cap."
   }
