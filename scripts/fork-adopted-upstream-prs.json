@@ -25,7 +25,7 @@
     "number": 16684,
     "title": "feat(server): agents use linked environments through any T3 tool",
     "headRef": "t3code/peer/forwarding",
-    "mergedHead": "7c2dfcb51981eea652abe6514208bc3dc40ba4d6",
+    "mergedHead": "8ae4629aa28e4bb68726ee0b6a913e8fa600139b",
     "reason": "Linked environments stack. Agents call T3 tools on another machine with its environmentId (MM-1921).",
     "forkRules": "Fork runs skip PeerForwarding.test.ts until upstream main has the link migrations. See apps/server/src/fork/excludedUpstreamTests.ts. Keep the provide of PeerForwarding.layer in server.ts. vite.config.ts keeps t3code/no-low-value-comments at warn for PeerForwarding.ts until its comments fit the 4-line cap."
   },

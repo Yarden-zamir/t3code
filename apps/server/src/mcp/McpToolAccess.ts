@@ -282,25 +282,22 @@ export const either = <P, A, E, R, A2, E2, R2>(
   first: Declaration<(params: P) => Effect.Effect<A, E, R>>,
   second: Declaration<(params: P) => Effect.Effect<A2, E2, R2>>,
 ) => {
-  const firstRemote = remoteCheckOf(first) as RemoteCheck<P> | undefined;
-  const secondRemote = remoteCheckOf(second) as RemoteCheck<P> | undefined;
+  const remotes = [remoteCheckOf(first), remoteCheckOf(second)] as ReadonlyArray<
+    RemoteCheck<P> | undefined
+  >;
   return declare(
     (params: P): Effect.Effect<A | A2, E | E2, R | R2> =>
       useFirst(params) ? checkedHandler(first)(params) : checkedHandler(second)(params),
-    // Fork: a linked environment runs the side this call picks, with that side's check here.
-    firstRemote === undefined && secondRemote === undefined
-      ? undefined
-      : (params: P) => {
-          const remote = useFirst(params) ? firstRemote : secondRemote;
-          return remote === undefined ? Effect.fail(actsHereOnly) : remote(params);
-        },
+    (params) =>
+      remotes[useFirst(params) ? 0 : 1]?.(params) ??
+      Effect.fail(
+        new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: "This action acts as the calling thread, which is here. Omit environmentId.",
+        }),
+      ),
   );
 };
-
-const actsHereOnly = new OrchestratorMcpFailure({
-  code: "invalid_request",
-  message: "This action acts as its calling thread, which is here, so it takes no environmentId.",
-});
 
 const fullAccessRequired =
   "Changing projects or environment settings needs a live full-access/default calling thread or a full-access client.";
