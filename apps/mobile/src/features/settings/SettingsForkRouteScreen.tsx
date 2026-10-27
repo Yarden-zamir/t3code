@@ -18,7 +18,7 @@ import { SettingsSection } from "./components/SettingsSection";
 
 /**
  * Fork: every fork setting that applies to the mobile app, like the Fork page of web settings.
- * Thread behavior and Server settings > New threads also show the ones of their topic.
+ * Threads also shows the ones of its topic.
  */
 export function SettingsForkRouteScreen() {
   const insets = useSafeAreaInsets();

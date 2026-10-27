@@ -24,7 +24,7 @@ import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
 import { resolveServerBackedAppDisplayName } from "./branding.logic";
 import { isElectron } from "./env";
 import { restoreNavigationHistory } from "./forkNavigationHistory";
-import { useComposerDraftStore } from "./composerDraftStore";
+import { subscribeDraftThreadPromotion, useComposerDraftStore } from "./composerDraftStore";
 import { startDefaultThemeAdoption } from "./hooks/useDefaultTheme";
 import { startEnvironmentThemeRepaint } from "./hooks/useEnvironmentTheme";
 import {
@@ -45,6 +45,8 @@ import { appAtomRegistry } from "./rpc/atomRegistry";
 import { primaryServerConfigAtom } from "./state/server";
 import { getActiveThemeFonts, subscribeToActiveThemeFonts } from "./forkThemeStyle";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
+import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
+import { environmentThreadShells } from "./state/threads";
 import { resolveThreadRouteTarget } from "./threadRoutes";
 
 /** Writes appearance settings onto the document, touching only the groups that changed. */
@@ -181,7 +183,14 @@ export function startAppServices(): AppRouter {
   startPreviewTitleRecording();
   startBrowserProfileReporting();
   installChatRouteCommands(router);
+  registerOpenFavoriteEditorCommand();
   startThreadOverlayRetention(router);
+  // Drafts promote as their server threads arrive, wherever the user is.
+  subscribeDraftThreadPromotion({
+    registry: appAtomRegistry,
+    threadShellAtom: environmentThreadShells.quietThreadShellAtom,
+    threadRefsAtom: environmentThreadShells.threadRefsAtom,
+  });
   startMainAppLocationTracking(router);
   startBackgroundThreadAnnouncements(appAtomRegistry, router);
   startThreadVisitedMigration(appAtomRegistry);

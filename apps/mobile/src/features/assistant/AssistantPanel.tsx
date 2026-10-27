@@ -58,7 +58,7 @@ import {
   flattenQueuedThreadMessages,
   type QueuedThreadMessage,
 } from "../../state/thread-outbox";
-import { ThreadOutboxDrainWorker, useIsThreadOutboxHost } from "../../state/thread-outbox-worker";
+import { useIsAppServicesHost } from "../../state/app-services-host";
 import { useThreadOutboxMessages } from "../../state/use-thread-outbox";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { useVoicePreferences } from "../../state/voice-preferences";
@@ -158,16 +158,12 @@ export function AssistantPanelRoot() {
 }
 
 /**
- * The app root runs the relay sign-in and the outbox sender when it is mounted. On a cold
- * start only this panel is mounted, so it runs them until the app root mounts.
+ * The app root runs the relay sign-in when it is mounted. On a cold start only this panel is
+ * mounted, so it runs it until the app root mounts. The outbox is a module service.
  */
 function AppServicesWhenAlone() {
-  if (!useIsThreadOutboxHost()) return null;
-  return (
-    <CloudAuthProvider>
-      <ThreadOutboxDrainWorker />
-    </CloudAuthProvider>
-  );
+  if (!useIsAppServicesHost()) return null;
+  return <CloudAuthProvider>{null}</CloudAuthProvider>;
 }
 
 type Phase =

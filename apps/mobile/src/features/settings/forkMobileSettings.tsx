@@ -145,7 +145,7 @@ export function ForkMobileSwitchRows(props: {
   ));
 }
 
-/** Thread behavior: the fork switches about chat. */
+/** Threads: the fork switches about chat. */
 export function ForkMobileThreadsSection() {
   const settings = useForkMobileSettings();
   if (settings.targets.length === 0 || settings.projectSelected) return null;
