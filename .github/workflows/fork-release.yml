@@ -373,6 +373,16 @@ jobs:
               --prerelease; then
             exit 0
           fi
+          # Another platform may still be creating the release: it stays a draft, which its
+          # tag cannot find, until that platform's files are up. Wait for it, 20 minutes at most.
+          for attempt in $(seq 1 40); do
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break
+            if [ "$attempt" -eq 40 ]; then
+              echo "Release $tag did not appear." >&2
+              exit 1
+            fi
+            sleep 30
+          done
           gh release upload "$tag" release-publish/* --repo "$GITHUB_REPOSITORY" --clobber
 
       # A manual run from another branch tests the build without a release.
