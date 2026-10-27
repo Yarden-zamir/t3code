@@ -934,7 +934,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     THREAD_CARD_SURFACE_CLASS,
     variantAction === "unsettle" &&
       !props.isActive &&
-      "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70 redesign:[&:not(:hover):not(:focus-within)_*]:text-secondary-label",
+      "[&:not(:hover):not(:focus-within)_*]:text-secondary-label",
     props.isActive
       ? THREAD_CARD_ACTIVE_CLASS
       : isSelected || props.sweepAction !== null
@@ -1009,17 +1009,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             ? cn(
                 "truncate",
                 shouldRecede
-                  ? "text-secondary-label redesign:text-foreground/75 redesign:group-hover/sidebar-row:text-foreground redesign:group-focus-visible/sidebar-row:text-foreground"
-                  : isUnread || isWoke || status === "input" || status === "request"
-                    ? "text-foreground"
-                    : status === "failed"
-                      ? "text-foreground/95"
-                      : "text-foreground/90 redesign:text-foreground",
+                  ? "text-foreground/75 group-hover/sidebar-row:text-foreground group-focus-visible/sidebar-row:text-foreground"
+                  : status === "failed" && !isUnread && !isWoke
+                    ? "text-foreground/95"
+                    : "text-foreground",
               )
             : cn(
                 "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
                 shouldRecede
-                  ? "text-secondary-label/70 redesign:text-secondary-label"
+                  ? "text-secondary-label"
                   : props.isActive || isWoke || status === "input" || status === "request"
                     ? "text-foreground"
                     : isUnread
@@ -1162,8 +1160,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 Regenerating title
               </span>
             ) : null}
-            {/* Shelf rows are one line; the New design gives the title the room a PR number takes. */}
-            {prBadge ? <span className="contents redesign:hidden">{prBadge}</span> : null}
             {sortable?.isDragging ? (
               dragDestination
             ) : (
@@ -1182,7 +1178,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
                     <span className="inline-flex items-center gap-1 text-xs text-info-foreground tabular-nums">
                       {/* The clock tells a wake time from an age at a glance. */}
-                      <AlarmClockIcon aria-hidden className="hidden size-3 redesign:block" />
+                      <AlarmClockIcon aria-hidden className="size-3" />
                       {props.snoozeWakeLabelText}
                     </span>
                   ) : isWoke ? (
@@ -1431,11 +1427,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       <EnvironmentMachineIcon
         aria-hidden
         kind={props.environmentMachine}
-        className="size-3 shrink-0 text-muted-foreground/40 redesign:text-inherit"
+        className="size-3 shrink-0"
       />
-      <span className="min-w-0 flex-1 truncate text-muted-foreground/40 redesign:text-inherit">
-        {props.scratchMachineLabel}
-      </span>
+      <span className="min-w-0 flex-1 truncate">{props.scratchMachineLabel}</span>
     </>
   ) : null;
   const diffLabel = diff ? (
@@ -1462,7 +1456,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {...(fileDropHandlers ?? {})}
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
-        metaLineEmpty && "redesign:[contain-intrinsic-size:auto_58px]",
+        metaLineEmpty && "[contain-intrinsic-size:auto_58px]",
         sortable?.isDragging && "relative z-20",
       )}
       // A custom layout sets its own height: its rows plus the card's 0.5rem insets.
@@ -1494,11 +1488,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           {accessibleTitle}
           {cardLayout === null ? (
             <div
-              className={cn(
-                THREAD_CARD_CONTENT_CLASS,
-                "h-[4.875rem]",
-                metaLineEmpty && "redesign:h-auto",
-              )}
+              className={cn(THREAD_CARD_CONTENT_CLASS, "h-[4.875rem]", metaLineEmpty && "h-auto")}
             >
               <div className="flex h-5 min-w-0 items-center gap-1.5">
                 {draftIndicator}
@@ -1507,11 +1497,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   label for the wider row controls. */}
                 {pinIndicator}
                 {props.projectDisplayName ? (
-                  <ThreadCardProjectLabel
-                    name={props.projectDisplayName}
-                    recede={shouldRecede}
-                    className="flex-1"
-                  />
+                  <ThreadCardProjectLabel name={props.projectDisplayName} className="flex-1" />
                 ) : (
                   <span className="flex-1" />
                 )}
@@ -1521,7 +1507,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               <div className="mt-1 flex min-w-0 items-center gap-1.5">
                 {titleLine}
                 {metaLineEmpty ? (
-                  <span aria-hidden className="hidden shrink-0 redesign:inline-flex">
+                  <span aria-hidden className="inline-flex shrink-0">
                     {providerStack}
                   </span>
                 ) : null}
@@ -1529,7 +1515,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               <div
                 className={cn(
                   "mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs",
-                  metaLineEmpty && "redesign:hidden",
+                  metaLineEmpty && "hidden",
                 )}
               >
                 {branchLabel ?? <span className="flex-1" />}
@@ -1551,11 +1537,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               nodes={{
                 favicon,
                 project: props.projectDisplayName ? (
-                  <ThreadCardProjectLabel
-                    name={props.projectDisplayName}
-                    recede={shouldRecede}
-                    className="shrink"
-                  />
+                  <ThreadCardProjectLabel name={props.projectDisplayName} className="shrink" />
                 ) : null,
                 branch: branchLabel,
                 title: (
