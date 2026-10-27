@@ -61,6 +61,12 @@ options.
   - the commits that changed in the range diff: apply them, for example with
     `git diff <old head> <new head> -- <files> > <patch>` and `git apply --3way --index <patch>`.
 
+- `apps/server/src/provider/agentContextBudget.json` holds the fork's measured agent context,
+  which the fork tools and instructions make larger than upstream's. When upstream changes it
+  or the fork changes tool text, run
+  `env -u T3_SERVICE_LAUNCHER_CONTEXT vp test run src/provider/AgentContextBudget.test.ts` in
+  `apps/server` and write its "Received" values to the file.
+
 ## Keep this skill current
 
 - When you do a repeated task by hand that no script covers, add a script or extend one for

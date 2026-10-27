@@ -33,6 +33,11 @@ import { SecretRequests } from "../secrets/SecretRequests.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { SourceControlRepositoryService } from "../sourceControl/SourceControlRepositoryService.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
+import { MachineExec } from "../fork/machineMap/MachineExec.ts";
+import { MachineMap } from "../fork/machineMap/MachineMap.ts";
+import { MachinePeers } from "../fork/machineMap/MachinePeers.ts";
+import { PeerForwarding } from "../peer/PeerForwarding.ts";
+import { RemoteDelegation } from "../peer/RemoteDelegation.ts";
 import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
 import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import { DocumentText } from "./DocumentText.ts";
@@ -67,6 +72,12 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(ThreadManagementService)({}),
   Layer.mock(ThreadSearch)({}),
   Layer.mock(VcsStatusBroadcaster)({}),
+  // Fork: the machine map and linked environment tools.
+  Layer.mock(MachineExec)({}),
+  Layer.mock(MachineMap)({}),
+  Layer.mock(MachinePeers)({ machineOf: () => undefined }),
+  Layer.mock(PeerForwarding)({}),
+  Layer.mock(RemoteDelegation)({}),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 const utf8Bytes = (text: string) => Buffer.byteLength(text, "utf8");
