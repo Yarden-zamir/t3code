@@ -27,6 +27,7 @@ import { CloudAuthProvider } from "./features/cloud/CloudAuthProvider";
 import { prepareNativeShowcaseCapture } from "./features/showcase/nativeShowcaseScene";
 import {
   presentPendingIncomingShare,
+  pruneIncomingShareImports,
   startIncomingShareInbox,
 } from "./features/sharing/IncomingShareProvider";
 import {
@@ -134,6 +135,7 @@ function handleNavigationStateChange(state: NavigationState | undefined): void {
   setAgentNotificationPathname(workspaceLocationFromState(state).pathname);
   recordAppShortcutNavigationState(state);
   pruneNewTaskBranchCheckouts(state);
+  pruneIncomingShareImports(state);
 }
 
 function handleNavigationReady(): void {
