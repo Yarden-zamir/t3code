@@ -1,10 +1,9 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
 
-import { getClientSettings } from "./hooks/useSettings";
-
 /**
- * Fork: the open request of the app's own context menu (`richContextMenu`). The host,
- * `ForkContextMenuHost`, draws it; one request at a time, like a system menu.
+ * Fork: the open request of the app's own context menu, drawn by `ForkContextMenuHost`.
+ * Upstream https://github.com/pingdotgg/t3code/pull/18103 adds a desktop toggle to the web
+ * menu. When it merges, move to its setting and keep this host for the later phases.
  */
 export type ForkContextMenuRequest = {
   readonly key: number;
@@ -22,7 +21,7 @@ export const FORK_CONTEXT_MENU_ATTRIBUTE = "data-fork-context-menu";
 
 let active: ActiveRequest | null = null;
 let nextKey = 0;
-let registeredHostCount = 0;
+let hostRegistered = false;
 const listeners = new Set<() => void>();
 
 function publish(next: ActiveRequest | null): void {
@@ -41,11 +40,12 @@ export function subscribeForkContextMenu(listener: () => void): () => void {
   };
 }
 
+/** The host registers while `richContextMenu` is on. */
 export function registerForkContextMenuHost(): () => void {
-  registeredHostCount += 1;
+  hostRegistered = true;
   return () => {
-    registeredHostCount -= 1;
-    if (registeredHostCount === 0) dismissForkContextMenu();
+    hostRegistered = false;
+    dismissForkContextMenu();
   };
 }
 
@@ -56,14 +56,18 @@ function defaultPosition(focused: HTMLElement | null): { x: number; y: number } 
   return { x: rect.left, y: rect.bottom };
 }
 
-/** Undefined means the caller keeps its own menu: the setting is off or no host is mounted. */
+/** Undefined means the caller keeps its own menu: no host is registered. */
 export function requestForkContextMenu<T extends string>(
   items: readonly ContextMenuItem<T>[],
   position?: { x: number; y: number },
 ): Promise<T | null> | undefined {
-  if (registeredHostCount === 0 || !getClientSettings().richContextMenu) return undefined;
+  if (!hostRegistered) return undefined;
+  const current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  // A menu that replaces an open one gives focus back where the open one would have.
+  const focused = current?.closest(`[${FORK_CONTEXT_MENU_ATTRIBUTE}]`)
+    ? (active?.returnFocus ?? null)
+    : current;
   dismissForkContextMenu();
-  const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   return new Promise<T | null>((resolve) => {
     nextKey += 1;
     publish({

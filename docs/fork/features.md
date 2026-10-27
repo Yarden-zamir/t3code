@@ -789,7 +789,10 @@ Right-click menus use the app's own menu, also in the desktop app, in place of t
 - **Setting:** client setting `richContextMenu` (off by default). Settings > Appearance > Interface > "App context menu".
 - **Works on:** web, desktop. The mobile app keeps its native menus.
 - Text fields and pages in the browser panel keep the system menu, with spelling suggestions and Cut, Copy and Paste. A place without an app menu also keeps the system menu.
-- **Limits:** the menu stays inside the app window. Disabled items stay reachable with the arrow keys, as in other app menus.
+- **Limits:**
+  - The menu stays inside the app window.
+  - Disabled items stay reachable with the arrow keys, as in other app menus.
+  - The menu takes focus, so a right-click inside an open picker, such as the branch picker, closes the picker.
 
 ## Command line and MCP
 

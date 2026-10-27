@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ClientSettings, ContextMenuItem } from "@t3tools/contracts";
 import {
   ArchiveIcon,
   CheckIcon,
@@ -31,6 +31,7 @@ import {
   settleForkContextMenu,
   subscribeForkContextMenu,
 } from "../forkContextMenu";
+import { useClientSettings } from "../hooks/useSettings";
 import {
   Menu,
   MenuCheckboxItem,
@@ -70,6 +71,7 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 const menuAttributes = { [FORK_CONTEXT_MENU_ATTRIBUTE]: "" };
+const selectEnabled = (settings: ClientSettings) => settings.richContextMenu;
 
 /** A header starts a group that runs to the next header; group labels need a group. */
 function groupByHeader(items: readonly ContextMenuItem[]): ContextMenuItem[][] {
@@ -174,8 +176,9 @@ export function ForkContextMenuHost() {
     readForkContextMenu,
   );
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- registers this host with the module store while mounted
-  useEffect(() => registerForkContextMenuHost(), []);
+  const enabled = useClientSettings(selectEnabled);
+  // oxlint-disable-next-line t3code/react-effect-budget -- registers this host with the module store while the setting is on
+  useEffect(() => (enabled ? registerForkContextMenuHost() : undefined), [enabled]);
 
   if (request === null) return null;
   const { key, position } = request;
@@ -200,7 +203,14 @@ export function ForkContextMenuHost() {
         style={{ left: position.x, top: position.y }}
         tabIndex={-1}
       />
-      <MenuPopup {...menuAttributes} align="start" side="bottom" sideOffset={0} finalFocus={false}>
+      <MenuPopup
+        {...menuAttributes}
+        align="start"
+        side="bottom"
+        sideOffset={0}
+        finalFocus={false}
+        layer="context"
+      >
         <MenuEntries items={request.items} onPick={(id) => settleForkContextMenu(key, id)} />
       </MenuPopup>
     </Menu>

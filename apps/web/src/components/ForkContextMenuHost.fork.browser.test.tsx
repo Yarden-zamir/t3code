@@ -2,7 +2,9 @@ import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
+import { isContextMenuOpen } from "../contextMenuFallback";
 import { requestForkContextMenu } from "../forkContextMenu";
+import { readLocalApi } from "../localApi";
 import { __setClientSettingsForTests } from "../hooks/useSettings";
 import { render } from "../../test/render";
 import { ForkContextMenuHost } from "./ForkContextMenuHost";
@@ -55,7 +57,6 @@ describe("ForkContextMenuHost", () => {
 
     await expect.element(page.getByRole("menu")).toBeVisible();
     await expect.element(page.getByText("Thread")).toBeVisible();
-    // Base UI keeps disabled items reachable, as ARIA menus allow, and skips nothing.
     // Base UI keeps disabled items reachable, as ARIA menus allow.
     await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
 
@@ -106,5 +107,20 @@ describe("ForkContextMenuHost", () => {
     expect(document.activeElement).toBe(field);
     invoker.remove();
     field.remove();
+  });
+
+  it("takes the menus of the local API, which close() dismisses", async () => {
+    setup(true);
+    await using _screen = await render(<ForkContextMenuHost />);
+    const api = readLocalApi();
+    if (!api) throw new Error("No local API.");
+    const selection = api.contextMenu.show(ITEMS, { x: 20, y: 20 });
+
+    await expect.element(page.getByRole("menu")).toBeVisible();
+    expect(isContextMenuOpen()).toBe(true);
+    await api.contextMenu.close();
+
+    await expect(selection).resolves.toBeNull();
+    expect(isContextMenuOpen()).toBe(false);
   });
 });
