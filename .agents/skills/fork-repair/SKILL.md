@@ -52,6 +52,14 @@ options.
   `git range-diff <old base>..<old head> <new base>..<new head>`. A rebase head often carries
   only lint and API fixes. For an adopted file that the fork does not change, take the new
   head's version: keeping the fork side drops those fixes. Never take its migrations.
+- A rebased head conflicts only because its base moved. Keep the fork side of each conflict
+  (`git checkout --ours --pathspec-from-file=<list>`), then read `git diff --cached --stat HEAD`.
+  It shows what the merge still adds:
+  - a migration the fork left out: remove its file and its line in the migration test;
+  - a hunk that repeats code fork main already has, such as a field or a test that the fork
+    keeps in a `.fork.test.ts` file: restore that file with `git checkout HEAD -- <file>`;
+  - the commits that changed in the range diff: apply them, for example with
+    `git diff <old head> <new head> -- <files> > <patch>` and `git apply --3way --index <patch>`.
 
 ## Keep this skill current
 

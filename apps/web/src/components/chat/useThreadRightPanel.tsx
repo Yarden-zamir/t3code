@@ -48,7 +48,10 @@ import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import { MAX_TERMINALS_PER_GROUP } from "../../types";
 import { shouldRenderPreviewMiniPlayer } from "../ChatView.logic";
-import { ThreadPreviewMiniPlayer } from "../preview/ThreadPreviewMiniPlayer";
+import {
+  ThreadPreviewMiniPlayer,
+  useThreadPreviewCanvasSource,
+} from "../preview/ThreadPreviewMiniPlayer";
 import { usePreviewSession } from "../preview/usePreviewSession";
 import { threadPullRequestPanelTarget } from "../pullRequest/pullRequestDetail.logic";
 import { RightPanelTabs } from "../RightPanelTabs";
@@ -165,8 +168,8 @@ export function useThreadRightPanel(input: {
   const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const rightPanelMaximized = canMaximizeRightPanel && rightPanelState.maximized === true;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
-  const [threadPanelPresentation, setThreadPanelPresentation] =
-    useState<ThreadPanelPresentation>("inline");
+  // The screen renders the thread details outside its canvas, which shows them as a popover.
+  const threadPanelPresentation: ThreadPanelPresentation = "popover";
   const threadPanelOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(
       state.threadPanelVisibilityByThreadKey,
@@ -205,6 +208,14 @@ export function useThreadRightPanel(input: {
     activeThreadRef?.environmentId ?? null,
     AuthPreviewOperateScope,
   );
+  const shownPreviewMiniPlayer =
+    activeThreadRef &&
+    activePreviewMiniPlayer &&
+    previewMiniPlayerVisible &&
+    (activePreviewMiniPlayer.source.kind === "device" || canOperatePreview)
+      ? activePreviewMiniPlayer
+      : null;
+  const canvasPreview = useThreadPreviewCanvasSource(activeThreadRef, shownPreviewMiniPlayer);
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
   const supportsThreadPullRequests =
@@ -379,8 +390,9 @@ export function useThreadRightPanel(input: {
     rightPanelMaximized,
     inlineRightPanelOwnsTitleBar,
     threadPanelPresentation,
-    setThreadPanelPresentation,
     threadPanelOpen,
+    shownPreviewMiniPlayer,
+    canvasPreview,
     pendingFileSurfaceIds,
     handleFilePendingChangeStable,
     deviceState,
@@ -547,7 +559,7 @@ export function ThreadRightPanelView(props: {
 export function ThreadRightPanelHosts(props: { readonly panel: ThreadRightPanel }) {
   const { panel } = props;
   const threadRef = panel.threadRef;
-  const miniPlayer = panel.activePreviewMiniPlayer;
+  const miniPlayer = panel.shownPreviewMiniPlayer;
   return (
     <>
       <DeviceSetupDialogHost
@@ -558,10 +570,7 @@ export function ThreadRightPanelHosts(props: { readonly panel: ThreadRightPanel 
       {panel.canOperatePreview && threadRef && panel.activeEnvironmentServerBrowser ? (
         <PreviewSessionSync threadRef={threadRef} />
       ) : null}
-      {threadRef &&
-      miniPlayer &&
-      panel.previewMiniPlayerVisible &&
-      (miniPlayer.source.kind === "device" || panel.canOperatePreview) ? (
+      {threadRef && miniPlayer ? (
         <ThreadPreviewMiniPlayer
           key={`${panel.threadKey}:${previewMiniPlayerSourceKey(miniPlayer.source)}`}
           threadRef={threadRef}

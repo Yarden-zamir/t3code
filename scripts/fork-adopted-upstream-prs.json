@@ -3,21 +3,21 @@
     "number": 16653,
     "title": "feat(server): /mcp narrows a client's modes from T3-Mode-Limit",
     "headRef": "t3code/peer/mode-limit-header",
-    "mergedHead": "56f88be97c37c5241b13bea95721049aa02fe049",
+    "mergedHead": "4fac0b18af72a2ce5a74e93f75b8595db04c0c03",
     "reason": "Base of the linked environments stack. Cross-machine calls carry the limits of the calling thread in T3-Mode-Limit (MM-1902)."
   },
   {
     "number": 16654,
     "title": "feat(server): t3_thread_launch takes clientRequestId",
     "headRef": "t3code/peer/launch-request-key",
-    "mergedHead": "8a5f64e971a8aac57c6c87c263857e7d22d17f84",
+    "mergedHead": "29cecbe8eca31385840d1e9e58c8ab02ccdc6b71",
     "reason": "Linked environments stack. A retried t3_thread_launch on another machine starts no second thread."
   },
   {
     "number": 16655,
     "title": "feat(server): link to another environment",
     "headRef": "t3code/peer/links",
-    "mergedHead": "25835af4375ebc2a7eaff8643ad6102ba22a7800",
+    "mergedHead": "3a6791a899b917334a53edafed9a11c03826d97f",
     "reason": "Linked environments stack. The machine map arrows are the links (MM-1921).",
     "forkRules": "Migration 068_PeerLinks stays out of Migrations.ts until upstream main has it. See docs/fork/operations.md \"Migrations\". Fork runs skip PeerLinks.test.ts until upstream main has the migration. See apps/server/src/fork/excludedUpstreamTests.ts. The fork has no manual links: MachinePeers gives the arrows to PeerLinks. Keep the refusal layer in cli/environment.ts and the peer link RPC handlers in fork/forkWs.ts."
   },
@@ -25,7 +25,7 @@
     "number": 16684,
     "title": "feat(server): agents use linked environments through any T3 tool",
     "headRef": "t3code/peer/forwarding",
-    "mergedHead": "7c2dfcb51981eea652abe6514208bc3dc40ba4d6",
+    "mergedHead": "8ae4629aa28e4bb68726ee0b6a913e8fa600139b",
     "reason": "Linked environments stack. Agents call T3 tools on another machine with its environmentId (MM-1921).",
     "forkRules": "Fork runs skip PeerForwarding.test.ts until upstream main has the link migrations. See apps/server/src/fork/excludedUpstreamTests.ts. Keep the provide of PeerForwarding.layer in server.ts. vite.config.ts keeps t3code/no-low-value-comments at warn for PeerForwarding.ts until its comments fit the 4-line cap."
   },
@@ -33,7 +33,7 @@
     "number": 16695,
     "title": "feat(server): work a linked environment starts stays within its link",
     "headRef": "t3code/peer/link-origin",
-    "mergedHead": "47ede02f8832b3b9a08283ca672fbade49a05bf0",
+    "mergedHead": "338ade32c2bc0005e500be233232abde04b24e7f",
     "reason": "Linked environments stack. Work that another machine starts stays within the access of its arrow (MM-1921).",
     "forkRules": "Migration 069_PeerLinkFence stays out of Migrations.ts until upstream main has it. See docs/fork/operations.md \"Migrations\". vite.config.ts keeps t3code/no-low-value-comments at warn for linkOrigin.ts until its comments fit the 4-line cap."
   },
@@ -41,14 +41,14 @@
     "number": 16698,
     "title": "feat(web,mobile): linked environments in Connections",
     "headRef": "t3code/peer/links-ui",
-    "mergedHead": "ab3252d2bd4d32722a88ee641006c0b8ebc03f65",
+    "mergedHead": "c9349bad78f215013c099330bce8d0d0be090fae",
     "reason": "Linked environments stack. Settings > Environments shows the arrow links read-only (MM-1921)."
   },
   {
     "number": 16719,
     "title": "feat(server): delegate_task to a linked environment",
     "headRef": "t3code/peer/remote-delegate",
-    "mergedHead": "6b9cfd5ada0529da96b8175abbcf266fc0935512",
+    "mergedHead": "e6b3aec0a807c0b3634923631801133fbb867963",
     "reason": "Top of the linked environments stack. delegate_task with target.environmentId runs on another machine (MM-1910).",
     "forkRules": "Fork runs skip RemoteDelegation.test.ts until upstream main has the link migrations. See apps/server/src/fork/excludedUpstreamTests.ts. vite.config.ts keeps t3code/no-polling-loop-in-tests at warn for RemoteDelegation.test.ts until its polling loops are converted, and t3code/no-low-value-comments at warn for RemoteDelegation.ts, threadAccess.ts, ThreadLaunchService.ts and packages/contracts/src/orchestrationV2.ts (its remote task code) until their comments fit the 4-line cap."
   }
