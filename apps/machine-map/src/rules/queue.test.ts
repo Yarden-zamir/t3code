@@ -189,4 +189,11 @@ describe("localSettingChanges (MM-404)", () => {
       },
     ]);
   });
+  it("never shares a worktree path template, because it names paths of one machine (MM-406)", () => {
+    expect(
+      sharedSettingChanges(map, "server", {
+        worktreePathTemplate: "~/code/{repoDir}/{branchLeaf}",
+      }),
+    ).toEqual([]);
+  });
 });

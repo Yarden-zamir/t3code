@@ -243,6 +243,7 @@ const MACHINE_LOCAL_SETTINGS: Readonly<Record<SettingScope, ReadonlySet<string>>
     "worktreesDirectory",
     "previousWorktreesDirectories",
     "addProjectBaseDirectory",
+    "worktreePathTemplate",
     // Keyed by project id. A project id is local to one environment.
     "projectSettingsOverrides",
     "projectScriptOverrides",
