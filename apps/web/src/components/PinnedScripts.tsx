@@ -27,6 +27,7 @@ import { useEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from "r
 import { create } from "zustand";
 
 import { showContextMenuFallback } from "~/contextMenuFallback";
+import { requestForkContextMenu } from "~/forkContextMenu";
 import { observeResize } from "~/lib/observeResize";
 import { serverEnvironment } from "~/state/server";
 import { useEnvironmentScope } from "~/state/session";
@@ -175,7 +176,8 @@ export function usePinnedScripts(input: {
     ];
     if (items.length === 0) return;
     // The in-app menu, not the native one: it matches the app theme on every platform.
-    const clicked = await showContextMenuFallback(items, position);
+    const clicked = await (requestForkContextMenu(items, position) ??
+      showContextMenuFallback(items, position));
     if (!clicked || !canWrite) return;
     const separator = clicked.indexOf(":");
     if (separator < 0) return;

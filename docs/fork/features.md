@@ -790,6 +790,18 @@ Back and forward buttons sit right of the sidebar toggle, like in VS Code. A but
   - In a browser without the Navigation API, such as an older Safari or Firefox, both buttons stay enabled, and a missing thread goes to a new thread instead of a skip.
   - Mouse buttons 4 and 5 and trackpad swipes do not go back or forward in the desktop app.
 
+### App context menu
+
+Right-click menus use the app's own menu, also in the desktop app, in place of the system menu. The menu follows the app theme and shows icons, group names, check marks and submenus. Arrow keys move over the items, letters jump to an item, and Escape closes the menu.
+
+- **Setting:** client setting `richContextMenu` (off by default). Settings > Appearance > Interface > "App context menu".
+- **Works on:** web, desktop. The mobile app keeps its native menus.
+- Text fields and pages in the browser panel keep the system menu, with spelling suggestions and Cut, Copy and Paste. A place without an app menu also keeps the system menu.
+- **Limits:**
+  - The menu stays inside the app window.
+  - Disabled items stay reachable with the arrow keys, as in other app menus.
+  - The menu takes focus, so a right-click inside an open picker, such as the branch picker, closes the picker.
+
 ## Command line and MCP
 
 ### `t3 tool`

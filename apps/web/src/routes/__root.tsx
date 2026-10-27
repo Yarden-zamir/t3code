@@ -1,4 +1,5 @@
 import { ForkAccessChangeNotices } from "../components/ForkAccessChangeNotices";
+import { ForkContextMenuHost } from "../components/ForkContextMenuHost";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { setCredentialedSiblingOrigins } from "@t3tools/client-runtime/rpc/siblingCredentials";
@@ -227,6 +228,7 @@ function RootRouteBranch() {
         {isElectron ? null : <InstalledAppCoordinator />}
         <ReopenClosedViewShortcut />
         <ConfirmDialogHost />
+        <ForkContextMenuHost />
         <CustomSnoozeDialogHost />
         <GuestShareDialogHost />
         <ForkAccessChangeNotices />
