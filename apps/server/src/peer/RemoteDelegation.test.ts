@@ -1389,7 +1389,8 @@ it.effect("stopping the parent stops its task there", () =>
 const stoppedThere = (
   laptopEnv: Effect.Success<ReturnType<typeof makeLaptop>>,
   taskId: NodeId,
-  stopCount = 1,
+  // `null` for a cancel's stop, which carries no count.
+  stopCount: number | null = 1,
 ) =>
   laptopEnv.orchestrator
     .streamStoredEventsFrom({
@@ -1403,7 +1404,7 @@ const stoppedThere = (
           stored.event.type === "subagent.updated" &&
           stored.event.payload.id === taskId &&
           stored.event.payload.remoteChild?.stoppedThere === true &&
-          stored.event.payload.remoteChild.stopCount === stopCount,
+          stored.event.payload.remoteChild.stopCount === (stopCount ?? undefined),
       ),
       Stream.runHead,
       Effect.map((stored) =>
@@ -1628,14 +1629,7 @@ it.effect("a task cancelled while the box is unreachable is stopped there after 
       yield* after.remote.start();
       yield* Deferred.await(thread.interruptedOnce);
       // Once the stop is recorded, nothing is owed there any more.
-      // oxlint-disable-next-line t3code/no-polling-loop-in-tests -- the follower records the stop after the box's real HTTP reply, with no event to await
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        const task = (yield* after.orchestrator.getThreadProjection(parentThreadId)).subagents.find(
-          (candidate) => candidate.id === delegated.taskId,
-        );
-        if (task?.remoteChild?.stoppedThere === true) break;
-        yield* Effect.sleep(Duration.millis(20)).pipe(TestClock.withLive);
-      }
+      yield* stoppedThere(after, delegated.taskId, null);
       expect(yield* after.projections.getOpenRemoteDelegatedTasks).toEqual([]);
       expect(yield* Ref.get(thread.stops)).toEqual(["thread.stop", "delegated-tasks"]);
       // The result here is still the cancel's.

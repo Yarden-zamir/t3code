@@ -512,8 +512,7 @@ const make = Effect.gen(function* () {
       // `false` means it is still running there: follow again straight away.
       Effect.repeat({ while: (done) => !done }),
       Effect.catchTags({
-        // An inline handler in a retry loop, so the operations it calls own the spans.
-        OrchestratorMcpFailure: Effect.fnUntraced(function* (error) {
+        OrchestratorMcpFailure: Effect.fn("RemoteDelegation.followFailed")(function* (error) {
           const reason = yield* finalReason(parentThreadId, taskId, error);
           if (reason === undefined) return yield* error;
           // Gone there, or no link to reach it by: nothing left to stop there.
