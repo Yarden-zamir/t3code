@@ -238,6 +238,13 @@ class T3AssistantModule : Module() {
     "screenshotHeight" to screenshotHeight,
     "sharedText" to sharedText,
     "sharedImageUri" to sharedImageUri,
+    "appLabel" to appLabel,
+    "activityClass" to activityClass,
+    "structuredData" to structuredData,
+    "clipMimeType" to clipMimeType,
+    "clipLabel" to clipLabel,
+    "isHomeApp" to isHomeApp,
+    "pageText" to pageText,
   )
 
   private fun hasPhotoAccess(context: Context): Boolean {

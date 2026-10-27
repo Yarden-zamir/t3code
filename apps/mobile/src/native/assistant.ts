@@ -17,6 +17,15 @@ export interface AssistantCapture {
   /** Text and an image that another app shared to "Ask T3 Code". */
   readonly sharedText: string | null;
   readonly sharedImageUri: string | null;
+  /** What the app reports about its screen, to name it. */
+  readonly appLabel: string | null;
+  readonly activityClass: string | null;
+  readonly structuredData: string | null;
+  readonly clipMimeType: string | null;
+  readonly clipLabel: string | null;
+  readonly isHomeApp: boolean;
+  /** The whole web page, from Chrome. It arrives after the screen text. */
+  readonly pageText: string | null;
 }
 
 export interface RecentPhoto {

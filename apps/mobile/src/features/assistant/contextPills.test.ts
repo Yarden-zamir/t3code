@@ -45,9 +45,7 @@ describe("context pills", () => {
       "fix this\n\nLink: https://x.dev",
     );
     expect(joinMessageText("", "Link: https://x.dev")).toBe("Link: https://x.dev");
-    expect(screenTextDocument("com.android.chrome", "body")).toBe(
-      "App: com.android.chrome\n\nbody",
-    );
+    expect(screenTextDocument("App: Chrome", "body")).toBe("App: Chrome\n\nbody");
     expect(screenTextDocument(null, "body")).toBe("body");
   });
 
