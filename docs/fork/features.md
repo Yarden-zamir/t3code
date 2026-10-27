@@ -121,11 +121,11 @@ When the owner changes an arrow or a client arrow, open clients get the new acce
 
 ### Portal views
 
-The portal has the views Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients (MM-1102). Each view and each selected item has its own link. Agents use the `machines_*` and `machine_exec` tools for machine operations, and the T3 tools with `environmentId` for work on other machines. Client approvals, invites and the resume after an emergency pause stay with the owner.
+The portal has the views Map, Levels, Health, Settings, Queue, Tasks, History, Inbox and Clients (MM-1102). Each view and each selected item has its own link. Agents use the `machines_*` and `machine_exec` tools for machine operations, and the T3 tools with `environmentId` for work on other machines. Client approvals, invites and the resume after an emergency pause stay with the owner.
 
 The map role never raises a thread's limits. Map writes need a live full-access/default caller, even with `edit`. These checks run on the server for agents started from web, desktop and mobile.
 
-Each arrow lists what agents on the source can do on the target: read threads, launch and delegate, exec and settings (MM-1915). The arrow panel, Map, Table and `machines_read` show the list. Secret copy waits for MM-1917.
+Each arrow lists what agents on the source can do on the target: read threads, launch and delegate, exec and settings (MM-1915). The arrow panel, Map, Levels and `machines_read` show the list. Secret copy waits for MM-1917.
 
 ### Work on other machines
 
@@ -144,7 +144,7 @@ An arrow with agent tools makes the target machine a linked environment of the s
 
 An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908). In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's (MM-1919).
 
-- **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Table and the arrow panel show an "exec" sticker.
+- **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Levels and the arrow panel show an "exec" sticker.
 - **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Without a thread credential it is refused (MM-1920). The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
 - **Stop:** the emergency pause, a removed arrow or exec turned off stops a running command at once (MM-1916).
 - **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`. A `t3 machine exec` run gives one entry when it ends.

@@ -2,7 +2,7 @@
 
 export const VIEWS = [
   "map",
-  "table",
+  "levels",
   "health",
   "settings",
   "queue",
@@ -16,7 +16,7 @@ export type View = (typeof VIEWS)[number];
 
 export const VIEW_LABEL: Record<View, string> = {
   map: "Map",
-  table: "Table",
+  levels: "Levels",
   health: "Health",
   settings: "Settings",
   queue: "Queue",
