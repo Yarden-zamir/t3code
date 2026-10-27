@@ -31,6 +31,19 @@ type PaletteItem = CommandPaletteActionItem | CommandPaletteSubmenuItem;
  * project list shows only projects on a server with `terminalThreads` on, and has no "No project"
  * entry.
  */
+/** The palette resolves this group's projects while it renders, like upstream's chat one. */
+export const FORK_TERMINAL_NEW_THREAD_IN_GROUP = "terminal-projects";
+
+/** "New terminal thread in": with no items, the view a palette intent opens to. */
+export function forkTerminalNewThreadInView(
+  items: CommandPaletteView["groups"][number]["items"] = [],
+): CommandPaletteView {
+  return {
+    addonIcon: <SquareTerminalIcon className={ADDON_ICON_CLASS} />,
+    groups: [{ value: FORK_TERMINAL_NEW_THREAD_IN_GROUP, label: "Projects", items }],
+  };
+}
+
 export function useForkTerminalThreadPaletteItems(input: {
   readonly pickerProjects: ReadonlyArray<CommandPaletteProject>;
   readonly projectGroupByTargetKey: ReadonlyMap<string, SidebarProjectSnapshot>;
@@ -80,10 +93,7 @@ export function useForkTerminalThreadPaletteItems(input: {
     }),
   );
 
-  const newThreadInView: CommandPaletteView = {
-    addonIcon: <SquareTerminalIcon className={ADDON_ICON_CLASS} />,
-    groups: [{ value: "projects", label: "Projects", items: projectItems }],
-  };
+  const newThreadInView = forkTerminalNewThreadInView(projectItems);
 
   const actionItems = (activeProjectTitle: string | null): PaletteItem[] => [
     ...(terminalThreadsEnabled && activeProjectTitle
