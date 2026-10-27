@@ -339,11 +339,13 @@ function MenuSubPopup({
   sideOffset = 0,
   alignOffset,
   align = "start",
+  layer = "default",
   ...props
 }: MenuPrimitive.Popup.Props & {
   align?: MenuPrimitive.Positioner.Props["align"];
   sideOffset?: MenuPrimitive.Positioner.Props["sideOffset"];
   alignOffset?: MenuPrimitive.Positioner.Props["alignOffset"];
+  layer?: "default" | "context";
 }) {
   const defaultAlignOffset = align !== "center" ? -5 : undefined;
 
@@ -353,6 +355,7 @@ function MenuSubPopup({
       alignOffset={alignOffset ?? defaultAlignOffset}
       className={className}
       data-slot="menu-sub-content"
+      layer={layer}
       side="inline-end"
       sideOffset={sideOffset}
       {...props}

@@ -128,7 +128,7 @@ function MenuEntry({
             <ItemIcon name={item.icon} />
             {item.label}
           </MenuSubTrigger>
-          <MenuSubPopup {...menuAttributes}>
+          <MenuSubPopup {...menuAttributes} layer="context">
             <MenuEntries items={item.children} onPick={onPick} />
           </MenuSubPopup>
         </MenuSub>
