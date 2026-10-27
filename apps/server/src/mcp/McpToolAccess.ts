@@ -186,7 +186,7 @@ export const writesThreads = <P, A, E, R>(
      * machine reaches a terminal thread without exec. Leave it unset for anything else. A
      * function decides per call, for a tool whose actions differ.
      */
-    readonly metadataOnly?: true | ((params: P) => boolean);
+    readonly metadataOnly?: true | ((params: NoInfer<P>) => boolean);
   },
 ) =>
   declare(

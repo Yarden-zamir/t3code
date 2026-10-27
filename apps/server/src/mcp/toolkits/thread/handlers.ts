@@ -94,7 +94,7 @@ const required = <A>(value: A | undefined, name: string) =>
     : Effect.succeed(value);
 const writesThread = <P extends { readonly threadId?: ThreadId | undefined }, A, E, R>(
   handle: (params: P) => Effect.Effect<A, E, R>,
-  options?: { readonly metadataOnly?: true | ((params: P) => boolean) },
+  options?: { readonly metadataOnly?: true | ((params: NoInfer<P>) => boolean) },
 ) => McpToolAccess.writesThreads((params: P) => [params.threadId], handle, options);
 // Fork (MM-1923): a cancel or a reorder sends nothing, unlike an edit or a promote.
 const metadataOnly = { metadataOnly: true } as const;

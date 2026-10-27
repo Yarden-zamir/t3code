@@ -49,7 +49,6 @@ import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import { MAX_TERMINALS_PER_GROUP } from "../../types";
 import { shouldRenderPreviewMiniPlayer } from "../ChatView.logic";
 import { ThreadPreviewMiniPlayer } from "../preview/ThreadPreviewMiniPlayer";
-import { useAgentOpenedPreviews } from "../preview/useAgentOpenedPreviews";
 import { usePreviewSession } from "../preview/usePreviewSession";
 import { threadPullRequestPanelTarget } from "../pullRequest/pullRequestDetail.logic";
 import { RightPanelTabs } from "../RightPanelTabs";
@@ -227,13 +226,6 @@ export function useThreadRightPanel(input: {
   const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(
     activeThreadRef?.environmentId ?? null,
   );
-  useAgentOpenedPreviews({
-    threadRef: activeThreadRef,
-    deviceState,
-    deviceStateLoaded,
-    miniPlayerSource: activePreviewMiniPlayer?.source ?? null,
-    sheetLayout: shouldUsePlanSidebarSheet,
-  });
   const {
     closeSurface: closeRightPanelSurface,
     closeOtherSurfaces: closeOtherRightPanelSurfacesStable,
@@ -251,6 +243,7 @@ export function useThreadRightPanel(input: {
     activeRightPanelSurface,
     activePreviewState,
     deviceState,
+    deviceStateLoaded,
     pullRequestPanelTarget,
     threadPanelPresentation,
     isServerThread,
