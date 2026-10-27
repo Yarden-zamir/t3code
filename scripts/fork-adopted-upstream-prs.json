@@ -3,7 +3,7 @@
     "number": 16653,
     "title": "feat(server): /mcp narrows a client's modes from T3-Mode-Limit",
     "headRef": "t3code/peer/mode-limit-header",
-    "mergedHead": "56f88be97c37c5241b13bea95721049aa02fe049",
+    "mergedHead": "4fac0b18af72a2ce5a74e93f75b8595db04c0c03",
     "reason": "Base of the linked environments stack. Cross-machine calls carry the limits of the calling thread in T3-Mode-Limit (MM-1902)."
   },
   {
