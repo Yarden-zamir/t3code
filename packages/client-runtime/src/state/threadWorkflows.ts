@@ -1,7 +1,8 @@
-import type {
-  ChatAttachment,
-  OrchestrationV2ProjectedTurnItem,
-  OrchestrationV2ProviderCapabilities,
+import {
+  type ChatAttachment,
+  isCompactionCommandMessage,
+  type OrchestrationV2ProjectedTurnItem,
+  type OrchestrationV2ProviderCapabilities,
 } from "@t3tools/contracts";
 import { copySorted } from "@t3tools/shared/Array";
 import { usageLimitBlockedRun } from "@t3tools/shared/orchestrationV2ThreadError";
@@ -27,6 +28,8 @@ export interface QueuedThreadRun {
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly messageId: Message["id"];
   readonly context?: Message["context"];
+  /** Carries the attribution a sent message shows: automation, agent sender, or guest. */
+  readonly message?: Message;
 }
 
 export interface ThreadQueueWorkflowState {
@@ -35,8 +38,9 @@ export interface ThreadQueueWorkflowState {
   readonly isHeld: boolean;
   /** The server refuses to resume this queue until the usage-limited run continues. */
   readonly heldByUsageLimit: boolean;
-  readonly canReorder: boolean;
   readonly canPromoteToSteer: boolean;
+  /** The active run is a compaction, so promoting a queued message stops it instead of steering. */
+  readonly promoteSkipsCompaction: boolean;
   readonly canSendNow: boolean;
 }
 
@@ -131,6 +135,11 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
   const activeRun = resolveActiveThreadRun(projection);
   const session = resolveThreadProviderSession(projection);
   const capabilities = session?.capabilities.turns;
+  const activeMessage = projection.messages.find(
+    (message) => message.id === activeRun?.userMessageId,
+  );
+  const promoteSkipsCompaction =
+    activeMessage !== undefined && isCompactionCommandMessage(activeMessage);
   const hasSteerableProviderTurn =
     activeRun?.status === "running" &&
     activeRun.activeAttemptId !== null &&
@@ -151,6 +160,7 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
       attachments: message?.attachments ?? [],
       messageId: run.userMessageId,
       ...(message?.context ? { context: message.context } : {}),
+      ...(message ? { message } : {}),
     };
   });
 
@@ -161,15 +171,16 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
     heldByUsageLimit:
       usageLimitBlockedRun(projection.runs, projection.turnItems, session?.lastError ?? null) !==
       null,
-    canReorder: capabilities?.supportsQueuedMessages === true,
     canSendNow:
       activeRun === null &&
       projection.thread.archivedAt == null &&
       projection.thread.deletedAt == null,
     canPromoteToSteer:
-      hasSteerableProviderTurn &&
-      (capabilities?.supportsActiveSteering === true ||
-        capabilities?.supportsSteeringByInterruptRestart === true),
+      promoteSkipsCompaction ||
+      (hasSteerableProviderTurn &&
+        (capabilities?.supportsActiveSteering === true ||
+          capabilities?.supportsSteeringByInterruptRestart === true)),
+    promoteSkipsCompaction,
   };
 }
 

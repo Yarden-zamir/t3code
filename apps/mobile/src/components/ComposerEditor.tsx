@@ -28,6 +28,7 @@ import { appAtomRegistry } from "../state/atom-registry";
 import { mobilePreferencesAtom } from "../state/preferences";
 import { useReadableThreadEnvironmentIds } from "../state/readableThreadEnvironments";
 import { useOpenLinkedThread } from "../features/threads/useOpenLinkedThread";
+import { useLinkedEnvironments } from "../state/peerLinks";
 import { ComposerContextSheet } from "./ComposerContextSheet";
 import { AppText as Text } from "./ui/AppText";
 import {
@@ -62,6 +63,7 @@ export function ComposerEditor({
     ? preferencesResult.value.composerEnterBehavior
     : undefined;
   const contextHistory = createComposerDraftContextHistory();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases the attachment file leases held for native text undo when the history is replaced or unmounts
   useEffect(() => () => contextHistory.dispose(), [contextHistory]);
   const changeText = (text: string) => {
     const restored = contextHistory.restore(
@@ -77,7 +79,7 @@ export function ComposerEditor({
   const [selected, setSelected] = useState<{ source: string; start: number; end: number } | null>(
     null,
   );
-  const readableThreadEnvironmentIds = useReadableThreadEnvironmentIds(environmentId ?? null);
+  const linkedEnvironments = useLinkedEnvironments(environmentId ?? null);
   const contextImports = useAtomValue(composerContextImportsAtom);
   const importing = draftKey ? contextImports[draftKey] === true : false;
   const pasteContext = async (
@@ -101,7 +103,8 @@ export function ComposerEditor({
         retained.attachments.length,
         signal,
         retained.context?.records.length ?? 0,
-        environmentId === undefined ? undefined : readableThreadEnvironmentIds,
+        environmentId,
+        linkedEnvironments,
       );
       if (signal.aborted) return;
       if (!result) {

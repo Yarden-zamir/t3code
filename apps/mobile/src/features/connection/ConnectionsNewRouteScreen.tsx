@@ -12,8 +12,8 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { AsyncResult } from "effect/reactivity";
-import { useEffect, useRef, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { useState } from "react";
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,13 +26,11 @@ import { FrostedCutout } from "../../components/ui/FrostedCutout";
 import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
 import { useAddEnvironmentCloudflareAccess } from "./CloudflareAccessFields";
 import { useClientEnroll } from "./useClientEnroll";
-import {
-  setPendingConnectionError,
-  useRemoteConnections,
-} from "../../state/use-remote-environment-registry";
+import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
+import { autoConnectReport, devAutoConnectAttemptAtom } from "./devAutoConnect";
 import { splitEnvironmentSections } from "./environmentSections";
 import { useForkClientInvite } from "./forkClientInvite";
 import { leaveSettingsPage } from "../settings/settings-navigation";
@@ -49,31 +47,55 @@ type ConnectionsNewRouteParams = {
 export function ConnectionsNewRouteScreen({
   route,
 }: StaticScreenProps<ConnectionsNewRouteParams | undefined>) {
-  const {
-    connectionPairingUrl,
-    onChangeConnectionPairingUrl,
-    onConnectPress,
-    pairingConnectionError,
-  } = useRemoteConnections();
-  const navigation = useNavigation();
-  const routeName = useRoute().name;
   const params = route.params ?? {};
   // Dev-only prefill prevents production links from supplying an attacker-chosen host and token.
   const routePairingUrl = __DEV__ ? (params.pairingUrl?.trim() ?? "") : "";
-  const shouldAutoConnect =
-    __DEV__ &&
-    routePairingUrl.length > 0 &&
-    (params.autoConnect === "1" || params.autoConnect === "true");
+  // A new prefill link replaces whatever the form held.
+  return (
+    <PairingForm
+      key={routePairingUrl}
+      routePairingUrl={routePairingUrl}
+      routeFor={params.routeFor}
+      inviteUrl={params.inviteUrl}
+    />
+  );
+}
+
+function PairingForm({
+  routePairingUrl,
+  routeFor,
+  inviteUrl,
+}: {
+  readonly routePairingUrl: string;
+  readonly routeFor: EnvironmentId | undefined;
+  /** Fork: a portal client invite to enroll with (MM-904). */
+  readonly inviteUrl: string | undefined;
+}) {
+  const { connectionPairingUrl, connectionError, onChangeConnectionPairingUrl, onConnectPress } =
+    useRemoteConnections();
+  const navigation = useNavigation();
+  const routeName = useRoute().name;
   const insets = useSafeAreaInsets();
-  const [hostInput, setHostInput] = useState("");
-  const [codeInput, setCodeInput] = useState("");
+  const [initialPairing] = useState(() => parsePairingUrl(routePairingUrl || connectionPairingUrl));
+  const [hostInput, setHostInput] = useState(initialPairing.host);
+  const [codeInput, setCodeInput] = useState(initialPairing.code);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // The user's own edit or submit dismisses the dev auto-connect report.
+  const [ownAttempt, setOwnAttempt] = useState(false);
+  const autoConnect = autoConnectReport(
+    useAtomValue(devAutoConnectAttemptAtom),
+    routePairingUrl,
+    ownAttempt,
+  );
+  const connecting = isSubmitting || autoConnect.connecting;
+  // Fork: `connectionError` carries the failure of a client invite enroll (useClientEnroll).
+  const pairingConnectionError = submitError ?? autoConnect.error ?? connectionError;
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const screenFocused = useIsFocused();
   const [scannerLocked, setScannerLocked] = useState(false);
   // A good scan parks the camera so it can't re-read the code over later edits.
   const [scanComplete, setScanComplete] = useState(false);
-  const attemptedAutoConnectRef = useRef<string | null>(null);
   const enrollInvite = useClientEnroll(setIsSubmitting);
   const access = useAddEnvironmentCloudflareAccess({
     pairingUrl: buildPairingUrl(hostInput, codeInput),
@@ -83,46 +105,24 @@ export function ConnectionsNewRouteScreen({
 
   const headerIconColor = useUniwindTheme()["--color-icon"];
 
-  const connectDisabled = isSubmitting || hostInput.trim().length === 0;
+  const connectDisabled = connecting || hostInput.trim().length === 0;
 
-  useEffect(() => {
-    const { host, code } = parsePairingUrl(connectionPairingUrl);
-    // oxlint-disable-next-line react/set-state-in-effect -- A new pairing URL reseeds the editable host and code fields.
-    setHostInput(host);
-    setCodeInput(code);
-  }, [connectionPairingUrl]);
+  const clearError = () => {
+    setSubmitError(null);
+    setOwnAttempt(true);
+  };
 
-  useEffect(() => {
-    if (routePairingUrl.length === 0) {
-      return;
-    }
-
-    const { host, code } = parsePairingUrl(routePairingUrl);
-    // oxlint-disable-next-line react/set-state-in-effect -- A pairing URL from the route reseeds the editable host and code fields.
-    setHostInput(host);
-    setCodeInput(code);
-  }, [routePairingUrl]);
-
-  useForkClientInvite(params.inviteUrl, setHostInput);
-
-  useEffect(() => {
-    if (pairingConnectionError) {
-      // oxlint-disable-next-line react/set-state-in-effect -- A pairing failure reported by the connection runtime ends the submit.
-      setIsSubmitting(false);
-    }
-  }, [pairingConnectionError]);
+  useForkClientInvite(inviteUrl, setHostInput);
 
   const handleHostChange = (value: string) => {
     setHostInput(value);
-    setPendingConnectionError(null);
+    clearError();
   };
 
   const handleCodeChange = (value: string) => {
     setCodeInput(value);
-    setPendingConnectionError(null);
+    clearError();
   };
-
-  useEffect(() => () => setPendingConnectionError(null), []);
 
   const handleScanPress = async () => {
     const permission = await requestCameraPermission();
@@ -173,17 +173,25 @@ export function ConnectionsNewRouteScreen({
     }
   };
 
-  const connectAndClose = async (pairingUrl: string): Promise<boolean> => {
+  const handleSubmit = async () => {
+    if (enrollInvite(hostInput)) return;
+    const pairingUrl = buildPairingUrl(hostInput, codeInput);
+    setOwnAttempt(true);
+    setSubmitError(null);
+    const staged = await access.stage();
+    if ("error" in staged) return setSubmitError(staged.error);
     setIsSubmitting(true);
     onChangeConnectionPairingUrl(pairingUrl);
-    const result = await onConnectPress(pairingUrl, params.routeFor);
+    const outcome = await onConnectPress(pairingUrl, routeFor);
     setIsSubmitting(false);
+    setSubmitError(outcome.error);
     void Haptics.notificationAsync(
-      AsyncResult.isSuccess(result)
+      outcome.ok
         ? Haptics.NotificationFeedbackType.Success
         : Haptics.NotificationFeedbackType.Error,
     );
-    if (AsyncResult.isSuccess(result)) {
+    if (!outcome.ok) await staged.undo();
+    if (outcome.ok) {
       // Replacing with Home would nest it inside any sheet below; return to the opener.
       if (!navigation.canGoBack()) {
         navigation.dispatch(StackActions.replace("Home"));
@@ -192,29 +200,7 @@ export function ConnectionsNewRouteScreen({
         leaveSettingsPage(navigation, workspaceHasColumns(), "SettingsEnvironments");
       }
     }
-    return AsyncResult.isSuccess(result);
   };
-
-  const handleSubmit = async () => {
-    if (enrollInvite(hostInput)) return;
-    const pairingUrl = buildPairingUrl(hostInput, codeInput);
-    setIsSubmitting(true);
-    const staged = await access.stage();
-    if ("error" in staged) {
-      setIsSubmitting(false);
-      return setPendingConnectionError(staged.error);
-    }
-    if (!(await connectAndClose(pairingUrl))) await staged.undo();
-  };
-
-  useEffect(() => {
-    if (!shouldAutoConnect || attemptedAutoConnectRef.current === routePairingUrl) {
-      return;
-    }
-
-    attemptedAutoConnectRef.current = routePairingUrl;
-    void connectAndClose(routePairingUrl);
-  }, [connectAndClose, routePairingUrl, shouldAutoConnect]);
 
   return (
     <SettingsScreen
@@ -222,8 +208,8 @@ export function ConnectionsNewRouteScreen({
       title="Add environment"
       actions={[
         {
-          accessibilityLabel: isSubmitting ? "Connecting" : "Add environment",
-          loading: isSubmitting,
+          accessibilityLabel: connecting ? "Connecting" : "Add environment",
+          loading: connecting,
           icon: "checkmark",
           tintColor: headerIconColor,
           disabled: connectDisabled,

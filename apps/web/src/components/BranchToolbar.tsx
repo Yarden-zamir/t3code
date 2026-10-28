@@ -267,17 +267,7 @@ const RunContextSelector = memo(function RunContextSelector({
       </TooltipPopup>
     </Tooltip>
   );
-  const icon = !showEnvironmentIndicator ? (
-    workspaceIcon
-  ) : isPanel ? (
-    environmentIcon
-  ) : (
-    // Button's SVG margins consume 4px of the gap; mx-0! restores the intended 2px.
-    <span className="inline-flex shrink-0 items-center gap-0.5">
-      {environmentIcon}
-      {workspaceIcon}
-    </span>
-  );
+  const icon = showEnvironmentIndicator ? environmentIcon : workspaceIcon;
   const triggerContent = (
     <>
       {icon}
@@ -299,7 +289,11 @@ const RunContextSelector = memo(function RunContextSelector({
           isPanel && THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS,
         )}
         onContextMenu={handleContextMenu}
-        aria-label={isPanel ? "Run context" : undefined}
+        aria-label={
+          isPanel
+            ? `Run context: ${[autoEnvironmentLabel ?? activeEnvironment?.label, workspaceLabel].filter(Boolean).join(", ")}`
+            : undefined
+        }
         data-composer-context-control
       >
         {triggerContent}
@@ -320,7 +314,11 @@ const RunContextSelector = memo(function RunContextSelector({
               }
             : undefined
         }
-        aria-label={isPanel ? "Run context" : undefined}
+        aria-label={
+          isPanel
+            ? `Run context: ${[autoEnvironmentLabel ?? activeEnvironment?.label, workspaceLabel].filter(Boolean).join(", ")}`
+            : undefined
+        }
         data-composer-context-control
         data-composer-shortcut={[
           showEnvironmentPicker && !envLocked ? "composer.host" : "",

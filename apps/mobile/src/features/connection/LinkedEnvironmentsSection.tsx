@@ -1,3 +1,4 @@
+import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
 import { peerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
 import { arrowLinkStatus } from "@t3tools/client-runtime/fork/arrowLinks";
 import { useFocusEffect } from "@react-navigation/native";
@@ -20,7 +21,7 @@ export function LinkedEnvironmentsSection(props: {
 }) {
   const config = useEnvironmentServerConfig(props.environmentId);
   const canRead = useEnvironmentScope(props.environmentId, AuthAccessReadScope);
-  const supported = canRead && config?.environment.capabilities.peerLinks === true;
+  const supported = canRead && offersLinkedEnvironments(config);
   const links = useEnvironmentQuery(
     supported ? peerLinkEnvironment.list({ environmentId: props.environmentId, input: {} }) : null,
   );

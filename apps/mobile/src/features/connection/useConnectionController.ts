@@ -10,7 +10,7 @@ import type {
 } from "@t3tools/contracts/relay";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 
 import { environmentCatalog } from "../../connection/catalog";
 import {
@@ -71,55 +71,38 @@ export function useConnectionController() {
     [registeredIds, relayEnvironments],
   );
 
-  const connectPairingUrl = useCallback(
-    (pairingUrl: string, expectedEnvironmentId?: EnvironmentId) =>
-      connectPairingUrlMutation({
-        pairingUrl,
-        ...(expectedEnvironmentId === undefined ? {} : { expectedEnvironmentId }),
-      }),
-    [connectPairingUrlMutation],
-  );
-  const connectRelayEnvironment = useCallback(
-    (environment: RelayClientEnvironmentRecord) =>
-      registerEnvironment(
-        new RelayConnectionRegistration({
-          target: new RelayConnectionTarget({
-            environmentId: environment.environmentId,
-            label: environment.label,
-          }),
+  const connectPairingUrl = (pairingUrl: string, expectedEnvironmentId?: EnvironmentId) =>
+    connectPairingUrlMutation({
+      pairingUrl,
+      ...(expectedEnvironmentId === undefined ? {} : { expectedEnvironmentId }),
+    });
+  const connectRelayEnvironment = (environment: RelayClientEnvironmentRecord) =>
+    registerEnvironment(
+      new RelayConnectionRegistration({
+        target: new RelayConnectionTarget({
+          environmentId: environment.environmentId,
+          label: environment.label,
         }),
-      ),
-    [registerEnvironment],
-  );
-  const removeEnvironment = useCallback(
-    (environmentId: EnvironmentId) => removeEnvironmentMutation(environmentId),
-    [removeEnvironmentMutation],
-  );
-  const retryEnvironment = useCallback(
-    (environmentId: EnvironmentId) => retryEnvironmentMutation(environmentId),
-    [retryEnvironmentMutation],
-  );
-  const setEnvironmentEnabled = useCallback(
-    (environmentId: EnvironmentId, enabled: boolean) =>
-      setEnvironmentEnabledMutation({ environmentId, enabled }),
-    [setEnvironmentEnabledMutation],
-  );
-  const updateEnvironment = useCallback(
-    async (
-      environmentId: EnvironmentId,
-      updates: { readonly label: string; readonly displayUrl: string },
-    ) => {
-      const result = await updateBearer({
-        environmentId,
-        label: updates.label,
-        httpBaseUrl: updates.displayUrl,
-      });
-      if (AsyncResult.isSuccess(result))
-        await headersFollowAddress(environmentId, updates.displayUrl);
-      return result;
-    },
-    [headersFollowAddress, updateBearer],
-  );
+      }),
+    );
+  const removeEnvironment = (environmentId: EnvironmentId) =>
+    removeEnvironmentMutation(environmentId);
+  const retryEnvironment = (environmentId: EnvironmentId) =>
+    retryEnvironmentMutation(environmentId);
+  const setEnvironmentEnabled = (environmentId: EnvironmentId, enabled: boolean) =>
+    setEnvironmentEnabledMutation({ environmentId, enabled });
+  const updateEnvironment = async (
+    environmentId: EnvironmentId,
+    updates: { readonly label: string; readonly displayUrl: string },
+  ) => {
+    const result = await updateBearer({
+      environmentId,
+      label: updates.label,
+      httpBaseUrl: updates.displayUrl,
+    });
+    if (AsyncResult.isSuccess(result)) await headersFollowAddress(environmentId, updates.displayUrl);
+    return result;
+  };
 
   return {
     connectedEnvironments,

@@ -109,6 +109,7 @@ export const terminalThreadAttach = resolveLaunch;
 export const terminalThreadAttachStream = (
   services: TerminalThreadLaunchServices,
   input: TerminalAttachInput,
+  viewerId: string,
 ) =>
   Stream.unwrap(
     services.terminals.forkRetainAttach(input).pipe(
@@ -126,10 +127,7 @@ export const terminalThreadAttachStream = (
             subscribe,
           );
         }
-        return terminalOutputStream<TerminalAttachStreamEvent, TerminalError>(
-          (listener, register) => terminals.attachStream(launch.input, listener, register),
-          (listener, register) => terminals.resyncStream(launch.input, listener, register),
-        );
+        return terminals.attachOutputStream(launch.input, viewerId);
       }),
     ),
   );

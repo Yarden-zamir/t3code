@@ -104,6 +104,7 @@ export function ThreadRouteView({
     leaveMissingRoute(() => void navigate({ to: "/", replace: true }));
   }, [background, draftMissing, navigate]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears pending file drops and navigates the router home once a server thread is confirmed missing
   useEffect(() => {
     if (target.kind !== "server" || !bootstrapComplete) {
       return;

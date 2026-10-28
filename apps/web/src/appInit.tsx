@@ -3,7 +3,7 @@ import type { ClientSettings } from "@t3tools/contracts/settings";
 import { createBrowserHistory, createHashHistory } from "@tanstack/react-router";
 
 import { applyAppearanceContrast } from "./appearanceContrast";
-import { applyAppearanceFontVariables, fontSettingOrThemeFont } from "./appearanceFonts";
+import { applyAppearanceFontVariables } from "./appearanceFonts";
 import { startElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
@@ -23,8 +23,11 @@ import { startGuideRunNotifications } from "./components/pullRequest/guide/PullR
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
 import { resolveServerBackedAppDisplayName } from "./branding.logic";
 import { isElectron } from "./env";
-import { restoreNavigationHistory } from "./forkNavigationHistory";
-import { subscribeDraftThreadPromotion, useComposerDraftStore } from "./composerDraftStore";
+import {
+  subscribeComposerDraftModelReconciliation,
+  subscribeDraftThreadPromotion,
+  useComposerDraftStore,
+} from "./composerDraftStore";
 import { startDefaultThemeAdoption } from "./hooks/useDefaultTheme";
 import { startEnvironmentThemeRepaint } from "./hooks/useEnvironmentTheme";
 import {
@@ -43,8 +46,9 @@ import { startProviderAuthDelivery } from "./providerAuthDelivery";
 import { getRouter, type AppRouter } from "./router";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 import { primaryServerConfigAtom } from "./state/server";
-import { getActiveThemeFonts, subscribeToActiveThemeFonts } from "./forkThemeStyle";
+import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
+import { startWorkspaceFocus } from "./lib/workspaceFocus";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
 import { environmentThreadShells } from "./state/threads";
@@ -54,15 +58,10 @@ import { resolveThreadRouteTarget } from "./threadRoutes";
 function startClientAppearance(): void {
   const root = document.documentElement;
   let applied: ClientSettings | null = null;
-  let appliedThemeFonts: ReturnType<typeof getActiveThemeFonts> | null = null;
   const apply = () => {
     const settings = getClientSettings();
     const previous = applied;
     applied = settings;
-    // Fork: an empty font setting falls back to the font the active theme suggests.
-    const themeFonts = getActiveThemeFonts();
-    const themeFontsChanged = themeFonts !== appliedThemeFonts;
-    appliedThemeFonts = themeFonts;
     if (previous?.diffColorScheme !== settings.diffColorScheme) {
       root.dataset.diffColorScheme = settings.diffColorScheme;
     }
@@ -87,13 +86,12 @@ function startClientAppearance(): void {
       previous.fontSizeInterface !== settings.fontSizeInterface ||
       previous.fontSizePrompt !== settings.fontSizePrompt ||
       previous.fontSizeCode !== settings.fontSizeCode ||
-      previous.fontSmoothing !== settings.fontSmoothing ||
-      themeFontsChanged
+      previous.fontSmoothing !== settings.fontSmoothing
     ) {
       applyAppearanceFontVariables(root, {
-        sans: fontSettingOrThemeFont(settings.fontFamilySans, themeFonts.sans),
-        code: fontSettingOrThemeFont(settings.fontFamilyCode, themeFonts.code),
-        composer: fontSettingOrThemeFont(settings.fontFamilyComposer, themeFonts.composer),
+        sans: settings.fontFamilySans,
+        code: settings.fontFamilyCode,
+        composer: settings.fontFamilyComposer,
         sizeInterface: settings.fontSizeInterface,
         sizePrompt: settings.fontSizePrompt,
         sizeCode: settings.fontSizeCode,
@@ -102,7 +100,6 @@ function startClientAppearance(): void {
     }
   };
   subscribeClientSettings(apply);
-  subscribeToActiveThemeFonts(apply);
   apply();
 }
 
@@ -158,8 +155,6 @@ export function startAppServices(): AppRouter {
   // Ahead of the history: the provider auth code must leave the address before anything reads it.
   startProviderAuthDelivery();
 
-  // Fork: settings load after the router starts, so the stored history stands for the setting.
-  if (isElectron) restoreNavigationHistory();
   // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
   const router = getRouter(isElectron ? createHashHistory() : createBrowserHistory());
 
@@ -190,7 +185,14 @@ export function startAppServices(): AppRouter {
     threadShellAtom: environmentThreadShells.quietThreadShellAtom,
     threadRefsAtom: environmentThreadShells.threadRefsAtom,
   });
+  subscribeComposerDraftModelReconciliation({
+    registry: appAtomRegistry,
+    threadShellAtom: environmentThreadShells.threadShellAtom,
+    threadRefsAtom: environmentThreadShells.threadRefsAtom,
+    shellStateAtom: environmentShell.stateAtom,
+  });
   startMainAppLocationTracking(router);
+  startWorkspaceFocus(router);
   startBackgroundThreadAnnouncements(appAtomRegistry, router);
   startThreadVisitedMigration(appAtomRegistry);
   startSshPasswordPromptQueue();

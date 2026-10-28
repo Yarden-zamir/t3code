@@ -408,10 +408,6 @@ export interface ThreadManagementServiceShape {
     ProjectionRecords<K>,
     ThreadManagementProjectionLoadError | ThreadManagementThreadNotFoundError
   >;
-  readonly getProjectThread: (input: {
-    readonly projectId: ProjectId;
-    readonly threadId: ThreadId;
-  }) => Effect.Effect<OrchestrationV2ThreadProjection, ThreadManagementError>;
   readonly getShellSnapshot: (options?: {
     readonly location?: "active" | "archive";
   }) => Effect.Effect<OrchestrationV2ThreadShellSnapshot, Orchestrator.OrchestratorV2Error>;
@@ -729,27 +725,6 @@ const make = Effect.gen(function* () {
       Effect.andThen(orchestrator.dispatch(command)),
     );
 
-  const getProjectThread: ThreadManagementServiceShape["getProjectThread"] = (input) =>
-    getThreadProjection(input.threadId).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ThreadManagementProjectionLoadError({
-            projectId: input.projectId,
-            threadId: input.threadId,
-            cause,
-          }),
-      ),
-      Effect.filterOrFail(
-        (projection) =>
-          projection.thread.projectId === input.projectId && projection.thread.deletedAt === null,
-        (_projection) =>
-          new ThreadManagementThreadNotFoundError({
-            projectId: input.projectId,
-            threadId: input.threadId,
-          }),
-      ),
-    );
-
   const getProjectThreadRecords: ThreadManagementServiceShape["getProjectThreadRecords"] = (
     input,
     fields,
@@ -941,6 +916,13 @@ const make = Effect.gen(function* () {
         { messageRoles: ["user"] },
       );
       const progress = delegatedTaskProgress(records);
+      // A thread rolled back past all its work, with nothing left running, has no answer to wait for.
+      if (
+        progress.resultRun === undefined &&
+        records.runs.every((run) => isTerminalRunStatus(run.status))
+      ) {
+        return latestRun(records);
+      }
       if (progress.state !== "result_available") return undefined;
       const pending = yield* orchestrator
         .delegatedTaskResultPending(input.threadId)
@@ -1357,7 +1339,6 @@ const make = Effect.gen(function* () {
     getThreadTranscript,
     getThreadSnapshotWindow,
     getProjectThreadRecords,
-    getProjectThread,
     getShellSnapshot: orchestrator.getShellSnapshot,
     listActiveSubagentThreadIds: orchestrator.listActiveSubagentThreadIds,
     listOlderSettledThreads: orchestrator.listOlderSettledThreads,

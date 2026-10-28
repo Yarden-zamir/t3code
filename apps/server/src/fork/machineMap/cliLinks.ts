@@ -16,6 +16,9 @@ const refused = (message: string) =>
 export const layer = Layer.succeed(
   PeerLinks.PeerLinks,
   PeerLinks.PeerLinks.of({
+    enabled: Effect.succeed(true),
+    // Manual links are refused, so no address needs a description.
+    describe: () => Effect.succeedNone,
     link: Effect.fn("PeerLinks.link")(function () {
       return refused(MANUAL_LINK_REFUSAL);
     }),

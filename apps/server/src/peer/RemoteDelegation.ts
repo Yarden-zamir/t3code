@@ -45,10 +45,17 @@ import * as PeerLinks from "./PeerLinks.ts";
 const FOLLOW_WAIT_MS = 10 * 60 * 1_000;
 /** A linked environment that stops answering is retried, backing off to this. */
 const FOLLOW_MAX_BACKOFF = Duration.minutes(5);
-const backoff = Schedule.exponential(Duration.seconds(2)).pipe(
-  Schedule.modifyDelay(({ duration }) =>
-    Effect.succeed(Duration.min(duration, FOLLOW_MAX_BACKOFF)),
-  ),
+/** How a follower retries; tests step it by hand. */
+export const FollowRetrySchedule = Context.Reference<Schedule.Schedule<unknown>>(
+  "t3/peer/RemoteDelegation/FollowRetrySchedule",
+  {
+    defaultValue: () =>
+      Schedule.exponential(Duration.seconds(2)).pipe(
+        Schedule.modifyDelay(({ duration }) =>
+          Effect.succeed(Duration.min(duration, FOLLOW_MAX_BACKOFF)),
+        ),
+      ),
+  },
 );
 
 type ThreadScope = McpInvocationContext.McpThreadInvocationScope;
@@ -91,22 +98,23 @@ export class RemoteDelegation extends Context.Service<
   }
 >()("t3/peer/RemoteDelegation") {}
 
-/**
- * Refusals that following again cannot change: the link was revoked, expired
- * or forgotten, or the thread or run there is gone. Anything else (the other
- * machine asleep, a dropped route) is worth retrying.
- */
 /** The other side refused because the thread there runs above this caller's modes. */
 const isModeRefusal = (error: OrchestratorMcpFailure) =>
   error.code === "runtime_mode_escalation_denied" ||
   error.code === "interaction_mode_escalation_denied";
 
+/**
+ * Refusals that following again cannot change: the link was revoked, expired
+ * or forgotten, or the thread or run there is gone. Anything else (the other
+ * machine asleep, a dropped route) is worth retrying.
+ */
 const isFinal = (error: OrchestratorMcpFailure) =>
   error.code === "capability_denied" ||
   error.code === "thread_not_found" ||
   error.code === "run_not_found";
 
 const make = Effect.gen(function* () {
+  const followRetry = yield* FollowRetrySchedule;
   const forwarding = yield* PeerForwarding.PeerForwarding;
   const links = yield* PeerLinks.PeerLinks;
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -348,11 +356,10 @@ const make = Effect.gen(function* () {
   );
 
   /**
-   * Completes `task` here with its thread there's final state. Each attempt
-   * is its own command, so one that failed never blocks the next. A report
-   * refused because the task already has its result (from a cancel, a Stop
-   * or an earlier report) is done. `stoppedThere` records that nothing is
-   * left to stop there, also on a task that already has its result.
+   * Completes `task` here with its thread there's final state. Each attempt is its own
+   * command, so a failed one never blocks the next; a report refused because the task already
+   * has its result (a cancel, a Stop or an earlier report) is done. `stoppedThere` records that
+   * nothing is left to stop there, even on a task that already has its result.
    */
   const complete = Effect.fn("RemoteDelegation.complete")(function* (
     parentThreadId: ThreadId,
@@ -405,11 +412,9 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * Stops the task's thread there as its Stop button does: its running turn,
-   * its queued messages, its pull request watches and the tasks it delegated.
-   * The thread there is the task's own, so whatever runs on it is stopped.
-   * `key` names the stop: the follower sends one, each cancel its own, and
-   * each is recorded there once however often it is sent.
+   * Stops the task's own thread there as its Stop button does: its running turn, queued
+   * messages, pull request watches and delegated tasks. `key` names the stop (the follower
+   * sends one, each cancel its own), and each is recorded there once however often it is sent.
    */
   const stopThere = (
     scope: ThreadScope,
@@ -501,11 +506,10 @@ const make = Effect.gen(function* () {
   const noReply = "(The thread in the linked environment ended without a reply.)";
 
   /**
-   * Waits on the task's thread there until its run ends, then completes the
-   * task here, and stops it there if it ended here first. A revoked, expired
-   * or forgotten link, or a thread or run gone there, fails the task and
-   * leaves nothing to stop; anything else (the other machine asleep, a
-   * dropped route) is retried, backing off. Completing is retried the same way.
+   * Waits for the task's run there to end, completes the task here, and stops it there if it
+   * ended here first. A revoked, expired or forgotten link, or a thread or run gone there,
+   * fails the task with nothing left to stop; anything else (the other machine asleep, a
+   * dropped route) is retried with back-off, and so is completing.
    */
   const follow = (parentThreadId: ThreadId, taskId: NodeId): Effect.Effect<void> =>
     followOnce(parentThreadId, taskId).pipe(
@@ -521,7 +525,7 @@ const make = Effect.gen(function* () {
           yield* complete(parentThreadId, taskId, "failed", reason, "stopped", stopCount);
         }),
       }),
-      Effect.retry(backoff),
+      Effect.retry(followRetry),
       Effect.ignoreCause({ log: true }),
     );
 

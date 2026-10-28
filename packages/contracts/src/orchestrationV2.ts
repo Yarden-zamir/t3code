@@ -853,6 +853,32 @@ export type OrchestrationV2RemoteTaskChild = typeof OrchestrationV2RemoteTaskChi
  */
 const DedupedBodyMarker = Schema.optionalKey(Schema.Literal(true));
 
+/**
+ * Where an app-owned task runs when it runs in a linked environment instead
+ * of in a child thread here: that environment and the ordinary thread it runs
+ * as there. Such a task has no `childThreadId`.
+ */
+export const OrchestrationV2RemoteTaskChild = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  label: Schema.String,
+  /** The run there that carries the task; absent on tasks recorded before it was kept. */
+  runId: Schema.optional(RunId),
+  /**
+   * Nothing is left to stop there: a stop reached it, was refused for good, or the thread
+   * or link is gone. A run ending there by itself sets it too, unless the task here was
+   * cancelled or stopped and still owes a stop, which its follower keeps sending across
+   * restarts. `false`: a Stop here owes one to a task that already had its result.
+   */
+  stoppedThere: Schema.optional(Schema.Boolean),
+  /**
+   * Stops asked for here once the task had its result. The count names the
+   * one owed, so each reaches the thread there once however often it is sent.
+   */
+  stopCount: Schema.optional(NonNegativeInt),
+});
+export type OrchestrationV2RemoteTaskChild = typeof OrchestrationV2RemoteTaskChild.Type;
+
 export const OrchestrationV2Subagent = Schema.Struct({
   id: NodeId,
   threadId: ThreadId,
@@ -1451,10 +1477,6 @@ export const OrchestrationV2ProviderRetry = Schema.Struct({
 });
 export type OrchestrationV2ProviderRetry = typeof OrchestrationV2ProviderRetry.Type;
 
-export const OrchestrationV2ProviderThreadDisposition = Schema.Literals(["reusable", "broken"]);
-export type OrchestrationV2ProviderThreadDisposition =
-  typeof OrchestrationV2ProviderThreadDisposition.Type;
-
 export const OrchestrationV2UserMessageInputIntent = Schema.Literals([
   "turn_start",
   "queued_turn",
@@ -1518,6 +1540,42 @@ const OrchestrationV2SecretRequestFields = {
   placeholder: Schema.optional(Schema.String),
   delivery: Schema.optional(OrchestrationV2SecretRequestDelivery),
   secretStatus: OrchestrationV2SecretRequestStatus,
+} as const;
+
+export const OrchestrationV2LinkRequestStatus = Schema.Literals([
+  "pending",
+  "linked",
+  "declined",
+  "cancelled",
+  "failed",
+]);
+export type OrchestrationV2LinkRequestStatus = typeof OrchestrationV2LinkRequestStatus.Type;
+
+/**
+ * An agent asked the user to link another environment. The user picks the
+ * access; the pairing code never passes through orchestration, so the item
+ * carries only what was asked and how it ended.
+ */
+const OrchestrationV2LinkRequestFields = {
+  type: Schema.Literal("link_request"),
+  /** The address the agent named, if it named one. */
+  url: Schema.optional(TrimmedNonEmptyString),
+  reason: Schema.String,
+  /**
+   * The environment the agent named, or the one answering at `url`. Without
+   * either the user picks the machine in the card.
+   */
+  environmentId: Schema.optional(EnvironmentId),
+  label: Schema.optional(Schema.String),
+  /** A phrase from the user's words, such as "vps", that preselects a machine. */
+  hint: Schema.optional(Schema.String),
+  /** The access the agent suggested; the user's choice is final. */
+  requestedAccess: Schema.optional(AuthMcpClientAccess),
+  linkStatus: OrchestrationV2LinkRequestStatus,
+  linkedEnvironmentId: Schema.optional(EnvironmentId),
+  linkedLabel: Schema.optional(Schema.String),
+  linkedAccess: Schema.optional(AuthMcpClientAccess),
+  failure: Schema.optional(Schema.String),
 } as const;
 
 export const OrchestrationV2TurnItem = Schema.Union([
@@ -1711,6 +1769,10 @@ export const OrchestrationV2TurnItem = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
+    ...OrchestrationV2LinkRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("subagent"),
     subagentId: NodeId,
     origin: Schema.Literals(["provider_native", "app_owned"]),
@@ -1769,21 +1831,6 @@ export const OrchestrationV2ProjectedTurnItem = Schema.Struct({
   item: OrchestrationV2TurnItem,
 });
 export type OrchestrationV2ProjectedTurnItem = typeof OrchestrationV2ProjectedTurnItem.Type;
-
-export const OrchestrationV2RawProviderEvent = Schema.Struct({
-  id: RawEventId,
-  driver: ProviderDriverKind,
-  providerInstanceId: ProviderInstanceId,
-  providerSessionId: ProviderSessionId,
-  sequence: PositiveInt,
-  direction: Schema.Literals(["incoming", "outgoing"]),
-  messageKind: Schema.Literals(["request", "response", "notification", "error"]),
-  method: Schema.NullOr(TrimmedNonEmptyString),
-  jsonRpcId: Schema.NullOr(Schema.Union([Schema.String, Schema.Number])),
-  payload: Schema.Unknown,
-  observedAt: Schema.DateTimeUtc,
-});
-export type OrchestrationV2RawProviderEvent = typeof OrchestrationV2RawProviderEvent.Type;
 
 const OrchestrationV2EventBase = Schema.Struct({
   id: EventId,
@@ -2546,6 +2593,10 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
+    ...OrchestrationV2LinkRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("subagent"),
     subagentId: NodeId,
     origin: Schema.Literals(["provider_native", "app_owned"]),
@@ -2670,14 +2721,6 @@ const OrchestrationV2JsonEventBaseFields = {
   ...OrchestrationV2EventBase.fields,
   occurredAt: Schema.DateTimeUtcFromString,
 } as const;
-
-export const OrchestrationV2RawProviderEventJson = OrchestrationV2RawProviderEvent.mapFields(
-  (fields) => ({
-    ...fields,
-    observedAt: Schema.DateTimeUtcFromString,
-  }),
-);
-export type OrchestrationV2RawProviderEventJson = typeof OrchestrationV2RawProviderEventJson.Type;
 
 export const OrchestrationV2DomainEventJson = Schema.Union([
   Schema.Struct({
@@ -2824,13 +2867,6 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
   }),
 ]);
 export type OrchestrationV2DomainEventJson = typeof OrchestrationV2DomainEventJson.Type;
-
-export const OrchestrationV2StoredEventJson = Schema.Struct({
-  sequence: NonNegativeInt,
-  commandId: Schema.NullOr(CommandId),
-  event: OrchestrationV2DomainEventJson,
-});
-export type OrchestrationV2StoredEventJson = typeof OrchestrationV2StoredEventJson.Type;
 
 export const OrchestrationV2Command = Schema.Union([
   Schema.Struct({
@@ -3370,7 +3406,8 @@ const OrchestrationV2InternalCommand = Schema.Union([
   /**
    * Completes a delegated task that ran in a linked environment, with what its
    * thread there ended as. The parent wakes exactly as for a child here. A
-   * task that already has a result keeps it; `stoppedThere` is still recorded.
+   * task that already has a result keeps it; `stoppedThere` is still recorded,
+   * and without it (a Stop or cancel here) the task owes a stop there instead.
    */
   Schema.Struct({
     type: Schema.Literal("delegated_task.remote.complete"),
@@ -3449,6 +3486,37 @@ const OrchestrationV2InternalCommand = Schema.Union([
     delivery: Schema.optional(OrchestrationV2SecretRequestDelivery),
     secretStatus: OrchestrationV2SecretRequestStatus,
   }),
+  /**
+   * Records or updates a link an agent asked the user to make. Internal so no
+   * client can mark a request linked without the link being made.
+   */
+  Schema.Struct({
+    type: Schema.Literal("link_request.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    nodeId: NodeId,
+    turnItemId: TurnItemId,
+    url: Schema.optional(TrimmedNonEmptyString),
+    reason: Schema.String,
+    environmentId: Schema.optional(EnvironmentId),
+    label: Schema.optional(Schema.String),
+    hint: Schema.optional(Schema.String),
+    requestedAccess: Schema.optional(AuthMcpClientAccess),
+    linkStatus: OrchestrationV2LinkRequestStatus,
+    linkedEnvironmentId: Schema.optional(EnvironmentId),
+    linkedLabel: Schema.optional(Schema.String),
+    linkedAccess: Schema.optional(AuthMcpClientAccess),
+    failure: Schema.optional(Schema.String),
+    /** Tells the agent how the card ended, in the same commit that closes it. */
+    wake: Schema.optional(
+      Schema.Struct({
+        messageId: MessageId,
+        text: Schema.String,
+        notification: OrchestrationV2Notification,
+      }),
+    ),
+  }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;
 
@@ -3470,7 +3538,6 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   stopWorkflow: "orchestration.stopWorkflow",
   getTurnItem: "orchestration.getTurnItem",
   launchThread: "orchestration.launchThread",
-  subscribeArchivedShell: "orchestration.subscribeArchivedShell",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
   subscribeCommandOutput: "orchestration.subscribeCommandOutput",
@@ -3510,25 +3577,6 @@ export const OrchestrationV2ArchivedShellSnapshot = Schema.Struct({
   threads: Schema.Array(OrchestrationV2ThreadShell),
 });
 export type OrchestrationV2ArchivedShellSnapshot = typeof OrchestrationV2ArchivedShellSnapshot.Type;
-
-export const OrchestrationV2ArchivedShellStreamItem = Schema.Union([
-  Schema.Struct({
-    kind: Schema.Literal("snapshot"),
-    snapshot: OrchestrationV2ArchivedShellSnapshot,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("thread.updated"),
-    sequence: NonNegativeInt,
-    thread: OrchestrationV2ThreadShell,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("thread.removed"),
-    sequence: NonNegativeInt,
-    threadId: ThreadId,
-  }),
-]);
-export type OrchestrationV2ArchivedShellStreamItem =
-  typeof OrchestrationV2ArchivedShellStreamItem.Type;
 
 export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
   commandId: CommandId,
@@ -3872,15 +3920,6 @@ export class OrchestrationV2StopWorkflowError extends Schema.TaggedError<Orchest
   }
 }
 
-export const OrchestrationV2RpcError = Schema.Union([
-  OrchestrationV2DispatchCommandError,
-  OrchestrationV2GetThreadProjectionError,
-  OrchestrationV2GetShellSnapshotError,
-  OrchestrationV2ThreadLaunchError,
-  OrchestrationV2StopWorkflowError,
-]);
-export type OrchestrationV2RpcError = typeof OrchestrationV2RpcError.Type;
-
 export const OrchestrationV2GetWorkflowScriptInput = Schema.Struct({
   threadId: ThreadId,
   scriptPath: TrimmedNonEmptyString,
@@ -4078,10 +4117,6 @@ export const OrchestrationV2RpcSchemas = {
   launchThread: {
     input: OrchestrationV2ThreadLaunchInput,
     output: OrchestrationV2ThreadLaunchResult,
-  },
-  subscribeArchivedShell: {
-    input: Schema.Struct({}),
-    output: OrchestrationV2ArchivedShellStreamItem,
   },
   subscribeShell: {
     input: OrchestrationV2SubscribeShellInput,

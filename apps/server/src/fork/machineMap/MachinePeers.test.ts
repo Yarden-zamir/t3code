@@ -989,7 +989,7 @@ it.effect("refuses manual links: they come from the arrows", () =>
 );
 
 // Delegation: A's real orchestrator with remote delegation over the arrow link, as in upstream's
-// `RemoteDelegation.test.ts`, which fork runs skip (`src/fork/excludedUpstreamTests.ts`).
+// `RemoteDelegation.test.ts`.
 
 const instanceId = ProviderInstanceId.make("codex");
 const driver = ProviderDriverKind.make("codex");

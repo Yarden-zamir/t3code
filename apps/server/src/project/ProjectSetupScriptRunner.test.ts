@@ -9,9 +9,9 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import { TestClock } from "effect/testing";
 
-import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "./ProjectService.ts";
 import * as ProjectSetupScriptRunner from "./ProjectSetupScriptRunner.ts";
 
@@ -59,7 +59,6 @@ const makeHarness = Effect.fn(function* (options: {
       Layer.mergeAll(
         terminals,
         Layer.mock(ProjectService.ProjectService)({}),
-        // Fork: the runner reads the thread to skip setup for links; this thread has none.
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadShell: () => Effect.succeed(null),
         }),

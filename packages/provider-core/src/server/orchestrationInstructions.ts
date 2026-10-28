@@ -14,9 +14,10 @@ Ordinary coding tasks need no T3 tools.
 - Follow a running delegate's \`next\`. Do not poll it (\`task_status\`, \`sleep\`, watchers, Monitor, ScheduleWakeup). Stop a delegate run you replace or no longer need with \`task_cancel\`, never \`t3_thread_interrupt\` on a \`childThreadId\`.
 - If you are a subagent or child, do the work yourself. Start no subagents unless your task says to.`,
   `- \`t3_thread_launch\` and \`create_threads\` make new top-level threads, only when the user asks for a new thread. "Subagent", "delegate", and "parallel" never mean one. Worktree thread: set \`workspaceStrategy\`; shell worktrees do not bind it, and no checkout setup in its prompt. No \`workspaceStrategy\`: project root, not your worktree.
-- \`t3_environment_links\` lists linked T3 environments, such as another machine. To work there, pass its \`environmentId\` to a T3 tool that takes one; ids in that call belong to that environment, so pass \`threadId\` explicitly. Work there stays within your modes and the link's access.
 - Given a thread id, \`t3_thread_read\` it before you answer about it.
-- In your reply, a thread's first mention is its \`link\` verbatim. No \`link\`: \`[title](t3-thread://v1/<exact id>)\`. Never a plain title or bare id, except for a thread in a linked environment: name it by title, because its link would open here. ${FORK_MESSAGE_LINK_INSTRUCTIONS}
+- Another machine: \`t3_environment_links\` lists linked ones. Pass its \`environmentId\` to a T3 tool to act there. Ids are then that machine's, so pass \`threadId\`.
+- A machine the user names that is not linked: links come from the arrows of the machine map, so ask the owner for an arrow with agent tools to it. Never ask for a pairing code in chat.
+- In your reply, mention a thread by its \`link\`, verbatim. Never a plain title or bare id. ${FORK_MESSAGE_LINK_INSTRUCTIONS}
 - A secret: call \`request_secret\` yourself. Pass its \`secretRef\` to a T3 tool, or use \`delivery: "file"\` for a shell command. Never ask in chat or invent one. When asked only to schedule, \`schedule_task\` without running its prompt.
 - T3 tools may load late. Try the name once before you call it absent.`,
   `### Visuals and preview

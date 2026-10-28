@@ -53,15 +53,21 @@ function useRunScopedPlan() {
   const persistServer = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   return (
     plan: ReturnType<typeof planScopedSettingsPatch>,
-    // Fork: MM-411. Runs after the save with the environments that saved it.
-    onSaved?: (saved: readonly { readonly environmentId: EnvironmentId }[]) => void,
+    options?: {
+      readonly onFailed?: () => void;
+      // Fork: MM-411. Runs after the save with the environments that saved it.
+      readonly onSaved?: (saved: readonly { readonly environmentId: EnvironmentId }[]) => void;
+    },
   ) => {
+    const onFailed = options?.onFailed;
+    const onSaved = options?.onSaved;
     if (plan.unavailableReason) {
       toastManager.add({
         type: "warning",
         title: "Setting not saved",
         description: plan.unavailableReason,
       });
+      onFailed?.();
       return;
     }
     void persistScopedSettingsPatch(
@@ -85,6 +91,7 @@ function useRunScopedPlan() {
     ).then(({ failedEnvironments, savedEnvironments, savedEnvironmentCount }) => {
       onSaved?.(savedEnvironments);
       if (failedEnvironments.length === 0) return;
+      onFailed?.();
       toastManager.add({
         type: "error",
         title:
@@ -106,10 +113,14 @@ export function useUpdateScopedSettings() {
   const { scope, environments } = useSettingsScope();
   const run = useRunScopedPlan();
   const shareToMachineMap = useShareToMachineMap();
-  return (patch: ScopedSettingsPatch) => {
+  /** `onFailed` runs when any target rejects or drops the patch, so a draft can fall back. */
+  return (patch: ScopedSettingsPatch, options?: { readonly onFailed?: () => void }) => {
     const plan = planScopedSettingsPatch(scope, environments, patch);
-    // Fork: MM-411. A change for all environments also becomes the shared value of the map.
-    run(plan, scope.kind === "all" ? (saved) => shareToMachineMap(plan, saved) : undefined);
+    run(plan, {
+      ...(options?.onFailed === undefined ? {} : { onFailed: options.onFailed }),
+      // Fork: MM-411. A change for all environments also becomes the shared value of the map.
+      ...(scope.kind === "all" ? { onSaved: (saved) => shareToMachineMap(plan, saved) } : {}),
+    });
   };
 }
 

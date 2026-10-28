@@ -1,5 +1,8 @@
 import { orderItemsByPreferredIds, sortSidebarV2ProjectGroups } from "../components/Sidebar.logic";
-import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
+import {
+  getProjectOrderKey,
+  selectProjectGroupingSettings,
+} from "@t3tools/client-runtime/state/project-grouping";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useEnvironmentIdentities, usePrimaryEnvironmentId } from "../state/environments";
 import { useDelegatedUnderParent, useProjects, useQuietThreadShells } from "../state/entities";
@@ -7,14 +10,6 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useClientSettings } from "./useSettings";
 
 export function useSidebarProjectGroups() {
-  return useSidebarProjectGroupSnapshots().projectGroups;
-}
-
-/**
- * Fork: also returns the groups before sorting. Their identity holds while threads stream, so the
- * sidebar owner filter keys stay stable.
- */
-export function useSidebarProjectGroupSnapshots() {
   const projects = useProjects();
   // Activity order lags a running thread's streaming ticks until its next
   // real change; reading every tick re-rendered the whole sidebar with it.
@@ -44,11 +39,5 @@ export function useSidebarProjectGroupSnapshots() {
     primaryEnvironmentId,
     resolveEnvironmentLabel: (environmentId) => labels.get(environmentId) ?? null,
   });
-  const projectGroups = sortSidebarV2ProjectGroups(
-    unsortedGroups,
-    threads,
-    sortOrder,
-    delegatedUnderParent,
-  );
-  return { unsortedProjectGroups: unsortedGroups, projectGroups };
+  return sortSidebarV2ProjectGroups(unsortedGroups, threads, sortOrder, delegatedUnderParent);
 }

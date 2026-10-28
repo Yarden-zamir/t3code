@@ -27,11 +27,7 @@ import {
 import { browserMiniPlayerSource, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { selectSelectedRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 
-import {
-  browserDefaultOpenProfileId,
-  browserDefaultOpenViewport,
-  resolveBrowserDefaults,
-} from "./browserDefaults";
+import { resolveBrowserDefaults } from "./browserDefaults";
 
 export const isBrowserPreviewFile = (path: string): boolean =>
   /\.(?:html?|pdf)$/i.test(path.split(/[?#]/, 1)[0] ?? "");
@@ -82,8 +78,8 @@ export async function openUrlInPreview<E>(input: {
     input: {
       threadId: input.threadRef.threadId,
       url: input.url,
-      viewport: browserDefaultOpenViewport(defaults),
-      profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
+      viewport: defaults.viewport,
+      profileId: input.profileId ?? defaults.profileId,
       ...(runtime === undefined ? {} : { runtime }),
     },
   });
