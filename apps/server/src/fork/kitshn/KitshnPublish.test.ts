@@ -174,6 +174,11 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
       expected: { reason: "unexpected_output" },
     },
     {
+      name: "an empty address is unexpected",
+      cli: { exitCode: 0, stdout: '{"address":"","card":"c","kind":"page","updated":false}' },
+      expected: { reason: "unexpected_output" },
+    },
+    {
       name: "a crash without JSON is unexpected",
       cli: { exitCode: 1, stdout: "" },
       expected: { reason: "unexpected_output" },

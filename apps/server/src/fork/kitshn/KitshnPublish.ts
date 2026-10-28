@@ -44,15 +44,15 @@ export type KitshnAddressInput = typeof KitshnAddressInput.Type;
 /** The `--json` answers of `kitshn publish` and `kitshn address`. */
 const KitshnCardKind = Schema.Literals(["page", "file", "folder"]);
 export const KitshnPublishResult = Schema.Struct({
-  address: Schema.String,
-  card: Schema.String,
+  address: TrimmedNonEmptyString,
+  card: TrimmedNonEmptyString,
   kind: KitshnCardKind,
   updated: Schema.Boolean,
   revision: Schema.optional(Schema.Number),
 });
 export const KitshnAddressResult = Schema.Struct({
-  address: Schema.String,
-  card: Schema.String,
+  address: TrimmedNonEmptyString,
+  card: TrimmedNonEmptyString,
   kind: KitshnCardKind,
   revision: Schema.optional(Schema.Number),
 });
