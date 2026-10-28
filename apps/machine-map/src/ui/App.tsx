@@ -453,7 +453,7 @@ export function App() {
     switch (route.view) {
       case "map":
         return <MapView map={map} readOnly={false} />;
-      case "table":
+      case "levels":
         return <BoardView />;
       case "health":
         return <HealthView />;

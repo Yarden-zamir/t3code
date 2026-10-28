@@ -1,5 +1,5 @@
 /**
- * The Board of the Table view (MM-1102, MM-1123): one lane per source, one column per level. Each
+ * The Board of the Levels view (MM-1102, MM-1123): one lane per source, one column per level. Each
  * chip is one arrow of its lane, so its column is its level. A chip moves only along its own lane.
  */
 import type {
