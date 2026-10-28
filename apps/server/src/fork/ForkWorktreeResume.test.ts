@@ -356,6 +356,8 @@ it.effect("waits for the launcher's existing async setup instead of starting ano
   Effect.gen(function* () {
     const f = yield* fixture;
     yield* f.exec(["worktree", "add", f.cwd, "saved"]);
+    const marker = yield* (yield* makeSetupMarker)(f.cwd);
+    yield* marker.mark;
     const waiting = yield* Deferred.make<void>();
     const complete = yield* Deferred.make<void>();
     const trackerLayer = Layer.mock(Tracker.WorktreeSetupTracker)({
@@ -381,6 +383,7 @@ it.effect("waits for the launcher's existing async setup instead of starting ano
     yield* Deferred.succeed(complete, undefined);
     yield* Fiber.join(startup);
     assert.strictEqual(f.setups(), 0);
+    assert.isFalse(yield* marker.pending);
   }).pipe(Effect.provide(layerGit)),
 );
 
@@ -482,6 +485,7 @@ it.effect("a deleted branch does not allow replacing an occupied saved path", ()
     yield* f.exec(["branch", "-D", "saved"]);
     yield* f.fs.makeDirectory(f.cwd);
     yield* f.fs.writeFileString(f.path.join(f.cwd, "private"), "keep");
+    yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
     const error = yield* f.prepare().pipe(Effect.flip);
     assert.include(error.message, "local branch does not exist");
     assert.strictEqual(yield* f.fs.readFileString(f.path.join(f.cwd, "private")), "keep");
@@ -495,10 +499,14 @@ it.effect("leaves a conflicting path and symbolic link untouched", () =>
     const f = yield* fixture;
     yield* f.fs.makeDirectory(f.cwd);
     yield* f.fs.writeFileString(f.path.join(f.cwd, "private"), "keep");
+    // Strict checks guard only a setup run in an existing folder.
+    yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
     yield* f.prepare().pipe(Effect.flip);
     assert.strictEqual(yield* f.fs.readFileString(f.path.join(f.cwd, "private")), "keep");
     yield* f.fs.remove(f.cwd, { recursive: true });
     yield* f.fs.symlink(f.repository, f.cwd);
+    // The marker keys on the real path, which is now the link target.
+    yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
     const error = yield* f.prepare().pipe(Effect.flip);
     assert.include(error.message, "symbolic link");
     assert.strictEqual(f.setups(), 0);

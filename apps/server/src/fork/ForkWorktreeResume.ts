@@ -38,7 +38,7 @@ export class WorktreeResumeError extends Schema.TaggedError<WorktreeResumeError>
   },
 ) {
   override get message() {
-    return `This thread's workspace folder no longer exists or is not a directory: ${this.cwd}. ${this.reason}`;
+    return `The thread workspace at ${this.cwd} could not be used. ${this.reason}`;
   }
 }
 
@@ -84,12 +84,13 @@ const make = Effect.gen(function* () {
         !pendingSetup
       )
         return;
-      // With restoration off, upstream's recovery after this hook handles a missing checkout.
-      if (!currentSettings.restoreWorktreesOnResume && !pendingSetup && !(yield* fs.exists(cwd)))
+      // An existing folder needs no repair on any branch, so start in it as upstream does. With
+      // restoration off, upstream's recovery after this hook handles a missing checkout.
+      if (!pendingSetup && (!currentSettings.restoreWorktreesOnResume || (yield* fs.exists(cwd))))
         return;
       const fail = (reason: string) => new WorktreeResumeError({ cwd, reason });
-      // A new launch can release its first turn while its async setup is still running.
-      // Wait for that setup rather than typing a second install into its terminal.
+      // A launch can release its first turn while its async setup still runs. That setup also
+      // restores evicted dependencies, so wait for it rather than typing a second install.
       const ongoing = yield* tracker.get(thread.id);
       if (
         ongoing?.phase === "running" &&
@@ -108,6 +109,7 @@ const make = Effect.gen(function* () {
             ))
         )
           return yield* fail("Project setup did not succeed. Retry setup before continuing.");
+        if (yield* fs.exists(cwd)) return yield* marker.clear;
       }
       // Repair under the same lease as storage cleanup, so a cleanup that already started
       // finishes first. Setup runs after this lease ends: its terminal takes the lease itself.
