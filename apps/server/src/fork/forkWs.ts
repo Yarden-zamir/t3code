@@ -30,7 +30,7 @@ import * as MachineMapState from "./machineMap/MachineMapState.ts";
 import * as MachinePeers from "./machineMap/MachinePeers.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
 import * as TerminalThreadMove from "./TerminalThreadMove.ts";
-import * as WorktreeMcpService from "../mcp/WorktreeMcpService.ts";
+import * as ForkWorktreeRecreate from "./ForkWorktreeRecreate.ts";
 import * as WebPush from "./webPush/WebPush.ts";
 
 /** The fork RPC tags, which the upstream handler object in `ws.ts` omits. */
@@ -86,7 +86,7 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const terminalThreadMove = yield* TerminalThreadMove.TerminalThreadMove;
       const forkUpdates = yield* ForkUpdates.ForkUpdates;
-      const worktrees = yield* WorktreeMcpService.WorktreeMcpService;
+      const worktreeRecreate = yield* ForkWorktreeRecreate.ForkWorktreeRecreate;
       /** MM-1907: this environment first, then the machines that its agents read. */
       const readableEnvironments = Effect.fn("ForkWs.readableEnvironments")(function* () {
         const self = yield* environment.getDescriptor;
@@ -152,7 +152,7 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
           terminalThreadMove.moveToThread(input).pipe(Effect.as({})),
         [FORK_WS_METHODS.forkUpdatesTerminalHold]: (input) =>
           forkUpdates.terminalHold(input.heldSince),
-        [FORK_WS_METHODS.threadRecreateWorktree]: (input) => worktrees.recreateLostWorktree(input),
+        [FORK_WS_METHODS.threadRecreateWorktree]: (input) => worktreeRecreate.recreate(input),
       });
     }),
   );

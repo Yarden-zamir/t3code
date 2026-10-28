@@ -199,20 +199,27 @@ it.effect("restores the same branch and path, waits for setup, and publishes act
   }).pipe(Effect.provide(layerGit)),
 );
 
-it.effect("runs setup for evicted dependencies without changing dirty files or HEAD", () =>
-  Effect.gen(function* () {
-    const f = yield* fixture;
-    yield* f.exec(["worktree", "add", f.cwd, "saved"]);
-    yield* f.fs.writeFileString(f.path.join(f.cwd, "package.json"), '{"dirty":true}');
-    yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
-    yield* f.prepare();
-    yield* f.prepare();
-    assert.strictEqual(
-      yield* f.fs.readFileString(f.path.join(f.cwd, "package.json")),
-      '{"dirty":true}',
-    );
-    assert.strictEqual(f.setups(), 1);
-  }).pipe(Effect.provide(layerGit)),
+// An agent may have switched the branch; only the folder's identity is checked.
+it.effect.each([{ branch: "saved" }, { branch: "switched" }])(
+  "runs setup for evicted dependencies without changing dirty files or HEAD (on $branch)",
+  ({ branch }) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.exec(
+        branch === "saved"
+          ? ["worktree", "add", f.cwd, "saved"]
+          : ["worktree", "add", "-b", branch, f.cwd],
+      );
+      yield* f.fs.writeFileString(f.path.join(f.cwd, "package.json"), '{"dirty":true}');
+      yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
+      yield* f.prepare();
+      yield* f.prepare();
+      assert.strictEqual(
+        yield* f.fs.readFileString(f.path.join(f.cwd, "package.json")),
+        '{"dirty":true}',
+      );
+      assert.strictEqual(f.setups(), 1);
+    }).pipe(Effect.provide(layerGit)),
 );
 
 it.effect(
@@ -487,7 +494,7 @@ it.effect("a deleted branch does not allow replacing an occupied saved path", ()
     yield* f.fs.writeFileString(f.path.join(f.cwd, "private"), "keep");
     yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
     const error = yield* f.prepare().pipe(Effect.flip);
-    assert.include(error.message, "local branch does not exist");
+    assert.include(error.message, "not the expected worktree");
     assert.strictEqual(yield* f.fs.readFileString(f.path.join(f.cwd, "private")), "keep");
     yield* f.exec(["show-ref", "--verify", "refs/heads/saved"]).pipe(Effect.flip);
     assert.strictEqual(f.setups(), 0);

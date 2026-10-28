@@ -71,6 +71,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as TerminalPortLayer from "./fork/terminalProvider/portLayer.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as WorktreeMcpService from "./mcp/WorktreeMcpService.ts";
+import * as ForkWorktreeRecreate from "./fork/ForkWorktreeRecreate.ts";
 import * as RemoteDelegation from "./peer/RemoteDelegation.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
@@ -705,8 +706,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // Fork: a drawer terminal becomes a terminal thread (`terminal.moveToThread`).
   TerminalThreadMove.layer,
   // Fork: a thread whose worktree folder is gone moves to a new one (`thread.recreateWorktree`).
-  // The MCP server provides the same layer, so both share one instance.
-  WorktreeMcpService.layer,
+  ForkWorktreeRecreate.layer.pipe(Layer.provide(WorktreeMcpService.layer)),
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),

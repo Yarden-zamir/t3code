@@ -130,7 +130,7 @@ import * as ForkUpdates from "./fork/ForkUpdates.ts";
 import * as MachineMap from "./fork/machineMap/MachineMap.ts";
 import * as PreviewServerGroups from "./fork/PreviewServerGroups.ts";
 import * as TerminalThreadMove from "./fork/TerminalThreadMove.ts";
-import * as WorktreeMcpService from "./mcp/WorktreeMcpService.ts";
+import * as ForkWorktreeRecreate from "./fork/ForkWorktreeRecreate.ts";
 import * as WebPush from "./fork/webPush/WebPush.ts";
 
 const snapshotConfig = (fields: Partial<ServerConfig>) =>
@@ -548,7 +548,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(MachineMap.MachineMap)({}),
   Layer.mock(PreviewServerGroups.PreviewServerGroups)({}),
   Layer.mock(TerminalThreadMove.TerminalThreadMove)({}),
-  Layer.mock(WorktreeMcpService.WorktreeMcpService)({}),
+  Layer.mock(ForkWorktreeRecreate.ForkWorktreeRecreate)({}),
   Layer.mock(WebPush.WebPush)({}),
 );
 

@@ -3,7 +3,6 @@ import { projectComposerContextForProvider } from "@t3tools/shared/composerConte
 import { forkSourceTurns } from "./forkNativeSource.ts";
 import {
   CommandId,
-  FORK_LOST_WORKTREE_FAILURE_CODE,
   latestProviderTurnForAttempt,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ContextHandoff,
@@ -1552,32 +1551,10 @@ export const layer: Layer.Layer<
           const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
           // Fork: worktree restore and setup run before the lease, because setup opens a terminal
           // and a terminal takes the same lease. A restored checkout makes upstream recovery a no-op.
-          const prepared = yield* Effect.result(prepareWorktree(input));
-          if (prepared._tag === "Failure" && input.willRetry === true)
-            return yield* prepared.failure;
-          // Only a folder that is still gone offers clients the move to a new worktree.
-          const lost =
-            prepared._tag === "Failure" &&
-            !(yield* fileSystem
-              .exists(prepared.failure.cwd)
-              .pipe(Effect.orElseSucceed(() => true)));
-          const turnStart = start(
-            prepared._tag === "Success"
-              ? input
-              : {
-                  ...input,
-                  startFailure: {
-                    signal: "worktree-restore-failure",
-                    title: "Couldn't restore thread workspace",
-                    ...(lost ? { code: FORK_LOST_WORKTREE_FAILURE_CODE } : {}),
-                    error: prepared.failure,
-                    message: prepared.failure.message,
-                  },
-                },
-          );
+          const turnInput = yield* prepareWorktree(input);
           const providerTurn = yield* thread.worktreePath === null
-            ? turnStart
-            : withWorkspaceLease(path.resolve(thread.worktreePath), turnStart);
+            ? start(turnInput)
+            : withWorkspaceLease(path.resolve(thread.worktreePath), start(turnInput));
           if (providerTurn !== undefined) yield* providerTurn;
         },
         (effect, input) =>

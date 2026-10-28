@@ -7,8 +7,7 @@ export const WorktreeMcpHandoffInput = Schema.Struct({
   // Fork: a lead moves a thread whose worktree folder is gone.
   threadId: Schema.optional(
     ThreadId.annotate({
-      description:
-        "Default: this thread. Another thread you manage, such as one whose worktree folder is gone.",
+      description: "Default: this thread. Another thread: only one whose worktree folder is gone.",
     }),
   ),
   branch: TrimmedNonEmptyString,

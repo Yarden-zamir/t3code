@@ -41,6 +41,7 @@ const realPaths = new Set([managedWorktreesDir, `${managedWorktreesDir}/project`
 function startWithMissingWorktree(
   worktreePath: string,
   prepareWorktree: ForkWorktreeResume.ForkWorktreeResume["Service"]["prepare"],
+  branch: string | null = "feature/restore",
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -60,7 +61,7 @@ function startWithMissingWorktree(
     thread: {
       id: threadId,
       projectId: ProjectId.make("project_provider_turn_start_projection_failure"),
-      branch: "feature/restore",
+      branch,
       worktreePath,
     },
     runs: [
@@ -208,20 +209,30 @@ it.each([
     message: "not the expected worktree",
     code: FORK_LOST_WORKTREE_FAILURE_CODE,
   },
+  // A scratch thread has no branch and no repository to recreate a worktree in.
+  {
+    prepare: true,
+    branch: null,
+    title: "Couldn't restore thread workspace",
+    message: "not the expected worktree",
+    code: null,
+  },
   {
     prepare: false,
     title: "Provider turn failed to start",
     message: "simulated inherited-background projection failure",
     code: null,
   },
-])("fails the run with its reason on the last attempt: $title", async (expected) => {
+])("fails the run with its reason on the last attempt: $title, code $code", async (expected) => {
   const cwd = `${managedWorktreesDir}/project/feature-restore`;
   const failure = new ForkWorktreeResume.WorktreeResumeError({
     cwd,
     reason: "The saved path is not the expected worktree; it was left untouched.",
   });
-  const harness = startWithMissingWorktree(cwd, () =>
-    expected.prepare ? Effect.fail(failure) : Effect.void,
+  const harness = startWithMissingWorktree(
+    cwd,
+    () => (expected.prepare ? Effect.fail(failure) : Effect.void),
+    expected.branch,
   );
   expect((await harness.startAttempt(true))._tag).toBe("Failure");
   expect(harness.writeIfRunCurrent).not.toHaveBeenCalled();

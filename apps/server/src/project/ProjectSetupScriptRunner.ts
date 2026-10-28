@@ -512,6 +512,7 @@ export const make = Effect.gen(function* () {
               threadId: input.threadId,
               terminalId,
               data:
+                // Limit: zsh with zle_bracketed_paste unset gets typed input, which zsh-autopair breaks.
                 shell === "line-editor"
                   ? bracketedPasteInput(commandLine)
                   : projectScriptTerminalInput(commandLine),
