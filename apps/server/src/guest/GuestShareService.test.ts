@@ -11,6 +11,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderThreadId,
   RunId,
   ThreadId,
   TurnItemId,
@@ -915,6 +916,34 @@ it.effect("serves an image on the host only when an agent reply the guest sees s
         }),
         // A guest's sent message is a user message; it must not open files on the host.
         item("item:guest-image", 2, { type: "user_message", text: `![Mine](${fromUser})` }),
+        // Fork: a run forks only once its native provider session is resolved.
+        {
+          id: EventId.make("event:provider-thread"),
+          type: "provider-thread.updated" as const,
+          threadId,
+          occurredAt: now,
+          payload: {
+            id: ProviderThreadId.make("provider-thread:guest-share"),
+            driver: ProviderDriverKind.make("codex"),
+            providerInstanceId: instanceId,
+            providerSessionId: null,
+            appThreadId: threadId,
+            ownerNodeId: null,
+            nativeThreadRef: {
+              driver: ProviderDriverKind.make("codex"),
+              nativeId: "native-guest-share",
+              strength: "strong" as const,
+            },
+            nativeConversationHeadRef: null,
+            status: "idle" as const,
+            firstRunOrdinal: 1,
+            lastRunOrdinal: 1,
+            handoffIds: [],
+            forkedFrom: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
         {
           id: EventId.make("event:run-done"),
           type: "run.updated" as const,
@@ -922,7 +951,12 @@ it.effect("serves an image on the host only when an agent reply the guest sees s
           runId,
           providerInstanceId: instanceId,
           occurredAt: now,
-          payload: { ...run!, status: "completed" as const, completedAt: now },
+          payload: {
+            ...run!,
+            providerThreadId: ProviderThreadId.make("provider-thread:guest-share"),
+            status: "completed" as const,
+            completedAt: now,
+          },
         },
       ],
     });
