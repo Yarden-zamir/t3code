@@ -59,6 +59,7 @@ import { readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { backgroundWorkNowItem, childInputNowItem, goalNowItem } from "./ThreadActivityBanners";
+import { withBackgroundWorkDetails } from "./BackgroundWorkDetails";
 import type { useLocalDispatchState } from "./useLocalDispatchState";
 const RELATED_THREAD_SHELL_WAIT_MS = 1_000;
 
@@ -78,6 +79,7 @@ interface ThreadLifecycleInput {
   readonly activeThreadShell: EnvironmentThreadShell | null;
   readonly activeLatestRun: EnvironmentThreadShell["latestRun"];
   readonly activeProjectCwd: string | null;
+  readonly gitCwd: string | null;
   readonly serverConfig: EnvironmentServerConfig | null;
   readonly runtimeMode: RuntimeMode;
   readonly isWorking: boolean;
@@ -129,6 +131,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     activeThreadShell,
     activeLatestRun,
     activeProjectCwd,
+    gitCwd,
     serverConfig,
     runtimeMode,
     isWorking,
@@ -510,15 +513,18 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       : null;
 
   const backgroundWorkNow = activeThread
-    ? backgroundWorkNowItem({
-        threadId: activeThread.id,
-        tasks: activeBackgroundTasks,
-        turnItems,
-        stopDisabled: !canOperateThread || isStoppingBackgroundWork,
-        stopping: isStoppingBackgroundWork,
-        onStop: handleStopBackgroundWorkStable,
-        onOpenThread: onOpenRelatedThreadStable,
-      })
+    ? withBackgroundWorkDetails(
+        backgroundWorkNowItem({
+          threadId: activeThread.id,
+          tasks: activeBackgroundTasks,
+          turnItems,
+          stopDisabled: !canOperateThread || isStoppingBackgroundWork,
+          stopping: isStoppingBackgroundWork,
+          onStop: handleStopBackgroundWorkStable,
+          onOpenThread: onOpenRelatedThreadStable,
+        }),
+        { tasks: activeBackgroundTasks, cwd: gitCwd ?? undefined, threadRef: activeThreadRef },
+      )
     : null;
   // The relative times read the clock; nowMinute re-renders them on the minute.
   const snoozedUntil = activeThreadShell?.snoozedUntil ?? null;

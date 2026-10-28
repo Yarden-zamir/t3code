@@ -364,7 +364,7 @@ Every agent runs as a child process of the T3 server, so an update, a crash or a
 
 ### Background work details
 
-Background work notifications name their tasks and output files. A status icon opens a details popover, and descriptions render Markdown links.
+Background work notifications name their tasks and output files. A status icon opens a details popover, and the links in a plain title open.
 
 - **Setting:** client setting `backgroundWorkDetails` (on by default). Settings > General > Display > "Background work details".
 - **Works on:** web, desktop.

@@ -2425,6 +2425,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadShell,
     activeLatestRun,
     activeProjectCwd,
+    gitCwd,
     serverConfig,
     runtimeMode,
     isWorking,

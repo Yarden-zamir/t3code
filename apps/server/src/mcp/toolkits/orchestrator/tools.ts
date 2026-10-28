@@ -45,6 +45,7 @@ import * as Struct from "effect/Struct";
 
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
+import { manualLinkToolsEnabled } from "../../../fork/machineMap/machineAccess.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -309,7 +310,7 @@ const ThreadInterruptTool = Tool.make("t3_thread_interrupt", {
 
 const EnvironmentLinksTool = Tool.make("t3_environment_links", {
   description:
-    "List linked environments (the user's other machines) and whether each answers now. Pass one's `environmentId` to a tool to act there; `delegate_task` takes `target.environmentId`. Expired: link it again with `t3_environment_link`.",
+    "List linked environments (the user's other machines) and whether each answers now. Pass one's `environmentId` to a tool to act there; `delegate_task` takes `target.environmentId`. Not listed or expired: links come from arrows on the machine map, so ask the user to set one in the portal.",
   success: OrchestratorMcpEnvironmentLinksResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
@@ -333,7 +334,7 @@ const EnvironmentLinkTool = Tool.make("t3_environment_link", {
   .annotate(Tool.Title, "Link another environment")
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, true)
-  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenWhileLinksOff);
+  .annotate(McpSchema.EnabledWhen, manualLinkToolsEnabled);
 
 const EnvironmentUnlinkTool = Tool.make("t3_environment_unlink", {
   description:
@@ -347,7 +348,7 @@ const EnvironmentUnlinkTool = Tool.make("t3_environment_unlink", {
   .annotate(Tool.Title, "Forget a linked environment")
   .annotate(Tool.Destructive, true)
   .annotate(Tool.Idempotent, true)
-  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenWhileLinksOff);
+  .annotate(McpSchema.EnabledWhen, manualLinkToolsEnabled);
 
 export const OrchestratorToolkit = Toolkit.make(
   OrchestratorCapabilitiesTool,
