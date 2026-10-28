@@ -48,13 +48,13 @@ export const KitshnPublishResult = Schema.Struct({
   card: TrimmedNonEmptyString,
   kind: KitshnCardKind,
   updated: Schema.Boolean,
-  revision: Schema.optional(Schema.Number),
+  revision: Schema.optional(Schema.NullOr(Schema.Int)),
 });
 export const KitshnAddressResult = Schema.Struct({
   address: TrimmedNonEmptyString,
   card: TrimmedNonEmptyString,
   kind: KitshnCardKind,
-  revision: Schema.optional(Schema.Number),
+  revision: Schema.optional(Schema.NullOr(Schema.Int)),
 });
 const KitshnCliRefusal = Schema.Struct({ error: Schema.String });
 
@@ -71,6 +71,7 @@ export class KitshnPublishError extends Schema.TaggedError<KitshnPublishError>()
       "no_key",
       "invalid_key",
       "outside_workspace",
+      "not_top_level",
       "not_found",
       "refused",
       "cli_failed",
@@ -92,14 +93,14 @@ export class KitshnPublish extends Context.Service<
   KitshnPublish,
   {
     readonly keyStatus: Effect.Effect<KitshnKeyStatus, KitshnPublishError>;
-    /** Consumes both refs, so the owner's answers are spent. */
+    /** Spends all three refs, so the owner types each value and the agent sees none. */
     readonly setKey: (input: {
       readonly threadId: ThreadId;
-      readonly server: string;
+      readonly serverRef: SecretRef;
       readonly clientIdRef: SecretRef;
       readonly clientSecretRef: SecretRef;
     }) => Effect.Effect<KitshnKeyStatus, KitshnPublishError>;
-    readonly clearKey: Effect.Effect<KitshnKeyStatus, KitshnPublishError>;
+    readonly clearKey: (threadId: ThreadId) => Effect.Effect<KitshnKeyStatus, KitshnPublishError>;
     readonly publish: (
       threadId: ThreadId,
       input: KitshnPublishInput,
@@ -145,34 +146,45 @@ const make = Effect.gen(function* () {
 
   const keyStatus = readKey.pipe(Effect.map(statusOf), Effect.withSpan("KitshnPublish.keyStatus"));
 
+  /** The key belongs to the owner, so only a top-level thread changes it, not a delegated child. */
+  const topLevelThread = Effect.fn("KitshnPublish.topLevelThread")(function* (threadId: ThreadId) {
+    const shell = yield* threads.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null));
+    if (shell === null) return yield* fail("not_found", `Thread '${threadId}' was not found.`);
+    if (shell.lineage.parentThreadId !== null) {
+      return yield* fail(
+        "not_top_level",
+        "Only a top-level thread sets or clears the kitshn agent key. Ask the parent thread.",
+      );
+    }
+    return shell;
+  });
+
   const setKey: KitshnPublish["Service"]["setKey"] = Effect.fn("KitshnPublish.setKey")(
     function* (input) {
-      const server = URL.parse(input.server);
+      const shell = yield* topLevelThread(input.threadId);
+      // A ref works only in the project of the thread that asked for it.
+      const values = yield* secretRequests
+        .consumeAll({
+          refs: [input.serverRef, input.clientIdRef, input.clientSecretRef],
+          projectId: shell.projectId,
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            fail("invalid_key", `${error.message} No secretRef was spent.`),
+          ),
+        );
+      const [serverText, clientId, clientSecret] = values;
+      if (serverText === undefined || clientId === undefined || clientSecret === undefined) {
+        return yield* Effect.die(new Error("consumeAll returned fewer values than refs."));
+      }
+      // The refs are spent here, so a bad URL needs all three answers again.
+      const server = URL.parse(serverText.trim());
       if (server === null || server.protocol !== "https:") {
         return yield* fail(
           "invalid_key",
-          "server must be an https URL, such as https://kit.example.com.",
+          "The server answer is not an https URL, such as https://kit.example.com. Ask for all three values again.",
         );
       }
-      const shell = yield* threads
-        .getThreadShell(input.threadId)
-        .pipe(Effect.orElseSucceed(() => null));
-      if (shell === null)
-        return yield* fail("not_found", `Thread '${input.threadId}' was not found.`);
-      // A ref works only in the project of the thread that asked for it.
-      const consume = (ref: SecretRef) =>
-        secretRequests
-          .consume({ ref, projectId: shell.projectId })
-          .pipe(
-            Effect.mapError((error) =>
-              fail(
-                "invalid_key",
-                `A secretRef is not usable (${error.reason}). Ask with request_secret again.`,
-              ),
-            ),
-          );
-      const clientId = yield* consume(input.clientIdRef);
-      const clientSecret = yield* consume(input.clientSecretRef);
       const key = { server: server.origin, clientId, clientSecret };
       const encoded = yield* encodeStoredKey(key).pipe(Effect.mapError(storeFailed));
       yield* secrets
@@ -182,13 +194,13 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const clearKey = secrets
-    .remove(KEY_SECRET_NAME)
-    .pipe(
-      Effect.mapError(storeFailed),
-      Effect.as(statusOf(Option.none())),
-      Effect.withSpan("KitshnPublish.clearKey"),
-    );
+  const clearKey: KitshnPublish["Service"]["clearKey"] = Effect.fn("KitshnPublish.clearKey")(
+    function* (threadId) {
+      yield* topLevelThread(threadId);
+      yield* secrets.remove(KEY_SECRET_NAME).pipe(Effect.mapError(storeFailed));
+      return statusOf(Option.none());
+    },
+  );
 
   /** Runs the CLI with `--json` and decodes its one JSON answer. */
   const runJson = Effect.fn("KitshnPublish.runJson")(
@@ -209,7 +221,7 @@ const make = Effect.gen(function* () {
       const unexpected = () =>
         fail(
           "unexpected_output",
-          `The kitshn CLI exited ${output.exitCode} with output that is not its --json answer: ${JSON.stringify(output.stdout.slice(0, 500))}`,
+          `The kitshn CLI exited ${output.exitCode} with output that is not its --json answer: ${JSON.stringify(output.stdout.slice(0, 500))}. kitshn may already have made the change. Check the card before a retry.`,
         );
       if (output.exitCode === 1) {
         const refusal = yield* decodeRefusal(output.stdout).pipe(Effect.mapError(unexpected));

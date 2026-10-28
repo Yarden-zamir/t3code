@@ -37,7 +37,7 @@ Mobile testers: read [Android emulator on the Mac](fork/operations.md#android-em
 - Without a thread credential, the CLI runs nothing on another machine and forwards no tool there (MM-1920). The `machines_*` portal tools follow the map role of this machine.
 - `t3 machine exec <machine> -- <command>` runs a command on another machine in a pipe, like ssh. See [Commands on other machines](fork/features.md#commands-on-other-machines).
 - The fork MCP tools are `machines_read`, `machines_resources`, `machines_set_access`, `machines_set_setting`, `machines_command`, `machines_queue_cancel`, `machines_undo`, `machines_preset`, `machines_join` and `machine_exec`. For other T3 tools on another machine, pass its `environmentId`; `t3_environment_links` lists them.
-- `kitshn_publish` and `kitshn_address` publish a workspace file or folder to kitshn. `kitshn_agent_key` sets, clears or shows the agent key that they use; set it with two `request_secret` refs. See [Publish to kitshn](fork/features.md#publish-to-kitshn).
+- `kitshn_publish` and `kitshn_address` publish a workspace file or folder to kitshn. `kitshn_agent_key` sets, clears or shows the agent key that they use; set it from a top-level thread with three `request_secret` refs: the server, the client id and the client secret. See [Publish to kitshn](fork/features.md#publish-to-kitshn).
 
 ## Machine map
 

@@ -26,6 +26,8 @@ export const KITSHN_CLI_PIN = {
 
 const MIN_NODE_MAJOR = 24;
 const DOWNLOAD_TIMEOUT = "2 minutes";
+// The pinned file is about 0.7 MB.
+const MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 // A folder site uploads many files; kitshn caps one file at 100 MB (K-1116).
 const RUN_TIMEOUT = "10 minutes";
 
@@ -90,25 +92,42 @@ const make = Effect.gen(function* () {
   const download = Effect.gen(function* () {
     const response = yield* httpClient.execute(HttpClientRequest.get(url)).pipe(
       Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.filterOrFail(
+        (ok) => Number(ok.headers["content-length"] ?? 0) <= MAX_DOWNLOAD_BYTES,
+        () => new Error("too large"),
+      ),
       Effect.flatMap((ok) => ok.arrayBuffer),
       Effect.timeout(DOWNLOAD_TIMEOUT),
       Effect.mapError(() =>
         fail("download_failed", `Could not download the kitshn CLI from ${url}.`),
       ),
     );
+    // A body without content-length is read whole first, then refused here.
+    if (response.byteLength > MAX_DOWNLOAD_BYTES) {
+      return yield* fail("download_failed", `The kitshn CLI at ${url} is larger than expected.`);
+    }
     const bytes = new Uint8Array(response);
     yield* verified(bytes);
-    const partial = `${cliPath}.partial`;
+    // A unique partial file, so two first runs at once do not share one.
     yield* fileSystem.makeDirectory(path.dirname(cliPath), { recursive: true }).pipe(
-      Effect.andThen(fileSystem.writeFile(partial, bytes)),
-      Effect.andThen(fileSystem.rename(partial, cliPath)),
+      Effect.andThen(
+        fileSystem.makeTempFile({
+          directory: path.dirname(cliPath),
+          prefix: ".kitshn-",
+          suffix: ".partial",
+        }),
+      ),
+      Effect.tap((partial) => fileSystem.writeFile(partial, bytes)),
+      Effect.flatMap((partial) => fileSystem.rename(partial, cliPath)),
       Effect.mapError(() =>
         fail("download_failed", `Could not save the kitshn CLI to ${cliPath}.`),
       ),
     );
   });
 
-  // Checked before every run, so a changed file never runs.
+  // Checked before every run, so a corrupt or replaced file never runs. Limit: Node reads the file
+  // again after the check, so a process of the same user can swap it in between; agents run as that
+  // user. Revisit when T3 moves to the kitshn daemon (K-1732) or runs agents as another user.
   const ensureCli = Effect.gen(function* () {
     if (!(yield* fileSystem.exists(cliPath).pipe(Effect.orDie))) yield* download;
     yield* verified(yield* fileSystem.readFile(cliPath).pipe(Effect.orDie));

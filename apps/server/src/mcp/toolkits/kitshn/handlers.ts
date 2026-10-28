@@ -22,7 +22,9 @@ const callingThread = Effect.fn("KitshnMcp.callingThread")(function* (operation:
 const toFailure = (error: KitshnPublish.KitshnPublishError) =>
   new OrchestratorMcpFailure({
     code:
-      error.reason === "no_key" || error.reason === "outside_workspace"
+      error.reason === "no_key" ||
+      error.reason === "outside_workspace" ||
+      error.reason === "not_top_level"
         ? "capability_denied"
         : "invalid_request",
     message: error.message,
@@ -49,21 +51,23 @@ export const layer = McpToolAccess.toLayer(KitshnToolkit, {
       const kitshn = yield* KitshnPublish.KitshnPublish;
       if (input.action === "status")
         return yield* kitshn.keyStatus.pipe(Effect.mapError(toFailure));
-      if (input.action === "clear") return yield* kitshn.clearKey.pipe(Effect.mapError(toFailure));
+      if (input.action === "clear") {
+        return yield* kitshn.clearKey(thread.threadId).pipe(Effect.mapError(toFailure));
+      }
       if (
-        input.server === undefined ||
+        input.serverRef === undefined ||
         input.clientIdRef === undefined ||
         input.clientSecretRef === undefined
       ) {
         return yield* new OrchestratorMcpFailure({
           code: "invalid_request",
-          message: "set needs server, clientIdRef and clientSecretRef.",
+          message: "set needs serverRef, clientIdRef and clientSecretRef.",
         });
       }
       return yield* kitshn
         .setKey({
           threadId: thread.threadId,
-          server: input.server,
+          serverRef: input.serverRef,
           clientIdRef: input.clientIdRef,
           clientSecretRef: input.clientSecretRef,
         })

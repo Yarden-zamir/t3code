@@ -25,7 +25,9 @@ const projectId = ProjectId.make("project-kitshn");
 const KEY = { server: "https://kit.example.com", clientId: "id-1", clientSecret: "secret-1" };
 
 /** A workspace with a page, a dot folder, and an outside file with a link to it. */
-const setup = (options: { cli?: KitshnCli.KitshnCliOutput; key?: boolean } = {}) =>
+const setup = (
+  options: { cli?: KitshnCli.KitshnCliOutput; key?: boolean; delegated?: boolean } = {},
+) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -43,6 +45,8 @@ const setup = (options: { cli?: KitshnCli.KitshnCliOutput; key?: boolean } = {})
     if (options.key !== false)
       stored.set("kitshn-agent-key", new TextEncoder().encode(JSON.stringify(KEY)));
     const answers = new Map([
+      [SecretRef.make("secret-ref:server"), " https://kit.example.org/ "],
+      [SecretRef.make("secret-ref:bad-server"), "http://kit.example.org"],
       [SecretRef.make("secret-ref:id"), "id-2"],
       [SecretRef.make("secret-ref:secret"), "secret-2"],
     ]);
@@ -63,12 +67,13 @@ const setup = (options: { cli?: KitshnCli.KitshnCliOutput; key?: boolean } = {})
         remove: (name) => Effect.sync(() => void stored.delete(name)),
       }),
       Layer.mock(SecretRequests.SecretRequests)({
-        consume: (input) => {
-          const value = answers.get(input.ref);
-          answers.delete(input.ref);
-          return value !== undefined && input.projectId === projectId
-            ? Effect.succeed(value)
-            : Effect.fail(new SecretRequestError({ reason: "ref_unavailable" }));
+        consumeAll: (input) => {
+          const values = input.refs.map((ref) => answers.get(ref));
+          if (input.projectId !== projectId || values.some((value) => value === undefined)) {
+            return Effect.fail(new SecretRequestError({ reason: "ref_unavailable" }));
+          }
+          for (const ref of input.refs) answers.delete(ref);
+          return Effect.succeed(values as Array<string>);
         },
       }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({
@@ -78,6 +83,9 @@ const setup = (options: { cli?: KitshnCli.KitshnCliOutput; key?: boolean } = {})
             projectId,
             worktreePath: workspace,
             deletedAt: null,
+            lineage: {
+              parentThreadId: options.delegated === true ? ThreadId.make("thread-parent") : null,
+            },
           } as unknown as OrchestrationV2ThreadShell),
       }),
       Layer.mock(ProjectService.ProjectService)({}),
@@ -102,7 +110,7 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
         card: "c1",
         kind: "page",
         updated: false,
-        revision: 3,
+        revision: null,
       };
       const { kitshn, runs, workspace } = yield* setup({
         cli: { exitCode: 0, stdout: `${JSON.stringify({ ...answer, extra: 1 })}\n` },
@@ -137,13 +145,15 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
       const { kitshn, runs } = yield* setup({
         cli: {
           exitCode: 0,
-          stdout: '{"address":"pages.example.com/new","card":"c1","kind":"file","updated":true}',
+          stdout:
+            '{"address":"pages.example.com/new","card":"c1","kind":"file","updated":true,"revision":4}',
         },
       });
       expect(yield* kitshn.address({ card: "c1", name: "new" })).toEqual({
         address: "pages.example.com/new",
         card: "c1",
         kind: "file",
+        revision: 4,
       });
       expect(runs[0]?.args).toEqual(["address", "c1", "new", "--json"]);
     }),
@@ -158,7 +168,10 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
     {
       name: "human text is unexpected",
       cli: { exitCode: 0, stdout: "kitshn: published a.html at https://pages.example.com/a" },
-      expected: { reason: "unexpected_output" },
+      expected: {
+        reason: "unexpected_output",
+        message: expect.stringContaining("kitshn may already have made the change"),
+      },
     },
     {
       name: "extra output after the JSON is unexpected",
@@ -218,12 +231,12 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
     }),
   );
 
-  it.effect("set spends both refs and status never shows the key; clear removes it", () =>
+  it.effect("set spends the three refs and status never shows the key; clear removes it", () =>
     Effect.gen(function* () {
       const { kitshn, stored } = yield* setup({ key: false });
       const set = kitshn.setKey({
         threadId,
-        server: "https://kit.example.org/",
+        serverRef: SecretRef.make("secret-ref:server"),
         clientIdRef: SecretRef.make("secret-ref:id"),
         clientSecretRef: SecretRef.make("secret-ref:secret"),
       });
@@ -235,8 +248,38 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
       });
       expect((yield* reasonOf(set)).reason).toBe("invalid_key");
       expect(yield* kitshn.keyStatus).toEqual({ set: true, server: "https://kit.example.org" });
-      expect(yield* kitshn.clearKey).toEqual({ set: false, server: null });
+      expect(yield* kitshn.clearKey(threadId)).toEqual({ set: false, server: null });
       expect(yield* kitshn.keyStatus).toEqual({ set: false, server: null });
+    }),
+  );
+
+  it.effect("set refuses a server answer that is not https", () =>
+    Effect.gen(function* () {
+      const { kitshn, stored } = yield* setup({ key: false });
+      const set = kitshn.setKey({
+        threadId,
+        serverRef: SecretRef.make("secret-ref:bad-server"),
+        clientIdRef: SecretRef.make("secret-ref:id"),
+        clientSecretRef: SecretRef.make("secret-ref:secret"),
+      });
+      expect((yield* reasonOf(set)).reason).toBe("invalid_key");
+      expect(stored.has("kitshn-agent-key")).toBe(false);
+    }),
+  );
+
+  it.effect("a delegated thread reads the key status but cannot set or clear the key", () =>
+    Effect.gen(function* () {
+      const { kitshn, stored } = yield* setup({ delegated: true });
+      const set = kitshn.setKey({
+        threadId,
+        serverRef: SecretRef.make("secret-ref:server"),
+        clientIdRef: SecretRef.make("secret-ref:id"),
+        clientSecretRef: SecretRef.make("secret-ref:secret"),
+      });
+      expect((yield* reasonOf(set)).reason).toBe("not_top_level");
+      expect((yield* reasonOf(kitshn.clearKey(threadId))).reason).toBe("not_top_level");
+      expect(yield* kitshn.keyStatus).toEqual({ set: true, server: KEY.server });
+      expect(stored.has("kitshn-agent-key")).toBe(true);
     }),
   );
 });
