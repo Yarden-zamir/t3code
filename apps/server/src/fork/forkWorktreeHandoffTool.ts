@@ -1,8 +1,11 @@
 import {
+  CommandId,
+  MessageId,
   type ThreadId,
   WorktreeMcpFailure,
   type WorktreeMcpHandoffInput,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
@@ -43,10 +46,35 @@ export const handoffFor = Effect.fn("ForkWorktreeHandoff.handoffFor")(function* 
       code: "invalid_request",
       message: `Thread '${target}' has no saved worktree. Another thread moves only when its worktree folder is gone.`,
     });
-  return yield* service.handoff(
+  const { continuationPrompt, ...move } = input;
+  const result = yield* service.handoff(
     actAsThread(scope, { threadId: shell.id, providerInstanceId: shell.providerInstanceId }),
-    input,
+    move,
   );
+  if (continuationPrompt === undefined) return result;
+  // Sent by the calling agent, so its task binds and the caller wakes with the result.
+  // The new branch never existed before, so it keeps these ids unique.
+  const id = `fork-worktree-handoff:${target}:${result.branch}`;
+  const continuation = yield* threads
+    .sendToThread({
+      projectId: shell.projectId,
+      commandId: CommandId.make(id),
+      threadId: target,
+      messageId: MessageId.make(id),
+      text: continuationPrompt,
+      attachments: [],
+      mode: "queue",
+      createdBy: "agent",
+      creationSource: "mcp",
+      senderThreadId: scope.thread.threadId,
+    })
+    .pipe(
+      Effect.map((sent) => ({ status: "scheduled" as const, delivery: sent.delivery })),
+      Effect.catchCause((cause) =>
+        Effect.succeed({ status: "failed" as const, detail: Cause.pretty(cause) }),
+      ),
+    );
+  return { ...result, continuation };
 });
 
 /** The write checks of the other thread tools apply to `threadId`. */

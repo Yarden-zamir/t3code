@@ -45,8 +45,9 @@ const records = {
   runs: [
     { id: RunId.make("run-old"), status: "failed", ordinal: 1, userMessageId: "message-old" },
     { id: failedRun, status: "failed", ordinal: 2, userMessageId: "message-lost" },
-    // Queued behind the failure and held, so it never ran.
+    // Queued behind the failure and held, and one the user then removed. Neither ran.
     { id: RunId.make("run-held"), status: "queued", ordinal: 3, queueHeld: true },
+    { id: RunId.make("run-removed"), status: "cancelled", ordinal: 4, startedAt: null },
   ],
   messages: [
     { id: "message-old", text: "Old.", attachments: [], createdBy: "user", creationSource: "web" },
@@ -86,6 +87,9 @@ const makeHarness = (options: {
           delivery: "started",
         } as ThreadManagementService.ThreadManagementSendResult),
   );
+  const fetchWorktreeBaseCommit = vi.fn((_: { readonly refName: string }) =>
+    Effect.succeed({ commitSha: "origin-sha", remoteRefName: "origin/trunk" }),
+  );
   const createWorktree = vi.fn((input: { readonly newRefName?: string | undefined }) =>
     Effect.succeed({
       worktree: { path: `/worktrees/project/${input.newRefName}`, refName: input.newRefName ?? "" },
@@ -105,10 +109,11 @@ const makeHarness = (options: {
     }),
     ServerSettings.layerTest({
       restoreWorktreesOnResume: options.restore,
-      newWorktreesStartFromOrigin: false,
+      newWorktreesStartFromOrigin: true,
     }),
     Layer.mock(GitWorkflowService.GitWorkflowService)({
       createWorktree,
+      fetchWorktreeBaseCommit,
       localStatus: () =>
         Effect.succeed({ isRepo: true, refName: "main", hasPrimaryRemote: true } as never),
       listLocalBranchNames: () =>
@@ -145,7 +150,7 @@ const makeHarness = (options: {
     Effect.flatMap(ForkWorktreeRecreate.ForkWorktreeRecreate, (service) =>
       service.recreate({ threadId: child, runId, creationSource: "mobile" }),
     ).pipe(Effect.provide(layer));
-  return { layer, dispatch, sendToThread, createWorktree, recreate };
+  return { layer, dispatch, sendToThread, createWorktree, fetchWorktreeBaseCommit, recreate };
 };
 
 const failureCode = (exit: Exit.Exit<unknown, unknown>) =>
@@ -155,11 +160,24 @@ describe("a thread whose worktree folder is gone", () => {
   it.effect("moves to a new worktree only while Restore worktrees on resume is on", () =>
     Effect.gen(function* () {
       const on = makeHarness({ restore: true, worktreePath: gone });
-      yield* handoffFor(leadScope, { threadId: child, branch: "feature/moved" }).pipe(
-        Effect.provide(on.layer),
-      );
+      yield* handoffFor(leadScope, {
+        threadId: child,
+        branch: "feature/moved",
+        continuationPrompt: "Finish it.",
+      }).pipe(Effect.provide(on.layer));
       expect(on.dispatch).toHaveBeenCalledWith(
         expect.objectContaining({ threadId: child, expectedWorktreePath: gone }),
+      );
+      // Sent once, by the lead, so the lead's task binds and the lead gets the result.
+      expect(on.sendToThread).toHaveBeenCalledTimes(1);
+      expect(on.sendToThread).toHaveBeenCalledWith(
+        expect.objectContaining({
+          threadId: child,
+          text: "Finish it.",
+          createdBy: "agent",
+          creationSource: "mcp",
+          senderThreadId: lead,
+        }),
       );
 
       const off = makeHarness({ restore: false, worktreePath: gone });
@@ -196,7 +214,7 @@ describe("a thread whose worktree folder is gone", () => {
         const harness = makeHarness({ restore: true, worktreePath: gone });
         const result = yield* harness.recreate(failedRun);
         expect(result.branch).toBe("feature/child-restored-2");
-        // A client message starts ahead of the held queue; the parent still gets the result.
+        // A client message starts ahead of the held queue.
         expect(harness.sendToThread).toHaveBeenCalledWith(
           expect.objectContaining({
             threadId: child,
@@ -213,17 +231,19 @@ describe("a thread whose worktree folder is gone", () => {
       }),
   );
 
+  // The old branch starts locally, because origin may lack its commits.
   it.effect.each([
-    { branchExists: true, base: "feature/child" },
-    { branchExists: false, base: "trunk" },
+    { branchExists: true, refName: "feature/child", fetched: [] },
+    { branchExists: false, refName: "origin-sha", fetched: ["trunk"] },
   ])(
     "starts from the old branch when it exists (exists: $branchExists)",
-    ({ branchExists, base }) =>
+    ({ branchExists, refName, fetched }) =>
       Effect.gen(function* () {
         const harness = makeHarness({ restore: true, worktreePath: gone, branchExists });
         yield* harness.recreate(failedRun);
-        expect(harness.createWorktree).toHaveBeenCalledWith(
-          expect.objectContaining({ refName: base }),
+        expect(harness.createWorktree).toHaveBeenCalledWith(expect.objectContaining({ refName }));
+        expect(harness.fetchWorktreeBaseCommit.mock.calls.map(([input]) => input.refName)).toEqual(
+          fetched,
         );
       }),
   );

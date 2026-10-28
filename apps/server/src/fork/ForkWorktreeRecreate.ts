@@ -11,6 +11,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { latestExecutedRun } from "@t3tools/shared/orchestrationV2ThreadError";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -61,14 +62,8 @@ const make = Effect.gen(function* () {
     // The upstream handoff refuses a folder that exists and a disabled "Restore worktrees on resume".
     if (thread.worktreePath === null)
       return yield* failure("invalid_request", `Thread '${threadId}' has no worktree to recreate.`);
-    // A queued run has a newer ordinal but never ran. Messages queued behind the failure are held.
-    const latest = runs.reduce<(typeof runs)[number] | undefined>(
-      (newest, run) =>
-        run.status !== "queued" && (newest === undefined || run.ordinal > newest.ordinal)
-          ? run
-          : newest,
-      undefined,
-    );
+    // Messages queued behind the failure are held and never ran, so they do not count.
+    const latest = latestExecutedRun(runs);
     const message = messages.find((candidate) => candidate.id === latest?.userMessageId);
     if (latest?.id !== runId || latest.status !== "failed" || message === undefined)
       return yield* failure(
@@ -94,9 +89,10 @@ const make = Effect.gen(function* () {
     for (let suffix = 2; taken.has(branch); suffix++) branch = `${base}-${suffix}`;
     // The committed work of the thread lives on its branch. Without it, start from the default branch.
     // Limit: with no readable origin default, the handoff uses the project's checked-out branch.
+    const ownBranch = thread.branch !== null && taken.has(thread.branch) ? thread.branch : null;
     const baseRef =
-      thread.branch !== null && taken.has(thread.branch)
-        ? thread.branch
+      ownBranch !== null
+        ? ownBranch
         : yield* gitDriver.resolvePrimaryRemoteName(project.workspaceRoot).pipe(
             Effect.flatMap((remote) =>
               gitDriver.resolveDefaultBranchName(project.workspaceRoot, remote),
@@ -116,7 +112,12 @@ const make = Effect.gen(function* () {
         },
         { threadId, providerInstanceId: thread.providerInstanceId },
       ),
-      { branch, ...(baseRef === null ? {} : { baseRef }) },
+      {
+        branch,
+        ...(baseRef === null ? {} : { baseRef }),
+        // Origin may lack the local commits of the old branch.
+        ...(ownBranch === null ? {} : { startFromOrigin: false }),
+      },
     );
     const uuid = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
     const continuation = yield* threads
