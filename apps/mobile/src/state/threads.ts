@@ -11,7 +11,6 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import { createTerminalThreadStatesAtom } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect } from "react";
 
@@ -101,8 +100,8 @@ export function useEnvironmentThread(
       ? environmentThreads.stateAtom(environmentId, threadId)
       : EMPTY_THREAD_STATE_ATOM,
   );
-  const state = Option.getOrElse(
-    AsyncResult.value(result),
+  const state = AsyncResult.getOrElse(
+    result,
     () => EMPTY_ENVIRONMENT_THREAD_STATE,
   ) as EnvironmentThreadState;
   return state;

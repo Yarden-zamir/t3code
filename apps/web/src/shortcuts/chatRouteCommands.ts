@@ -109,8 +109,10 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
   const startNew =
     (kind: NewThreadKind): CommandHandler =>
     (event) => {
-      // Pre-hydration settings are the defaults, where the legacy sidebar is off.
-      if (!getClientSettings().legacySidebarEnabled && readProjectGroupCount() > 1) {
+      // The boring sidebar's folders already show the context, so it starts in
+      // the current project like the legacy sidebar did.
+      const { boringSidebarEnabled, legacySidebarEnabled } = getClientSettings();
+      if (!boringSidebarEnabled && !legacySidebarEnabled && readProjectGroupCount() > 1) {
         claim(event);
         openCommandPalette({ open: "new-thread-in", threadKind: kind });
         return;
