@@ -79,6 +79,7 @@ export const HEALTH_TABLES = `
   CREATE TABLE IF NOT EXISTS resource_latest (machine_id TEXT PRIMARY KEY, data TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS health_alerts (id TEXT PRIMARY KEY, machine_id TEXT NOT NULL, active INTEGER NOT NULL, started_at TEXT NOT NULL, data TEXT NOT NULL);
   CREATE INDEX IF NOT EXISTS health_alerts_by_start ON health_alerts (started_at);
+  CREATE INDEX IF NOT EXISTS health_alerts_by_active_start ON health_alerts (active, started_at);
 `;
 
 export class HealthStore {
