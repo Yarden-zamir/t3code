@@ -703,6 +703,7 @@ function ThreadRouteContent(
   // list as the screen behind it. Limit: the thread has no timeline, so the messages that a
   // schedule or an agent sent show only in the terminal. Revisit when the terminal screen needs them.
   const terminalThreadRedirected = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Fork: navigates to the terminal screen once the thread and its permissions load.
   useEffect(() => {
     if (!selectedThread || !isTerminalThread(selectedThread)) return;
     if (!canReadTerminal && !canOperateTerminal) return;

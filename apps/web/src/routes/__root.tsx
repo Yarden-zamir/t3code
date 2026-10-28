@@ -353,6 +353,7 @@ function EventRouter({
   const serverConfig = useAtomValue(primaryServerConfigAtom);
   const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
   const trustedBrowserOrigins = serverConfig?.trustedBrowserOrigins;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Fork: keeps the module list of sibling origins for credentialed requests in step with the server config.
   useEffect(() => {
     setCredentialedSiblingOrigins(trustedBrowserOrigins ?? []);
   }, [trustedBrowserOrigins]);

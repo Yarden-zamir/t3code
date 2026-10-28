@@ -163,13 +163,13 @@ An agent runs a shell command on another machine with `machine_exec`. The comman
 
 ### Thread mentions across machines
 
-The `@` menu lists the threads of this machine and of the machines that it reads through the machine map. With more than one machine, each item names its machine. The agent reads an attached thread of another machine through the arrow, on the T3 server of that machine (MM-1905 to MM-1907).
+The `@` menu lists the threads of this machine and of the machines that it links to through the machine map arrows. Each thread of another machine names its machine. The agent reads an attached thread of another machine through the arrow, on the T3 server of that machine (MM-1905 to MM-1907).
 
-- **Setting:** an arrow with agent tools and a level above `none`, from the machine that runs the agent to the machine of the thread. Set it in the portal.
+- **Setting:** an arrow with agent tools and a level above `none`, from the machine that runs the agent to the machine of the thread. Set it in the portal. Upstream's Labs setting `linkedEnvironmentsEnabled` must be on for both machines.
 - **Works on:** web, desktop and mobile, through local, relay and tunnel connections. The client lists the threads of a machine only when it also connects to that machine.
 - A send stops when the target machine cannot read an attached thread. Remove the thread, or switch to a machine that can read it.
 - Agents in every mode can read these threads. The read carries the limits of the agent's thread, so the other machine refuses what that thread may not do.
-- **Limits:** a machine asks each peer once for its environment id. An offline peer is not listed until it answers. Right after a page load, a send with a thread of another machine waits until the list of readable machines arrives.
+- **Limits:** a machine asks each peer once for its environment id. An offline peer is not listed until it answers. A send that starts before the list of linked machines loads refuses a thread of another machine; send again.
 
 ### Join and install
 
@@ -434,16 +434,6 @@ Tabs under the sidebar search hold threads. A thread lives in one tab, so the ta
   - Tabs were called groups before. A server moves `sidebarGroups` and `mobileSidebarGroups` in `settings.json` to the new keys once at start, and renames the old `sidebar.group.*`, `sidebar.previousGroup` and `sidebar.nextGroup` keybindings. A client moves `sidebarGroupsEnabled` and `sidebarGroupSingleThreadOpens` when it loads. The portal moves the shared values and overrides of the map once. A machine on an older version keeps the old keys, so it does not sync tabs with a machine on a newer version until both update. The open tab resets to "Threads" once.
   - Applies only after upstream thread groups merge ([pingdotgg/t3code#15988](https://github.com/pingdotgg/t3code/pull/15988) "feat: related threads stay together as a group"): a nested thread always shows in the tab of its top thread, so a nested group never splits across tabs. This holds for views too. A drag or "Assign to tab" on a nested thread assigns its top thread. Fork Sync resolves that merge with this rule.
 
-### Snooze quick options
-
-Edits the choices of the snooze menus.
-
-- **Setting:** client setting `snoozeQuickOptions` (null by default: the built-in choices). Settings > General > Sidebar > "Snooze quick options".
-- **Works on:** web, desktop: the snooze button, the thread menu and the menu for selected threads.
-- A choice snoozes for a number of minutes, hours or days, or until a time today, tomorrow or on the next given weekday. A blank label shows a label that names the choice.
-- A choice for today shows while its time is more than an hour away. The reset button brings back the built-in choices.
-- **Limits:** the mobile app keeps the built-in choices. Revisit when the mobile parity work reaches snooze.
-
 ### Worktree path template
 
 A template decides where new worktrees go, for example next to `main/` in a `.bare` container.
@@ -458,11 +448,11 @@ A template decides where new worktrees go, for example next to `main/` in a `.ba
 
 ### Thread link chips
 
-Every thread link in chat shows as the chip of an attached thread, and opens the thread in T3 Code.
+Upstream shows every `t3-thread://` link in chat as the chip of an attached thread. With this setting, thread addresses and app links become chips too, and open the thread in T3 Code.
 
 - **Setting:** server setting `threadLinkChips` (off by default). Settings > Appearance > Thread links > "Thread link chips". In the mobile Settings: Threads, or Fork.
 - **Works on:** web, desktop, mobile. Mobile reads the setting of the server of the thread, and has no switch of its own.
-- The chip reads `t3-thread://v1/<threadId>`, `t3code://threads/<environmentId>/<threadId>`, `https://<host>/<environmentId>/<threadId>`, and the attached-thread marker `[Thread: <title>; ref=<contextId>]` that agents copy.
+- The chip reads `t3code://threads/<environmentId>/<threadId>`, `https://<host>/<environmentId>/<threadId>`, and the attached-thread marker `[Thread: <title>; ref=<contextId>]` that agents copy.
 - An app link or a web address becomes a chip only when this client knows the environment. Copy keeps the link as written.
 - A `t3-thread://` link to a thread on another machine opens that thread when this client knows its environment.
 - A link that names a message shows a marker: `#` on web and desktop, a message icon on mobile. See [Message links](#message-links).
@@ -474,7 +464,7 @@ A thread link that names a message opens the thread at that message. Use **Copy 
 
 - **Setting:** server setting `messageLinks` (on by default). Settings > Appearance > Thread links > "Message links". In the mobile Settings: Threads, or Fork. Off: the link opens the thread only, and **Copy message link** is hidden.
 - **Works on:** web, desktop, mobile.
-- **Forms:** `t3-thread://v1/<threadId>#<messageId>`, and a thread address or app link with `#<messageId>` or `?message=<messageId>`. Agents take `messageId` from `t3_thread_read`, also for a thread on another machine.
+- **Forms:** `t3-thread://v2/<environmentId>/<threadId>#<messageId>`, `t3-thread://v1/<threadId>#<messageId>`, and a thread address or app link with `#<messageId>` or `?message=<messageId>`. Agents take `messageId` from `t3_thread_read`, also for a thread on another machine.
 - A message that the thread does not have shows "Message not found", and the thread stays open.
 - **Limits:** on mobile, a reply hidden in the fold of a prompt without a run shows as not found. Revisit when upstream pingdotgg/t3code#19203 merges; then use its scroll code.
 

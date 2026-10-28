@@ -37,7 +37,11 @@ export function ForkMessageCopyButton({
   const shell = appAtomRegistry.get(
     environmentThreadShells.threadShellAtom(scopeThreadRef(environmentId, threadId)),
   );
-  const link = formatThreadLink({ environmentId, threadId }, shell?.title ?? "", messageId ?? undefined);
+  const link = formatThreadLink(
+    { environmentId, threadId },
+    shell?.title ?? "",
+    messageId ?? undefined,
+  );
   const linkText = replaceComposerContextReferences(props.text, (reference) => reference.label);
   const actions = [
     ...(enabled ? [{ id: "copy-message-link", title: "Copy message link", image: "link" }] : []),

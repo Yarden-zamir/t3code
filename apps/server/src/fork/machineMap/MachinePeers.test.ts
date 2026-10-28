@@ -530,10 +530,7 @@ const makeMac = (
         ),
       ),
       Layer.provide(
-        Layer.merge(
-          Layer.succeedContext(links),
-          Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
-        ),
+        Layer.merge(Layer.succeedContext(links), Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
       ),
       Layer.provide(NodeCrypto.layer),
       Layer.provideMerge(

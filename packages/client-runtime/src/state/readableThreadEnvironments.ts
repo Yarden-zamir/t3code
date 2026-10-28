@@ -1,4 +1,8 @@
-import { type EnvironmentId, type MachineMapReadableEnvironment, WS_METHODS } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type MachineMapReadableEnvironment,
+  WS_METHODS,
+} from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 

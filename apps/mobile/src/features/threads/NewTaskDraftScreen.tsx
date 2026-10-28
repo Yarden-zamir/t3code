@@ -39,7 +39,6 @@ import {
 
 import {
   AuthOrchestrationOperateScope,
-  type EnvironmentId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";

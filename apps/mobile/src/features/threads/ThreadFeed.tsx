@@ -56,12 +56,8 @@ import {
 } from "@t3tools/contracts";
 import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
-import {
-  formatThreadLink,
-  parseThreadLinkHref,
-} from "@t3tools/shared/threadLinks";
+import { formatThreadLink, parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import { threadLinkMessageId } from "@t3tools/shared/threadMessageLinks";
-import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@t3tools/shared/promptLinks";
 import {
   parseComposerContextHref,
   collectComposerContextReferences,

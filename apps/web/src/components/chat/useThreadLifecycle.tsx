@@ -78,7 +78,6 @@ interface ThreadLifecycleInput {
   readonly activeThreadShell: EnvironmentThreadShell | null;
   readonly activeLatestRun: EnvironmentThreadShell["latestRun"];
   readonly activeProjectCwd: string | null;
-  readonly gitCwd: string | null;
   readonly serverConfig: EnvironmentServerConfig | null;
   readonly runtimeMode: RuntimeMode;
   readonly isWorking: boolean;
@@ -130,7 +129,6 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     activeThreadShell,
     activeLatestRun,
     activeProjectCwd,
-    gitCwd,
     serverConfig,
     runtimeMode,
     isWorking,

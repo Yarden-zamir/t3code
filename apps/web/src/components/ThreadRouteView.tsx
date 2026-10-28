@@ -98,7 +98,7 @@ export function ThreadRouteView({
   const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
   const draftMissing = target.kind === "draft" && !draftSession && !draftRedirect;
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Fork: back and forward skip a missing draft instead of the upstream redirect.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Fork: back and forward skip a missing draft instead of the upstream redirect.
   useEffect(() => {
     if (background || !draftMissing) return;
     leaveMissingRoute(() => void navigate({ to: "/", replace: true }));

@@ -100,7 +100,8 @@ export function useConnectionController() {
       label: updates.label,
       httpBaseUrl: updates.displayUrl,
     });
-    if (AsyncResult.isSuccess(result)) await headersFollowAddress(environmentId, updates.displayUrl);
+    if (AsyncResult.isSuccess(result))
+      await headersFollowAddress(environmentId, updates.displayUrl);
     return result;
   };
 

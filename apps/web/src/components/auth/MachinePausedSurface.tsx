@@ -25,10 +25,7 @@ export function MachinePausedSurface() {
 
   return (
     <StandalonePage>
-      <StandalonePageHeader
-        title="Paused"
-        description={MACHINE_PAUSED_MESSAGE}
-      />
+      <StandalonePageHeader title="Paused" description={MACHINE_PAUSED_MESSAGE} />
     </StandalonePage>
   );
 }

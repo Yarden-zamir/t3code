@@ -64,7 +64,7 @@ function BrowserSettingsSync({ environmentId }: { readonly environmentId: Enviro
     }
     globalThis.localStorage.setItem(APPLIED_KEY, JSON.stringify(applied));
   });
-  // oxlint-disable-next-line t3code/react-effect-budget -- applies pushed map values to storage, outside React.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- applies pushed map values to storage, outside React.
   useEffect(() => {
     void apply();
     // The key stands for the desired values, which arrive as a new object on each push.

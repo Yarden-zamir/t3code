@@ -52,7 +52,7 @@ export function ForkSharedClientSettings() {
   const planKey = plan === null ? null : stableStringify(plan.applied);
   const appliedKey = applied === null ? null : stableStringify(applied);
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- writes pushed map values to storage, outside React.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- writes pushed map values to storage, outside React.
   useEffect(() => {
     if (plan === null || planKey === appliedKey) return;
     updatePreferences({

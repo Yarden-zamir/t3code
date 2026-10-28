@@ -7,8 +7,6 @@ import { requestHeaderOrigin } from "@t3tools/client-runtime/connection";
 import { useAtomSet } from "@effect/atom-react";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
-import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/reactivity";
 import { useCallback } from "react";
 
 import {
