@@ -409,6 +409,19 @@ A local service, for example kitshn, learns which thread an agent works in. The 
 - The check does not keep the credential alive.
 - **Limits:** the MCP credential is the only auth, as on `/mcp`. The route is also reachable through a tunnel or a public origin.
 
+### Publish to kitshn
+
+Agents publish a file or a folder of their workspace to kitshn, and give the card a new address name. The tools are `kitshn_publish` and `kitshn_address`. They run the kitshn CLI with a kitshn agent key, a Cloudflare Access service token (kitshn K-718, K-1116, K-1120, K-1123).
+
+- **Setting:** the agent key, in the server secret store. To add it, ask an agent in a full-access thread to call `kitshn_agent_key` with `set`. The agent asks you for the client id and the client secret in two private secret cards. `status` shows whether a key is set and its server, never the key. `clear` removes it.
+- **Works on:** server, so every client.
+- Only a live full-access/default thread on this machine can publish. An agent on another machine cannot.
+- `path` is relative to the thread's worktree, or its project folder. The tool refuses a path outside that folder after links resolve, and a path in a dot folder or to a dotfile.
+- The server downloads `kitshn.mjs` of one pinned kitshn release once, to `kitshn-cli` in its state folder. It checks the SHA-256 before each run and refuses a file that does not match. It runs the CLI with the Node of the server, version 24 or newer.
+- **Limits:**
+  - A new kitshn CLI needs a manual pin bump in `apps/server/src/fork/kitshn/KitshnCli.ts`. Revisit when kitshn has a stable release channel.
+  - kitshn plans to replace agent keys with the local kitshn daemon (K-1732). Then only `KitshnCli.ts` changes.
+
 ### Scheduled task model
 
 A scheduled task runs on any provider instance, or on the project default model. Pick it in the scheduled task editor.
