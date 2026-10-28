@@ -1,6 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import { worktreeRecreateRunId } from "@t3tools/client-runtime/fork/worktreeRecreate";
 import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import {
   FORK_LOST_WORKTREE_FAILURE_CODE,
   type OrchestrationV2TurnItem,
   type ScopedThreadRef,
@@ -11,6 +15,7 @@ import { useState } from "react";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 
 type ErrorItem = Pick<
   Extract<OrchestrationV2TurnItem, { readonly type: "error" }>,
@@ -37,7 +42,7 @@ function RecreateWorktreeButton(props: {
   const allowed = useAtomValue(
     threadEnvironment.recreateWorktree.permissionAtom(props.threadRef.environmentId),
   );
-  const recreate = useAtomCommand(threadEnvironment.recreateWorktree, "recreate worktree");
+  const recreate = useAtomCommand(threadEnvironment.recreateWorktree, { reportFailure: false });
   const [busy, setBusy] = useState(false);
   if (runId === null || !allowed) return null;
   return (
@@ -47,12 +52,23 @@ function RecreateWorktreeButton(props: {
         size="xs"
         variant="outline"
         disabled={busy}
-        onClick={() => {
+        onClick={async () => {
           setBusy(true);
-          void recreate({
+          const result = await recreate({
             environmentId: props.threadRef.environmentId,
-            input: { threadId: props.threadRef.threadId, runId },
-          }).finally(() => setBusy(false));
+            input: { threadId: props.threadRef.threadId, runId, creationSource: "web" },
+          });
+          setBusy(false);
+          if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Couldn't recreate the worktree",
+                description: error instanceof Error ? error.message : "An error occurred.",
+              }),
+            );
+          }
         }}
       >
         <GitBranchPlusIcon aria-hidden />

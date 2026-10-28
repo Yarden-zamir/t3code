@@ -152,7 +152,10 @@ const make = Effect.gen(function* () {
 
     const projection = yield* loadThread(scope);
     const expectedWorktreePath = yield* lostWorktreePath(projection.thread);
-    if (projection.thread.worktreePath !== expectedWorktreePath && projection.thread.worktreePath) {
+    if (
+      projection.thread.worktreePath !== null &&
+      projection.thread.worktreePath !== expectedWorktreePath
+    ) {
       return yield* alreadyInWorktree(projection.thread.worktreePath);
     }
     if (projection.thread.archivedAt !== null) {
@@ -270,7 +273,10 @@ const make = Effect.gen(function* () {
         const recheckAndBind = Effect.gen(function* () {
           // A concurrent UI binding may have landed during git work; do not orphan a second worktree.
           const recheck = yield* loadThread(scope);
-          if (recheck.thread.worktreePath !== expectedWorktreePath && recheck.thread.worktreePath) {
+          if (
+            recheck.thread.worktreePath !== null &&
+            recheck.thread.worktreePath !== expectedWorktreePath
+          ) {
             return yield* alreadyInWorktree(recheck.thread.worktreePath);
           }
           if (recheck.thread.archivedAt !== null) {

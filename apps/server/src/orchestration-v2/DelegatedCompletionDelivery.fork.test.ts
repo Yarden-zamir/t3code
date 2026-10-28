@@ -244,6 +244,25 @@ it.effect.each([
     }).pipe(Effect.provide(layerTest)),
 );
 
+// "Recreate on a new branch" resends the failed message as the user who clicked.
+it.effect("a message the user resends from a client starts before the held queue", () =>
+  Effect.gen(function* () {
+    const threadId = ThreadId.make("thread:failure-hold:user-resend");
+    yield* createThread(threadId);
+    yield* userSend(threadId, "active");
+    yield* agentSend(threadId, "queued by the parent");
+    yield* failWithHeldQueue(threadId, "failure-hold:user-resend");
+
+    yield* send(threadId, "resent", {
+      createdBy: "user",
+      creationSource: "mobile",
+      dispatchMode: { type: "queue_after_active" },
+    });
+
+    assert.deepEqual(yield* runStates(threadId), ["failed", "queued", "starting"]);
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("a message held after a usage limit stays held behind an agent message", () =>
   Effect.gen(function* () {
     const threadId = ThreadId.make("thread:failure-hold:usage-limit");

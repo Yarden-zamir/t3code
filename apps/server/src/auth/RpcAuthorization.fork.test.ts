@@ -122,6 +122,7 @@ it.effect.each([
     const failure = yield* client[recreateMethod]({
       threadId: ThreadId.make("thread:lost"),
       runId: RunId.make("run:failed"),
+      creationSource: "web",
     }).pipe(Effect.flip);
     expect(failure).toMatchObject({
       _tag: "EnvironmentAuthorizationError",

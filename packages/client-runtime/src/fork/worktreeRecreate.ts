@@ -7,7 +7,8 @@ import {
 
 /**
  * The run that "Recreate on a new branch" resends, for a lost worktree failure row. Only the
- * thread's latest run offers it: the resend starts a newer run, which retires the button.
+ * thread's latest run offers it: the resend starts a newer run, which retires the button. Queued
+ * runs do not count: messages queued behind the failure are held and never ran.
  */
 export function worktreeRecreateRunId(
   runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "status" | "ordinal">>,
@@ -16,5 +17,7 @@ export function worktreeRecreateRunId(
   if (error.failure.code !== FORK_LOST_WORKTREE_FAILURE_CODE || error.runId === null) return null;
   const run = runs.find((candidate) => candidate.id === error.runId);
   if (run?.status !== "failed") return null;
-  return runs.some((candidate) => candidate.ordinal > run.ordinal) ? null : run.id;
+  return runs.some((candidate) => candidate.status !== "queued" && candidate.ordinal > run.ordinal)
+    ? null
+    : run.id;
 }

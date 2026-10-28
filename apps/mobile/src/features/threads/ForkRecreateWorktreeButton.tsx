@@ -2,6 +2,10 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { worktreeRecreateRunId } from "@t3tools/client-runtime/fork/worktreeRecreate";
 import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import {
   type EnvironmentId,
   FORK_LOST_WORKTREE_FAILURE_CODE,
   type OrchestrationV2TurnItem,
@@ -12,6 +16,7 @@ import { useState } from "react";
 import { View } from "react-native";
 
 import { Button } from "../../components/ui/Button";
+import * as Dialog from "../../components/ui/Dialog";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 
@@ -41,7 +46,7 @@ function RecreateWorktreeButton(props: Props) {
   const allowed = useAtomValue(
     threadEnvironment.recreateWorktree.permissionAtom(props.environmentId),
   );
-  const recreate = useAtomCommand(threadEnvironment.recreateWorktree, "recreate worktree");
+  const recreate = useAtomCommand(threadEnvironment.recreateWorktree, { reportFailure: false });
   const [busy, setBusy] = useState(false);
   if (runId === null || !allowed) return null;
   return (
@@ -50,13 +55,21 @@ function RecreateWorktreeButton(props: Props) {
         label="Recreate on a new branch"
         tone="secondary"
         disabled={busy}
-        onPress={() => {
+        onPress={async () => {
           setBusy(true);
           void Haptics.selectionAsync();
-          void recreate({
+          const result = await recreate({
             environmentId: props.environmentId,
-            input: { threadId: props.threadId, runId },
-          }).finally(() => setBusy(false));
+            input: { threadId: props.threadId, runId, creationSource: "mobile" },
+          });
+          setBusy(false);
+          if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            Dialog.alert(
+              "Couldn't recreate the worktree",
+              error instanceof Error ? error.message : String(error),
+            );
+          }
         }}
         icon="arrow.triangle.branch"
       />

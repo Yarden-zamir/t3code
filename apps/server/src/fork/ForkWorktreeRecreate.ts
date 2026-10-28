@@ -14,6 +14,7 @@ import * as Option from "effect/Option";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as WorktreeMcpService from "../mcp/WorktreeMcpService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -35,6 +36,11 @@ export class ForkWorktreeRecreate extends Context.Service<
 const failure = (code: WorktreeMcpFailure["code"], message: string) =>
   new WorktreeMcpFailure({ code, message });
 
+const errorDetail = (cause: Cause.Cause<unknown>) => {
+  const error = Cause.squash(cause);
+  return error instanceof Error ? error.message : String(error);
+};
+
 const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const worktrees = yield* WorktreeMcpService.WorktreeMcpService;
@@ -42,10 +48,11 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const git = yield* GitWorkflowService.GitWorkflowService;
   const environment = yield* ServerEnvironment.ServerEnvironment;
+  const gitDriver = yield* GitVcsDriver.GitVcsDriver;
 
   const recreate: ForkWorktreeRecreate["Service"]["recreate"] = Effect.fn(
     "ForkWorktreeRecreate.recreate",
-  )(function* ({ threadId, runId }) {
+  )(function* ({ threadId, runId, creationSource }) {
     const { thread, runs, messages } = yield* threads
       .getThreadRecords(threadId, ["runs", "messages"])
       .pipe(
@@ -54,8 +61,12 @@ const make = Effect.gen(function* () {
     // The upstream handoff refuses a folder that exists and a disabled "Restore worktrees on resume".
     if (thread.worktreePath === null)
       return yield* failure("invalid_request", `Thread '${threadId}' has no worktree to recreate.`);
+    // A queued run has a newer ordinal but never ran. Messages queued behind the failure are held.
     const latest = runs.reduce<(typeof runs)[number] | undefined>(
-      (newest, run) => (newest === undefined || run.ordinal > newest.ordinal ? run : newest),
+      (newest, run) =>
+        run.status !== "queued" && (newest === undefined || run.ordinal > newest.ordinal)
+          ? run
+          : newest,
       undefined,
     );
     const message = messages.find((candidate) => candidate.id === latest?.userMessageId);
@@ -81,6 +92,17 @@ const make = Effect.gen(function* () {
     const base = `${thread.branch ?? "t3code/workspace"}-restored`;
     let branch = base;
     for (let suffix = 2; taken.has(branch); suffix++) branch = `${base}-${suffix}`;
+    // The committed work of the thread lives on its branch. Without it, start from the default branch.
+    // Limit: with no readable origin default, the handoff uses the project's checked-out branch.
+    const baseRef =
+      thread.branch !== null && taken.has(thread.branch)
+        ? thread.branch
+        : yield* gitDriver.resolvePrimaryRemoteName(project.workspaceRoot).pipe(
+            Effect.flatMap((remote) =>
+              gitDriver.resolveDefaultBranchName(project.workspaceRoot, remote),
+            ),
+            Effect.orElseSucceed(() => null),
+          );
     const { environmentId } = yield* environment.getDescriptor;
     const result = yield* worktrees.handoff(
       actAsThread(
@@ -94,7 +116,7 @@ const make = Effect.gen(function* () {
         },
         { threadId, providerInstanceId: thread.providerInstanceId },
       ),
-      { branch },
+      { branch, ...(baseRef === null ? {} : { baseRef }) },
     );
     const uuid = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
     const continuation = yield* threads
@@ -106,14 +128,18 @@ const make = Effect.gen(function* () {
         text: message.text,
         attachments: message.attachments,
         mode: "queue",
-        createdBy: message.createdBy,
-        creationSource: message.creationSource,
-        ...(message.senderThreadId === undefined ? {} : { senderThreadId: message.senderThreadId }),
+        createdBy: "user",
+        creationSource,
       })
       .pipe(
         Effect.map((sent) => ({ status: "scheduled" as const, delivery: sent.delivery })),
         Effect.catchCause((cause) =>
-          Effect.succeed({ status: "failed" as const, detail: Cause.pretty(cause) }),
+          Effect.fail(
+            failure(
+              "operation_failed",
+              `The worktree moved to ${result.worktreePath} on ${result.branch}, but the message was not sent again: ${errorDetail(cause)}`,
+            ),
+          ),
         ),
       );
     return { ...result, continuation };

@@ -20,6 +20,7 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import type * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as WorktreeMcpService from "./WorktreeMcpService.ts";
@@ -44,6 +45,8 @@ const records = {
   runs: [
     { id: RunId.make("run-old"), status: "failed", ordinal: 1, userMessageId: "message-old" },
     { id: failedRun, status: "failed", ordinal: 2, userMessageId: "message-lost" },
+    // Queued behind the failure and held, so it never ran.
+    { id: RunId.make("run-held"), status: "queued", ordinal: 3, queueHeld: true },
   ],
   messages: [
     { id: "message-old", text: "Old.", attachments: [], createdBy: "user", creationSource: "web" },
@@ -61,6 +64,8 @@ const records = {
 const makeHarness = (options: {
   readonly restore: boolean;
   readonly worktreePath: string | null;
+  readonly branchExists?: boolean;
+  readonly sendFails?: boolean;
 }) => {
   const thread = {
     id: child,
@@ -73,7 +78,13 @@ const makeHarness = (options: {
   };
   const dispatch = vi.fn((_: unknown) => Effect.succeed({ sequence: 1, storedEvents: [] }));
   const sendToThread = vi.fn((_: unknown) =>
-    Effect.succeed({ delivery: "queued" } as ThreadManagementService.ThreadManagementSendResult),
+    options.sendFails === true
+      ? Effect.fail(
+          new ThreadManagementService.ThreadManagementThreadArchivedError({ threadId: child }),
+        )
+      : Effect.succeed({
+          delivery: "started",
+        } as ThreadManagementService.ThreadManagementSendResult),
   );
   const createWorktree = vi.fn((input: { readonly newRefName?: string | undefined }) =>
     Effect.succeed({
@@ -100,7 +111,12 @@ const makeHarness = (options: {
       createWorktree,
       localStatus: () =>
         Effect.succeed({ isRepo: true, refName: "main", hasPrimaryRemote: true } as never),
-      listLocalBranchNames: () => Effect.succeed(["main", "feature/child-restored"]),
+      listLocalBranchNames: () =>
+        Effect.succeed([
+          "main",
+          "feature/child-restored",
+          ...(options.branchExists === true ? ["feature/child"] : []),
+        ]),
       removeWorktree: () => Effect.void,
       deleteLocalBranch: () => Effect.void,
     }),
@@ -109,6 +125,10 @@ const makeHarness = (options: {
     }),
     Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
       refreshStatus: () => Effect.die("refreshStatus is not part of this test"),
+    }),
+    Layer.mock(GitVcsDriver.GitVcsDriver)({
+      resolvePrimaryRemoteName: () => Effect.succeed("origin"),
+      resolveDefaultBranchName: () => Effect.succeed("trunk"),
     }),
     Layer.mock(ServerEnvironment.ServerEnvironment)({
       getDescriptor: Effect.succeed({ environmentId: leadScope.environmentId } as never),
@@ -121,7 +141,11 @@ const makeHarness = (options: {
     ForkWorktreeRecreate.layer.pipe(Layer.provide(worktrees), Layer.provide(services)),
     services,
   );
-  return { layer, dispatch, sendToThread, createWorktree };
+  const recreate = (runId: RunId) =>
+    Effect.flatMap(ForkWorktreeRecreate.ForkWorktreeRecreate, (service) =>
+      service.recreate({ threadId: child, runId, creationSource: "mobile" }),
+    ).pipe(Effect.provide(layer));
+  return { layer, dispatch, sendToThread, createWorktree, recreate };
 };
 
 const failureCode = (exit: Exit.Exit<unknown, unknown>) =>
@@ -165,29 +189,50 @@ describe("a thread whose worktree folder is gone", () => {
     }),
   );
 
-  it.effect("recreates on a free branch and resends the latest failed message as it was", () =>
+  it.effect(
+    "recreates on a free branch and resends the latest failed run as the clicking user",
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ restore: true, worktreePath: gone });
+        const result = yield* harness.recreate(failedRun);
+        expect(result.branch).toBe("feature/child-restored-2");
+        // A client message starts ahead of the held queue; the parent still gets the result.
+        expect(harness.sendToThread).toHaveBeenCalledWith(
+          expect.objectContaining({
+            threadId: child,
+            mode: "queue",
+            text: "Finish the migration.",
+            attachments: [{ type: "image", id: "image-1" }],
+            createdBy: "user",
+            creationSource: "mobile",
+          }),
+        );
+        const stale = yield* Effect.exit(harness.recreate(RunId.make("run-old")));
+        expect(failureCode(stale)).toBe("invalid_request");
+        expect(harness.sendToThread).toHaveBeenCalledTimes(1);
+      }),
+  );
+
+  it.effect.each([
+    { branchExists: true, base: "feature/child" },
+    { branchExists: false, base: "trunk" },
+  ])(
+    "starts from the old branch when it exists (exists: $branchExists)",
+    ({ branchExists, base }) =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ restore: true, worktreePath: gone, branchExists });
+        yield* harness.recreate(failedRun);
+        expect(harness.createWorktree).toHaveBeenCalledWith(
+          expect.objectContaining({ refName: base }),
+        );
+      }),
+  );
+
+  it.effect("fails when the message cannot be sent again", () =>
     Effect.gen(function* () {
-      const harness = makeHarness({ restore: true, worktreePath: gone });
-      const recreate = (runId: RunId) =>
-        Effect.flatMap(ForkWorktreeRecreate.ForkWorktreeRecreate, (service) =>
-          service.recreate({ threadId: child, runId }),
-        ).pipe(Effect.provide(harness.layer));
-      const result = yield* recreate(failedRun);
-      expect(result.branch).toBe("feature/child-restored-2");
-      expect(harness.sendToThread).toHaveBeenCalledWith(
-        expect.objectContaining({
-          threadId: child,
-          mode: "queue",
-          text: "Finish the migration.",
-          attachments: [{ type: "image", id: "image-1" }],
-          createdBy: "agent",
-          creationSource: "mcp",
-          senderThreadId: lead,
-        }),
-      );
-      const stale = yield* Effect.exit(recreate(RunId.make("run-old")));
-      expect(failureCode(stale)).toBe("invalid_request");
-      expect(harness.sendToThread).toHaveBeenCalledTimes(1);
+      const harness = makeHarness({ restore: true, worktreePath: gone, sendFails: true });
+      const exit = yield* Effect.exit(harness.recreate(failedRun));
+      expect(failureCode(exit)).toBe("operation_failed");
     }),
   );
 });

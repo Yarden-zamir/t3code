@@ -13,9 +13,14 @@ const error = (code: string) =>
 describe("worktreeRecreateRunId", () => {
   it("offers the resend only for the latest run that failed to restore its worktree", () => {
     expect(worktreeRecreateRunId([failed], error(FORK_LOST_WORKTREE_FAILURE_CODE))).toBe(failed.id);
-    const resent = { id: RunId.make("run-2"), status: "queued", ordinal: 2 } as const;
+    // A message queued behind the failure is held and never ran, so the button stays.
+    const held = { id: RunId.make("run-2"), status: "queued", ordinal: 2 } as const;
+    expect(worktreeRecreateRunId([failed, held], error(FORK_LOST_WORKTREE_FAILURE_CODE))).toBe(
+      failed.id,
+    );
+    const resent = { id: RunId.make("run-3"), status: "starting", ordinal: 3 } as const;
     expect(
-      worktreeRecreateRunId([failed, resent], error(FORK_LOST_WORKTREE_FAILURE_CODE)),
+      worktreeRecreateRunId([failed, held, resent], error(FORK_LOST_WORKTREE_FAILURE_CODE)),
     ).toBeNull();
     expect(worktreeRecreateRunId([failed], error("provider_crashed"))).toBeNull();
     expect(
