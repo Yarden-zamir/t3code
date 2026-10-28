@@ -404,7 +404,7 @@ Sets how far back recent Claude Code and Codex sessions are offered for import, 
 A local service, for example kitshn, learns which thread an agent works in. The agent sends its MCP credential, the value of `T3_ACP_MCP_AUTHORIZATION`, to `GET /api/thread-identity` on the server port.
 
 - **Works on:** server.
-- The answer is the current state of the credential's thread: title, project, provider instance, modes, and the parent of a delegated child.
+- The answer is the current state of the credential's thread: title, project, provider instance, modes, and the parent of a delegated child. A child delegated from a linked environment names the parent thread and its environment.
 - An unknown, revoked or idle credential gets `{"active":false}`, without a reason.
 - The check does not keep the credential alive.
 - **Limits:** the MCP credential is the only auth, as on `/mcp`. The route is also reachable through a tunnel or a public origin.

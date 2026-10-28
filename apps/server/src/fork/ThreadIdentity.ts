@@ -48,7 +48,20 @@ const make = Effect.gen(function* () {
       if (Option.isNone(project)) {
         return yield* Effect.die(`Project ${thread.value.projectId} of a thread is missing.`);
       }
-      const subagent = thread.value.lineage.relationshipToParent === "subagent";
+      const { lineage, delegatedFrom } = thread.value;
+      // A child delegated from a linked environment has its parent only in `delegatedFrom`.
+      const parent =
+        lineage.relationshipToParent === "subagent"
+          ? { threadId: lineage.parentThreadId, environmentId: null }
+          : delegatedFrom === undefined
+            ? null
+            : {
+                threadId: delegatedFrom.threadId,
+                environmentId:
+                  delegatedFrom.environmentId === scope.environmentId
+                    ? null
+                    : delegatedFrom.environmentId,
+              };
       const checkedAt = DateTime.formatIso(yield* DateTime.now);
       return {
         active: true,
@@ -60,8 +73,9 @@ const make = Effect.gen(function* () {
         providerInstanceId: thread.value.providerInstanceId,
         runtimeMode: thread.value.runtimeMode,
         interactionMode: thread.value.interactionMode,
-        subagent,
-        parentThreadId: subagent ? thread.value.lineage.parentThreadId : null,
+        subagent: parent !== null,
+        parentThreadId: parent?.threadId ?? null,
+        parentEnvironmentId: parent?.environmentId ?? null,
         checkedAt,
       };
     },

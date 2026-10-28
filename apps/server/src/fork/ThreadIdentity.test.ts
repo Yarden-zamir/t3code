@@ -148,6 +148,7 @@ it.layer(layer)("ThreadIdentity", (it) => {
         interactionMode: "default",
         subagent: false,
         parentThreadId: null,
+        parentEnvironmentId: null,
         checkedAt: expect.any(String),
       });
 
@@ -177,6 +178,28 @@ it.layer(layer)("ThreadIdentity", (it) => {
         threadId: child.id,
         subagent: true,
         parentThreadId,
+        parentEnvironmentId: null,
+      });
+    }),
+  );
+
+  it.effect("names the parent of a child delegated from a linked environment", () =>
+    Effect.gen(function* () {
+      const identity = yield* ThreadIdentity.ThreadIdentity;
+      const parentThreadId = ThreadId.make("thread-remote-parent");
+      const parentEnvironmentId = EnvironmentId.make("environment-remote");
+      const child = yield* putThread("thread-remote-child", {
+        delegatedFrom: {
+          environmentId: parentEnvironmentId,
+          threadId: parentThreadId,
+          title: "Lead",
+        },
+      });
+      expect(yield* identity.check(yield* issueToken(child.id))).toMatchObject({
+        active: true,
+        subagent: true,
+        parentThreadId,
+        parentEnvironmentId,
       });
     }),
   );

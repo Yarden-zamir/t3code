@@ -20,6 +20,8 @@ export const ForkThreadIdentityActive = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   subagent: Schema.Boolean,
   parentThreadId: Schema.NullOr(ThreadId),
+  /** Null when the parent thread is in this environment. */
+  parentEnvironmentId: Schema.NullOr(EnvironmentId),
   checkedAt: Schema.String,
 });
 
