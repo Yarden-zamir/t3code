@@ -945,8 +945,9 @@ export class MachineMapObject extends DurableObject<Env> {
       record.at,
       JSON.stringify(record),
     );
+    // Insert order, not `at`, picks the rows to drop, so the delete reads only those rows.
     this.#sql(
-      "DELETE FROM exec_log WHERE id NOT IN (SELECT id FROM exec_log ORDER BY at DESC LIMIT ?)",
+      "DELETE FROM exec_log WHERE rowid <= (SELECT MAX(rowid) FROM exec_log) - ?",
       KEPT_EXECS,
     );
     this.#broadcast(this.#execsEvent());
@@ -975,8 +976,9 @@ export class MachineMapObject extends DurableObject<Env> {
       record.at,
       JSON.stringify(record),
     );
+    // Insert order, not `at`, picks the rows to drop, so the delete reads only those rows.
     this.#sql(
-      "DELETE FROM call_log WHERE id NOT IN (SELECT id FROM call_log ORDER BY at DESC LIMIT ?)",
+      "DELETE FROM call_log WHERE rowid <= (SELECT MAX(rowid) FROM call_log) - ?",
       KEPT_CALLS,
     );
     this.#broadcast(this.#callsEvent());
