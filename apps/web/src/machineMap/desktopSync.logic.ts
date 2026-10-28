@@ -129,6 +129,34 @@ export function clientSettingsPatchFromDesired(
   return { patch, skipped };
 }
 
+/**
+ * MM-416: client settings that only the desktop app uses. A browser does not take their shared
+ * values. The settings view marks the same ones as "Only available in the desktop app."
+ */
+const DESKTOP_ONLY_CLIENT_SETTINGS = [
+  "appToggleShortcuts",
+  "browserAutoShowFloatingPreview",
+  "browserDefaultAppearance",
+  "browserDefaultProfileId",
+  "browserDefaultViewport",
+  "browserDefaultZoomFactor",
+  "browserLinkTarget",
+  "browserProfiles",
+  "browserRecordingFrameRate",
+  "browserRecordingShowKeyPresses",
+  "browserRecordingShowMousePresses",
+  "checkNewerBeforeUpdateInstall",
+  "confirmQuit",
+] as const satisfies ReadonlyArray<keyof ClientSettings>;
+
+const desktopOnlyClientSettings: ReadonlySet<string> = new Set(DESKTOP_ONLY_CLIENT_SETTINGS);
+
+export function withoutDesktopOnlyClientSettings(values: SettingValues): SettingValues {
+  return Object.fromEntries(
+    Object.entries(values).filter(([key]) => !desktopOnlyClientSettings.has(key)),
+  );
+}
+
 /** The report key of the client settings. Report again only when it changes. */
 export function clientSettingsReportKey(settings: ClientSettings): string {
   return stableStringify(settings);

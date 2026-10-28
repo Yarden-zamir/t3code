@@ -146,9 +146,11 @@ jobs:
           git fetch --no-tags --filter=tree:0 --unshallow origin "$(git rev-parse HEAD)"
           node scripts/fork-adopted-prs.ts check
       # See docs/fork/operations.md "Migrations".
+      # The clone has the commits but not their files, so noop negotiation offers none of them.
+      # Otherwise upstream sends deltas against files that the clone lacks, and the fetch fails.
       - name: Check the migration registry against upstream main
         run: |
-          git fetch --depth=1 --no-tags https://github.com/pingdotgg/t3code.git main:refs/remotes/upstream/main
+          git -c fetch.negotiationAlgorithm=noop fetch --depth=1 --no-tags https://github.com/pingdotgg/t3code.git main:refs/remotes/upstream/main
           node scripts/fork-check-migrations.ts
 
   typecheck:
