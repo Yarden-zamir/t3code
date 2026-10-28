@@ -43,7 +43,13 @@ const make = Effect.gen(function* () {
           Effect.asSome,
           Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeedNone }),
         );
-      if (Option.isNone(thread)) return INACTIVE;
+      // The credential is revoked only after an archive or delete commits, so check both here.
+      if (
+        Option.isNone(thread) ||
+        thread.value.archivedAt !== null ||
+        thread.value.deletedAt !== null
+      )
+        return INACTIVE;
       const project = yield* projects.getById(thread.value.projectId, { includeDeleted: true });
       if (Option.isNone(project)) {
         return yield* Effect.die(`Project ${thread.value.projectId} of a thread is missing.`);

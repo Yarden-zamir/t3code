@@ -405,7 +405,7 @@ A local service, for example kitshn, learns which thread an agent works in. The 
 
 - **Works on:** server.
 - The answer is the current state of the credential's thread: title, project, provider instance, modes, and the parent of a delegated child. A child delegated from a linked environment names the parent thread and its environment.
-- An unknown, revoked or idle credential gets `{"active":false}`, without a reason.
+- An unknown, revoked or idle credential, or the credential of an archived or deleted thread, gets `{"active":false}`, without a reason.
 - The check does not keep the credential alive.
 - **Limits:** the MCP credential is the only auth, as on `/mcp`. The route is also reachable through a tunnel or a public origin.
 

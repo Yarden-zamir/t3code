@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { EnvironmentId, ProjectId, ThreadId } from "./baseSchemas.ts";
+import { EnvironmentId, IsoDateTime, ProjectId, ThreadId } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import { ProviderInteractionMode, RuntimeMode } from "./providerPolicy.ts";
 
@@ -22,7 +22,7 @@ export const ForkThreadIdentityActive = Schema.Struct({
   parentThreadId: Schema.NullOr(ThreadId),
   /** Null when the parent thread is in this environment. */
   parentEnvironmentId: Schema.NullOr(EnvironmentId),
-  checkedAt: Schema.String,
+  checkedAt: IsoDateTime,
 });
 
 /** RFC 7662 shape: an unknown, revoked or idle credential gives no reason. */

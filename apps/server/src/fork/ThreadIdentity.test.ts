@@ -216,6 +216,19 @@ it.layer(layer)("ThreadIdentity", (it) => {
     }),
   );
 
+  it.effect("answers active false for an archived or deleted thread before its revocation", () =>
+    Effect.gen(function* () {
+      const identity = yield* ThreadIdentity.ThreadIdentity;
+      const now = yield* DateTime.now;
+      const archived = yield* putThread("thread-archived", { archivedAt: now });
+      const deleted = yield* putThread("thread-deleted", { deletedAt: now });
+      expect(yield* identity.check(yield* issueToken(archived.id))).toStrictEqual({
+        active: false,
+      });
+      expect(yield* identity.check(yield* issueToken(deleted.id))).toStrictEqual({ active: false });
+    }),
+  );
+
   it.effect("does not extend the idle life of the credential", () =>
     Effect.gen(function* () {
       const identity = yield* ThreadIdentity.ThreadIdentity;
