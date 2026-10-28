@@ -22,6 +22,8 @@ export interface ShellState {
   command: string | null;
   /** Epoch milliseconds of the start of the last command. */
   commandStartedAt: number;
+  /** When the last command ended, however short. A draft becomes a thread on it. */
+  commandEndedAt: string | null;
 }
 
 /** A terminal session: `hasRunningSubprocess` is an upstream field that the marks also set. */
@@ -109,6 +111,10 @@ export function applyShellItems(
       }
       case "commandEnd":
         // The first prompt of a shell reports an end without a command.
+        if (state.shell === "running") {
+          state.commandEndedAt = at;
+          changed = true;
+        }
         if (
           state.shell === "running" &&
           Date.parse(at) - state.commandStartedAt >= NOTIFIED_COMMAND_MIN_MS
