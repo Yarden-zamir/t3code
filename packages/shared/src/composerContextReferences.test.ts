@@ -273,7 +273,8 @@ describe("provider projection", () => {
     expect(projected).toContain('<context kind="environment" id="env_vps">');
     expect(projected).toContain("label: vps");
     expect(projected).toContain("environmentId: environment-vps");
-    expect(projected).toContain("t3_environment_link with this environmentId");
+    // Fork: links are machine map arrows (composerContextReferences.fork.test.ts).
+    expect(projected).toContain("arrows on the machine map");
     expect(projected).not.toMatch(/https?:/);
   });
 
