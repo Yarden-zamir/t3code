@@ -5512,7 +5512,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       blocked:
         activeRun !== undefined || worktreeMissingRun !== undefined || worktreeSetupUnresolved,
       latestRun,
-      nextQueuedRun: nextQueuedRun(projection),
+      // Held runs count: the fork releases the queue that the failure held.
+      nextQueuedRun: queuedRunsInDeliveryOrder(projection)[0],
       turnItems: projection.turnItems,
     });
     const queueBehindRun = activeRun ?? worktreeMissingRun ?? providerFailureRun;

@@ -27,14 +27,14 @@ function setup() {
   state.enabled = true;
 }
 
-it("copies a Markdown message link labelled by the thread id without a shell, and hides the action when message links are off", async () => {
+it("copies a message autolink without a shell, and hides the action when message links are off", async () => {
   setup();
   await using screen = await render(
     <ForkCopyMessageLink threadRef={threadRef} messageId="user:1" />,
   );
   using clipboard = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
   await screen.getByRole("button", { name: "Copy message link" }).click();
-  expect(clipboard).toHaveBeenCalledWith("[thread:1](t3-thread://v1/thread:1#user:1)");
+  expect(clipboard).toHaveBeenCalledWith("<t3-thread://v2/local/thread:1#user:1>");
   state.enabled = false;
   await screen.rerender(<ForkCopyMessageLink threadRef={threadRef} messageId="user:1" />);
   await expect
@@ -82,13 +82,13 @@ it("copies only the chosen cursor message, including after focus moves to the pa
     viewport.blur();
     runRegisteredFocusLevelCommand("timeline.copyMessageLink");
   });
-  expect(clipboard).toHaveBeenLastCalledWith("[thread:1](t3-thread://v1/thread:1#assistant:2)");
+  expect(clipboard).toHaveBeenLastCalledWith("<t3-thread://v2/local/thread:1#assistant:2>");
   await act(() => {
     viewport.focus();
     runRegisteredFocusLevelCommand("timeline.previous");
     runRegisteredFocusLevelCommand("timeline.copyMessageLink");
   });
-  expect(clipboard).toHaveBeenLastCalledWith("[thread:1](t3-thread://v1/thread:1#user:1)");
+  expect(clipboard).toHaveBeenLastCalledWith("<t3-thread://v2/local/thread:1#user:1>");
   await act(() => {
     runRegisteredFocusLevelCommand("timeline.previous");
   });
