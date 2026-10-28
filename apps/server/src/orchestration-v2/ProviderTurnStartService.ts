@@ -3,6 +3,7 @@ import { projectComposerContextForProvider } from "@t3tools/shared/composerConte
 import { forkSourceTurns } from "./forkNativeSource.ts";
 import {
   CommandId,
+  FORK_LOST_WORKTREE_FAILURE_CODE,
   latestProviderTurnForAttempt,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ContextHandoff,
@@ -101,6 +102,7 @@ interface StartFailure {
   readonly title: string;
   readonly error: Error;
   readonly message?: string;
+  readonly code?: string;
 }
 
 const squashError = (cause: Cause.Cause<unknown>): Error => {
@@ -485,6 +487,7 @@ export const layer: Layer.Layer<
               title: failed.title,
               failure: makeProviderFailure({
                 cause: failed.error,
+                code: failed.code,
                 message:
                   failed.message ??
                   knownProviderFailureMessage(failed.error) ??
@@ -1552,6 +1555,12 @@ export const layer: Layer.Layer<
           const prepared = yield* Effect.result(prepareWorktree(input));
           if (prepared._tag === "Failure" && input.willRetry === true)
             return yield* prepared.failure;
+          // Only a folder that is still gone offers clients the move to a new worktree.
+          const lost =
+            prepared._tag === "Failure" &&
+            !(yield* fileSystem
+              .exists(prepared.failure.cwd)
+              .pipe(Effect.orElseSucceed(() => true)));
           const turnStart = start(
             prepared._tag === "Success"
               ? input
@@ -1560,6 +1569,7 @@ export const layer: Layer.Layer<
                   startFailure: {
                     signal: "worktree-restore-failure",
                     title: "Couldn't restore thread workspace",
+                    ...(lost ? { code: FORK_LOST_WORKTREE_FAILURE_CODE } : {}),
                     error: prepared.failure,
                     message: prepared.failure.message,
                   },

@@ -23,6 +23,7 @@ import {
   AuthRelayReadScope,
   AuthRelayWriteScope,
   AuthTerminalOperateScope,
+  AuthSourceControlWriteScope,
   ORCHESTRATION_V2_WS_METHODS,
   AuthTerminalReadScope,
   type AuthEnvironmentScope,
@@ -262,6 +263,10 @@ const requiredScopesForRpcCall = (
   // Fork: moving a terminal also creates its terminal thread.
   if (method === WS_METHODS.terminalMoveToThread) {
     return [AuthTerminalOperateScope, AuthOrchestrationOperateScope];
+  }
+  // Fork: recreating a lost worktree also rebinds the thread and resends its failed message.
+  if (method === WS_METHODS.threadRecreateWorktree) {
+    return [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
   }
   if (method === WS_METHODS.serverUpdateSettings) return requiredScopesForSettingsUpdate(payload);
   if (method === WS_METHODS.projectsMutate) {

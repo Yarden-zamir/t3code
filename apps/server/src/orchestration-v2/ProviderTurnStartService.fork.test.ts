@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vite-plus/test";
 import {
   CheckpointScopeId,
+  FORK_LOST_WORKTREE_FAILURE_CODE,
   MessageId,
   NodeId,
   ProviderSessionId,
@@ -205,11 +206,13 @@ it.each([
     prepare: true,
     title: "Couldn't restore thread workspace",
     message: "not the expected worktree",
+    code: FORK_LOST_WORKTREE_FAILURE_CODE,
   },
   {
     prepare: false,
     title: "Provider turn failed to start",
     message: "simulated inherited-background projection failure",
+    code: null,
   },
 ])("fails the run with its reason on the last attempt: $title", async (expected) => {
   const cwd = `${managedWorktreesDir}/project/feature-restore`;
@@ -239,6 +242,7 @@ it.each([
         title: expected.title,
         failure: expect.objectContaining({
           message: expect.stringContaining(expected.message),
+          code: expected.code,
         }),
       }),
     }),

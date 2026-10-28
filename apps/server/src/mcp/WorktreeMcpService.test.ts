@@ -7,6 +7,7 @@ import {
   type Project,
   ProjectId,
   ProviderInstanceId,
+  RunId,
   ThreadId,
   WorktreeMcpHandoffInput,
 } from "@t3tools/contracts";
@@ -62,8 +63,12 @@ interface ThreadFixture {
   readonly deletedAt?: string | null;
 }
 
-const makeProjection = (overrides: ThreadFixture = {}): OrchestrationV2ThreadProjection =>
+const makeProjection = (
+  overrides: ThreadFixture = {},
+  records: Partial<Pick<OrchestrationV2ThreadProjection, "runs" | "messages">> = {},
+): OrchestrationV2ThreadProjection =>
   ({
+    ...records,
     thread: {
       id: threadId,
       projectId,
@@ -113,6 +118,8 @@ interface HarnessOptions {
   readonly removeWorktreeFails?: boolean;
   readonly deleteLocalBranchFails?: boolean;
   readonly createWorktreeGate?: Effect.Effect<void>;
+  readonly records?: Partial<Pick<OrchestrationV2ThreadProjection, "runs" | "messages">>;
+  readonly localBranchNames?: ReadonlyArray<string>;
 }
 
 const makeHarness = (options: HarnessOptions = {}) => {
@@ -133,9 +140,10 @@ const makeHarness = (options: HarnessOptions = {}) => {
   );
   const listLocalBranchNames = vi.fn((_: string) =>
     Effect.succeed(
-      options.existingBranchWorktreePath === undefined
-        ? ["dev"]
-        : ["dev", "feature/taken", "feature/taken-idle"],
+      (options.localBranchNames && [...options.localBranchNames]) ??
+        (options.existingBranchWorktreePath === undefined
+          ? ["dev"]
+          : ["dev", "feature/taken", "feature/taken-idle"]),
     ),
   );
   const getThreadRecords = vi.fn((id: ThreadId) => {
@@ -172,7 +180,7 @@ const makeHarness = (options: HarnessOptions = {}) => {
       return Effect.succeed(makeProjection({ ...thread, archivedAt: "2026-01-02T00:00:00.000Z" }));
     }
     return id === threadId && thread !== null
-      ? Effect.succeed(makeProjection(thread))
+      ? Effect.succeed(makeProjection(thread, options.records))
       : Effect.fail(new OrchestratorProjectionError({ threadId: id }));
   });
   const sendToThread = vi.fn((_: unknown) => {
@@ -453,7 +461,7 @@ describe("t3_worktree_handoff", () => {
 
   it.effect("fails when the thread is already attached to a worktree", () => {
     const harness = makeHarness({
-      thread: { branch: "feature/existing", worktreePath: "/worktrees/project/existing" },
+      thread: { branch: "feature/existing", worktreePath: process.cwd() },
     });
     return Effect.gen(function* () {
       const exit = yield* Effect.exit(runHandoff(harness, { branch: "feature/second" }));
@@ -620,7 +628,7 @@ describe("t3_worktree_handoff", () => {
 
   it.effect("releases the per-thread guard after a failed handoff", () => {
     const harness = makeHarness({
-      thread: { worktreePath: "/worktrees/project/existing" },
+      thread: { worktreePath: process.cwd() },
     });
     return Effect.gen(function* () {
       const service = yield* resolveService(harness);
@@ -666,6 +674,86 @@ describe("t3_worktree_handoff", () => {
       const result = yield* runHandoff(harness, { branch: "feature/setup-dies" });
       expect(result.setupScript).toEqual({ status: "failed", detail: "setup runner defect" });
       expect(harness.dispatch).toHaveBeenCalled();
+    });
+  });
+});
+
+describe("lost worktree", () => {
+  const gone = "/worktrees/project/gone";
+  const failedRunId = RunId.make("run-lost-worktree");
+  const records = {
+    runs: [{ id: failedRunId, status: "failed", ordinal: 3, userMessageId: "message-lost" }],
+    messages: [
+      {
+        id: "message-lost",
+        text: "Finish the migration.",
+        attachments: [{ type: "image", id: "image-1" }],
+        createdBy: "agent",
+        creationSource: "mcp",
+        senderThreadId: "thread-lead",
+      },
+    ],
+  } as unknown as Pick<OrchestrationV2ThreadProjection, "runs" | "messages">;
+
+  it.effect("hands off a thread whose saved worktree folder is gone", () => {
+    const harness = makeHarness({ thread: { branch: "feature/gone", worktreePath: gone } });
+    return Effect.gen(function* () {
+      yield* runHandoff(harness, { branch: "feature/moved" });
+      expect(harness.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "thread.metadata.update",
+          branch: "feature/moved",
+          expectedWorktreePath: gone,
+        }),
+      );
+    });
+  });
+
+  it.effect("recreates it on a free branch and resends the failed message as it was", () => {
+    const harness = makeHarness({
+      thread: { branch: "feature/gone", worktreePath: gone },
+      records,
+      localBranchNames: ["dev", "feature/gone-restored"],
+    });
+    return Effect.gen(function* () {
+      const service = yield* resolveService(harness);
+      const result = yield* service.recreateLostWorktree({ threadId, runId: failedRunId });
+      expect(result.branch).toBe("feature/gone-restored-2");
+      expect(harness.sendToThread).toHaveBeenCalledWith(
+        expect.objectContaining({
+          threadId,
+          mode: "queue",
+          text: "Finish the migration.",
+          attachments: [{ type: "image", id: "image-1" }],
+          createdBy: "agent",
+          creationSource: "mcp",
+          senderThreadId: "thread-lead",
+        }),
+      );
+    });
+  });
+
+  it.effect("refuses a folder that exists and a run that did not fail", () => {
+    const existing = makeHarness({
+      thread: { branch: "feature/here", worktreePath: process.cwd() },
+      records,
+    });
+    const running = makeHarness({
+      thread: { branch: "feature/gone", worktreePath: gone },
+      records: { ...records, runs: [{ ...records.runs[0]!, status: "running" }] },
+    });
+    return Effect.gen(function* () {
+      for (const [harness, code] of [
+        [existing, "already_in_worktree"],
+        [running, "invalid_request"],
+      ] as const) {
+        const service = yield* resolveService(harness);
+        const exit = yield* Effect.exit(
+          service.recreateLostWorktree({ threadId, runId: failedRunId }),
+        );
+        expectTypedFailure(exit, { _tag: "WorktreeMcpFailure", code });
+        expect(harness.createWorktree).not.toHaveBeenCalled();
+      }
     });
   });
 });
