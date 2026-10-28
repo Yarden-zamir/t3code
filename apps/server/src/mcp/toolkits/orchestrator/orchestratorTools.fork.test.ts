@@ -6,9 +6,10 @@ import { OrchestratorToolkit } from "./tools.ts";
 
 const client = { protocolVersion: "2025-06-18", capabilities: {} };
 const enabled = (name: keyof typeof OrchestratorToolkit.tools) =>
-  Context.getOrUndefined(OrchestratorToolkit.tools[name].annotations, McpSchema.EnabledWhen)?.(
-    client,
-  );
+  Context.getOrUndefined(
+    OrchestratorToolkit.tools[name].annotations,
+    McpSchema.EnabledWhen,
+  )?.(client);
 
 it("hides the manual link tools and keeps the arrow links listed", () => {
   expect(enabled("t3_environment_link")).toBe(false);
