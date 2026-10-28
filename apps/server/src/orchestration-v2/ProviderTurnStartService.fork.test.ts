@@ -82,8 +82,9 @@ function startWithMissingWorktree(
     contextTransfers: [],
     turnItems: [],
   } as unknown as OrchestrationV2ThreadProjection;
-  const writeIfRunCurrent = vi.fn(() =>
-    Effect.succeed({ committed: true, storedEvents: [] } as never),
+  const writeIfRunCurrent = vi.fn(
+    (_request: Parameters<EventSink.EventSinkV2["Service"]["writeIfRunCurrent"]>[0]) =>
+      Effect.succeed({ committed: true, storedEvents: [] } as never),
   );
   const startRootRun = vi.fn(() => Effect.void);
   const openSession = vi.fn(() => Effect.die("Provider must not open before setup succeeds"));
@@ -161,8 +162,18 @@ function startWithMissingWorktree(
       .start({ threadId, runId })
       .pipe(Effect.flip);
   }).pipe(Effect.provide(layer), Effect.runPromise);
+  const startAttempt = (willRetry: boolean) =>
+    Effect.gen(function* () {
+      yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2).start({
+        threadId,
+        runId,
+        willRetry,
+      });
+    }).pipe(Effect.provide(layer), Effect.runPromiseExit);
   return {
     start,
+    startAttempt,
+    writeIfRunCurrent,
     pruneWorktrees,
     createWorktree,
     startRootRun,
@@ -184,6 +195,38 @@ it("does not open a provider or start a turn when setup fails, and preserves its
   expect(harness.startRootRun).not.toHaveBeenCalled();
   expect(harness.pruneWorktrees).not.toHaveBeenCalled();
   expect(harness.createWorktree).not.toHaveBeenCalled();
+});
+
+it("fails the run with its reason when worktree preparation fails on the last attempt", async () => {
+  const cwd = `${managedWorktreesDir}/project/feature-restore`;
+  const failure = new ForkWorktreeResume.WorktreeResumeError({
+    cwd,
+    reason: "The saved path is not the expected worktree; it was left untouched.",
+  });
+  const harness = startWithMissingWorktree(cwd, () => Effect.fail(failure));
+  expect((await harness.startAttempt(true))._tag).toBe("Failure");
+  expect(harness.writeIfRunCurrent).not.toHaveBeenCalled();
+
+  await harness.startAttempt(false);
+  const events = harness.writeIfRunCurrent.mock.calls.flatMap(([request]) => request.events);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "run.updated",
+      payload: expect.objectContaining({ status: "failed" }),
+    }),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "turn-item.updated",
+      payload: expect.objectContaining({
+        type: "error",
+        failure: expect.objectContaining({
+          message: expect.stringContaining("not the expected worktree"),
+        }),
+      }),
+    }),
+  );
+  expect(harness.openSession).not.toHaveBeenCalled();
 });
 
 it("runs fork worktree setup before startup takes the workspace lease", async () => {

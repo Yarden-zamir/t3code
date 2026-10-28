@@ -50,6 +50,7 @@ interface PrepareOptions {
   readonly exitCode?: number;
   readonly tracker?: Layer.Layer<Tracker.WorktreeSetupTracker>;
   readonly completion?: Effect.Effect<Setup.ProjectSetupScriptCompletion>;
+  readonly branch?: string | null;
 }
 
 const fixture = Effect.gen(function* () {
@@ -156,7 +157,11 @@ const fixture = Effect.gen(function* () {
     );
   const prepare = (options: PrepareOptions = {}) =>
     Effect.gen(function* () {
-      yield* (yield* Resume.ForkWorktreeResume).prepare(input);
+      yield* (yield* Resume.ForkWorktreeResume).prepare(
+        options.branch === undefined
+          ? input
+          : { ...input, thread: { ...input.thread, branch: options.branch } },
+      );
     }).pipe(Effect.provide(layer(options)));
   const activityStatuses = () =>
     activities.flatMap((event) =>
@@ -375,6 +380,38 @@ it.effect("waits for the launcher's existing async setup instead of starting ano
     yield* f.fs.makeDirectory(f.path.join(f.cwd, "node_modules"));
     yield* Deferred.succeed(complete, undefined);
     yield* Fiber.join(startup);
+    assert.strictEqual(f.setups(), 0);
+  }).pipe(Effect.provide(layerGit)),
+);
+
+// Agents switch branches and scratch threads have none; nothing here needs a repair.
+it.effect("starts in an existing folder whose branch changed or that has no branch", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.exec(["worktree", "add", "-b", "switched", f.cwd]);
+    yield* f.prepare();
+    yield* f.exec(["branch", "-D", "saved"]);
+    yield* f.prepare();
+    yield* f.prepare({ branch: null });
+    assert.strictEqual(f.setups(), 0);
+    assert.deepStrictEqual(f.activities, []);
+  }).pipe(Effect.provide(layerGit)),
+);
+
+it.effect("a launch's running setup does not hold the start of its existing checkout", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.exec(["worktree", "add", f.cwd, "saved"]);
+    const trackerLayer = Layer.mock(Tracker.WorktreeSetupTracker)({
+      get: () =>
+        Effect.succeed({
+          phase: "running",
+          stages: [{ id: "setup-script", status: "running" }],
+        } as never),
+      // A setup whose completion is never seen keeps this snapshot running forever.
+      stream: () => Stream.die("start must not wait for the launch's setup"),
+    });
+    yield* f.prepare({ tracker: trackerLayer });
     assert.strictEqual(f.setups(), 0);
   }).pipe(Effect.provide(layerGit)),
 );
