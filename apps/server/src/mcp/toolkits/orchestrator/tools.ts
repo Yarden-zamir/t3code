@@ -45,7 +45,6 @@ import * as Struct from "effect/Struct";
 
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
-import { manualLinkToolsEnabled } from "../../../fork/machineMap/machineAccess.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -334,7 +333,7 @@ const EnvironmentLinkTool = Tool.make("t3_environment_link", {
   .annotate(Tool.Title, "Link another environment")
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, true)
-  .annotate(McpSchema.EnabledWhen, manualLinkToolsEnabled);
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenWhileLinksOff);
 
 const EnvironmentUnlinkTool = Tool.make("t3_environment_unlink", {
   description:
@@ -348,7 +347,7 @@ const EnvironmentUnlinkTool = Tool.make("t3_environment_unlink", {
   .annotate(Tool.Title, "Forget a linked environment")
   .annotate(Tool.Destructive, true)
   .annotate(Tool.Idempotent, true)
-  .annotate(McpSchema.EnabledWhen, manualLinkToolsEnabled);
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenWhileLinksOff);
 
 export const OrchestratorToolkit = Toolkit.make(
   OrchestratorCapabilitiesTool,

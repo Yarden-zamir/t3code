@@ -1,4 +1,7 @@
-import { Tool } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
+
+import { manualLinkToolsEnabled } from "../../fork/machineMap/machineAccess.ts";
+import * as McpInvocationContext from "../McpInvocationContext.ts";
 
 import { AttachmentToolkit } from "./attachment/tools.ts";
 import { DeviceToolkit } from "./device/tools.ts";
@@ -13,6 +16,24 @@ import { PullRequestsToolkit } from "./pullRequests/tools.ts";
 import { ThreadToolkit } from "./thread/tools.ts";
 import { WorktreeToolkit } from "./worktree/tools.ts";
 
+const FORK_HIDDEN_LINK_TOOLS = new Set(["t3_environment_link", "t3_environment_unlink"]);
+
+/**
+ * Fork: links are machine map arrows, so the manual link tools stay hidden. Upstream's
+ * Linked environments gate still applies to them, so they hide with both conditions.
+ */
+const ForkOrchestratorToolkit = Toolkit.make(
+  ...Object.values(OrchestratorToolkit.tools).map((tool) =>
+    FORK_HIDDEN_LINK_TOOLS.has(tool.name)
+      ? tool.annotate(
+          McpSchema.EnabledWhen,
+          () => manualLinkToolsEnabled() && McpInvocationContext.hiddenWhileLinksOff(),
+        )
+      : tool,
+  ),
+  // Same tools by name and type; only the EnabledWhen annotation of the two link tools differs.
+) as unknown as typeof OrchestratorToolkit;
+
 /**
  * Every toolkit that `/mcp` publishes, keyed by name. The server builds its
  * `/mcp` layer from one registration per key (`McpHttpServer.layer`), and the
@@ -20,7 +41,7 @@ import { WorktreeToolkit } from "./worktree/tools.ts";
  * here; the type checker then requires its server registration.
  */
 export const McpToolkits = {
-  orchestrator: OrchestratorToolkit,
+  orchestrator: ForkOrchestratorToolkit,
   preview: PreviewToolkit,
   worktree: WorktreeToolkit,
   thread: ThreadToolkit,
