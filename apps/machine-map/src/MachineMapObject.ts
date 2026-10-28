@@ -396,6 +396,7 @@ const KEPT_CALLS = 500;
 const PAGE_ENDED_ALERTS = 50;
 /** MM-1503: the alarm prunes old resource points and alerts this often. */
 const PRUNE_EVERY_MS = HOUR_MS;
+const ROWS_READ_WARNING = 200;
 /** MM-1808: the push words of each alert kind. */
 const ALERT_PUSH: Record<HealthAlertKind, { readonly title: string; readonly unit: string }> = {
   cpu: { title: "CPU is high", unit: "%" },
@@ -535,7 +536,11 @@ export class MachineMapObject extends DurableObject<Env> {
     query: string,
     ...bindings: Array<SqlStorageValue>
   ): Array<T> {
-    return this.ctx.storage.sql.exec<T>(query, ...bindings).toArray();
+    const cursor = this.ctx.storage.sql.exec<T>(query, ...bindings);
+    const rows = cursor.toArray();
+    // Rows read count against the account-wide Durable Object limit, so a scan must show in logs.
+    if (cursor.rowsRead > ROWS_READ_WARNING) console.warn("sql rows read", cursor.rowsRead, query);
+    return rows;
   }
 
   #migrate(): void {
@@ -559,6 +564,8 @@ export class MachineMapObject extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, sign_in_id TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS exec_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS call_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS exec_log_by_at ON exec_log (at);
+      CREATE INDEX IF NOT EXISTS call_log_by_at ON call_log (at);
       CREATE TABLE IF NOT EXISTS guest_apps (machine_id TEXT PRIMARY KEY, hostname TEXT NOT NULL, guest_app_id TEXT, build_app_id TEXT);
     `);
     this.ctx.storage.sql.exec(HEALTH_TABLES);
