@@ -149,6 +149,8 @@ export function stripTerminalControl(text: string): string {
 // Line editors (zsh, fish, bash 5.1+) enable bracketed paste when they start reading a command.
 const BRACKETED_PASTE_ON = "\x1b[?2004h";
 const BRACKETED_PASTE_OFF = "\x1b[?2004l";
+// Pasted text skips line editor widgets, such as zsh-autopair closing the wrapper's `(` early.
+const bracketedPasteInput = (command: string) => `\x1b[200~ ${command}\x1b[201~\r`;
 // Longer than one subprocess poll plus its ps timeout, so a startup prompt is seen as busy first.
 const SHELL_QUIET_FALLBACK = "3 seconds";
 
@@ -305,7 +307,7 @@ export const make = Effect.gen(function* () {
       readonly terminalId: string;
       readonly onStartupPrompt: Effect.Effect<void>;
     }) {
-      const outcome = yield* Deferred.make<"ready" | "exited">();
+      const outcome = yield* Deferred.make<"line-editor" | "exited">();
       let reading = false;
       let carry = "";
       let busy = false;
@@ -330,7 +332,7 @@ export const make = Effect.gen(function* () {
         if (event.type === "exited" || event.type === "closed") {
           return Deferred.succeed(outcome, "exited").pipe(Effect.asVoid);
         }
-        return reading ? Deferred.succeed(outcome, "ready").pipe(Effect.asVoid) : Effect.void;
+        return reading ? Deferred.succeed(outcome, "line-editor").pipe(Effect.asVoid) : Effect.void;
       });
       // A startup prompt runs as a child process, so a busy shell keeps waiting for the user.
       const quiet = Effect.gen(function* () {
@@ -509,7 +511,10 @@ export const make = Effect.gen(function* () {
           : terminalManager.write({
               threadId: input.threadId,
               terminalId,
-              data: projectScriptTerminalInput(commandLine),
+              data:
+                shell === "line-editor"
+                  ? bracketedPasteInput(commandLine)
+                  : projectScriptTerminalInput(commandLine),
             }),
       ),
       Effect.catchCause((cause) =>
