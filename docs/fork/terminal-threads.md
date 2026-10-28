@@ -8,10 +8,12 @@ A terminal thread is a thread whose screen is a terminal. Use it for an editor, 
 CLI agent or a dev server that you want next to your other threads.
 
 Turn on Settings > Terminal > Terminal threads on the server. Then start one like a normal
-thread: the terminal button next to New thread in the sidebar (not in the legacy sidebar), `mod+alt+t`
-(`chat.newTerminal`), or New terminal thread in the command palette. These follow the
-same rules as the New thread button, including the project chooser and Shift. The command
-`chat.newTerminalLocal` (`mod+alt+shift+n`) starts in the focused project at once.
+thread: the terminal button next to New thread in the sidebar, `mod+alt+t`
+(`chat.newTerminal`), or New terminal thread in the command palette. The button and the
+shortcut follow the same rules as the New thread button. With the boring sidebar on, they start
+in the current project. Otherwise, with more than one project, they open the project chooser,
+and Shift starts in the current project. The command `chat.newTerminalLocal`
+(`mod+alt+shift+n`) starts in the focused project at once.
 
 When you turn the setting off, existing terminal threads stay in the sidebar with their saved
 output, read only. They start no shell, and a message or a scheduled task to them fails. A
