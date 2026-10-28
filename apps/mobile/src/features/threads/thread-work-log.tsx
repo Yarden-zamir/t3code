@@ -53,6 +53,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { ForkRecreateWorktreeButton } from "./ForkRecreateWorktreeButton";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { isJavaScriptReplTool } from "@t3tools/shared/toolActivity";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
@@ -950,6 +951,11 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
               runId={failureItem.runId}
             />
           ) : null}
+          <ForkRecreateWorktreeButton
+            environmentId={props.environmentId}
+            threadId={failureItem.threadId}
+            error={failureItem}
+          />
         </View>
       </WorkLogPressable>
     );

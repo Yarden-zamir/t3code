@@ -361,6 +361,15 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+    // Fork: a thread whose worktree folder is gone moves to a new branch and resends its run.
+    recreateWorktree: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:thread:recreate-worktree",
+      tag: WS_METHODS.threadRecreateWorktree,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
+      },
+    }),
   };
   const optimistic = createOptimisticThreadLifecycle(snapshotAtom);
   return {
