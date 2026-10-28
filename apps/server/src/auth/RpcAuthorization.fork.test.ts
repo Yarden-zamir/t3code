@@ -3,6 +3,7 @@ import {
   AuthOrchestrationReadScope,
   AuthSourceControlWriteScope,
   AuthTerminalOperateScope,
+  RunId,
   ThreadId,
   WS_METHODS,
   WsRpcGroup,
@@ -75,6 +76,53 @@ it.effect.each([
       threadId: ThreadId.make("thread:source"),
       terminalId: "term-2",
       newThreadId: ThreadId.make("thread:new"),
+    }).pipe(Effect.flip);
+    expect(failure).toMatchObject({
+      _tag: "EnvironmentAuthorizationError",
+      requiredPermission: missing,
+    });
+    expect(handled).toEqual([]);
+  }).pipe(Effect.scoped),
+);
+
+const recreateMethod = WS_METHODS.threadRecreateWorktree;
+const recreateGroup = WsRpcGroup.omit(
+  ...[...WsRpcGroup.requests.keys()].filter(
+    (
+      tag,
+    ): tag is Exclude<keyof typeof RpcAuthorization.RPC_REQUIRED_SCOPES, typeof recreateMethod> =>
+      tag !== recreateMethod,
+  ),
+);
+
+// The recreate rebinds the thread and resends its message, so a worktree grant alone is not enough.
+it.effect.each([
+  {
+    scopes: [AuthOrchestrationReadScope, AuthSourceControlWriteScope],
+    missing: AuthOrchestrationOperateScope,
+  },
+  {
+    scopes: [AuthOrchestrationReadScope, AuthOrchestrationOperateScope],
+    missing: AuthSourceControlWriteScope,
+  },
+])("rejects recreating a lost worktree without $missing", ({ scopes, missing }) =>
+  Effect.gen(function* () {
+    const handled: Array<string> = [];
+    const client = yield* RpcTest.makeClient(recreateGroup).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          recreateGroup.toLayerHandler(recreateMethod, () =>
+            Effect.sync(() => handled.push("recreate")).pipe(Effect.as({} as never)),
+          ),
+          RpcAuthorization.layer(scopes),
+        ),
+      ),
+    );
+
+    const failure = yield* client[recreateMethod]({
+      threadId: ThreadId.make("thread:lost"),
+      runId: RunId.make("run:failed"),
+      creationSource: "web",
     }).pipe(Effect.flip);
     expect(failure).toMatchObject({
       _tag: "EnvironmentAuthorizationError",

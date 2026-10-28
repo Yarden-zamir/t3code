@@ -1,11 +1,12 @@
-import type {
-  OrchestrationV2AppThread,
-  OrchestrationV2Run,
-  OrchestrationV2TurnItem,
-  RunAttemptId,
-  RunId,
-  ProviderThreadId,
-  ThreadId,
+import {
+  FORK_LOST_WORKTREE_FAILURE_CODE,
+  type OrchestrationV2AppThread,
+  type OrchestrationV2Run,
+  type OrchestrationV2TurnItem,
+  type RunAttemptId,
+  type RunId,
+  type ProviderThreadId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -38,7 +39,7 @@ export class WorktreeResumeError extends Schema.TaggedError<WorktreeResumeError>
   },
 ) {
   override get message() {
-    return `This thread's workspace folder no longer exists or is not a directory: ${this.cwd}. ${this.reason}`;
+    return `The thread workspace at ${this.cwd} could not be used. ${this.reason}`;
   }
 }
 
@@ -84,12 +85,13 @@ const make = Effect.gen(function* () {
         !pendingSetup
       )
         return;
-      // With restoration off, upstream's recovery after this hook handles a missing checkout.
-      if (!currentSettings.restoreWorktreesOnResume && !pendingSetup && !(yield* fs.exists(cwd)))
+      // An existing folder needs no repair on any branch, so start in it as upstream does. With
+      // restoration off, upstream's recovery after this hook handles a missing checkout.
+      if (!pendingSetup && (!currentSettings.restoreWorktreesOnResume || (yield* fs.exists(cwd))))
         return;
       const fail = (reason: string) => new WorktreeResumeError({ cwd, reason });
-      // A new launch can release its first turn while its async setup is still running.
-      // Wait for that setup rather than typing a second install into its terminal.
+      // A launch can release its first turn while its async setup still runs. That setup also
+      // restores evicted dependencies, so wait for it rather than typing a second install.
       const ongoing = yield* tracker.get(thread.id);
       if (
         ongoing?.phase === "running" &&
@@ -108,6 +110,7 @@ const make = Effect.gen(function* () {
             ))
         )
           return yield* fail("Project setup did not succeed. Retry setup before continuing.");
+        if (yield* fs.exists(cwd)) return yield* marker.clear;
       }
       // Repair under the same lease as storage cleanup, so a cleanup that already started
       // finishes first. Setup runs after this lease ends: its terminal takes the lease itself.
@@ -115,8 +118,7 @@ const make = Effect.gen(function* () {
       const { project, repository, exists } = yield* withWorkspaceLease(
         path.resolve(cwd),
         Effect.gen(function* () {
-          if (!path.isAbsolute(cwd) || thread.branch === null)
-            return yield* fail("The saved worktree path or branch is missing.");
+          if (!path.isAbsolute(cwd)) return yield* fail("The saved worktree path is missing.");
           const project = yield* projects.getById(thread.projectId);
           if (Option.isNone(project)) return yield* fail("The project repository is missing.");
           const repository = project.value.workspaceRoot;
@@ -145,16 +147,21 @@ const make = Effect.gen(function* () {
             return yield* fail(
               "The saved path exists but is not a directory; it was left untouched.",
             );
-          const branch = yield* git.execute({
-            cwd: repository,
-            args: ["show-ref", "--verify", "--quiet", `refs/heads/${thread.branch}`],
-            allowNonZeroExit: true,
-            operation: "check saved worktree branch",
-          });
-          if (branch.exitCode !== 0 && (exists || branch.exitCode !== 1))
-            return yield* fail("The saved local branch does not exist or cannot be read.");
+          // An existing folder needs only its identity: agents switch and rename its branch.
+          if (!exists && thread.branch === null)
+            return yield* fail("The saved branch is missing, so the folder cannot be restored.");
+          const branch = exists
+            ? undefined
+            : yield* git.execute({
+                cwd: repository,
+                args: ["show-ref", "--verify", "--quiet", `refs/heads/${thread.branch}`],
+                allowNonZeroExit: true,
+                operation: "check saved worktree branch",
+              });
+          if (branch !== undefined && branch.exitCode !== 0 && branch.exitCode !== 1)
+            return yield* fail("The saved local branch cannot be read.");
           const recreateBranch = Effect.fn("ForkWorktreeResume.recreateBranch")(function* () {
-            if (branch.exitCode === 0) return;
+            if (branch === undefined || branch.exitCode === 0) return;
             yield* exec(["check-ref-format", "--branch", thread.branch!]);
             const remote = yield* exec(["ls-remote", "--symref", "origin", "HEAD"]);
             const defaultBranch = remote.stdout.match(/^ref: refs\/heads\/([^\r\n]+)\tHEAD$/m)?.[1];
@@ -177,9 +184,8 @@ const make = Effect.gen(function* () {
             recreationNotice = `The branch was gone, so this worktree was recreated from ${defaultBranch}. Earlier uncommitted work is not in it.`;
           });
           if (exists) {
-            const [actualCommon, actualBranch, top] = yield* Effect.all([
+            const [actualCommon, top] = yield* Effect.all([
               exec(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd),
-              exec(["symbolic-ref", "HEAD"], cwd),
               exec(["rev-parse", "--show-toplevel"], cwd),
             ]).pipe(
               Effect.mapError(
@@ -197,11 +203,7 @@ const make = Effect.gen(function* () {
               fs.realPath(top.stdout.trim()),
               fs.realPath(cwd),
             ]);
-            if (
-              expectedCommon !== worktreeCommon ||
-              actualBranch.stdout.trim() !== `refs/heads/${thread.branch}` ||
-              worktreeRoot !== savedRoot
-            ) {
+            if (expectedCommon !== worktreeCommon || worktreeRoot !== savedRoot) {
               return yield* fail(
                 "The saved path is not the expected worktree; it was left untouched.",
               );
@@ -263,7 +265,7 @@ const make = Effect.gen(function* () {
             } else {
               yield* recreateBranch();
               // No reset, force or broad prune, including when reviving a deleted branch.
-              yield* exec(["worktree", "add", "--no-guess-remote", "--", cwd, thread.branch]);
+              yield* exec(["worktree", "add", "--no-guess-remote", "--", cwd, thread.branch!]);
             }
           }
           return { project, repository, exists };
@@ -407,33 +409,57 @@ export const layer = Layer.effect(ForkWorktreeResume, make);
 
 // The core orchestration layer also runs without fork extensions (replay and upstream tests).
 // Production installs this service at the same boundary as the project setup runner.
+// It returns the turn input. On the last attempt, a failure rides along for start() to settle.
 export const makePrepare = Effect.gen(function* () {
   const service = yield* Effect.serviceOption(ForkWorktreeResume);
   const projections = yield* ProjectionStore.ProjectionStoreV2;
-  return Effect.fn("ForkWorktreeResume.prepareTurn")(function* (input: {
-    readonly threadId: ThreadId;
-    readonly runId: RunId;
-  }) {
-    if (Option.isNone(service)) return;
+  const fs = yield* FileSystem.FileSystem;
+  return Effect.fn("ForkWorktreeResume.prepareTurn")(function* <
+    Input extends {
+      readonly threadId: ThreadId;
+      readonly runId: RunId;
+      readonly willRetry?: boolean;
+    },
+  >(input: Input) {
+    if (Option.isNone(service)) return input;
     // Turn startup reads the same context next and reports its own errors.
     const projection = yield* projections
       .getTurnStartContext(input.threadId, input.runId)
       .pipe(Effect.option);
-    if (Option.isNone(projection)) return;
+    if (Option.isNone(projection)) return input;
     const { thread, runs, attempts, providerThreads, turnItems } = projection.value;
     const run = runs.find((candidate) => candidate.id === input.runId);
-    if (run === undefined || run.status !== "starting") return;
+    if (run === undefined || run.status !== "starting") return input;
     const attempt = attempts.find((candidate) => candidate.id === run.activeAttemptId);
     const providerThread = providerThreads.find(
       (candidate) => candidate.id === run.providerThreadId,
     );
-    if (attempt === undefined || providerThread === undefined) return;
-    yield* service.value.prepare({
-      thread,
-      run,
-      attemptId: attempt.id,
-      providerThreadId: providerThread.id,
-      turnItems,
-    });
+    if (attempt === undefined || providerThread === undefined) return input;
+    const prepared = yield* Effect.result(
+      service.value.prepare({
+        thread,
+        run,
+        attemptId: attempt.id,
+        providerThreadId: providerThread.id,
+        turnItems,
+      }),
+    );
+    if (prepared._tag === "Success") return input;
+    if (input.willRetry === true) return yield* prepared.failure;
+    // Clients offer a new worktree only for a git worktree whose folder is still gone.
+    const lost =
+      thread.branch !== null &&
+      thread.worktreePath !== null &&
+      !(yield* fs.exists(thread.worktreePath).pipe(Effect.orElseSucceed(() => true)));
+    return {
+      ...input,
+      startFailure: {
+        signal: "worktree-restore-failure",
+        title: "Couldn't restore thread workspace",
+        error: prepared.failure,
+        message: prepared.failure.message,
+        ...(lost ? { code: FORK_LOST_WORKTREE_FAILURE_CODE } : {}),
+      },
+    };
   });
 });

@@ -114,7 +114,8 @@ describe("ProjectSetupScriptRunner", () => {
 
       yield* emit({ ...event, type: "activity", hasRunningSubprocess: false, label: "zsh" });
       yield* emit({ ...event, type: "output", data: "\r\n% \x1b[?2004h" });
-      expect(yield* Queue.take(writes)).toMatch(/^ \( vp i\r\);/);
+      // A paste skips line editor widgets, such as zsh-autopair closing the `(` before the sentinel.
+      expect(yield* Queue.take(writes)).toMatch(/^\x1b\[200~ ?\( vp i\r\);[^]*\x1b\[201~\r$/);
     }),
   );
 

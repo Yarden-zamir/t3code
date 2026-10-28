@@ -13,9 +13,11 @@ import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import type * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
+import { makeLostWorktreePath } from "../fork/forkLostWorktree.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -62,6 +64,7 @@ const make = Effect.gen(function* () {
   const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
   const setupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+  const lostWorktreePath = yield* makeLostWorktreePath; // Fork: a gone folder counts as detached.
 
   // Serialize handoffs per thread to avoid creating two worktrees and orphaning one.
   const handoffThreadsInFlight = new Set<string>();
@@ -148,7 +151,11 @@ const make = Effect.gen(function* () {
       );
 
     const projection = yield* loadThread(scope);
-    if (projection.thread.worktreePath !== null) {
+    const expectedWorktreePath = yield* lostWorktreePath(projection.thread);
+    if (
+      projection.thread.worktreePath !== null &&
+      projection.thread.worktreePath !== expectedWorktreePath
+    ) {
       return yield* alreadyInWorktree(projection.thread.worktreePath);
     }
     if (projection.thread.archivedAt !== null) {
@@ -266,7 +273,10 @@ const make = Effect.gen(function* () {
         const recheckAndBind = Effect.gen(function* () {
           // A concurrent UI binding may have landed during git work; do not orphan a second worktree.
           const recheck = yield* loadThread(scope);
-          if (recheck.thread.worktreePath !== null) {
+          if (
+            recheck.thread.worktreePath !== null &&
+            recheck.thread.worktreePath !== expectedWorktreePath
+          ) {
             return yield* alreadyInWorktree(recheck.thread.worktreePath);
           }
           if (recheck.thread.archivedAt !== null) {
@@ -282,7 +292,7 @@ const make = Effect.gen(function* () {
               threadId: scope.thread.threadId,
               branch: worktree.worktree.refName,
               worktreePath,
-              expectedWorktreePath: null,
+              expectedWorktreePath,
             })
             .pipe(
               Effect.catchCause((cause) =>
@@ -435,6 +445,7 @@ export const layer: Layer.Layer<
   WorktreeMcpService,
   never,
   | Crypto.Crypto
+  | FileSystem.FileSystem
   | ThreadManagementService.ThreadManagementService
   | ProjectService.ProjectService
   | ServerSettings.ServerSettingsService

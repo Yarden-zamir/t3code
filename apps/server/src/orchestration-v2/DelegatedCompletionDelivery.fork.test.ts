@@ -244,6 +244,25 @@ it.effect.each([
     }).pipe(Effect.provide(layerTest)),
 );
 
+// "Recreate on a new branch" resends the failed message as the user who clicked.
+it.effect("a message the user resends from a client starts before the held queue", () =>
+  Effect.gen(function* () {
+    const threadId = ThreadId.make("thread:failure-hold:user-resend");
+    yield* createThread(threadId);
+    yield* userSend(threadId, "active");
+    yield* agentSend(threadId, "queued by the parent");
+    yield* failWithHeldQueue(threadId, "failure-hold:user-resend");
+
+    yield* send(threadId, "resent", {
+      createdBy: "user",
+      creationSource: "mobile",
+      dispatchMode: { type: "queue_after_active" },
+    });
+
+    assert.deepEqual(yield* runStates(threadId), ["failed", "queued", "starting"]);
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("a message held after a usage limit stays held behind an agent message", () =>
   Effect.gen(function* () {
     const threadId = ThreadId.make("thread:failure-hold:usage-limit");
@@ -448,7 +467,8 @@ const nestedDelegatedCompletion = (childThreadId: ThreadId, name: string) =>
     return messageId;
   });
 
-it.effect.each(["a background command", "a nested delegated task"])(
+// The third is t3_worktree_handoff with threadId: the lead restarts a delegate in a new worktree.
+it.effect.each(["a background command", "a nested delegated task", "the lead's continuation"])(
   "a delegated child's later run from %s reaches the parent once, as its own task",
   (source) =>
     Effect.gen(function* () {
@@ -471,7 +491,14 @@ it.effect.each(["a background command", "a nested delegated task"])(
                 summary: "Command finished",
               },
             })
-          : yield* nestedDelegatedCompletion(childThreadId, source);
+          : source === "a nested delegated task"
+            ? yield* nestedDelegatedCompletion(childThreadId, source)
+            : yield* send(childThreadId, "continue in the new worktree", {
+                createdBy: "agent",
+                creationSource: "mcp",
+                dispatchMode: { type: "queue_after_active" },
+                senderThreadId: parentThreadId,
+              });
 
       const wakeRun = (yield* orchestrator.getThreadProjection(childThreadId)).runs.find(
         (run) => run.userMessageId === messageId,

@@ -16,6 +16,7 @@ import {
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -94,6 +95,19 @@ class WorktreeRecreateNoBaseError extends Schema.TaggedError<WorktreeRecreateNoB
 }
 
 const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
+
+interface StartFailure {
+  readonly signal: string;
+  readonly title: string;
+  readonly error: Error;
+  readonly message?: string;
+  readonly code?: string;
+}
+
+const squashError = (cause: Cause.Cause<unknown>): Error => {
+  const error = Cause.squash(cause);
+  return error instanceof Error ? error : new Error(String(error));
+};
 
 /**
  * Claude refuses these before it reads the prompt: replacing a process running background work,
@@ -303,6 +317,7 @@ export const layer: Layer.Layer<
       readonly threadId: ThreadId;
       readonly runId: RunId;
       readonly willRetry?: boolean;
+      readonly startFailure?: StartFailure;
     }) {
       const { runId } = input;
       const projection = yield* projectionStore.getTurnStartContext(input.threadId, runId);
@@ -458,12 +473,7 @@ export const layer: Layer.Layer<
         },
       );
       const settleStartFailure = Effect.fn("ProviderTurnStartService.settleStartFailure")(
-        function* (failed: {
-          readonly signal: string;
-          readonly title: string;
-          readonly error: Error;
-          readonly message?: string;
-        }) {
+        function* (failed: StartFailure) {
           const nestedCause = "cause" in failed.error ? failed.error.cause : undefined;
           yield* settleRunBeforeStart({
             signal: failed.signal,
@@ -476,6 +486,7 @@ export const layer: Layer.Layer<
               title: failed.title,
               failure: makeProviderFailure({
                 cause: failed.error,
+                code: failed.code,
                 message:
                   failed.message ??
                   knownProviderFailureMessage(failed.error) ??
@@ -490,6 +501,7 @@ export const layer: Layer.Layer<
           });
         },
       );
+      if (input.startFailure !== undefined) return yield* settleStartFailure(input.startFailure);
       if (message.attachments.length === 0 && message.text.trimStart().startsWith("/")) {
         const isEmptyCompaction =
           message.text.trim().toLowerCase() === "/compact" && !projection.hasConversation;
@@ -1539,14 +1551,28 @@ export const layer: Layer.Layer<
           const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
           // Fork: worktree restore and setup run before the lease, because setup opens a terminal
           // and a terminal takes the same lease. A restored checkout makes upstream recovery a no-op.
-          yield* prepareWorktree(input);
+          const turnInput = yield* prepareWorktree(input);
           const providerTurn = yield* thread.worktreePath === null
-            ? start(input)
-            : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));
+            ? start(turnInput)
+            : withWorkspaceLease(path.resolve(thread.worktreePath), start(turnInput));
           if (providerTurn !== undefined) yield* providerTurn;
         },
         (effect, input) =>
           effect.pipe(
+            // A final failure that start() did not settle would leave the run starting and block
+            // its queue. Settle it; start() returns early once the run is no longer starting.
+            Effect.catchCauseIf(
+              (cause) => input.willRetry !== true && !Cause.hasInterruptsOnly(cause),
+              (cause) =>
+                start({
+                  ...input,
+                  startFailure: {
+                    signal: "provider-turn-start-failure",
+                    title: "Provider turn failed to start",
+                    error: squashError(cause),
+                  },
+                }).pipe(Effect.ignoreCause({ log: true }), Effect.andThen(Effect.failCause(cause))),
+            ),
             Effect.mapError((cause) =>
               isProviderTurnStartError(cause)
                 ? cause

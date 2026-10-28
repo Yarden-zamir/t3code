@@ -9,6 +9,7 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as WorktreeMcpService from "../../WorktreeMcpService.ts";
 import { WorktreeToolkit } from "./tools.ts";
+import { forkWorktreeHandoff } from "../../../fork/forkWorktreeHandoffTool.ts";
 
 const handlers = {
   t3_worktree_list: McpToolAccess.reads((input) =>
@@ -36,13 +37,7 @@ const handlers = {
         .pipe(Effect.mapError(unavailable));
     }),
   ),
-  t3_worktree_handoff: McpToolAccess.actsAsCaller((input) =>
-    Effect.gen(function* () {
-      const scope = yield* McpInvocationContext.McpInvocationContext;
-      const service = yield* WorktreeMcpService.WorktreeMcpService;
-      return yield* service.handoff(scope, input);
-    }),
-  ),
+  t3_worktree_handoff: forkWorktreeHandoff, // Fork: `threadId` moves a thread whose folder is gone.
   t3_worktree_status: McpToolAccess.readsAsCaller(() =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;

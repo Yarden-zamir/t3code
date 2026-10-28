@@ -41,6 +41,8 @@ import {
   MachineMapRequestError,
 } from "./machineMapClient.ts";
 import { OrchestrationV2ThreadLaunchError } from "./orchestrationV2.ts";
+import { ForkRecreateThreadWorktreeInput } from "./forkWorktreeRecreate.ts";
+import { WorktreeMcpFailure, WorktreeMcpHandoffResult } from "./worktreeMcp.ts";
 import {
   WebPushEndpointInput,
   WebPushError,
@@ -80,6 +82,8 @@ export const FORK_WS_METHODS = {
   terminalMoveToThread: "terminal.moveToThread",
   // Fork: desktop "Install when idle" waits for terminal thread programs (forkTerminalThreads.ts)
   forkUpdatesTerminalHold: "forkUpdates.terminalHold",
+  // Fork: a thread whose worktree folder is gone moves to a new worktree (forkWorktreeRecreate.ts)
+  threadRecreateWorktree: "thread.recreateWorktree",
 } as const;
 
 const forkChangelogError = Schema.Union([ForkChangelogError, EnvironmentAuthorizationError]);
@@ -208,6 +212,12 @@ const WsForkUpdatesTerminalHoldRpc = Rpc.make(FORK_WS_METHODS.forkUpdatesTermina
   stream: true,
 });
 
+const WsThreadRecreateWorktreeRpc = Rpc.make(FORK_WS_METHODS.threadRecreateWorktree, {
+  payload: ForkRecreateThreadWorktreeInput,
+  success: WorktreeMcpHandoffResult,
+  error: Schema.Union([WorktreeMcpFailure, EnvironmentAuthorizationError]),
+});
+
 export const ForkWsRpcGroup = RpcGroup.make(
   WsForkChangelogListReleasesRpc,
   WsForkChangelogReleaseChangesRpc,
@@ -228,6 +238,7 @@ export const ForkWsRpcGroup = RpcGroup.make(
   WsVcsPrepareDraftWorktreeRpc,
   WsTerminalMoveToThreadRpc,
   WsForkUpdatesTerminalHoldRpc,
+  WsThreadRecreateWorktreeRpc,
 );
 
 /** The fork part of `CLIENT_GUARDED_RPC_SCOPES`. */
@@ -245,6 +256,9 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [FORK_WS_METHODS.vcsPrepareDraftWorktree]: AuthSourceControlWriteScope,
   // Fork: takes over a running terminal, as `terminal.open` and `terminal.close` need.
   [FORK_WS_METHODS.terminalMoveToThread]: AuthTerminalOperateScope,
+  // Fork: creates a worktree and a branch, as `vcs.createWorktree` does. The server also requires
+  // orchestration operate, because it rebinds the thread and sends a message.
+  [FORK_WS_METHODS.threadRecreateWorktree]: AuthSourceControlWriteScope,
 } as const;
 
 /** The fork RPCs that the server's `RPC_REQUIRED_SCOPES` adds to `CLIENT_GUARDED_RPC_SCOPES`. */

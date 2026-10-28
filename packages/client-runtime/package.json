@@ -243,6 +243,10 @@
       "types": "./src/fork/accessChange.ts",
       "default": "./src/fork/accessChange.ts"
     },
+    "./fork/worktreeRecreate": {
+      "types": "./src/fork/worktreeRecreate.ts",
+      "default": "./src/fork/worktreeRecreate.ts"
+    },
     "./state/peerPairingCode": {
       "types": "./src/state/peerPairingCode.ts",
       "default": "./src/state/peerPairingCode.ts"

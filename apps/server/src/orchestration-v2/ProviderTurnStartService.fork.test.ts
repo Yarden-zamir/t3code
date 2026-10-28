@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vite-plus/test";
 import {
   CheckpointScopeId,
+  FORK_LOST_WORKTREE_FAILURE_CODE,
   MessageId,
   NodeId,
   ProviderSessionId,
@@ -40,6 +41,7 @@ const realPaths = new Set([managedWorktreesDir, `${managedWorktreesDir}/project`
 function startWithMissingWorktree(
   worktreePath: string,
   prepareWorktree: ForkWorktreeResume.ForkWorktreeResume["Service"]["prepare"],
+  branch: string | null = "feature/restore",
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -59,7 +61,7 @@ function startWithMissingWorktree(
     thread: {
       id: threadId,
       projectId: ProjectId.make("project_provider_turn_start_projection_failure"),
-      branch: "feature/restore",
+      branch,
       worktreePath,
     },
     runs: [
@@ -82,8 +84,9 @@ function startWithMissingWorktree(
     contextTransfers: [],
     turnItems: [],
   } as unknown as OrchestrationV2ThreadProjection;
-  const writeIfRunCurrent = vi.fn(() =>
-    Effect.succeed({ committed: true, storedEvents: [] } as never),
+  const writeIfRunCurrent = vi.fn(
+    (_request: Parameters<EventSink.EventSinkV2["Service"]["writeIfRunCurrent"]>[0]) =>
+      Effect.succeed({ committed: true, storedEvents: [] } as never),
   );
   const startRootRun = vi.fn(() => Effect.void);
   const openSession = vi.fn(() => Effect.die("Provider must not open before setup succeeds"));
@@ -156,13 +159,25 @@ function startWithMissingWorktree(
     ),
   );
 
-  const start = Effect.gen(function* () {
-    return yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2)
-      .start({ threadId, runId })
-      .pipe(Effect.flip);
-  }).pipe(Effect.provide(layer), Effect.runPromise);
+  // A retrying attempt returns its error; the final attempt settles the run instead.
+  const start = () =>
+    Effect.gen(function* () {
+      return yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2)
+        .start({ threadId, runId, willRetry: true })
+        .pipe(Effect.flip);
+    }).pipe(Effect.provide(layer), Effect.runPromise);
+  const startAttempt = (willRetry: boolean) =>
+    Effect.gen(function* () {
+      yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2).start({
+        threadId,
+        runId,
+        willRetry,
+      });
+    }).pipe(Effect.provide(layer), Effect.runPromiseExit);
   return {
     start,
+    startAttempt,
+    writeIfRunCurrent,
     pruneWorktrees,
     createWorktree,
     startRootRun,
@@ -177,13 +192,73 @@ it("does not open a provider or start a turn when setup fails, and preserves its
     reason: "Project setup exited with code 7.",
   });
   const harness = startWithMissingWorktree(cwd, () => Effect.fail(failure));
-  const error = await harness.start;
+  const error = await harness.start();
   expect(error.cause).toBe(failure);
   expect(failure.message).toContain("setup exited with code 7");
   expect(harness.openSession).not.toHaveBeenCalled();
   expect(harness.startRootRun).not.toHaveBeenCalled();
   expect(harness.pruneWorktrees).not.toHaveBeenCalled();
   expect(harness.createWorktree).not.toHaveBeenCalled();
+});
+
+// The second case fails in upstream code that settles nothing: a projection read after preparation.
+it.each([
+  {
+    prepare: true,
+    title: "Couldn't restore thread workspace",
+    message: "not the expected worktree",
+    code: FORK_LOST_WORKTREE_FAILURE_CODE,
+  },
+  // A scratch thread has no branch and no repository to recreate a worktree in.
+  {
+    prepare: true,
+    branch: null,
+    title: "Couldn't restore thread workspace",
+    message: "not the expected worktree",
+    code: null,
+  },
+  {
+    prepare: false,
+    title: "Provider turn failed to start",
+    message: "simulated inherited-background projection failure",
+    code: null,
+  },
+])("fails the run with its reason on the last attempt: $title, code $code", async (expected) => {
+  const cwd = `${managedWorktreesDir}/project/feature-restore`;
+  const failure = new ForkWorktreeResume.WorktreeResumeError({
+    cwd,
+    reason: "The saved path is not the expected worktree; it was left untouched.",
+  });
+  const harness = startWithMissingWorktree(
+    cwd,
+    () => (expected.prepare ? Effect.fail(failure) : Effect.void),
+    expected.branch,
+  );
+  expect((await harness.startAttempt(true))._tag).toBe("Failure");
+  expect(harness.writeIfRunCurrent).not.toHaveBeenCalled();
+
+  await harness.startAttempt(false);
+  const events = harness.writeIfRunCurrent.mock.calls.flatMap(([request]) => request.events);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "run.updated",
+      payload: expect.objectContaining({ status: "failed" }),
+    }),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "turn-item.updated",
+      payload: expect.objectContaining({
+        type: "error",
+        title: expected.title,
+        failure: expect.objectContaining({
+          message: expect.stringContaining(expected.message),
+          code: expected.code,
+        }),
+      }),
+    }),
+  );
+  expect(harness.openSession).not.toHaveBeenCalled();
 });
 
 it("runs fork worktree setup before startup takes the workspace lease", async () => {
@@ -198,6 +273,6 @@ it("runs fork worktree setup before startup takes the workspace lease", async ()
       }),
     ),
   );
-  await harness.start;
+  await harness.start();
   expect(setupGotLease).toBe(true);
 });

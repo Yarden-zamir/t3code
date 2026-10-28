@@ -232,6 +232,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.vcsPrepareDraftWorktree]: "vcs",
   [WS_METHODS.terminalMoveToThread]: "terminal",
   [WS_METHODS.forkUpdatesTerminalHold]: "forkUpdates",
+  [WS_METHODS.threadRecreateWorktree]: "vcs",
 } as const satisfies Readonly<Record<WsRpcMethod, string>>;
 
 const RPC_SPAN_PREFIX = "ws.rpc";

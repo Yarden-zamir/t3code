@@ -50,6 +50,7 @@ interface PrepareOptions {
   readonly exitCode?: number;
   readonly tracker?: Layer.Layer<Tracker.WorktreeSetupTracker>;
   readonly completion?: Effect.Effect<Setup.ProjectSetupScriptCompletion>;
+  readonly branch?: string | null;
 }
 
 const fixture = Effect.gen(function* () {
@@ -156,7 +157,11 @@ const fixture = Effect.gen(function* () {
     );
   const prepare = (options: PrepareOptions = {}) =>
     Effect.gen(function* () {
-      yield* (yield* Resume.ForkWorktreeResume).prepare(input);
+      yield* (yield* Resume.ForkWorktreeResume).prepare(
+        options.branch === undefined
+          ? input
+          : { ...input, thread: { ...input.thread, branch: options.branch } },
+      );
     }).pipe(Effect.provide(layer(options)));
   const activityStatuses = () =>
     activities.flatMap((event) =>
@@ -194,20 +199,27 @@ it.effect("restores the same branch and path, waits for setup, and publishes act
   }).pipe(Effect.provide(layerGit)),
 );
 
-it.effect("runs setup for evicted dependencies without changing dirty files or HEAD", () =>
-  Effect.gen(function* () {
-    const f = yield* fixture;
-    yield* f.exec(["worktree", "add", f.cwd, "saved"]);
-    yield* f.fs.writeFileString(f.path.join(f.cwd, "package.json"), '{"dirty":true}');
-    yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
-    yield* f.prepare();
-    yield* f.prepare();
-    assert.strictEqual(
-      yield* f.fs.readFileString(f.path.join(f.cwd, "package.json")),
-      '{"dirty":true}',
-    );
-    assert.strictEqual(f.setups(), 1);
-  }).pipe(Effect.provide(layerGit)),
+// An agent may have switched the branch; only the folder's identity is checked.
+it.effect.each([{ branch: "saved" }, { branch: "switched" }])(
+  "runs setup for evicted dependencies without changing dirty files or HEAD (on $branch)",
+  ({ branch }) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.exec(
+        branch === "saved"
+          ? ["worktree", "add", f.cwd, "saved"]
+          : ["worktree", "add", "-b", branch, f.cwd],
+      );
+      yield* f.fs.writeFileString(f.path.join(f.cwd, "package.json"), '{"dirty":true}');
+      yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
+      yield* f.prepare();
+      yield* f.prepare();
+      assert.strictEqual(
+        yield* f.fs.readFileString(f.path.join(f.cwd, "package.json")),
+        '{"dirty":true}',
+      );
+      assert.strictEqual(f.setups(), 1);
+    }).pipe(Effect.provide(layerGit)),
 );
 
 it.effect(
@@ -351,6 +363,8 @@ it.effect("waits for the launcher's existing async setup instead of starting ano
   Effect.gen(function* () {
     const f = yield* fixture;
     yield* f.exec(["worktree", "add", f.cwd, "saved"]);
+    const marker = yield* (yield* makeSetupMarker)(f.cwd);
+    yield* marker.mark;
     const waiting = yield* Deferred.make<void>();
     const complete = yield* Deferred.make<void>();
     const trackerLayer = Layer.mock(Tracker.WorktreeSetupTracker)({
@@ -375,6 +389,39 @@ it.effect("waits for the launcher's existing async setup instead of starting ano
     yield* f.fs.makeDirectory(f.path.join(f.cwd, "node_modules"));
     yield* Deferred.succeed(complete, undefined);
     yield* Fiber.join(startup);
+    assert.strictEqual(f.setups(), 0);
+    assert.isFalse(yield* marker.pending);
+  }).pipe(Effect.provide(layerGit)),
+);
+
+// Agents switch branches and scratch threads have none; nothing here needs a repair.
+it.effect("starts in an existing folder whose branch changed or that has no branch", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.exec(["worktree", "add", "-b", "switched", f.cwd]);
+    yield* f.prepare();
+    yield* f.exec(["branch", "-D", "saved"]);
+    yield* f.prepare();
+    yield* f.prepare({ branch: null });
+    assert.strictEqual(f.setups(), 0);
+    assert.deepStrictEqual(f.activities, []);
+  }).pipe(Effect.provide(layerGit)),
+);
+
+it.effect("a launch's running setup does not hold the start of its existing checkout", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.exec(["worktree", "add", f.cwd, "saved"]);
+    const trackerLayer = Layer.mock(Tracker.WorktreeSetupTracker)({
+      get: () =>
+        Effect.succeed({
+          phase: "running",
+          stages: [{ id: "setup-script", status: "running" }],
+        } as never),
+      // A setup whose completion is never seen keeps this snapshot running forever.
+      stream: () => Stream.die("start must not wait for the launch's setup"),
+    });
+    yield* f.prepare({ tracker: trackerLayer });
     assert.strictEqual(f.setups(), 0);
   }).pipe(Effect.provide(layerGit)),
 );
@@ -445,8 +492,9 @@ it.effect("a deleted branch does not allow replacing an occupied saved path", ()
     yield* f.exec(["branch", "-D", "saved"]);
     yield* f.fs.makeDirectory(f.cwd);
     yield* f.fs.writeFileString(f.path.join(f.cwd, "private"), "keep");
+    yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
     const error = yield* f.prepare().pipe(Effect.flip);
-    assert.include(error.message, "local branch does not exist");
+    assert.include(error.message, "not the expected worktree");
     assert.strictEqual(yield* f.fs.readFileString(f.path.join(f.cwd, "private")), "keep");
     yield* f.exec(["show-ref", "--verify", "refs/heads/saved"]).pipe(Effect.flip);
     assert.strictEqual(f.setups(), 0);
@@ -458,10 +506,14 @@ it.effect("leaves a conflicting path and symbolic link untouched", () =>
     const f = yield* fixture;
     yield* f.fs.makeDirectory(f.cwd);
     yield* f.fs.writeFileString(f.path.join(f.cwd, "private"), "keep");
+    // Strict checks guard only a setup run in an existing folder.
+    yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
     yield* f.prepare().pipe(Effect.flip);
     assert.strictEqual(yield* f.fs.readFileString(f.path.join(f.cwd, "private")), "keep");
     yield* f.fs.remove(f.cwd, { recursive: true });
     yield* f.fs.symlink(f.repository, f.cwd);
+    // The marker keys on the real path, which is now the link target.
+    yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
     const error = yield* f.prepare().pipe(Effect.flip);
     assert.include(error.message, "symbolic link");
     assert.strictEqual(f.setups(), 0);

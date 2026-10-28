@@ -65,7 +65,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 **Threads**
 
-- **[Restore worktrees on resume](docs/fork/features.md#restore-worktrees-on-resume):** recover a missing checkout at its saved path, recreate a deleted branch from the origin default branch, and run project setup before continuing (off by default).
+- **[Restore worktrees on resume](docs/fork/features.md#restore-worktrees-on-resume):** recover a missing checkout at its saved path, recreate a deleted branch from the origin default branch, run project setup before continuing, and offer "Recreate on a new branch" when the folder cannot be restored (off by default).
 - **[Artifact-only worktree cleanup](docs/fork/features.md#artifact-only-worktree-cleanup):** evict ignored build outputs before dependencies, keep checkouts and branches, and report logical bytes per folder type (off by default; no orphan cleanup).
 - **[Sidebar tabs](docs/fork/features.md#sidebar-tabs):** tabs above the sidebar list that hold threads, filled by drag or by rules. Mobile shows and edits them too.
 - **[Worktree path template](docs/fork/features.md#worktree-path-template):** a template decides where new worktrees go.
