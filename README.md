@@ -61,6 +61,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Pull requests from origin](docs/fork/features.md#pull-requests-from-origin):** a fork checkout uses the pull requests of its fork, not of upstream.
 - **[Pull request watch remark filter](docs/fork/features.md#pull-request-watch-remark-filter):** select which comments and reviews wake a watching agent.
 - **[Agent session import limits](docs/fork/features.md#agent-session-import-limits):** the import window and the message limit for imported sessions.
+- **[Thread identity check](docs/fork/features.md#thread-identity-check):** a local service checks which thread holds an agent's MCP credential.
 - **[Scheduled task model](docs/fork/features.md#scheduled-task-model):** a scheduled task runs on any provider instance, or on the project default model.
 
 **Threads**

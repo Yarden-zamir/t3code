@@ -192,6 +192,7 @@ import * as ForkPreviewServerGroups from "./fork/PreviewServerGroups.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
 import * as MachineExec from "./fork/machineMap/MachineExec.ts";
 import * as MachineExecRoute from "./fork/machineMap/machineExecRoute.ts";
+import * as ThreadIdentityRoute from "./fork/threadIdentityRoute.ts";
 import * as MachineHost from "./fork/machineMap/MachineHost.ts";
 import * as MachineMap from "./fork/machineMap/MachineMap.ts";
 import * as MachineMapState from "./fork/machineMap/MachineMapState.ts";
@@ -831,6 +832,8 @@ const layerMakeRoutes = Layer.mergeAll(
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
     Layer.provide(NodeSocket.layerWebSocketConstructor),
   ),
+  // Fork: thread attestation for kitshn, with the MCP credential of a thread.
+  ThreadIdentityRoute.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   // Follows delegated tasks running in linked environments, including after a restart.
   Layer.effectDiscard(
     RemoteDelegation.RemoteDelegation.pipe(Effect.flatMap((remote) => remote.start())),
