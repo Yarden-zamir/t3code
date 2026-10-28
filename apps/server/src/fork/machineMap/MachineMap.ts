@@ -727,6 +727,7 @@ const make = Effect.gen(function* () {
       });
       yield* Effect.logInfo("Machine map portal connection ended.", {
         reason: ended.reason,
+        message: ended.message,
         closeCode: ended.closeCode,
         failures,
       });

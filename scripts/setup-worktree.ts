@@ -3,6 +3,8 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
+import { forkVpCommand } from "./fork-setup-vp.ts";
+
 const ENV_FILES = [".env", NodePath.join("infra", "relay", ".env")];
 
 const worktree = NodePath.dirname(import.meta.dirname);
@@ -49,11 +51,14 @@ if (!projectRoot) {
 // Use the shell for Windows vp shims. Unattended installs need pnpm's confirmation
 // flag and closed stdin so other prompts fail. A stale lockfile must fail, not be rewritten.
 // Pipe output so the failure marker can keep its tail.
-const install = NodeChildProcess.spawn("vp i --frozen-lockfile -- --yes", {
-  cwd: worktree,
-  shell: true,
-  stdio: ["ignore", "pipe", "pipe"],
-});
+const install = NodeChildProcess.spawn(
+  `${forkVpCommand(projectRoot)} i --frozen-lockfile -- --yes`,
+  {
+    cwd: worktree,
+    shell: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  },
+);
 activeInstall = install;
 let installOutput = "";
 for (const [source, target] of [
