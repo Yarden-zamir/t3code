@@ -37,6 +37,7 @@ import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServer from "effect/http/HttpServer";
 import * as Socket from "effect/socket/Socket";
 
+import * as ServerSettings from "../../serverSettings.ts";
 import * as McpHttpServer from "../../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
@@ -288,6 +289,7 @@ const setup = Effect.gen(function* () {
       ),
       Layer.provide(threads),
       Layer.provide(tunnel),
+      Layer.provide(ServerSettings.layerTest()),
     ),
     { disableListenLog: true, disableLogger: true },
   ).pipe(Layer.provideMerge(Layer.fresh(NodeHttpServer.layerTest)), Layer.fresh, Layer.build);

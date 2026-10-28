@@ -9,7 +9,6 @@ import {
   setClientSettings,
 } from "./methods/clientSettings.ts";
 import {
-  clearConnectionCatalog,
   getConnectionCatalog,
   isCloudflareAccessChallenged,
   setConnectionCatalog,
@@ -32,7 +31,6 @@ import {
   ensureSshEnvironment,
   fetchSshEnvironmentDescriptor,
   fetchSshSessionState,
-  issueSshWebSocketTicket,
   resolveSshHost,
   resolveSshPasswordPrompt,
 } from "./methods/sshEnvironment.ts";
@@ -129,7 +127,6 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(dismissSnapShotAnimation);
   yield* ipc.handle(acknowledgeSnapShot);
   yield* ipc.handle(setConnectionCatalog);
-  yield* ipc.handle(clearConnectionCatalog);
   yield* ipc.handle(isCloudflareAccessChallenged);
 
   yield* ipc.handle(discoverSshHosts);
@@ -139,7 +136,6 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(fetchSshEnvironmentDescriptor);
   yield* ipc.handle(bootstrapSshBearerSession);
   yield* ipc.handle(fetchSshSessionState);
-  yield* ipc.handle(issueSshWebSocketTicket);
   yield* ipc.handle(resolveSshPasswordPrompt);
 
   yield* ipc.handle(getServerExposureState);

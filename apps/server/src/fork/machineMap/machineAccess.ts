@@ -425,5 +425,8 @@ export const isCliLocalUser = (scope: McpInvocationScope) =>
   scope.thread === undefined && scope.client?.label === CLI_LOCAL_USER_LABEL;
 
 /** MM-1921: the answer to a manual link or unlink, from the CLI, Connections or an agent. */
+/** `McpSchema.EnabledWhen` of `t3_environment_link` and `t3_environment_unlink`: links are arrows. */
+export const manualLinkToolsEnabled = (): boolean => false;
+
 export const MANUAL_LINK_REFUSAL =
   "Links to other machines come from the machine map. Set the arrow with agent tools in the portal.";

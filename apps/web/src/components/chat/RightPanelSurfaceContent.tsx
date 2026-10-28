@@ -38,7 +38,7 @@ export type RightPanelTerminalProps = Omit<
   "visible" | "threadRef" | "surface"
 >;
 
-export interface RightPanelPullRequestProps {
+interface RightPanelPullRequestProps {
   readonly capabilityKnown: boolean;
   readonly supported: boolean;
   readonly projectId: ProjectId | null;

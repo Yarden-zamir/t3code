@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { OrchestrationV2TurnItem, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  OrchestrationV2PendingBackgroundTask,
+  OrchestrationV2TurnItem,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 
 import { useClientSettings } from "~/hooks/useSettings";
@@ -7,8 +11,10 @@ import { environmentThreadDetails } from "../../state/threads";
 import ChatMarkdown from "../ChatMarkdown";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import type { ThreadNowItem } from "./ThreadNow";
 import {
   backgroundWorkDetailsMarkdown,
+  backgroundWorkFromPendingTask,
   type BackgroundWorkRef,
   linksOnlyMarkdown,
   resolveBackgroundWorkDetails,
@@ -127,4 +133,37 @@ function BackgroundWorkDetailsContent(props: {
       })}
     </div>
   );
+}
+
+/**
+ * Fork: upstream's background work line, with the details popover on its icon and the links of a
+ * plain title clickable. The line stays upstream's while the setting is off.
+ */
+export function withBackgroundWorkDetails(
+  item: ThreadNowItem | null,
+  input: {
+    readonly tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>;
+    readonly cwd: string | undefined;
+    readonly threadRef: ScopedThreadRef | null;
+  },
+): ThreadNowItem | null {
+  if (item === null) return null;
+  return {
+    ...item,
+    icon: (
+      <BackgroundWorkIcon
+        work={input.tasks.map(backgroundWorkFromPendingTask)}
+        cwd={input.cwd}
+        threadRef={input.threadRef}
+      >
+        {item.icon}
+      </BackgroundWorkIcon>
+    ),
+    title:
+      typeof item.title === "string" ? (
+        <BackgroundWorkText text={item.title} cwd={input.cwd} threadRef={input.threadRef} />
+      ) : (
+        item.title
+      ),
+  };
 }

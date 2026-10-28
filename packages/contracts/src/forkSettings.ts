@@ -51,47 +51,6 @@ export const SidebarOwnerFilter = Schema.Struct({
   ),
 });
 export type SidebarOwnerFilter = typeof SidebarOwnerFilter.Type;
-/** Fork: a local time of day for a snooze quick option. */
-const SnoozeQuickOptionTime = Schema.Struct({
-  hour: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 23 })),
-  minute: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 59 })),
-});
-export const SnoozeQuickOptionDay = Schema.Literals([
-  "today",
-  "tomorrow",
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday",
-]);
-export type SnoozeQuickOptionDay = typeof SnoozeQuickOptionDay.Type;
-/**
- * Fork: one entry of the `snoozeQuickOptions` client setting. "in" snoozes for a duration. "at"
- * snoozes until a local time today, tomorrow, or on the next given weekday. Limit: a desktop shell
- * fails to read the client settings when an entry has a kind that its schema does not know.
- * Revisit before a new kind: release the shell before the web client writes that kind.
- */
-export const SnoozeQuickOption = Schema.Union([
-  Schema.TaggedStruct("in", {
-    amount: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 999 })),
-    unit: Schema.Literals(["minutes", "hours", "days"]),
-    label: Schema.optionalKey(TrimmedNonEmptyString),
-  }),
-  Schema.TaggedStruct("at", {
-    day: SnoozeQuickOptionDay,
-    time: SnoozeQuickOptionTime,
-    label: Schema.optionalKey(TrimmedNonEmptyString),
-  }),
-]);
-export type SnoozeQuickOption = typeof SnoozeQuickOption.Type;
-export const MAX_SNOOZE_QUICK_OPTIONS = 10;
-const SnoozeQuickOptions = Schema.NullOr(
-  Schema.Array(SnoozeQuickOption).check(Schema.isMaxLength(MAX_SNOOZE_QUICK_OPTIONS)),
-);
-
 export const MIN_TOOLTIP_SHORTCUT_LIMIT = 1;
 export const MAX_TOOLTIP_SHORTCUT_LIMIT = 9;
 /** How many keys of one control its tooltip shows before "+N". */
@@ -277,11 +236,6 @@ export const ForkClientSettingsFields = {
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   /**
-   * Fork: the quick options of the web and desktop snooze menus, in menu order. Null keeps the
-   * built-in options. The mobile app always shows the built-in options.
-   */
-  snoozeQuickOptions: SnoozeQuickOptions.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
-  /**
    * Fork: focus levels. Escape moves focus from the composer to the timeline, then to the
    * sidebar. Arrow keys move a cursor in the timeline and the sidebar. Off by default, because
    * these keys change what Escape, arrows, `mod+f` and digits do today.
@@ -374,7 +328,6 @@ export const ForkClientSettingsPatchFields = {
   sidebarOwnerFilter: Schema.optionalKey(SidebarOwnerFilter),
   sidebarTabsEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarTabSingleThreadOpens: Schema.optionalKey(Schema.Boolean),
-  snoozeQuickOptions: Schema.optionalKey(SnoozeQuickOptions),
   keyboardFocusLevels: Schema.optionalKey(Schema.Boolean),
   focusLevelHighlight: Schema.optionalKey(Schema.Boolean),
   tooltipShortcuts: Schema.optionalKey(Schema.Boolean),

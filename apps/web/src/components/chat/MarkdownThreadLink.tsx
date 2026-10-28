@@ -1,41 +1,46 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, MessageId } from "@t3tools/contracts";
 import {
   formatThreadLink,
+  guessThreadLinkRef,
   percentDecodedThreadLinkId,
-  resolveThreadLinkRef,
+  type ThreadLink,
+  unknownThreadLinkLabel,
 } from "@t3tools/shared/threadLinks";
 
 import { useThreadRefs, useThreadShell } from "../../state/entities";
+import { UnresolvedChip } from "../contextChipParts";
 import { ThreadContextChip } from "../ThreadContextChip";
 
+/** `label` is the link's written text; an autolink has none. */
 export function MarkdownThreadLink(props: {
   readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
-  readonly label: string;
+  readonly link: ThreadLink;
+  readonly label: string | null;
   /** Fork: the link opens the thread at this message. */
   readonly messageId?: MessageId | null;
 }) {
-  const decodedId = percentDecodedThreadLinkId(props.threadId);
-  const written = useThreadShell(scopeThreadRef(props.environmentId, props.threadId));
+  const environmentId = props.link.environmentId ?? props.environmentId;
+  const decodedId = percentDecodedThreadLinkId(props.link.threadId);
+  const written = useThreadShell(scopeThreadRef(environmentId, props.link.threadId));
   const decoded = useThreadShell(
-    written === null && decodedId !== null ? scopeThreadRef(props.environmentId, decodedId) : null,
+    written === null && decodedId !== null ? scopeThreadRef(environmentId, decodedId) : null,
   );
   const local = written ?? decoded;
-  const refs = useThreadRefs(local === null);
-  const remote = useThreadShell(
-    local === null
-      ? resolveThreadLinkRef(scopeThreadRef(props.environmentId, props.threadId), refs)
-      : null,
-  );
+  const guess = local === null && props.link.environmentId === null;
+  const refs = useThreadRefs(guess);
+  const remote = useThreadShell(guess ? guessThreadLinkRef(props.link, refs) : null);
   const thread = local ?? remote;
-  const environmentId = thread?.environmentId ?? props.environmentId;
-  const threadId = thread?.id ?? props.threadId;
-  const title = thread?.title.trim() || props.label;
+  if (thread === null) {
+    const unknown = unknownThreadLinkLabel(props.link, props.environmentId);
+    return <UnresolvedChip label={props.label ?? unknown} tooltip={unknown} />;
+  }
+  const ref = { environmentId: thread.environmentId, threadId: thread.id };
+  const title = thread.title.trim() || props.label || "Untitled thread";
   return (
     <ThreadContextChip
-      record={{ environmentId, threadId, title: props.label }}
-      copyMarkdown={formatThreadLink(threadId, title, props.messageId ?? undefined)}
+      record={{ ...ref, title }}
+      copyMarkdown={formatThreadLink(ref, title, props.messageId ?? undefined)}
       messageId={props.messageId ?? null}
     />
   );

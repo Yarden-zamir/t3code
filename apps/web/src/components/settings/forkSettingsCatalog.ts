@@ -171,7 +171,6 @@ const FORK_SETTING_GROUPS = [
         place: "worktrees-creation",
       },
       { ids: ["sidebar-tabs", "sidebar-tab-single-thread"], place: "general-sidebar" },
-      { ids: ["snooze-quick-options"], place: "general-sidebar" },
       { ids: ["message-pins"], place: "general-display" },
       { ids: ["mobile-new-thread-project"], place: "appearance-mobile-app" },
       { ids: ["mobile-composer-camera"], place: "appearance-mobile-app" },

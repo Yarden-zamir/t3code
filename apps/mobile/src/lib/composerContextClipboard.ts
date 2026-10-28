@@ -13,7 +13,7 @@ import {
   decodeComposerContextFragment,
   encodeComposerContextFragment,
 } from "@t3tools/shared/composerContextClipboard";
-import { unreadableThreadContexts } from "@t3tools/shared/composerContextReferences";
+import { threadContextsOutsideEnvironment } from "@t3tools/shared/composerContextReferences";
 import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import * as Option from "effect/Option";
@@ -66,8 +66,9 @@ export async function importComposerContextClipboard(
   existingCount: number,
   signal: AbortSignal,
   existingContextCount = 0,
-  /** The destination environment and the machines it reads (MM-1906). */
-  destinationReadableEnvironmentIds?: ReadonlyArray<EnvironmentId>,
+  destinationEnvironmentId?: EnvironmentId,
+  /** The machines the destination links to, whose threads its agent can read too. */
+  linkedEnvironments: ReadonlyMap<EnvironmentId, string> = new Map(),
 ) {
   const fragment =
     decodeComposerContextFragment(input.fragment) ?? decodeComposerContextClipboardHtml(input.html);
@@ -75,12 +76,13 @@ export async function importComposerContextClipboard(
   const selected = referencedComposerContext(input.text, { version: 1, records: fragment.records });
   const imported = reidentifyComposerContext(input.text, selected?.records ?? [], uuidv4);
   const skippedThreads =
-    destinationReadableEnvironmentIds === undefined
+    destinationEnvironmentId === undefined
       ? []
-      : unreadableThreadContexts({
+      : threadContextsOutsideEnvironment({
           text: imported.text,
           records: imported.context.records,
-          readableEnvironmentIds: destinationReadableEnvironmentIds,
+          environmentId: destinationEnvironmentId,
+          linkedEnvironments,
         });
   const skippedIds = new Set(skippedThreads.map((record) => record.contextId));
   const retained = imported.context.records.filter((record) => !skippedIds.has(record.contextId));

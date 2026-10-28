@@ -51,7 +51,6 @@ const FORK_RESTORED_SETTINGS = [
   ["agentSessionImportMaxMessages", "Imported messages per session"],
   ["sidebarTabsEnabled", "Sidebar tabs"],
   ["sidebarTabSingleThreadOpens", "Single-thread tabs"],
-  ["snoozeQuickOptions", "Snooze quick options"],
   ["worktreePathTemplate", "Worktree path template"],
   ["repositoryOwnerFilters", "Repository owner filters"],
   ["pullRequestFilterChips", "Pull request filter chips"],

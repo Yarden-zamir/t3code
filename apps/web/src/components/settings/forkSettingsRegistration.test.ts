@@ -52,7 +52,6 @@ const FORK_PAGE_ROWS: Record<
   sidebarOwnerFilter: { notListed: "The sidebar owner filter menu sets it." },
   sidebarTabsEnabled: "sidebar-tabs",
   sidebarTabSingleThreadOpens: "sidebar-tab-single-thread",
-  snoozeQuickOptions: "snooze-quick-options",
   keyboardFocusLevels: "keyboard-focus-levels",
   focusLevelHighlight: "focus-level-highlight",
   tooltipShortcuts: "tooltip-shortcuts",

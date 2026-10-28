@@ -35,7 +35,7 @@ Fork main registers only the migration ids and names that `upstream/main` has. T
 
 ### Adopted upstream pull requests
 
-Fork main holds open `pingdotgg/t3code` pull requests that upstream did not merge yet. [`scripts/fork-adopted-upstream-prs.json`](../../scripts/fork-adopted-upstream-prs.json) lists them in stack order. Each entry has the number, the title, the upstream branch (`headRef`), the head that fork main holds (`mergedHead`), the reason, and the optional `forkRules`. Today the list holds the linked environments stack of Julius, #16653 to #16719, each pull request on the one before it.
+Fork main holds open `pingdotgg/t3code` pull requests that upstream did not merge yet. [`scripts/fork-adopted-upstream-prs.json`](../../scripts/fork-adopted-upstream-prs.json) lists them in stack order. Each entry has the number, the title, the upstream branch (`headRef`), the head that fork main holds (`mergedHead`), the reason, and the optional `forkRules`. Today the list is empty. Upstream merged the linked environments stack (#16653 to #16719) that it held.
 
 After the upstream main merge, Fork Sync runs `node scripts/fork-adopted-prs.ts sync`. For each entry, in list order, it reads the state of the pull request with `gh`:
 
@@ -53,13 +53,11 @@ To repair a failed sync by hand, run the same script on the repair branch after 
 
 To adopt another open pull request, merge its head with `git merge --no-ff` on a new branch from `origin/main` and add its entry at its place in the stack order. Apply the [migration rule](#migrations).
 
-The rules of the linked environments stack:
+The fork rules for upstream's linked environments:
 
-- The fork does not use upstream's manual links. `MachinePeers` gives `PeerLinks` and `PeerMcpClient` the machine map arrows (MM-1921).
-- The migrations `068_PeerLinks` and `069_PeerLinkFence` are not in the fork. See [Migrations](#migrations).
-- Fork runs skip the upstream tests that need their table. `apps/server/src/fork/excludedUpstreamTests.ts` lists them with the reason. `MachinePeers.test.ts` covers the same forwarding and delegation over arrow links. Remove those entries when upstream main has the migration.
-- The fork hooks in upstream files: the provide of `PeerForwarding.layer` in `server.ts`, the refusal layer in `cli/environment.ts`, and the peer link RPC handlers in `fork/forkWs.ts`. With those handlers in `ws.ts`, the handler object is too deep a type, and the server layers lose their types.
-- When an upstream merge conflicts in a file that only the stack touches, take upstream's version, then apply the fork hooks again.
+- The fork does not use upstream's manual links. `MachinePeers` gives `PeerLinks` and `PeerMcpClient` the machine map arrows (MM-1921), and its `link` and `unlink` refuse.
+- The fork hooks in upstream files: `MachinePeers.layer` in the runtime core of `server.ts`, and the refusal layer in `cli/environment.ts`.
+- Upstream's Labs setting `linkedEnvironmentsEnabled` gates links on each machine, also the arrow links. Set it on the owner's machines through the machine map.
 
 ### Fork Release
 
@@ -107,6 +105,7 @@ Each day at 09:00 Israel time, the VPS task "Fork daily release" promotes a nigh
 - The Lint job also runs `scripts/fork-check-doc-links.ts`. It fails on a relative link or an anchor that does not resolve in `README.md`, `docs/fork*`, `docs/fork/` or `apps/machine-map/*.md`.
 - The Lint job also fetches upstream main and runs `scripts/fork-check-migrations.ts`. See [Migrations](#migrations).
 - The Lint job also fetches the commits of HEAD without their files and runs `node scripts/fork-adopted-prs.ts check`. See [Adopted upstream pull requests](#adopted-upstream-pull-requests).
+- Fork runs skip the upstream tests in `apps/server/src/fork/excludedUpstreamTests.ts` and `apps/web/src/forkExcludedUpstreamTests.ts`, each with its reason. The web list holds browser tests that the smaller runner of Fork CI cannot run in time.
 
 ### Repair agent
 

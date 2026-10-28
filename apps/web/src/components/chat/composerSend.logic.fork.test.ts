@@ -1,7 +1,7 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { describe, expect, it } from "vite-plus/test";
-import { threadContextRecord } from "../../lib/composerContextRecords";
+import { threadContextRecord } from "@t3tools/shared/composerContextReferences";
 import { loadBalancingSendWarning } from "./composerSend.logic";
 
 const local = EnvironmentId.make("local");

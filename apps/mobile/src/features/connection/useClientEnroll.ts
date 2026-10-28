@@ -7,8 +7,6 @@ import { requestHeaderOrigin } from "@t3tools/client-runtime/connection";
 import { useAtomSet } from "@effect/atom-react";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
-import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/reactivity";
 import { useCallback } from "react";
 
 import {
@@ -20,10 +18,7 @@ import {
 import { type ClientEnrollResult, enrollWithInvite } from "../../connection/clientEnrollSteps";
 import { requestAppTokenSync } from "../../connection/forkAppTokenRepair";
 import { updateMobilePreferencesAtom } from "../../state/preferences";
-import {
-  setPendingConnectionError,
-  useRemoteConnections,
-} from "../../state/use-remote-environment-registry";
+import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useSaveCloudflareAccessToken } from "./CloudflareAccessFields";
 import { buildPairingUrl } from "./pairing";
 
@@ -44,8 +39,8 @@ function useEnrollClient() {
         saveClient: (client) => savePreferences({ appTokenClient: client }),
         pair: async (machine) => {
           const credential = await issueMachinePairingCredential(machine.origin);
-          const result = await onConnectPress(buildPairingUrl(machine.origin, credential));
-          if (!AsyncResult.isSuccess(result)) throw Cause.squash(result.cause);
+          const outcome = await onConnectPress(buildPairingUrl(machine.origin, credential));
+          if (!outcome.ok) throw new Error(outcome.error ?? "Could not pair with the machine.");
         },
       }),
     [onConnectPress, savePreferences, saveToken],
@@ -56,13 +51,16 @@ function useEnrollClient() {
  * Returns `enrollInvite(text)`. It starts the enroll and returns true when
  * `text` is a portal invite, and returns false for any other text.
  */
-export function useClientEnroll(setSubmitting: (submitting: boolean) => void) {
+export function useClientEnroll(
+  setSubmitting: (submitting: boolean) => void,
+  setError: (error: string | null) => void,
+) {
   const enrollClient = useEnrollClient();
   const navigation = useNavigation();
   const run = useCallback(
     async (invite: ClientInvite) => {
       setSubmitting(true);
-      setPendingConnectionError(null);
+      setError(null);
       // No `finally`: the React Compiler cannot compile a try/finally.
       let result: Awaited<ReturnType<typeof enrollClient>>;
       try {
@@ -70,7 +68,7 @@ export function useClientEnroll(setSubmitting: (submitting: boolean) => void) {
       } catch (cause) {
         setSubmitting(false);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        setPendingConnectionError(message(cause));
+        setError(message(cause));
         return;
       }
       setSubmitting(false);
@@ -85,7 +83,7 @@ export function useClientEnroll(setSubmitting: (submitting: boolean) => void) {
         return;
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setPendingConnectionError(
+      setError(
         result.paired.length === 0 && failures.length === 0
           ? `"${result.name}" has no machines yet. Give it access in the portal; this phone then adds them by itself.`
           : [
@@ -95,7 +93,7 @@ export function useClientEnroll(setSubmitting: (submitting: boolean) => void) {
             ].join("\n"),
       );
     },
-    [enrollClient, navigation, setSubmitting],
+    [enrollClient, navigation, setError, setSubmitting],
   );
   return useCallback(
     (text: string): boolean => {

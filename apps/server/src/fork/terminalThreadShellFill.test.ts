@@ -132,45 +132,38 @@ it.effect("refuses the shell field while the setting is off, on any thread", () 
   }),
 );
 
-it.effect("counts an attach stream as attached for its whole life, also through a resync", () =>
+it.effect("counts an attach stream as attached for its whole life", () =>
   Effect.gen(function* () {
     const counts = makeAttachCounts();
     const key = `draft-1/${DEFAULT_TERMINAL_ID}`;
-    const attachedAtResync: Array<boolean> = [];
-    const output = (data: string) => ({
-      type: "output" as const,
-      threadId: "draft-1",
-      terminalId: DEFAULT_TERMINAL_ID,
-      sequence: 1,
-      data,
-    });
+    const attachedWhileStreaming: Array<boolean> = [];
     const draft = services(null, {
       terminals: {
         forkRetainAttach: (attach) => counts.retain(`${attach.threadId}/${attach.terminalId}`),
-        // More output than the stream queues, so the stream drops it and resyncs.
-        attachStream: (_input, listener) =>
-          Effect.gen(function* () {
-            for (let chunk = 0; chunk < 3; chunk++) {
-              yield* listener(output("x".repeat(5 * 1024 * 1024)));
-            }
-            return () => {};
-          }),
-        resyncStream: (_input, listener) =>
-          Effect.gen(function* () {
-            attachedAtResync.push(counts.has(key));
-            yield* listener(output("after resync"));
-            return () => {};
-          }),
+        attachOutputStream: (attach, viewerId) =>
+          Stream.fromEffect(
+            Effect.sync(() => {
+              attachedWhileStreaming.push(counts.has(key));
+              return {
+                type: "output" as const,
+                threadId: attach.threadId,
+                terminalId: attach.terminalId,
+                sequence: 1,
+                data: viewerId,
+              };
+            }),
+          ),
       },
     });
 
-    const events = yield* terminalThreadAttachStream(draft, {
-      ...input(DEFAULT_TERMINAL_ID),
-      threadId: "draft-1",
-    }).pipe(Stream.take(1), Stream.runCollect);
+    const events = yield* terminalThreadAttachStream(
+      draft,
+      { ...input(DEFAULT_TERMINAL_ID), threadId: "draft-1" },
+      "viewer-1",
+    ).pipe(Stream.runCollect);
 
-    expect(events.map((event) => event.type === "output" && event.data)).toEqual(["after resync"]);
-    expect(attachedAtResync).toEqual([true]);
+    expect(events.map((event) => event.type === "output" && event.data)).toEqual(["viewer-1"]);
+    expect(attachedWhileStreaming).toEqual([true]);
     expect(counts.has(key)).toBe(false);
   }),
 );

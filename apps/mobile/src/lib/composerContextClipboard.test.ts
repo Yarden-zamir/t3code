@@ -212,7 +212,7 @@ describe("mobile context clipboard imports", () => {
       0,
       new AbortController().signal,
       COMPOSER_CONTEXT_MAX_RECORDS - 3,
-      [EnvironmentId.make("destination")],
+      EnvironmentId.make("destination"),
     );
     expect(result).not.toBeNull();
     expect(result!.context.records).toEqual([
@@ -256,7 +256,7 @@ describe("mobile context clipboard imports", () => {
         0,
         new AbortController().signal,
         COMPOSER_CONTEXT_MAX_RECORDS - 2,
-        [EnvironmentId.make("destination")],
+        EnvironmentId.make("destination"),
       ),
     ).rejects.toThrow("Remove some context");
     expect(mocks.download).not.toHaveBeenCalled();
@@ -270,7 +270,7 @@ describe("mobile context clipboard imports", () => {
       0,
       new AbortController().signal,
       0,
-      [EnvironmentId.make("destination")],
+      EnvironmentId.make("destination"),
     );
     expect(result).not.toBeNull();
     expect(result!.context.records).toEqual([
@@ -293,6 +293,22 @@ describe("mobile context clipboard imports", () => {
         .map((reference) => reference.label),
     ).toEqual([foreignThread.label, image.label]);
     expect(result!.text).toMatch(/^Compare these findings: .* before changing anything\.$/);
+  });
+
+  it("keeps a thread from a machine the destination links to", async () => {
+    const result = await importComposerContextClipboard(
+      mixedClipboard,
+      0,
+      new AbortController().signal,
+      0,
+      EnvironmentId.make("destination"),
+      new Map([[foreignThread.environmentId, "Source"]]),
+    );
+    expect(result!.skippedThreads).toEqual([]);
+    expect(result!.context.records.filter((record) => record.kind === "thread")).toEqual([
+      { ...foreignThread, contextId: expect.any(String) },
+      { ...localThread, contextId: expect.any(String) },
+    ]);
   });
 
   it("preserves both machines' thread references when pasting without a destination", async () => {

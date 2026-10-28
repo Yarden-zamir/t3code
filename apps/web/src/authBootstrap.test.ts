@@ -150,6 +150,8 @@ describe("resolveInitialServerAuthGateState", () => {
 
     const testWindow = installTestBrowser("http://localhost/");
     testWindow.desktopBridge = {
+      // Fork: the session read resolves the server address for the browser key proof (MM-917).
+      getLocalEnvironmentEnabled: () => true,
       getLocalEnvironmentBootstraps: () => [
         {
           id: "primary",

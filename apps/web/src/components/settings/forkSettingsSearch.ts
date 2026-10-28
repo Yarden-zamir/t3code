@@ -81,12 +81,6 @@ export const ORGANIZATION_ITEMS = [
     searchTerms: ["sidebar tab one thread open directly"],
   },
   {
-    id: "snooze-quick-options",
-    title: "Snooze quick options",
-    to: "/settings/general",
-    searchTerms: ["snooze menu presets choices later tonight tomorrow next week remind wake"],
-  },
-  {
     id: "repository-owner-filters",
     title: "Repository owner filters",
     to: "/settings/general",

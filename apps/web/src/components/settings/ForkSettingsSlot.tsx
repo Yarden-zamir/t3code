@@ -49,7 +49,6 @@ import { RecoverInterruptedTurnsSettings } from "./RecoverInterruptedTurnsSettin
 import { RepositoryOwnerFiltersSettingsRow } from "./RepositoryOwnerFiltersSettingsRow";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import { SidebarTabsSettingsRow } from "./SidebarTabsSettingsRow";
-import { SnoozeQuickOptionsSettingsRow } from "./SnoozeQuickOptionsSettingsRow";
 import { TerminalHistorySettingsRows } from "./TerminalHistorySettingsRows";
 import { TerminalKeyMappingsSettingsRow } from "./TerminalKeyMappingsSettingsRow";
 import { TerminalThreadFontLimitsSettingsRow } from "./TerminalThreadFontLimitsSettingsRow";
@@ -104,7 +103,6 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "pull-request-watch-roles": PullRequestWatchSettingsRows,
   "agent-session-import-window": AgentSessionImportSettingsRows,
   "sidebar-tabs": SidebarTabsSettingsRow,
-  "snooze-quick-options": SnoozeQuickOptionsSettingsRow,
   "storage-worktree-path-template": WorktreePathTemplateRow,
   "repository-owner-filters": RepositoryOwnerFiltersSettingsRow,
   "pull-request-filter-chips": PullRequestFilterChipsSettingsRow,

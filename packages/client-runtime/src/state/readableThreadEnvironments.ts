@@ -1,10 +1,35 @@
-import { type EnvironmentId, WS_METHODS } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type MachineMapReadableEnvironment,
+  WS_METHODS,
+} from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 
-import { readableThreadEnvironments } from "../composerThreadItems.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { createEnvironmentRpcQueryAtomFamily, executeAtomQuery } from "./runtime.ts";
+
+/** An environment whose threads the agents of another environment can read, with its machine name. */
+export interface ReadableThreadEnvironment {
+  readonly environmentId: EnvironmentId;
+  readonly name: string | null;
+}
+
+/**
+ * Fork: MM-1906. The environment first, then the machines that its server reads through the
+ * machine map (`machineMap.readableEnvironments`). Without that answer, for example from a server
+ * without the machine map, the agent reads only its own environment.
+ */
+function readableThreadEnvironments(
+  environmentId: EnvironmentId,
+  served: ReadonlyArray<MachineMapReadableEnvironment> | null,
+): ReadonlyArray<ReadableThreadEnvironment> {
+  const self = served?.find((entry) => entry.environmentId === environmentId);
+  return [
+    { environmentId, name: self?.name ?? null },
+    ...(served ?? []).filter((entry) => entry.environmentId !== environmentId),
+  ];
+}
 
 /**
  * Fork: MM-1906, MM-1907. The machines whose threads the agents of an environment can read, for the

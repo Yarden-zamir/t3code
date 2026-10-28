@@ -8,7 +8,7 @@ import {
   onSizeChanged,
   size,
 } from "@expo/ui/jetpack-compose/modifiers";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Pressable, View, type StyleProp, type ViewStyle } from "react-native";
 import { useAndroidControlSizing } from "./ui/useAndroidControlSizing";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
@@ -35,9 +35,9 @@ export function ScrollComposeButton(props: {
     colors["--color-primary"],
   );
   const rippleRadius = useThemeRadius(16);
-  const rememberWidth = useCallback(({ width }: { width: number }) => {
+  const rememberWidth = ({ width }: { width: number }) => {
     setButtonWidth((previous) => Math.max(previous, width));
-  }, []);
+  };
   return (
     <View
       pointerEvents="box-none"

@@ -177,7 +177,7 @@ export function ForkContextMenuHost() {
   );
 
   const enabled = useClientSettings(selectEnabled);
-  // oxlint-disable-next-line t3code/react-effect-budget -- registers this host with the module store while the setting is on
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers this host with the module store while the setting is on
   useEffect(() => (enabled ? registerForkContextMenuHost() : undefined), [enabled]);
 
   if (request === null) return null;

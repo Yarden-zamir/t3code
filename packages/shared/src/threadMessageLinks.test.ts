@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import { formatThreadLink, parseThreadLinkHref, relabelThreadLinks } from "./threadLinks.ts";
 import {
@@ -10,11 +11,11 @@ import {
 
 describe("message links", () => {
   it("reads the thread and the message of a link with and without a fragment", () => {
-    expect(parseThreadLinkHref("t3-thread://v1/mcp:1")).toBe("mcp:1");
+    expect(parseThreadLinkHref("t3-thread://v1/mcp:1")?.threadId).toBe("mcp:1");
     expect(threadLinkMessageId("t3-thread://v1/mcp:1")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v1/mcp:1#msg:2")).toBe("mcp:1");
+    expect(parseThreadLinkHref("t3-thread://v1/mcp:1#msg:2")?.threadId).toBe("mcp:1");
     expect(threadLinkMessageId("t3-thread://v1/mcp:1#msg:2")).toBe("msg:2");
-    expect(parseThreadLinkHref("t3-thread://v1/mcp:1#")).toBe("mcp:1");
+    expect(parseThreadLinkHref("t3-thread://v1/mcp:1#")?.threadId).toBe("mcp:1");
     expect(threadLinkMessageId("t3-thread://v1/mcp:1#")).toBeNull();
     expect(parseThreadLinkHref("t3-thread://v1/#msg")).toBeNull();
   });
@@ -33,10 +34,11 @@ describe("message links", () => {
   });
 
   it("formats and relabels a link with its message", () => {
-    expect(formatThreadLink("t1", "Fix", "m1")).toBe("[Fix](t3-thread://v1/t1#m1)");
-    expect(relabelThreadLinks("[Old](t3-thread://v1/t1#m1)", () => "New")).toBe(
-      "[New](t3-thread://v1/t1#m1)",
-    );
+    const link = { environmentId: null, threadId: ThreadId.make("t1") };
+    expect(formatThreadLink(link, "Fix", "m1")).toBe("[Fix](t3-thread://v1/t1#m1)");
+    expect(
+      relabelThreadLinks("[Old](t3-thread://v1/t1#m1)", EnvironmentId.make("env-1"), () => "New"),
+    ).toBe("[New](t3-thread://v1/t1#m1)");
   });
 });
 

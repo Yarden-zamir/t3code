@@ -172,7 +172,7 @@ export function startThreadNotifications(
       notification.addEventListener("click", () => {
         notification.close();
         window.focus();
-        void window.desktopBridge?.revealWindow?.().catch(() => undefined);
+        void window.desktopBridge?.revealWindow().catch(() => undefined);
         void router.navigate({
           to: "/$environmentId/$threadId",
           params: { environmentId, threadId: thread.id },
@@ -206,11 +206,14 @@ export function startThreadNotifications(
     environmentId: EnvironmentId,
     entry: WatchedEnvironment,
     threads: ReadonlyArray<OrchestrationV2ThreadShell>,
-    subagentRequests: ReadonlyMap<ThreadId, PendingSubagentRequest>,
-    delegatedUnderParent: ReadonlySet<string>,
   ) => {
     const previous = entry.previous;
     const next = new Map<ThreadId, NotificationState>();
+    // A parent here also hears of what its tasks on linked environments ask.
+    const subagentRequests = registry.get(
+      environmentThreadShells.pendingSubagentRequestsAtom(environmentId),
+    );
+    const delegatedUnderParent = registry.get(environmentThreadShells.delegatedUnderParentAtom);
     const changed: Array<[NotificationState | undefined, NotificationState]> = [];
     for (const rawThread of threads) {
       if (
@@ -272,42 +275,45 @@ export function startThreadNotifications(
         if (state) present(environmentId, state, kind);
       }),
     };
-    const shellAtom = environmentShell.stateValueAtom(environmentId);
-    // Fork: a parent here also hears of what its tasks on linked environments ask.
-    const subagentRequestsAtom = environmentThreadShells.pendingSubagentRequestsAtom(environmentId);
-    const { delegatedUnderParentAtom } = environmentThreadShells;
-    const observe = () => {
-      const shell = registry.get(shellAtom);
-      const threads =
-        shell.status === "live" && Option.isSome(shell.snapshot)
-          ? shell.snapshot.value.threads
-          : null;
-      if (threads !== null) {
-        observeThreads(
-          environmentId,
-          entry,
-          threads,
-          registry.get(subagentRequestsAtom),
-          registry.get(delegatedUnderParentAtom),
-        );
-        return;
-      }
-      entry.gate.clear();
-      entry.previous = new Map();
+    let threads: ReadonlyArray<OrchestrationV2ThreadShell> | null = null;
+    const unsubscribeShell = registry.subscribe(
+      environmentShell.stateValueAtom(environmentId),
+      (shell) => {
+        threads =
+          shell.status === "live" && Option.isSome(shell.snapshot)
+            ? shell.snapshot.value.threads
+            : null;
+        if (threads !== null) {
+          observeThreads(environmentId, entry, threads);
+          return;
+        }
+        entry.gate.clear();
+        entry.previous = new Map();
+      },
+      { immediate: true },
+    );
+    const reobserve = () => {
+      if (threads !== null) observeThreads(environmentId, entry, threads);
     };
-    const unsubscribes = [
-      registry.subscribe(subagentRequestsAtom, observe),
-      registry.subscribe(delegatedUnderParentAtom, observe),
-      registry.subscribe(shellAtom, observe, { immediate: true }),
-      watchForkTerminalThreadNotifications({
-        registry,
-        router,
-        environmentId,
-        trackNotification,
-      }),
-    ];
+    const unsubscribeRequests = registry.subscribe(
+      environmentThreadShells.pendingSubagentRequestsAtom(environmentId),
+      reobserve,
+    );
+    const unsubscribeDelegated = registry.subscribe(
+      environmentThreadShells.delegatedUnderParentAtom,
+      reobserve,
+    );
+    const unsubscribeForkTerminal = watchForkTerminalThreadNotifications({
+      registry,
+      router,
+      environmentId,
+      trackNotification,
+    });
     entry.unsubscribe = () => {
-      for (const unsubscribe of unsubscribes) unsubscribe();
+      unsubscribeShell();
+      unsubscribeRequests();
+      unsubscribeDelegated();
+      unsubscribeForkTerminal();
       entry.gate.clear();
     };
     return entry;
@@ -350,7 +356,7 @@ export function startThreadNotifications(
     clearPending();
     const stops: Array<() => void> = [];
     if (hasDesktopNotifications(nextMode)) {
-      const unsubscribeBadgeClear = window.desktopBridge?.onNotificationBadgeClear?.(clearPending);
+      const unsubscribeBadgeClear = window.desktopBridge?.onNotificationBadgeClear(clearPending);
       window.addEventListener("focus", clearPending);
       stops.push(() => {
         unsubscribeBadgeClear?.();

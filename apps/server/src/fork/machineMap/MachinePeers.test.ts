@@ -63,6 +63,7 @@ import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSearch from "../../orchestration-v2/ThreadSearch.ts";
 import * as PeerForwarding from "../../peer/PeerForwarding.ts";
+import * as PeerLinkRequests from "../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../peer/PeerLinks.ts";
 import { descriptorOf, servePeer, type ServedPeer } from "../../peer/PeerLinks.testkit.ts";
 import * as RemoteDelegation from "../../peer/RemoteDelegation.ts";
@@ -312,6 +313,8 @@ const serveVps = (seen: Ref.Ref<Seen>, mapNow: Ref.Ref<MapNow>, vpsRun: VpsRun) 
       Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
       Layer.provide(ServerSettings.layerTest()),
       Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
+      Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+      Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
       Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
     ),
   ).pipe(
@@ -526,7 +529,9 @@ const makeMac = (
           ),
         ),
       ),
-      Layer.provide(Layer.succeedContext(links)),
+      Layer.provide(
+        Layer.merge(Layer.succeedContext(links), Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+      ),
       Layer.provide(NodeCrypto.layer),
       Layer.provideMerge(
         Layer.mock(ThreadManagement.ThreadManagementService)({
@@ -989,7 +994,7 @@ it.effect("refuses manual links: they come from the arrows", () =>
 );
 
 // Delegation: A's real orchestrator with remote delegation over the arrow link, as in upstream's
-// `RemoteDelegation.test.ts`, which fork runs skip (`src/fork/excludedUpstreamTests.ts`).
+// `RemoteDelegation.test.ts`.
 
 const instanceId = ProviderInstanceId.make("codex");
 const driver = ProviderDriverKind.make("codex");
@@ -1070,6 +1075,7 @@ const setupDelegation = (initial: MapNow) =>
         ),
       ),
       Layer.provide(Layer.succeedContext(links)),
+      Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
       Layer.provide(NodeCrypto.layer),
       Layer.provideMerge(layerThreads),
       Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),

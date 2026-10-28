@@ -2,7 +2,6 @@ import type { AuthSessionState } from "@t3tools/contracts";
 import { ExternalLinkIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { APP_DISPLAY_NAME } from "../../branding";
 import { fetchSessionState } from "../../environments/primary";
 import { Button } from "../ui/button";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
@@ -35,9 +34,8 @@ export function ClientPendingSurface({
   }, []);
 
   return (
-    <StandalonePage tone="pairing">
+    <StandalonePage>
       <StandalonePageHeader
-        eyebrow={APP_DISPLAY_NAME}
         title="Waiting for approval"
         description={
           pending.code === null

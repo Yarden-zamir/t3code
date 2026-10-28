@@ -30,7 +30,7 @@ import {
 } from "./MessagesTimeline.logic";
 
 /*
- * Fork: opens a thread at one message. A `t3-thread://v1/<threadId>#<messageId>` link, a thread
+ * Fork: opens a thread at one message. A `t3-thread://` link with `#<messageId>`, a thread
  * address with `#<messageId>` or `?message=<messageId>`, and an app link reach the thread route.
  * The timeline loads history, opens the fold, scrolls the message near the top and highlights it.
  * When pingdotgg/t3code#19203 merges, use its `useLinkedMessageTarget` and keep the fork links.

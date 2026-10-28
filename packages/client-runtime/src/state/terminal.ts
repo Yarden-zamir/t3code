@@ -18,7 +18,6 @@ import {
   type AtomCommand,
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
-  createEnvironmentRpcSubscriptionAtomFamily,
   createEnvironmentSubscriptionAtomFamily,
   runAtomCommand,
 } from "./runtime.ts";
@@ -92,10 +91,6 @@ export function createTerminalEnvironmentAtoms<R, E>(
       idleTtlMs: 5_000,
       subscribe: attachStream,
     }),
-    events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
-      label: "environment-data:terminal:events",
-      tag: WS_METHODS.subscribeTerminalEvents,
-    }),
     metadata: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:metadata",
       subscribe: (_input: null) =>
@@ -124,12 +119,6 @@ export function createTerminalEnvironmentAtoms<R, E>(
     clear: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:terminal:clear",
       tag: WS_METHODS.terminalClear,
-      scheduler: lifecycleScheduler,
-      concurrency: lifecycleConcurrency,
-    }),
-    restart: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:terminal:restart",
-      tag: WS_METHODS.terminalRestart,
       scheduler: lifecycleScheduler,
       concurrency: lifecycleConcurrency,
     }),

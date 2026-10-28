@@ -1,7 +1,6 @@
 import { formatThreadAppLink, parseThreadAddress } from "@t3tools/shared/threadAddress";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { APP_DISPLAY_NAME } from "~/branding";
 import { isElectron } from "~/env";
 import { usePrimarySettings } from "~/hooks/useSettings";
 import { useEnvironmentIds } from "~/state/environments";
@@ -64,9 +63,8 @@ function ThreadAddressLanding(props: {
   }, [props.appLink]);
 
   return (
-    <StandalonePage tone="brand">
+    <StandalonePage>
       <StandalonePageHeader
-        eyebrow={APP_DISPLAY_NAME}
         title="Opened in T3 Code"
         description="This thread opened in the desktop app. You can also continue in this tab."
       />

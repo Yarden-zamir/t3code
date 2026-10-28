@@ -21,6 +21,7 @@ import {
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   AuthOrchestrationOperateScope,
+  type EnvironmentId,
   type EnvironmentMachineKind,
   type ScopedThreadRef,
   type ThreadCardLayout,
@@ -93,8 +94,7 @@ import {
   useLinkedThreadPullRequest,
   ThreadSearchPullRequestNumber,
 } from "../ThreadStatusIndicators";
-import { type SnoozePreset } from "../Sidebar.snooze";
-import { resolveSnoozePresets } from "../snoozeQuickOptions";
+import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { ShortcutHint } from "../focusLevels/ShortcutHint";
 import { resolveThreadCardInfo } from "@t3tools/client-runtime/thread-card-info";
 import { slotLayoutHeightPx } from "../SlotLayoutView";
@@ -118,7 +118,7 @@ import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
-import { getTriggerDisplayModelLabel } from "../chat/providerIconUtils";
+import { getTriggerDisplayModelName } from "../chat/providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
 import {
@@ -387,10 +387,13 @@ function SnoozeMenuButton(props: {
   onOpenChange: (open: boolean) => void;
   onSnooze: (preset: Pick<SnoozePreset, "snoozedUntil">) => void;
   timestampFormat: TimestampFormat;
+  environmentId: EnvironmentId;
 }) {
-  const { open, onOpenChange, onSnooze, timestampFormat } = props;
-  // oxlint-disable-next-line react/purity -- Presets are resolved only while the menu is open, so each opening reads a fresh time.
-  const presets = open ? resolveSnoozePresets(new Date(), timestampFormat) : [];
+  const { open, onOpenChange, onSnooze, timestampFormat, environmentId } = props;
+  const presets = open
+    ? // oxlint-disable-next-line react/purity -- Presets are resolved only while the menu is open, so each opening reads a fresh time.
+      resolveSnoozePresets(new Date(), timestampFormat, environmentId)
+    : [];
   return (
     <Menu open={open} onOpenChange={onOpenChange}>
       <Tooltip>
@@ -419,14 +422,15 @@ function SnoozeMenuButton(props: {
             key={preset.id}
             onClick={(event) => {
               event.stopPropagation();
-              onSnooze(preset);
+              const picked = pickSnoozePreset(presets, preset.id, timestampFormat, environmentId);
+              if (picked) onSnooze(picked);
             }}
           >
             {preset.label}
             <MenuShortcut>{preset.whenLabel}</MenuShortcut>
           </MenuItem>
         ))}
-        <MenuSeparator />
+        {presets.length > 0 ? <MenuSeparator /> : null}
         <MenuItem
           onClick={async (event) => {
             event.stopPropagation();
@@ -531,6 +535,7 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
 type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
+  navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
   snoozeSupported: boolean;
@@ -793,7 +798,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     (model) => model.slug === thread.modelSelection.model,
   );
   const modelLabel = selectedModel
-    ? getTriggerDisplayModelLabel(selectedModel)
+    ? getTriggerDisplayModelName(selectedModel, providerEntry?.driverKind)
     : thread.modelSelection.model;
 
   const isRemote = thread.environmentId !== props.currentEnvironmentId;
@@ -832,6 +837,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   };
   const handleKeyDown = (event: ReactKeyboardEvent) => {
     if (event.target !== event.currentTarget) return;
+    if (
+      event.key === "F2" &&
+      !isRenaming &&
+      readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)
+    ) {
+      event.preventDefault();
+      onStartRename(threadRef, thread.title);
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     onThreadActivate(threadRef);
@@ -1127,8 +1141,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             render={
               <div
                 ref={rowRef}
-                role="button"
-                tabIndex={0}
+                role="treeitem"
+                tabIndex={-1}
+                data-sidebar-row={threadKey}
+                data-sidebar-parent={props.navigationParent}
                 aria-label={accessibility.label}
                 aria-current={accessibility.current}
                 data-testid="sidebar-row-slim"
@@ -1375,6 +1391,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               onOpenChange={setSnoozeMenuOpen}
               onSnooze={handleSnoozePreset}
               timestampFormat={props.timestampFormat}
+              environmentId={thread.environmentId}
             />
           ) : null}
           {props.settlementSupported ? (
@@ -1471,8 +1488,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           render={
             <div
               ref={rowRef}
-              role="button"
-              tabIndex={0}
+              role="treeitem"
+              tabIndex={-1}
+              data-sidebar-row={threadKey}
+              data-sidebar-parent={props.navigationParent}
               aria-label={accessibility.label}
               aria-current={accessibility.current}
               data-testid="sidebar-row-card"
@@ -1648,7 +1667,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
     (model) => model.slug === thread.modelSelection.model,
   );
   const modelLabel = selectedModel
-    ? getTriggerDisplayModelLabel(selectedModel)
+    ? getTriggerDisplayModelName(selectedModel, providerEntry?.driverKind)
     : thread.modelSelection.model;
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
