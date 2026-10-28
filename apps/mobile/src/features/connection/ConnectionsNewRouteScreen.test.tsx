@@ -66,6 +66,16 @@ vi.mock("./CloudEnvironmentRows", () => ({ CloudEnvironmentRows: () => null }));
 vi.mock("./environmentSections", () => ({
   splitEnvironmentSections: () => ({ connectedCloudEnvironments: [] }),
 }));
+// Fork: the invite enroll and Cloudflare Access fields load native modules.
+vi.mock("./useClientEnroll", () => ({ useClientEnroll: () => () => false }));
+vi.mock("./forkClientInvite", () => ({ useForkClientInvite: () => undefined }));
+vi.mock("./CloudflareAccessFields", () => ({
+  useAddEnvironmentCloudflareAccess: () => ({
+    message: null,
+    section: null,
+    stage: async () => ({ undo: async () => undefined }),
+  }),
+}));
 vi.mock("./devAutoConnect", () => ({
   autoConnectReport: () => ({ connecting: false, error: null }),
   devAutoConnectAttemptAtom: {},

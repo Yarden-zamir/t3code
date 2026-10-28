@@ -71,7 +71,7 @@ function PairingForm({
   /** Fork: a portal client invite to enroll with (MM-904). */
   readonly inviteUrl: string | undefined;
 }) {
-  const { connectionPairingUrl, connectionError, onChangeConnectionPairingUrl, onConnectPress } =
+  const { connectionPairingUrl, onChangeConnectionPairingUrl, onConnectPress } =
     useRemoteConnections();
   const navigation = useNavigation();
   const routeName = useRoute().name;
@@ -89,14 +89,13 @@ function PairingForm({
     ownAttempt,
   );
   const connecting = isSubmitting || autoConnect.connecting;
-  // Fork: `connectionError` carries the failure of a client invite enroll (useClientEnroll).
-  const pairingConnectionError = submitError ?? autoConnect.error ?? connectionError;
+  const pairingConnectionError = submitError ?? autoConnect.error;
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const screenFocused = useIsFocused();
   const [scannerLocked, setScannerLocked] = useState(false);
   // A good scan parks the camera so it can't re-read the code over later edits.
   const [scanComplete, setScanComplete] = useState(false);
-  const enrollInvite = useClientEnroll(setIsSubmitting);
+  const enrollInvite = useClientEnroll(setIsSubmitting, setSubmitError);
   const access = useAddEnvironmentCloudflareAccess({
     pairingUrl: buildPairingUrl(hostInput, codeInput),
     failure: pairingConnectionError,
