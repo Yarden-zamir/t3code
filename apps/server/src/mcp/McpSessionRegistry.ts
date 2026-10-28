@@ -30,6 +30,10 @@ export interface McpSessionRegistryShape {
   readonly resolve: (
     rawToken: string,
   ) => Effect.Effect<McpInvocationContext.McpThreadInvocationScope | undefined>;
+  /** Fork: `resolve` without the idle-life extension, for read-only credential checks. */
+  readonly inspect: (
+    rawToken: string,
+  ) => Effect.Effect<McpInvocationContext.McpThreadInvocationScope | undefined>;
   readonly touch: (threadId: ThreadId) => Effect.Effect<void>;
   readonly revokeProviderSession: (providerSessionId: string) => Effect.Effect<void>;
   readonly revokeThread: (threadId: ThreadId) => Effect.Effect<void>;
@@ -137,20 +141,32 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     },
   );
 
+  // `resolve` and `inspect` own the span.
+  const lookup = Effect.fnUntraced(function* (rawToken: string, extend: boolean) {
+    if (rawToken.length === 0) return undefined;
+    const tokenHash = yield* hashToken(rawToken);
+    const timestamp = yield* currentTimeMillis;
+    return yield* SynchronizedRef.modify(state, ({ records }) => {
+      const record = records.get(tokenHash);
+      if (!record || timestamp - record.lastAliveAt > livenessWindowMs) {
+        return [undefined, { records }] as const;
+      }
+      if (!extend) return [record.scope, { records }] as const;
+      const next = new Map(records);
+      next.set(tokenHash, { ...record, lastAliveAt: timestamp });
+      return [record.scope, { records: next }] as const;
+    });
+  });
+
   const resolve: McpSessionRegistryShape["resolve"] = Effect.fn("McpSessionRegistry.resolve")(
     function* (rawToken) {
-      if (rawToken.length === 0) return undefined;
-      const tokenHash = yield* hashToken(rawToken);
-      const timestamp = yield* currentTimeMillis;
-      return yield* SynchronizedRef.modify(state, ({ records }) => {
-        const record = records.get(tokenHash);
-        if (!record || timestamp - record.lastAliveAt > livenessWindowMs) {
-          return [undefined, { records }] as const;
-        }
-        const next = new Map(records);
-        next.set(tokenHash, { ...record, lastAliveAt: timestamp });
-        return [record.scope, { records: next }] as const;
-      });
+      return yield* lookup(rawToken, true);
+    },
+  );
+
+  const inspect: McpSessionRegistryShape["inspect"] = Effect.fn("McpSessionRegistry.inspect")(
+    function* (rawToken) {
+      return yield* lookup(rawToken, false);
     },
   );
 
@@ -177,6 +193,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   return McpSessionRegistry.of({
     issue,
     resolve,
+    inspect,
     touch,
     revokeProviderSession: Effect.fn("McpSessionRegistry.revokeProviderSession")(
       function* (providerSessionId) {
