@@ -1300,7 +1300,6 @@ describe("resolveSidebarRouteReveal", () => {
         scopedProjectKeys,
         delegatedUnderParent: new Set(),
         findThread,
-        delegatedUnderParent: new Set(),
       }),
     ).toEqual({ pendingKey: hiddenKey, widensScope: true });
   });
@@ -1315,7 +1314,6 @@ describe("resolveSidebarRouteReveal", () => {
         scopedProjectKeys,
         delegatedUnderParent: new Set(),
         findThread,
-        delegatedUnderParent: new Set(),
       }),
     ).toEqual({ pendingKey: null, widensScope: false });
   });
@@ -1332,7 +1330,6 @@ describe("resolveSidebarRouteReveal", () => {
         scopedProjectKeys,
         delegatedUnderParent: new Set(),
         findThread,
-        delegatedUnderParent: new Set(),
       });
     resolve("environment-test:unlisted");
     expect(resolve(hiddenKey)).toEqual({ pendingKey: hiddenKey, widensScope: true });
@@ -1347,7 +1344,6 @@ describe("resolveSidebarRouteReveal", () => {
         scopedProjectKeys,
         delegatedUnderParent: new Set(),
         findThread,
-        delegatedUnderParent: new Set(),
       }),
     ).toEqual({ pendingKey: hiddenKey, widensScope: false });
   });

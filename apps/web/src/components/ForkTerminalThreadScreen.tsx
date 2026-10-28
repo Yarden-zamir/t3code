@@ -660,7 +660,8 @@ function useThreadShortcuts(threadRef: ScopedThreadRef, linkedPullRequestUrl: st
   const copyReference = () => {
     if (!thread) return;
     const target = resolveThreadReferenceCopyTarget({
-      threadId: thread.id,
+      threadRef,
+      title: thread.title,
       openPanelPullRequestUrl,
       pullRequests: thread.pullRequests,
       linkedPullRequestUrl: linkedPullRequestUrl ?? thread.branchPullRequest?.url ?? null,

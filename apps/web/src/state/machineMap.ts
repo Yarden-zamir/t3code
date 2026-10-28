@@ -1,5 +1,4 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ReadableThreadEnvironment } from "@t3tools/client-runtime/composerThreadItems";
 import { createReadableThreadEnvironmentAtoms } from "@t3tools/client-runtime/state/readableThreadEnvironments";
 import {
   createEnvironmentRpcCommand,
@@ -73,19 +72,6 @@ export const machinesRead = createEnvironmentRpcQueryAtomFamily(connectionAtomRu
 
 const readableThreadEnvironmentAtoms = createReadableThreadEnvironmentAtoms(connectionAtomRuntime);
 
-const NO_READABLE_ENVIRONMENTS = Atom.make<ReadonlyArray<ReadableThreadEnvironment>>([]);
-
-/** MM-1907: the composer's environment first, then the machines that its agent reads. */
-export function useReadableThreadEnvironments(
-  environmentId: EnvironmentId | null,
-): ReadonlyArray<ReadableThreadEnvironment> {
-  return useAtomValue(
-    environmentId === null
-      ? NO_READABLE_ENVIRONMENTS
-      : readableThreadEnvironmentAtoms.readable(environmentId),
-  );
-}
-
 /** MM-1906: the readable environment ids of each environment in `environmentIds`. */
 export function useReadableEnvironmentIdsByEnvironment(
   environmentIds: ReadonlyArray<EnvironmentId>,
@@ -94,7 +80,3 @@ export function useReadableEnvironmentIdsByEnvironment(
     readableThreadEnvironmentAtoms.readableIdsByEnvironment(environmentIds.join("\u0000")),
   );
 }
-
-/** MM-1906: the readable environment ids of `environmentId` once its server answered. */
-export const loadReadableThreadEnvironmentIds = (environmentId: EnvironmentId) =>
-  readableThreadEnvironmentAtoms.loadReadableIds(appAtomRegistry, environmentId);

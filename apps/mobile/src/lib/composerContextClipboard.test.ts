@@ -212,7 +212,7 @@ describe("mobile context clipboard imports", () => {
       0,
       new AbortController().signal,
       COMPOSER_CONTEXT_MAX_RECORDS - 3,
-      [EnvironmentId.make("destination")],
+      EnvironmentId.make("destination"),
     );
     expect(result).not.toBeNull();
     expect(result!.context.records).toEqual([
@@ -256,7 +256,7 @@ describe("mobile context clipboard imports", () => {
         0,
         new AbortController().signal,
         COMPOSER_CONTEXT_MAX_RECORDS - 2,
-        [EnvironmentId.make("destination")],
+        EnvironmentId.make("destination"),
       ),
     ).rejects.toThrow("Remove some context");
     expect(mocks.download).not.toHaveBeenCalled();
@@ -270,7 +270,7 @@ describe("mobile context clipboard imports", () => {
       0,
       new AbortController().signal,
       0,
-      [EnvironmentId.make("destination")],
+      EnvironmentId.make("destination"),
     );
     expect(result).not.toBeNull();
     expect(result!.context.records).toEqual([

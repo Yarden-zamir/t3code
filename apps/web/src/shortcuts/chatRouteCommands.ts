@@ -7,10 +7,16 @@ import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { dispatchPreviewAction, type PreviewAction } from "../components/preview/previewActionBus";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
-import { createNewThreadHandler, resolveDefaultProjectRef } from "../hooks/useHandleNewThread";
+import { readTerminalThreadsAvailable } from "../hooks/useForkTerminalThreads";
+import {
+  createNewTerminalThreadHandler,
+  createNewThreadHandler,
+  resolveDefaultProjectRef,
+} from "../hooks/useHandleNewThread";
 import { createScratchProjectActions } from "../hooks/useScratchProject";
 import { getClientSettings } from "../hooks/useSettings";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import { type NewThreadKind, startNewThreadFromContext } from "../lib/chatThreadActions";
+import { isTerminalThreadShellKey } from "../lib/terminalFocus";
 import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -34,6 +40,7 @@ const CHAT_ROUTE_ID = "/_chat";
  */
 export function installChatRouteCommands(router: AnyRouter): () => void {
   const handleNewThread = createNewThreadHandler(router);
+  const handleNewTerminalThread = createNewTerminalThreadHandler(handleNewThread);
   const scratch = createScratchProjectActions({
     environments: () =>
       [...appAtomRegistry.get(environmentPresentations.presentationsAtom)].map(
@@ -74,6 +81,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         useUiStateStore.getState().projectOrder,
       ),
       handleNewThread,
+      handleNewTerminalThread,
     };
   };
   const readProjectGroupCount = () =>
@@ -91,10 +99,36 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     event.stopPropagation();
   };
 
-  const startNewLocal: CommandHandler = (event) => {
-    claim(event);
-    void startNewThreadFromContext(readThreadContext());
-  };
+  const startNewLocal =
+    (kind: NewThreadKind): CommandHandler =>
+    (event) => {
+      claim(event);
+      void startNewThreadFromContext(readThreadContext(), kind);
+    };
+
+  const startNew =
+    (kind: NewThreadKind): CommandHandler =>
+    (event) => {
+      // Pre-hydration settings are the defaults, where the legacy sidebar is off.
+      if (!getClientSettings().legacySidebarEnabled && readProjectGroupCount() > 1) {
+        claim(event);
+        openCommandPalette({ open: "new-thread-in", threadKind: kind });
+        return;
+      }
+      startNewLocal(kind)(event);
+    };
+
+  // Fork: each new-thread shortcut has a terminal twin, inert while no server has terminal threads on.
+  const terminalTwin =
+    (handler: CommandHandler): CommandHandler =>
+    (event) => {
+      if (!readTerminalThreadsAvailable()) return false;
+      if (event.repeat) {
+        event.preventDefault();
+        return;
+      }
+      return handler(event);
+    };
 
   const previewCommand =
     (action: PreviewAction): CommandHandler =>
@@ -106,7 +140,8 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
 
   return registerCommands(
     {
-      "chat.newLocal": startNewLocal,
+      "chat.newLocal": startNewLocal("chat"),
+      "chat.newTerminalLocal": terminalTwin(startNewLocal("terminal")),
       "chat.newWithoutProject": (event) => {
         const { activeThread, activeDraftThread } = readThreadContext();
         const environmentId = scratch.scratchEnvironmentId(
@@ -116,16 +151,11 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         claim(event);
         void scratch.startScratchThread(environmentId);
       },
-      "chat.new": (event) => {
-        // Pre-hydration settings are the defaults, where the legacy sidebar is off.
-        if (!getClientSettings().legacySidebarEnabled && readProjectGroupCount() > 1) {
-          claim(event);
-          openCommandPalette({ open: "new-thread-in" });
-          return;
-        }
-        startNewLocal(event);
-      },
+      "chat.new": startNew("chat"),
+      "chat.newTerminal": terminalTwin(startNew("terminal")),
       "preview.toggle": (event) => {
+        // Fork: a Ctrl chord in the main terminal of a terminal thread goes to its shell.
+        if (isTerminalThreadShellKey(event)) return false;
         claim(event);
         const threadRef = readRouteThreadRef();
         if (!threadRef || (!canOperatePreview(threadRef.environmentId) && !readPreviewOpen())) {

@@ -1,7 +1,6 @@
 import { MACHINE_PAUSED_MESSAGE } from "@t3tools/client-runtime/connection";
 import { useEffect, useRef } from "react";
 
-import { APP_DISPLAY_NAME } from "../../branding";
 import { fetchSessionState } from "../../environments/primary";
 import { createMachineAccessWatcher } from "../../forkMachineAccessWatcher";
 import { usePrimaryEnvironment } from "../../state/environments";
@@ -25,9 +24,8 @@ export function MachinePausedSurface() {
   }, []);
 
   return (
-    <StandalonePage tone="error">
+    <StandalonePage>
       <StandalonePageHeader
-        eyebrow={APP_DISPLAY_NAME}
         title="Paused"
         description={MACHINE_PAUSED_MESSAGE}
       />

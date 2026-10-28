@@ -364,7 +364,7 @@ export const layerProduction = Layer.mergeAll(
       ForkWorktreeResume.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
-            layerEventSinkProvided,
+            layerEventSink,
             IdAllocator.layer,
             layerProjectSetupScriptRunner,
             layerProjectService,

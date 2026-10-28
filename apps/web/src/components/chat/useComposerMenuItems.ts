@@ -104,10 +104,6 @@ export function useComposerMenuItems({
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
   const environmentThreadShells = useThreadShells(isPathTrigger);
-  // Fork: MM-1907. Threads of the machines that this machine's agent reads, named per machine.
-  const readableThreadEnvironments = useReadableThreadEnvironments(
-    isPathTrigger ? environmentId : null,
-  );
   // Mounts older settled threads matching the mention, which shells may leave out.
   useThreadSearch(isPathTrigger ? [environmentId] : [], pathTriggerQuery, { titlesOnly: true });
   // The user's machines feed `@` machine matches; the catalog summary is cheap and stable.

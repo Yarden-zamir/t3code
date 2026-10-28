@@ -379,7 +379,9 @@ const make = Effect.gen(function* () {
     // The arrows are the switch: a machine without arrows has no links.
     enabled: Effect.succeed(true),
     // Manual links are refused, so no address needs a description.
-    describe: () => Effect.succeedNone,
+    describe: Effect.fn("MachinePeers.describe")(function* () {
+      return Option.none();
+    }),
     link: Effect.fn("MachinePeers.link")(function () {
       return manualRefused;
     }),

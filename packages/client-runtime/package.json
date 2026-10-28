@@ -139,10 +139,6 @@
       "types": "./src/relay/index.ts",
       "default": "./src/relay/index.ts"
     },
-    "./state/readableThreadEnvironments": {
-      "types": "./src/state/readableThreadEnvironments.ts",
-      "default": "./src/state/readableThreadEnvironments.ts"
-    },
     "./state/auth": {
       "types": "./src/state/auth.ts",
       "default": "./src/state/auth.ts"
@@ -226,6 +222,10 @@
     "./state/deviceHubAccess": {
       "types": "./src/state/deviceHubAccess.ts",
       "default": "./src/state/deviceHubAccess.ts"
+    },
+    "./state/readableThreadEnvironments": {
+      "types": "./src/state/readableThreadEnvironments.ts",
+      "default": "./src/state/readableThreadEnvironments.ts"
     },
     "./state/peerLinks": {
       "types": "./src/state/peerLinks.ts",

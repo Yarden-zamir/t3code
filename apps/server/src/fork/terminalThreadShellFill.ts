@@ -25,7 +25,7 @@ export interface TerminalThreadLaunchServices {
   readonly settings: Pick<ServerSettings.ServerSettingsService["Service"], "getSettings">;
   readonly terminals: Pick<
     TerminalManager.TerminalManager["Service"],
-    "attachStream" | "resyncStream" | "forkRetainAttach" | "forkSavedOutputStream"
+    "attachOutputStream" | "forkRetainAttach" | "forkSavedOutputStream"
   >;
 }
 

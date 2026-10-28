@@ -520,8 +520,6 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         stopping: isStoppingBackgroundWork,
         onStop: handleStopBackgroundWorkStable,
         onOpenThread: onOpenRelatedThreadStable,
-        cwd: gitCwd ?? undefined,
-        threadRef: activeThreadRef,
       })
     : null;
   // The relative times read the clock; nowMinute re-renders them on the minute.

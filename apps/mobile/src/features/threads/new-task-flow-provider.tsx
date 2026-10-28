@@ -17,7 +17,7 @@ import {
   repositoryGroupingKeyOf,
   ThreadId,
 } from "@t3tools/contracts";
-import { unreadableThreadContexts } from "@t3tools/shared/composerContextReferences";
+import { threadContextsOutsideEnvironment } from "@t3tools/shared/composerContextReferences";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 
@@ -81,10 +81,6 @@ import {
   type HomeProjectScope,
 } from "../home/homeThreadList";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
-import {
-  currentReadableThreadEnvironmentIds,
-  useReadableThreadEnvironmentIds,
-} from "../../state/readableThreadEnvironments";
 import {
   resolvePendingTaskInteractionMode,
   resolveProviderInteractionMode,
@@ -331,8 +327,6 @@ export function NewTaskFlowProvider(
   const linkedEnvironments = useLinkedEnvironments(selectedProject?.environmentId ?? null);
   const projectDefaults = useNewTaskProjectDefaults(selectedProject);
   const selectedEnvironmentServerConfig = projectDefaults.serverConfig;
-  // MM-1906: keeps the readable list loaded, so a start rarely waits for it.
-  useReadableThreadEnvironmentIds(selectedProject?.environmentId ?? null);
   const isScratchDraft = projectDefaults.isScratch;
   const serverConfigs = useServerConfigs();
   const { connectedEnvironments } = useRemoteConnectionStatus();
@@ -782,7 +776,7 @@ export function NewTaskFlowProvider(
       return null;
     }
     if (
-      unreadableThreadContexts({
+      threadContextsOutsideEnvironment({
         text: draft.text,
         records: draft.context?.records ?? [],
         environmentId: selectedProject.environmentId,

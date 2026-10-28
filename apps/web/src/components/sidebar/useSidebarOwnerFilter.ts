@@ -6,9 +6,9 @@
 import type { SidebarOwnerFilter } from "@t3tools/contracts";
 
 import { useClientSettings, updateClientSettings } from "../../hooks/useSettings";
-import type { ProjectGroupingSettings } from "../../logicalProject";
+import type { ProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
 import {
-  resolveSidebarProjectScopeKey,
+  resolveSidebarProjectScopeKeys,
   type SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
 import { useThreadSelectionStore } from "../../threadSelectionStore";
@@ -57,19 +57,18 @@ export function useSidebarOwnerFilter<Group extends SidebarProjectSnapshot>(inpu
     void updateClientSettings({ sidebarOwnerFilter: filter });
     // An owner change that hides the scoped project drops the scope too, so that the scope
     // cannot come back unseen when the owner filter goes.
-    const { sidebarProjectScopeKey, setSidebarProjectScopeKey } = useUiStateStore.getState();
+    const { sidebarProjectScopeKeys, setSidebarProjectScopeKeys } = useUiStateStore.getState();
     const visible = filterSidebarProjectGroupsByOwner(
       unsortedProjectGroups,
       resolveSidebarOwnerFilter({ enabled: repositoryOwnerFiltersEnabled, filter }),
     );
-    const scopeShows =
-      resolveSidebarProjectScopeKey({
-        groups: visible,
-        key: sidebarProjectScopeKey,
-        settings: projectGroupingSettings,
-        canClearMissingScope: true,
-      }) !== null;
-    if (sidebarProjectScopeKey !== null && !scopeShows) setSidebarProjectScopeKey(null);
+    const shownKeys = resolveSidebarProjectScopeKeys({
+      groups: visible,
+      keys: sidebarProjectScopeKeys,
+      settings: projectGroupingSettings,
+      canClearMissingScope: true,
+    });
+    if (shownKeys.length !== sidebarProjectScopeKeys.length) setSidebarProjectScopeKeys(shownKeys);
   };
   const ownerHiddenThreadsNeedingUser = countHiddenThreadsNeedingUser(
     threads,

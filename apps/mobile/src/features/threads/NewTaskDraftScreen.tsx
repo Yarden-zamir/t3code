@@ -58,7 +58,7 @@ import {
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
-import { unreadableThreadContexts } from "@t3tools/shared/composerContextReferences";
+import { threadContextsOutsideEnvironment } from "@t3tools/shared/composerContextReferences";
 
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 
@@ -100,10 +100,6 @@ import { idleShareFlagAtom, idleShareImportPhaseAtom } from "./incomingShareImpo
 import { newTaskFlowKey } from "./new-task-flow-state";
 import { appAtomRegistry } from "../../state/atom-registry";
 
-import {
-  loadReadableThreadEnvironmentIds,
-  useReadableThreadEnvironmentIds,
-} from "../../state/readableThreadEnvironments";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 
 function NewTaskWorkspaceIcon(props: {
@@ -165,9 +161,6 @@ export function NewTaskDraftScreen(props: {
   const [creationMetadata] = useState(makeTurnCommandMetadata);
   const projects = useProjects();
   const flow = useNewTaskFlow();
-  const readableThreadEnvironmentIds = useReadableThreadEnvironmentIds(
-    flow.selectedProject?.environmentId ?? null,
-  );
   const navigation = useNavigation();
   const isFocused = useIsFocused();
   const goBack = useWorkspaceBackNavigation("threads");

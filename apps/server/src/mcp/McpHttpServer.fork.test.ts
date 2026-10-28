@@ -13,6 +13,7 @@ import { Tool, Toolkit } from "effect/ai";
 import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
@@ -63,7 +64,9 @@ it.effect(
             ),
           }),
         ).pipe(
-          Layer.provideMerge(McpHttpServer.layerMcpTransport),
+          Layer.provideMerge(
+            McpHttpServer.layerMcpTransport.pipe(Layer.provide(ServerSettings.layerTest())),
+          ),
           Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
           Layer.provide(
             Layer.mock(McpSessionRegistry.McpSessionRegistry)({

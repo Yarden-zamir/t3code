@@ -13,7 +13,7 @@ import {
   decodeComposerContextFragment,
   encodeComposerContextFragment,
 } from "@t3tools/shared/composerContextClipboard";
-import { unreadableThreadContexts } from "@t3tools/shared/composerContextReferences";
+import { threadContextsOutsideEnvironment } from "@t3tools/shared/composerContextReferences";
 import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import * as Option from "effect/Option";
@@ -76,9 +76,9 @@ export async function importComposerContextClipboard(
   const selected = referencedComposerContext(input.text, { version: 1, records: fragment.records });
   const imported = reidentifyComposerContext(input.text, selected?.records ?? [], uuidv4);
   const skippedThreads =
-    destinationReadableEnvironmentIds === undefined
+    destinationEnvironmentId === undefined
       ? []
-      : unreadableThreadContexts({
+      : threadContextsOutsideEnvironment({
           text: imported.text,
           records: imported.context.records,
           environmentId: destinationEnvironmentId,

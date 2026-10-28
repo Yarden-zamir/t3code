@@ -5,7 +5,18 @@
  * upstream changes a row status.
  */
 import type { AppIconSlot } from "../AppIcon";
-import type { SidebarV2TopStatusKind } from "../Sidebar.logic";
+
+/** The row statuses that a tab can show, one `status.<kind>` icon slot each. */
+type SidebarV2TopStatusKind =
+  | "approval"
+  | "done"
+  | "failed"
+  | "limited"
+  | "input"
+  | "request"
+  | "waiting"
+  | "woke"
+  | "working";
 
 export interface SidebarTabStatus {
   readonly kind: SidebarV2TopStatusKind;

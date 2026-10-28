@@ -6,6 +6,7 @@
 import { PeerLinkError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import * as PeerLinks from "../../peer/PeerLinks.ts";
 import { MANUAL_LINK_REFUSAL } from "./machineAccess.ts";
@@ -18,7 +19,9 @@ export const layer = Layer.succeed(
   PeerLinks.PeerLinks.of({
     enabled: Effect.succeed(true),
     // Manual links are refused, so no address needs a description.
-    describe: () => Effect.succeedNone,
+    describe: Effect.fn("PeerLinks.describe")(function* () {
+      return Option.none();
+    }),
     link: Effect.fn("PeerLinks.link")(function () {
       return refused(MANUAL_LINK_REFUSAL);
     }),

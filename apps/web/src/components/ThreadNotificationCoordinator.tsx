@@ -206,8 +206,6 @@ export function startThreadNotifications(
     environmentId: EnvironmentId,
     entry: WatchedEnvironment,
     threads: ReadonlyArray<OrchestrationV2ThreadShell>,
-    subagentRequests: ReadonlyMap<ThreadId, PendingSubagentRequest>,
-    delegatedUnderParent: ReadonlySet<string>,
   ) => {
     const previous = entry.previous;
     const next = new Map<ThreadId, NotificationState>();

@@ -33,7 +33,7 @@ const DevicePanel = lazy(() =>
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
 
-type RightPanelTerminalProps = Omit<
+export type RightPanelTerminalProps = Omit<
   PersistentThreadTerminalPanelProps,
   "visible" | "threadRef" | "surface"
 >;
@@ -48,7 +48,7 @@ interface RightPanelPullRequestProps {
   readonly onBack: (() => void) | undefined;
 }
 
-interface RightPanelFileProps {
+export interface RightPanelFileProps {
   readonly projectName: string | null;
   readonly workspaceRoot: string | undefined;
   readonly availableEditors: ReadonlyArray<EditorId>;

@@ -26,7 +26,6 @@ import { importComposerContextClipboard } from "../lib/composerContextClipboard"
 import { startComposerDraftOperation } from "../state/composerDraftOperations";
 import { appAtomRegistry } from "../state/atom-registry";
 import { mobilePreferencesAtom } from "../state/preferences";
-import { useReadableThreadEnvironmentIds } from "../state/readableThreadEnvironments";
 import { useOpenLinkedThread } from "../features/threads/useOpenLinkedThread";
 import { useLinkedEnvironments } from "../state/peerLinks";
 import { ComposerContextSheet } from "./ComposerContextSheet";
@@ -125,7 +124,7 @@ export function ComposerEditor({
         );
       if (result.skippedThreads.length > 0)
         warnings.push(
-          `${result.skippedThreads.map((title) => `"${title}"`).join(", ")} ${result.skippedThreads.length === 1 ? "is" : "are"} on a machine that this machine cannot read.`,
+          `${result.skippedThreads.map((title) => `"${title}"`).join(", ")} ${result.skippedThreads.length === 1 ? "is" : "are"} on another machine.`,
         );
       if (warnings.length > 0)
         Dialog.alert(

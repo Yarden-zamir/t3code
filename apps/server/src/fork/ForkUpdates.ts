@@ -201,7 +201,7 @@ const make = Effect.gen(function* () {
 
   // On success the launcher replaces this process with the new version.
   const runUpdate = (version: string) =>
-    selfUpdate.update({ targetVersion: version, continueRunningThreads: true }).pipe(
+    selfUpdate.update({ targetVersion: version }).pipe(
       Effect.tap(() => Effect.logInfo("Fork update handed to the service launcher.", { version })),
       Effect.catch((error) =>
         Effect.logWarning("Fork update failed.", { version, reason: error.reason }),

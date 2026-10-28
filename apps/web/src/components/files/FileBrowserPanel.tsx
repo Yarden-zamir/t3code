@@ -43,7 +43,7 @@ interface FileBrowserPanelProps {
   selectedPathRevealId: number;
   onOpenFile: (relativePath: string) => void;
   /** False on a screen without a composer, which has no "Add to chat". */
-  canAddToChat: boolean;
+  canAddToChat?: boolean;
   /** Host-folder entries use absolute paths. Avoid full traversal: disable expand-all and search only
    * loaded folders. */
   hostFolder?: boolean;
@@ -142,7 +142,7 @@ export default function FileBrowserPanel({
   selectedPath,
   selectedPathRevealId,
   onOpenFile,
-  canAddToChat,
+  canAddToChat = false,
   onRefreshSelectedFile,
   workspaceMutationId,
   hostFolder = false,

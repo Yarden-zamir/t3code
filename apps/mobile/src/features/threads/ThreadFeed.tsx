@@ -59,7 +59,6 @@ import { encodeComposerContextFragment } from "@t3tools/shared/composerContextCl
 import {
   formatThreadLink,
   parseThreadLinkHref,
-  resolveThreadLinkRef,
 } from "@t3tools/shared/threadLinks";
 import { threadLinkMessageId } from "@t3tools/shared/threadMessageLinks";
 import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@t3tools/shared/promptLinks";
@@ -2513,7 +2512,7 @@ export const ThreadFeed = memo(function ThreadFeed({
           // Fork: a Markdown link, so a paste in chat is a chip, the same as "Copy message link".
           const title = appAtomRegistry.get(environmentThreadShells.threadShellAtom(thread))?.title;
           const messageId = threadLinkMessageId(href) ?? undefined;
-          copyTextWithHaptic(formatThreadLink(thread.threadId, title ?? "", messageId));
+          copyTextWithHaptic(formatThreadLink(thread, title ?? "", messageId));
         }
         return;
       }

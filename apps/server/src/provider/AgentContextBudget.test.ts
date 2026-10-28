@@ -40,8 +40,6 @@ import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { MachineExec } from "../fork/machineMap/MachineExec.ts";
 import { MachineMap } from "../fork/machineMap/MachineMap.ts";
 import { MachinePeers } from "../fork/machineMap/MachinePeers.ts";
-import { PeerForwarding } from "../peer/PeerForwarding.ts";
-import { RemoteDelegation } from "../peer/RemoteDelegation.ts";
 import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
 import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import { DocumentText } from "./DocumentText.ts";

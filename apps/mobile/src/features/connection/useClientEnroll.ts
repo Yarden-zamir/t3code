@@ -44,8 +44,8 @@ function useEnrollClient() {
         saveClient: (client) => savePreferences({ appTokenClient: client }),
         pair: async (machine) => {
           const credential = await issueMachinePairingCredential(machine.origin);
-          const result = await onConnectPress(buildPairingUrl(machine.origin, credential));
-          if (!AsyncResult.isSuccess(result)) throw Cause.squash(result.cause);
+          const outcome = await onConnectPress(buildPairingUrl(machine.origin, credential));
+          if (!outcome.ok) throw new Error(outcome.error ?? "Could not pair with the machine.");
         },
       }),
     [onConnectPress, savePreferences, saveToken],

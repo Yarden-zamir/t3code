@@ -69,7 +69,6 @@ import {
   resolvePreferredThreadWorktreePath,
   stagePendingTerminalLaunch,
 } from "../terminal/terminalLaunchContext";
-import { terminalDebugLog } from "../terminal/terminalDebugLog";
 import { terminalThreadLaunch } from "@t3tools/shared/terminalThreadLaunch";
 import type { ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { ThreadScreenBinding, ThreadScreenFallback, ThreadScreenHost } from "./ThreadScreenHost";
@@ -100,7 +99,6 @@ import {
   type ThreadInspectorMode,
 } from "./thread-inspector-content-stack";
 import { threadRouteIsHydrating } from "./thread-route-hydration";
-import { useThreadPromptLink } from "../prompt-links/useThreadPromptLink";
 import { useForkMessageLinkParam } from "./forkMessageLinks";
 import { ThreadHeader } from "./ThreadHeader";
 import {

@@ -1080,7 +1080,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ),
         );
   const threads = useQuietThreadShells();
-  const delegatedUnderParent = useDelegatedUnderParent();
   const routeRowThreadKey =
     routeThreadRef === null
       ? null

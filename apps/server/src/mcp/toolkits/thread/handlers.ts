@@ -25,7 +25,6 @@ import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
 import { ThreadToolkit } from "./tools.ts";
-import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import {
   refuseTerminalThreadWithoutExec,
   scheduledTaskRunsWith,

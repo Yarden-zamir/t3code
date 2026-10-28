@@ -104,14 +104,13 @@ import {
   startAttachmentUpload,
 } from "../../lib/attachmentUploadQueue";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
-import { loadReadableThreadEnvironmentIds } from "../../state/machineMap";
 import { fileAttachmentCapabilityBlockReason } from "./composerAttachmentFiles";
 import { useLinkedEnvironments } from "../../state/peerLinks";
 import { readEnvironmentScope } from "../../state/session";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
-  unreadableThreadContexts,
+  threadContextsOutsideEnvironment,
 } from "@t3tools/shared/composerContextReferences";
 import {
   draftSendState,

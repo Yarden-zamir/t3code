@@ -17,7 +17,7 @@ import { MessageCopyButton } from "./MessageCopyButton";
  */
 function messageLinkMarkdown(threadRef: ScopedThreadRef, messageId: string): string {
   const title = readThreadShell(threadRef)?.title ?? "";
-  return formatThreadLink(threadRef.threadId, title, messageId);
+  return formatThreadLink(threadRef, title, messageId);
 }
 
 /** Fork: Copy message link and the pin toggle of a message (`ForkMessagePins`). */

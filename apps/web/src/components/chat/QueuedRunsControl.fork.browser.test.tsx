@@ -45,6 +45,8 @@ const baseProps = {
   onEditQueuedRun: () => undefined,
   onCancelEdit: () => undefined,
   onResumeLimitedThread: () => undefined,
+  timestampFormat: "locale",
+  onOpenThread: () => undefined,
 } satisfies ComponentProps<typeof QueuedRunsControl>;
 
 async function renderQueue(props: Partial<ComponentProps<typeof QueuedRunsControl>> = {}) {
@@ -59,7 +61,6 @@ it("continues a usage-limited thread instead of sending a queued message now", a
     canPromoteToSteer: false,
     canSendNow: true,
     heldByUsageLimit: true,
-    canReorder: true,
     queuedRuns: [
       { run: { id: "run:held", userMessageId: "message:held" }, text: "Held", attachments: [] },
     ],

@@ -122,7 +122,10 @@ it.effect("keeps a merged thread unsettled while its background command runs", (
       const activation = yield* Deferred.make<void>();
       const candidateReads = yield* Queue.unbounded<void>();
       const commands = yield* Ref.make<ReadonlyArray<AutoSettleCommand>>([]);
-      const layer = ThreadSettlementService.layer.pipe(
+      const layer = Layer.effect(
+        ThreadSettlementService.ThreadSettlementServiceV2,
+        ThreadSettlementService.make,
+      ).pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.mock(ProjectStore.ProjectStoreV2)({
@@ -229,7 +232,10 @@ it.effect("keeps the shell of a terminal thread open when it settles", () =>
         yield* Queue.unbounded<
           Parameters<TerminalManager.TerminalManager["Service"]["closeIdle"]>[0]
         >();
-      const layer = ThreadSettlementService.layer.pipe(
+      const layer = Layer.effect(
+        ThreadSettlementService.ThreadSettlementServiceV2,
+        ThreadSettlementService.make,
+      ).pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.succeed([]) }),

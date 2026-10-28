@@ -124,7 +124,6 @@ vi.mock("./useSettings", () => ({
       confirmThreadArchive: true,
       timestampFormat: "12-hour",
     }),
-  getClientSettings: () => ({ snoozeQuickOptions: null }),
 }));
 vi.mock("./useThreadActions", () => ({
   refuseBlockedArchive: () => false,
