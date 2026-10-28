@@ -36,6 +36,8 @@ export interface VoicePreferences {
   readonly assistantSendAfterVoice?: boolean;
   readonly assistantAttachScreenshot?: boolean;
   readonly assistantAttachScreenText?: boolean;
+  /** On a Chrome page, the screen text is the whole page instead of what is on screen. */
+  readonly assistantFullPageText?: boolean;
   readonly assistantAfterSend?: AssistantAfterSend;
   /** 0 turns the glow off. */
   readonly assistantGlowSeconds?: AssistantGlowSeconds;
@@ -60,6 +62,7 @@ export const VOICE_PREFERENCE_DEFAULTS = {
   assistantSendAfterVoice: false,
   assistantAttachScreenshot: true,
   assistantAttachScreenText: true,
+  assistantFullPageText: true,
   assistantAfterSend: "close",
   assistantGlowSeconds: 5,
   assistantSpeakFirstReply: false,
@@ -118,6 +121,7 @@ export function sanitizeVoicePreferences(value: unknown): VoicePreferences | und
     "assistantSendAfterVoice",
     "assistantAttachScreenshot",
     "assistantAttachScreenText",
+    "assistantFullPageText",
     "assistantSpeakFirstReply",
     "assistantRecentPhoto",
     "assistantLocation",

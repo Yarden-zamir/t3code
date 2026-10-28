@@ -99,7 +99,7 @@ export function ContextPills(props: {
   );
 }
 
-const CONTEXT_PILL_ICONS = {
+export const CONTEXT_PILL_ICONS = {
   screenshot: "photo",
   screenText: "doc.text",
   selection: "text.alignleft",
@@ -117,17 +117,20 @@ export interface PanelMenuItem {
   readonly key: string;
   readonly icon: AppSymbolName;
   readonly label: string;
+  /** Set for a pill on the panel: whether it goes along. Unset for a way to add context. */
+  readonly checked?: boolean;
   readonly onPress: () => void;
 }
 
-/** The list the "+" pill opens. */
+/** The list the "+" pill opens: every pill on the panel, then the ways to add more. */
 export function PanelMenu(props: { readonly items: ReadonlyArray<PanelMenuItem> }) {
   return (
-    <View>
+    <ScrollView className="max-h-80" keyboardShouldPersistTaps="handled">
       {props.items.map((item) => (
         <Pressable
           key={item.key}
-          accessibilityRole="button"
+          accessibilityRole={item.checked === undefined ? "button" : "checkbox"}
+          accessibilityState={item.checked === undefined ? undefined : { checked: item.checked }}
           className="flex-row items-center gap-3 rounded-xl px-1 py-2.5"
           style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
           onPress={item.onPress}
@@ -136,9 +139,12 @@ export function PanelMenu(props: { readonly items: ReadonlyArray<PanelMenuItem> 
           <Text className="flex-1 text-base" numberOfLines={1}>
             {item.label}
           </Text>
+          {item.checked ? (
+            <SymbolView name="checkmark" size={16} tintColorClassName="accent-primary" />
+          ) : null}
         </Pressable>
       ))}
-    </View>
+    </ScrollView>
   );
 }
 

@@ -1,4 +1,5 @@
 import { ForkAccessChangeNotices } from "../components/ForkAccessChangeNotices";
+import { ForkContextMenuHost } from "../components/ForkContextMenuHost";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { setCredentialedSiblingOrigins } from "@t3tools/client-runtime/rpc/siblingCredentials";
@@ -35,6 +36,7 @@ import { DesktopWebLinkCoordinator } from "../components/desktop/DesktopWebLinkC
 import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
 import { DesktopUpdateIdleInstall } from "../components/desktop/DesktopUpdateIdleInstall";
 import { MachineMapDesktop } from "../components/desktop/MachineMapDesktop";
+import { MachineMapBrowserSettings } from "../components/MachineMapBrowserSettings";
 import { ClientPendingSurface } from "../components/auth/ClientPendingSurface";
 import { MachinePausedSurface, MachinePauseWatcher } from "../components/auth/MachinePausedSurface";
 import { InstalledAppCoordinator } from "../components/InstalledAppCoordinator";
@@ -219,6 +221,7 @@ function RootRouteBranch() {
         {isElectron ? <RunningThreadKeepAlive /> : null}
         {isElectron ? <DesktopUpdateIdleInstall /> : null}
         {isElectron && primaryEnvironmentAuthenticated ? <MachineMapDesktop /> : null}
+        {!isElectron && primaryEnvironmentAuthenticated ? <MachineMapBrowserSettings /> : null}
         {primaryEnvironmentAuthenticated ? <MachinePauseWatcher /> : null}
         <RelayClientInstallDialog />
         <ConnectOnboardingDialog />
@@ -227,6 +230,7 @@ function RootRouteBranch() {
         {isElectron ? null : <InstalledAppCoordinator />}
         <ReopenClosedViewShortcut />
         <ConfirmDialogHost />
+        <ForkContextMenuHost />
         <CustomSnoozeDialogHost />
         <GuestShareDialogHost />
         <ForkAccessChangeNotices />

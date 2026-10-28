@@ -121,11 +121,11 @@ When the owner changes an arrow or a client arrow, open clients get the new acce
 
 ### Portal views
 
-The portal has the views Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients (MM-1102). Each view and each selected item has its own link. Agents use the `machines_*` and `machine_exec` tools for machine operations, and the T3 tools with `environmentId` for work on other machines. Client approvals, invites and the resume after an emergency pause stay with the owner.
+The portal has the views Map, Levels, Health, Settings, Queue, Tasks, History, Inbox and Clients (MM-1102). Each view and each selected item has its own link. Agents use the `machines_*` and `machine_exec` tools for machine operations, and the T3 tools with `environmentId` for work on other machines. Client approvals, invites and the resume after an emergency pause stay with the owner.
 
 The map role never raises a thread's limits. Map writes need a live full-access/default caller, even with `edit`. These checks run on the server for agents started from web, desktop and mobile.
 
-Each arrow lists what agents on the source can do on the target: read threads, launch and delegate, exec and settings (MM-1915). The arrow panel, Map, Table and `machines_read` show the list. Secret copy waits for MM-1917.
+Each arrow lists what agents on the source can do on the target: read threads, launch and delegate, exec and settings (MM-1915). The arrow panel, Map, Levels and `machines_read` show the list. Secret copy waits for MM-1917.
 
 ### Work on other machines
 
@@ -144,7 +144,7 @@ An arrow with agent tools makes the target machine a linked environment of the s
 
 An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908). In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's (MM-1919).
 
-- **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Table and the arrow panel show an "exec" sticker.
+- **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Levels and the arrow panel show an "exec" sticker.
 - **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Without a thread credential it is refused (MM-1920). The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
 - **Stop:** the emergency pause, a removed arrow or exec turned off stops a running command at once (MM-1916).
 - **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`. A `t3 machine exec` run gives one entry when it ends.
@@ -185,6 +185,8 @@ Settings > Machines joins or leaves the map with a code. It shows the connection
 ### Desktop app on the map
 
 The desktop app adds each machine that its server can use as an environment, with the machine token headers, and removes it when the arrow drops to `none` (MM-1401). It applies the shared client settings, and runs the commands Reload windows and Install update (MM-1402). Environments that you saved by hand stay as they are.
+
+A browser that a machine serves, and the mobile app, also take the shared client settings. A change on the device stays until the shared value changes again. The mobile app takes only the settings that it has: follow-up behavior, math rendering, plan mode and the working shelf (MM-416).
 
 When a machine refuses the connection, the app pairs again with a backoff: at least 30 seconds between two pairings of one machine, and up to 10 minutes after repeated failures. The target gives a machine its live session again, so a new pairing adds no session (MM-1305). Machine, client and Cloudflare Access sessions without a connection for 7 days end. The Clients view shows one row for each machine, client or sign-in on a machine (MM-903).
 
@@ -517,9 +519,9 @@ The plus button of the mobile composer, the new thread draft and question answer
 
 ### Android assistant panel
 
-T3 Code can be the Android digital assistant. The assistant button opens a panel over the current app. The panel attaches the screenshot and the screen text, takes typed or spoken text, and starts a new thread or adds the message to an existing thread. The title of the panel opens a picker with a search, the recent threads and the projects. With more than one machine, a machine icon opens the machine list, and the picker then shows the threads and projects of that machine. "Ask T3 Code" in the Android share sheet opens the same panel with the shared text or image. Context pills show the context: the shared item, the screenshot, the screen text, the text selected on screen, the page link, the clipboard, and, when turned on in Settings > Voice, the newest photo of the last 15 minutes and the last known location. A tap attaches a pill or leaves it out; a hold opens it to read and edit the text, or to crop and draw on an image. The "+" pill comes first and adds photos, a camera photo, files (when the server takes uploads), and the newest photo or the location for one press. The arrow on top of the panel, tapped or dragged up, continues in the app: a thread gets the text and the attachments in its composer, and a new thread opens its draft screen. After sending, the panel can show the replies to its messages and send follow-ups to the same thread. A glow along the screen edges replaces a dim layer, so the app under the panel stays readable. Text that was not sent comes back when the panel opens again within a minute.
+T3 Code can be the Android digital assistant. The assistant button opens a panel over the current app. The panel attaches the screenshot and the screen text, takes typed or spoken text, and starts a new thread or adds the message to an existing thread. The title of the panel opens a picker with a search, the recent threads and the projects. With more than one machine, a machine icon opens the machine list, and the picker then shows the threads and projects of that machine. "Ask T3 Code" in the Android share sheet opens the same panel with the shared text or image. Context pills show the context: the shared item, the screenshot, the screen text, the text selected on screen, the page link, the clipboard, and, when turned on in Settings > Voice, the newest photo of the last 15 minutes and the last known location. A tap attaches a pill or leaves it out; a hold opens it to read and edit the text, or to crop and draw on an image. The "+" pill comes first and adds photos, a camera photo, files (when the server takes uploads), and the newest photo or the location for one press. The arrow on top of the panel, tapped or dragged up, continues in the app: a thread gets the text and the attachments in its composer, and a new thread opens its draft screen. After sending, the panel can show the replies to its messages and send follow-ups to the same thread. The screen text pill is named after what the screen shows (video, chat, music, page, home screen, or the app), from the link, the structured data and the clip that the app reports (`apps/mobile/src/features/assistant/screenSubject.ts`). App categories and window titles are not used, because phones report them wrong. On a Chrome page, the screen text is the whole page from Chrome's page content provider, which Chrome opens to the default assistant for 60 seconds. A video link opens at the reported position. A glow along the screen edges replaces a dim layer, so the app under the panel stays readable. Text that was not sent comes back when the panel opens again within a minute.
 
-- **Setting:** the Android setting Default apps > Digital assistant app. The options are phone-local preferences under `voice` (`apps/mobile/src/persistence/forkVoicePreferences.ts`), in Settings > Voice of the mobile app: a new thread or the last opened thread (a new thread by default), keyboard or voice first (keyboard by default), start the thread after speaking (off), attach the screenshot (on), attach the screen text (on), after sending: close, show the reply in the panel, or open the thread (close), the edge glow time (5 seconds; off, 3, 5, 10 seconds, or until the panel closes), read the first reply aloud (off), and the project (the last new thread project by default).
+- **Setting:** the Android setting Default apps > Digital assistant app. The options are phone-local preferences under `voice` (`apps/mobile/src/persistence/forkVoicePreferences.ts`), in Settings > Voice of the mobile app: a new thread or the last opened thread (a new thread by default), keyboard or voice first (keyboard by default), start the thread after speaking (off), attach the screenshot (on), attach the screen text (on), the whole page in Chrome (on), after sending: close, show the reply in the panel, or open the thread (close), the edge glow time (5 seconds; off, 3, 5, 10 seconds, or until the panel closes), read the first reply aloud (off), and the project (the last new thread project by default).
 - **Works on:** mobile, Android 10 or later.
 - The panel and the app share one JS runtime. The outbox sender and the T3 Connect sign-in run once across both (`apps/mobile/src/lib/singletonHost.ts`).
 - The message goes through the thread outbox, so a new thread uses the project's model defaults, and the message waits for the connection when offline. A message to an existing thread is queued after a running turn, so "read the first reply aloud" reads the reply to that message.
@@ -789,6 +791,18 @@ Back and forward buttons sit right of the sidebar toggle, like in VS Code. A but
   - The desktop app keeps at most 50 entries, and no forward entries: the start of the app is a new navigation.
   - In a browser without the Navigation API, such as an older Safari or Firefox, both buttons stay enabled, and a missing thread goes to a new thread instead of a skip.
   - Mouse buttons 4 and 5 and trackpad swipes do not go back or forward in the desktop app.
+
+### App context menu
+
+Right-click menus use the app's own menu, also in the desktop app, in place of the system menu. The menu follows the app theme and shows icons, group names, check marks and submenus. Arrow keys move over the items, letters jump to an item, and Escape closes the menu.
+
+- **Setting:** client setting `richContextMenu` (off by default). Settings > Appearance > Interface > "App context menu".
+- **Works on:** web, desktop. The mobile app keeps its native menus.
+- Text fields and pages in the browser panel keep the system menu, with spelling suggestions and Cut, Copy and Paste. A place without an app menu also keeps the system menu.
+- **Limits:**
+  - The menu stays inside the app window.
+  - Disabled items stay reachable with the arrow keys, as in other app menus.
+  - The menu takes focus, so a right-click inside an open picker, such as the branch picker, closes the picker.
 
 ## Command line and MCP
 

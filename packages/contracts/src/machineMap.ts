@@ -243,6 +243,7 @@ const MACHINE_LOCAL_SETTINGS: Readonly<Record<SettingScope, ReadonlySet<string>>
     "worktreesDirectory",
     "previousWorktreesDirectories",
     "addProjectBaseDirectory",
+    "worktreePathTemplate",
     // Keyed by project id. A project id is local to one environment.
     "projectSettingsOverrides",
     "projectScriptOverrides",
@@ -900,7 +901,7 @@ export const MapToolInputs = {
     ),
     scope: SettingScope.annotate({
       description:
-        "server: T3 server settings (settings.json). client: desktop app client settings.",
+        "server: T3 server settings (settings.json). client: settings of all client apps.",
     }),
     key: TrimmedNonEmptyString.annotate({
       description:

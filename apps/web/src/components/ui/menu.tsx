@@ -27,6 +27,7 @@ function MenuPopup({
   anchor,
   keepMounted = false,
   width = "default",
+  layer = "default",
   ...props
 }: MenuPrimitive.Popup.Props & {
   align?: MenuPrimitive.Positioner.Props["align"];
@@ -36,6 +37,8 @@ function MenuPopup({
   anchor?: MenuPrimitive.Positioner.Props["anchor"];
   keepMounted?: boolean;
   width?: "default" | "content";
+  /** `context` draws above tooltips and preview cards, like a system context menu. */
+  layer?: "default" | "context";
 }) {
   return (
     <MenuPrimitive.Portal keepMounted={keepMounted}>
@@ -43,7 +46,7 @@ function MenuPopup({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-[130]"
+        className={layer === "context" ? "z-[150]" : "z-[130]"}
         data-slot="menu-positioner"
         side={side}
         sideOffset={sideOffset}
@@ -336,11 +339,13 @@ function MenuSubPopup({
   sideOffset = 0,
   alignOffset,
   align = "start",
+  layer = "default",
   ...props
 }: MenuPrimitive.Popup.Props & {
   align?: MenuPrimitive.Positioner.Props["align"];
   sideOffset?: MenuPrimitive.Positioner.Props["sideOffset"];
   alignOffset?: MenuPrimitive.Positioner.Props["alignOffset"];
+  layer?: "default" | "context";
 }) {
   const defaultAlignOffset = align !== "center" ? -5 : undefined;
 
@@ -350,6 +355,7 @@ function MenuSubPopup({
       alignOffset={alignOffset ?? defaultAlignOffset}
       className={className}
       data-slot="menu-sub-content"
+      layer={layer}
       side="inline-end"
       sideOffset={sideOffset}
       {...props}

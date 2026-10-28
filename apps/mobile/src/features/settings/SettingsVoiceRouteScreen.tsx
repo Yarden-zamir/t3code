@@ -185,6 +185,12 @@ export function SettingsVoiceRouteScreen() {
                 onValueChange={(value) => updateVoice({ assistantAttachScreenText: value })}
               />
               <SettingsSwitchRow
+                label="Whole page in Chrome"
+                subtitle="On a Chrome page, the screen text holds the whole page, not only what is on screen."
+                value={voice.assistantFullPageText}
+                onValueChange={(value) => updateVoice({ assistantFullPageText: value })}
+              />
+              <SettingsSwitchRow
                 label="Read the first reply aloud"
                 subtitle="The panel stays open until it reads the agent's reply aloud."
                 value={voice.assistantSpeakFirstReply}

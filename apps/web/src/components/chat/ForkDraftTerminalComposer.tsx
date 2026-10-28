@@ -536,17 +536,17 @@ export function ForkDraftTerminalComposer(props: {
   // after typed text is the only sign of a command; a running program is not, because prompt
   // helpers (a git status daemon) also run programs.
   const integrated = summary?.shell === "prompt" || summary?.shell === "running";
-  const finishedAt = summary?.attention?.kind === "finished" ? summary.attention.at : null;
+  const commandEndedAt = summary?.commandEndedAt ?? null;
   const running = summary?.shell === "running";
   useEffect(() => {
-    if (finishedAt !== null) {
+    if (commandEndedAt !== null) {
       void promote();
       return;
     }
     if (!running) return;
     const timer = window.setTimeout(() => void promote(), LONG_RUNNING_COMMAND_MS);
     return () => window.clearTimeout(timer);
-  }, [finishedAt, running]);
+  }, [commandEndedAt, running]);
   // Setting `currentProjectTerminalOpensThread`: the enlarge button, pressed for the user. It waits
   // for the shell list, so the thread names the same shell as the draft terminal.
   const opensAsThread = useDraftOpensAsThread(draftId);

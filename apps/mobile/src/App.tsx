@@ -1,5 +1,6 @@
 import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
 import { ForkAccessChangeNotices } from "./features/connection/ForkAccessChangeNotices";
+import { ForkSharedClientSettings } from "./features/settings/ForkSharedClientSettings";
 import { installComposerAttachmentUploads } from "./state/composer-attachment-uploads";
 import { installThreadOutboxDelivery } from "./state/threadOutboxDelivery";
 import * as Linking from "expo-linking";
@@ -197,6 +198,7 @@ function AppContent() {
       <SplashScreenCoordinator />
       <SubscriptionUsageCoordinator />
       <ForkAccessChangeNotices />
+      <ForkSharedClientSettings />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>

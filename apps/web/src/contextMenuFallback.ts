@@ -1,5 +1,7 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
 
+import { isForkContextMenuOpen } from "./forkContextMenu";
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<string, string> }>> = {
@@ -205,7 +207,7 @@ function isNodeWithinMenuStack(target: EventTarget | null, menuStack: readonly H
 let activeContextMenuDismiss: (() => void) | null = null;
 
 export function isContextMenuOpen(): boolean {
-  return activeContextMenuDismiss !== null;
+  return activeContextMenuDismiss !== null || isForkContextMenuOpen();
 }
 
 export function dismissContextMenu(): void {
