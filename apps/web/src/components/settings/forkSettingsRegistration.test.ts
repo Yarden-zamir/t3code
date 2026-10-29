@@ -178,6 +178,17 @@ describe("fork settings registration", () => {
     expect(problems).toEqual([]);
   });
 
+  // A Fork page entry shows only while each of its ids is on the platform.
+  it("hides no catalog entry by an id that the platform hides", () => {
+    const hidden = forkSettingGroups.flatMap((group) =>
+      group.entries.flatMap((entry) => {
+        const shown = entry.ids.map((id) => isSettingsSearchItemOnPlatform(searchItem(id), ""));
+        return shown.includes(true) && shown.includes(false) ? [entry.ids.join(", ")] : [];
+      }),
+    );
+    expect(hidden).toEqual([]);
+  });
+
   it("renders each place from exactly one slot", () => {
     const sources = Object.values(
       import.meta.glob<string>(["../**/*.tsx", "!../**/*.test.tsx"], {

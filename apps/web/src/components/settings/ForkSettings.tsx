@@ -17,7 +17,7 @@ import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchIte
 
 /** The upstream rows that the fork changed and the Fork page renders, as on their own page. */
 const UPSTREAM_SETTING_ROWS: Readonly<Record<UpstreamSettingRowId, ComponentType>> = {
-  "update-track": AboutVersionSection,
+  "app-version": AboutVersionSection,
   "storage-worktrees-location": WorktreesDirectoryRow,
 };
 

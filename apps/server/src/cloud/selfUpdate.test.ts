@@ -147,6 +147,12 @@ it.layer(NodeServices.layer)("server self update", (it) => {
       expect(
         (yield* desktop.selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason,
       ).toContain("desktop app");
+      // Fork: a fork desktop app has no Stable track to switch to.
+      expect(
+        (yield* desktop.selfUpdate
+          .update({ targetVersion: "1.1.0", channel: "latest" })
+          .pipe(Effect.flip)).reason,
+      ).toBe("This machine updates only to fork releases.");
       expect([...web.order, ...desktop.order]).toEqual([]);
     }),
   );
