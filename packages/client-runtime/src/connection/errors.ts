@@ -13,18 +13,6 @@ import {
 /** Fork: the server refused the saved session of a direct connection; only a new pairing helps. */
 export const PAIRING_REVOKED_MESSAGE = "This pairing expired or was revoked. Pair again.";
 
-/** Fork: MM-718. What a client shows while the machine map pause locks the environment. */
-export const MACHINE_PAUSED_MESSAGE =
-  "Paused from the machine map portal. Only the desktop app on this machine works until Resume.";
-
-// The pause ends without a client action, so the client keeps the credential and retries.
-const machinePausedError = (traceId: string) =>
-  new ConnectionTransientError({
-    reason: "remote-unavailable",
-    detail: MACHINE_PAUSED_MESSAGE,
-    traceId,
-  });
-
 export function profileMissingError(connectionId: string): ConnectionBlockedError {
   return new ConnectionBlockedError({
     reason: "configuration",
@@ -204,7 +192,6 @@ export function mapRemoteEnvironmentError(
   const via = connectionMethod === "relay" ? "relay" : "direct";
   switch (error._tag) {
     case "EnvironmentAuthInvalidError":
-      if (error.reason === "machine_paused") return machinePausedError(error.traceId);
       return new ConnectionBlockedError({
         reason: "authentication",
         // A direct connection holds the session of a pairing link, which expires or is revoked.

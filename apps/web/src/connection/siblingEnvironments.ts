@@ -119,17 +119,9 @@ function siblingOriginsToPair(input: {
 }
 
 /** Why a sibling is not paired, for the rows in Connections settings. */
-export type SiblingIssue =
-  | "sign-in" // most often no Cloudflare Access cookie for that host yet
-  | "waiting" // MM-918: the browser key waits for approval in the portal
-  | "paused"; // MM-718
+export type SiblingIssue = "sign-in"; // most often no Cloudflare Access cookie for that host yet
 
-const issueOf = (error: unknown): SiblingIssue =>
-  error instanceof SiblingPairingRefused && error.reason === "client_pending"
-    ? "waiting"
-    : error instanceof SiblingPairingRefused && error.reason === "machine_paused"
-      ? "paused"
-      : "sign-in";
+const issueOf = (_error: unknown): SiblingIssue => "sign-in";
 
 let issues: ReadonlyMap<string, SiblingIssue> = new Map();
 const listeners = new Set<() => void>();
@@ -177,11 +169,8 @@ async function pairSiblingOrigin(
   }
 }
 
-const delayAfter = (issue: SiblingIssue, failures: number): number => {
-  if (issue === "waiting") return WAITING_CHECK_MS;
-  if (issue === "paused") return RETRY_MAX_MS;
-  return Math.min(RETRY_MIN_MS * 2 ** failures, RETRY_MAX_MS);
-};
+const delayAfter = (failures: number): number =>
+  Math.min(RETRY_MIN_MS * 2 ** failures, RETRY_MAX_MS);
 
 /**
  * Pairs a sibling when its backoff allows it, with at most one pairing per origin at a time.
@@ -207,7 +196,7 @@ export async function pairSiblingWhenDue(
   }
   const issue = issueOf(error);
   const failures = (nextAttempt.get(origin)?.failures ?? 0) + 1;
-  nextAttempt.set(origin, { atMs: Date.now() + delayAfter(issue, failures), failures });
+  nextAttempt.set(origin, { atMs: Date.now() + delayAfter(failures), failures });
   return { issue, error };
 }
 

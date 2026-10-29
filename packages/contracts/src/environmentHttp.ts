@@ -99,10 +99,6 @@ export type EnvironmentRequestInvalidReason = typeof EnvironmentRequestInvalidRe
 export const EnvironmentAuthInvalidReason = Schema.Literals([
   "missing_credential",
   "invalid_credential",
-  // Fork: MM-718. The machine map pause locks every client except the desktop app of the machine.
-  "machine_paused",
-  // Fork: MM-918. Under `enforce`, the browser key waits for approval in the portal.
-  "client_pending",
 ]);
 export type EnvironmentAuthInvalidReason = typeof EnvironmentAuthInvalidReason.Type;
 

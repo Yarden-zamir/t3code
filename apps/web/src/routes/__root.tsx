@@ -37,7 +37,6 @@ import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepA
 import { DesktopUpdateIdleInstall } from "../components/desktop/DesktopUpdateIdleInstall";
 import { KitshnClientSettings } from "../components/KitshnClientSettings";
 import { DesktopDeviceMachines } from "../machineMap/desktopDevice";
-import { MachinePausedSurface, MachinePauseWatcher } from "../components/auth/MachinePausedSurface";
 import { InstalledAppCoordinator } from "../components/InstalledAppCoordinator";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
@@ -165,10 +164,6 @@ function RootRouteBranch() {
 
   if (pathname === GUEST_PAGE_PATH) return <Outlet />;
 
-  if (authGateState.status === "machine-paused") {
-    return <MachinePausedSurface />;
-  }
-
   if (pathname === "/pair" || pathname === "/connect" || pathname === "/connect-agent") {
     return <Outlet />;
   }
@@ -221,7 +216,6 @@ function RootRouteBranch() {
         {isElectron ? <DesktopUpdateIdleInstall /> : null}
         {primaryEnvironmentAuthenticated ? <KitshnClientSettings /> : null}
         {isElectron && primaryEnvironmentAuthenticated ? <DesktopDeviceMachines /> : null}
-        {primaryEnvironmentAuthenticated ? <MachinePauseWatcher /> : null}
         <RelayClientInstallDialog />
         <ConnectOnboardingDialog />
         <SshPasswordPromptDialog />
