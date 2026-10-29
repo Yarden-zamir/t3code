@@ -202,6 +202,7 @@ import {
   shouldCreateNewThreadInCurrentProject,
   shouldNavigateAfterThreadPark,
   sidebarListItemId,
+  sidebarSectionHasCards,
   sidebarThreadKeyAtY,
   sortInboxThreadsByReturn,
   sortPinnedThreadsForSidebar,
@@ -3359,11 +3360,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
                         );
-                        const isCard =
-                          section === "active" ||
-                          section === "pinned" ||
-                          section === "working" ||
-                          section === "waiting";
+                        const isCard = sidebarSectionHasCards(section);
                         const rowVariant = folderRow
                           ? folderRowsMultiline
                             ? "folder-multiline"

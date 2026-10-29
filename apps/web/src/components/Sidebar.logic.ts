@@ -171,6 +171,13 @@ export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
 
 export type SidebarSection = "pinned" | "active" | "working" | "waiting" | "snoozed" | "settled";
 
+/** Sections whose rows are cards; the other sections show slim rows. */
+export function sidebarSectionHasCards(section: SidebarSection): boolean {
+  return (
+    section === "pinned" || section === "active" || section === "working" || section === "waiting"
+  );
+}
+
 export function resolveSidebarThreadSection(input: {
   readonly snoozed: boolean;
   readonly settled: boolean;

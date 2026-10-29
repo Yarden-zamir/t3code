@@ -3,6 +3,7 @@ import { verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sort
 import {
   resolveSidebarDropTarget,
   sidebarListItemId,
+  sidebarSectionHasCards,
   sidebarMarkerId,
   type SidebarListItem,
   type SidebarListMarker,
@@ -136,13 +137,7 @@ export function createSidebarSortingStrategy(input: {
         }
         continue;
       }
-      if (
-        item.section === "pinned" ||
-        item.section === "active" ||
-        item.section === "working" ||
-        item.section === "waiting"
-      )
-        cardHeight ??= rects[index]?.height;
+      if (sidebarSectionHasCards(item.section)) cardHeight ??= rects[index]?.height;
       else slimHeight ??= rects[index]?.height;
       if (item.key !== active.key) groups[item.section].push(item);
     }
@@ -207,10 +202,7 @@ export function createSidebarSortingStrategy(input: {
       const index = indices.get(sidebarListItemId(item));
       const rect = index === undefined ? undefined : rects[index];
       const fallback =
-        item.kind === "thread" &&
-        (item.section === "pinned" || item.section === "active" || item.section === "working")
-          ? cardHeight
-          : slimHeight;
+        item.kind === "thread" && sidebarSectionHasCards(item.section) ? cardHeight : slimHeight;
       const moved = item.kind === "thread" && item.key === active.key;
       return item.kind === "marker" &&
         (item.marker === "pinned-header" || item.marker === "pinned-divider")

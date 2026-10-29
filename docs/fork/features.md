@@ -470,7 +470,7 @@ The sidebar lists threads that wait in a Waiting shelf, under the Working shelf.
 
 - **Setting:** the Working shelf setting, client setting `sidebarWorkingShelfEnabled`. Settings > General > "Working section". On mobile: Settings > General > Sidebar > "Working section".
 - **Works on:** web, desktop, mobile.
-- **Use it:** a thread is in the Waiting shelf when its row shows Waiting: its run waits on another thread, or background work that the agent waits on holds its completion (`forkThreadIsWaiting` in `packages/client-runtime/src/state/forkTerminalThreads.ts`). A thread is in one shelf only. Waiting wins over Working. The shelf has the count, the collapse toggle, the sort and the drag rules of the Working shelf. When no thread waits, the shelf does not show.
+- **Use it:** a thread is in the Waiting shelf when its run waits on another thread, or when background work that the agent waits on holds its completion (`forkThreadIsWaiting` in `packages/client-runtime/src/state/forkTerminalThreads.ts`). A thread is in one shelf only. Waiting wins over Working. The shelf has the count, the collapse toggle, the sort and the drag rules of the Working shelf. When no thread waits, the shelf does not show.
 - **Limits:** the boring sidebar in Labs has no Working shelf, so it has no Waiting shelf.
 
 ### Worktree path template

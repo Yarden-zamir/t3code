@@ -1673,6 +1673,14 @@ describe("Working section beta", () => {
           blockedOnThreadWait: true,
         }),
         makeThread({
+          id: ThreadId.make("background"),
+          title: "background",
+          runtime: { ...running, status: "idle" },
+          pendingBackgroundTasks: [
+            { taskId: "bg-1", description: "Watch build", kind: "monitor", awaited: true },
+          ],
+        }),
+        makeThread({
           id: ThreadId.make("snoozed"),
           title: "snoozed",
           runtime: running,
@@ -1723,6 +1731,7 @@ describe("Working section beta", () => {
       "v2-working-shelf",
       "working",
       "v2-waiting-shelf",
+      "background",
       "waiting",
       "v2-snoozed-shelf",
       "snoozed",
