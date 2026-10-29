@@ -332,6 +332,8 @@ export class KitshnProvider extends Context.Service<
      * kitshn has not named the Access app of the host.
      */
     readonly hostNotice: Stream.Stream<boolean>;
+    /** K-1623: kitshn has an Access application on this provider's host: the handover ran. */
+    readonly hostWithKitshn: Stream.Stream<boolean>;
     /** K-1611: the connection now, then each change. */
     readonly connection: Stream.Stream<KitshnConnection>;
     /** K-1609: whether the daemon named a link proxy, and whether `kitshn link-check` passed. */
@@ -370,6 +372,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   );
   const linkChecks = yield* Semaphore.make(1);
   const hostNotice = yield* SubscriptionRef.make(false);
+  const hostWithKitshn = yield* SubscriptionRef.make(false);
   const askResults = yield* Ref.make<ReadonlyArray<AskResult>>([]);
   const connection = yield* SubscriptionRef.make<KitshnConnection>({
     status: "connecting",
@@ -399,6 +402,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   ) {
     // Before the handover kitshn sends no access, or access with no audience (contract §10).
     const notWithKitshn = site !== undefined && (access === null || access.audiences.length === 0);
+    yield* SubscriptionRef.set(hostWithKitshn, access !== null && access.audiences.length > 0);
     const before = yield* SubscriptionRef.getAndSet(hostNotice, notWithKitshn);
     if (notWithKitshn && !before) {
       yield* Effect.logWarning(
@@ -800,6 +804,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     request,
     state: SubscriptionRef.changes(providerState),
     hostNotice: SubscriptionRef.changes(hostNotice),
+    hostWithKitshn: SubscriptionRef.changes(hostWithKitshn),
     askResults: Ref.get(askResults),
     connection: SubscriptionRef.changes(connection),
     linkProxyState: Ref.get(linkProxy).pipe(

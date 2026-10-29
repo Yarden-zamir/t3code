@@ -549,6 +549,10 @@ const layerServerSelfUpdate = ServerSelfUpdate.layer.pipe(Layer.provide(layerDes
 
 // Fork: kitshn is the only way this server joins other machines (K-704 to K-1610).
 const layerMachineMap = MachineExec.layer.pipe(
+  // Fork: the portal tunnel of an older join serves the host until its handover to kitshn.
+  Layer.provideMerge(
+    layerPortalTunnel.pipe(Layer.provide(ServerSecretStore.layer), Layer.provide(layerRelayClient)),
+  ),
   Layer.provideMerge(KitshnSettingsSync.layer),
   Layer.provideMerge(MachinePeers.layer),
   Layer.provideMerge(KitshnAudit.layer),
@@ -558,10 +562,6 @@ const layerMachineMap = MachineExec.layer.pipe(
   Layer.provideMerge(MachineHost.layer),
   // Fork: updates from the fork releases.
   Layer.provideMerge(ForkUpdates.layer.pipe(Layer.provide(layerServerSelfUpdate))),
-  // Fork: the portal tunnel of an older join serves the host until its handover to kitshn.
-  Layer.provide(
-    layerPortalTunnel.pipe(Layer.provide(ServerSecretStore.layer), Layer.provide(layerRelayClient)),
-  ),
   Layer.provide(ProcessRunner.layer),
   Layer.provide(NodeSocket.layerWebSocketConstructor),
 );
