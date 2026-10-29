@@ -219,3 +219,15 @@ it.effect("a setting goes into one part of the settings state, keeping its other
     expect(resultText(local)).toContain("belongs to one machine");
   }),
 );
+
+it.effect("a job that waits for its approver circle names kitshn's proposal id (K-1722)", () =>
+  Effect.gen(function* () {
+    const waiting: KitshnProvider.KitshnProvider["Service"]["request"] = () =>
+      Effect.succeed({ id: "1", type: "ask", outcome: "waiting", proposalId: "p-9" });
+    const result = yield* callTool(threadCaller, "machines_command", {
+      machineId: "vps",
+      command: "restart-server",
+    }).pipe(Effect.provide(toolsWith(liveThreadsLayer, [], waiting)));
+    expect(resultText(result)).toContain('\\"proposalId\\":\\"p-9\\"');
+  }),
+);

@@ -550,6 +550,13 @@ it.layer(
         expect(refused.message).toBe("not queued");
         expect(yield* Ref.get(harness.machine)).toEqual({ id: "m-1", name: "studio" });
         expect(yield* Ref.get(harness.contacts)).toBe(1);
+        // K-1722: the answer to a waiting ask is kept for machines_read.
+        yield* child.say({ type: "ask-result", proposalId: "p1", outcome: "approved" });
+        yield* child.say(command(3, "collect-diagnostics"));
+        yield* Queue.take(child.written);
+        expect(yield* harness.provider.askResults).toEqual([
+          { type: "ask-result", proposalId: "p1", outcome: "approved" },
+        ]);
       }).pipe(Effect.scoped),
   );
   it.effect(

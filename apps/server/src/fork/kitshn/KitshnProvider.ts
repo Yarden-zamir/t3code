@@ -49,6 +49,7 @@ import {
   type ProviderResource,
   ProviderResource as ProviderResourceSchema,
   type AccessApp,
+  type AskResult,
   type CardSettingValues,
   type DesiredParts,
   type LocalRequest,
@@ -333,6 +334,8 @@ export class KitshnProvider extends Context.Service<
      * kitshn has not named the Access app of the host. Always false while `SEND_SITE` is off.
      */
     readonly hostNotice: Stream.Stream<boolean>;
+    /** K-1722: the answers to this machine's waiting asks, newest first, at most 50. */
+    readonly askResults: Effect.Effect<ReadonlyArray<AskResult>>;
     /** A call on the link socket failed: the next use runs `kitshn link-check` again first. */
     readonly linkSocketFailed: (socket: string) => Effect.Effect<void>;
     readonly request: (
@@ -365,6 +368,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   );
   const linkChecks = yield* Semaphore.make(1);
   const hostNotice = yield* SubscriptionRef.make(false);
+  const askResults = yield* Ref.make<ReadonlyArray<AskResult>>([]);
   // The live registered connection, so `request` can use it.
   const live = yield* Ref.make<
     Option.Option<(request: LocalRequestInput) => Effect.Effect<Answer, KitshnRequestError>>
@@ -575,7 +579,9 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         }
         const answer = decoded.value;
         // An ask answer and a grants push come from kitshn itself, not from the local daemon.
-        if (answer.type === "ask" || answer.type === "grants") yield* grants.contact;
+        if (answer.type === "ask" || answer.type === "ask-result" || answer.type === "grants") {
+          yield* grants.contact;
+        }
         const asked = "id" in answer && answer.id !== null ? waiting.get(answer.id) : undefined;
         if (asked !== undefined) return yield* Deferred.succeed(asked, answer);
         switch (answer.type) {
@@ -633,6 +639,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
               return yield* new RegisterRefused({ error: answer.error });
             }
             return yield* Effect.logWarning(`kitshn provider: kitshn refused: ${answer.error}`);
+          case "ask-result":
+            return yield* Ref.update(askResults, (results) => [answer, ...results].slice(0, 50));
           case "upsert":
           case "remove":
           case "command-result":
@@ -782,6 +790,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     request,
     state: SubscriptionRef.changes(providerState),
     hostNotice: SubscriptionRef.changes(hostNotice),
+    askResults: Ref.get(askResults),
     linkSocket: linkChecks.withPermits(1)(
       Effect.gen(function* () {
         const current = yield* Ref.get(linkProxy);

@@ -107,7 +107,13 @@ export const layer = McpToolAccess.toLayer(MachineMapToolkit, {
     Effect.gen(function* () {
       const answer = yield* ask({ type: "ask", action: "state", target: "" });
       const machine = yield* (yield* KitshnGrants.KitshnGrants).machine;
-      return { _tag: "read", machine, state: "result" in answer ? answer.result : null };
+      const askResults = yield* (yield* KitshnProvider.KitshnProvider).askResults;
+      return {
+        _tag: "read",
+        machine,
+        state: "result" in answer ? answer.result : null,
+        askResults,
+      };
     }),
   ),
   machines_resources: McpToolAccess.reads(() =>
@@ -144,7 +150,7 @@ export const layer = McpToolAccess.toLayer(MachineMapToolkit, {
             return Effect.succeed({
               _tag: "command",
               outcome: "waiting",
-              proposalId: answer.result ?? null,
+              proposalId: answer.proposalId ?? null,
             });
           default:
             return Effect.fail(toFailure({ message: answer.reason ?? "kitshn refused the job." }));

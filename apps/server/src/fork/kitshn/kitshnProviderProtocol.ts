@@ -150,6 +150,16 @@ export const LinkAudit = Schema.Struct({
 });
 export type LinkAudit = typeof LinkAudit.Type;
 
+/** K-1722 to K-1724: an event, the answer to a waiting ask. */
+export const AskResult = Schema.Struct({
+  type: Schema.Literal("ask-result"),
+  proposalId: Schema.String,
+  outcome: Schema.Literals(["approved", "denied", "expired"]),
+  result: Schema.optionalKey(Schema.Unknown),
+  reason: Schema.optionalKey(Schema.String),
+});
+export type AskResult = typeof AskResult.Type;
+
 /** K-1623: the team domain and the AUD tags of kitshn's Access applications on this provider's hosts. */
 export const AccessApp = Schema.Struct({
   teamDomain: Schema.String,
@@ -341,14 +351,20 @@ export const Answer = Schema.Union([
     provider: Schema.String,
     values: CardSettingValues,
   }),
-  /** K-1710: kitshn ran the ask (`done`), holds it for the owner, or refused it. */
+  /**
+   * K-1710, K-1722: kitshn ran the ask (`done`), holds it for its approver circle (`waiting`, with
+   * `proposalId`; an `ask-result` event follows), or refused it.
+   */
   Schema.Struct({
     id: Schema.String,
     type: Schema.Literal("ask"),
     outcome: Schema.Literals(["done", "waiting", "refused", "not-kitshn"]),
     result: Schema.optionalKey(Schema.Unknown),
+    proposalId: Schema.optionalKey(Schema.String),
     reason: Schema.optionalKey(Schema.String),
+    need: Schema.optionalKey(Schema.String),
   }),
+  AskResult,
   Schema.Struct({ id: Schema.String, type: Schema.Literal("job-cancel") }),
   Schema.Struct({
     id: Schema.String,

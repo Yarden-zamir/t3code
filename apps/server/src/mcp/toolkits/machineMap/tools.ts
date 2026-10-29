@@ -41,7 +41,7 @@ const KITSHN_NOTE =
 
 const MachinesReadTool = Tool.make("machines_read", {
   ...shared,
-  description: `Read what kitshn shows this machine. Changes nothing. The result is {"_tag":"read", machine, state}: machine is {id, name} of this machine on the kitshn map, or null before it registered. state is the answer of the kitshn state ask: rights (what kitshn lets this machine do), circles ({id, name, level} that this machine can see), cards (the cards that this machine manages, with kind, name, addresses, status, circles, deploy, backup and uptime), proposals (open asks that this machine may answer) and repos. It does not list other machines or their status. ${KITSHN_NOTE}`,
+  description: `Read what kitshn shows this machine. Changes nothing. The result is {"_tag":"read", machine, state}: machine is {id, name} of this machine on the kitshn map, or null before it registered. state is the answer of the kitshn state ask: rights (what kitshn lets this machine do), circles ({id, name, level} that this machine can see), cards (the cards that this machine manages, with kind, name, addresses, status, circles, deploy, backup and uptime), proposals (open asks that this machine may answer) and repos. askResults lists the answers to this machine's waiting jobs, newest first: {proposalId, outcome ("approved", "denied" or "expired"), result, reason}. It does not list other machines or their status. ${KITSHN_NOTE}`,
   success: Schema.Unknown,
 })
   .annotate(Tool.Readonly, true)
@@ -109,7 +109,7 @@ export const MachinesCommandInput = Schema.Struct({
 
 const MachinesCommandTool = Tool.make("machines_command", {
   ...shared,
-  description: `Run a command of the T3 card on a machine as a kitshn job (K-1612). kitshn runs it at once only when a circle that holds this machine may run commands there. Otherwise the job waits for the owner. The result is {"_tag":"command", outcome} with outcome "done" and result (it holds the job id), or "waiting" and proposalId; a refusal fails with its reason. restart-server and stop-all-agents stop the running agent turns there, the caller's too when it runs there. Cancel a queued job with machines_queue_cancel. ${KITSHN_NOTE}`,
+  description: `Run a command of the T3 card on a machine as a kitshn job (K-1612). kitshn runs it at once only when a circle that holds this machine may run commands there. Otherwise the job waits for the owner. The result is {"_tag":"command", outcome} with outcome "done" and result (it holds the job id), or "waiting" and proposalId, whose answer shows later in askResults of machines_read; a refusal fails with its reason. restart-server and stop-all-agents stop the running agent turns there, the caller's too when it runs there. Cancel a queued job with machines_queue_cancel. ${KITSHN_NOTE}`,
   parameters: MachinesCommandInput,
   success: Schema.Unknown,
 }).annotate(Tool.Destructive, true);
