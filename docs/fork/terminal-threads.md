@@ -101,6 +101,10 @@ The sidebar shows the state of a terminal thread until you visit it:
 - A program that runs in the shell shows Working. A background job does not.
 - A shell that cannot start shows Failed.
 
+A bell, or a command of 10 seconds or more that ends, moves the terminal thread to the top of
+the inbox. The folder sidebar sorts threads by the last message that you sent. There, a terminal
+thread also moves up at its last bell or ended command.
+
 With Web Push on, a phone also gets a notification for a bell (Input needed) and for a command
 of 10 seconds or more that ends (Program done or Program failed).
 

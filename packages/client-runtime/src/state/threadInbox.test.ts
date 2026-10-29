@@ -239,5 +239,10 @@ describe("sortWorkingThreadsBySend", () => {
     expect(
       sortWorkingThreadsBySend([launched, sentFirst, sentLast]).map((thread) => thread.id),
     ).toEqual(["sent-last", "sent-first", "launched"]);
+    const rang = (entry: { readonly id: string }) =>
+      entry.id === "launched" ? Date.parse("2026-06-01T03:00:00.000Z") : undefined;
+    expect(
+      sortWorkingThreadsBySend([launched, sentFirst, sentLast], rang).map((thread) => thread.id),
+    ).toEqual(["launched", "sent-last", "sent-first"]);
   });
 });

@@ -59,7 +59,10 @@ type WorkingSortInput = Pick<
   "id" | "environmentId" | "createdAt" | "latestRun" | "latestUserAuthoredMessageAt"
 >;
 
-export function sortWorkingThreadsBySend<T extends WorkingSortInput>(threads: readonly T[]): T[] {
+export function sortWorkingThreadsBySend<T extends WorkingSortInput>(
+  threads: readonly T[],
+  observedAttentionAt?: (thread: T) => number | undefined,
+): T[] {
   const timestamps = new Map(
     threads.map((thread) => [
       thread,
@@ -70,6 +73,7 @@ export function sortWorkingThreadsBySend<T extends WorkingSortInput>(threads: re
             ? thread.latestRun?.requestedAt
             : thread.latestUserAuthoredMessageAt) ?? undefined,
         ) ?? 0,
+        observedAttentionAt?.(thread) ?? 0,
       ),
     ]),
   );

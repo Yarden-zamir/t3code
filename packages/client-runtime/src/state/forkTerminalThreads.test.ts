@@ -250,6 +250,8 @@ describe("forkInboxReturnAt", () => {
     );
     expect(returnAt(agent)).toBe(Date.parse(visited));
     expect(forkInboxReturnAt(undefined)(agent)).toBeUndefined();
+    // The folder sidebar sorts by send time and passes no tracker: only terminal attention counts.
+    expect(forkInboxReturnAt(undefined)(shell)).toBe(Date.parse(after));
   });
 });
 
