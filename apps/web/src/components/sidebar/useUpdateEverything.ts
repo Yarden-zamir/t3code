@@ -75,7 +75,8 @@ export function useUpdateEverything(
     waitForNpm,
   } = channelSwitch
     ? { ...collectChannelSwitchTargets(machines, channelSwitch), waitForNpm: [] }
-    : collectServerUpdateTargets(machines, targetVersion, localUpdateVersion !== null);
+    : // Fork: the desktop feed can offer a release before its SHA256SUMS upload, so every server waits.
+      collectServerUpdateTargets(machines, targetVersion, false);
   // Fork: servers install from the fork GitHub release, not from npm.
   const published = useForkReleaseInstallable(waitForNpm.length > 0 ? targetVersion : null);
   const servers = published

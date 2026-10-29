@@ -119,8 +119,9 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
       "latest",
     );
 
+    // Fork: release notes drop every <details> block, to keep screenshots out of the list.
     expect(result.releaseNotes).toEqual([
-      { version: "1.2.3", items: ["hidden", "Logs", "Newer fix", "Older fix"], totalItems: 4 },
+      { version: "1.2.3", items: ["Newer fix", "Older fix"], totalItems: 2 },
     ]);
   });
 
