@@ -9,7 +9,7 @@ import {
   useUpdateScopedSettings,
 } from "./useScopedSettings";
 
-/** Fork: `keybindingSync`, the keybindings of this machine sync through the machine map. */
+/** Fork: `keybindingSync`, the keybindings of this machine sync through kitshn. */
 export function KeybindingSyncSettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -20,7 +20,7 @@ export function KeybindingSyncSettingsRow() {
       {...searchableSetting("keybinding-sync")}
       serverScoped
       settingKeys={["keybindingSync"]}
-      description="The machine map syncs keybindings.json like other settings. A change for all environments becomes the shared value; a change for one environment stays on that machine."
+      description="kitshn syncs keybindings.json like other settings. A change for all environments becomes the shared value; a change for one environment stays on that machine."
       resetAction={
         mixed || settings.keybindingSync !== DEFAULT_SERVER_SETTINGS.keybindingSync ? (
           <SettingResetButton
@@ -36,7 +36,7 @@ export function KeybindingSyncSettingsRow() {
           settingKeys={["keybindingSync"]}
           checked={settings.keybindingSync}
           onCheckedChange={(checked) => updateSettings({ keybindingSync: Boolean(checked) })}
-          aria-label="Sync keybindings through the machine map"
+          aria-label="Sync keybindings through kitshn"
         />
       }
     />

@@ -118,7 +118,7 @@ export function useShareKeybindingsToMachineMap() {
       toastManager.add({
         type: "info",
         title: "Keybindings not shared",
-        description: "Turn on Sync keybindings to share them through the machine map.",
+        description: "Turn on Sync keybindings to share them through kitshn.",
       });
       return;
     }
@@ -141,7 +141,7 @@ export function MachineMapSyncedMarker({ keys }: { keys: readonly (keyof ServerS
         render={
           <span
             tabIndex={0}
-            aria-label="Synced by the machine map"
+            aria-label="Synced through kitshn"
             className="inline-flex text-muted-foreground"
           />
         }
@@ -149,7 +149,7 @@ export function MachineMapSyncedMarker({ keys }: { keys: readonly (keyof ServerS
         <RefreshCwIcon className="size-3" />
       </TooltipTrigger>
       <TooltipPopup side="top">
-        Synced by the machine map. A change for all environments updates the shared value.
+        Synced through kitshn. A change for all environments updates the shared value.
       </TooltipPopup>
     </Tooltip>
   );

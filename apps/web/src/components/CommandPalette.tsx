@@ -1365,7 +1365,7 @@ function OpenCommandPaletteDialog(props: {
     actionItems.push({
       kind: "action",
       value: "action:open-machines",
-      searchTerms: ["show machines", "machine map", "portal", "presence", "access"],
+      searchTerms: ["show machines", "kitshn", "links", "machine map"],
       title: "Show machines",
       icon: <NetworkIcon className={ITEM_ICON_CLASS} />,
       run: async () => {

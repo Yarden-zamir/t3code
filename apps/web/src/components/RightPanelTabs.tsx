@@ -372,7 +372,7 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Machines",
-      description: "The machine map: presence, work, access and tasks.",
+      description: "The machines that the kitshn links of this machine reach.",
       icon: Network,
       shortcut: "N",
       available: props.machinesAvailable,

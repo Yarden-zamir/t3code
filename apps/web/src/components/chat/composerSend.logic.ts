@@ -13,7 +13,7 @@ export function referencedThreadContexts(draft: {
 
 /**
  * Fork: MM-1906. A machine reads an attached thread when the thread is on that machine or on a
- * machine that it reads through the machine map. `readableEnvironmentIds` holds both.
+ * machine that it reads through a kitshn link. `readableEnvironmentIds` holds both.
  */
 export function canReadThreadContexts(
   threadContexts: ReadonlyArray<ThreadContextRecord>,
