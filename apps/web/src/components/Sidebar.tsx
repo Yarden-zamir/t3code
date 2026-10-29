@@ -695,7 +695,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   // A loaded config gates dragging only; the sort must not depend on it, so web and mobile agree.
   const sortedPinned = sortPinnedThreadsForSidebar(pinned);
   const sortedActive = sortActiveBySend
-    ? sortWorkingThreadsBySend(active)
+    ? sortWorkingThreadsBySend(active, forkInboxReturnAt(undefined))
     : workingShelfEnabled
       ? sortInboxThreadsByReturn(active, forkInboxReturnAt(inboxObservation.returnedAt))
       : sortThreadsForSidebar(active);
