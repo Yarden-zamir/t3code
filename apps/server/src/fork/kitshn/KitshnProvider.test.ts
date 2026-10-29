@@ -112,6 +112,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
     const linkChecks = yield* Queue.unbounded<string>();
     const linkCheckExit = yield* Ref.make(0);
     const channels = yield* Queue.unbounded<string>();
+    const contacts = yield* Ref.make(0);
 
     const layer = Layer.effect(
       KitshnProvider.KitshnProvider,
@@ -121,7 +122,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
         Layer.mergeAll(
           Layer.mock(KitshnGrants.KitshnGrants)({
             replaceTables: (next) => Ref.set(tables, next),
-            contact: Effect.void,
+            contact: Ref.update(contacts, (count) => count + 1),
             setMachine: (next) => Ref.set(machine, next),
             setPeerOrigins: () => Effect.void,
             setAccess: () => Effect.void,
@@ -221,6 +222,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
       machine,
       linkChecks,
       channels,
+      contacts,
       linkCheckExit,
     };
   });
@@ -352,6 +354,14 @@ const EXPECTED_REGISTER = {
   ],
 };
 
+/** K-706: after a register answer, the provider asks kitshn for its state to prove contact. */
+const takeProbe = (child: FakeChild) =>
+  Queue.take(child.written).pipe(
+    Effect.tap((line) =>
+      Effect.sync(() => expect(line).toMatchObject({ type: "ask", action: "state" })),
+    ),
+  );
+
 const command = (commandId: number, name: string, row?: string) => ({
   type: "command",
   provider: "t3",
@@ -407,6 +417,7 @@ it.layer(
         machineId: "m-1",
         grants: { app: [GRANT] },
       });
+      yield* takeProbe(child);
       yield* child.say("not json");
       yield* child.say({ type: "something-new" });
       yield* child.say(command(7, "collect-diagnostics"));
@@ -489,6 +500,7 @@ it.layer(
         });
         expect(register.resources).toEqual([...EXPECTED_REGISTER.resources, card("t1")]);
         yield* child.say({ id: register.id, type: "register", machineId: "m-1", grants: {} });
+        yield* takeProbe(child);
 
         yield* Ref.set(harness.shared, [share("t2")]);
         yield* TestClock.adjust("15 seconds");
@@ -524,6 +536,10 @@ it.layer(
         // K-717: the T3 card's update channel reaches the updater.
         expect(yield* Queue.take(harness.channels)).toBe("nightly");
         expect(yield* Queue.take(harness.channels)).toBe("daily");
+        // K-706: the daemon's own register answer proves no contact with kitshn; kitshn's answer does.
+        const probe = yield* takeProbe(child);
+        expect(yield* Ref.get(harness.contacts)).toBe(0);
+        yield* child.say({ id: probe.id, type: "ask", outcome: "done", result: {} });
         const asking = yield* harness.provider
           .request({ type: "job-cancel", jobId: 42 })
           .pipe(Effect.forkChild);
@@ -533,6 +549,7 @@ it.layer(
         const refused = yield* Effect.flip(Fiber.join(asking));
         expect(refused.message).toBe("not queued");
         expect(yield* Ref.get(harness.machine)).toEqual({ id: "m-1", name: "studio" });
+        expect(yield* Ref.get(harness.contacts)).toBe(1);
       }).pipe(Effect.scoped),
   );
   it.effect(

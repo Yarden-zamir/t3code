@@ -68,8 +68,9 @@ const RETRY_CAP = Duration.seconds(30);
 // Revisit if kitshn starts "when idle" jobs (K-1608) that need a faster busy fact. A thread card
 // that lags grants nothing: the guest routes check the share itself on each request.
 const FACTS_POLL = Duration.seconds(15);
-// While the child runs, the daemon answers; this keeps the saved table fresh (K-706).
-const CONTACT_TICK = Duration.minutes(1);
+// K-706: only kitshn's own answers keep the saved table fresh. The daemon forwards a `grants`
+// event only on a change, so this ask proves contact with kitshn while nothing changes.
+const CONTACT_PROBE = Duration.hours(1);
 // kitshn holds 500 cards per machine for all providers (K-704).
 const THREAD_CARDS_LIMIT = 200;
 // Below the daemon's 5-minute limit, so T3 answers before the daemon gives up.
@@ -573,7 +574,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
           );
         }
         const answer = decoded.value;
-        if (yield* Deferred.isDone(registeredOnce)) yield* grants.contact;
+        // An ask answer and a grants push come from kitshn itself, not from the local daemon.
+        if (answer.type === "ask" || answer.type === "grants") yield* grants.contact;
         const asked = "id" in answer && answer.id !== null ? waiting.get(answer.id) : undefined;
         if (asked !== undefined) return yield* Deferred.succeed(asked, answer);
         switch (answer.type) {
@@ -645,7 +647,11 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
 
       yield* Deferred.await(registeredOnce).pipe(
         Effect.andThen(
-          Effect.sleep(CONTACT_TICK).pipe(Effect.andThen(grants.contact), Effect.forever),
+          localRequest({ type: "ask", action: "state", target: "" }).pipe(
+            Effect.ignore,
+            Effect.andThen(Effect.sleep(CONTACT_PROBE)),
+            Effect.forever,
+          ),
         ),
         Effect.forkScoped,
       );
