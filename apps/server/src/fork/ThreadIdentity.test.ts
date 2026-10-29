@@ -8,7 +8,6 @@ import {
   ProviderInstanceId,
   ThreadId,
   type OrchestrationV2AppThread,
-  type Project,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -22,7 +21,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import * as ProjectService from "../project/ProjectService.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadIdentity from "./ThreadIdentity.ts";
 import * as ThreadIdentityRoute from "./threadIdentityRoute.ts";
 
@@ -56,11 +55,10 @@ const layerRegistry = Layer.effect(
   Layer.provide(NodeServices.layer),
 );
 
-const project: Project = {
-  id: projectId,
+const project: ProjectStore.ProjectRow = {
+  projectId,
   title: "Kitshn",
   workspaceRoot: "/workspace/kitshn",
-  repositoryIdentity: null,
   faviconPath: null,
   projectIcon: null,
   defaultModelSelection: null,
@@ -75,8 +73,9 @@ const project: Project = {
 const layerDependencies = Layer.mergeAll(
   layerRegistry,
   ProjectionStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
-  Layer.mock(ProjectService.ProjectService)({
-    getById: (id) => Effect.succeed(id === projectId ? Option.some(project) : Option.none()),
+  // Only the stored project row: the check needs its title, never the repository probe.
+  Layer.mock(ProjectStore.ProjectStoreV2)({
+    get: (id) => Effect.succeed(id === projectId ? Option.some(project) : Option.none()),
   }),
 );
 

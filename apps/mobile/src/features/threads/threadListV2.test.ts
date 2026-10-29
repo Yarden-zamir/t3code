@@ -1661,11 +1661,25 @@ describe("Working section beta", () => {
     expect(ids(layout).slice(1)).toEqual(["finished-early", "finished-late", "asks-approval"]);
   });
 
-  it("places the shelf after queued tasks and before snoozed and settled threads", () => {
+  it("places Working, then Waiting, after queued tasks and before snoozed and settled threads", () => {
     const layout = buildThreadListV2Items({
       threads: [
         makeThread({ id: ThreadId.make("active"), title: "active" }),
         makeThread({ id: ThreadId.make("working"), title: "working", runtime: running }),
+        makeThread({
+          id: ThreadId.make("waiting"),
+          title: "waiting",
+          runtime: running,
+          blockedOnThreadWait: true,
+        }),
+        makeThread({
+          id: ThreadId.make("background"),
+          title: "background",
+          runtime: { ...running, status: "idle" },
+          pendingBackgroundTasks: [
+            { taskId: "bg-1", description: "Watch build", kind: "monitor", awaited: true },
+          ],
+        }),
         makeThread({
           id: ThreadId.make("snoozed"),
           title: "snoozed",
@@ -1685,6 +1699,7 @@ describe("Working section beta", () => {
       now: NOW,
       workingShelfEnabled: true,
       workingShelfExpanded: true,
+      waitingShelfExpanded: true,
       snoozedShelfExpanded: true,
     });
     const items = buildThreadListV2ListItems({
@@ -1693,6 +1708,9 @@ describe("Working section beta", () => {
       workingCount: layout.workingCount,
       workingShelfExpanded: true,
       workingShelfHeaderIndex: layout.workingShelfHeaderIndex,
+      waitingCount: layout.waitingCount,
+      waitingShelfExpanded: true,
+      waitingShelfHeaderIndex: layout.waitingShelfHeaderIndex,
       snoozedCount: layout.snoozedCount,
       snoozedShelfExpanded: true,
       snoozedShelfHeaderIndex: layout.snoozedShelfHeaderIndex,
@@ -1712,6 +1730,9 @@ describe("Working section beta", () => {
       "active",
       "v2-working-shelf",
       "working",
+      "v2-waiting-shelf",
+      "background",
+      "waiting",
       "v2-snoozed-shelf",
       "snoozed",
       "v2-settled-shelf",
