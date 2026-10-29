@@ -414,7 +414,7 @@ A local service, for example kitshn, learns which thread an agent works in. The 
 Agents publish a file or a folder of their workspace to kitshn, and give the card a new address name. The tools are `kitshn_publish` and `kitshn_address`. They run the machine's kitshn 2 CLI, which sends each call through the local kitshn daemon (kitshn K-1116, K-1120, K-1123, K-1714). No agent and no T3 setting holds a kitshn token.
 
 - **Setting:** none in T3. Join the machine to kitshn, so its daemon runs. Without a daemon, the tool returns the kitshn error.
-- On each start, the server registers itself with the daemon as the `t3.` attester: `kitshn attester set --prefix t3. --url http://127.0.0.1:<port>/api/thread-identity --token-env T3_ACP_MCP_AUTHORIZATION`. This needs the daemon user or root. A failure logs one warning, and the server starts normally. A dev server (`vp run dev`, with a dev URL), a server that does not listen on loopback, and Windows skip it.
+- On each start, the server registers itself with the daemon as the `t3.` attester: `kitshn attester set --prefix t3. --url http://127.0.0.1:<port>/api/thread-identity --token-env T3_ACP_MCP_AUTHORIZATION`. This needs the daemon user or root. When the machine has no kitshn 2, the server logs one info line. Any other failure logs one warning. In both cases the server starts normally. Only the server of the default T3 home `~/.t3` registers. A server with `--base-dir` or `T3CODE_HOME`, a worktree dev server, a dev server with a dev URL, a server that does not listen on loopback, and Windows skip it.
 - A call with a thread credential fails closed. When the daemon cannot check the thread, or the thread is archived or deleted, the tool returns the kitshn error.
 - **Works on:** server, so every client.
 - Only a live full-access/default thread on this machine can publish. An agent on another machine cannot.
@@ -424,6 +424,7 @@ Agents publish a file or a folder of their workspace to kitshn, and give the car
 - A call stops after 150 seconds, a little above the daemon's own 120-second call limit. kitshn refuses at once when a right is unset or set to "ask".
 - **Limits:**
   - The server checks a binary once per path and change time. A new install at the same path with the same change time is not checked again. Revisit if kitshn installs keep the change time.
+  - A server that stopped leaves its `t3.` entry in the daemon. kitshn calls then fail with "could not check the T3 thread; try again." until the installed server starts again.
   - A process of the same user, such as an agent in another full-access thread, can replace `~/.local/bin/kitshn` with a file that answers the version check. That file then gets the credential of the next thread that calls a kitshn tool. The change-time cache does not stop this, because the file can keep the old change time. Revisit when agents run as a user other than the server, or when kitshn signs its binary.
 
 ### Scheduled task model

@@ -12,7 +12,7 @@ import * as KitshnCli from "./KitshnCli.ts";
 /** Registers a server on `host:4321` with a fake kitshn that answers with `failure`, if any. */
 const register = (
   host: string,
-  options: { failure?: KitshnCli.KitshnCliError["reason"]; devUrl?: URL } = {},
+  options: { failure?: KitshnCli.KitshnCliError["reason"]; devUrl?: URL; baseDir?: string } = {},
 ) =>
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
@@ -22,7 +22,11 @@ const register = (
         KitshnAttester.layer.pipe(
           Layer.provide(
             Layer.mergeAll(
-              Layer.succeed(ServerConfig.ServerConfig, { ...config, devUrl: options.devUrl }),
+              Layer.succeed(ServerConfig.ServerConfig, {
+                ...config,
+                devUrl: options.devUrl,
+                baseDir: options.baseDir ?? "/home/owner/.t3",
+              }),
               Layer.mock(KitshnCli.KitshnCli)({
                 setAttester: (url) =>
                   Effect.suspend(() => {
@@ -44,7 +48,10 @@ const register = (
     );
     yield* attester
       .register(NetAddress.inetAddressFromIpStringUnsafe(host, 4321))
-      .pipe(Effect.provideService(HostProcess.Platform, "linux"));
+      .pipe(
+        Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(HostProcess.HomeDirectory, "/home/owner"),
+      );
     return urls;
   });
 
@@ -69,9 +76,10 @@ it.layer(
       }),
   );
 
-  it.effect("skips a non-loopback listener and a dev server", () =>
+  it.effect("skips a non-loopback listener, another T3 home and a dev server", () =>
     Effect.gen(function* () {
       expect(yield* register("100.64.0.7")).toEqual([]);
+      expect(yield* register("127.0.0.1", { baseDir: "/work/repo/.t3" })).toEqual([]);
       expect(yield* register("127.0.0.1", { devUrl: new URL("http://localhost:5733") })).toEqual(
         [],
       );

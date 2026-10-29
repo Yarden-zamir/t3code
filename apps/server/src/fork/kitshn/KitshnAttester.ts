@@ -7,6 +7,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as NetAddress from "effect/net/NetAddress";
 
 import * as ServerConfig from "../../config.ts";
@@ -24,6 +25,7 @@ export class KitshnAttester extends Context.Service<
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const cli = yield* KitshnCli.KitshnCli;
+  const path = yield* Path.Path;
 
   const register: KitshnAttester["Service"]["register"] = Effect.fn("KitshnAttester.register")(
     function* (address) {
@@ -31,6 +33,14 @@ const make = Effect.gen(function* () {
       // A dev server would take the `t3.` entry from the installed app, which owns the agents.
       if (config.devUrl !== undefined) {
         return yield* Effect.logDebug("kitshn attester: a dev server does not register");
+      }
+      // Only the server of the default T3 home owns the `t3.` entry; ServerConfig does not record
+      // whether --base-dir, T3CODE_HOME or a worktree `.t3` chose the folder, so compare paths.
+      const defaultHome = path.join(yield* HostProcess.HomeDirectory, ".t3");
+      if (path.resolve(config.baseDir) !== defaultHome) {
+        return yield* Effect.logDebug(
+          `kitshn attester: the T3 home ${config.baseDir} is not the default ${defaultHome}, so it does not register`,
+        );
       }
       // The daemon accepts only a loopback attester.
       if (!NetAddress.isLoopback(address.address) && !NetAddress.isUnspecified(address.address)) {
