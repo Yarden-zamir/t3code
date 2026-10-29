@@ -7,7 +7,7 @@ User-facing fork features are in [features.md](features.md). Agents that operate
 
 Fork main only moves forward. Nothing rebases or force-pushes it. To see all fork changes, run `git diff upstream/main...main`.
 
-The fork disables every upstream workflow, because they need upstream's runners and secrets. Fork workflow files start with `fork-`.
+The fork disables every upstream workflow, because they need upstream's runners and secrets. Fork workflow files start with `fork-`. One exception stays on: `agent-context-budget.yml` runs no PR code and needs no secrets, and fork PRs use its budget check.
 
 ### Fork Sync
 
@@ -20,7 +20,7 @@ The fork disables every upstream workflow, because they need upstream's runners 
 - Before the other fork tests, the job installs the Electron binary for the desktop tests. When a fork test is in `apps/server`, it also installs Playwright Chromium for the server preview tests.
 - A conflict only in `README.md` resolves by itself. See [Change the fork](#change-the-fork).
 - If a merge conflicts, upstream closes an adopted pull request without a merge, or a check fails, the sync comments on the issue "Fork sync: upstream merge failed" and stops. The comment and the call to the repair agent name the reason, for example the adopted pull request that conflicted.
-- After each sync, the job "Check upstream workflows" fails when another workflow is active. It prints the `gh workflow disable` command for that workflow.
+- After each sync, the job "Check upstream workflows" fails when another workflow is active, except `agent-context-budget.yml`. It prints the `gh workflow disable` command for that workflow.
 - To pause the automatic sync, disable the task "Fork Sync trigger" on the VPS. Before you merge upstream by hand, read [Repair agent](../fork-agents.md#repair-agent).
 
 ### Migrations

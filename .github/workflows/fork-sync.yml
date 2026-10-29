@@ -221,9 +221,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # agent-context-budget.yml stays on: it runs no PR code and fork PRs rely on its budget check.
           active="$(gh workflow list --repo "$GITHUB_REPOSITORY" --all --json path,state \
             --jq '.[] | select(.state == "active" and (.path | startswith(".github/workflows/"))
-              and ((.path | ltrimstr(".github/workflows/")) | startswith("fork-") | not)) | .path')"
+              and ((.path | ltrimstr(".github/workflows/")) | startswith("fork-") | not)
+              and (.path != ".github/workflows/agent-context-budget.yml")) | .path')"
           if [[ -z "$active" ]]; then
             echo "Only fork workflows are active."
             exit 0
