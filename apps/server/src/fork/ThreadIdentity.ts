@@ -12,7 +12,7 @@ import * as Option from "effect/Option";
 
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as ProjectionStoreV2 from "../orchestration-v2/ProjectionStore.ts";
-import * as ProjectService from "../project/ProjectService.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 
 const INACTIVE: ForkThreadIdentity = { active: false };
 
@@ -23,7 +23,7 @@ export class ThreadIdentity extends Context.Service<
       rawToken: string,
     ) => Effect.Effect<
       ForkThreadIdentity,
-      ProjectionStoreV2.ProjectionStoreV2Error | ProjectService.ProjectOperationError
+      ProjectionStoreV2.ProjectionStoreV2Error | ProjectStore.ProjectStoreV2Error
     >;
   }
 >()("t3/fork/ThreadIdentity") {}
@@ -31,7 +31,8 @@ export class ThreadIdentity extends Context.Service<
 const make = Effect.gen(function* () {
   const registry = yield* McpSessionRegistry.McpSessionRegistry;
   const projections = yield* ProjectionStoreV2.ProjectionStoreV2;
-  const projects = yield* ProjectService.ProjectService;
+  // The stored row only: the project service also probes the repository, which takes seconds.
+  const projects = yield* ProjectStore.ProjectStoreV2;
 
   const check: ThreadIdentity["Service"]["check"] = Effect.fn("ThreadIdentity.check")(
     function* (rawToken) {
@@ -50,7 +51,7 @@ const make = Effect.gen(function* () {
         thread.value.deletedAt !== null
       )
         return INACTIVE;
-      const project = yield* projects.getById(thread.value.projectId, { includeDeleted: true });
+      const project = yield* projects.get(thread.value.projectId, { includeDeleted: true });
       if (Option.isNone(project)) {
         return yield* Effect.die(`Project ${thread.value.projectId} of a thread is missing.`);
       }
