@@ -11,7 +11,7 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { MachineId, MapTime, type MapToolInputs } from "./machineMap.ts";
 
 /** MM-1501: how many processes each top list holds. */
-export const TOP_PROCESS_COUNT = 5;
+const TOP_PROCESS_COUNT = 5;
 
 const Percent = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 }));
 const Bytes = Schema.Number.check(Schema.isGreaterThanOrEqualTo(0));

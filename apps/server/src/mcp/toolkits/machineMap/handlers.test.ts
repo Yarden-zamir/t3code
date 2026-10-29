@@ -93,7 +93,13 @@ const toolsWith = (
         }),
       }),
     ),
-    Layer.provide(Layer.mock(KitshnGrants.KitshnGrants)({ machine: Effect.succeed(null) })),
+    Layer.provide(
+      Layer.mock(KitshnGrants.KitshnGrants)({
+        machine: Effect.succeed(null),
+        trustsPeerOrigin: () => false,
+        peerOrigins: () => [],
+      }),
+    ),
     Layer.provide(Layer.mock(KitshnCli.KitshnCli)({})),
     Layer.provide(Layer.mock(MachineExec.MachineExec)({})),
   );

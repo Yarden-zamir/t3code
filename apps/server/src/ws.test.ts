@@ -128,7 +128,6 @@ import {
 } from "./ws.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
-import * as MachineMap from "./fork/machineMap/MachineMap.ts";
 import * as PreviewServerGroups from "./fork/PreviewServerGroups.ts";
 import * as TerminalThreadMove from "./fork/TerminalThreadMove.ts";
 import * as ForkWorktreeRecreate from "./fork/ForkWorktreeRecreate.ts";
@@ -546,7 +545,6 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({}),
   Layer.mock(ForkChangelog.ForkChangelog)({}),
   Layer.mock(ForkUpdates.ForkUpdates)({ available: false }),
-  Layer.mock(MachineMap.MachineMap)({}),
   Layer.mock(PreviewServerGroups.PreviewServerGroups)({}),
   Layer.mock(TerminalThreadMove.TerminalThreadMove)({}),
   Layer.mock(ForkWorktreeRecreate.ForkWorktreeRecreate)({}),

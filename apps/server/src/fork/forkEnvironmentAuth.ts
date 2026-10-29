@@ -1,6 +1,5 @@
 /**
- * Fork parts of `EnvironmentAuth`: the kitshn Access login and the machine map pause lock and
- * peer origins. `EnvironmentAuth.ts` keeps one-line hooks into this file.
+ * Fork parts of `EnvironmentAuth`: the kitshn Access login and the trusted peer origins. `EnvironmentAuth.ts` keeps one-line hooks into this file.
  */
 import {
   type AuthEnvironmentScope,
@@ -10,69 +9,36 @@ import {
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 import type { ServerAuthInternalError } from "../auth/EnvironmentAuth.ts";
 import { APP_RESOURCE_ID, type AccessVisitor, appLevelScopes } from "./kitshn/kitshnGrantRules.ts";
 import { kitshnMachineOf } from "./kitshn/kitshnAgents.ts";
 import { KitshnGrants, KITSHN_SESSION_SUBJECT_PREFIX } from "./kitshn/KitshnGrants.ts";
-import type * as MachineMapState from "./machineMap/MachineMapState.ts";
 
-type MachineMap = Option.Option<MachineMapState.MachineMapState["Service"]>;
 type Grants = Option.Option<KitshnGrants["Service"]>;
 
 const visitorName = (visitor: AccessVisitor) => visitor.email ?? visitor.clientId ?? "visitor";
 
-/** Fork: MM-718. A valid session that the machine map pause locks. */
-export class ServerAuthMachinePausedError extends Schema.TaggedError<ServerAuthMachinePausedError>()(
-  "ServerAuthMachinePausedError",
-  {},
-) {
-  override get message(): string {
-    return "The machine map pause locks this client.";
-  }
-}
-
-/** Machine map (MM-718): fails a session that the pause locks. Absent outside the server. */
-export const rejectWhilePaused =
-  (machineMap: MachineMap) =>
-  <S extends { readonly subject: string }>(session: S) =>
-    Option.isNone(machineMap)
-      ? Effect.succeed(session)
-      : machineMap.value
-          .lockedFor(session.subject)
-          .pipe(
-            Effect.flatMap((locked) =>
-              locked ? Effect.fail(new ServerAuthMachinePausedError({})) : Effect.succeed(session),
-            ),
-          );
-
-/** Machine map (MM-1311): the pages of peer machines are trusted like the explicit list. */
+/** MM-1311: the pages of linked machines are trusted like the explicit list (K-1609). */
 export const withPeerOrigins = (
   trustedOrigins: ReadonlySet<string>,
-  machineMap: MachineMap,
+  grants: Grants,
 ): Pick<ReadonlySet<string>, "has"> => ({
   has: (origin) =>
-    trustedOrigins.has(origin) ||
-    (Option.isSome(machineMap) && machineMap.value.trustsPeerOrigin(origin)),
+    trustedOrigins.has(origin) || (Option.isSome(grants) && grants.value.trustsPeerOrigin(origin)),
 });
 
 /**
  * A one-use pairing credential for a request with a verified Access JWT whose visitor holds a
  * `t3.app` grant (K-706), or undefined. A machine's token gets the session `machine:<id>`; any
- * other visitor `kitshn:<email or token>`. Without kitshn 2 there is no Access login (K-712). It
- * fails while the machine map pause locks every Access subject (MM-718).
+ * other visitor `kitshn:<email or token>`. Without kitshn 2 there is no Access login (K-712).
  */
 export type IssueCloudflareAccessPairingCredential = (
   request: HttpServerRequest.HttpServerRequest,
-) => Effect.Effect<
-  AuthPairingCredentialResult | undefined,
-  ServerAuthInternalError | ServerAuthMachinePausedError
->;
+) => Effect.Effect<AuthPairingCredentialResult | undefined, ServerAuthInternalError>;
 
 export const makeIssueCloudflareAccessPairingCredential = (input: {
-  readonly machineMap: MachineMap;
   readonly kitshnGrants: Grants;
   readonly issuePairingCredentialForSubject: (grant: {
     readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
@@ -81,7 +47,7 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
     readonly ttl: Duration.Duration;
   }) => Effect.Effect<AuthPairingCredentialResult, ServerAuthInternalError>;
 }): IssueCloudflareAccessPairingCredential => {
-  const { machineMap, kitshnGrants, issuePairingCredentialForSubject } = input;
+  const { kitshnGrants, issuePairingCredentialForSubject } = input;
 
   const kitshnCredential = Effect.fn("EnvironmentAuth.kitshnCredential")(function* (
     grants: KitshnGrants["Service"],
@@ -104,18 +70,6 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
     });
   });
 
-  // MM-718: an Access visitor is never the local desktop app, so the pause locks it. A session
-  // made now would only be refused on its first use.
-  const rejectWhileLocked = Option.isNone(machineMap)
-    ? Effect.void
-    : machineMap.value
-        .lockedFor("one-time-token")
-        .pipe(
-          Effect.flatMap((locked) =>
-            locked ? Effect.fail(new ServerAuthMachinePausedError({})) : Effect.void,
-          ),
-        );
-
   return (request) =>
     Option.isNone(kitshnGrants)
       ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
@@ -125,9 +79,7 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
             visitor === null
               ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
                 Effect.succeed(undefined)
-              : rejectWhileLocked.pipe(
-                  Effect.andThen(kitshnCredential(kitshnGrants.value, visitor)),
-                ),
+              : kitshnCredential(kitshnGrants.value, visitor),
           ),
           Effect.withSpan("EnvironmentAuth.issueCloudflareAccessPairingCredential"),
         );

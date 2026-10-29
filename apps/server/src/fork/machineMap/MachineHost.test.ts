@@ -35,8 +35,6 @@ import * as ScheduledTasks from "../../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ForkUpdates from "../ForkUpdates.ts";
 import * as MachineHost from "./MachineHost.ts";
-import * as MachineMapState from "./MachineMapState.ts";
-import * as MachinePeers from "./MachinePeers.ts";
 
 const running = ThreadId.make("thread:running");
 const waiting = ThreadId.make("thread:waiting");
@@ -111,12 +109,6 @@ const makeLayer = (input: {
   MachineHost.layer.pipe(
     // An empty environment: CI runners run under systemd, and INVOCATION_ID would mark the host supervised.
     Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
-    Layer.provideMerge(
-      MachineMapState.layer.pipe(
-        Layer.provide(ServerSettings.layerTest()),
-        Layer.provide(ServerSecretStore.layer),
-      ),
-    ),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ServerEnvironment.ServerEnvironment)({
@@ -215,7 +207,6 @@ const makeLayer = (input: {
         Layer.mock(ProcessRunner.ProcessRunner)({
           run: () => Effect.succeed({ code: 128, stdout: "" } as never),
         }),
-        Layer.mock(MachinePeers.MachinePeers)({ machineOf: () => undefined }),
         Layer.mock(ForkUpdates.ForkUpdates)({ available: false }),
       ),
     ),

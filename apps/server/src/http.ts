@@ -48,7 +48,7 @@ import {
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
-import * as MachineMapState from "./fork/machineMap/MachineMapState.ts";
+import * as KitshnGrants from "./fork/kitshn/KitshnGrants.ts";
 import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import {
   browserApiCorsAllowedHeaders,
@@ -259,11 +259,11 @@ export const layerBrowserApiCors = Layer.unwrap(
     const config = yield* ServerConfig.ServerConfig;
     const devOrigin = config.devUrl?.origin;
     const trustedOrigins = config.trustedBrowserOrigins ?? [];
-    // Fork: machine map (MM-1311). The pages of peer machines are trusted like the list above.
-    const machineMap = yield* Effect.serviceOption(MachineMapState.MachineMapState);
+    // Fork (MM-1311): the pages of linked machines are trusted like the list above (K-1609).
+    const kitshnGrants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
     const isTrusted = (origin: string) =>
       trustedOrigins.includes(origin) ||
-      (Option.isSome(machineMap) && machineMap.value.trustsPeerOrigin(origin));
+      (Option.isSome(kitshnGrants) && kitshnGrants.value.trustsPeerOrigin(origin));
     const shared = {
       allowedMethods: browserApiCorsAllowedMethods,
       allowedHeaders: browserApiCorsAllowedHeaders,
@@ -278,13 +278,13 @@ export const layerBrowserApiCors = Layer.unwrap(
           ...DESKTOP_RENDERER_ORIGINS,
           ...config.devAllowedOrigins,
           ...trustedOrigins,
-          ...(Option.isSome(machineMap) ? machineMap.value.peerOrigins() : []),
+          ...(Option.isSome(kitshnGrants) ? kitshnGrants.value.peerOrigins() : []),
         ],
         credentials: true,
         ...shared,
       });
     }
-    if (trustedOrigins.length === 0 && Option.isNone(machineMap)) {
+    if (trustedOrigins.length === 0 && Option.isNone(kitshnGrants)) {
       return HttpRouter.cors(shared);
     }
     // Fork: T3CODE_TRUSTED_BROWSER_ORIGINS. A trusted origin gets its exact

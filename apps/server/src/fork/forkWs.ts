@@ -3,6 +3,7 @@
  * layer and calls the helpers below, so the upstream file keeps one line per hook.
  */
 import {
+  MachineMapRequestError,
   CommandId,
   FORK_WS_METHODS,
   ForkWsRpcGroup,
@@ -25,10 +26,8 @@ import * as PortScanner from "../preview/PortScanner.ts";
 import * as ForkChangelog from "./ForkChangelog.ts";
 import * as KitshnGrants from "./kitshn/KitshnGrants.ts";
 import * as ForkUpdates from "./ForkUpdates.ts";
-import { requireLocalDesktop } from "./machineMap/browserAccess.ts";
-import * as MachineMap from "./machineMap/MachineMap.ts";
-import { isLocalDesktopSubject, isMachineSubject } from "./machineMap/machineAccess.ts";
-import * as MachineMapState from "./machineMap/MachineMapState.ts";
+import { isMachineSubject } from "./machineMap/machineAccess.ts";
+import * as KitshnProvider from "./kitshn/KitshnProvider.ts";
 import * as MachinePeers from "./machineMap/MachinePeers.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
 import * as TerminalThreadMove from "./TerminalThreadMove.ts";
@@ -45,18 +44,13 @@ export const environmentLabelUpdates = <E>(
 ) =>
   Stream.unwrap(
     Effect.gen(function* () {
-      const map = yield* Effect.serviceOption(MachineMapState.MachineMapState);
-      if (Option.isNone(map)) return Stream.empty;
+      const provider = yield* Effect.serviceOption(KitshnProvider.KitshnProvider);
+      if (Option.isNone(provider)) return Stream.empty;
       const settings = yield* ServerSettings.ServerSettingsService;
       const environment = yield* ServerEnvironment.ServerEnvironment;
+      // Each `register` answer can bring a new machine name; the label reads it again.
       const changes = Stream.merge(
-        map.value.changes.pipe(
-          Stream.map(
-            (local) =>
-              `${local.enabled}:${local.token !== null}:${local.saved.desired?.self.name ?? ""}`,
-          ),
-          Stream.changes,
-        ),
+        provider.value.state.pipe(Stream.map(() => "kitshn")),
         settings.streamChanges.pipe(
           Stream.map((value) => String(value.environmentLabelFromMachineMap)),
           Stream.changes,
@@ -78,7 +72,6 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
   ForkWsRpcGroup.toLayer(
     Effect.gen(function* () {
       const forkChangelog = yield* ForkChangelog.ForkChangelog;
-      const machineMap = yield* MachineMap.MachineMap;
       // The server provides it; a bare RPC layer, as in tests, reads only this environment.
       const machinePeers = yield* Effect.serviceOption(MachinePeers.MachinePeers);
       const environment = yield* ServerEnvironment.ServerEnvironment;
@@ -102,8 +95,11 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
           ...peers.map(({ environmentId, name }) => ({ environmentId, name })),
         ];
       });
-      // Only the local desktop app gets the machine map token (MM-306, MM-1401).
-      const machineMapClient = { desktop: isLocalDesktopSubject(currentSession.subject) };
+      // The portal is gone; these RPCs stay until the clients stop calling them.
+      const replaced = new MachineMapRequestError({
+        reason: "join-refused",
+        detail: "The machine map is replaced by kitshn. Join with kitshn join on the machine.",
+      });
       return ForkWsRpcGroup.of({
         [FORK_WS_METHODS.forkChangelogListReleases]: (_input) => forkChangelog.listReleases,
         [FORK_WS_METHODS.forkChangelogReleaseChanges]: (input) =>
@@ -111,25 +107,17 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
         [FORK_WS_METHODS.forkChangelogUpstreamPending]: (_input) => forkChangelog.upstreamPending,
         [FORK_WS_METHODS.forkChangelogSyncStatus]: (_input) => forkChangelog.syncStatus,
         [FORK_WS_METHODS.forkChangelogStartSync]: (_input) => forkChangelog.startSync,
-        [FORK_WS_METHODS.machineMapSubscribe]: (_input) =>
-          machineMap.clientStates(machineMapClient),
-        [FORK_WS_METHODS.machineMapJoin]: (input) =>
-          requireLocalDesktop(machineMapClient).pipe(Effect.andThen(machineMap.join(input))),
-        [FORK_WS_METHODS.machineMapLeave]: (_input) =>
-          requireLocalDesktop(machineMapClient).pipe(Effect.andThen(machineMap.leave)),
-        [FORK_WS_METHODS.machineMapReportDesktop]: (input) =>
-          machineMap.reportDesktop(input, machineMapClient).pipe(Effect.as({})),
-        [FORK_WS_METHODS.machineMapShareSettings]: (input) => machineMap.shareSettings(input),
+        [FORK_WS_METHODS.machineMapSubscribe]: (_input) => Stream.empty,
+        [FORK_WS_METHODS.machineMapJoin]: (_input) => Effect.fail(replaced),
+        [FORK_WS_METHODS.machineMapLeave]: (_input) => Effect.fail(replaced),
+        [FORK_WS_METHODS.machineMapReportDesktop]: (_input) => Effect.succeed({}),
+        [FORK_WS_METHODS.machineMapShareSettings]: (_input) => Effect.fail(replaced),
         [FORK_WS_METHODS.machineMapRead]: (_input) =>
-          // MM-1701: another machine reaches this server through an arrow, not a map role.
-          // It must not read the map through the map role of this machine.
-          isMachineSubject(currentSession.subject)
-            ? Effect.succeed({
-                _tag: "unavailable" as const,
-                reason: "refused" as const,
-                detail: "Other machines read the map with their own map role.",
-              })
-            : machineMap.readPanel,
+          Effect.succeed({
+            _tag: "unavailable" as const,
+            reason: "off" as const,
+            detail: "The machine map is replaced by kitshn. The kitshn map shows the machines.",
+          }),
         [FORK_WS_METHODS.machineMapReadableEnvironments]: (_input) => readableEnvironments(),
         [FORK_WS_METHODS.webPushPublicKey]: (_input) =>
           webPush.publicKey.pipe(Effect.map((publicKey) => ({ publicKey }))),
@@ -159,14 +147,14 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
     }),
   );
 
-/** Machine map (MM-1311): peer machines join the explicit list of trusted browser origins. */
+/** MM-1311: linked machines join the explicit list of trusted browser origins (K-1609). */
 export const trustedBrowserOriginsConfig = (configured: ReadonlyArray<string> | undefined) =>
-  Effect.serviceOption(MachineMapState.MachineMapState).pipe(
-    Effect.map((machineMap) => {
+  Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
+    Effect.map((grants) => {
       const origins = [
         ...new Set([
           ...(configured ?? []),
-          ...(Option.isSome(machineMap) ? machineMap.value.peerOrigins() : []),
+          ...(Option.isSome(grants) ? grants.value.peerOrigins() : []),
         ]),
       ];
       return origins.length === 0 ? {} : { trustedBrowserOrigins: origins };
@@ -216,21 +204,11 @@ export const awaitKitshnLoss = (
         ? Effect.never
         : grants.value.visitor(request).pipe(
             Effect.flatMap((visitor) =>
-              visitor === null || isMachineSubject(session.subject)
+              visitor === null
                 ? Effect.never
                 : grants.value.awaitLoss(grants.value.allowsSession(visitor, session)),
             ),
             Effect.as(HttpServerResponse.empty()),
           ),
-    ),
-  );
-
-/** MM-718: the pause closes the socket at once; the upgrade then refuses it. */
-export const awaitMachineMapLock = (subject: string) =>
-  Effect.serviceOption(MachineMapState.MachineMapState).pipe(
-    Effect.flatMap((machineMapState) =>
-      Option.isNone(machineMapState)
-        ? Effect.never
-        : machineMapState.value.awaitLockFor(subject).pipe(Effect.as(HttpServerResponse.empty())),
     ),
   );

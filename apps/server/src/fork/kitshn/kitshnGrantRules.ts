@@ -23,7 +23,7 @@ export const KINDS = [
     id: "t3.app",
     name: "T3 app",
     levels: { view: "read", use: "standard", control: "admin" },
-    // K-719 (cutover): the owner is never locked out of the app or the agent tools.
+    // K-719: the owner is never locked out of the app or the agent tools.
     ownerControl: true,
   },
   { id: "t3.thread", name: "T3 thread", levels: { view: "view", use: "send" } },
@@ -214,3 +214,16 @@ export const tokenOfMachine = (tables: GrantTables, machineId: string): string |
   }
   return null;
 };
+
+/**
+ * MM-1311: the `https://` origins of the app cards in this machine's reach (K-1609). Their pages
+ * are trusted like the explicit list while the link holds. Only a bare host becomes an origin.
+ */
+export const peerOriginsOf = (
+  reach: ReadonlyArray<{ readonly kind: string; readonly address: string | null }>,
+): ReadonlyArray<string> =>
+  reach.flatMap((card) => {
+    if (card.kind !== "t3.app" || card.address === null) return [];
+    const url = URL.parse(`https://${card.address}`);
+    return url !== null && url.host === card.address.toLowerCase() ? [url.origin] : [];
+  });

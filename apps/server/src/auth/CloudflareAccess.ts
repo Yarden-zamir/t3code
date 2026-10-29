@@ -2,8 +2,6 @@ import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import * as Effect from "effect/Effect";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 
-import type { CloudflareAccessConfig } from "../config.ts";
-
 export const CLOUDFLARE_ACCESS_JWT_HEADER = "cf-access-jwt-assertion";
 
 /** The identity claims of a verified Access JWT: an email, or the common name of a service token. */
@@ -18,7 +16,7 @@ export interface CloudflareAccessClaims {
  * server listens on loopback behind the tunnel. Revisit before the server is exposed directly.
  */
 export const makeCloudflareAccessClaimsVerifier = (
-  config: CloudflareAccessConfig,
+  config: { readonly teamDomain: string; readonly audiences: ReadonlyArray<string> },
   // createRemoteJWKSet caches the keys and refetches once on an unknown kid.
   getKey: JWTVerifyGetKey = createRemoteJWKSet(
     new URL(`https://${config.teamDomain}/cdn-cgi/access/certs`),
@@ -35,7 +33,7 @@ export const makeCloudflareAccessClaimsVerifier = (
     return Effect.tryPromise(() =>
       jwtVerify(token, getKey, {
         issuer: `https://${config.teamDomain}`,
-        audience: config.aud,
+        audience: [...config.audiences],
         algorithms: ["RS256"],
         requiredClaims: ["exp"],
         clockTolerance: 5,

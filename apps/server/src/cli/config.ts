@@ -24,11 +24,6 @@ import * as CliError from "effect/cli/CliError";
 import { readBootstrapEnvelope } from "../bootstrap.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
-import {
-  joinedTunnelOrigin,
-  machineMapEnabledInSettings,
-  readJoinedTunnel,
-} from "../fork/machineMap/MachineTunnel.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 
@@ -185,10 +180,6 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-  cloudflareAccessSubjects: Config.String("T3CODE_CLOUDFLARE_ACCESS_SUBJECTS").pipe(
-    Config.option,
-    Config.map(Option.getOrUndefined),
-  ),
 });
 
 const DevAuthTokenConfig = Config.Redacted("T3CODE_DEV_AUTH_TOKEN").pipe(
@@ -304,25 +295,19 @@ export const resolveTrustedBrowserOrigins = (raw: string | undefined) =>
     },
   );
 
-// Fork: Cloudflare Access login. All three values turn it on, none turn it off,
-// and a partial set fails startup so a missing value never weakens the check.
+// Fork: the Access check of kitshn grants (K-706). Both values turn it on, neither turns it off,
+// and one alone fails startup so a missing value never weakens the check.
 export const resolveCloudflareAccess = Effect.fn("config.resolveCloudflareAccess")(function* (raw: {
   readonly teamDomain: string | undefined;
   readonly aud: string | undefined;
-  readonly subjects: string | undefined;
 }) {
   const teamDomain = raw.teamDomain?.trim() ?? "";
   const aud = raw.aud?.trim() ?? "";
-  const subjects = (raw.subjects ?? "")
-    .replaceAll("\n", ",")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  if (teamDomain === "" && aud === "" && subjects.length === 0) return undefined;
-  if (teamDomain === "" || aud === "" || subjects.length === 0) {
+  if (teamDomain === "" && aud === "") return undefined;
+  if (teamDomain === "" || aud === "") {
     return yield* new CliError.UserError({
       cause:
-        "T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN, T3CODE_CLOUDFLARE_ACCESS_AUD and T3CODE_CLOUDFLARE_ACCESS_SUBJECTS must be set together.",
+        "T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN and T3CODE_CLOUDFLARE_ACCESS_AUD must be set together.",
     });
   }
   const teamUrl = URL.parse(`https://${teamDomain}`);
@@ -331,11 +316,7 @@ export const resolveCloudflareAccess = Effect.fn("config.resolveCloudflareAccess
       cause: `T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN must be a host such as team.cloudflareaccess.com, got ${teamDomain}.`,
     });
   }
-  return {
-    teamDomain,
-    aud,
-    subjects,
-  } satisfies ServerConfig.CloudflareAccessConfig;
+  return { teamDomain, aud } satisfies ServerConfig.CloudflareAccessConfig;
 });
 
 const resolveOptionPrecedence = <Value>(
@@ -507,29 +488,14 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     () => 443,
   );
   const explicitTunnelUrl = env.tunnelPairingUrl ?? bootstrap?.tunnelPairingUrl;
-  const explicitAccess = {
-    teamDomain: env.cloudflareAccessTeamDomain ?? bootstrap?.cloudflareAccessTeamDomain,
-    aud: env.cloudflareAccessAud ?? bootstrap?.cloudflareAccessAud,
-    subjects: env.cloudflareAccessSubjects ?? bootstrap?.cloudflareAccessSubjects,
-  };
-  // Fork: machine map (MM-1310). The tunnel of a join applies only to a server without its own,
-  // and only while the machine map is on (MM-1301).
-  const joinedTunnel =
-    explicitTunnelUrl === undefined &&
-    (yield* machineMapEnabledInSettings(derivedPaths.settingsPath))
-      ? yield* readJoinedTunnel(derivedPaths.stateDir)
-      : undefined;
-  const tunnelPairingUrl = yield* resolveTunnelPairingUrl(
-    explicitTunnelUrl ?? (joinedTunnel && joinedTunnelOrigin(joinedTunnel)),
-  );
+  const tunnelPairingUrl = yield* resolveTunnelPairingUrl(explicitTunnelUrl);
   const trustedBrowserOrigins = yield* resolveTrustedBrowserOrigins(
     env.trustedBrowserOrigins ?? bootstrap?.trustedBrowserOrigins,
   );
-  const cloudflareAccess = yield* resolveCloudflareAccess(
-    joinedTunnel !== undefined && Object.values(explicitAccess).every((v) => v === undefined)
-      ? { ...joinedTunnel.access, subjects: joinedTunnel.access.subjects.join(",") }
-      : explicitAccess,
-  );
+  const cloudflareAccess = yield* resolveCloudflareAccess({
+    teamDomain: env.cloudflareAccessTeamDomain ?? bootstrap?.cloudflareAccessTeamDomain,
+    aud: env.cloudflareAccessAud ?? bootstrap?.cloudflareAccessAud,
+  });
   const staticDir = devUrl ? undefined : yield* ServerConfig.resolveStaticDir();
   const explicitHost = resolveOptionPrecedence(
     normalizedFlags.host,

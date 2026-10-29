@@ -1,8 +1,6 @@
 /**
- * Fork: machine map. This machine as the portal sees it: its status (MM-1002) and the commands it
- * runs itself (MM-501). The desktop commands (`installUpdate`, `reloadWindows`) are not here:
- * `MachineMap` hands them to the desktop app (MM-1402). A server that runs as the background
- * service runs `installUpdate` itself (MM-505, `ForkUpdates`).
+ * Fork: the commands that this machine runs itself (MM-501), for its kitshn card. A server that
+ * runs as the background service runs `installUpdate` itself (MM-505, `ForkUpdates`).
  */
 import {
   AuthSessionId,
@@ -19,6 +17,7 @@ import {
   ScheduledTaskId,
   type ScheduledTask,
 } from "@t3tools/contracts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -28,7 +27,9 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as Ref from "effect/Ref";
 
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
@@ -48,8 +49,6 @@ import { getAutoBootstrapThreadModelSelection } from "../../serverRuntimeStartup
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ForkUpdates from "../ForkUpdates.ts";
 import { programName, redactSecretsInText } from "../redactUrlSecrets.ts";
-import * as MachineMapState from "./MachineMapState.ts";
-import * as MachinePeers from "./MachinePeers.ts";
 
 /** What a command reports to the portal (`commandResult`). */
 export interface CommandOutcome {
@@ -75,8 +74,11 @@ const SERVER_COMMAND_KINDS: ReadonlyArray<MachineCommandKind> = [
   "startThread",
   "revokeClient",
   "collectDiagnostics",
-  "testArrow",
 ];
+
+const PausedTaskIds = Schema.fromJsonString(Schema.Array(Schema.String));
+const decodePausedTaskIds = Schema.decodeUnknownEffect(PausedTaskIds);
+const encodePausedTaskIds = Schema.encodeEffect(PausedTaskIds);
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -189,8 +191,24 @@ const make = Effect.gen(function* () {
   const telemetry = yield* ResourceTelemetry.ResourceTelemetry;
   const launcher = yield* ServiceLauncherClient.ServiceLauncherClient;
   const processRunner = yield* ProcessRunner.ProcessRunner;
-  const state = yield* MachineMapState.MachineMapState;
-  const peers = yield* MachinePeers.MachinePeers;
+  const fileSystem = yield* FileSystem.FileSystem;
+  // Scheduled tasks that `pauseScheduledTasks` turned off; `resumeScheduledTasks` turns on only those.
+  const pausedTasksPath = path.join(config.stateDir, "paused-scheduled-tasks.json");
+  const readPausedTaskIds = fileSystem.readFileString(pausedTasksPath).pipe(
+    Effect.flatMap(decodePausedTaskIds),
+    Effect.orElseSucceed((): ReadonlyArray<string> => []),
+  );
+  const writePausedTaskIds = (ids: ReadonlyArray<string>) =>
+    encodePausedTaskIds(ids).pipe(
+      Effect.flatMap((contents) =>
+        writeFileStringAtomically({ filePath: pausedTasksPath, contents }),
+      ),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+      Effect.catch((cause) =>
+        Effect.logWarning("Could not save the paused scheduled tasks.", { cause: String(cause) }),
+      ),
+    );
   const forkUpdates = yield* ForkUpdates.ForkUpdates;
 
   const startedAtMs = yield* Clock.currentTimeMillis;
@@ -351,18 +369,15 @@ const make = Effect.gen(function* () {
       if (result._tag === "Success") paused.push(task.id);
     }
     // Remember every task this machine turned off, so resume turns on only those.
-    yield* state.updateSaved((saved) => ({
-      ...saved,
-      pausedTaskIds: [...new Set([...saved.pausedTaskIds, ...paused])],
-    }));
+    yield* writePausedTaskIds([...new Set([...(yield* readPausedTaskIds), ...paused])]);
     return succeed({ paused: paused.length, failed: enabled.length - paused.length });
   });
 
   const resumeScheduledTasks = Effect.gen(function* () {
-    const { saved } = yield* state.snapshot;
+    const pausedTaskIds = yield* readPausedTaskIds;
     const { tasks } = yield* scheduledTasks.list();
     const existing = new Set<string>(tasks.map((task) => task.id));
-    const toResume = saved.pausedTaskIds.filter((id) => existing.has(id));
+    const toResume = pausedTaskIds.filter((id) => existing.has(id));
     const failed: Array<string> = [];
     for (const id of toResume) {
       const result = yield* scheduledTasks
@@ -370,7 +385,7 @@ const make = Effect.gen(function* () {
         .pipe(Effect.result);
       if (result._tag === "Failure") failed.push(id);
     }
-    yield* state.updateSaved((current) => ({ ...current, pausedTaskIds: failed }));
+    yield* writePausedTaskIds(failed);
     return succeed({ resumed: toResume.length - failed.length, failed: failed.length });
   });
 
@@ -453,6 +468,13 @@ const make = Effect.gen(function* () {
   const runInput: MachineHost["Service"]["runInput"] = Effect.fnUntraced(
     function* (commandId, input) {
       switch (input._tag) {
+        // The portal's arrow test; kitshn links have no test command (K-1620 is not built).
+        case "testArrow":
+          return {
+            ok: false,
+            result: null,
+            error: "testArrow is replaced by kitshn links.",
+          } satisfies CommandOutcome;
         case "restartServer":
           return supervised
             ? { ...succeed({ restarting: true }), restartAfterReply: true as const }
@@ -479,8 +501,6 @@ const make = Effect.gen(function* () {
           });
         case "collectDiagnostics":
           return yield* collectDiagnostics;
-        case "testArrow":
-          return succeed(yield* peers.testArrow(input.to));
         case "installUpdate":
           return forkUpdates.available
             ? succeed(yield* forkUpdates.install({ whenIdle: input.whenIdle }))

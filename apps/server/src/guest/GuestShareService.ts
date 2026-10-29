@@ -61,7 +61,6 @@ import {
 } from "../orchestration-v2/WireProjection.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as MachineMapState from "../fork/machineMap/MachineMapState.ts";
 import * as ForkGuestShareHost from "../fork/forkGuestShareHost.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { guestShareView, guestThreadModel } from "./guestView.ts";
@@ -297,18 +296,10 @@ const make = Effect.gen(function* () {
     });
 
   const connectHostname = yield* ForkGuestShareHost.guestShareHostname(managedEndpoint);
-  // Fork: the machine map pause (MM-718) closes guest access the way the beta switch does.
-  const machineMap = yield* Effect.serviceOption(MachineMapState.MachineMapState);
-  const machinePaused = Option.isNone(machineMap)
-    ? Effect.succeed(false)
-    : machineMap.value.lockedFor("guest");
   // A beta: while it is off, no link opens and every guest request is refused.
   const sharingEnabled = serverSettings.getSettings.pipe(
     Effect.map((settings) => settings.guestSharingEnabled),
     Effect.orElseSucceed(() => false),
-    Effect.flatMap((enabled) =>
-      enabled ? Effect.map(machinePaused, (paused) => !paused) : Effect.succeed(false),
-    ),
   );
 
   const dispatchGuestCommand = (

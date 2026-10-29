@@ -36,7 +36,7 @@ import {
   nextChangeAt,
   sessionAllowed,
 } from "./kitshnGrantRules.ts";
-import { GrantTables } from "./kitshnProviderProtocol.ts";
+import { type AccessApp, GrantTables } from "./kitshnProviderProtocol.ts";
 
 /**
  * The one switch for grant enforcement: this server is a kitshn provider, so kitshn answered a
@@ -121,6 +121,16 @@ export class KitshnGrants extends Context.Service<
     /** This machine, from the last `register` answer; saved, so it holds across a restart. */
     readonly machine: Effect.Effect<KitshnMachine | null>;
     readonly setMachine: (machine: KitshnMachine) => Effect.Effect<void>;
+    /** MM-1311: true for the origin of a linked machine's app. Sync: each request reads it. */
+    readonly trustsPeerOrigin: (origin: string) => boolean;
+    /** MM-1311: the trusted peer origins, sorted, for the server config of the clients. */
+    readonly peerOrigins: () => ReadonlyArray<string>;
+    readonly setPeerOrigins: (origins: ReadonlyArray<string>) => Effect.Effect<void>;
+    /**
+     * The Access app that kitshn names for this machine's host (pending contract). Null keeps the
+     * configured one, so a server keeps checking JWTs until kitshn sends its value.
+     */
+    readonly setAccess: (access: AccessApp | null) => Effect.Effect<void>;
   }
 >()("t3/fork/kitshn/KitshnGrants") {}
 
@@ -161,11 +171,15 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const statePath = path.join(config.stateDir, "kitshn-grants.json");
-  const verifyClaims =
-    options?.verifyClaims ??
-    (config.cloudflareAccess === undefined
+  const configured =
+    config.cloudflareAccess === undefined
       ? undefined
-      : makeCloudflareAccessClaimsVerifier(config.cloudflareAccess));
+      : makeCloudflareAccessClaimsVerifier({
+          teamDomain: config.cloudflareAccess.teamDomain,
+          audiences: [config.cloudflareAccess.aud],
+        });
+  let verifyClaims = options?.verifyClaims ?? configured;
+  let accessKey: string | null = null;
 
   // A missing file starts with no table, so every Access request is refused until kitshn
   // answers. A broken one does the same and says why.
@@ -191,6 +205,7 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
   });
   const pending = new Set<AuthSessionId>(loaded.pendingRevocations);
   let machine = loaded.machine;
+  let peerOrigins: ReadonlySet<string> = new Set();
   let savedContactAt = loaded.lastContactAt;
   const tracked = new Map<AuthSessionId, Tracked>();
   const writes = yield* Semaphore.make(1);
@@ -345,6 +360,25 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
     contact,
     state: SubscriptionRef.get(state),
     machine: Effect.sync(() => machine),
+    setAccess: Effect.fn("KitshnGrants.setAccess")((access: AccessApp | null) =>
+      Effect.sync(() => {
+        if (options?.verifyClaims !== undefined) return;
+        const key = access === null ? null : `${access.teamDomain} ${access.audiences.join(",")}`;
+        if (key === accessKey) return;
+        accessKey = key;
+        verifyClaims =
+          access === null || access.audiences.length === 0
+            ? configured
+            : makeCloudflareAccessClaimsVerifier(access);
+      }),
+    ),
+    trustsPeerOrigin: (origin) => peerOrigins.has(origin),
+    peerOrigins: () => [...peerOrigins].toSorted(),
+    setPeerOrigins: Effect.fn("KitshnGrants.setPeerOrigins")((origins: ReadonlyArray<string>) =>
+      Effect.sync(() => {
+        peerOrigins = new Set(origins);
+      }),
+    ),
     setMachine: Effect.fn("KitshnGrants.setMachine")(function* (next) {
       if (machine?.id === next.id && machine.name === next.name) return;
       machine = next;

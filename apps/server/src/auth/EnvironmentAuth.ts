@@ -43,7 +43,6 @@ import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { REUSABLE_DEV_SESSION_EXPIRES_AT, resolveReusableDevAuth } from "./ReusableDevAuth.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
-import * as MachineMapState from "../fork/machineMap/MachineMapState.ts";
 import * as KitshnGrants from "../fork/kitshn/KitshnGrants.ts";
 import { clientBrowserSessionTtl } from "../fork/machineMap/machineAccess.ts";
 import * as ForkAuth from "../fork/forkEnvironmentAuth.ts";
@@ -386,7 +385,6 @@ export class ServerAuthInvalidCredentialError extends Schema.TaggedError<ServerA
 export const ServerAuthCredentialError = Schema.Union([
   ServerAuthMissingCredentialError,
   ServerAuthInvalidCredentialError,
-  ForkAuth.ServerAuthMachinePausedError,
 ]);
 export type ServerAuthCredentialError = typeof ServerAuthCredentialError.Type;
 export const isServerAuthCredentialError = Schema.is(ServerAuthCredentialError);
@@ -398,8 +396,6 @@ export const serverAuthCredentialReason = (
       return "missing_credential";
     case "ServerAuthInvalidCredentialError":
       return "invalid_credential";
-    case "ServerAuthMachinePausedError":
-      return "machine_paused";
   }
 };
 
@@ -722,9 +718,6 @@ export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const descriptor = yield* policy.getDescriptor();
   const config = yield* ServerConfig.ServerConfig;
-  // Fork: machine map (MM-718, MM-1305). Absent outside the server: no pause lock, no grants.
-  const machineMap = yield* Effect.serviceOption(MachineMapState.MachineMapState);
-  const rejectWhilePaused = ForkAuth.rejectWhilePaused(machineMap);
   // Fork: kitshn provider (K-706). Absent outside the server: T3's own auth only.
   const kitshnGrants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
   const rejectOutsideKitshnGrants =
@@ -747,9 +740,7 @@ export const make = Effect.gen(function* () {
     token: string,
   ): Effect.Effect<
     AuthenticatedSession,
-    | ServerAuthInvalidCredentialError
-    | ForkAuth.ServerAuthMachinePausedError
-    | ServerAuthInternalError
+    ServerAuthInvalidCredentialError | ServerAuthInternalError
   > =>
     sessions.verify(token).pipe(
       Effect.tapError((cause) =>
@@ -763,7 +754,6 @@ export const make = Effect.gen(function* () {
       ),
       mapSessionVerificationErrors,
       Effect.flatMap(rejectMcpClientAudience),
-      Effect.flatMap(rejectWhilePaused),
       Effect.map((session) => ({
         sessionId: session.sessionId,
         subject: session.subject,
@@ -799,7 +789,7 @@ export const make = Effect.gen(function* () {
     // Cloudflare Access cookie, so this server's own session cookie arrives with them.
     ...(config.trustedBrowserOrigins ?? []),
   ]);
-  const trustedOrigins = ForkAuth.withPeerOrigins(trustedBrowserOrigins, machineMap);
+  const trustedOrigins = ForkAuth.withPeerOrigins(trustedBrowserOrigins, kitshnGrants);
 
   const authenticateRequest = (
     request: HttpServerRequest.HttpServerRequest,
@@ -866,11 +856,10 @@ export const make = Effect.gen(function* () {
             ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
           }) satisfies AuthSessionState,
       ),
-      Effect.catchIf(isServerAuthCredentialError, (error) =>
+      Effect.catchIf(isServerAuthCredentialError, () =>
         Effect.succeed({
           authenticated: false,
           auth: descriptor,
-          ...(error._tag === "ServerAuthMachinePausedError" ? { machinePaused: true } : {}),
         } satisfies AuthSessionState),
       ),
       Effect.withSpan("EnvironmentAuth.getSessionState"),
@@ -1194,7 +1183,6 @@ export const make = Effect.gen(function* () {
 
   const issueCloudflareAccessPairingCredential =
     ForkAuth.makeIssueCloudflareAccessPairingCredential({
-      machineMap,
       kitshnGrants,
       issuePairingCredentialForSubject,
     });
@@ -1305,13 +1293,13 @@ export const make = Effect.gen(function* () {
       if (Option.isSome(requestUrl)) {
         const websocketTicket = requestUrl.value.searchParams.get(WEBSOCKET_TICKET_QUERY_PARAM);
         if (websocketTicket && websocketTicket.trim().length > 0) {
-          const session = yield* sessions.verifyWebSocketToken(websocketTicket).pipe(
-            mapSessionVerificationErrors,
-            Effect.flatMap(rejectMcpClientAudience),
-            // Fork: a machine that the machine map pauses refuses its sessions.
-            Effect.flatMap(rejectWhilePaused),
-            Effect.flatMap(rejectOutsideKitshnGrants(request)),
-          );
+          const session = yield* sessions
+            .verifyWebSocketToken(websocketTicket)
+            .pipe(
+              mapSessionVerificationErrors,
+              Effect.flatMap(rejectMcpClientAudience),
+              Effect.flatMap(rejectOutsideKitshnGrants(request)),
+            );
           if (session.audience !== undefined && session.audience !== use) {
             return yield* new ServerAuthInvalidCredentialError({
               diagnostic: `WebSocket ticket was issued for the ${session.audience} route.`,

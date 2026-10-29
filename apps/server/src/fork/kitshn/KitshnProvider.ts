@@ -17,10 +17,12 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
+import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as MachineHost from "../machineMap/MachineHost.ts";
@@ -32,6 +34,7 @@ import {
   AGENTS_RESOURCE_ID,
   APP_RESOURCE_ID,
   KINDS,
+  peerOriginsOf,
   threadResourceId,
 } from "./kitshnGrantRules.ts";
 import * as KitshnGrants from "./KitshnGrants.ts";
@@ -177,9 +180,25 @@ export interface KitshnProviderState {
   readonly cardSettings: CardSettingValues;
   /** K-1609: the cards of other machines that this machine reaches. */
   readonly reach: ReadonlyArray<ReachedCard>;
-  /** K-1609: the link proxy, or null while this machine has none (no outgoing links). */
-  readonly linkSocket: string | null;
 }
+
+/**
+ * K-1623: the `t3.app` card stays without `site` until kitshn keeps the address off a card while
+ * its live site is not `ok`. Today kitshn makes an Access application on the portal's host at once,
+ * and the portal holds every T3 host in one shared Access app, so a site could break access to
+ * every machine. The lead turns it on once that kitshn fix is merged and deployed.
+ */
+const SEND_SITE = false;
+
+/** K-1623: the card's site: the label of the machine's current tunnel host and the real port. */
+const appSite = (config: {
+  readonly tunnelPairingUrl?: string | undefined;
+  readonly port: number;
+}) => {
+  if (config.tunnelPairingUrl === undefined) return undefined;
+  const label = new URL(config.tunnelPairingUrl).hostname.split(".", 1)[0] ?? "";
+  return label.startsWith("t3-") ? { name: label, port: config.port } : undefined;
+};
 
 /** Why a local request to kitshn did not get an answer. */
 export class KitshnRequestError extends Schema.TaggedError<KitshnRequestError>()(
@@ -198,6 +217,13 @@ export class KitshnProvider extends Context.Service<
      */
     /** The last settings state and card settings from kitshn, then each change. */
     readonly state: Stream.Stream<KitshnProviderState>;
+    /**
+     * K-1609: the link proxy of the live connection, after `kitshn link-check` passed, or null.
+     * It is gone the moment that connection closes, so no call goes to an old path.
+     */
+    readonly linkSocket: Effect.Effect<string | null>;
+    /** A call on the link socket failed: the next use runs `kitshn link-check` again first. */
+    readonly linkSocketFailed: (socket: string) => Effect.Effect<void>;
     readonly request: (
       request: LocalRequestInput,
     ) => Effect.Effect<Exclude<Answer, { readonly type: "error" }>, KitshnRequestError>;
@@ -220,8 +246,12 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     settings: null,
     cardSettings: {},
     reach: [],
-    linkSocket: null,
   });
+  // K-1609: the one place that holds the link proxy, owned by the connection that registered it.
+  const linkProxy = yield* Ref.make<{ readonly path: string; readonly checked: boolean } | null>(
+    null,
+  );
+  const linkChecks = yield* Semaphore.make(1);
   // The live registered connection, so `request` can use it.
   const live = yield* Ref.make<
     Option.Option<(request: LocalRequestInput) => Effect.Effect<Answer, KitshnRequestError>>
@@ -237,6 +267,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     confirm: command.confirm,
   }));
 
+  const site = appSite(yield* ServerConfig.ServerConfig);
   const appResource = Effect.gen(function* () {
     const descriptor = yield* environment.getDescriptor;
     const busy = yield* threads.getShellSnapshot().pipe(
@@ -250,6 +281,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       kind: "t3.app",
       name: `T3 on ${descriptor.label}`.slice(0, 80),
       status: "running",
+      ...(SEND_SITE && site !== undefined ? { site } : {}),
       facts: [
         { label: "Version", value: descriptor.serverVersion, role: "version" },
         {
@@ -338,6 +370,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         return received.value;
       });
       yield* Effect.addFinalizer(() => Ref.set(live, Option.none()));
+      yield* Effect.addFinalizer(() => Ref.set(linkProxy, null));
 
       const registerId = nextId();
       const registeredOnce = yield* Deferred.make<void>();
@@ -417,8 +450,14 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
               settings: answer.desired?.[SETTINGS_KIND] ?? null,
               cardSettings: answer.settings ?? {},
               reach: answer.reach ?? [],
-              linkSocket: answer.linkSocket ?? null,
             });
+            yield* grants.setPeerOrigins(peerOriginsOf(answer.reach ?? []));
+            yield* Ref.update(linkProxy, (current) => {
+              const path = answer.linkSocket ?? null;
+              if (path === null) return null;
+              return current?.path === path ? current : { path, checked: false };
+            });
+            yield* grants.setAccess(answer.access ?? null);
             yield* Ref.set(live, Option.some(localRequest));
             yield* Deferred.succeed(registeredOnce, undefined);
             return yield* Effect.logInfo(
@@ -435,7 +474,10 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
               ...current,
               cardSettings: answer.values,
             }));
+          case "access":
+            return yield* grants.setAccess(answer.access);
           case "reach":
+            yield* grants.setPeerOrigins(peerOriginsOf(answer.cards));
             return yield* SubscriptionRef.update(providerState, (current) => ({
               ...current,
               reach: answer.cards,
@@ -587,6 +629,36 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     run,
     request,
     state: SubscriptionRef.changes(providerState),
+    linkSocket: linkChecks.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* Ref.get(linkProxy);
+        if (current === null) return null;
+        if (current.checked) return current.path;
+        const checked = yield* cli.linkCheck(current.path).pipe(
+          Effect.map((output) => ({
+            ok: output.exitCode === 0,
+            text: output.stderr || output.stdout,
+          })),
+          Effect.catch((error) => Effect.succeed({ ok: false, text: error.message })),
+        );
+        if (!checked.ok) {
+          yield* Effect.logWarning(
+            `kitshn provider: link-check refused the link socket: ${checked.text.trim()}`,
+          );
+          return null;
+        }
+        // The connection may have closed or registered another path while the check ran.
+        const latest = yield* Ref.updateAndGet(linkProxy, (now) =>
+          now?.path === current.path ? { path: now.path, checked: true } : now,
+        );
+        return latest?.path === current.path && latest.checked ? current.path : null;
+      }),
+    ),
+    linkSocketFailed: Effect.fn("KitshnProvider.linkSocketFailed")((socket: string) =>
+      Ref.update(linkProxy, (current) =>
+        current?.path === socket ? { path: socket, checked: false } : current,
+      ),
+    ),
   });
 });
 

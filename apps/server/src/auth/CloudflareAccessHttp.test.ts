@@ -47,7 +47,7 @@ const layerConfig = Layer.effect(
     const config = yield* ServerConfig.ServerConfig;
     return {
       ...config,
-      cloudflareAccess: { teamDomain: ACCESS_TEAM, aud: "aud-tag", subjects: ["dev@example.com"] },
+      cloudflareAccess: { teamDomain: ACCESS_TEAM, aud: "aud-tag" },
     } satisfies ServerConfig.ServerConfig["Service"];
   }),
 ).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-auth-access-test-" })));

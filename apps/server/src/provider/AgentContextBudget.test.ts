@@ -90,7 +90,7 @@ const toolHandlerServices = Layer.mergeAll(
   // Fork: the machine map and linked environment tools.
   Layer.mock(MachineExec)({}),
   Layer.mock(KitshnCli)({}),
-  Layer.mock(KitshnGrants)({}),
+  Layer.mock(KitshnGrants)({ trustsPeerOrigin: () => false, peerOrigins: () => [] }),
   Layer.mock(KitshnProvider)({}),
   Layer.mock(MachinePeers)({ machineOf: () => undefined }),
   Layer.mock(PeerForwarding)({}),

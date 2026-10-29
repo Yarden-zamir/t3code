@@ -1,7 +1,7 @@
 /**
- * Fork: machine map. MM-1922: each T3 tool call that this machine forwards over an arrow link goes
- * to the portal History: the target machine, the calling thread, the tool, the outcome and the
- * time. Never the arguments or the output. It wraps upstream `PeerForwarding`, so a forwarded wait
+ * Fork: MM-1922 on kitshn (K-1610): each T3 tool call that this machine forwards over a link goes
+ * to the kitshn audit: the target machine, the calling thread, the tool, the outcome and the time.
+ * Never the arguments or the output. It wraps upstream `PeerForwarding`, so a forwarded wait
  * counts once, not once for each piece that upstream sends.
  */
 import {
@@ -10,8 +10,6 @@ import {
   type OrchestratorMcpFailure,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -21,7 +19,7 @@ import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as PeerForwarding from "../../peer/PeerForwarding.ts";
 import { historyCaller } from "./machineCallerAccess.ts";
-import * as MachineMap from "./MachineMap.ts";
+import * as KitshnAudit from "../kitshn/KitshnAudit.ts";
 import * as MachinePeers from "./MachinePeers.ts";
 
 /** `refused`: the link or the other machine did not allow the call, so the tool did not run. */
@@ -35,10 +33,9 @@ const outcomeOf = (exit: Exit.Exit<unknown, OrchestratorMcpFailure>): MachineCal
 
 const make = Effect.gen(function* () {
   const upstream = yield* PeerForwarding.PeerForwarding;
-  const machineMap = yield* MachineMap.MachineMap;
+  const audit = yield* KitshnAudit.KitshnAudit;
   const peers = yield* MachinePeers.MachinePeers;
   const threads = yield* ThreadManagement.ThreadManagementService;
-  const crypto = yield* Crypto.Crypto;
 
   const reported = Effect.fn("MachineCallHistory.reported")(function* <A>(
     scope: McpInvocationContext.McpInvocationScope,
@@ -46,7 +43,6 @@ const make = Effect.gen(function* () {
     tool: string,
     call: Effect.Effect<A, OrchestratorMcpFailure>,
   ) {
-    const at = DateTime.formatIso(yield* DateTime.now);
     const exit = yield* Effect.exit(call);
     const to = peers.machineOf(environmentId);
     // A call that never reached a machine of the map has no target to show.
@@ -55,14 +51,14 @@ const make = Effect.gen(function* () {
         Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
         Effect.provideService(ThreadManagement.ThreadManagementService, threads),
       );
-      yield* machineMap.reportCall({
-        id: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
-        at,
-        to,
-        threadId: caller.threadId,
-        threadTitle: caller.threadTitle,
-        tool,
+      yield* audit.report({
+        kind: "tool",
+        target: to,
+        thread: caller.threadId,
+        name: tool,
+        cwd: null,
         outcome: outcomeOf(exit),
+        exitCode: null,
       });
     }
     return yield* exit;

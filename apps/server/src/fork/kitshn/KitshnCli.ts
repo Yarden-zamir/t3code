@@ -78,6 +78,11 @@ export class KitshnCli extends Context.Service<
       readonly code: string;
       readonly server: string;
     }) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
+    /**
+     * K-1609, K-621: `kitshn link-check <socket>` exits 0 when this account's daemon serves that
+     * link socket or pipe. It runs with no credential.
+     */
+    readonly linkCheck: (socket: string) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
     /** The path of the machine's kitshn 2 binary, after its version check. */
     readonly binary: Effect.Effect<string, KitshnCliError>;
   }
@@ -199,6 +204,29 @@ const make = Effect.gen(function* () {
     return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
   });
 
+  const linkCheck: KitshnCli["Service"]["linkCheck"] = Effect.fn("KitshnCli.linkCheck")(
+    function* (socket) {
+      const command = yield* binary;
+      const output = yield* runner
+        .run({
+          command,
+          args: ["link-check", socket],
+          env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+          timeout: VERSION_TIMEOUT,
+          timeoutBehavior: "timedOutResult",
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            fail("run_failed", `kitshn at ${command} did not run: ${error._tag}.`),
+          ),
+        );
+      if (output.timedOut || output.code === null) {
+        return yield* fail("run_failed", `kitshn link-check did not finish in ${VERSION_TIMEOUT}.`);
+      }
+      return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
+    },
+  );
+
   const setAttester: KitshnCli["Service"]["setAttester"] = Effect.fn("KitshnCli.setAttester")(
     function* (url) {
       const command = yield* binary;
@@ -254,7 +282,7 @@ const make = Effect.gen(function* () {
     },
   );
 
-  return KitshnCli.of({ run, join, setAttester, binary });
+  return KitshnCli.of({ run, join, linkCheck, setAttester, binary });
 });
 
 export const layer = Layer.effect(KitshnCli, make);

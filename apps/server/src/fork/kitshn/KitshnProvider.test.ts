@@ -108,6 +108,8 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
     const tables = yield* Ref.make<GrantTables | null>(null);
     const shared = yield* Ref.make<ReadonlyArray<SharedThread>>([]);
     const machine = yield* Ref.make<KitshnGrants.KitshnMachine | null>(null);
+    const linkChecks = yield* Queue.unbounded<string>();
+    const linkCheckExit = yield* Ref.make(0);
 
     const layer = Layer.effect(
       KitshnProvider.KitshnProvider,
@@ -119,6 +121,10 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
             replaceTables: (next) => Ref.set(tables, next),
             contact: Effect.void,
             setMachine: (next) => Ref.set(machine, next),
+            setPeerOrigins: () => Effect.void,
+            setAccess: () => Effect.void,
+            trustsPeerOrigin: () => false,
+            peerOrigins: () => [],
           }),
           Layer.succeed(ServerConfig.ServerConfig, {
             ...config,
@@ -126,6 +132,11 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
             baseDir: "/home/owner/.t3",
           }),
           Layer.mock(KitshnCli.KitshnCli)({
+            linkCheck: (socket) =>
+              Queue.offer(linkChecks, socket).pipe(
+                Effect.andThen(Ref.get(linkCheckExit)),
+                Effect.map((exitCode) => ({ exitCode, stdout: "", stderr: "not this account" })),
+              ),
             binary: Queue.offer(binaryCalls, undefined).pipe(
               Effect.andThen(
                 options.installed === false
@@ -201,6 +212,8 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
       ran,
       restarted,
       machine,
+      linkChecks,
+      linkCheckExit,
     };
   });
 
@@ -428,5 +441,42 @@ it.layer(
       expect(refused.message).toBe("not queued");
       expect(yield* Ref.get(harness.machine)).toEqual({ id: "m-1", name: "studio" });
     }).pipe(Effect.scoped),
+  );
+  it.effect(
+    "uses the link socket only after link-check, and drops it when the connection closes",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* setup();
+        const child = yield* Queue.take(harness.children);
+        const register = yield* Queue.take(child.written);
+        yield* child.say({
+          id: register.id,
+          type: "register",
+          machineId: "m-1",
+          machineName: "studio",
+          grants: {},
+          linkSocket: "/run/kitshn/link.sock",
+        });
+        // The command result comes only after the register answer above was handled.
+        yield* child.say(command(1, "collect-diagnostics"));
+        yield* Queue.take(child.written);
+        // The first use runs link-check; a passed check holds for later uses.
+        expect(yield* harness.provider.linkSocket).toBe("/run/kitshn/link.sock");
+        expect(yield* harness.provider.linkSocket).toBe("/run/kitshn/link.sock");
+        expect(yield* Queue.takeAll(harness.linkChecks)).toEqual(["/run/kitshn/link.sock"]);
+
+        // A connection error: the next use checks again, and a failed check gives no socket.
+        yield* harness.provider.linkSocketFailed("/run/kitshn/link.sock");
+        yield* Ref.set(harness.linkCheckExit, 1);
+        expect(yield* harness.provider.linkSocket).toBeNull();
+        expect(yield* Queue.takeAll(harness.linkChecks)).toEqual(["/run/kitshn/link.sock"]);
+
+        // The connection that gave the socket closes: no call goes to the old path.
+        yield* Ref.set(harness.linkCheckExit, 0);
+        yield* child.exit(1);
+        yield* Deferred.await(child.stopped);
+        expect(yield* harness.provider.linkSocket).toBeNull();
+        expect(yield* Queue.size(harness.linkChecks)).toBe(0);
+      }).pipe(Effect.scoped),
   );
 });

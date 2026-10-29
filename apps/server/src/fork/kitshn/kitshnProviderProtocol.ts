@@ -1,7 +1,7 @@
 /**
  * Fork: every message of `kitshn provider` (K-702 to K-707), the only copy in T3. Source of truth:
  * kitshn `packages/local/src/provider.ts` and `index.ts`. The child bridges the local socket, so
- * asks and local requests use it too. "cutover" marks a shape that kitshn has not merged yet.
+ * asks and local requests use it too.
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -29,7 +29,7 @@ export const ProviderKind = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   levels: ProviderLevels,
-  /** K-719 (cutover): the Owner circle always holds each card of the kind at its top level. */
+  /** K-719: the Owner circle always holds each card of the kind at its top level. */
   ownerControl: Schema.optionalKey(Schema.Boolean),
   /** K-709: a kind of desired state, with no cards and no levels. */
   state: Schema.optionalKey(Schema.Struct({ schema: Schema.optionalKey(Schema.Unknown) })),
@@ -150,6 +150,16 @@ export const LinkAudit = Schema.Struct({
 });
 export type LinkAudit = typeof LinkAudit.Type;
 
+/**
+ * The Access app in front of this machine's `t3.app` host: its team domain and audience tags.
+ * Pending contract: the kitshn lead sends the exact shape with its PR.
+ */
+export const AccessApp = Schema.Struct({
+  teamDomain: Schema.String,
+  audiences: Schema.Array(Schema.String),
+});
+export type AccessApp = typeof AccessApp.Type;
+
 export const Request = Schema.Union([
   Schema.Struct({
     id: Schema.String,
@@ -211,9 +221,9 @@ export const Request = Schema.Union([
     provider: Schema.Literal(PROVIDER_NAME),
     audit: LinkAudit,
   }),
-  /** K-1612 (cutover): cancels a queued job that this machine queued. */
+  /** K-1612: cancels a queued job that this machine queued. */
   Schema.Struct({ id: Schema.String, type: Schema.Literal("job-cancel"), jobId: Schema.Int }),
-  /** K-605 (cutover): the resource sample now and the samples of the last hour. */
+  /** K-605: the resource sample now and the samples of the last hour. */
   Schema.Struct({ id: Schema.String, type: Schema.Literal("samples") }),
 ]);
 export type Request = typeof Request.Type;
@@ -228,7 +238,7 @@ export type LocalRequestInput = LocalRequest extends infer R
     : never
   : never;
 
-/** K-605 (cutover): one resource sample; each share is between 0 and 1. */
+/** K-605: one resource sample; each share is between 0 and 1. */
 export const Sample = Schema.Struct({
   at: Schema.Number,
   cpu: Schema.Number,
@@ -291,7 +301,7 @@ export const Answer = Schema.Union([
     type: Schema.Literal("register"),
     machineId: Schema.String,
     grants: GrantTables,
-    /** K-704 (cutover): the name of this machine on the map; null before its first connection. */
+    /** K-704: the name of this machine on the map; null before its first connection. */
     machineName: Schema.optionalKey(Schema.NullOr(Schema.String)),
     /** K-709: the saved desired state of each kind, also while kitshn is out of reach. */
     desired: Schema.optionalKey(Schema.Record(Schema.String, DesiredParts)),
@@ -304,6 +314,14 @@ export const Answer = Schema.Union([
      * the machine has no link proxy, so it has no outgoing links.
      */
     linkSocket: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    /** Pending contract: the Access app of this machine's host; absent until kitshn sends it. */
+    access: Schema.optionalKey(Schema.NullOr(AccessApp)),
+  }),
+  /** Pending contract: an event: the Access app of this machine's host changed. */
+  Schema.Struct({
+    type: Schema.Literal("access"),
+    provider: Schema.String,
+    access: Schema.NullOr(AccessApp),
   }),
   Schema.Struct({ id: Schema.String, type: Schema.Literal("audit") }),
   /** K-1609: an event: the cards of other machines that this machine reaches, on each change. */

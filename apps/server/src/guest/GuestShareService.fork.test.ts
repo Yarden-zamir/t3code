@@ -9,20 +9,14 @@ import {
 } from "@t3tools/contracts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import * as Stream from "effect/Stream";
-import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { CloudManagedEndpointRuntime } from "../cloud/ManagedEndpointRuntime.ts";
 import * as ServerConfig from "../config.ts";
 import { makeListSharedThreads } from "../fork/kitshn/sharedThreads.ts";
-import * as MachineMapState from "../fork/machineMap/MachineMapState.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as CommandOutputHub from "../orchestration-v2/CommandOutputHub.ts";
 import * as EffectOutbox from "../orchestration-v2/EffectOutbox.ts";
@@ -69,18 +63,6 @@ const layerCleanup = Layer.mock(ResourceCleanupService.ResourceCleanupService)({
   cleanupPreviews: () => Effect.void,
   cleanupAttachments: () => Effect.void,
 });
-// The machine map pause (MM-718), as the portal's desired state sets it.
-const paused = Ref.makeUnsafe(false);
-const layerMachineMap = Layer.unwrap(
-  Effect.map(Queue.unbounded<never>(), (clientSeen) =>
-    Layer.mock(MachineMapState.MachineMapState)({
-      lockedFor: () => Ref.get(paused),
-      trustsPeerOrigin: () => false,
-      peerOrigins: () => [],
-      clientSeen,
-    }),
-  ),
-);
 const layerConfigWith = (tunnelPairingUrl: string | undefined) =>
   Layer.effect(
     ServerConfig.ServerConfig,
@@ -101,7 +83,6 @@ const layerTestWith = (tunnelPairingUrl: string | undefined) =>
     ),
     Layer.provideMerge(ServerSettings.layerTest({ guestSharingEnabled: true })),
     Layer.provide(layerConnect),
-    Layer.provide(layerMachineMap),
     Layer.provide(Layer.mock(AnalyticsService.AnalyticsService)({ record: () => Effect.void })),
     Layer.provide(ServerSecretStore.layer),
     Layer.provideMerge(layerConfigWith(tunnelPairingUrl)),
@@ -128,37 +109,10 @@ const createThread = Effect.fn(function* (threadId: ThreadId) {
   });
 });
 
-it.effect("refuses every guest request while the machine map pauses the machine", () =>
-  Effect.gen(function* () {
-    yield* Ref.set(paused, false);
-    yield* Ref.set(connectHost, "env.t3.test");
-    const threadId = ThreadId.make("thread:guest-share-paused");
-    yield* createThread(threadId);
-    const guestShares = yield* GuestShareService.GuestShareService;
-    const { url } = yield* guestShares.create({ threadId });
-    const credential = url.slice(url.indexOf("#") + 1);
-    const { token: session } = yield* guestShares.redeem({ credential, name: "Sam" });
-    const collecting = yield* Stream.runCollect(yield* guestShares.stream(session)).pipe(
-      Effect.forkChild,
-    );
-
-    yield* Ref.set(paused, true);
-    // An open stream closes at the next access check.
-    yield* TestClock.adjust("30 seconds");
-    yield* Fiber.join(collecting);
-    assert.equal((yield* Effect.flip(guestShares.check(session))).reason, "inactive");
-
-    // The end of the pause lets the same guest back in.
-    yield* Ref.set(paused, false);
-    assert.isTrue(Exit.isSuccess(yield* Effect.exit(guestShares.check(session))));
-  }).pipe(Effect.provide(layerTest)),
-);
-
 it.effect(
   "makes links on the tunnel host without T3 Connect, and ends them when the host changes",
   () =>
     Effect.gen(function* () {
-      yield* Ref.set(paused, false);
       yield* Ref.set(connectHost, null);
       const threadId = ThreadId.make("thread:guest-share-tunnel");
       yield* createThread(threadId);
@@ -178,7 +132,6 @@ it.effect(
 
 it.effect("refuses a link without T3 Connect and without a tunnel", () =>
   Effect.gen(function* () {
-    yield* Ref.set(paused, false);
     yield* Ref.set(connectHost, null);
     const threadId = ThreadId.make("thread:guest-share-no-host");
     yield* createThread(threadId);
@@ -190,7 +143,6 @@ it.effect("refuses a link without T3 Connect and without a tunnel", () =>
 
 it.effect("opens a shared thread for a kitshn t3.thread grant: view reads, send also sends", () =>
   Effect.gen(function* () {
-    yield* Ref.set(paused, false);
     yield* Ref.set(connectHost, "env.t3.test");
     const threadId = ThreadId.make("thread:guest-share-grant");
     yield* createThread(threadId);

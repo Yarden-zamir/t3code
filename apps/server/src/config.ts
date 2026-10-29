@@ -34,12 +34,10 @@ export type RuntimeMode = typeof RuntimeMode.Type;
 export const StartupPresentation = Schema.Literals(["browser", "headless"]);
 export type StartupPresentation = typeof StartupPresentation.Type;
 
-// Fork: Cloudflare Access login. `subjects` lists the emails and service token
-// common names that count as the owner.
+// Fork: the Access app in front of this machine, for the check of kitshn grants (K-706).
 export interface CloudflareAccessConfig {
   readonly teamDomain: string;
   readonly aud: string;
-  readonly subjects: ReadonlyArray<string>;
 }
 
 export interface ServerDerivedPaths {

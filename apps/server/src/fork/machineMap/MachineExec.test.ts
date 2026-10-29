@@ -4,8 +4,6 @@ import { withThreadCredential } from "@t3tools/provider-core/server/forkThreadCr
 import {
   EnvironmentId,
   MACHINE_EXEC_MAX_OUTPUT_BYTES,
-  type MachineDesiredState,
-  type MachineExecReport,
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -13,12 +11,10 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as NetAddress from "effect/net/NetAddress";
 import { HttpServer } from "effect/http";
-import * as HttpClient from "effect/http/HttpClient";
-import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
@@ -28,12 +24,13 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as ProcessRunner from "../../processRunner.ts";
 import type { GrantState } from "../kitshn/kitshnGrantRules.ts";
 import { fakeKitshnGrants, peerGrants } from "../kitshn/KitshnGrants.testkit.ts";
+import * as KitshnAudit from "../kitshn/KitshnAudit.ts";
 import * as KitshnGrants from "../kitshn/KitshnGrants.ts";
+import type { LinkAudit } from "../kitshn/kitshnProviderProtocol.ts";
+import * as KitshnProvider from "../kitshn/KitshnProvider.ts";
 import { machineRequestNamespace } from "./machineAccess.ts";
 import * as MachineExec from "./MachineExec.ts";
-import { arrow, desiredState, PEER, SELF } from "./MachineMap.testkit.ts";
-import * as MachineMap from "./MachineMap.ts";
-import * as MachineMapState from "./MachineMapState.ts";
+import { PEER, SELF } from "./MachineMap.testkit.ts";
 import * as MachinePeers from "./MachinePeers.ts";
 
 /** A session of the peer on this machine, as `McpOAuth` admits it. */
@@ -60,58 +57,46 @@ const localThread: McpInvocationContext.McpInvocationScope = {
   issuedAt: 0,
 };
 
-const execArrowOut = arrow(SELF, PEER, "standard", { agentTools: true, exec: true });
-
-const localState = (desired: MachineDesiredState): MachineMapState.LocalState => ({
-  enabled: true,
-  clientAccess: "off",
-  portalUrl: "https://portal.example.com",
-  token: { clientId: "mac-token", secret: "test-secret" },
-  saved: {
-    desired,
-    desiredAtMs: 0,
-    handledCommandIds: [],
-    pausedTaskIds: [],
-    desktopCommands: [],
-    pendingRevokes: [],
-    pendingClientAccess: null,
+/** This machine reaches PEER: its app card at use and its agents card at `agents`. */
+const reachOf = (agents: string) => [
+  { machineId: PEER, machineName: "VPS", kind: "t3.app", id: "app", address: null, level: "use" },
+  {
+    machineId: PEER,
+    machineName: "VPS",
+    kind: "t3.agents",
+    id: "agents",
+    address: null,
+    level: agents,
   },
-});
+];
 
 const harness = Effect.fn("MachineExecTest.harness")(function* (input: {
-  readonly desired: MachineDesiredState;
+  readonly reach?: ReadonlyArray<ReturnType<typeof reachOf>[number]>;
   readonly grants?: GrantState;
   readonly processRunner?: Layer.Layer<ProcessRunner.ProcessRunner>;
 }) {
-  const state = yield* SubscriptionRef.make(localState(input.desired));
   const grantState = yield* SubscriptionRef.make(input.grants ?? peerGrants("standard", "exec"));
   const layerGrants = Layer.succeed(KitshnGrants.KitshnGrants, fakeKitshnGrants(grantState));
-  const reports: Array<MachineExecReport> = [];
+  const reports: Array<Omit<LinkAudit, "at">> = [];
   const requests: Array<string> = [];
-  const http = HttpClient.make((request) =>
-    Effect.sync(() => {
-      requests.push(request.url);
-      return HttpClientResponse.fromWeb(request, new Response(null, { status: 403 }));
-    }),
-  );
-  const layerState = Layer.mock(MachineMapState.MachineMapState)({
-    clientSeen: yield* Queue.unbounded<never>(),
-    trustsPeerOrigin: () => false,
-    peerOrigins: () => [],
-    snapshot: SubscriptionRef.get(state),
-    changes: SubscriptionRef.changes(state),
-    activeDesired: SubscriptionRef.get(state).pipe(
-      Effect.map((local) => (local.enabled ? local.saved.desired : null)),
-    ),
-  });
   const layer = MachineExec.layer.pipe(
     Layer.provide(MachinePeers.layer),
-    Layer.provide(layerState),
     Layer.provide(layerGrants),
-    Layer.provide(Layer.succeed(HttpClient.HttpClient, http)),
     Layer.provide(
-      Layer.mock(MachineMap.MachineMap)({
-        reportExec: (report) => Effect.sync(() => void reports.push(report)),
+      Layer.mock(KitshnProvider.KitshnProvider)({
+        state: Stream.make({
+          settings: null,
+          cardSettings: {},
+          reach: input.reach ?? reachOf("exec"),
+        }),
+        // The socket path of a test that never opens it: refusals come before any call.
+        linkSocket: Effect.succeed("/nonexistent/link.sock"),
+        linkSocketFailed: () => Effect.void,
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(KitshnAudit.KitshnAudit)({
+        report: (audit) => Effect.sync(() => void reports.push(audit)),
       }),
     ),
     Layer.provide(
@@ -134,12 +119,12 @@ const harness = Effect.fn("MachineExecTest.harness")(function* (input: {
         }),
       ),
     );
-  return { state, grantState, reports, requests, exec };
+  return { grantState, reports, requests, exec };
 });
 
 it.live("runs a command for a peer whose grants allow exec, and leaves the audit to it", () =>
   Effect.gen(function* () {
-    const { exec, reports } = yield* harness({ desired: desiredState({}) });
+    const { exec, reports } = yield* harness({});
     const result = yield* exec(peerSession, {
       machine: SELF,
       command: "printf %s-%s out put; printf oops >&2; exit 3",
@@ -161,7 +146,7 @@ it.live("runs a command for a peer whose grants allow exec, and leaves the audit
 
 it.live("caps each stream and marks the cut", () =>
   Effect.gen(function* () {
-    const { exec } = yield* harness({ desired: desiredState({}) });
+    const { exec } = yield* harness({});
     const result = yield* exec(peerSession, {
       machine: SELF,
       command: `head -c ${MACHINE_EXEC_MAX_OUTPUT_BYTES + 10_000} /dev/zero | tr '\\0' x`,
@@ -174,7 +159,7 @@ it.live("caps each stream and marks the cut", () =>
 
 it.live("stops a command at its timeout", () =>
   Effect.gen(function* () {
-    const { exec } = yield* harness({ desired: desiredState({}) });
+    const { exec } = yield* harness({});
     const result = yield* exec(peerSession, {
       machine: SELF,
       command: "sleep 30",
@@ -197,11 +182,11 @@ it.effect("refuses a peer without exec grants, and a call meant for another mach
       peerGrants(null, "exec"),
       { ...peerGrants("admin", "exec"), lastContactAt: null },
     ]) {
-      const { exec } = yield* harness({ desired: desiredState({}), grants, processRunner });
+      const { exec } = yield* harness({ grants, processRunner });
       const error = yield* exec(peerSession, { machine: SELF, command: "true" }).pipe(Effect.flip);
       expect(error.message).toContain("do not allow exec");
     }
-    const { exec } = yield* harness({ desired: desiredState({}), processRunner });
+    const { exec } = yield* harness({ processRunner });
     const onward = yield* exec(peerSession, { machine: "other", command: "true" }).pipe(
       Effect.flip,
     );
@@ -214,7 +199,6 @@ it.effect("refuses a call that its machine narrowed below full-access/default (M
   Effect.gen(function* () {
     const runs: Array<string> = [];
     const { exec, reports } = yield* harness({
-      desired: desiredState({}),
       processRunner: Layer.mock(ProcessRunner.ProcessRunner)({
         run: (input) =>
           Effect.sync(() => void runs.push(input.command)).pipe(Effect.andThen(Effect.never)),
@@ -232,13 +216,14 @@ it.effect("refuses a call that its machine narrowed below full-access/default (M
       expect(error.message).toContain("full-access/default");
     }
     expect(runs).toEqual([]);
-    expect(reports).toMatchObject([{ outcome: "refused" }, { outcome: "refused" }]);
+    // K-1610: the calling machine reports; this machine, the target, reports nothing.
+    expect(reports).toEqual([]);
   }),
 );
 
 it.effect("refuses restricted callers and missing exec before sending anything", () =>
   Effect.gen(function* () {
-    const allowed = yield* harness({ desired: desiredState({ arrowsOut: [execArrowOut] }) });
+    const allowed = yield* harness({});
     for (const modes of [{ runtimeMode: "auto" }, { interactionMode: "plan" }] as const) {
       const error = yield* allowed
         .exec(localThread, { machine: "VPS", command: "true" }, modes)
@@ -247,19 +232,17 @@ it.effect("refuses restricted callers and missing exec before sending anything",
     }
     expect(allowed.requests).toEqual([]);
 
-    const withoutExec = yield* harness({
-      desired: desiredState({ arrowsOut: [arrow(SELF, PEER, "admin", { agentTools: true })] }),
-    });
+    const withoutExec = yield* harness({ reach: reachOf("use") });
     const error = yield* withoutExec
       .exec(localThread, { machine: "VPS", command: "true" })
       .pipe(Effect.flip);
     expect(error.message).toContain("does not allow exec");
     expect(withoutExec.requests).toEqual([]);
-    // A refusal on this side never reaches the other machine, so this machine reports it.
+    // K-1610: this machine reports each refused run, with the first word of the command.
     expect([...allowed.reports, ...withoutExec.reports]).toMatchObject([
-      { from: SELF, target: PEER, outcome: "refused" },
-      { from: SELF, target: PEER, outcome: "refused" },
-      { from: SELF, target: PEER, outcome: "refused" },
+      { kind: "exec", target: PEER, name: "true", outcome: "refused", exitCode: null },
+      { kind: "exec", target: PEER, name: "true", outcome: "refused", exitCode: null },
+      { kind: "exec", target: PEER, name: "true", outcome: "refused", exitCode: null },
     ]);
   }),
 );
@@ -294,7 +277,7 @@ it.effect("a restricted thread's shell is refused with its own thread credential
     if (scope === undefined) return yield* Effect.die("The shell credential does not resolve.");
     expect(scope.thread.threadId).toBe(threadId);
 
-    const allowed = yield* harness({ desired: desiredState({ arrowsOut: [execArrowOut] }) });
+    const allowed = yield* harness({});
     const error = yield* allowed
       .exec(scope, { machine: "VPS", command: "true" }, { runtimeMode: "auto" })
       .pipe(Effect.flip);
@@ -314,7 +297,7 @@ it.effect("losing the exec grant stops a running command at once", () =>
           Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined)),
         ),
     });
-    const { exec, grantState } = yield* harness({ desired: desiredState({}), processRunner });
+    const { exec, grantState } = yield* harness({ processRunner });
     const fiber = yield* exec(peerSession, { machine: SELF, command: "sleep 600" }).pipe(
       Effect.flip,
       Effect.forkChild,

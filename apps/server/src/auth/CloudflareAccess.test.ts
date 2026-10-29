@@ -10,8 +10,7 @@ import {
 
 const config = {
   teamDomain: "team.cloudflareaccess.com",
-  aud: "aud-tag",
-  subjects: [],
+  audiences: ["aud-tag"],
 };
 
 const makeKeys = Effect.promise(async () => {

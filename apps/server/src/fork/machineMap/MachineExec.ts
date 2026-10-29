@@ -1,8 +1,8 @@
 /**
  * Fork: machine map, `machine_exec` (MM-1908, MM-1909) and its stream for `t3 machine exec`
  * (MM-1919). An agent of this machine sends the call to another machine through `MachinePeers`. A
- * session of another machine runs the command here, as the user of this server. Only the arrow and
- * the caller limits control a run: no list of commands or patterns grants or refuses one (MM-1909).
+ * session of another machine runs the command here, as the user of this server. Only the kitshn
+ * grants and the caller limits control a run: no list of commands grants or refuses one (MM-1909).
  */
 import {
   MACHINE_EXEC_MAX_OUTPUT_BYTES,
@@ -18,8 +18,6 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import type * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
-import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -35,13 +33,10 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import { kitshnMachineAllows } from "../kitshn/kitshnAgents.ts";
 import * as KitshnGrants from "../kitshn/KitshnGrants.ts";
-import { historyCaller } from "./machineCallerAccess.ts";
 import { expandHomePath } from "../../os-jank.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { machineOfRequestNamespace } from "./machineAccess.ts";
 import { dataFrame, type ExecSocket, makeLiveness, readFrame } from "./machineExecStream.ts";
-import * as MachineMap from "./MachineMap.ts";
-import * as MachineMapState from "./MachineMapState.ts";
 import * as MachinePeers from "./MachinePeers.ts";
 
 const DEFAULT_TIMEOUT_SECONDS = 30;
@@ -49,8 +44,6 @@ const DEFAULT_TIMEOUT_SECONDS = 30;
 const FORCE_KILL_AFTER = Duration.seconds(1);
 /** Stdin chunks that wait for a command before the stream stops reading the caller. */
 const STDIN_CHUNKS = 16;
-/** The History keeps the start of a long command, so one run cannot fill the portal. */
-const REPORTED_COMMAND_CHARS = 2_000;
 const TRUNCATED_MARKER = `\n[output truncated at ${MACHINE_EXEC_MAX_OUTPUT_BYTES} bytes]`;
 
 /**
@@ -107,14 +100,11 @@ const denied = (message: string) =>
   new OrchestratorMcpFailure({ code: "capability_denied", message });
 
 const make = Effect.gen(function* () {
-  const state = yield* MachineMapState.MachineMapState;
   const peers = yield* MachinePeers.MachinePeers;
-  const machineMap = yield* MachineMap.MachineMap;
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
 
   const kitshnGrants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
   /** K-706: the token of `from` holds `t3.agents` = `exec` and `t3.app` at `standard` or higher. */
@@ -130,30 +120,6 @@ const make = Effect.gen(function* () {
   /** Completes when the grants stop allowing exec: a new table, an `endsAt` or a stale table. */
   const lostAccess = (from: MachineId) =>
     Option.isNone(kitshnGrants) ? Effect.void : kitshnGrants.value.awaitLoss(allowedNow(from));
-
-  /** MM-1908: a refused call in the History. No command ran, so it has no output or exit code. */
-  const reportRefused = Effect.fn("MachineExec.reportRefused")(function* (refusal: {
-    readonly from: MachineId;
-    /** The machine that the command was for, when the calling machine reports its refusal. */
-    readonly target?: MachineId;
-    readonly input: ExecRequest;
-    readonly reason: string;
-  }) {
-    yield* machineMap.reportExec({
-      id: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
-      at: DateTime.formatIso(DateTime.makeUnsafe(yield* Clock.currentTimeMillis)),
-      from: refusal.from,
-      threadId: refusal.input.caller?.threadId ?? null,
-      threadTitle: refusal.input.caller?.threadTitle ?? null,
-      command: refusal.input.command.slice(0, REPORTED_COMMAND_CHARS),
-      cwd: refusal.input.cwd ?? "~",
-      outcome: "refused",
-      exitCode: null,
-      durationMs: 0,
-      reason: refusal.reason,
-      ...(refusal.target === undefined ? {} : { target: refusal.target }),
-    });
-  });
 
   /** The checks of a run here, and the report of its end (MM-1908). */
   const admit = Effect.fn("MachineExec.admit")(function* (from: MachineId, input: ExecRequest) {
@@ -381,13 +347,10 @@ const make = Effect.gen(function* () {
 
   /**
    * MM-1902: the source sends its thread's limits in `T3-Mode-Limit`. Exec runs past every T3
-   * mode, so a narrower thread there gets no shell here, whatever the arrow allows. A source from
+   * mode, so a narrower thread there gets no shell here, whatever its grants allow. A source from
    * before `T3-Mode-Limit` checks the thread itself and sends no header.
    */
-  const refuseNarrowedSource = Effect.fn("MachineExec.refuseNarrowedSource")(function* (
-    from: MachineId,
-    input: ExecRequest,
-  ) {
+  const refuseNarrowedSource = Effect.fn("MachineExec.refuseNarrowedSource")(function* () {
     const narrowed = (yield* McpInvocationContext.McpInvocationContext).client?.narrowedTo;
     if (
       narrowed !== undefined &&
@@ -395,40 +358,19 @@ const make = Effect.gen(function* () {
     ) {
       const reason =
         "machine_exec needs a full-access/default calling thread on the machine that sends it.";
-      yield* reportRefused({ from, input, reason });
       return yield* denied(reason);
     }
   });
-
-  /** A refusal on this machine never reaches the other machine, so this machine reports it. */
-  const reportOutgoingRefusal = (input: ExecRequest) =>
-    Effect.fn("MachineExec.reportOutgoingRefusal")(function* (
-      error: MachinePeers.MachinePeerError | OrchestratorMcpFailure,
-    ) {
-      const target =
-        error._tag === "MachinePeerError" &&
-        (error.reason === "caller-refused" || error.reason === "no-exec")
-          ? error.target
-          : undefined;
-      const self = (yield* state.activeDesired)?.self;
-      if (target === undefined || self === undefined) return;
-      yield* reportRefused({
-        from: self.id,
-        target,
-        input: { ...input, caller: yield* historyCaller() },
-        reason: error.message,
-      });
-    });
 
   const exec: MachineExec["Service"]["exec"] = Effect.fn("MachineExec.exec")(function* (input) {
     const scope = yield* McpInvocationContext.McpInvocationContext;
     const from = machineOfRequestNamespace(scope.requestNamespace);
     // A local agent goes out through the arrow of this machine; a machine session runs here.
     if (from !== undefined) {
-      yield* refuseNarrowedSource(from, input);
+      yield* refuseNarrowedSource();
       return yield* runHere(from, input);
     }
-    return yield* peers.exec(input).pipe(Effect.tapError(reportOutgoingRefusal(input)));
+    return yield* peers.exec(input);
   });
 
   const stream: MachineExec["Service"]["stream"] = Effect.fn("MachineExec.stream")(
@@ -458,10 +400,10 @@ const make = Effect.gen(function* () {
         (yield* McpInvocationContext.McpInvocationContext).requestNamespace,
       );
       if (from !== undefined) {
-        yield* refuseNarrowedSource(from, start);
+        yield* refuseNarrowedSource();
         return yield* runStreamHere(from, start, caller);
       }
-      const peer = yield* peers.openExec(start).pipe(Effect.tapError(reportOutgoingRefusal(start)));
+      const peer = yield* peers.openExec(start);
       // This machine passes every frame on as it is. The target keeps the stream alive and ends it.
       const passOn = (source: ExecSocket, sink: ExecSocket) =>
         Effect.forever(
