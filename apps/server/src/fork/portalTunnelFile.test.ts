@@ -1,27 +1,30 @@
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
+import * as Queue from "effect/Queue";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import * as TestClock from "effect/testing/TestClock";
 
-import { awaitHandover } from "./portalTunnelFile.ts";
+import { runWhileNotServed } from "./portalTunnelFile.ts";
 
-it.effect("retires the portal tunnel only after kitshn held the host for 10 minutes", () =>
+const HOST = "t3-oracle-vps.example.com";
+
+it.effect("runs the portal tunnel while kitshn does not serve its host (K-1623)", () =>
   Effect.gen(function* () {
-    const withKitshn = yield* SubscriptionRef.make(false);
-    const waiting = yield* awaitHandover(SubscriptionRef.changes(withKitshn)).pipe(
-      Effect.forkChild,
+    const events = yield* Queue.unbounded<"start" | "stop">();
+    const run = Queue.offer(events, "start").pipe(
+      Effect.andThen(Effect.never),
+      Effect.onInterrupt(() => Queue.offer(events, "stop")),
     );
-    yield* TestClock.adjust("1 hour");
-    expect(waiting.pollUnsafe()).toBeUndefined();
-    // A give-back before the 10 minutes end keeps the portal tunnel running.
-    yield* SubscriptionRef.set(withKitshn, true);
-    yield* TestClock.adjust("5 minutes");
-    yield* SubscriptionRef.set(withKitshn, false);
-    yield* TestClock.adjust("10 minutes");
-    expect(waiting.pollUnsafe()).toBeUndefined();
-    yield* SubscriptionRef.set(withKitshn, true);
-    yield* TestClock.adjust("10 minutes");
-    yield* Fiber.join(waiting);
+    // No `served` from an older kitshn reads as an empty list: the tunnel runs.
+    const served = yield* SubscriptionRef.make<ReadonlyArray<string>>([]);
+    yield* runWhileNotServed(SubscriptionRef.changes(served), HOST, run).pipe(Effect.forkChild);
+    expect(yield* Queue.take(events)).toBe("start");
+    // Another host changes nothing; then the record points at kitshn: stop.
+    yield* SubscriptionRef.set(served, ["t3-mac.example.com"]);
+    yield* SubscriptionRef.set(served, ["t3-mac.example.com", HOST]);
+    expect(yield* Queue.take(events)).toBe("stop");
+    // A give-back drops the host before the record moves back: start again.
+    yield* SubscriptionRef.set(served, []);
+    expect(yield* Queue.take(events)).toBe("start");
+    expect(yield* Queue.size(events)).toBe(0);
   }),
 );

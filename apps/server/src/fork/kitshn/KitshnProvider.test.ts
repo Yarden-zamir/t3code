@@ -588,6 +588,17 @@ it.layer(
         yield* child.say(command(5, "collect-diagnostics"));
         yield* Queue.take(child.written);
         expect(yield* hostNotice).toEqual(Option.some(false));
+        // An access push without `served` (an older kitshn) means that kitshn serves no host.
+        const served = harness.provider.servedHosts.pipe(Stream.runHead);
+        expect(yield* served).toEqual(Option.some([]));
+        yield* child.say({
+          type: "access",
+          provider: "t3",
+          access: { teamDomain: team, audiences: ["a"], served: ["t3-studio.example.com"] },
+        });
+        yield* child.say(command(6, "collect-diagnostics"));
+        yield* Queue.take(child.written);
+        expect(yield* served).toEqual(Option.some(["t3-studio.example.com"]));
         // K-1722: the answer to a waiting ask is kept for machines_read.
         yield* child.say({ type: "ask-result", proposalId: "p1", outcome: "approved" });
         yield* child.say(command(3, "collect-diagnostics"));

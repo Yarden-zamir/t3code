@@ -164,6 +164,8 @@ export type AskResult = typeof AskResult.Type;
 export const AccessApp = Schema.Struct({
   teamDomain: Schema.String,
   audiences: Schema.Array(Schema.String),
+  /** The hosts whose DNS record points at kitshn's tunnel. An older kitshn sends none. */
+  served: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type AccessApp = typeof AccessApp.Type;
 

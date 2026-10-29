@@ -389,7 +389,7 @@ To undo the part of the portal, run the script with `--undo`. It puts the host b
 CLOUDFLARE_HANDOVER_TOKEN_FILE=<token file> node scripts/fork-host-handover.ts mac --undo
 ```
 
-On `oracle-vps`, T3 stops the portal tunnel by itself 10 minutes after kitshn names its Access application for the host, and never starts it again. It writes `~/.t3/userdata/machine-map-tunnel-retired` for that and keeps `machine-map-tunnel.json`. After "Give the address back…", delete that file on the machine and restart T3, so the portal tunnel runs again.
+On `oracle-vps`, T3 runs the portal tunnel only while kitshn does not serve the host. It stops the tunnel when kitshn lists the host in `served`, after the DNS record moved to kitshn's tunnel, and starts it again when a give-back drops the host from that list. `machine-map-tunnel.json` stays.
 
 Do not remove a handed-over machine in the portal. The portal then deletes the DNS record that it made, and kitshn uses that record now.
 

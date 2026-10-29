@@ -7,7 +7,6 @@ import * as RelayClient from "@t3tools/shared/relayClient";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -21,13 +20,7 @@ import * as ServerConfig from "../config.ts";
 import * as KitshnProvider from "./kitshn/KitshnProvider.ts";
 
 const TOKEN_SECRET_NAME = "machine-map-tunnel-token";
-/** Written once the host moved to kitshn; the portal tunnel never starts again after it. */
-const RETIRED_FILE = "machine-map-tunnel-retired";
-/**
- * K-1623: kitshn moves the host's DNS record a minute after it made its application and ingress,
- * so the portal tunnel keeps serving this long after kitshn names its application.
- */
-const RETIRE_AFTER = Duration.minutes(10);
+
 /** A pause after each exit, so a broken token or download does not spin. */
 const RESTART_DELAY = Duration.seconds(10);
 
@@ -57,20 +50,26 @@ export const readPortalTunnel = Effect.fn("portalTunnelFile.read")(function* (st
   );
 });
 
-/** Completes once `withKitshn` stayed true for `RETIRE_AFTER`; a false resets the wait. */
-export const awaitHandover = (withKitshn: Stream.Stream<boolean>) =>
-  withKitshn.pipe(
+/**
+ * K-1623: runs `run` while kitshn does not serve `host`, and stops it while it does. kitshn lists
+ * a host in `served` once its DNS record points at kitshn's tunnel, and drops it before a give-back
+ * moves the record back. The audiences arrive minutes before the record moves, so they never count.
+ */
+export const runWhileNotServed = <E, R>(
+  served: Stream.Stream<ReadonlyArray<string>>,
+  host: string,
+  run: Effect.Effect<never, E, R>,
+) =>
+  served.pipe(
+    Stream.map((hosts) => hosts.includes(host)),
     Stream.changes,
-    Stream.switchMap((handedOver) =>
-      handedOver ? Stream.fromEffect(Effect.sleep(RETIRE_AFTER)) : Stream.empty,
-    ),
-    Stream.runHead,
-    Effect.asVoid,
+    Stream.switchMap((servedByKitshn) => (servedByKitshn ? Stream.empty : Stream.fromEffect(run))),
+    Stream.runDrain,
   );
 
 /**
- * Runs the portal tunnel's `cloudflared` while the config took its tunnel from the file (MM-1309),
- * until the host moved to kitshn. Then it stops it for good and leaves the file as it is.
+ * Runs the portal tunnel's `cloudflared` while the config took its tunnel from the file (MM-1309)
+ * and kitshn does not serve its host. The file stays as it is.
  */
 export const layerPortalTunnel = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -79,13 +78,10 @@ export const layerPortalTunnel = Layer.effectDiscard(
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const relayClient = yield* RelayClient.RelayClient;
     const path = yield* Path.Path;
-    const fileSystem = yield* FileSystem.FileSystem;
     const provider = yield* KitshnProvider.KitshnProvider;
     const tunnel = yield* readPortalTunnel(config.stateDir);
     // A tunnel from the environment or the desktop settings has its own `cloudflared` (MM-1310).
     if (tunnel === undefined || config.tunnelPairingUrl !== tunnel.origin) return;
-    const retiredPath = path.join(config.stateDir, RETIRED_FILE);
-    if (yield* fileSystem.exists(retiredPath).pipe(Effect.orElseSucceed(() => false))) return;
 
     const runOnce = Effect.scoped(
       Effect.gen(function* () {
@@ -125,20 +121,17 @@ export const layerPortalTunnel = Layer.effectDiscard(
         });
       }),
     );
-    const runner = yield* runOnce.pipe(
+    const runForever = runOnce.pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("cloudflared could not run. It tries again.", { cause: String(cause) }),
       ),
       Effect.andThen(Effect.sleep(RESTART_DELAY)),
       Effect.forever,
-      Effect.forkScoped,
     );
-    yield* awaitHandover(provider.hostWithKitshn).pipe(
-      Effect.andThen(fileSystem.writeFileString(retiredPath, "The host moved to kitshn.\n")),
-      Effect.andThen(Fiber.interrupt(runner)),
-      Effect.andThen(Effect.logInfo("The host moved to kitshn, so the portal tunnel stopped.")),
+    const host = new URL(tunnel.origin).hostname;
+    yield* runWhileNotServed(provider.servedHosts, host, runForever).pipe(
       Effect.catchCause((cause) =>
-        Effect.logWarning("Could not retire the portal tunnel.", { cause: String(cause) }),
+        Effect.logWarning("The portal tunnel stopped.", { cause: String(cause) }),
       ),
       Effect.forkScoped,
     );
