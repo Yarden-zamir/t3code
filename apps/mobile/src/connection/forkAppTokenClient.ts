@@ -50,14 +50,14 @@ export interface AppTokenEnvironment {
 export interface MachineSyncPlan {
   /** Machines that the portal lists and that no saved environment reaches: pair with them. */
   readonly pair: ReadonlyArray<ClientMachine>;
-  /** Environments of machines that the portal no longer lists: their arrow is `none`. */
+  /** Environments of machines that kitshn no longer lists for this phone. */
   readonly disable: ReadonlyArray<EnvironmentId>;
   /** Environments that the repair disabled before and that the portal lists again. */
   readonly enable: ReadonlyArray<EnvironmentId>;
 }
 
 /**
- * Compares the machines of `GET /client/machines` (MM-914) with the saved environments. The
+ * Compares the machines of kitshn's `GET /device/machines` (K-1601) with the saved environments. The
  * repair disables an environment instead of removing it: a removal also deletes the saved token
  * of its origin, and the app could not pair again. It enables only what it disabled itself.
  */
@@ -67,6 +67,8 @@ export function planMachineSync(input: {
   readonly disabledByRepair: ReadonlySet<EnvironmentId>;
 }): MachineSyncPlan {
   const listed = new Set(input.machines.map((machine) => machine.origin));
+  // An empty list says nothing about access, for example before cards have addresses.
+  if (listed.size === 0) return { pair: [], disable: [], enable: [] };
   const savedOrigins = new Set(input.saved.map((environment) => environment.origin));
   return {
     pair: input.machines.filter((machine) => !savedOrigins.has(machine.origin)),
@@ -86,9 +88,12 @@ export function planMachineSync(input: {
 
 // The action comes first, because the lists cut a long reason after a few words.
 export const TOKEN_REFUSED_MESSAGE =
-  "Invite this phone again: the portal refused its app token. In the portal, open this phone under Clients and use Invite an app.";
+  "Add this phone on the kitshn map again: kitshn refused its device token.";
 
 export const REPAIRING_MESSAGE = "Pairing again with the app token of this phone...";
 
 export const NO_ACCESS_MESSAGE =
-  "No access to this machine now. Give this phone access in the portal.";
+  "No access to this machine now. Share its T3 app card with this phone on the kitshn map.";
+
+export const EMPTY_LIST_MESSAGE =
+  "kitshn lists no machines for this phone yet. The saved machines stay as they are.";

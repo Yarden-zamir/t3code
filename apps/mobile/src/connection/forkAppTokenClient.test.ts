@@ -25,6 +25,15 @@ describe("planMachineSync", () => {
     expect(plan.enable).toEqual([]);
   });
 
+  it("never disables a saved machine while the list is empty", () => {
+    const plan = planMachineSync({
+      machines: [],
+      saved: [{ environmentId: macEnvironment, origin: mac.origin, enabled: true }],
+      disabledByRepair: new Set(),
+    });
+    expect(plan).toEqual({ pair: [], disable: [], enable: [] });
+  });
+
   it("enables again only the environments that the repair disabled", () => {
     const plan = planMachineSync({
       machines: [mac, vps],

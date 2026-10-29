@@ -17,7 +17,7 @@ export function AppTokenSettingsSection() {
   return (
     <SettingsSection
       title="App token"
-      footer="This phone pairs again by itself when a machine ends its session, and reads its machines from the portal when it opens."
+      footer="This phone pairs again by itself when a machine ends its session, and reads its machines from kitshn when it opens."
     >
       <ListActionRow
         icon="arrow.uturn.backward"

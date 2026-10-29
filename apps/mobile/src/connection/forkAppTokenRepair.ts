@@ -1,10 +1,11 @@
 /**
- * Fork: an app token client pairs again by itself (MM-921). A machine ends client sessions at a
- * level change, an arrow expiry or a `clientAccess` change (MM-912). The app then pairs again with
- * its saved token headers. At start and on each return to the foreground, it reads its machines
- * from the portal (MM-914): it pairs with new arrows and disables machines whose arrow is `none`.
+ * Fork: an app token client pairs again by itself when a machine ends its session (MM-921). At
+ * start and on each return to the foreground, it reads its machines from kitshn (K-1601). An
+ * empty or refused list disables nothing and shows its reason.
  */
 import {
+  CLOUDFLARE_ACCESS_CLIENT_ID_HEADER,
+  CLOUDFLARE_ACCESS_CLIENT_SECRET_HEADER,
   cloudflareAccessServiceToken,
   ConnectionOnboarding,
   type ConnectionCatalogEntry,
@@ -43,6 +44,7 @@ import { issueMachinePairingCredential } from "./clientEnroll";
 import {
   appTokenOrigins,
   type AppTokenEnvironment,
+  EMPTY_LIST_MESSAGE,
   isRefusedSession,
   NO_ACCESS_MESSAGE,
   REPAIRING_MESSAGE,
@@ -50,7 +52,7 @@ import {
   repairDelayMs,
   TOKEN_REFUSED_MESSAGE,
 } from "./forkAppTokenClient";
-import { fetchWithRequestHeaders, requestHeaderRules } from "./requestHeaders";
+import { requestHeaderRules } from "./requestHeaders";
 
 const decodeMachines = Schema.decodeUnknownOption(Schema.toCodecJson(DeviceMachinesResponse));
 
@@ -83,10 +85,17 @@ const readPortal = Effect.fn("mobile.appTokenRepair.readPortal")(function* (
       savedMachinesUrl?.endsWith("/device/machines") === true
         ? savedMachinesUrl
         : deviceMachinesUrl(rule.origin);
-    if (machinesUrl === null) continue;
-    const response = yield* Effect.tryPromise(() => fetchWithRequestHeaders(machinesUrl)).pipe(
-      Effect.option,
-    );
+    const token = cloudflareAccessServiceToken(rule.headers);
+    if (machinesUrl === null || token === null) continue;
+    // The phone saves its token for the T3 origins only, so it sends it to kitshn here itself.
+    const response = yield* Effect.tryPromise(() =>
+      fetch(machinesUrl, {
+        headers: {
+          [CLOUDFLARE_ACCESS_CLIENT_ID_HEADER]: token.clientId,
+          [CLOUDFLARE_ACCESS_CLIENT_SECRET_HEADER]: token.clientSecret,
+        },
+      }),
+    ).pipe(Effect.option);
     if (Option.isNone(response)) continue;
     const { status } = response.value;
     const finalHost = (() => {
@@ -104,8 +113,6 @@ const readPortal = Effect.fn("mobile.appTokenRepair.readPortal")(function* (
     const body = yield* Effect.tryPromise(() => response.value.json()).pipe(Effect.option);
     const answer = Option.flatMap(body, decodeMachines);
     if (Option.isSome(answer)) {
-      const token = cloudflareAccessServiceToken(rule.headers);
-      if (token === null) continue;
       return {
         _tag: "machines",
         machinesUrl,
@@ -141,7 +148,7 @@ function savedClient(): AppTokenClient | null {
 
 let requestSyncFromApp: (() => void) | null = null;
 
-/** Reads the machine list from the portal now: after an enrollment, or from "Refresh machines". */
+/** Reads the machine list from kitshn now: after an enrollment, or from "Refresh machines". */
 export function requestAppTokenSync(): void {
   requestSyncFromApp?.();
 }
@@ -233,6 +240,12 @@ export const layer = Layer.effectDiscard(
         appTokenEnvironmentIdsAtom,
         savedEnvironments.map((environment) => environment.environmentId),
       );
+      if (machines.length === 0) {
+        for (const environment of savedEnvironments) {
+          setError(environment.environmentId, EMPTY_LIST_MESSAGE);
+        }
+        return;
+      }
       const plan = planMachineSync({
         machines,
         saved: savedEnvironments,
