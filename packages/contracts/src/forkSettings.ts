@@ -160,7 +160,7 @@ export const PullRequestWatchRemarkFilter = Schema.Struct({
 });
 export type PullRequestWatchRemarkFilter = typeof PullRequestWatchRemarkFilter.Type;
 
-export const DEFAULT_MACHINE_MAP_PORTAL_URL = "https://t3.yarden-zamir.com";
+const DEFAULT_MACHINE_MAP_PORTAL_URL = "https://t3.yarden-zamir.com";
 
 /**
  * Fork: machine map (`apps/machine-map/SPEC.md`, MM-1301). Off means no portal connection and no
@@ -452,13 +452,6 @@ export const ForkServerSettingsFields = {
    * highlights it. Off: the link opens the thread only.
    */
   messageLinks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /**
-   * Fork: a notice when the machine map changes the access of a client to this server, or the
-   * access of the agents of this server to another machine. A server setting, so the mobile app
-   * reads it, and the machine map turns it on for every machine. Off by default, like every fork
-   * behavior that changes what clients show.
-   */
-  accessChangeNotices: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Fork: user-built thread card layouts. See `ThreadCardLayouts`. */
   threadCardLayouts: ThreadCardLayouts.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /**
@@ -544,7 +537,6 @@ export const ForkServerSettingsPatchFields = {
   threadLinkChips: Schema.optionalKey(Schema.Boolean),
   threadLinksOpenDesktopApp: Schema.optionalKey(Schema.Boolean),
   messageLinks: Schema.optionalKey(Schema.Boolean),
-  accessChangeNotices: Schema.optionalKey(Schema.Boolean),
   keybindingSync: Schema.optionalKey(Schema.Boolean),
   previewLocalServerGroups: Schema.optionalKey(Schema.Boolean),
   mobilePublishedThemes: Schema.optionalKey(Schema.Boolean),

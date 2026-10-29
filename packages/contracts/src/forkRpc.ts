@@ -32,10 +32,8 @@ import {
 } from "./forkTerminalThreads.ts";
 import {
   MachineMapClientState,
-  MachineMapDesktopReport,
   MachineMapShareSettingsInput,
   MachineMapShareSettingsResult,
-  MachineMapPanelState,
   MachineMapReadableEnvironment,
   MachineMapRequestError,
 } from "./machineMapClient.ts";
@@ -60,9 +58,7 @@ export const FORK_WS_METHODS = {
 
   // Fork: machine map (apps/machine-map/SPEC.md)
   machineMapSubscribe: "machineMap.subscribe",
-  machineMapReportDesktop: "machineMap.reportDesktop",
   machineMapShareSettings: "machineMap.shareSettings",
-  machineMapRead: "machineMap.read",
   machineMapReadableEnvironments: "machineMap.readableEnvironments",
 
   // Fork: Web Push (webPush.ts)
@@ -119,12 +115,6 @@ const WsMachineMapSubscribeRpc = Rpc.make(FORK_WS_METHODS.machineMapSubscribe, {
   stream: true,
 });
 /** Fork: only the local desktop app reports. Other sessions get `desktop-only`. */
-const WsMachineMapReportDesktopRpc = Rpc.make(FORK_WS_METHODS.machineMapReportDesktop, {
-  payload: MachineMapDesktopReport,
-  success: Schema.Struct({}),
-  error: machineMapError,
-});
-
 /** Fork: MM-411. A change saved for all environments becomes the shared value of the map. */
 const WsMachineMapShareSettingsRpc = Rpc.make(FORK_WS_METHODS.machineMapShareSettings, {
   payload: MachineMapShareSettingsInput,
@@ -133,12 +123,6 @@ const WsMachineMapShareSettingsRpc = Rpc.make(FORK_WS_METHODS.machineMapShareSet
 });
 
 /** Fork: MM-1701. `machines_read` through the portal connection, for the Machines panel. */
-const WsMachineMapReadRpc = Rpc.make(FORK_WS_METHODS.machineMapRead, {
-  payload: Schema.Struct({}),
-  success: MachineMapPanelState,
-  error: machineMapError,
-});
-
 /** MM-1907: the environments whose threads the agents of this server can read. */
 const WsMachineMapReadableEnvironmentsRpc = Rpc.make(
   FORK_WS_METHODS.machineMapReadableEnvironments,
@@ -212,9 +196,7 @@ export const ForkWsRpcGroup = RpcGroup.make(
   WsForkChangelogSyncStatusRpc,
   WsForkChangelogStartSyncRpc,
   WsMachineMapSubscribeRpc,
-  WsMachineMapReportDesktopRpc,
   WsMachineMapShareSettingsRpc,
-  WsMachineMapReadRpc,
   WsMachineMapReadableEnvironmentsRpc,
   WsWebPushPublicKeyRpc,
   WsWebPushSubscribeRpc,
@@ -233,7 +215,6 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   // Fork: MM-411. Sets shared values of the map, like a settings change on every machine.
   [FORK_WS_METHODS.machineMapShareSettings]: AuthSettingsWriteScope,
   // Fork: the local desktop app reports desktop command results and its waiting update.
-  [FORK_WS_METHODS.machineMapReportDesktop]: AuthEnvironmentMaintainScope,
   // Fork: creates a worktree, as `vcs.createWorktree` does, and runs the project setup script.
   [FORK_WS_METHODS.vcsPrepareDraftWorktree]: AuthSourceControlWriteScope,
   // Fork: takes over a running terminal, as `terminal.open` and `terminal.close` need.
@@ -252,7 +233,6 @@ export const FORK_RPC_READ_SCOPES = {
   // Fork: machine map state for this server's clients. Only the desktop gets the token.
   [FORK_WS_METHODS.machineMapSubscribe]: AuthOrchestrationReadScope,
   // Fork: MM-1701. The same data that an agent with read access gets from `machines_read`.
-  [FORK_WS_METHODS.machineMapRead]: AuthOrchestrationReadScope,
   // Fork: MM-1907. Names the machines whose threads this server's agents can read.
   [FORK_WS_METHODS.machineMapReadableEnvironments]: AuthOrchestrationReadScope,
   // Fork: a subscription receives the thread titles of this server, which reading allows already.

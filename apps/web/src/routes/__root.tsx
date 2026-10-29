@@ -1,4 +1,3 @@
-import { ForkAccessChangeNotices } from "../components/ForkAccessChangeNotices";
 import { ForkContextMenuHost } from "../components/ForkContextMenuHost";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -36,8 +35,7 @@ import { DesktopAppActivationCoordinator } from "../components/desktop/DesktopAp
 import { DesktopWebLinkCoordinator } from "../components/desktop/DesktopWebLinkCoordinator";
 import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
 import { DesktopUpdateIdleInstall } from "../components/desktop/DesktopUpdateIdleInstall";
-import { MachineMapDesktop } from "../components/desktop/MachineMapDesktop";
-import { MachineMapBrowserSettings } from "../components/MachineMapBrowserSettings";
+import { KitshnClientSettings } from "../components/KitshnClientSettings";
 import { ClientPendingSurface } from "../components/auth/ClientPendingSurface";
 import { MachinePausedSurface, MachinePauseWatcher } from "../components/auth/MachinePausedSurface";
 import { InstalledAppCoordinator } from "../components/InstalledAppCoordinator";
@@ -225,8 +223,7 @@ function RootRouteBranch() {
         ) : null}
         {isElectron ? <RunningThreadKeepAlive /> : null}
         {isElectron ? <DesktopUpdateIdleInstall /> : null}
-        {isElectron && primaryEnvironmentAuthenticated ? <MachineMapDesktop /> : null}
-        {!isElectron && primaryEnvironmentAuthenticated ? <MachineMapBrowserSettings /> : null}
+        {primaryEnvironmentAuthenticated ? <KitshnClientSettings /> : null}
         {primaryEnvironmentAuthenticated ? <MachinePauseWatcher /> : null}
         <RelayClientInstallDialog />
         <ConnectOnboardingDialog />
@@ -238,7 +235,6 @@ function RootRouteBranch() {
         <ForkContextMenuHost />
         <CustomSnoozeDialogHost />
         <GuestShareDialogHost />
-        <ForkAccessChangeNotices />
         <ProjectCloneToastCoordinator />
         <AddProjectToMachineDialogHost />
         {import.meta.env.DEV && primaryEnvironmentAuthenticated ? <DevReplayHost /> : null}

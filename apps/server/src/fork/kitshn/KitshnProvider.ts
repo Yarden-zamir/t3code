@@ -46,6 +46,7 @@ import {
   type ProviderCommand,
   type ProviderResource,
   ProviderResource as ProviderResourceSchema,
+  type AccessApp,
   type CardSettingValues,
   type DesiredParts,
   type LocalRequest,
@@ -222,6 +223,11 @@ export class KitshnProvider extends Context.Service<
      * It is gone the moment that connection closes, so no call goes to an old path.
      */
     readonly linkSocket: Effect.Effect<string | null>;
+    /**
+     * K-1623: true while this machine's T3 host is not with kitshn: the card names its site, and
+     * kitshn has not named the Access app of the host. Always false while `SEND_SITE` is off.
+     */
+    readonly hostNotice: Stream.Stream<boolean>;
     /** A call on the link socket failed: the next use runs `kitshn link-check` again first. */
     readonly linkSocketFailed: (socket: string) => Effect.Effect<void>;
     readonly request: (
@@ -252,6 +258,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     null,
   );
   const linkChecks = yield* Semaphore.make(1);
+  const hostNotice = yield* SubscriptionRef.make(false);
   // The live registered connection, so `request` can use it.
   const live = yield* Ref.make<
     Option.Option<(request: LocalRequestInput) => Effect.Effect<Answer, KitshnRequestError>>
@@ -268,6 +275,18 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   }));
 
   const site = appSite(yield* ServerConfig.ServerConfig);
+  /** K-1623: one log line when the host is not with kitshn; Settings > Machines shows it too. */
+  const setHostNotice = Effect.fn("KitshnProvider.setHostNotice")(function* (
+    access: AccessApp | null,
+  ) {
+    const notWithKitshn = SEND_SITE && site !== undefined && access === null;
+    const before = yield* SubscriptionRef.getAndSet(hostNotice, notWithKitshn);
+    if (notWithKitshn && !before) {
+      yield* Effect.logWarning(
+        `This machine's host ${site.name} is not with kitshn. Run scripts/fork-host-handover.ts <machine>.`,
+      );
+    }
+  });
   const appResource = Effect.gen(function* () {
     const descriptor = yield* environment.getDescriptor;
     const busy = yield* threads.getShellSnapshot().pipe(
@@ -458,6 +477,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
               return current?.path === path ? current : { path, checked: false };
             });
             yield* grants.setAccess(answer.access ?? null);
+            yield* setHostNotice(answer.access ?? null);
             yield* Ref.set(live, Option.some(localRequest));
             yield* Deferred.succeed(registeredOnce, undefined);
             return yield* Effect.logInfo(
@@ -475,6 +495,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
               cardSettings: answer.values,
             }));
           case "access":
+            yield* setHostNotice(answer.access);
             return yield* grants.setAccess(answer.access);
           case "reach":
             yield* grants.setPeerOrigins(peerOriginsOf(answer.cards));
@@ -629,6 +650,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     run,
     request,
     state: SubscriptionRef.changes(providerState),
+    hostNotice: SubscriptionRef.changes(hostNotice),
     linkSocket: linkChecks.withPermits(1)(
       Effect.gen(function* () {
         const current = yield* Ref.get(linkProxy);

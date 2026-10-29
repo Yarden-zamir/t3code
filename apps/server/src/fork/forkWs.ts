@@ -3,7 +3,6 @@
  * layer and calls the helpers below, so the upstream file keeps one line per hook.
  */
 import {
-  MachineMapRequestError,
   CommandId,
   FORK_WS_METHODS,
   ForkWsRpcGroup,
@@ -28,6 +27,7 @@ import * as KitshnGrants from "./kitshn/KitshnGrants.ts";
 import * as ForkUpdates from "./ForkUpdates.ts";
 import { isMachineSubject } from "./machineMap/machineAccess.ts";
 import * as KitshnProvider from "./kitshn/KitshnProvider.ts";
+import * as KitshnSettingsSync from "./kitshn/KitshnSettingsSync.ts";
 import * as MachinePeers from "./machineMap/MachinePeers.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
 import * as TerminalThreadMove from "./TerminalThreadMove.ts";
@@ -72,6 +72,7 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
   ForkWsRpcGroup.toLayer(
     Effect.gen(function* () {
       const forkChangelog = yield* ForkChangelog.ForkChangelog;
+      const settingsSync = yield* KitshnSettingsSync.KitshnSettingsSync;
       // The server provides it; a bare RPC layer, as in tests, reads only this environment.
       const machinePeers = yield* Effect.serviceOption(MachinePeers.MachinePeers);
       const environment = yield* ServerEnvironment.ServerEnvironment;
@@ -95,11 +96,6 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
           ...peers.map(({ environmentId, name }) => ({ environmentId, name })),
         ];
       });
-      // The portal is gone; these RPCs stay until the clients stop calling them.
-      const replaced = new MachineMapRequestError({
-        reason: "join-refused",
-        detail: "The machine map is replaced by kitshn. Join with kitshn join on the machine.",
-      });
       return ForkWsRpcGroup.of({
         [FORK_WS_METHODS.forkChangelogListReleases]: (_input) => forkChangelog.listReleases,
         [FORK_WS_METHODS.forkChangelogReleaseChanges]: (input) =>
@@ -107,15 +103,8 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
         [FORK_WS_METHODS.forkChangelogUpstreamPending]: (_input) => forkChangelog.upstreamPending,
         [FORK_WS_METHODS.forkChangelogSyncStatus]: (_input) => forkChangelog.syncStatus,
         [FORK_WS_METHODS.forkChangelogStartSync]: (_input) => forkChangelog.startSync,
-        [FORK_WS_METHODS.machineMapSubscribe]: (_input) => Stream.empty,
-        [FORK_WS_METHODS.machineMapReportDesktop]: (_input) => Effect.succeed({}),
-        [FORK_WS_METHODS.machineMapShareSettings]: (_input) => Effect.fail(replaced),
-        [FORK_WS_METHODS.machineMapRead]: (_input) =>
-          Effect.succeed({
-            _tag: "unavailable" as const,
-            reason: "off" as const,
-            detail: "The machine map is replaced by kitshn. The kitshn map shows the machines.",
-          }),
+        [FORK_WS_METHODS.machineMapSubscribe]: (_input) => settingsSync.clientState,
+        [FORK_WS_METHODS.machineMapShareSettings]: (input) => settingsSync.share(input),
         [FORK_WS_METHODS.machineMapReadableEnvironments]: (_input) => readableEnvironments(),
         [FORK_WS_METHODS.webPushPublicKey]: (_input) =>
           webPush.publicKey.pipe(Effect.map((publicKey) => ({ publicKey }))),

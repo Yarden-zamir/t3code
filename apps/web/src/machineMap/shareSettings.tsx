@@ -110,7 +110,7 @@ export function useShareKeybindingsToMachineMap() {
   const { state } = useMachineMapState(environmentId);
   const share = useAtomCommand(shareMachineMapSettings, { reportFailure: false });
   return () => {
-    if (environmentId === null || state === null || state.connection.status === "off") return;
+    if (environmentId === null || state === null || !state.joined) return;
     const syncOn = targets.find((target) => target.environmentId === environmentId)?.settings
       .keybindingSync;
     // The server reports no `keybindings` with the sync off, so the share would send nothing.
@@ -133,11 +133,7 @@ export function MachineMapSyncedMarker({ keys }: { keys: readonly (keyof ServerS
   const environmentId =
     context?.scope.kind === "environment" ? context.scope.environmentId : primaryEnvironmentId;
   const { state } = useMachineMapState(keys.length === 0 ? null : environmentId);
-  // A desired state saved before the map turned off syncs nothing.
-  const synced =
-    state === null || state.connection.status === "off"
-      ? {}
-      : (state.desired?.settings.server ?? {});
+  const synced = state === null || !state.joined ? {} : state.settings.server;
   if (!keys.some((key) => Object.hasOwn(synced, key))) return null;
   return (
     <Tooltip>

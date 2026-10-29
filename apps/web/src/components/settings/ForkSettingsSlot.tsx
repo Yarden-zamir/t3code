@@ -1,6 +1,5 @@
 import type { ComponentType } from "react";
 
-import { AccessChangeNoticesSettingsRow } from "./AccessChangeNoticesSettingsRow";
 import { AppToggleShortcutsSettingsRow } from "./AppToggleShortcutsSettingsRow";
 import {
   BackForwardButtonsSettingsRow,
@@ -87,7 +86,6 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "auto-settle-waits-for-background-commands": AutoSettleWaitsForBackgroundCommandsSettingsRow,
   "worktree-artifact-eviction": WorktreeArtifactSettingsRows,
   "environment-label-from-machine-map": EnvironmentLabelSettingsRow,
-  "access-change-notices": AccessChangeNoticesSettingsRow,
   "tunnel-pairing": TunnelPairingSettingsRow,
   "restart-reconnect-warning-grace": RestartReconnectWarningGraceSettingsRow,
   "in-app-notification-seconds": InAppNotificationSettingsRows,

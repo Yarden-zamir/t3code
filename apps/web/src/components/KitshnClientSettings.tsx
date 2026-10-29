@@ -15,7 +15,8 @@ import {
 import {
   clientSettingsPatchFromDesired,
   withoutDesktopOnlyClientSettings,
-} from "../machineMap/desktopSync.logic";
+} from "../machineMap/clientSettings.logic";
+import { isElectron } from "../env";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useMachineMapState } from "../state/machineMap";
 
@@ -33,10 +34,10 @@ function readApplied(): AppliedSharedSettings {
 }
 
 /**
- * Fork, MM-416: a browser takes the shared client settings of the machine that serves it, from
- * the map state that its connection already streams. The desktop app follows MM-403 instead.
+ * Fork: the app takes the client settings of `t3.settings` from the machine that serves it. A
+ * browser leaves out the settings that only the desktop app uses (MM-416).
  */
-export function MachineMapBrowserSettings() {
+export function KitshnClientSettings() {
   const environmentId = usePrimaryEnvironmentId();
   return environmentId === null ? null : <BrowserSettingsSync environmentId={environmentId} />;
 }
@@ -44,13 +45,13 @@ export function MachineMapBrowserSettings() {
 function BrowserSettingsSync({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const { state } = useMachineMapState(environmentId);
   // oxlint-disable-next-line t3code/no-rpc-permission-bypass -- the client settings scope, not an RPC client.
-  const desiredClient = state?.desired?.settings.client ?? null;
+  const desiredClient = state?.joined === true ? state.settings.client : null;
   const desiredKey = stableStringify(desiredClient);
 
   const apply = useEffectEvent(async () => {
     if (desiredClient === null) return;
     const { changed, applied } = sharedSettingsToApply(
-      withoutDesktopOnlyClientSettings(desiredClient),
+      isElectron ? desiredClient : withoutDesktopOnlyClientSettings(desiredClient),
       readApplied(),
     );
     if (Object.keys(changed).length > 0) {
@@ -58,13 +59,13 @@ function BrowserSettingsSync({ environmentId }: { readonly environmentId: Enviro
       await ensureClientSettingsHydrated();
       const { patch, skipped } = clientSettingsPatchFromDesired(changed, getClientSettings());
       if (skipped.length > 0) {
-        console.warn("Machine map: skipped client settings that do not apply here.", skipped);
+        console.warn("kitshn: skipped client settings that do not apply here.", skipped);
       }
       if (Object.keys(patch).length > 0) await persistClientSettingsPatch(patch);
     }
     globalThis.localStorage.setItem(APPLIED_KEY, JSON.stringify(applied));
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- applies pushed map values to storage, outside React.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- applies pushed kitshn values to storage, outside React.
   useEffect(() => {
     void apply();
     // The key stands for the desired values, which arrive as a new object on each push.

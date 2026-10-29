@@ -116,43 +116,6 @@ export const ArrowRecord = Schema.Struct({
 export type ArrowRecord = typeof ArrowRecord.Type;
 
 /**
- * MM-1915: what agents on `from` can do on `to`. Each capability follows from fields that the
- * target enforces: agent tools give a link (MM-1921) with the access of the level (MM-302), and
- * exec needs agent tools and `standard` or `admin` (MM-1908). Copy-secrets waits for MM-1917.
- */
-export const ArrowCapability = Schema.Literals(["readThreads", "launch", "exec", "settings"]);
-export type ArrowCapability = typeof ArrowCapability.Type;
-
-/** MM-1915: the capabilities of an arrow at its level now, in the order of `ArrowCapability`. */
-export const arrowCapabilities = (
-  arrow: Pick<ArrowRecord, "level" | "agentTools" | "exec">,
-): ReadonlyArray<ArrowCapability> => {
-  if (!arrow.agentTools || arrow.level === "none") return [];
-  // `read` links are read-only; `standard` launches fenced to its own threads; `admin` is not fenced.
-  const works = arrow.level === "standard" || arrow.level === "admin";
-  return ArrowCapability.literals.filter((capability) => {
-    switch (capability) {
-      case "readThreads":
-        return true;
-      case "launch":
-        return works;
-      case "exec":
-        return works && arrow.exec;
-      case "settings":
-        return arrow.level === "admin";
-    }
-  });
-};
-
-/** MM-1915: each capability in words, for lists such as "Mac on VPS: read threads, exec". */
-export const ARROW_CAPABILITY_TEXT: Record<ArrowCapability, string> = {
-  readThreads: "read threads",
-  launch: "launch and delegate",
-  exec: "exec",
-  settings: "settings",
-};
-
-/**
  * MM-1921: upstream links always expire, so a permanent arrow link reports this expiry. Clients
  * show no expiry for it. Revisit when upstream `PeerLink.expiresAt` may be null.
  */

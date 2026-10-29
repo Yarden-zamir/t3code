@@ -126,6 +126,7 @@ import {
   WS_RPC_SERVER_OPTIONS,
   withLateEditorConfig,
 } from "./ws.ts";
+import * as KitshnSettingsSync from "./fork/kitshn/KitshnSettingsSync.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
 import * as PreviewServerGroups from "./fork/PreviewServerGroups.ts";
@@ -549,6 +550,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(TerminalThreadMove.TerminalThreadMove)({}),
   Layer.mock(ForkWorktreeRecreate.ForkWorktreeRecreate)({}),
   Layer.mock(WebPush.WebPush)({}),
+  Layer.mock(KitshnSettingsSync.KitshnSettingsSync)({}),
 );
 
 const layerConfigSources = Layer.mergeAll(

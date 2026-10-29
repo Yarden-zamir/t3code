@@ -6,6 +6,9 @@
  */
 import {
   KEYBINDINGS_SETTING_KEY,
+  type MachineMapClientState,
+  type MachineMapShareSettingsInput,
+  type MachineMapShareSettingsResult,
   isMachineLocalSetting,
   ScopedSettingValues,
   ServerSettings as ServerSettingsSchema,
@@ -33,6 +36,7 @@ import {
   withSharedThemes,
 } from "../machineMap/themeSync.ts";
 import type { DesiredParts } from "./kitshnProviderProtocol.ts";
+import * as KitshnGrants from "./KitshnGrants.ts";
 import * as KitshnProvider from "./KitshnProvider.ts";
 
 const decodePatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
@@ -51,18 +55,44 @@ export const effectiveSettings = (parts: DesiredParts | null): ScopedSettingValu
   };
 };
 
+/** MM-411: the shared part with the saved values of `input.server` and the `input.client` values. */
+export const sharedPartAfterShare = (
+  shared: ScopedSettingValues,
+  savedServer: SettingValues,
+  input: MachineMapShareSettingsInput,
+): ScopedSettingValues => {
+  const server = { ...shared.server };
+  for (const key of input.server) {
+    if (!isMachineLocalSetting("server", key) && Object.hasOwn(savedServer, key)) {
+      server[key] = savedServer[key];
+    }
+  }
+  return {
+    server,
+    client: { ...shared.client, ...withoutMachineLocalSettings("client", input.client) },
+  };
+};
+
 export class KitshnSettingsSync extends Context.Service<
   KitshnSettingsSync,
   {
     /** Applies the settings of kitshn for the life of the server. Never fails. */
     readonly run: Effect.Effect<void>;
-    /** The client values of the effective settings, then each change. */
-    readonly clientSettings: Stream.Stream<SettingValues>;
+    /** What a client needs of the kitshn connection, then each change (`machineMap.subscribe`). */
+    readonly clientState: Stream.Stream<MachineMapClientState>;
+    /**
+     * MM-411 on kitshn: puts the saved values of these server keys and these client values into
+     * the shared part of `t3.settings`. False when this server is not a kitshn provider.
+     */
+    readonly share: (
+      input: MachineMapShareSettingsInput,
+    ) => Effect.Effect<MachineMapShareSettingsResult>;
   }
 >()("t3/fork/kitshn/KitshnSettingsSync") {}
 
 const make = Effect.gen(function* () {
   const provider = yield* KitshnProvider.KitshnProvider;
+  const grants = yield* KitshnGrants.KitshnGrants;
   const settings = yield* ServerSettings.ServerSettingsService;
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -165,10 +195,59 @@ const make = Effect.gen(function* () {
     Effect.provideService(Path.Path, path),
   );
 
-  return KitshnSettingsSync.of({
-    run,
-    clientSettings: effective.pipe(Stream.map((values) => values.client)),
-  });
+  const clientState: KitshnSettingsSync["Service"]["clientState"] = Stream.zipLatest(
+    provider.state,
+    provider.hostNotice,
+  ).pipe(
+    Stream.mapEffect(([state, hostNotWithKitshn]) =>
+      Effect.all([grants.active, grants.machine]).pipe(
+        Effect.map(([joined, machine]): MachineMapClientState => ({
+          joined,
+          machine,
+          settings: effectiveSettings(state.settings),
+          hostNotWithKitshn,
+        })),
+      ),
+    ),
+    Stream.changesWith((left, right) => stableStringify(left) === stableStringify(right)),
+  );
+
+  const share: KitshnSettingsSync["Service"]["share"] = Effect.fn("KitshnSettingsSync.share")(
+    function* (input) {
+      if (!(yield* grants.active)) return { shared: false };
+      const current = yield* reportedServerSettings(yield* settings.getSettings);
+      const state = yield* provider.state.pipe(Stream.runHead);
+      const shared = Option.getOrElse(
+        Option.flatMap(state, (value) => decodePart(value.settings?.shared ?? null)),
+        () => ({ server: {}, client: {} }),
+      );
+      return yield* provider
+        .request({
+          type: "desired-set",
+          provider: "t3",
+          kind: KitshnProvider.SETTINGS_KIND,
+          part: "shared",
+          value: sharedPartAfterShare(shared, current, input),
+        })
+        .pipe(
+          Effect.as({ shared: true }),
+          Effect.catch((error) =>
+            Effect.logWarning("kitshn settings: could not share the settings.", {
+              cause: error.message,
+            }).pipe(Effect.as({ shared: false })),
+          ),
+        );
+    },
+    Effect.provideService(FileSystem.FileSystem, fileSystem),
+    Effect.provideService(Path.Path, path),
+    Effect.catch((cause) =>
+      Effect.logWarning("kitshn settings: could not read the settings to share.", {
+        cause: String(cause),
+      }).pipe(Effect.as({ shared: false })),
+    ),
+  );
+
+  return KitshnSettingsSync.of({ run, clientState, share });
 });
 
 export const layer = Layer.effect(KitshnSettingsSync, make);
