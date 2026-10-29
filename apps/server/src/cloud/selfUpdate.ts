@@ -95,6 +95,9 @@ export const pruneRuntimesOnStart = Effect.fn("cloud.server_self_update.prune_on
   },
 );
 
+// Fork: the fork hides the Update track switch, and its machines update only to fork releases.
+const FORK_RELEASES_ONLY = "This machine updates only to fork releases.";
+
 /** The client checks this when planning; the host checks again because its database may have
  * moved on since (another client updated it). Stable and Nightly each build their own commits,
  * so crossing tracks needs the target release to know every migration this database holds. */
@@ -108,7 +111,7 @@ export function trackSwitchBlockReason(input: {
   if (!crossesReleaseTrack(input.serverVersion, input.targetVersion)) return null;
   const databaseMigration = input.databaseMigration();
   if (input.targetDatabaseMigration === undefined || databaseMigration === undefined) {
-    return `Cannot confirm this database works with t3@${input.targetVersion}. Switch tracks from Settings → About → Update track, which checks it first.`;
+    return `Cannot confirm this database works with t3@${input.targetVersion}. ${FORK_RELEASES_ONLY}`;
   }
   return input.targetDatabaseMigration < databaseMigration
     ? `This database has changes t3@${input.targetVersion} does not support yet; it stays on this release.`
@@ -156,6 +159,8 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
     "cloud.server_self_update.update",
   )(function* (input, reportProgress = () => Effect.void, onHandoffAccepted = () => Effect.void) {
     if (capability === "desktop-managed") {
+      // Fork: the fork publishes no Stable desktop builds, so a remote Stable switch stops here.
+      if (input.channel === "latest") return yield* failWith(FORK_RELEASES_ONLY);
       const unsafeCrossing = input.channel === undefined ? null : crossesTrackUnsafely(input);
       if (unsafeCrossing !== null) return yield* failWith(unsafeCrossing);
       if (desktopAppUpdate.available) {

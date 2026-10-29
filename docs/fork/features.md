@@ -283,7 +283,7 @@ Nightly desktop builds for macOS, Windows and Linux, plus Linux server archives 
 
 - **Works on:** desktop and server.
 - **Limits:** macOS builds use a self-made certificate and are not notarized, so the first install needs Control-click > Open. Revisit if the fork gets an Apple developer account.
-  - The fork releases have one track, so the desktop app hides the upstream Settings > About > Update track switch (`SHOWS_DESKTOP_UPDATE_TRACK` in `apps/web/src/components/settings/ForkSettingsPanelRows.tsx`). That switch moves machines to upstream npm releases. Revisit if the fork publishes a stable track.
+  - The fork releases have one track, so the desktop app hides the upstream Settings > About > Update track switch and its search item (`SHOWS_DESKTOP_UPDATE_TRACK` in `apps/web/src/components/settings/forkSettingsSearch.ts`). That switch moves machines to upstream npm releases. A saved Stable channel loads as nightly (`apps/desktop/src/settings/DesktopAppSettings.ts`), and the server refuses a Stable switch from a remote client (`apps/server/src/cloud/selfUpdate.ts`). Revisit if the fork publishes a stable track.
 
 ### Android APK
 

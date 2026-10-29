@@ -147,6 +147,12 @@ it.layer(NodeServices.layer)("server self update", (it) => {
       expect(
         (yield* desktop.selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason,
       ).toContain("desktop app");
+      // Fork: a fork desktop app has no Stable track to switch to.
+      expect(
+        (yield* desktop.selfUpdate
+          .update({ targetVersion: "1.1.0", channel: "latest" })
+          .pipe(Effect.flip)).reason,
+      ).toBe("This machine updates only to fork releases.");
       expect([...web.order, ...desktop.order]).toEqual([]);
     }),
   );
@@ -192,6 +198,16 @@ it.layer(NodeServices.layer)("server self update", (it) => {
       );
       yield* Deferred.succeed(accepted, "launcher-id");
       expect((yield* Fiber.join(first)).updateId).toBe("launcher-id");
+    }),
+  );
+
+  // Fork: the fork release is chosen first, so the track check sees the release that installs.
+  it.effect("installs the newer fork release for a request on the other track", () =>
+    Effect.gen(function* () {
+      const { selfUpdate, order } = yield* makeHarness();
+      const result = yield* selfUpdate.update({ targetVersion: "0.1.5-nightly.20261028.1" });
+      expect(result.updateId).toBe("launcher-id");
+      expect(order).toEqual(["index", "download", "extract", "preflight", "accept"]);
     }),
   );
 

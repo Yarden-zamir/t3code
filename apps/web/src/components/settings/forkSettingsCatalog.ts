@@ -126,7 +126,7 @@ const FORK_SETTING_GROUPS = [
     title: "Updates and releases",
     entries: [
       {
-        ids: ["update-track", "app-version"],
+        ids: ["app-version"],
         change:
           "Fork: installs fork releases, never downgrades, and offers Install when idle while agents or terminal programs run.",
       },
