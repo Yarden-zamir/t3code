@@ -93,6 +93,18 @@ describe("exchangeDeviceInvite", () => {
   );
 });
 
+describe("exchangeDeviceInvite answer", () => {
+  it("keeps the secret when one machine entry does not decode", async () => {
+    const enrolled = await exchangeDeviceInvite(
+      INVITE,
+      "Pixel",
+      answering(json(200, { ...ENROLLED, machines: [ENROLLED.machines[0], { id: 7 }] })),
+    );
+    expect(enrolled.serviceToken).toEqual(TOKEN);
+    expect(enrolled.machines).toHaveLength(1);
+  });
+});
+
 describe("readDeviceMachines", () => {
   it("keeps only the t3.app cards", async () => {
     const list = await readDeviceMachines(

@@ -527,13 +527,27 @@ it.layer(
         // Before kitshn answers the register, nothing goes out.
         const early = yield* Effect.flip(harness.provider.request({ type: "samples" }));
         expect(early.message).toContain("no connection to kitshn");
+        // kitshn's full register answer: every field that packages/local/src/index.ts sends.
         yield* child.say({
           id: register.id,
           type: "register",
           machineId: "m-1",
-          machineName: "studio",
           grants: {},
+          desired: { "t3.settings": { shared: { server: {}, client: {} }, machine: null } },
           settings: { app: { updateChannel: "daily" } },
+          reach: [
+            {
+              machineId: "m-2",
+              machineName: "vps",
+              kind: "t3.app",
+              id: "app",
+              address: "t3-vps.example.com",
+              level: "use",
+            },
+          ],
+          access: null,
+          linkSocket: null,
+          machineName: "studio",
         });
         // K-717: the T3 card's update channel reaches the updater.
         expect(yield* Queue.take(harness.channels)).toBe("nightly");
@@ -551,6 +565,8 @@ it.layer(
         const refused = yield* Effect.flip(Fiber.join(asking));
         expect(refused.message).toBe("not queued");
         expect(yield* Ref.get(harness.machine)).toEqual({ id: "m-1", name: "studio" });
+        const state = Option.getOrThrow(yield* harness.provider.state.pipe(Stream.runHead));
+        expect(state.reach.map((card) => card.machineId)).toEqual(["m-2"]);
         expect(yield* Ref.get(harness.contacts)).toBe(1);
         // K-1623: before the handover the host notice shows, also for an empty audience list.
         const hostNotice = harness.provider.hostNotice.pipe(Stream.runHead);

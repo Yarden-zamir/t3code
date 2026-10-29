@@ -6,6 +6,7 @@
 import {
   ClientEnrollResponse,
   type ClientMachine,
+  DeviceMachine,
   DeviceMachinesResponse,
   t3AppMachines,
 } from "@t3tools/contracts";
@@ -61,9 +62,19 @@ const DEVICE_INVITE_ERRORS: Readonly<Record<number, string>> = {
 const ErrorBody = Schema.Struct({ error: Schema.String });
 const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(ErrorBody));
 
-const decodeEnrollResponse = Schema.decodeUnknownSync(
-  Schema.fromJsonString(Schema.toCodecJson(ClientEnrollResponse)),
+// The token fields decode first, and each machine on its own: one machine that does not decode
+// must never lose the only copy of the secret.
+const decodeEnrollHead = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.toCodecJson(
+      Schema.Struct({
+        ...ClientEnrollResponse.fields,
+        machines: Schema.Array(Schema.Unknown),
+      }),
+    ),
+  ),
 );
+const decodeDeviceMachine = Schema.decodeUnknownOption(Schema.toCodecJson(DeviceMachine));
 const decodeMachines = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.toCodecJson(DeviceMachinesResponse)),
 );
@@ -104,7 +115,14 @@ export async function exchangeDeviceInvite(
           : `kitshn refused the invite (${response.status}).`),
     );
   }
-  return decodeEnrollResponse(response.body);
+  const head = decodeEnrollHead(response.body);
+  return {
+    ...head,
+    machines: head.machines.flatMap((machine) => {
+      const decoded = decodeDeviceMachine(machine);
+      return decoded._tag === "Some" ? [decoded.value] : [];
+    }),
+  };
 }
 
 export type DeviceMachineList =
