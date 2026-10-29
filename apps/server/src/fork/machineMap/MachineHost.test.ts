@@ -11,6 +11,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -29,6 +30,7 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as ProcessRunner from "../../processRunner.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as HostResources from "../../resourceTelemetry/HostResources.ts";
+import * as ResourceTelemetry from "../../resourceTelemetry/ResourceTelemetry.ts";
 import * as ScheduledTasks from "../../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ForkUpdates from "../ForkUpdates.ts";
@@ -72,6 +74,34 @@ const command = (input: MachineCommandInput, expiresAt = "2999-01-01T00:00:00.00
     result: null,
     error: null,
   }) satisfies MachineCommand;
+
+// Each line holds a secret whose value contains "SECRET", which no diagnostics output may show.
+const SECRET_LINES = [
+  "open https://t3.example/pair#token=SECRET-pair failed",
+  "GITHUB_TOKEN=SECRET-env\tpassword=SECRET-tab api_key=SECRET-ak",
+  'request {"Authorization":"Bearer SECRET-jwt","token":"SECRET-json"}',
+  "--api-key SECRET-flag --password=SECRET-flagpw --client-secret SECRET-cs",
+  "Authorization: Basic SECRET-basic",
+  "Authorization: token SECRET-scheme",
+  "x-api-key: SECRET-hdr1 X-Api-Key: SECRET-hdr2",
+  "foo_token=SECRET-ft accessToken=SECRET-at private_key=SECRET-pk passwd=SECRET-pd",
+  "MY_PASSWORD: SECRET-yaml",
+  "Cookie: sid=SECRET-cookie set-cookie: session=SECRET-sc",
+  "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=SECRET-azure;EndpointSuffix=x",
+  "AKIASECRET0EXAMPLE77 AIzaSECRET-google-key ya29.SECRET-oauth",
+  "glpat-SECRET-gitlab npm_SECRET-npm-token xoxa-SECRET-slack xoxs-SECRET-slack",
+  "xapp-SECRET-slack-app sk-ant-SECRET-anthropic github_pat_SECRET-github",
+  "-----BEGIN RSA PRIVATE KEY-----\nMIIESECRETpem\n-----END RSA PRIVATE KEY-----",
+];
+// Error texts that hold no secret keep every word.
+const READABLE_LINES = [
+  "SyntaxError: Unexpected token '<'",
+  'password authentication failed for user "postgres"',
+  "secret not found",
+  "NODE_ENV=production CODEX_HOME=/home/owner/.codex",
+  "exit code 1",
+];
+const ERROR_TEXTS = [...SECRET_LINES, ...READABLE_LINES];
 
 const makeLayer = (input: {
   readonly interrupted: Ref.Ref<ReadonlyArray<string>>;
@@ -151,8 +181,35 @@ const makeLayer = (input: {
             totalMemoryBytes: 1000,
           }),
         }),
-        Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({}),
-        Layer.mock(TraceDiagnostics.TraceDiagnostics)({}),
+        Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({
+          read: Effect.succeed({
+            processes: [
+              { pid: 7, command: "/usr/bin/node /srv/server.js --token abc123", elapsed: "1:00" },
+              { pid: 8, command: "/Applications/T3 Code.app/Contents/MacOS/T3 Code --key k-1" },
+            ],
+          } as never),
+        }),
+        Layer.mock(ResourceTelemetry.ResourceTelemetry)({
+          latest: Effect.succeed({
+            processes: [{ identity: { pid: 8 }, name: "T3 Code" }],
+          } as never),
+        }),
+        Layer.mock(TraceDiagnostics.TraceDiagnostics)({
+          read: () =>
+            Effect.succeed({
+              latestFailures: ERROR_TEXTS.slice(0, 10).map((cause) => ({
+                name: "failure",
+                cause,
+                endedAt: DateTime.makeUnsafe(0),
+              })),
+              latestWarningAndErrorLogs: ERROR_TEXTS.slice(10).map((message) => ({
+                level: "error",
+                spanName: "log",
+                message,
+                seenAt: DateTime.makeUnsafe(0),
+              })),
+            } as never),
+        }),
         Layer.mock(ServiceLauncherClient.ServiceLauncherClient)({ managed: false }),
         // No git checkout in this test: the build falls back to the release.
         Layer.mock(ProcessRunner.ProcessRunner)({
@@ -227,6 +284,31 @@ it.layer(NodeServices.layer)("MachineHost", (it) => {
         expect(host.supportedCommands({ desktopConnected: false })).not.toContain("restartServer");
         expect(host.supportedCommands({ desktopConnected: true })).toContain("installUpdate");
       }).pipe(Effect.provide(makeLayer({ interrupted, enabledTasks, revoked })));
+    }),
+  );
+
+  it.effect("diagnostics hold program names and no secrets", () =>
+    Effect.gen(function* () {
+      const interrupted = yield* Ref.make<ReadonlyArray<string>>([]);
+      const enabledTasks = yield* Ref.make<ReadonlySet<string>>(new Set());
+      const revoked = yield* Ref.make<ReadonlyArray<string>>([]);
+      const outcome = yield* Effect.gen(function* () {
+        const host = yield* MachineHost.MachineHost;
+        return yield* host.run(command({ _tag: "collectDiagnostics" }));
+      }).pipe(Effect.provide(makeLayer({ interrupted, enabledTasks, revoked })));
+      expect(outcome.ok).toBe(true);
+      const result = outcome.result as {
+        readonly processes: ReadonlyArray<{ readonly command: string }>;
+      };
+      // A process name keeps its spaces; without one, the command keeps its program only.
+      expect(result.processes.map((entry) => entry.command)).toEqual(["node", "T3 Code"]);
+      const text = JSON.stringify(outcome.result);
+      for (const secret of ["abc123", "k-1", "SECRET"]) expect(text).not.toContain(secret);
+      const messages = (
+        outcome.result as { readonly recentErrors: ReadonlyArray<{ readonly message: string }> }
+      ).recentErrors.map((entry) => entry.message);
+      expect(messages).toHaveLength(ERROR_TEXTS.length);
+      expect(messages).toEqual(expect.arrayContaining(READABLE_LINES));
     }),
   );
 
