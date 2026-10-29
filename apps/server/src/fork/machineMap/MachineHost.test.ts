@@ -75,6 +75,34 @@ const command = (input: MachineCommandInput, expiresAt = "2999-01-01T00:00:00.00
     error: null,
   }) satisfies MachineCommand;
 
+// Each line holds a secret whose value contains "SECRET", which no diagnostics output may show.
+const SECRET_LINES = [
+  "open https://t3.example/pair#token=SECRET-pair failed",
+  "GITHUB_TOKEN=SECRET-env\tpassword=SECRET-tab api_key=SECRET-ak",
+  'request {"Authorization":"Bearer SECRET-jwt","token":"SECRET-json"}',
+  "--api-key SECRET-flag --password=SECRET-flagpw --client-secret SECRET-cs",
+  "Authorization: Basic SECRET-basic",
+  "Authorization: token SECRET-scheme",
+  "x-api-key: SECRET-hdr1 X-Api-Key: SECRET-hdr2",
+  "foo_token=SECRET-ft accessToken=SECRET-at private_key=SECRET-pk passwd=SECRET-pd",
+  "MY_PASSWORD: SECRET-yaml",
+  "Cookie: sid=SECRET-cookie set-cookie: session=SECRET-sc",
+  "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=SECRET-azure;EndpointSuffix=x",
+  "AKIASECRET0EXAMPLE77 AIzaSECRET-google-key ya29.SECRET-oauth",
+  "glpat-SECRET-gitlab npm_SECRET-npm-token xoxa-SECRET-slack xoxs-SECRET-slack",
+  "xapp-SECRET-slack-app sk-ant-SECRET-anthropic github_pat_SECRET-github",
+  "-----BEGIN RSA PRIVATE KEY-----\nMIIESECRETpem\n-----END RSA PRIVATE KEY-----",
+];
+// Error texts that hold no secret keep every word.
+const READABLE_LINES = [
+  "SyntaxError: Unexpected token '<'",
+  'password authentication failed for user "postgres"',
+  "secret not found",
+  "NODE_ENV=production CODEX_HOME=/home/owner/.codex",
+  "exit code 1",
+];
+const ERROR_TEXTS = [...SECRET_LINES, ...READABLE_LINES];
+
 const makeLayer = (input: {
   readonly interrupted: Ref.Ref<ReadonlyArray<string>>;
   readonly enabledTasks: Ref.Ref<ReadonlySet<string>>;
@@ -169,23 +197,17 @@ const makeLayer = (input: {
         Layer.mock(TraceDiagnostics.TraceDiagnostics)({
           read: () =>
             Effect.succeed({
-              latestFailures: [
-                {
-                  name: "pair",
-                  cause:
-                    "open https://t3.example/pair#token=PAIRSECRET with GITHUB_TOKEN=gh-value\tpassword=pw-value api_key=ak-value",
-                  endedAt: DateTime.makeUnsafe(0),
-                },
-              ],
-              latestWarningAndErrorLogs: [
-                {
-                  level: "error",
-                  spanName: "http",
-                  message:
-                    'request {"Authorization":"Bearer jwt-value","token":"json-value"}\n--api-key flag-value',
-                  seenAt: DateTime.makeUnsafe(0),
-                },
-              ],
+              latestFailures: ERROR_TEXTS.slice(0, 10).map((cause) => ({
+                name: "failure",
+                cause,
+                endedAt: DateTime.makeUnsafe(0),
+              })),
+              latestWarningAndErrorLogs: ERROR_TEXTS.slice(10).map((message) => ({
+                level: "error",
+                spanName: "log",
+                message,
+                seenAt: DateTime.makeUnsafe(0),
+              })),
             } as never),
         }),
         Layer.mock(ServiceLauncherClient.ServiceLauncherClient)({ managed: false }),
@@ -281,10 +303,12 @@ it.layer(NodeServices.layer)("MachineHost", (it) => {
       // A process name keeps its spaces; without one, the command keeps its program only.
       expect(result.processes.map((entry) => entry.command)).toEqual(["node", "T3 Code"]);
       const text = JSON.stringify(outcome.result);
-      const secrets = ["abc123", "k-1", "PAIRSECRET", "gh-value", "pw-value", "ak-value"];
-      for (const secret of [...secrets, "jwt-value", "json-value", "flag-value"]) {
-        expect(text).not.toContain(secret);
-      }
+      for (const secret of ["abc123", "k-1", "SECRET"]) expect(text).not.toContain(secret);
+      const messages = (
+        outcome.result as { readonly recentErrors: ReadonlyArray<{ readonly message: string }> }
+      ).recentErrors.map((entry) => entry.message);
+      expect(messages).toHaveLength(ERROR_TEXTS.length);
+      expect(messages).toEqual(expect.arrayContaining(READABLE_LINES));
     }),
   );
 

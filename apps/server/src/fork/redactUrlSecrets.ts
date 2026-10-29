@@ -278,27 +278,46 @@ export function redactTurnItemUrlSecrets(item: OrchestrationV2TurnItem): Orchest
   }
 }
 
+// Known token formats. A word must be longer than its prefix by 8, so `ASIA` alone stays.
 const TOKEN_PREFIXES = [
   "ghp_",
   "gho_",
   "ghs_",
   "ghu_",
+  "ghr_",
   "github_pat_",
+  "glpat-",
+  "npm_",
   "sk-",
-  "xoxb-",
-  "xoxp-",
+  "xapp-",
   "eyJ",
+  "AKIA",
+  "ASIA",
+  "AIza",
+  "ya29.",
 ];
-// The word after one of these is a secret. Narrower than SECRET_KEYS: "exit code 1" stays.
-const SECRET_LEADS: ReadonlySet<string> = new Set([
-  "bearer",
+// A key whose name holds one of these words has a secret value, as in `accessToken=x`.
+const SECRET_WORDS = [
   "token",
-  "password",
   "secret",
+  "password",
+  "passwd",
+  "pwd",
   "api_key",
   "apikey",
-  "client_secret",
-]);
+  "private_key",
+  "access_key",
+  "account_key",
+  "auth",
+  "credential",
+  "session",
+  "cookie",
+];
+// Bare words that announce a secret. `token` or `password` alone does not, so
+// `Unexpected token '<'` and `password authentication failed` stay readable.
+const SECRET_LEADS: ReadonlySet<string> = new Set(["bearer", "basic"]);
+// After a secret key, these name the scheme, as in `Authorization: token x`. The scheme stays.
+const AUTH_SCHEMES: ReadonlySet<string> = new Set(["bearer", "basic", "token", "digest"]);
 // Quotes and JSON punctuation around a word, as in `"token":"abc",`.
 const WRAPPERS: ReadonlySet<string> = new Set([
   '"',
@@ -314,14 +333,6 @@ const WRAPPERS: ReadonlySet<string> = new Set([
   ")",
 ]);
 
-const isEnvName = (name: string) =>
-  name.length >= 2 &&
-  name[0]! >= "A" &&
-  name[0]! <= "Z" &&
-  [...name].every(
-    (char) => (char >= "A" && char <= "Z") || (char >= "0" && char <= "9") || char === "_",
-  );
-
 const unwrap = (text: string) => {
   let start = 0;
   let end = text.length;
@@ -330,63 +341,124 @@ const unwrap = (text: string) => {
   return { start, end, core: text.slice(start, end) };
 };
 
-/** `--api-key`, `API-KEY` and `api_key` all name the key `api_key`. */
+const isLower = (char: string) => (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
+const isUpper = (char: string) => char >= "A" && char <= "Z";
+
+/** `--api-key`, `X-Api-Key`, `apiKey` and `API_KEY` all become `api_key`. */
 const keyName = (raw: string) => {
   let start = 0;
   while (raw[start] === "-") start += 1;
-  return unwrap(raw.slice(start)).core.toLowerCase().replaceAll("-", "_");
+  const core = unwrap(raw.slice(start)).core;
+  let name = "";
+  for (let index = 0; index < core.length; index += 1) {
+    const char = core[index]!;
+    if (index > 0 && isUpper(char) && isLower(core[index - 1]!)) name += "_";
+    name += char;
+  }
+  return name.toLowerCase().replaceAll("-", "_");
 };
 
-/** True when the word before announces a secret: `Bearer`, `token:`, `"Authorization":"Bearer`, `--token`. */
-function leadsSecret(previous: string): boolean {
-  let core = unwrap(previous).core;
-  if (core.startsWith("--")) return SECRET_KEYS.has(keyName(core));
-  if (core.endsWith(":")) core = core.slice(0, -1);
-  return SECRET_LEADS.has(keyName(core.slice(core.lastIndexOf(":") + 1)));
+const isSecretKey = (raw: string) => {
+  const name = keyName(raw);
+  return SECRET_WORDS.some((word) => name.includes(word));
+};
+
+const isToken = (text: string) => {
+  const core = unwrap(text).core;
+  // `npm_config_cache=/x` is a key: redactPair checks its value.
+  if (core.includes("=") || core.includes(":")) return false;
+  const slack = core.startsWith("xox") && isLower(core[3] ?? "") && core[4] === "-";
+  return (
+    slack ||
+    TOKEN_PREFIXES.some((prefix) => core.startsWith(prefix) && core.length >= prefix.length + 8)
+  );
+};
+
+/** One `key=value` or `key:value`, as in `AccountKey=x` or `"token":"x"`. */
+function redactPair(pair: string): string {
+  for (const separator of ["=", ":"]) {
+    const at = pair.indexOf(separator);
+    if (at <= 0) continue;
+    const value = pair.slice(at + 1);
+    const valueStart = unwrap(value).start;
+    const secret = value.slice(valueStart);
+    if (secret === "" || secret === REDACTED) return pair;
+    if (AUTH_SCHEMES.has(unwrap(secret).core.toLowerCase())) return pair;
+    if (isSecretKey(pair.slice(0, at)) || isToken(secret)) {
+      return `${pair.slice(0, at + 1)}${value.slice(0, valueStart)}${REDACTED}`;
+    }
+    return pair;
+  }
+  return pair;
 }
 
-function redactWord(word: string, previous: string | undefined): string {
-  const { start, end, core } = unwrap(word);
-  if (core === "") return word;
-  const wrap = (inner: string) => word.slice(0, start) + inner + word.slice(end);
-  if (previous !== undefined && leadsSecret(previous)) return wrap(REDACTED);
-  if (TOKEN_PREFIXES.some((prefix) => core.startsWith(prefix))) return wrap(REDACTED);
+/** True when the word announces a secret in the next word: `Bearer`, `token:`, `x-api-key:`, `--token`. */
+function leadsSecret(word: string): boolean {
+  const core = unwrap(word).core;
+  if (core.endsWith(":") || core.endsWith("=")) return isSecretKey(core.slice(0, -1));
+  if (core.startsWith("--")) return !core.includes("=") && isSecretKey(core);
+  // `"Authorization":"token` keeps its scheme, and the next word is the secret.
   for (const separator of ["=", ":"]) {
     const at = core.indexOf(separator);
-    if (at <= 0) continue;
-    const key = core.slice(0, at);
-    const value = core.slice(at + 1);
-    const valueStart = unwrap(value).start;
-    if (value.slice(valueStart) === "" || value.slice(valueStart) === REDACTED) continue;
-    if (SECRET_KEYS.has(keyName(key)) || (separator === "=" && isEnvName(unwrap(key).core))) {
-      return wrap(`${core.slice(0, at + 1)}${value.slice(0, valueStart)}${REDACTED}`);
+    if (at > 0 && isSecretKey(core.slice(0, at))) {
+      return AUTH_SCHEMES.has(unwrap(core.slice(at + 1)).core.toLowerCase());
     }
   }
-  return word;
+  return SECRET_LEADS.has(keyName(core));
+}
+
+/** Hides the body of each PEM private key block, also of a block that a cut left open. */
+function redactPrivateKeys(text: string): string {
+  let result = text;
+  for (
+    let at = result.indexOf("-----BEGIN ");
+    at >= 0;
+    at = result.indexOf("-----BEGIN ", at + 1)
+  ) {
+    const headerEnd = result.indexOf("-----", at + 11);
+    if (headerEnd < 0 || !result.slice(at, headerEnd).includes("PRIVATE KEY")) continue;
+    const bodyStart = headerEnd + 5;
+    const footer = result.indexOf("-----END", bodyStart);
+    const bodyEnd = footer < 0 ? result.length : footer;
+    result = `${result.slice(0, bodyStart)}${REDACTED}${result.slice(bodyEnd)}`;
+  }
+  return result;
 }
 
 /**
- * Hides URL secrets, `key=value` and `"key":"value"` for SECRET_KEYS, env values, the word after
- * `Bearer`, `token:` or `--token`, and known token formats. Known limit: a secret with a space
- * inside quotes keeps its second word. Revisit if diagnostics leak one.
+ * Hides URL secrets, private key blocks, known token formats, values of keys whose name holds a
+ * secret word (`k=v`, `k: v`, `"k":"v"`), and the word after `Bearer`, `Basic` or `--token`.
+ * Known limits: short flags (`-p x`), a quoted secret with a space, and `user:pass@host` without
+ * a scheme stay. Revisit if diagnostics leak one.
  */
 export function redactSecretsInText(text: string): string {
-  const source = redactUrlSecretsInText(text);
+  const source = redactPrivateKeys(redactUrlSecretsInText(text));
   let result = "";
-  let previous: string | undefined;
+  let lead = false;
   let index = 0;
   while (index < source.length) {
     let end = index;
     const isSpace = source[index]!.trim() === "";
     while (end < source.length && (source[end]!.trim() === "") === isSpace) end += 1;
-    const piece = source.slice(index, end);
-    if (isSpace) {
-      result += piece;
-    } else {
-      result += redactWord(piece, previous);
-      previous = piece;
-    }
+    const word = source.slice(index, end);
     index = end;
+    if (isSpace) {
+      result += word;
+      continue;
+    }
+    const { start, end: coreEnd, core } = unwrap(word);
+    if (lead && AUTH_SCHEMES.has(core.toLowerCase())) {
+      result += word;
+      continue;
+    }
+    const redacted =
+      core === "" || core === REDACTED
+        ? word
+        : lead || isToken(core)
+          ? `${word.slice(0, start)}${REDACTED}${word.slice(coreEnd)}`
+          : `${word.slice(0, start)}${core.split(";").map(redactPair).join(";")}${word.slice(coreEnd)}`;
+    result += redacted;
+    lead = !lead && leadsSecret(word);
   }
   return result;
 }
