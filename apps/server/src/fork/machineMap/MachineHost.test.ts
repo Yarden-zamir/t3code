@@ -11,6 +11,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -29,6 +30,7 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as ProcessRunner from "../../processRunner.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as HostResources from "../../resourceTelemetry/HostResources.ts";
+import * as ResourceTelemetry from "../../resourceTelemetry/ResourceTelemetry.ts";
 import * as ScheduledTasks from "../../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ForkUpdates from "../ForkUpdates.ts";
@@ -151,8 +153,41 @@ const makeLayer = (input: {
             totalMemoryBytes: 1000,
           }),
         }),
-        Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({}),
-        Layer.mock(TraceDiagnostics.TraceDiagnostics)({}),
+        Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({
+          read: Effect.succeed({
+            processes: [
+              { pid: 7, command: "/usr/bin/node /srv/server.js --token abc123", elapsed: "1:00" },
+              { pid: 8, command: "/Applications/T3 Code.app/Contents/MacOS/T3 Code --key k-1" },
+            ],
+          } as never),
+        }),
+        Layer.mock(ResourceTelemetry.ResourceTelemetry)({
+          latest: Effect.succeed({
+            processes: [{ identity: { pid: 8 }, name: "T3 Code" }],
+          } as never),
+        }),
+        Layer.mock(TraceDiagnostics.TraceDiagnostics)({
+          read: () =>
+            Effect.succeed({
+              latestFailures: [
+                {
+                  name: "pair",
+                  cause:
+                    "open https://t3.example/pair#token=PAIRSECRET with GITHUB_TOKEN=gh-value\tpassword=pw-value api_key=ak-value",
+                  endedAt: DateTime.makeUnsafe(0),
+                },
+              ],
+              latestWarningAndErrorLogs: [
+                {
+                  level: "error",
+                  spanName: "http",
+                  message:
+                    'request {"Authorization":"Bearer jwt-value","token":"json-value"}\n--api-key flag-value',
+                  seenAt: DateTime.makeUnsafe(0),
+                },
+              ],
+            } as never),
+        }),
         Layer.mock(ServiceLauncherClient.ServiceLauncherClient)({ managed: false }),
         // No git checkout in this test: the build falls back to the release.
         Layer.mock(ProcessRunner.ProcessRunner)({
@@ -227,6 +262,29 @@ it.layer(NodeServices.layer)("MachineHost", (it) => {
         expect(host.supportedCommands({ desktopConnected: false })).not.toContain("restartServer");
         expect(host.supportedCommands({ desktopConnected: true })).toContain("installUpdate");
       }).pipe(Effect.provide(makeLayer({ interrupted, enabledTasks, revoked })));
+    }),
+  );
+
+  it.effect("diagnostics hold program names and no secrets", () =>
+    Effect.gen(function* () {
+      const interrupted = yield* Ref.make<ReadonlyArray<string>>([]);
+      const enabledTasks = yield* Ref.make<ReadonlySet<string>>(new Set());
+      const revoked = yield* Ref.make<ReadonlyArray<string>>([]);
+      const outcome = yield* Effect.gen(function* () {
+        const host = yield* MachineHost.MachineHost;
+        return yield* host.run(command({ _tag: "collectDiagnostics" }));
+      }).pipe(Effect.provide(makeLayer({ interrupted, enabledTasks, revoked })));
+      expect(outcome.ok).toBe(true);
+      const result = outcome.result as {
+        readonly processes: ReadonlyArray<{ readonly command: string }>;
+      };
+      // A process name keeps its spaces; without one, the command keeps its program only.
+      expect(result.processes.map((entry) => entry.command)).toEqual(["node", "T3 Code"]);
+      const text = JSON.stringify(outcome.result);
+      const secrets = ["abc123", "k-1", "PAIRSECRET", "gh-value", "pw-value", "ak-value"];
+      for (const secret of [...secrets, "jwt-value", "json-value", "flag-value"]) {
+        expect(text).not.toContain(secret);
+      }
     }),
   );
 

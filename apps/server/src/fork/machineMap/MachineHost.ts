@@ -42,10 +42,12 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as ProcessRunner from "../../processRunner.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as HostResources from "../../resourceTelemetry/HostResources.ts";
+import * as ResourceTelemetry from "../../resourceTelemetry/ResourceTelemetry.ts";
 import * as ScheduledTasks from "../../scheduledTasks/ScheduledTaskService.ts";
 import { getAutoBootstrapThreadModelSelection } from "../../serverRuntimeStartup.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ForkUpdates from "../ForkUpdates.ts";
+import { programName, redactSecretsInText } from "../redactUrlSecrets.ts";
 import * as MachineMapState from "./MachineMapState.ts";
 import * as MachinePeers from "./MachinePeers.ts";
 
@@ -184,6 +186,7 @@ const make = Effect.gen(function* () {
   const hostResources = yield* HostResources.HostResources;
   const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
   const traceDiagnostics = yield* TraceDiagnostics.TraceDiagnostics;
+  const telemetry = yield* ResourceTelemetry.ResourceTelemetry;
   const launcher = yield* ServiceLauncherClient.ServiceLauncherClient;
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const state = yield* MachineMapState.MachineMapState;
@@ -405,6 +408,11 @@ const make = Effect.gen(function* () {
       }),
       hostResources.read,
     ]);
+    // `read` refreshed the snapshot, so `latest` holds the same processes, with their names.
+    const names = new Map(
+      (yield* telemetry.latest).processes.map((entry) => [entry.identity.pid, entry.name]),
+    );
+    // The portal and the kitshn provider both send this out, so nothing secret goes in.
     return succeed({
       versions: {
         t3: descriptor.serverVersion,
@@ -422,13 +430,13 @@ const make = Effect.gen(function* () {
         ...traces.latestFailures.slice(0, 10).map((failure) => ({
           kind: "failure",
           name: failure.name,
-          message: failure.cause.slice(0, 300),
+          message: redactSecretsInText(failure.cause).slice(0, 300),
           at: DateTime.formatIso(failure.endedAt),
         })),
         ...traces.latestWarningAndErrorLogs.slice(0, 10).map((log) => ({
           kind: log.level,
           name: log.spanName,
-          message: log.message.slice(0, 300),
+          message: redactSecretsInText(log.message).slice(0, 300),
           at: DateTime.formatIso(log.seenAt),
         })),
       ],
@@ -437,7 +445,7 @@ const make = Effect.gen(function* () {
         cpuPercent: entry.cpuPercent,
         rssBytes: entry.rssBytes,
         elapsed: entry.elapsed,
-        command: entry.command.slice(0, 160),
+        command: programName(names.get(entry.pid), entry.command).slice(0, 160),
       })),
     });
   });
