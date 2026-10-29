@@ -25,6 +25,8 @@ const setup = (binaries: {
   path: ReadonlyArray<string>;
   /** PATH folders to give as paths relative to the cwd. */
   relative?: ReadonlyArray<string>;
+  /** A Windows host: `kitshn.exe` files without an execute bit, and PATH split by `;`. */
+  windows?: boolean;
   /** The answer of `kitshn attester set`. */
   attester?: { readonly code: number; readonly stdout: string; readonly stderr: string };
 }) =>
@@ -35,9 +37,9 @@ const setup = (binaries: {
     const versions = new Map<string, string>();
     const install = Effect.fn(function* (directory: string, version: string) {
       yield* fs.makeDirectory(directory, { recursive: true });
-      const file = path.join(directory, "kitshn");
+      const file = path.join(directory, binaries.windows === true ? "kitshn.exe" : "kitshn");
       yield* fs.writeFileString(file, "#!/bin/sh\n");
-      yield* fs.chmod(file, 0o755);
+      yield* fs.chmod(file, binaries.windows === true ? 0o644 : 0o755);
       versions.set(file, version);
       return file;
     });
@@ -88,13 +90,14 @@ const setup = (binaries: {
     );
     const host = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
-        Effect.provideService(HostProcess.Platform, "darwin"),
+        Effect.provideService(HostProcess.Platform, binaries.windows === true ? "win32" : "darwin"),
         Effect.provideService(HostProcess.HomeDirectory, home),
         Effect.provideService(HostProcess.Environment, {
           PATH: [
             ...relativeBinaries.map((file) => path.relative(process.cwd(), path.dirname(file))),
             ...pathBinaries.map((file) => path.dirname(file)),
-          ].join(":"),
+          ].join(binaries.windows === true ? ";" : ":"),
+          LOCALAPPDATA: path.join(base, "local"),
         }),
       );
     const run = host(cli.run(["address", "c1", "new", "--json"], AUTHORIZATION));
@@ -125,6 +128,14 @@ it.layer(NodeServices.layer)("KitshnCli", (it) => {
       // and the real run gets exactly this thread's value.
       expect(runs[0]?.env).toEqual({ T3_ACP_MCP_AUTHORIZATION: "" });
       expect(runs[2]?.env).toEqual({ T3_ACP_MCP_AUTHORIZATION: "Bearer thread-token" });
+    }),
+  );
+
+  it.effect("finds kitshn.exe on a Windows PATH, which has no execute bit", () =>
+    Effect.gen(function* () {
+      const { run, runs, pathBinaries } = yield* setup({ path: [KITSHN_2], windows: true });
+      yield* run;
+      expect(runs.map((input) => input.command)).toEqual([pathBinaries[0], pathBinaries[0]]);
     }),
   );
 

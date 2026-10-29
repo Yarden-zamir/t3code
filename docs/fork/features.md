@@ -140,7 +140,7 @@ A kitshn link makes another machine a linked environment. Agents pass its `envir
 - **Thread limits:** each call carries the limits of the calling thread. The other machine applies the narrower of those and the level.
 - **Manual links:** `t3 environment link` and `t3 environment unlink` refuse. Settings > Environments shows the kitshn links read-only.
 - **Audit:** each forwarded tool call and each exec run goes to the kitshn audit, without arguments or output.
-- **Limits:** a call goes through the link socket of the kitshn daemon. Windows has no link socket yet, so a Windows machine reaches no other machine. While kitshn is out of reach, at most 100 audit reports wait, and older ones drop.
+- **Limits:** a call goes through the link socket of the kitshn daemon, a named pipe on Windows. While kitshn is out of reach, at most 100 audit reports wait, and older ones drop.
 
 ### Commands on other machines
 

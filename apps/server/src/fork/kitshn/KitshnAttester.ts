@@ -31,7 +31,6 @@ export class KitshnAttester extends Context.Service<
 export const kitshnOwnerRefusal = Effect.fn("KitshnAttester.kitshnOwnerRefusal")(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const path = yield* Path.Path;
-  if ((yield* HostProcess.Platform) === "win32") return Option.some("Windows has no kitshn 2");
   if (config.devUrl !== undefined) return Option.some("a dev server does not register");
   // ServerConfig does not record whether --base-dir, T3CODE_HOME or a worktree `.t3` chose the
   // folder, so compare paths.

@@ -102,14 +102,27 @@ const make = Effect.gen(function* () {
   const candidates = Effect.gen(function* () {
     const home = yield* HostProcess.HomeDirectory;
     const env = yield* HostProcess.Environment;
+    const windows = (yield* HostProcess.Platform) === "win32";
+    const name = windows ? "kitshn.exe" : "kitshn";
+    // K-625: the Windows join puts kitshn in %LOCALAPPDATA%\Programs\kitshn.
+    const installed = windows
+      ? path.join(
+          env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"),
+          "Programs",
+          "kitshn",
+          name,
+        )
+      : path.join(home, ...KITSHN_2_HOME_PATH);
     // A relative entry would make the spawn search PATH again, so the checked file may not run.
-    const pathDirectories = (env.PATH ?? "").split(":").filter((entry) => path.isAbsolute(entry));
-    return [
-      ...new Set([
-        path.join(home, ...KITSHN_2_HOME_PATH),
-        ...pathDirectories.map((directory) => path.join(directory, "kitshn")),
-      ]),
-    ];
+    const pathDirectories = (env.PATH ?? env.Path ?? "")
+      .split(windows ? ";" : ":")
+      .filter((entry) => path.isAbsolute(entry));
+    return {
+      windows,
+      files: [
+        ...new Set([installed, ...pathDirectories.map((directory) => path.join(directory, name))]),
+      ],
+    };
   });
 
   const isKitshn2 = Effect.fn("KitshnCli.isKitshn2")(function* (
@@ -137,15 +150,13 @@ const make = Effect.gen(function* () {
   });
 
   const binary = Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") {
-      return yield* fail("not_installed", "kitshn 2 runs on macOS and Linux, not on Windows.");
-    }
     const refused: Array<string> = [];
-    for (const candidate of yield* candidates) {
+    const { windows, files } = yield* candidates;
+    for (const candidate of files) {
       const info = yield* fileSystem.stat(candidate).pipe(Effect.option);
-      if (Option.isNone(info) || info.value.type !== "File" || (info.value.mode & 0o111) === 0) {
-        continue;
-      }
+      if (Option.isNone(info) || info.value.type !== "File") continue;
+      // Windows has no execute bit; the `.exe` name marks a program there.
+      if (!windows && (info.value.mode & 0o111) === 0) continue;
       if (yield* isKitshn2(candidate, info.value.mtime)) return candidate;
       refused.push(candidate);
     }
