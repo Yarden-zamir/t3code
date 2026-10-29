@@ -18,6 +18,7 @@ import { ChildProcessSpawner } from "effect/process";
 import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
+import * as ForkUpdates from "../ForkUpdates.ts";
 import * as MachineHost from "../machineMap/MachineHost.ts";
 import * as KitshnCli from "./KitshnCli.ts";
 import * as KitshnGrants from "./KitshnGrants.ts";
@@ -110,6 +111,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
     const machine = yield* Ref.make<KitshnGrants.KitshnMachine | null>(null);
     const linkChecks = yield* Queue.unbounded<string>();
     const linkCheckExit = yield* Ref.make(0);
+    const channels = yield* Queue.unbounded<string>();
 
     const layer = Layer.effect(
       KitshnProvider.KitshnProvider,
@@ -163,6 +165,10 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
               }),
             ),
           ),
+          Layer.mock(ForkUpdates.ForkUpdates)({
+            available: false,
+            setChannel: (channel) => Queue.offer(channels, channel).pipe(Effect.asVoid),
+          }),
           Layer.mock(MachineHost.MachineHost)({
             isDesktopCommand: () => false,
             supervised: true,
@@ -213,6 +219,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
       restarted,
       machine,
       linkChecks,
+      channels,
       linkCheckExit,
     };
   });
@@ -416,31 +423,37 @@ it.layer(
       }).pipe(Effect.scoped),
   );
 
-  it.effect("sends local requests over the live connection and keeps the machine name", () =>
-    Effect.gen(function* () {
-      const harness = yield* setup();
-      const child = yield* Queue.take(harness.children);
-      const register = yield* Queue.take(child.written);
-      // Before kitshn answers the register, nothing goes out.
-      const early = yield* Effect.flip(harness.provider.request({ type: "samples" }));
-      expect(early.message).toContain("no connection to kitshn");
-      yield* child.say({
-        id: register.id,
-        type: "register",
-        machineId: "m-1",
-        machineName: "studio",
-        grants: {},
-      });
-      const asking = yield* harness.provider
-        .request({ type: "job-cancel", jobId: 42 })
-        .pipe(Effect.forkChild);
-      const sent = yield* Queue.take(child.written);
-      expect(sent).toEqual({ id: expect.any(String), type: "job-cancel", jobId: 42 });
-      yield* child.say({ id: sent.id, type: "error", error: "not queued" });
-      const refused = yield* Effect.flip(Fiber.join(asking));
-      expect(refused.message).toBe("not queued");
-      expect(yield* Ref.get(harness.machine)).toEqual({ id: "m-1", name: "studio" });
-    }).pipe(Effect.scoped),
+  it.effect(
+    "sends local requests over the live connection and keeps the machine name and channel",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* setup();
+        const child = yield* Queue.take(harness.children);
+        const register = yield* Queue.take(child.written);
+        // Before kitshn answers the register, nothing goes out.
+        const early = yield* Effect.flip(harness.provider.request({ type: "samples" }));
+        expect(early.message).toContain("no connection to kitshn");
+        yield* child.say({
+          id: register.id,
+          type: "register",
+          machineId: "m-1",
+          machineName: "studio",
+          grants: {},
+          settings: { app: { updateChannel: "daily" } },
+        });
+        // K-717: the T3 card's update channel reaches the updater.
+        expect(yield* Queue.take(harness.channels)).toBe("nightly");
+        expect(yield* Queue.take(harness.channels)).toBe("daily");
+        const asking = yield* harness.provider
+          .request({ type: "job-cancel", jobId: 42 })
+          .pipe(Effect.forkChild);
+        const sent = yield* Queue.take(child.written);
+        expect(sent).toEqual({ id: expect.any(String), type: "job-cancel", jobId: 42 });
+        yield* child.say({ id: sent.id, type: "error", error: "not queued" });
+        const refused = yield* Effect.flip(Fiber.join(asking));
+        expect(refused.message).toBe("not queued");
+        expect(yield* Ref.get(harness.machine)).toEqual({ id: "m-1", name: "studio" });
+      }).pipe(Effect.scoped),
   );
   it.effect(
     "uses the link socket only after link-check, and drops it when the connection closes",

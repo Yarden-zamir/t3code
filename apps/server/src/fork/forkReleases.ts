@@ -20,6 +20,7 @@ const ReleaseIndex = Schema.Array(
   Schema.Struct({
     tag_name: Schema.String,
     draft: Schema.optional(Schema.Boolean),
+    prerelease: Schema.optional(Schema.Boolean),
     assets: Schema.Array(Schema.Struct({ name: Schema.String })),
   }),
 );
@@ -61,16 +62,34 @@ const installableReleases = (httpClient: HttpClient.HttpClient) =>
       Effect.mapError((cause) => new ForkReleaseLookupError({ cause })),
     );
 
-const newerIn = (releases: ReleaseIndex, currentVersion: string) => {
-  const newest = newestCliReleaseVersion(releases, cliReleaseChannelOf(currentVersion));
+/**
+ * K-717: the `updateChannel` of the T3 card. "daily" is a nightly that the "Fork daily release"
+ * task promoted: it keeps its nightly tag and is no longer a prerelease.
+ */
+export type ForkUpdateChannel = "nightly" | "daily";
+
+const newerIn = (
+  releases: ReleaseIndex,
+  currentVersion: string,
+  channel: ForkUpdateChannel = "nightly",
+) => {
+  const feed =
+    channel === "daily" ? releases.filter((release) => release.prerelease === false) : releases;
+  const newest = newestCliReleaseVersion(feed, cliReleaseChannelOf(currentVersion));
   return newest !== undefined && compareExactServiceVersions(newest, currentVersion) > 0
     ? newest
     : undefined;
 };
 
-/** The newest installable fork release on the channel of `currentVersion`, if it is newer. */
-export const newerForkRelease = (httpClient: HttpClient.HttpClient, currentVersion: string) =>
-  installableReleases(httpClient).pipe(Effect.map((releases) => newerIn(releases, currentVersion)));
+/** The newest installable fork release of `channel` on the track of `currentVersion`, if newer. */
+export const newerForkRelease = (
+  httpClient: HttpClient.HttpClient,
+  currentVersion: string,
+  channel: ForkUpdateChannel,
+) =>
+  installableReleases(httpClient).pipe(
+    Effect.map((releases) => newerIn(releases, currentVersion, channel)),
+  );
 
 /**
  * The version that a self-update request installs. A requested version with no installable fork

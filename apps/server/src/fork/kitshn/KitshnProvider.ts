@@ -25,6 +25,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
+import * as ForkUpdates from "../ForkUpdates.ts";
 import * as MachineHost from "../machineMap/MachineHost.ts";
 import { redactSecretsInText } from "../redactUrlSecrets.ts";
 import { makeListSharedThreads, type SharedThread } from "./sharedThreads.ts";
@@ -243,6 +244,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const cli = yield* KitshnCli.KitshnCli;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const host = yield* MachineHost.MachineHost;
+  const forkUpdates = yield* ForkUpdates.ForkUpdates;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const serviceScope = yield* Effect.scope;
@@ -644,6 +646,15 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       if (answer.type === "error") return yield* new KitshnRequestError({ message: answer.error });
       return answer;
     },
+  );
+
+  yield* SubscriptionRef.changes(providerState).pipe(
+    Stream.map(({ cardSettings }) =>
+      cardSettings[APP_RESOURCE_ID]?.[UPDATE_CHANNEL_SETTING] === "daily" ? "daily" : "nightly",
+    ),
+    Stream.changes,
+    Stream.runForEach(forkUpdates.setChannel),
+    Effect.forkScoped,
   );
 
   return KitshnProvider.of({
