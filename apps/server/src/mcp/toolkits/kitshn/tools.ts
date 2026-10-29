@@ -1,6 +1,5 @@
-/** Fork: kitshn publishing with the owner's agent key (`fork/kitshn/KitshnPublish.ts`). */
-import { OrchestratorMcpFailure, SecretRef } from "@t3tools/contracts";
-import * as Schema from "effect/Schema";
+/** Fork: kitshn publishing through the machine's kitshn daemon (`fork/kitshn/KitshnPublish.ts`). */
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import { Tool, Toolkit } from "effect/ai";
 
 import * as KitshnPublish from "../../../fork/kitshn/KitshnPublish.ts";
@@ -20,7 +19,7 @@ const shared = {
 const KitshnPublishTool = Tool.make("kitshn_publish", {
   ...shared,
   description:
-    'Publish a file or folder of this thread\'s workspace to kitshn: a .html file becomes a page, another file a file card, a folder a static site without dotfiles and links. Path "." is the whole workspace; prefer a build folder. The same name updates its card; circle, public, address and zone apply only to its first publish. Without circle the card stays private. Full-access threads only. The result is {address, card, kind (page, file or folder), updated, revision?}.',
+    "Publish a file or folder of this thread's workspace to kitshn: a .html file becomes a page, another file a file card, a folder a static site without dotfiles and links. Path \".\" is the whole workspace; prefer a build folder. The same name updates its card; circle, public, address and zone apply only to its first publish. Without circle the card stays private. Runs as this thread through the kitshn daemon of this machine; a call can wait for the owner's answer. Full-access threads only. The result is {address, card, kind (page, file or folder), updated, revision?}.",
   parameters: KitshnPublish.KitshnPublishInput,
   success: KitshnPublish.KitshnPublishResult,
 }).annotate(Tool.Destructive, true);
@@ -28,22 +27,9 @@ const KitshnPublishTool = Tool.make("kitshn_publish", {
 const KitshnAddressTool = Tool.make("kitshn_address", {
   ...shared,
   description:
-    "Give a kitshn page, file or folder site a new address name. The old address redirects. Full-access threads only. The result is {address, card, kind, revision?}.",
+    "Give a kitshn page, file or folder site a new address name. The old address redirects. Runs like kitshn_publish. Full-access threads only. The result is {address, card, kind, revision?}.",
   parameters: KitshnPublish.KitshnAddressInput,
   success: KitshnPublish.KitshnAddressResult,
 }).annotate(Tool.Destructive, true);
 
-const KitshnAgentKeyTool = Tool.make("kitshn_agent_key", {
-  ...shared,
-  description:
-    'Read, set or clear the kitshn agent key that kitshn_publish and kitshn_address use. "status" returns {set, server}. "set" takes three request_secret refs: the kitshn https URL and the client id and client secret of the key\'s Cloudflare Access service token. It spends them. "set" and "clear" need a top-level thread. Full-access threads only.',
-  parameters: Schema.Struct({
-    action: Schema.Literals(["status", "set", "clear"]),
-    serverRef: Schema.optional(SecretRef),
-    clientIdRef: Schema.optional(SecretRef),
-    clientSecretRef: Schema.optional(SecretRef),
-  }),
-  success: KitshnPublish.KitshnKeyStatus,
-}).annotate(Tool.Destructive, true);
-
-export const KitshnToolkit = Toolkit.make(KitshnPublishTool, KitshnAddressTool, KitshnAgentKeyTool);
+export const KitshnToolkit = Toolkit.make(KitshnPublishTool, KitshnAddressTool);

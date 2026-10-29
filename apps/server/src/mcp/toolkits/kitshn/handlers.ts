@@ -7,8 +7,11 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { KitshnToolkit } from "./tools.ts";
 
-/** The key and the files belong to this machine, so an agent on another machine gets none. */
-const callingThread = Effect.fn("KitshnMcp.callingThread")(function* (operation: string) {
+/**
+ * The daemon and the files belong to this machine, so an agent on another machine gets none. A call
+ * needs the thread's own credential: without it kitshn would see only the bare machine, not a thread.
+ */
+export const callingThread = Effect.fn("KitshnMcp.callingThread")(function* (operation: string) {
   const scope = yield* McpInvocationContext.McpInvocationContext;
   if (isMachineRequestNamespace(scope.requestNamespace)) {
     return yield* new OrchestratorMcpFailure({
@@ -16,62 +19,37 @@ const callingThread = Effect.fn("KitshnMcp.callingThread")(function* (operation:
       message: "kitshn tools are not available to another machine.",
     });
   }
-  return (yield* McpInvocationContext.requireThreadScope(scope, operation)).thread;
+  const { thread } = yield* McpInvocationContext.requireThreadScope(scope, operation);
+  if (scope.threadAuthorization === undefined) {
+    return yield* new OrchestratorMcpFailure({
+      code: "capability_denied",
+      message: `${operation} needs the MCP credential of an agent thread on this machine, so kitshn knows the thread that asks.`,
+    });
+  }
+  return { threadId: thread.threadId, authorization: scope.threadAuthorization };
 });
 
 const toFailure = (error: KitshnPublish.KitshnPublishError) =>
   new OrchestratorMcpFailure({
-    code:
-      error.reason === "no_key" ||
-      error.reason === "outside_workspace" ||
-      error.reason === "not_top_level"
-        ? "capability_denied"
-        : "invalid_request",
+    code: error.reason === "outside_workspace" ? "capability_denied" : "invalid_request",
     message: error.message,
   });
 
 export const layer = McpToolAccess.toLayer(KitshnToolkit, {
   kitshn_publish: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
-      const thread = yield* callingThread("kitshn_publish");
+      const caller = yield* callingThread("kitshn_publish");
       const kitshn = yield* KitshnPublish.KitshnPublish;
-      return yield* kitshn.publish(thread.threadId, input).pipe(Effect.mapError(toFailure));
+      return yield* kitshn
+        .publish(caller.threadId, caller.authorization, input)
+        .pipe(Effect.mapError(toFailure));
     }),
   ),
   kitshn_address: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
-      yield* callingThread("kitshn_address");
+      const caller = yield* callingThread("kitshn_address");
       const kitshn = yield* KitshnPublish.KitshnPublish;
-      return yield* kitshn.address(input).pipe(Effect.mapError(toFailure));
-    }),
-  ),
-  kitshn_agent_key: McpToolAccess.writesEnvironment((input) =>
-    Effect.gen(function* () {
-      const thread = yield* callingThread("kitshn_agent_key");
-      const kitshn = yield* KitshnPublish.KitshnPublish;
-      if (input.action === "status")
-        return yield* kitshn.keyStatus.pipe(Effect.mapError(toFailure));
-      if (input.action === "clear") {
-        return yield* kitshn.clearKey(thread.threadId).pipe(Effect.mapError(toFailure));
-      }
-      if (
-        input.serverRef === undefined ||
-        input.clientIdRef === undefined ||
-        input.clientSecretRef === undefined
-      ) {
-        return yield* new OrchestratorMcpFailure({
-          code: "invalid_request",
-          message: "set needs serverRef, clientIdRef and clientSecretRef.",
-        });
-      }
-      return yield* kitshn
-        .setKey({
-          threadId: thread.threadId,
-          serverRef: input.serverRef,
-          clientIdRef: input.clientIdRef,
-          clientSecretRef: input.clientSecretRef,
-        })
-        .pipe(Effect.mapError(toFailure));
+      return yield* kitshn.address(caller.authorization, input).pipe(Effect.mapError(toFailure));
     }),
   ),
 });

@@ -1,63 +1,137 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import * as Redacted from "effect/Redacted";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import * as ServerConfig from "../../config.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as KitshnCli from "./KitshnCli.ts";
 
-const KEY = { server: "https://kit.example.com", clientId: "id", clientSecret: "secret" };
+const KITSHN_2 = '{"product":"kitshn","generation":2,"version":"b46829700699"}';
+const AUTHORIZATION = Redacted.make("Bearer thread-token");
 
-const cliWith = (download: string) =>
-  KitshnCli.KitshnCli.pipe(
-    Effect.provide(
-      KitshnCli.layer.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(
-              HttpClient.HttpClient,
-              HttpClient.make((request) =>
-                Effect.succeed(HttpClientResponse.fromWeb(request, new Response(download))),
-              ),
-            ),
-            Layer.mock(ProcessRunner.ProcessRunner)({}),
+/**
+ * Fake `kitshn` files: each answers `version --json` with its own text, and the fake runner records
+ * every call. `home` gets `~/.local/bin/kitshn` when given; `path` lists the PATH folders in order.
+ */
+const setup = (binaries: { home?: string; path: ReadonlyArray<string> }) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const base = yield* fs.makeTempDirectoryScoped({ prefix: "kitshn-cli-" });
+    const versions = new Map<string, string>();
+    const install = Effect.fn(function* (directory: string, version: string) {
+      yield* fs.makeDirectory(directory, { recursive: true });
+      const file = path.join(directory, "kitshn");
+      yield* fs.writeFileString(file, "#!/bin/sh\n");
+      yield* fs.chmod(file, 0o755);
+      versions.set(file, version);
+      return file;
+    });
+    const home = path.join(base, "home");
+    const homeBinary =
+      binaries.home === undefined
+        ? undefined
+        : yield* install(path.join(home, ".local", "bin"), binaries.home);
+    const pathBinaries = yield* Effect.forEach(binaries.path, (version, index) =>
+      install(path.join(base, `bin${index}`), version),
+    );
+    const runs: Array<ProcessRunner.ProcessRunInput> = [];
+    const cli = yield* KitshnCli.KitshnCli.pipe(
+      Effect.provide(
+        KitshnCli.layer.pipe(
+          Layer.provide(
+            Layer.mock(ProcessRunner.ProcessRunner)({
+              run: (input) =>
+                Effect.sync(() => {
+                  runs.push(input);
+                  const version = input.args[0] === "version";
+                  return {
+                    stdout: version ? (versions.get(input.command) ?? "") : '{"card":"c1"}',
+                    stderr: version ? "" : "waiting: proposal p1 asks its approver circle.\n",
+                    code: ChildProcessSpawner.ExitCode(
+                      version && versions.get(input.command) === "" ? 2 : 0,
+                    ),
+                    timedOut: false,
+                    stdoutTruncated: false,
+                    stderrTruncated: false,
+                    stdoutInvalidUtf8: false,
+                    stderrInvalidUtf8: false,
+                  };
+                }),
+            }),
           ),
         ),
       ),
-    ),
+    );
+    const run = cli.run(["address", "c1", "new", "--json"], AUTHORIZATION).pipe(
+      Effect.provideService(HostProcess.Platform, "darwin"),
+      Effect.provideService(HostProcess.HomeDirectory, home),
+      Effect.provideService(HostProcess.Environment, {
+        PATH: pathBinaries.map((file) => path.dirname(file)).join(":"),
+      }),
+    );
+    return { run, runs, homeBinary, pathBinaries };
+  });
+
+it.layer(NodeServices.layer)("KitshnCli", (it) => {
+  it.effect("runs the first kitshn 2 on PATH with only the thread credential added", () =>
+    Effect.gen(function* () {
+      // KitSHn 1 has no `version --json`, so it exits non-zero; it comes first on PATH.
+      const { run, runs, pathBinaries } = yield* setup({ path: ["", KITSHN_2] });
+      const output = yield* run;
+      expect(output).toEqual({
+        exitCode: 0,
+        stdout: '{"card":"c1"}',
+        stderr: "waiting: proposal p1 asks its approver circle.\n",
+      });
+      yield* run;
+      // The version check runs once per binary and mtime.
+      expect(runs.map((input) => [input.command, input.args[0]])).toEqual([
+        [pathBinaries[0], "version"],
+        [pathBinaries[1], "version"],
+        [pathBinaries[1], "address"],
+        [pathBinaries[1], "address"],
+      ]);
+      expect(runs[0]?.env).toBeUndefined();
+      expect(runs[2]?.env).toEqual({ T3_ACP_MCP_AUTHORIZATION: "Bearer thread-token" });
+    }),
   );
 
-it.layer(
-  ServerConfig.layerTest(process.cwd(), { prefix: "kitshn-cli-" }).pipe(
-    Layer.provideMerge(NodeServices.layer),
-  ),
-)("KitshnCli", (it) => {
-  it.effect("refuses a download or a cached file that does not match the pinned hash", () =>
+  it.effect("prefers ~/.local/bin/kitshn over PATH", () =>
     Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const { stateDir } = yield* ServerConfig.ServerConfig;
-      const cached = path.join(
-        stateDir,
-        "kitshn-cli",
-        `kitshn-${KitshnCli.KITSHN_CLI_PIN.tag}.mjs`,
-      );
+      const { run, runs, homeBinary } = yield* setup({ home: KITSHN_2, path: [KITSHN_2] });
+      yield* run;
+      expect(runs.map((input) => input.command)).toEqual([homeBinary, homeBinary]);
+    }),
+  );
 
-      const cli = yield* cliWith("console.log('not kitshn')");
-      expect((yield* Effect.flip(cli.run(["address", "a", "b"], KEY))).reason).toBe(
-        "checksum_mismatch",
-      );
-      expect(yield* fs.exists(cached)).toBe(false);
+  it.effect.each([
+    { name: "KitSHn 1", version: "" },
+    {
+      name: "another generation",
+      version: '{"product":"kitshn","generation":1,"version":"0.10.0"}',
+    },
+    { name: "extra output", version: `${KITSHN_2}\nnote` },
+  ])("refuses $name and never runs it", ({ version }) =>
+    Effect.gen(function* () {
+      const { run, runs, pathBinaries } = yield* setup({ path: [version] });
+      const error = yield* Effect.flip(run);
+      expect(error.reason).toBe("not_kitshn_2");
+      expect(error.message).toContain(pathBinaries[0]);
+      expect(runs.map((input) => input.args[0])).toEqual(["version"]);
+    }),
+  );
 
-      yield* fs.makeDirectory(path.dirname(cached), { recursive: true });
-      yield* fs.writeFileString(cached, "console.log('changed')");
-      expect((yield* Effect.flip(cli.run(["address", "a", "b"], KEY))).reason).toBe(
-        "checksum_mismatch",
-      );
+  it.effect("names the missing install when no kitshn exists", () =>
+    Effect.gen(function* () {
+      const { run, runs } = yield* setup({ path: [] });
+      expect((yield* Effect.flip(run)).reason).toBe("not_installed");
+      expect(runs).toEqual([]);
     }),
   );
 });

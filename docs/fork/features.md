@@ -411,17 +411,17 @@ A local service, for example kitshn, learns which thread an agent works in. The 
 
 ### Publish to kitshn
 
-Agents publish a file or a folder of their workspace to kitshn, and give the card a new address name. The tools are `kitshn_publish` and `kitshn_address`. They run the kitshn CLI with a kitshn agent key, a Cloudflare Access service token (kitshn K-718, K-1116, K-1120, K-1123).
+Agents publish a file or a folder of their workspace to kitshn, and give the card a new address name. The tools are `kitshn_publish` and `kitshn_address`. They run the machine's kitshn 2 CLI, which sends each call through the local kitshn daemon (kitshn K-1116, K-1120, K-1123, K-1714). No agent and no T3 setting holds a kitshn token.
 
-- **Setting:** the agent key, in the server secret store. To add it, ask an agent in a top-level full-access thread to call `kitshn_agent_key` with `set`. The agent asks you for the kitshn server URL, the client id and the client secret in three private secret cards, so the agent never sees or chooses them. A delegated thread cannot set or clear the key. `status` shows whether a key is set and its server, never the key. `clear` removes it.
+- **Setting:** none in T3. Join the machine to kitshn, so its daemon runs. Without a daemon, the tool returns the kitshn error.
 - **Works on:** server, so every client.
 - Only a live full-access/default thread on this machine can publish. An agent on another machine cannot.
+- The call runs with the thread's MCP credential in `T3_ACP_MCP_AUTHORIZATION`. The daemon checks it at [Thread identity check](#thread-identity-check) (`/api/thread-identity`), so kitshn knows the thread that asks. A caller without a thread credential, such as an OAuth client, gets a refusal.
 - `path` is relative to the thread's worktree, or its project folder. The tool refuses a path outside that folder after links resolve, and a path in a dot folder or to a dotfile.
-- The server downloads `kitshn.mjs` of one pinned kitshn release once, to `kitshn-cli` in its state folder. It checks the SHA-256 before each run and refuses a file that does not match. It runs the CLI with the Node of the server, version 24 or newer.
+- The server uses `~/.local/bin/kitshn`, else the first `kitshn` on its PATH that is kitshn 2. The PATH is the one that the server reads from the login shell at start. A binary is kitshn 2 when `kitshn version --json` prints `{"product":"kitshn","generation":2,…}`. KitSHn 1 never runs. When no binary is kitshn 2, the error names the paths that it found.
+- A call that waits for the owner's answer blocks the tool for up to 10 minutes.
 - **Limits:**
-  - A new kitshn CLI needs a manual pin bump in `apps/server/src/fork/kitshn/KitshnCli.ts`. Revisit when kitshn has a stable release channel.
-  - kitshn plans to replace agent keys with the local kitshn daemon (K-1732). Then only `KitshnCli.ts` changes.
-  - The hash check finds a corrupt or replaced file. It does not stop a process of the same user that swaps the file between the check and the run; agents run as that user. Revisit with the kitshn daemon.
+  - The server checks a binary once per path and change time. A new install at the same path with the same change time is not checked again. Revisit if kitshn installs keep the change time.
 
 ### Scheduled task model
 

@@ -1,24 +1,20 @@
 /**
  * Fork: agents publish files and folders to kitshn (K-1116, K-1123) and rename their addresses
- * (K-1120, K-1124). The agent key stays in the server secret store; the owner sets it through
- * `request_secret` refs, so its values never reach a thread, a setting or a log.
+ * (K-1120, K-1124). Each call runs as the calling thread through the machine's kitshn daemon.
  */
-import { type SecretRef, type ThreadId, TrimmedNonEmptyString } from "@t3tools/contracts";
+import { type ThreadId, TrimmedNonEmptyString } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
-import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as KitshnCli from "./KitshnCli.ts";
-
-const KEY_SECRET_NAME = "kitshn-agent-key";
 
 /** A CLI value. A leading "-" would read as a flag of the kitshn CLI. */
 const CliValue = TrimmedNonEmptyString.check(
@@ -58,33 +54,20 @@ export const KitshnAddressResult = Schema.Struct({
 });
 const KitshnCliRefusal = Schema.Struct({ error: Schema.String });
 
-export const KitshnKeyStatus = Schema.Struct({
-  set: Schema.Boolean,
-  server: Schema.NullOr(Schema.String),
-});
-export type KitshnKeyStatus = typeof KitshnKeyStatus.Type;
-
 export class KitshnPublishError extends Schema.TaggedError<KitshnPublishError>()(
   "KitshnPublishError",
   {
     reason: Schema.Literals([
-      "no_key",
-      "invalid_key",
       "outside_workspace",
-      "not_top_level",
       "not_found",
       "refused",
       "cli_failed",
       "unexpected_output",
-      "store_failed",
     ]),
     message: Schema.String,
   },
 ) {}
 
-const StoredKey = Schema.fromJsonString(KitshnCli.KitshnAgentKey);
-const decodeStoredKey = Schema.decodeEffect(StoredKey);
-const encodeStoredKey = Schema.encodeEffect(StoredKey);
 const decodeRefusal = Schema.decodeEffect(Schema.fromJsonString(KitshnCliRefusal));
 const decodePublishAnswer = Schema.decodeEffect(Schema.fromJsonString(KitshnPublishResult));
 const decodeAddressAnswer = Schema.decodeEffect(Schema.fromJsonString(KitshnAddressResult));
@@ -92,140 +75,57 @@ const decodeAddressAnswer = Schema.decodeEffect(Schema.fromJsonString(KitshnAddr
 export class KitshnPublish extends Context.Service<
   KitshnPublish,
   {
-    readonly keyStatus: Effect.Effect<KitshnKeyStatus, KitshnPublishError>;
-    /** Spends all three refs, so the owner types each value and the agent sees none. */
-    readonly setKey: (input: {
-      readonly threadId: ThreadId;
-      readonly serverRef: SecretRef;
-      readonly clientIdRef: SecretRef;
-      readonly clientSecretRef: SecretRef;
-    }) => Effect.Effect<KitshnKeyStatus, KitshnPublishError>;
-    readonly clearKey: (threadId: ThreadId) => Effect.Effect<KitshnKeyStatus, KitshnPublishError>;
     readonly publish: (
       threadId: ThreadId,
+      threadAuthorization: Redacted.Redacted<string>,
       input: KitshnPublishInput,
     ) => Effect.Effect<typeof KitshnPublishResult.Type, KitshnPublishError>;
     readonly address: (
+      threadAuthorization: Redacted.Redacted<string>,
       input: KitshnAddressInput,
     ) => Effect.Effect<typeof KitshnAddressResult.Type, KitshnPublishError>;
   }
 >()("t3/fork/kitshn/KitshnPublish") {}
 
+/** The last line that is not a `waiting:` note of a call that waits for the owner. */
+const lastLine = (stderr: string) =>
+  stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .findLast((line) => line !== "" && !line.startsWith("waiting:"));
+
 const fail = (reason: KitshnPublishError["reason"], message: string) =>
   new KitshnPublishError({ reason, message });
 
 const make = Effect.gen(function* () {
-  const secrets = yield* ServerSecretStore.ServerSecretStore;
-  const secretRequests = yield* SecretRequests.SecretRequests;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const projects = yield* ProjectService.ProjectService;
   const cli = yield* KitshnCli.KitshnCli;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
-  const storeFailed = () => fail("store_failed", "Could not read or write the kitshn agent key.");
-
-  const readKey = secrets.get(KEY_SECRET_NAME).pipe(
-    Effect.mapError(storeFailed),
-    Effect.flatMap(
-      Option.match({
-        onNone: () => Effect.succeed(Option.none<KitshnCli.KitshnAgentKey>()),
-        onSome: (bytes) =>
-          decodeStoredKey(new TextDecoder().decode(bytes)).pipe(
-            Effect.asSome,
-            Effect.mapError(storeFailed),
-          ),
-      }),
-    ),
-  );
-
-  const statusOf = (key: Option.Option<KitshnCli.KitshnAgentKey>): KitshnKeyStatus => ({
-    set: Option.isSome(key),
-    server: Option.match(key, { onNone: () => null, onSome: (value) => value.server }),
-  });
-
-  const keyStatus = readKey.pipe(Effect.map(statusOf), Effect.withSpan("KitshnPublish.keyStatus"));
-
-  /** The key belongs to the owner, so only a top-level thread changes it, not a delegated child. */
-  const topLevelThread = Effect.fn("KitshnPublish.topLevelThread")(function* (threadId: ThreadId) {
-    const shell = yield* threads.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null));
-    if (shell === null) return yield* fail("not_found", `Thread '${threadId}' was not found.`);
-    if (shell.lineage.parentThreadId !== null) {
-      return yield* fail(
-        "not_top_level",
-        "Only a top-level thread sets or clears the kitshn agent key. Ask the parent thread.",
-      );
-    }
-    return shell;
-  });
-
-  const setKey: KitshnPublish["Service"]["setKey"] = Effect.fn("KitshnPublish.setKey")(
-    function* (input) {
-      const shell = yield* topLevelThread(input.threadId);
-      // A ref works only in the project of the thread that asked for it.
-      const values = yield* secretRequests
-        .consumeAll({
-          refs: [input.serverRef, input.clientIdRef, input.clientSecretRef],
-          projectId: shell.projectId,
-        })
-        .pipe(
-          Effect.mapError((error) =>
-            fail("invalid_key", `${error.message} Ask the owner for all three values again.`),
-          ),
-        );
-      const [serverText, clientId, clientSecret] = values;
-      if (serverText === undefined || clientId === undefined || clientSecret === undefined) {
-        return yield* Effect.die(new Error("consumeAll returned fewer values than refs."));
-      }
-      // The refs are spent here, so a bad URL needs all three answers again.
-      const server = URL.parse(serverText.trim());
-      if (server === null || server.protocol !== "https:") {
-        return yield* fail(
-          "invalid_key",
-          "The server answer is not an https URL, such as https://kit.example.com. Ask for all three values again.",
-        );
-      }
-      const key = { server: server.origin, clientId, clientSecret };
-      const encoded = yield* encodeStoredKey(key).pipe(Effect.mapError(storeFailed));
-      yield* secrets
-        .set(KEY_SECRET_NAME, new TextEncoder().encode(encoded))
-        .pipe(Effect.mapError(storeFailed));
-      return statusOf(Option.some(key));
-    },
-  );
-
-  const clearKey: KitshnPublish["Service"]["clearKey"] = Effect.fn("KitshnPublish.clearKey")(
-    function* (threadId) {
-      yield* topLevelThread(threadId);
-      yield* secrets.remove(KEY_SECRET_NAME).pipe(Effect.mapError(storeFailed));
-      return statusOf(Option.none());
-    },
-  );
-
   /** Runs the CLI with `--json` and decodes its one JSON answer. */
   const runJson = Effect.fn("KitshnPublish.runJson")(
     function* <A>(
+      threadAuthorization: Redacted.Redacted<string>,
       args: ReadonlyArray<string>,
       decodeAnswer: (stdout: string) => Effect.Effect<A, Schema.SchemaError>,
     ) {
-      const key = yield* readKey;
-      if (Option.isNone(key)) {
-        return yield* fail(
-          "no_key",
-          "No kitshn agent key is set on this T3 server. The owner must add one: kitshn_agent_key with action set.",
-        );
-      }
       const output = yield* cli
-        .run([...args, "--json"], key.value)
+        .run([...args, "--json"], threadAuthorization)
         .pipe(Effect.mapError((error) => fail("cli_failed", error.message)));
       const unexpected = () =>
         fail(
           "unexpected_output",
           `The kitshn CLI exited ${output.exitCode} with output that is not its --json answer: ${JSON.stringify(output.stdout.slice(0, 500))}. kitshn may already have made the change. Check the card before a retry.`,
         );
-      if (output.exitCode === 1) {
-        const refusal = yield* decodeRefusal(output.stdout).pipe(Effect.mapError(unexpected));
-        return yield* fail("refused", refusal.error);
+      if (output.exitCode === 1 || output.exitCode === 2) {
+        // A failure before the CLI reads --json prints one line on stderr instead.
+        const line = lastLine(output.stderr);
+        const refusal = yield* decodeRefusal(output.stdout).pipe(Effect.option);
+        if (Option.isSome(refusal)) return yield* fail("refused", refusal.value.error);
+        if (output.stdout.trim() === "" && line !== undefined) return yield* fail("refused", line);
+        return yield* unexpected();
       }
       if (output.exitCode !== 0) return yield* unexpected();
       return yield* decodeAnswer(output.stdout).pipe(Effect.mapError(unexpected));
@@ -279,11 +179,12 @@ const make = Effect.gen(function* () {
   });
 
   const publish: KitshnPublish["Service"]["publish"] = Effect.fn("KitshnPublish.publish")(
-    function* (threadId, input) {
+    function* (threadId, threadAuthorization, input) {
       const target = yield* publishablePath(threadId, input.path);
       const option = (flag: string, value: string | undefined) =>
         value === undefined ? [] : [flag, value];
       return yield* runJson(
+        threadAuthorization,
         [
           "publish",
           target,
@@ -299,12 +200,16 @@ const make = Effect.gen(function* () {
   );
 
   const address: KitshnPublish["Service"]["address"] = Effect.fn("KitshnPublish.address")(
-    function* (input) {
-      return yield* runJson(["address", input.card, input.name], decodeAddressAnswer);
+    function* (threadAuthorization, input) {
+      return yield* runJson(
+        threadAuthorization,
+        ["address", input.card, input.name],
+        decodeAddressAnswer,
+      );
     },
   );
 
-  return KitshnPublish.of({ keyStatus, setKey, clearKey, publish, address });
+  return KitshnPublish.of({ publish, address });
 });
 
 export const layer = Layer.effect(KitshnPublish, make);

@@ -18,6 +18,7 @@ import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
@@ -846,6 +847,14 @@ it.effect("admits provider and OAuth client credentials and points only clients 
         "provider-session",
         "client:session-1",
       ]);
+      // Fork: only a thread's own credential reaches the kitshn daemon as that thread.
+      expect(
+        seen.map((scope) =>
+          scope.threadAuthorization === undefined
+            ? undefined
+            : Redacted.value(scope.threadAuthorization),
+        ),
+      ).toEqual([`Bearer ${providerToken}`, undefined]);
 
       const missing = yield* call(undefined);
       expect(missing.status).toBe(401);

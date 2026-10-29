@@ -12,6 +12,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Redacted from "effect/Redacted";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 
 const ALL_MCP_CAPABILITIES = [
@@ -106,6 +107,11 @@ export interface McpInvocationScope {
   readonly client: McpClientCaller | undefined;
   /** False while the Linked environments beta is off here; `/mcp` reads it per request. */
   readonly linkedEnvironments?: boolean;
+  /**
+   * Fork: the `Authorization` value of a request that a thread's own MCP credential made. The kitshn
+   * tools pass it on to the kitshn daemon, which asks `/api/thread-identity` about it.
+   */
+  readonly threadAuthorization?: Redacted.Redacted<string> | undefined;
 }
 
 /**
