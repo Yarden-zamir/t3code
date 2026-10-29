@@ -87,7 +87,7 @@ export class KitshnPublish extends Context.Service<
   }
 >()("t3/fork/kitshn/KitshnPublish") {}
 
-/** The last line that is not a `waiting:` note of a call that waits for the owner. */
+/** The last line that is not a `waiting:` progress note. */
 const lastLine = (stderr: string) =>
   stderr
     .split("\n")

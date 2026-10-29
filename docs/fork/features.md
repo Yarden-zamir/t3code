@@ -419,7 +419,7 @@ Agents publish a file or a folder of their workspace to kitshn, and give the car
 - The call runs with the thread's MCP credential in `T3_ACP_MCP_AUTHORIZATION`. The daemon checks it at [Thread identity check](#thread-identity-check) (`/api/thread-identity`), so kitshn knows the thread that asks. A caller without a thread credential, such as an OAuth client, gets a refusal.
 - `path` is relative to the thread's worktree, or its project folder. The tool refuses a path outside that folder after links resolve, and a path in a dot folder or to a dotfile.
 - The server uses `~/.local/bin/kitshn`, else the first `kitshn` on its PATH that is kitshn 2. The PATH is the one that the server reads from the login shell at start. A binary is kitshn 2 when `kitshn version --json` prints `{"product":"kitshn","generation":2,…}`. KitSHn 1 never runs. When no binary is kitshn 2, the error names the paths that it found.
-- A call that waits for the owner's answer blocks the tool for up to 10 minutes.
+- A call stops after 150 seconds, a little above the daemon's own 120-second call limit. kitshn refuses at once when a right is unset or set to "ask".
 - **Limits:**
   - The server checks a binary once per path and change time. A new install at the same path with the same change time is not checked again. Revisit if kitshn installs keep the change time.
 

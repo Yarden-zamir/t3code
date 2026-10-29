@@ -19,8 +19,8 @@ import * as ProcessRunner from "../../processRunner.ts";
 
 /** The documented install path of kitshn 2. It goes before PATH, where KitSHn 1 can come first. */
 const KITSHN_2_HOME_PATH = [".local", "bin", "kitshn"] as const;
-// A folder site uploads many files, and a call can wait for the owner's answer.
-const RUN_TIMEOUT = "10 minutes";
+// A little above the daemon's own 120-second call limit, so its error reaches the agent first.
+const RUN_TIMEOUT = "150 seconds";
 // KitSHn 1 starts through `uv run`, which can take a while the first time.
 const VERSION_TIMEOUT = "30 seconds";
 
@@ -138,7 +138,7 @@ const make = Effect.gen(function* () {
       if (output.timedOut || output.code === null) {
         return yield* fail(
           "run_failed",
-          `kitshn did not finish in ${RUN_TIMEOUT}. An owner approval can still be open.`,
+          `kitshn did not finish in ${RUN_TIMEOUT}. The kitshn daemon gives each call 120 seconds.`,
         );
       }
       return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
