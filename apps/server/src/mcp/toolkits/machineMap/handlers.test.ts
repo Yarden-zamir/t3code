@@ -3,11 +3,13 @@ import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import { McpSchema, McpServer } from "effect/ai";
 
 import * as MachineExec from "../../../fork/machineMap/MachineExec.ts";
-import * as MachineMap from "../../../fork/machineMap/MachineMap.ts";
-import * as MachinePeers from "../../../fork/machineMap/MachinePeers.ts";
+import * as KitshnCli from "../../../fork/kitshn/KitshnCli.ts";
+import * as KitshnGrants from "../../../fork/kitshn/KitshnGrants.ts";
+import * as KitshnProvider from "../../../fork/kitshn/KitshnProvider.ts";
 import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { liveThreadsLayer } from "../../McpToolAccess.testkit.ts";
@@ -67,43 +69,48 @@ const callTool = (
 const resultText = (result: { readonly content: ReadonlyArray<unknown> }) =>
   JSON.stringify(result.content);
 
+const notConnected = new KitshnProvider.KitshnRequestError({
+  message: "This server has no connection to kitshn.",
+});
+
 const toolsWith = (
   threads: Layer.Layer<ThreadManagement.ThreadManagementService>,
-  callMapTool: MachineMap.MachineMap["Service"]["callMapTool"] = () =>
-    Effect.fail(
-      new MachineMap.MachineMapToolError({
-        reason: "not-connected",
-        detail: "This machine has no portal connection now.",
-      }),
-    ),
+  requests: Array<unknown> = [],
+  answer: KitshnProvider.KitshnProvider["Service"]["request"] = () => Effect.fail(notConnected),
 ) =>
   McpHttpServer.toolkitRegistration(MachineMapToolkit, MachineMapHandlers.layer).pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provide(threads),
     Layer.provide(
-      Layer.mock(MachineMap.MachineMap)({
-        callMapTool,
+      Layer.mock(KitshnProvider.KitshnProvider)({
+        request: (input) =>
+          Effect.sync(() => void requests.push(input)).pipe(Effect.andThen(answer(input))),
+        state: Stream.make({
+          settings: { shared: { server: { a: 1 }, client: {} }, machine: null },
+          cardSettings: {},
+        }),
       }),
     ),
-    Layer.provide(Layer.mock(MachinePeers.MachinePeers)({ machineOf: () => undefined })),
+    Layer.provide(Layer.mock(KitshnGrants.KitshnGrants)({ machine: Effect.succeed(null) })),
+    Layer.provide(Layer.mock(KitshnCli.KitshnCli)({})),
     Layer.provide(Layer.mock(MachineExec.MachineExec)({})),
   );
 
 const layerTools = toolsWith(liveThreadsLayer);
 
-it.effect("a map tool without a portal connection says so", () =>
+it.effect("a machine tool without a kitshn connection says so", () =>
   Effect.gen(function* () {
     const result = yield* callTool(threadCaller, "machines_read", {});
     expect(result.isError).toBe(true);
-    expect(resultText(result)).toContain("no portal connection");
+    expect(resultText(result)).toContain("no connection to kitshn");
   }).pipe(Effect.provide(layerTools)),
 );
 
-it.effect("another machine cannot use the map tools of this machine", () =>
+it.effect("another machine cannot use the machine tools of this machine", () =>
   Effect.gen(function* () {
     for (const [name, args] of [
       ["machines_read", {}],
-      ["machines_resources", { machineId: "mac" }],
+      ["machines_resources", {}],
     ] as const) {
       const result = yield* callTool(machineCaller, name, args);
       expect(result.isError).toBe(true);
@@ -112,27 +119,25 @@ it.effect("another machine cannot use the map tools of this machine", () =>
   }).pipe(Effect.provide(layerTools)),
 );
 
-it.effect("the machine's edit role does not let a plan thread change the map", () =>
+it.effect("a plan thread cannot change anything, and a full-access one sends a kitshn job", () =>
   Effect.gen(function* () {
-    const portalCalls: Array<string> = [];
-    const editPortal: MachineMap.MachineMap["Service"]["callMapTool"] = ({ tool }) =>
-      Effect.sync(() => {
-        portalCalls.push(tool);
-        return { _tag: "applied", revision: 2 };
-      });
+    const requests: Array<unknown> = [];
+    const done: KitshnProvider.KitshnProvider["Service"]["request"] = () =>
+      Effect.succeed({ id: "1", type: "ask", outcome: "done", result: { jobId: 7 } });
     const restrictedTools = toolsWith(
       Layer.mock(ThreadManagement.ThreadManagementService)({
         getThreadShell: (id) => Effect.succeed(liveThreadShell(id, { interactionMode: "plan" })),
       }),
-      editPortal,
+      requests,
+      done,
     );
     for (const [tool, input] of [
-      ["machines_set_access", { from: "mac", to: "vps", level: "admin" }],
-      ["machines_set_setting", { scope: "server", key: "forkAutoUpdate", value: true }],
-      ["machines_command", { machineId: "vps", command: { _tag: "restartServer" } }],
-      ["machines_queue_cancel", { commandId: "command:queued" }],
-      ["machines_undo", { revision: 1 }],
-      ["machines_preset", { action: "apply", name: "full-access" }],
+      [
+        "machines_set_setting",
+        { part: "shared", scope: "server", key: "forkAutoUpdate", value: true },
+      ],
+      ["machines_command", { machineId: "vps", command: "restart-server" }],
+      ["machines_queue_cancel", { jobId: 7 }],
     ] as const) {
       const result = yield* callTool(threadCaller, tool, input).pipe(
         Effect.provide(restrictedTools),
@@ -140,12 +145,53 @@ it.effect("the machine's edit role does not let a plan thread change the map", (
       expect(result.isError).toBe(true);
       expect(resultText(result)).toContain("full-access/default");
     }
-    expect(portalCalls).toEqual([]);
+    expect(requests).toEqual([]);
     const allowed = yield* callTool(threadCaller, "machines_command", {
       machineId: "vps",
-      command: { _tag: "restartServer" },
-    }).pipe(Effect.provide(toolsWith(liveThreadsLayer, editPortal)));
+      command: "restart-server",
+    }).pipe(Effect.provide(toolsWith(liveThreadsLayer, requests, done)));
     expect(allowed.isError).not.toBe(true);
-    expect(portalCalls).toEqual(["machines_command"]);
+    expect(requests).toEqual([
+      {
+        type: "ask",
+        action: "job",
+        target: "vps",
+        body: {
+          command: { kind: "provider", provider: "t3", command: "restart-server", resource: "app" },
+        },
+      },
+    ]);
+  }),
+);
+
+it.effect("a setting goes into one part of the settings state, keeping its other keys", () =>
+  Effect.gen(function* () {
+    const requests: Array<unknown> = [];
+    const done: KitshnProvider.KitshnProvider["Service"]["request"] = () =>
+      Effect.succeed({ id: "1", type: "desired-set" });
+    const tools = toolsWith(liveThreadsLayer, requests, done);
+    const set = yield* callTool(threadCaller, "machines_set_setting", {
+      part: "shared",
+      scope: "server",
+      key: "forkAutoUpdate",
+      value: true,
+    }).pipe(Effect.provide(tools));
+    expect(set.isError).not.toBe(true);
+    expect(requests).toEqual([
+      {
+        type: "desired-set",
+        provider: "t3",
+        kind: "t3.settings",
+        part: "shared",
+        value: { server: { a: 1, forkAutoUpdate: true }, client: {} },
+      },
+    ]);
+    const local = yield* callTool(threadCaller, "machines_set_setting", {
+      part: "machine",
+      scope: "server",
+      key: "worktreesDirectory",
+      value: "/tmp",
+    }).pipe(Effect.provide(tools));
+    expect(resultText(local)).toContain("belongs to one machine");
   }),
 );

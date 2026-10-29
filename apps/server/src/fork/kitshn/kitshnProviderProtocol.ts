@@ -17,12 +17,24 @@ export const ProviderLevels = Schema.Struct({
   control: Schema.optionalKey(Schema.String),
 });
 
+/** K-717: a setting of each card of a kind, with a closed list of values. */
+export const ProviderCardSetting = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  values: Schema.Array(Schema.String),
+  default: Schema.String,
+});
+
 export const ProviderKind = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   levels: ProviderLevels,
   /** K-719 (cutover): the Owner circle always holds each card of the kind at its top level. */
   ownerControl: Schema.optionalKey(Schema.Boolean),
+  /** K-709: a kind of desired state, with no cards and no levels. */
+  state: Schema.optionalKey(Schema.Struct({ schema: Schema.optionalKey(Schema.Unknown) })),
+  /** K-717: settings of each card of the kind. */
+  settings: Schema.optionalKey(Schema.Array(ProviderCardSetting)),
 });
 
 export const ProviderCommand = Schema.Struct({
@@ -47,6 +59,21 @@ export const ProviderSticker = Schema.Struct({
 
 const RESERVED_SITE_NAMES: ReadonlySet<string> = new Set(["pages", "files", "kit", "www"]);
 
+/** K-1625: a list on a card; a row names the commands that the card menu offers for it. */
+export const ProviderList = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  columns: Schema.Array(Schema.Struct({ id: Schema.String, title: Schema.String })),
+  rows: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      cells: Schema.Record(Schema.String, Schema.String.check(Schema.isMaxLength(200))),
+      commands: Schema.optionalKey(Schema.Array(Schema.String)),
+    }),
+  ),
+});
+export type ProviderList = typeof ProviderList.Type;
+
 export const ProviderResource = Schema.Struct({
   id: Schema.String,
   kind: Schema.String,
@@ -56,6 +83,7 @@ export const ProviderResource = Schema.Struct({
   parent: Schema.optionalKey(Schema.String),
   facts: Schema.optionalKey(Schema.Array(ProviderFact)),
   stickers: Schema.optionalKey(Schema.Array(ProviderSticker)),
+  lists: Schema.optionalKey(Schema.Array(ProviderList)),
   /** K-1104: the card as a live site. Phase A sends none. kitshn refuses its own names (K-817). */
   site: Schema.optionalKey(
     Schema.Struct({
@@ -69,6 +97,26 @@ export const ProviderResource = Schema.Struct({
   ),
 });
 export type ProviderResource = typeof ProviderResource.Type;
+
+/** K-707, K-1612: a provider command as a kitshn job; `resource` null is the machine card. */
+export const ProviderJobCommand = Schema.Struct({
+  kind: Schema.Literal("provider"),
+  provider: Schema.String,
+  command: Schema.String,
+  resource: Schema.NullOr(Schema.String),
+  row: Schema.optionalKey(Schema.String),
+});
+
+/** K-709: the shared part and this machine's part of one desired state; null where none is set. */
+export const DesiredParts = Schema.Struct({ shared: Schema.Unknown, machine: Schema.Unknown });
+export type DesiredParts = typeof DesiredParts.Type;
+
+/** K-717: card setting values, by resource id, then by setting id. */
+export const CardSettingValues = Schema.Record(
+  Schema.String,
+  Schema.Record(Schema.String, Schema.String),
+);
+export type CardSettingValues = typeof CardSettingValues.Type;
 
 export const Request = Schema.Union([
   Schema.Struct({
@@ -107,6 +155,23 @@ export const Request = Schema.Union([
     action: Schema.Literal("state"),
     target: Schema.String,
   }),
+  /** K-1612: run a provider command on a machine as this machine, if a circle lets it. */
+  Schema.Struct({
+    id: Schema.String,
+    type: Schema.Literal("ask"),
+    action: Schema.Literal("job"),
+    target: Schema.String,
+    body: Schema.Struct({ command: ProviderJobCommand }),
+  }),
+  /** K-709: set the part of a desired state of this machine, or the shared part; null clears it. */
+  Schema.Struct({
+    id: Schema.String,
+    type: Schema.Literal("desired-set"),
+    provider: Schema.Literal(PROVIDER_NAME),
+    kind: Schema.String,
+    part: Schema.Literals(["shared", "machine"]),
+    value: Schema.Unknown,
+  }),
   /** K-1612 (cutover): cancels a queued job that runs on this machine or that it queued. */
   Schema.Struct({ id: Schema.String, type: Schema.Literal("job-cancel"), jobId: Schema.Int }),
   /** K-605 (cutover): the resource sample now and the samples of the last hour. */
@@ -114,7 +179,10 @@ export const Request = Schema.Union([
 ]);
 export type Request = typeof Request.Type;
 /** The requests that wait for an answer of the same id. */
-export type LocalRequest = Extract<Request, { readonly type: "ask" | "job-cancel" | "samples" }>;
+export type LocalRequest = Extract<
+  Request,
+  { readonly type: "ask" | "job-cancel" | "samples" | "desired-set" }
+>;
 export type LocalRequestInput = LocalRequest extends infer R
   ? R extends LocalRequest
     ? Omit<R, "id">
@@ -186,6 +254,24 @@ export const Answer = Schema.Union([
     grants: GrantTables,
     /** K-704 (cutover): the name of this machine on the map; null before its first connection. */
     machineName: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    /** K-709: the saved desired state of each kind, also while kitshn is out of reach. */
+    desired: Schema.optionalKey(Schema.Record(Schema.String, DesiredParts)),
+    /** K-717: the saved card setting values. */
+    settings: Schema.optionalKey(CardSettingValues),
+  }),
+  Schema.Struct({ id: Schema.String, type: Schema.Literal("desired-set") }),
+  /** K-709: an event: the desired state of one kind, on each change. */
+  Schema.Struct({
+    type: Schema.Literal("desired"),
+    provider: Schema.String,
+    kind: Schema.String,
+    state: DesiredParts,
+  }),
+  /** K-717: an event: the card setting values, on each change. */
+  Schema.Struct({
+    type: Schema.Literal("settings"),
+    provider: Schema.String,
+    values: CardSettingValues,
   }),
   /** K-1710: kitshn ran the ask (`done`), holds it for the owner, or refused it. */
   Schema.Struct({
@@ -217,6 +303,8 @@ export const Answer = Schema.Union([
     commandId: Schema.Int,
     command: Schema.String,
     resource: Schema.NullOr(Schema.String),
+    /** K-1625: the row of a list that the command is for. */
+    row: Schema.optionalKey(Schema.String),
   }),
 ]);
 export type Answer = typeof Answer.Type;

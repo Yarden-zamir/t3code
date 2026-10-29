@@ -70,6 +70,14 @@ export class KitshnCli extends Context.Service<
     ) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
     /** Registers `url` as the T3 attester of this machine's daemon, without a credential. */
     readonly setAttester: (url: string) => Effect.Effect<void, KitshnCliError>;
+    /**
+     * K-602: `kitshn join <code> --server <server>` as the server user, which joins this machine
+     * and starts its daemon. Its output, or the reason that it failed.
+     */
+    readonly join: (input: {
+      readonly code: string;
+      readonly server: string;
+    }) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
     /** The path of the machine's kitshn 2 binary, after its version check. */
     readonly binary: Effect.Effect<string, KitshnCliError>;
   }
@@ -170,6 +178,27 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const join: KitshnCli["Service"]["join"] = Effect.fn("KitshnCli.join")(function* (input) {
+    const command = yield* binary;
+    const output = yield* runner
+      .run({
+        command,
+        args: ["join", input.code, "--server", input.server],
+        env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+        timeout: RUN_TIMEOUT,
+        timeoutBehavior: "timedOutResult",
+      })
+      .pipe(
+        Effect.mapError((error) =>
+          fail("run_failed", `kitshn at ${command} did not run: ${error._tag}.`),
+        ),
+      );
+    if (output.timedOut || output.code === null) {
+      return yield* fail("run_failed", `kitshn join did not finish in ${RUN_TIMEOUT}.`);
+    }
+    return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
+  });
+
   const setAttester: KitshnCli["Service"]["setAttester"] = Effect.fn("KitshnCli.setAttester")(
     function* (url) {
       const command = yield* binary;
@@ -225,7 +254,7 @@ const make = Effect.gen(function* () {
     },
   );
 
-  return KitshnCli.of({ run, setAttester, binary });
+  return KitshnCli.of({ run, join, setAttester, binary });
 });
 
 export const layer = Layer.effect(KitshnCli, make);

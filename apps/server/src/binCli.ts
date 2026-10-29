@@ -32,7 +32,7 @@ import { themeCommand } from "./cli/theme.ts";
 import { toolCommand } from "./cli/tool.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
-import { machineCommand, machineMapCommand } from "./fork/machineMap/cli.ts";
+import { machineCommand } from "./fork/machineMap/cli.ts";
 
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
@@ -96,7 +96,6 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       doctorCommand,
       triageCommand,
       // Fork: machine map.
-      machineMapCommand,
       machineCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),

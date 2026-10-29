@@ -213,6 +213,14 @@ const EXPECTED_REGISTER = {
       name: "T3 app",
       levels: { view: "read", use: "standard", control: "admin" },
       ownerControl: true,
+      settings: [
+        {
+          id: "updateChannel",
+          title: "Update channel",
+          values: ["nightly", "daily"],
+          default: "nightly",
+        },
+      ],
     },
     { id: "t3.thread", name: "T3 thread", levels: { view: "view", use: "send" } },
     {
@@ -221,6 +229,7 @@ const EXPECTED_REGISTER = {
       levels: { use: "use", control: "exec" },
       ownerControl: true,
     },
+    { id: "t3.settings", name: "T3 settings", levels: {}, state: {} },
   ],
   commands: [
     { id: "restart-server", title: "Restart server", kinds: ["t3.app"], confirm: true },

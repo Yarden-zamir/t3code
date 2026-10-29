@@ -558,7 +558,8 @@ const layerServerSelfUpdate = ServerSelfUpdate.layer.pipe(Layer.provide(layerDes
 
 const layerMachineMap = MachineExec.layer.pipe(
   // Fork: the kitshn provider connection; the machine tools send their kitshn requests over it.
-  Layer.provideMerge(KitshnProvider.layer.pipe(Layer.provide(KitshnCli.layer))),
+  Layer.provideMerge(KitshnProvider.layer),
+  Layer.provideMerge(KitshnCli.layer),
   Layer.provideMerge(MachineMap.layer),
   Layer.provideMerge(MachineHost.layer),
   // Fork: updates from the fork releases. It runs also when the machine map is off.

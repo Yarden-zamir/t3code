@@ -18,6 +18,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
@@ -42,6 +43,8 @@ import {
   type ProviderCommand,
   type ProviderResource,
   ProviderResource as ProviderResourceSchema,
+  type CardSettingValues,
+  type DesiredParts,
   type LocalRequest,
   type LocalRequestInput,
   type Request,
@@ -143,6 +146,36 @@ class RegisterRefused extends Schema.TaggedError<RegisterRefused>()("RegisterRef
   error: Schema.String,
 }) {}
 
+/** K-709: the desired state kind of the T3 settings, in the `ForkSettingsState` shape. */
+export const SETTINGS_KIND = "t3.settings";
+/** K-717: the update channel of the app card. */
+const UPDATE_CHANNEL_SETTING = "updateChannel";
+
+const REGISTERED_KINDS = [
+  ...KINDS.map((kind) =>
+    kind.id === "t3.app"
+      ? {
+          ...kind,
+          settings: [
+            {
+              id: UPDATE_CHANNEL_SETTING,
+              title: "Update channel",
+              values: ["nightly", "daily"],
+              default: "nightly",
+            },
+          ],
+        }
+      : kind,
+  ),
+  { id: SETTINGS_KIND, name: "T3 settings", levels: {}, state: {} },
+];
+
+/** What kitshn keeps for this provider besides grants: the settings state and card settings. */
+export interface KitshnProviderState {
+  readonly settings: DesiredParts | null;
+  readonly cardSettings: CardSettingValues;
+}
+
 /** Why a local request to kitshn did not get an answer. */
 export class KitshnRequestError extends Schema.TaggedError<KitshnRequestError>()(
   "KitshnRequestError",
@@ -158,6 +191,8 @@ export class KitshnProvider extends Context.Service<
      * One ask or local request over the live connection, and its answer. An `error` answer
      * fails with its text, as does a server without a registered connection.
      */
+    /** The last settings state and card settings from kitshn, then each change. */
+    readonly state: Stream.Stream<KitshnProviderState>;
     readonly request: (
       request: LocalRequestInput,
     ) => Effect.Effect<Exclude<Answer, { readonly type: "error" }>, KitshnRequestError>;
@@ -176,6 +211,10 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const serviceScope = yield* Effect.scope;
   const ownerRefusal = yield* kitshnOwnerRefusal();
   const grants = yield* KitshnGrants.KitshnGrants;
+  const providerState = yield* SubscriptionRef.make<KitshnProviderState>({
+    settings: null,
+    cardSettings: {},
+  });
   // The live registered connection, so `request` can use it.
   const live = yield* Ref.make<
     Option.Option<(request: LocalRequestInput) => Effect.Effect<Answer, KitshnRequestError>>
@@ -297,7 +336,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         id: registerId,
         type: "register",
         provider: PROVIDER_NAME,
-        kinds: KINDS,
+        kinds: REGISTERED_KINDS,
         commands: providerCommands,
         resources: [app, yield* agentsResource, ...sentThreads.values()],
       });
@@ -359,11 +398,26 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
             if (answer.id !== registerId) return;
             yield* grants.replaceTables(answer.grants);
             yield* grants.setMachine({ id: answer.machineId, name: answer.machineName ?? null });
+            yield* SubscriptionRef.set(providerState, {
+              settings: answer.desired?.[SETTINGS_KIND] ?? null,
+              cardSettings: answer.settings ?? {},
+            });
             yield* Ref.set(live, Option.some(localRequest));
             yield* Deferred.succeed(registeredOnce, undefined);
             return yield* Effect.logInfo(
               `kitshn provider: registered, with ${grantCount(answer.grants)} grants`,
             );
+          case "desired":
+            if (answer.kind !== SETTINGS_KIND) return;
+            return yield* SubscriptionRef.update(providerState, (current) => ({
+              ...current,
+              settings: answer.state,
+            }));
+          case "settings":
+            return yield* SubscriptionRef.update(providerState, (current) => ({
+              ...current,
+              cardSettings: answer.values,
+            }));
           case "grants":
             yield* grants.replaceTables(answer.tables);
             return yield* Effect.logInfo(
@@ -382,6 +436,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
           case "ask":
           case "job-cancel":
           case "samples":
+          case "desired-set":
             return;
         }
       });
@@ -505,7 +560,11 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     },
   );
 
-  return KitshnProvider.of({ run, request });
+  return KitshnProvider.of({
+    run,
+    request,
+    state: SubscriptionRef.changes(providerState),
+  });
 });
 
 export const layer = Layer.effect(KitshnProvider, Effect.flatMap(makeListSharedThreads, make));
