@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { AuthSessionId, MACHINE_LEVEL_SCOPES } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -270,19 +271,61 @@ describe("KitshnGrants", () => {
   );
 });
 
-it("checks kitshn's audiences and the portal's audience while the portal serves hosts", () => {
-  const portal = { teamDomain: "team.cloudflareaccess.com", aud: "portal-aud" };
-  const kitshn = { teamDomain: "team.cloudflareaccess.com", audiences: ["kitshn-aud"] };
-  expect(KitshnGrants.accessChecks(portal, kitshn)).toEqual([
-    { teamDomain: "team.cloudflareaccess.com", audiences: ["kitshn-aud", "portal-aud"] },
-  ]);
-  expect(KitshnGrants.accessChecks(portal, null)).toEqual([
-    { teamDomain: "team.cloudflareaccess.com", audiences: ["portal-aud"] },
-  ]);
-  expect(KitshnGrants.accessChecks(undefined, kitshn)).toEqual([kitshn]);
-  // No application yet: kitshn sends an empty list, and the portal's audience still holds.
-  expect(KitshnGrants.accessChecks(undefined, { ...kitshn, audiences: [] })).toEqual([]);
-  expect(
-    KitshnGrants.accessChecks({ ...portal, teamDomain: "old.cloudflareaccess.com" }, kitshn),
-  ).toEqual([kitshn, { teamDomain: "old.cloudflareaccess.com", audiences: ["portal-aud"] }]);
+describe("kitshnAccessVerifier (K-1623)", () => {
+  const TEAM = "team.cloudflareaccess.com";
+  const PORTAL = { teamDomain: TEAM, aud: "portal-aud" };
+
+  it.effect("accepts kitshn's audiences and the portal's, with kitshn's issuer only", () =>
+    Effect.gen(function* () {
+      const { privateKey, publicKey } = yield* Effect.promise(() => generateKeyPair("RS256"));
+      const jwk = {
+        ...(yield* Effect.promise(() => exportJWK(publicKey))),
+        kid: "k",
+        alg: "RS256",
+      };
+      const getKey = createLocalJWKSet({ keys: [jwk] });
+      const request = (audience: string, issuer = `https://${TEAM}`) =>
+        Effect.promise(() =>
+          new SignJWT({ email: "owner@example.com" })
+            .setProtectedHeader({ alg: "RS256", kid: "k" })
+            .setIssuer(issuer)
+            .setAudience(audience)
+            .setIssuedAt()
+            .setExpirationTime("5m")
+            .sign(privateKey),
+        ).pipe(
+          Effect.map((token) =>
+            HttpServerRequest.fromWeb(
+              new Request("http://127.0.0.1/", { headers: { "cf-access-jwt-assertion": token } }),
+            ),
+          ),
+        );
+      const passes = (
+        verify: ReturnType<typeof KitshnGrants.kitshnAccessVerifier>,
+        audience: string,
+        issuer?: string,
+      ) =>
+        verify === undefined
+          ? Effect.succeed(false)
+          : request(audience, issuer).pipe(
+              Effect.flatMap(verify),
+              Effect.map((claims) => claims !== undefined),
+            );
+      const kitshn = { teamDomain: TEAM, audiences: ["kitshn-aud"] };
+
+      // null: kitshn sent nothing yet; [] : kitshn has no application yet. The portal's holds.
+      for (const access of [null, { ...kitshn, audiences: [] }]) {
+        const verify = KitshnGrants.kitshnAccessVerifier(PORTAL, access, getKey);
+        expect(yield* passes(verify, "portal-aud")).toBe(true);
+        expect(yield* passes(verify, "kitshn-aud")).toBe(false);
+      }
+      expect(KitshnGrants.kitshnAccessVerifier(undefined, null, getKey)).toBeUndefined();
+
+      const verify = KitshnGrants.kitshnAccessVerifier(PORTAL, kitshn, getKey);
+      expect(yield* passes(verify, "kitshn-aud")).toBe(true);
+      expect(yield* passes(verify, "portal-aud")).toBe(true);
+      expect(yield* passes(verify, "other-aud")).toBe(false);
+      expect(yield* passes(verify, "kitshn-aud", "https://evil.cloudflareaccess.com")).toBe(false);
+    }),
+  );
 });

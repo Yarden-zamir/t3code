@@ -19,6 +19,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
+import type { JWTVerifyGetKey } from "jose";
 
 import {
   type CloudflareAccessClaims,
@@ -84,11 +85,36 @@ interface Tracked {
 }
 
 /**
+ * K-1623: the Access check of this server, or undefined without any audience. A token passes with
+ * an `aud` of kitshn's applications or the portal's, and the issuer `https://<teamDomain>`.
+ */
+export const kitshnAccessVerifier = (
+  configured: { readonly teamDomain: string; readonly aud: string } | undefined,
+  kitshn: AccessApp | null,
+  getKey?: JWTVerifyGetKey,
+) => {
+  const verifiers = accessChecks(configured, kitshn).map((check) =>
+    getKey === undefined
+      ? makeCloudflareAccessClaimsVerifier(check)
+      : makeCloudflareAccessClaimsVerifier(check, getKey),
+  );
+  if (verifiers.length === 0) return undefined;
+  return (request: HttpServerRequest.HttpServerRequest) =>
+    Effect.gen(function* () {
+      for (const verify of verifiers) {
+        const claims = yield* verify(request);
+        if (claims !== undefined) return claims;
+      }
+      return undefined;
+    });
+};
+
+/**
  * K-1623: the Access checks of this server: the audiences of kitshn's applications on its host,
  * and the portal's audience from the config. Known limit: the portal's audience stays valid while
  * the portal Worker serves hosts; drop `configured` here when the portal Worker goes.
  */
-export const accessChecks = (
+const accessChecks = (
   configured: { readonly teamDomain: string; readonly aud: string } | undefined,
   kitshn: AccessApp | null,
 ): ReadonlyArray<{ readonly teamDomain: string; readonly audiences: ReadonlyArray<string> }> => {
@@ -191,20 +217,8 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const statePath = path.join(config.stateDir, "kitshn-grants.json");
-  const verifierOf = (access: AccessApp | null) => {
-    const verifiers = accessChecks(config.cloudflareAccess, access).map((check) =>
-      makeCloudflareAccessClaimsVerifier(check),
-    );
-    if (verifiers.length === 0) return undefined;
-    return (request: HttpServerRequest.HttpServerRequest) =>
-      Effect.gen(function* () {
-        for (const verify of verifiers) {
-          const claims = yield* verify(request);
-          if (claims !== undefined) return claims;
-        }
-        return undefined;
-      });
-  };
+  const verifierOf = (access: AccessApp | null) =>
+    kitshnAccessVerifier(config.cloudflareAccess, access);
   let verifyClaims = options?.verifyClaims ?? verifierOf(null);
   let accessKey: string | null = null;
 
