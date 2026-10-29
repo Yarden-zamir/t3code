@@ -7,7 +7,7 @@ User-facing fork features are in [features.md](features.md). Agents that operate
 
 Fork main only moves forward. Nothing rebases or force-pushes it. To see all fork changes, run `git diff upstream/main...main`.
 
-The fork disables every upstream workflow, because they need upstream's runners and secrets. Fork workflow files start with `fork-`. One exception stays on: `agent-context-budget.yml` runs no PR code and needs no secrets, and fork PRs use its budget check.
+The fork disables every upstream workflow, because they need upstream's runners and secrets. Fork workflow files start with `fork-`. One exception stays on: `agent-context-budget.yml` runs on `pull_request`, so it gets no secrets and a read-only token, and fork PRs use its budget check.
 
 ### Fork Sync
 
