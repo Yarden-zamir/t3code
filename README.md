@@ -13,36 +13,24 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Trusted sibling environments](docs/fork/features.md#trusted-sibling-environments):** one browser page pairs with and reaches the other hosts.
 - **[Quiet reconnect after restart](docs/fork/features.md#quiet-reconnect-after-restart):** right after the app starts, the composer waits before it warns that a server is reconnecting (off by default).
 
-**Machine map** (all lines need `machineMap`, which a join to a map turns on)
+**kitshn** (each line needs kitshn 2 on the machine, joined to kitshn)
 
-- **[Portal](docs/fork/features.md#machine-map):** one portal at `t3.yarden-zamir.com` maps every T3 machine, adds phones with an app invite, and sets access between them.
-- **[Environment name from machine map](docs/fork/features.md#environment-name-from-machine-map):** an optional setting keeps environment names equal to machine map names, also after a name change.
-- **[Access change notices](docs/fork/features.md#access-change-notices):** a notice names what an arrow change allows now, without a reload (off by default).
-- **[Portal views](docs/fork/features.md#portal-views):** Map, Table, Health, Settings, Queue, Tasks, History, Inbox and Clients.
-- **[Work on other machines](docs/fork/features.md#work-on-other-machines):** an arrow with agent tools makes the other machine a linked environment, where agents delegate tasks within their own limits. Each arrow lists what it allows, only the owner raises it, and History lists each forwarded call.
-- **[Join and install](docs/fork/features.md#join-and-install):** "Add machine" shows one command per system that installs the fork and joins.
-- **[Join feedback](docs/fork/features.md#join-and-install):** the open join dialog shows when a machine uses the code, and whether it connected.
-- **[Emergency pause](docs/fork/features.md#emergency-pause):** a big red button stops all agents and sets all access to none.
-- **[Scheduled tasks](docs/fork/features.md#scheduled-tasks):** the Tasks view lists the scheduled tasks of every machine.
-- **[Health alerts](docs/fork/features.md#health-alerts):** CPU, memory, disk, swap and battery alerts per machine.
-- **[Installable portal](docs/fork/features.md#installable-portal):** the portal installs as an app, with Web Push for alerts.
-- **[Settings and theme sync](docs/fork/features.md#settings-and-theme-sync):** a setting with a shared value syncs to every machine, also themes and keybindings.
-- **[Settings > Machines](docs/fork/features.md#settings--machines):** join or leave the map, and see the machines that this machine can reach.
-- **[Desktop app on the map](docs/fork/features.md#desktop-app-on-the-map):** the desktop app adds each reachable machine as an environment.
-- **[Zoom and pan](docs/fork/features.md#zoom-and-pan):** the map zooms, pans and fits all cards, with "Auto layout".
-- **[Approved clients](docs/fork/features.md#approved-clients):** a new browser waits until the owner approves it.
-- **[Client access](docs/fork/features.md#client-access):** each machine decides which browsers get in through Cloudflare Access; an open browser waits for approval when its access changes.
-- **[Owner-only access changes](docs/fork/features.md#owner-only-access-changes):** only the owner changes `clientAccess` and `machineMap`, and only the owner raises access between machines.
-- **[Sibling client sessions](docs/fork/features.md#sibling-client-sessions):** a browser client session lasts 1 day, also on sibling machines.
-- **[App invites and app tokens](docs/fork/features.md#app-invites-and-app-tokens):** "Invite an app" shows a QR code that a native app uses once.
-- **[Machines panel](docs/fork/features.md#machines-panel):** a read-only map in the right panel of a thread.
+- **[kitshn](docs/fork/features.md#kitshn):** the T3 server is a provider of kitshn. The owner shares access between machines on the kitshn map.
+- **[Cards](docs/fork/features.md#cards):** the T3 card shows the version and busy state, runs the T3 commands, and lists scheduled tasks and client sessions.
+- **[Access from kitshn](docs/fork/features.md#access-from-kitshn):** kitshn grants decide who gets in, with saved grants for 24 hours while kitshn is out of reach.
+- **[Environment name from kitshn](docs/fork/features.md#environment-name-from-kitshn):** an optional setting keeps environment names equal to kitshn map names.
+- **[Work on other machines](docs/fork/features.md#work-on-other-machines):** a kitshn link makes the other machine a linked environment, where agents delegate tasks within their own limits.
+- **[Commands on other machines](docs/fork/features.md#commands-on-other-machines):** `machine_exec` and `t3 machine exec` run commands on another machine with the exec grant.
+- **[Settings and theme sync](docs/fork/features.md#settings-and-theme-sync):** the shared `t3.settings` on kitshn syncs settings, themes and keybindings to every machine.
+- **[Settings > Machines](docs/fork/features.md#settings--machines):** how to join, and notices for the host handover and the desktop machine list.
+- **[Machines panel](docs/fork/features.md#machines-panel):** the right panel of a thread lists the machines that the kitshn links reach.
 
 **Updates and releases**
 
 - **[Fork releases](docs/fork/features.md#fork-releases):** nightly desktop builds and Linux server archives from fork main.
 - **[Daily release](docs/fork/operations.md#daily-release):** each morning a VPS task promotes the newest nightly to a release with highlighted notes.
 - **[Android APK](docs/fork/features.md#android-apk):** a signed APK of fork main that installs next to the store app.
-- **[Fork installers](docs/fork/features.md#fork-installers):** one command installs the fork and joins the machine map.
+- **[Fork installers](docs/fork/features.md#fork-installers):** one command installs the fork.
 - **[Install when idle](docs/fork/features.md#install-when-idle):** while agents run, the update offers "Install when idle".
 - **[Server auto-update](docs/fork/features.md#server-auto-update):** a headless server installs each newer fork release when idle.
 - **[Newer update before install](docs/fork/features.md#newer-update-before-install):** the desktop app checks for a newer release before it installs.
@@ -130,7 +118,6 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - Queue: a resumed queued turn shows after the turns that ran before it. A paused queue shows while a turn runs. Resume waits for an edit and for a usage limit. Send now on a stopped thread also waits for a usage limit.
 - Queue: a message held after a provider failure runs before a later agent message or wake, which waits behind it. Before, the later run started first and the held message stayed queued until the user came back.
 - Delegated tasks: a later run that a child starts itself, after a background command or a nested delegated task, reports its result to the parent as a new task. A parent that cancelled the child gets no report.
-- Machine map: an expired machine arrow ends the sessions that it granted.
 - Terminal: powerline outlines and half circles (U+E0B1 to U+E0B7) fill their whole cell, so they meet the segments next to them.
 - Device panel: a Homebrew Android SDK (`android-commandlinetools`) works without `ANDROID_HOME`, also when the `adb` on `PATH` has no emulator.
 
