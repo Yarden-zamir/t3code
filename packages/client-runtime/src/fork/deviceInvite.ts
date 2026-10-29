@@ -48,14 +48,18 @@ export interface DeviceResponse {
 /** Sends one request; rejects on a network error. */
 export type DeviceTransport = (request: DeviceRequest) => Promise<DeviceResponse>;
 
-/** K-1601: what each refusal of `POST /join/device` means. 423 and 502 keep the invite. */
+/** K-1601: what each refusal of `POST /join/device` means. 423, 502 and 503 keep the invite. */
 const DEVICE_INVITE_ERRORS: Readonly<Record<number, string>> = {
   400: "This is not a kitshn invite code. Scan the invite again.",
   404: "This invite is unknown, used or cancelled. Ask the owner for a new invite.",
   410: "This invite expired. Invites last 15 minutes. Ask the owner for a new invite.",
   423: "kitshn is paused. The invite stays: try it again after Resume.",
   502: "Cloudflare did not take the new token. The invite stays: try it again.",
+  503: "kitshn cannot make device tokens yet: it has no Cloudflare API token. The invite stays.",
 };
+
+const ErrorBody = Schema.Struct({ error: Schema.String });
+const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(ErrorBody));
 
 const decodeEnrollResponse = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.toCodecJson(ClientEnrollResponse)),
@@ -92,8 +96,12 @@ export async function exchangeDeviceInvite(
     throw new Error(`kitshn is unreachable (${response.status}). Try again later.`);
   }
   if (response.status < 200 || response.status >= 300) {
+    const said = decodeErrorBody(response.body);
     throw new Error(
-      DEVICE_INVITE_ERRORS[response.status] ?? `kitshn refused the invite (${response.status}).`,
+      DEVICE_INVITE_ERRORS[response.status] ??
+        (said._tag === "Some"
+          ? `kitshn refused the invite: ${said.value.error}`
+          : `kitshn refused the invite (${response.status}).`),
     );
   }
   return decodeEnrollResponse(response.body);

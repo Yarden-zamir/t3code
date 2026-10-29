@@ -199,7 +199,7 @@ A phone or a desktop app joins kitshn with its own device token (K-1601). On the
 - The app keeps only the `t3.app` cards that the token opens, and pairs with each machine. It reads the list at start, when it comes back to the foreground, and on Settings > Fork > App token > Refresh machines (phone). The desktop app also reads it every 30 seconds, adds each new machine as an environment, and removes an environment that it added when the list drops the machine.
 - A refused machine pairs again with a backoff, because Access can take some seconds to accept a new token.
 - An empty or refused list disables or removes no saved machine. The machine shows the reason instead.
-- If kitshn is paused (423) or Cloudflare refused the new token (502), the invite stays: try it again. A lost answer uses the invite up, so ask the owner for a new one.
+- If kitshn is paused (423), Cloudflare refused the new token (502), or kitshn has no Cloudflare API token (503), the invite stays: try it again. A lost answer uses the invite up, so ask the owner for a new one.
 
 ### Machines panel
 

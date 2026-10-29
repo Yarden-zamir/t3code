@@ -68,6 +68,8 @@ describe("exchangeDeviceInvite", () => {
     [410, "expired"],
     [423, "The invite stays"],
     [502, "The invite stays"],
+    [503, "The invite stays"],
+    [500, "kitshn refused the invite: x"],
   ])("names what %i means", async (status, text) => {
     await expect(
       exchangeDeviceInvite(INVITE, "Pixel", answering(json(status, { error: "x" }))),
