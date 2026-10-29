@@ -464,6 +464,15 @@ Tabs under the sidebar search hold threads. A thread lives in one tab, so the ta
   - Tabs were called groups before. A server moves `sidebarGroups` and `mobileSidebarGroups` in `settings.json` to the new keys once at start, and renames the old `sidebar.group.*`, `sidebar.previousGroup` and `sidebar.nextGroup` keybindings. A client moves `sidebarGroupsEnabled` and `sidebarGroupSingleThreadOpens` when it loads. The portal moves the shared values and overrides of the map once. A machine on an older version keeps the old keys, so it does not sync tabs with a machine on a newer version until both update. The open tab resets to "Threads" once.
   - Applies only after upstream thread groups merge ([pingdotgg/t3code#15988](https://github.com/pingdotgg/t3code/pull/15988) "feat: related threads stay together as a group"): a nested thread always shows in the tab of its top thread, so a nested group never splits across tabs. This holds for views too. A drag or "Assign to tab" on a nested thread assigns its top thread. Fork Sync resolves that merge with this rule.
 
+### Waiting shelf
+
+The sidebar lists threads that wait in a Waiting shelf, under the Working shelf.
+
+- **Setting:** the Working shelf setting, client setting `sidebarWorkingShelfEnabled`. Settings > General > "Working section". On mobile: Settings > General > Sidebar > "Working section".
+- **Works on:** web, desktop, mobile.
+- **Use it:** a thread is in the Waiting shelf when its row shows Waiting: its run waits on another thread, or background work that the agent waits on holds its completion (`forkThreadIsWaiting` in `packages/client-runtime/src/state/forkTerminalThreads.ts`). A thread is in one shelf only. Waiting wins over Working. The shelf has the count, the collapse toggle, the sort and the drag rules of the Working shelf. When no thread waits, the shelf does not show.
+- **Limits:** the boring sidebar in Labs has no Working shelf, so it has no Waiting shelf.
+
 ### Worktree path template
 
 A template decides where new worktrees go, for example next to `main/` in a `.bare` container.
