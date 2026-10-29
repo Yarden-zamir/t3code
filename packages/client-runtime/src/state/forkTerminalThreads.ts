@@ -17,6 +17,7 @@ import {
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 
 import type { EnvironmentThreadShell } from "./models.ts";
 import { isThreadWorking } from "./threadInbox.ts";
@@ -232,6 +233,22 @@ export function forkThreadIsWorking(
   if (isThreadWorking(thread)) return true;
   const label = terminalThreadStatusLabel(thread.terminal, thread.lastVisitedAt);
   return label === "Working" || label === "Connecting";
+}
+
+/**
+ * The thread waits: its run waits on another thread, or background work that the agent waits on
+ * holds its completion. The row status shows Waiting, and the Waiting shelf lists it.
+ */
+export function forkThreadIsWaiting(
+  thread: Pick<EnvironmentThreadShell, "runtime"> & {
+    readonly blockedOnThreadWait?: boolean | undefined;
+    readonly pendingBackgroundTasks?: EnvironmentThreadShell["pendingBackgroundTasks"] | undefined;
+  },
+): boolean {
+  return (
+    (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) ||
+    backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])
+  );
 }
 
 /**

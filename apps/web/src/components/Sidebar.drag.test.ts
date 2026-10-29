@@ -9,6 +9,7 @@ import {
 import {
   resolveSidebarDropTarget,
   sidebarListItemId,
+  sidebarSectionHasCards,
   sidebarMarkerId,
   type SidebarListItem,
   type SidebarListMarker,
@@ -37,7 +38,7 @@ function layout(
   const rects = items.map((item) => {
     const height =
       item.kind === "thread"
-        ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
+        ? (sidebarSectionHasCards(item.section) ? cardHeight : 36) * scale
         : item.marker === "pinned-header" || item.marker === "pinned-divider"
           ? 0
           : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
@@ -528,6 +529,32 @@ describe("sidebar drag projection", () => {
     expect(byTime.get("a2")?.y).toBe(-83);
     expect(byTime.get(sidebarMarkerId("working-header"))).toEqual(stationary);
     expect(byTime.get("w")).toEqual(stationary);
+  });
+
+  it("sizes an unmeasured Waiting row as a card", () => {
+    const items = [
+      pinnedHeader,
+      thread("p", "pinned"),
+      divider,
+      thread("a1", "active"),
+      marker("waiting-header"),
+      thread("x", "waiting"),
+      settledHeader,
+      marker("settled-placeholder"),
+    ];
+    const strategy = createSidebarSortingStrategy({
+      items,
+      settledOrder: [],
+      settledExpanded: false,
+      activeOrder: ["a1", "p"],
+    });
+    const args = layout(items, "p", "a1");
+    // Scrolled out of view: the Waiting row has no measured rect.
+    const rects = args.rects.map((rect, index) => (items[index] === items[5] ? undefined : rect));
+    const settledIndex = items.indexOf(settledHeader);
+    expect(strategy({ ...args, rects: rects as typeof args.rects, index: settledIndex })).toEqual(
+      stationary,
+    );
   });
 
   it("updates the projection when the target or measured geometry changes", () => {
