@@ -32,16 +32,13 @@ const setup = (options: { cli?: Partial<KitshnCli.KitshnCliOutput> } = {}) =>
 
     const runs: Array<{ args: ReadonlyArray<string>; authorization: string }> = [];
     const dependencies = Layer.mergeAll(
-      Layer.succeed(
-        KitshnCli.KitshnCli,
-        KitshnCli.KitshnCli.of({
-          run: (args, authorization) =>
-            Effect.sync(() => {
-              runs.push({ args, authorization: Redacted.value(authorization) });
-              return { exitCode: 0, stdout: "", stderr: "", ...options.cli };
-            }),
-        }),
-      ),
+      Layer.mock(KitshnCli.KitshnCli)({
+        run: (args, authorization) =>
+          Effect.sync(() => {
+            runs.push({ args, authorization: Redacted.value(authorization) });
+            return { exitCode: 0, stdout: "", stderr: "", ...options.cli };
+          }),
+      }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({
         getThreadShell: () =>
           Effect.succeed({
@@ -153,6 +150,22 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
       name: "an empty address is unexpected",
       cli: { exitCode: 0, stdout: '{"address":"","card":"c","kind":"page","updated":false}' },
       expected: { reason: "unexpected_output" },
+    },
+    {
+      name: "a failed thread check fails closed with the daemon's text",
+      cli: { exitCode: 1, stdout: '{"error":"could not check the T3 thread; try again."}' },
+      expected: { reason: "refused", message: "could not check the T3 thread; try again." },
+    },
+    {
+      name: "an inactive thread fails closed with the daemon's text",
+      cli: {
+        exitCode: 1,
+        stdout: '{"error":"the T3 thread of this call is not active (archived or deleted)."}',
+      },
+      expected: {
+        reason: "refused",
+        message: "the T3 thread of this call is not active (archived or deleted).",
+      },
     },
     {
       name: "a waiting note on stderr does not change the decoded refusal",

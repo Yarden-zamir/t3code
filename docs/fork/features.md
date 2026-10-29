@@ -414,6 +414,8 @@ A local service, for example kitshn, learns which thread an agent works in. The 
 Agents publish a file or a folder of their workspace to kitshn, and give the card a new address name. The tools are `kitshn_publish` and `kitshn_address`. They run the machine's kitshn 2 CLI, which sends each call through the local kitshn daemon (kitshn K-1116, K-1120, K-1123, K-1714). No agent and no T3 setting holds a kitshn token.
 
 - **Setting:** none in T3. Join the machine to kitshn, so its daemon runs. Without a daemon, the tool returns the kitshn error.
+- On each start, the server registers itself with the daemon as the `t3.` attester: `kitshn attester set --prefix t3. --url http://127.0.0.1:<port>/api/thread-identity --token-env T3_ACP_MCP_AUTHORIZATION`. This needs the daemon user or root. A failure logs one warning, and the server starts normally. A dev server (`vp run dev`, with a dev URL), a server that does not listen on loopback, and Windows skip it.
+- A call with a thread credential fails closed. When the daemon cannot check the thread, or the thread is archived or deleted, the tool returns the kitshn error.
 - **Works on:** server, so every client.
 - Only a live full-access/default thread on this machine can publish. An agent on another machine cannot.
 - The call runs with the thread's MCP credential in `T3_ACP_MCP_AUTHORIZATION`. The daemon checks it at [Thread identity check](#thread-identity-check) (`/api/thread-identity`), so kitshn knows the thread that asks. A caller without a thread credential, such as an OAuth client, gets a refusal.

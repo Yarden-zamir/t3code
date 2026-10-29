@@ -23,6 +23,10 @@ const KITSHN_2_HOME_PATH = [".local", "bin", "kitshn"] as const;
 const RUN_TIMEOUT = "150 seconds";
 // KitSHn 1 starts through `uv run`, which can take a while the first time.
 const VERSION_TIMEOUT = "30 seconds";
+// The daemon itself gives `attester set` 10 seconds.
+const ATTESTER_TIMEOUT = "15 seconds";
+/** The label prefix of the T3 attester; kitshn reserves it for T3 (K-1755). */
+const T3_ATTESTER_PREFIX = "t3.";
 
 /** The answer of `kitshn version --json` of kitshn 2. KitSHn 1 has no such command. */
 const Kitshn2Version = Schema.Struct({
@@ -32,8 +36,21 @@ const Kitshn2Version = Schema.Struct({
 });
 const decodeKitshn2Version = Schema.decodeUnknownOption(Schema.fromJsonString(Kitshn2Version));
 
+/** The answer of `kitshn attester set`: the attesters of this machine after the change. */
+const Attesters = Schema.Array(
+  Schema.Struct({ prefix: Schema.String, address: Schema.String, tokenEnv: Schema.String }),
+);
+const decodeAttesters = Schema.decodeUnknownOption(Schema.fromJsonString(Attesters));
+
+/** The last stderr line that is not a `waiting:` note of a call that waits for the owner. */
+export const lastLine = (stderr: string) =>
+  stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .findLast((line) => line !== "" && !line.startsWith("waiting:"));
+
 export class KitshnCliError extends Schema.TaggedError<KitshnCliError>()("KitshnCliError", {
-  reason: Schema.Literals(["not_installed", "not_kitshn_2", "run_failed"]),
+  reason: Schema.Literals(["not_installed", "not_kitshn_2", "run_failed", "attester_refused"]),
   message: Schema.String,
 }) {}
 
@@ -51,6 +68,8 @@ export class KitshnCli extends Context.Service<
       args: ReadonlyArray<string>,
       threadAuthorization: Redacted.Redacted<string>,
     ) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
+    /** Registers `url` as the T3 attester of this machine's daemon, without a credential. */
+    readonly setAttester: (url: string) => Effect.Effect<void, KitshnCliError>;
   }
 >()("t3/fork/kitshn/KitshnCli") {}
 
@@ -149,7 +168,62 @@ const make = Effect.gen(function* () {
     },
   );
 
-  return KitshnCli.of({ run });
+  const setAttester: KitshnCli["Service"]["setAttester"] = Effect.fn("KitshnCli.setAttester")(
+    function* (url) {
+      const command = yield* binary;
+      const output = yield* runner
+        .run({
+          command,
+          args: [
+            "attester",
+            "set",
+            "--prefix",
+            T3_ATTESTER_PREFIX,
+            "--url",
+            url,
+            "--token-env",
+            THREAD_CREDENTIAL_AUTHORIZATION_ENV,
+          ],
+          env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+          timeout: ATTESTER_TIMEOUT,
+          timeoutBehavior: "timedOutResult",
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            fail("run_failed", `kitshn at ${command} did not run: ${error._tag}.`),
+          ),
+        );
+      if (output.timedOut || output.code === null) {
+        return yield* fail(
+          "run_failed",
+          `kitshn attester set did not finish in ${ATTESTER_TIMEOUT}.`,
+        );
+      }
+      if (output.code !== 0) {
+        return yield* fail(
+          "attester_refused",
+          lastLine(output.stderr) ?? `kitshn attester set exited ${output.code}.`,
+        );
+      }
+      const attesters = decodeAttesters(output.stdout);
+      const listed =
+        Option.isSome(attesters) &&
+        attesters.value.some(
+          (attester) =>
+            attester.prefix === T3_ATTESTER_PREFIX &&
+            attester.address === url &&
+            attester.tokenEnv === THREAD_CREDENTIAL_AUTHORIZATION_ENV,
+        );
+      if (!listed) {
+        return yield* fail(
+          "attester_refused",
+          `kitshn attester set did not list the ${T3_ATTESTER_PREFIX} attester at ${url}.`,
+        );
+      }
+    },
+  );
+
+  return KitshnCli.of({ run, setAttester });
 });
 
 export const layer = Layer.effect(KitshnCli, make);

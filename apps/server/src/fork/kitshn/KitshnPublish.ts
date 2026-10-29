@@ -87,13 +87,6 @@ export class KitshnPublish extends Context.Service<
   }
 >()("t3/fork/kitshn/KitshnPublish") {}
 
-/** The last line that is not a `waiting:` progress note. */
-const lastLine = (stderr: string) =>
-  stderr
-    .split("\n")
-    .map((line) => line.trim())
-    .findLast((line) => line !== "" && !line.startsWith("waiting:"));
-
 const fail = (reason: KitshnPublishError["reason"], message: string) =>
   new KitshnPublishError({ reason, message });
 
@@ -121,7 +114,7 @@ const make = Effect.gen(function* () {
         );
       if (output.exitCode === 1 || output.exitCode === 2) {
         // A failure before the CLI reads --json prints one line on stderr instead.
-        const line = lastLine(output.stderr);
+        const line = KitshnCli.lastLine(output.stderr);
         const refusal = yield* decodeRefusal(output.stdout).pipe(Effect.option);
         if (Option.isSome(refusal)) return yield* fail("refused", refusal.value.error);
         if (output.stdout.trim() === "" && line !== undefined) return yield* fail("refused", line);
