@@ -13,7 +13,13 @@ import {
   requestHeaderOrigin,
   routeHttpBaseUrl,
 } from "@t3tools/client-runtime/connection";
-import { ClientMachinesResponse, type EnvironmentId } from "@t3tools/contracts";
+import {
+  type ClientMachinesResponse,
+  DeviceMachinesResponse,
+  deviceMachinesUrl,
+  type EnvironmentId,
+  t3AppMachines,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -47,7 +53,7 @@ import {
 } from "./forkAppTokenClient";
 import { fetchWithRequestHeaders, requestHeaderRules } from "./requestHeaders";
 
-const decodeMachines = Schema.decodeUnknownOption(Schema.toCodecJson(ClientMachinesResponse));
+const decodeMachines = Schema.decodeUnknownOption(Schema.toCodecJson(DeviceMachinesResponse));
 
 type PortalAnswer =
   | {
@@ -60,24 +66,25 @@ type PortalAnswer =
   | { readonly _tag: "none" };
 
 /**
- * The portal is the origin whose `GET /client/machines` answers with the machine list. A phone
- * without an app token has no such origin. The portal answers 403 for a removed client, and
- * Cloudflare Access refuses a deleted token on every origin.
+ * kitshn's `GET /device/machines` (K-1601) of the zone of each origin that holds a token answers
+ * with the machine list. A phone without an app token has none. kitshn answers 403 for a login,
+ * and Cloudflare Access refuses a deleted token on every origin.
  */
 const readPortal = Effect.fn("mobile.appTokenRepair.readPortal")(function* (
   savedMachinesUrl: string | null,
 ) {
-  const savedOrigin = savedMachinesUrl === null ? null : requestHeaderOrigin(savedMachinesUrl);
-  // The enrollment saves the machine list URL. A phone enrolled before that finds it by asking
-  // each origin that holds a token.
+  // Each origin that holds a token names its zone, and so the kitshn list of that zone.
   const rules = requestHeaderRules().filter(
-    (rule) =>
-      cloudflareAccessServiceToken(rule.headers) !== null &&
-      (savedOrigin === null || rule.origin === savedOrigin),
+    (rule) => cloudflareAccessServiceToken(rule.headers) !== null,
   );
   let refused = 0;
   for (const rule of rules) {
-    const machinesUrl = savedMachinesUrl ?? `${rule.origin}/client/machines`;
+    // A list URL saved by a portal enrollment is not kitshn's, so the zone of the token decides.
+    const machinesUrl =
+      savedMachinesUrl?.endsWith("/device/machines") === true
+        ? savedMachinesUrl
+        : deviceMachinesUrl(rule.origin);
+    if (machinesUrl === null) continue;
     const response = yield* Effect.tryPromise(() => fetchWithRequestHeaders(machinesUrl)).pipe(
       Effect.option,
     );
@@ -104,7 +111,7 @@ const readPortal = Effect.fn("mobile.appTokenRepair.readPortal")(function* (
         _tag: "machines",
         machinesUrl,
         tokenClientId: token.clientId,
-        answer: answer.value,
+        answer: t3AppMachines(answer.value),
       } as PortalAnswer;
     }
   }

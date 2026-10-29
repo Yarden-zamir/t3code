@@ -667,6 +667,36 @@ export const ClientMachinesResponse = Schema.Struct({ machines: Schema.Array(Cli
 export type ClientMachinesResponse = typeof ClientMachinesResponse.Type;
 
 /**
+ * K-1601, K-1617: `GET https://kit.<zone>/device/machines` with the device's service token. Each
+ * provider card that the token opens, with the portal's machine fields plus its card, kind and level.
+ */
+export const DeviceMachinesResponse = Schema.Struct({
+  machines: Schema.Array(
+    Schema.Struct({
+      ...ClientMachine.fields,
+      card: Schema.String,
+      kind: Schema.String,
+      level: Schema.String,
+    }),
+  ),
+});
+export type DeviceMachinesResponse = typeof DeviceMachinesResponse.Type;
+
+/** The device machine list of the zone of `origin` (`https://t3-<machine>.<zone>`), or null. */
+export const deviceMachinesUrl = (origin: string): string | null => {
+  const host = URL.parse(origin)?.hostname ?? "";
+  const dot = host.indexOf(".");
+  return dot <= 0 ? null : `https://kit.${host.slice(dot + 1)}/device/machines`;
+};
+
+/** The T3 servers of a device machine list: only `t3.app` cards. */
+export const t3AppMachines = (response: DeviceMachinesResponse): ClientMachinesResponse => ({
+  machines: response.machines
+    .filter((machine) => machine.kind === "t3.app")
+    .map(({ id, name, origin }) => ({ id, name, origin })),
+});
+
+/**
  * MM-913: the answer to a used invite. The secret is in this answer only. The app keeps it and
  * sends both values as `CF-Access-Client-Id` and `CF-Access-Client-Secret` on every request.
  */
