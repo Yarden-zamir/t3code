@@ -122,7 +122,9 @@ kitshn runs a command at once when a grant allows it. Otherwise the command wait
 The kitshn grants decide who gets in: browsers through Cloudflare Access, other machines and guests. On `t3.app`, view gives `read`, use gives `standard` and control gives `admin`.
 
 - A grant that drops ends the sessions that it no longer allows.
-- **Limits:** while kitshn is out of reach, the server uses the grants that it saved, for at most 24 hours.
+- The server accepts an Access token for the audiences of kitshn's applications on its host. Until the portal Worker goes, it also accepts the portal's audience, from the environment or from `machine-map-tunnel.json` of an older portal join.
+- **Pause:** kitshn's emergency pause closes every grant, so links and `machine_exec` stop at once (K-1618).
+- **Limits:** while kitshn is out of reach, the server uses the grants that it saved, for at most 24 hours after kitshn's last answer. The server asks kitshn once an hour to prove contact.
 
 ### Environment name from kitshn
 
@@ -183,14 +185,14 @@ The `t3.settings` state on kitshn holds a shared part and a part for each machin
 
 ### Settings > Machines
 
-Settings > Machines shows how to join this machine to kitshn, and the kitshn settings of the selected environment.
+Settings > Machines shows how to join this machine to kitshn, and the kitshn settings of the selected environment. It also shows the kitshn connection: connected, connecting with the last error, or off with the reason, and the grants, reached machines, link proxy and kitshn's last answer. `machines_read` gives agents the same state.
 
 - A notice shows when the T3 host of this machine is not with kitshn yet. Run `scripts/fork-host-handover.ts` with the machine name to hand it over.
 - The desktop app shows "Machine list needs kitshn device tokens". It does not add the other machines as environments yet. Add a machine by hand in Settings > Connections.
 
 ### Mobile app machines
 
-The mobile app reads its machines from kitshn (`/device/machines`) when it opens and when it returns to the foreground. Settings > Fork > App token > Refresh machines reads them at once.
+The mobile app reads its machines from kitshn (`/device/machines`) with its device token when it opens and when it returns to the foreground. Settings > Fork > App token > Refresh machines reads them at once. An empty or refused list disables no saved machine; the machine shows the reason instead.
 
 ### Machines panel
 
