@@ -4,7 +4,7 @@
  * cards and commands. A missing kitshn, a refusal or an exit only logs, and the server tries again
  * later; without kitshn 2 the server behaves as upstream (K-712). Its grant tables go to `KitshnGrants`, which enforces them.
  */
-import type { MachineCommandInput } from "@t3tools/contracts";
+import type { MachineCommandInput, MachineStatus } from "@t3tools/contracts";
 import { THREAD_CREDENTIAL_AUTHORIZATION_ENV } from "@t3tools/provider-core/server/forkThreadCredential";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -45,6 +45,7 @@ import {
   MAX_COMMAND_OUTPUT_LENGTH,
   PROVIDER_NAME,
   type ProviderCommand,
+  type ProviderList,
   type ProviderResource,
   ProviderResource as ProviderResourceSchema,
   type AccessApp,
@@ -136,6 +137,108 @@ const COMMANDS = [
   readonly input: MachineCommandInput;
 }>;
 type KitshnCommand = (typeof COMMANDS)[number];
+
+/** K-1625: a list holds at most this many rows. Revisit when an owner has more tasks or clients. */
+const LIST_ROWS_LIMIT = 100;
+const CELL_LIMIT = 200;
+const TASK_ROW = "task:";
+const SESSION_ROW = "session:";
+
+/** K-1625: the row commands of the T3 card. Each one turns its row into a machine map command. */
+const ROW_COMMANDS = [
+  {
+    id: "run-task",
+    title: "Run now",
+    confirm: true,
+    row: TASK_ROW,
+    input: (taskId: string): MachineCommandInput => ({ _tag: "runScheduledTask", taskId }),
+  },
+  {
+    id: "pause-task",
+    title: "Pause",
+    confirm: false,
+    row: TASK_ROW,
+    input: (taskId: string): MachineCommandInput => ({
+      _tag: "setScheduledTaskEnabled",
+      taskId,
+      enabled: false,
+    }),
+  },
+  {
+    id: "resume-task",
+    title: "Resume",
+    confirm: false,
+    row: TASK_ROW,
+    input: (taskId: string): MachineCommandInput => ({
+      _tag: "setScheduledTaskEnabled",
+      taskId,
+      enabled: true,
+    }),
+  },
+  {
+    id: "revoke-session",
+    title: "Revoke session",
+    confirm: true,
+    row: SESSION_ROW,
+    input: (sessionId: string): MachineCommandInput => ({ _tag: "revokeClient", sessionId }),
+  },
+] as const;
+
+/** The machine map command of a row command, or undefined when the row is not of its list. */
+const rowCommandInput = (command: string, row: string) => {
+  const entry = ROW_COMMANDS.find((candidate) => candidate.id === command);
+  if (entry === undefined || !row.startsWith(entry.row)) return undefined;
+  const id = row.slice(entry.row.length);
+  return id === "" ? undefined : entry.input(id);
+};
+
+const cell = (value: string) => value.slice(0, CELL_LIMIT);
+
+/** K-1625: the scheduled tasks and client sessions of this server, as lists of the T3 card. */
+const appLists = (
+  status: Pick<MachineStatus, "tasks" | "clients">,
+): ReadonlyArray<ProviderList> => [
+  {
+    id: "tasks",
+    title: "Scheduled tasks",
+    columns: [
+      { id: "title", title: "Task" },
+      { id: "schedule", title: "Schedule" },
+      { id: "state", title: "State" },
+      { id: "next", title: "Next run" },
+    ],
+    rows: (status.tasks ?? []).slice(0, LIST_ROWS_LIMIT).map((task) => ({
+      id: `${TASK_ROW}${task.id}`,
+      cells: {
+        title: cell(task.title),
+        schedule: cell(task.schedule),
+        state: task.enabled ? "on" : "paused",
+        next: task.nextRunAt ?? "",
+      },
+      commands: ["run-task", task.enabled ? "pause-task" : "resume-task"],
+    })),
+  },
+  {
+    id: "sessions",
+    title: "Client sessions",
+    columns: [
+      { id: "client", title: "Client" },
+      { id: "device", title: "Device" },
+      { id: "connected", title: "Connected" },
+      { id: "lastSeen", title: "Last seen" },
+    ],
+    rows: status.clients.slice(0, LIST_ROWS_LIMIT).map((session) => ({
+      id: `${SESSION_ROW}${session.sessionId}`,
+      cells: {
+        client: cell(session.label ?? session.browser ?? session.subject),
+        device: cell([session.deviceType, session.os].filter((part) => part !== null).join(", ")),
+        connected: session.connected ? "yes" : "no",
+        lastSeen: session.lastSeenAt ?? "",
+      },
+      commands: ["revoke-session"],
+    })),
+  },
+];
 
 const CUT_NOTE = "\n[cut at 64 KiB]";
 // MachineHost redacts the diagnostics at the source, which the machine map portal shares.
@@ -269,12 +372,14 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const registered: ReadonlyArray<KitshnCommand> = COMMANDS.filter((command) =>
     host.supportedCommands({ desktopConnected: false }).includes(command.input._tag),
   );
-  const providerCommands: ReadonlyArray<ProviderCommand> = registered.map((command) => ({
-    id: command.id,
-    title: command.title,
-    kinds: ["t3.app"],
-    confirm: command.confirm,
-  }));
+  const providerCommands: ReadonlyArray<ProviderCommand> = [...registered, ...ROW_COMMANDS].map(
+    (command) => ({
+      id: command.id,
+      title: command.title,
+      kinds: ["t3.app"],
+      confirm: command.confirm,
+    }),
+  );
 
   const site = appSite(yield* ServerConfig.ServerConfig);
   /** K-1623: one log line when the host is not with kitshn; Settings > Machines shows it too. */
@@ -291,6 +396,11 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   });
   const appResource = Effect.gen(function* () {
     const descriptor = yield* environment.getDescriptor;
+    const status = yield* host.status({
+      desktopConnected: false,
+      updateWaiting: null,
+      desktopBuild: null,
+    });
     const busy = yield* threads.getShellSnapshot().pipe(
       Effect.map(
         (snapshot) => snapshot.threads.filter((thread) => thread.activeRunId !== null).length,
@@ -319,6 +429,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
           role: "busy",
         },
       ],
+      lists: appLists(status),
     } satisfies ProviderResource;
   });
 
@@ -413,15 +524,18 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       const handleCommand = Effect.fn("KitshnProvider.handleCommand")(function* (
         event: Extract<Answer, { readonly type: "command" }>,
       ) {
-        const command = registered.find((entry) => entry.id === event.command);
+        const input =
+          event.row === undefined
+            ? registered.find((entry) => entry.id === event.command)?.input
+            : rowCommandInput(event.command, event.row);
         const outcome: MachineHost.CommandOutcome =
-          command === undefined || event.resource !== APP_RESOURCE_ID
+          input === undefined || event.resource !== APP_RESOURCE_ID
             ? {
                 ok: false,
                 result: null,
-                error: `T3 has no command ${event.command} for ${event.resource ?? "the machine"}.`,
+                error: `T3 has no command ${event.command} for ${event.row ?? event.resource ?? "the machine"}.`,
               }
-            : yield* host.runInput(`kitshn:${event.commandId}`, command.input).pipe(
+            : yield* host.runInput(`kitshn:${event.commandId}`, input).pipe(
                 Effect.timeoutOption(COMMAND_TIMEOUT),
                 Effect.map(
                   Option.getOrElse((): MachineHost.CommandOutcome => ({

@@ -170,6 +170,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
             setChannel: (channel) => Queue.offer(channels, channel).pipe(Effect.asVoid),
           }),
           Layer.mock(MachineHost.MachineHost)({
+            status: () => Effect.succeed(STATUS as never),
             isDesktopCommand: () => false,
             supervised: true,
             supportedCommands: () => [
@@ -224,6 +225,33 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
     };
   });
 
+const STATUS = {
+  tasks: [
+    {
+      id: "daily",
+      title: "Daily digest",
+      enabled: true,
+      schedule: "Every day at 09:00",
+      nextRunAt: "2026-10-30T06:00:00.000Z",
+      lastRunAt: null,
+      lastRunStatus: null,
+      lastRunError: null,
+    },
+  ],
+  clients: [
+    {
+      sessionId: "s-1",
+      label: null,
+      subject: "owner",
+      deviceType: "mobile",
+      os: "Android",
+      browser: null,
+      connected: true,
+      lastSeenAt: null,
+    },
+  ],
+};
+
 const EXPECTED_REGISTER = {
   type: "register",
   provider: "t3",
@@ -262,6 +290,10 @@ const EXPECTED_REGISTER = {
       confirm: true,
     },
     { id: "collect-diagnostics", title: "Collect diagnostics", kinds: ["t3.app"], confirm: false },
+    { id: "run-task", title: "Run now", kinds: ["t3.app"], confirm: true },
+    { id: "pause-task", title: "Pause", kinds: ["t3.app"], confirm: false },
+    { id: "resume-task", title: "Resume", kinds: ["t3.app"], confirm: false },
+    { id: "revoke-session", title: "Revoke session", kinds: ["t3.app"], confirm: true },
   ],
   resources: [
     {
@@ -274,17 +306,59 @@ const EXPECTED_REGISTER = {
         { label: "Running turns", value: "1" },
         { label: "Busy", value: "true", role: "busy" },
       ],
+      lists: [
+        {
+          id: "tasks",
+          title: "Scheduled tasks",
+          columns: [
+            { id: "title", title: "Task" },
+            { id: "schedule", title: "Schedule" },
+            { id: "state", title: "State" },
+            { id: "next", title: "Next run" },
+          ],
+          rows: [
+            {
+              id: "task:daily",
+              cells: {
+                title: "Daily digest",
+                schedule: "Every day at 09:00",
+                state: "on",
+                next: "2026-10-30T06:00:00.000Z",
+              },
+              commands: ["run-task", "pause-task"],
+            },
+          ],
+        },
+        {
+          id: "sessions",
+          title: "Client sessions",
+          columns: [
+            { id: "client", title: "Client" },
+            { id: "device", title: "Device" },
+            { id: "connected", title: "Connected" },
+            { id: "lastSeen", title: "Last seen" },
+          ],
+          rows: [
+            {
+              id: "session:s-1",
+              cells: { client: "owner", device: "mobile, Android", connected: "yes", lastSeen: "" },
+              commands: ["revoke-session"],
+            },
+          ],
+        },
+      ],
     },
     { id: "agents", kind: "t3.agents", name: "Agents on studio", status: "running", parent: "app" },
   ],
 };
 
-const command = (commandId: number, name: string) => ({
+const command = (commandId: number, name: string, row?: string) => ({
   type: "command",
   provider: "t3",
   commandId,
   command: name,
   resource: "app",
+  ...(row === undefined ? {} : { row }),
 });
 
 it.layer(
@@ -350,6 +424,12 @@ it.layer(
         commandId: 8,
         ok: false,
       });
+      // K-1625: a row command runs for its row, and only for a row of its own list.
+      yield* child.say(command(9, "pause-task", "task:daily"));
+      expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 9, ok: true });
+      expect(yield* Queue.take(harness.ran)).toBe("kitshn:9 setScheduledTaskEnabled");
+      yield* child.say(command(10, "revoke-session", "task:daily"));
+      expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 10, ok: false });
       // An unknown rule type keeps the rest of the table readable.
       expect(yield* Ref.get(harness.tables)).toEqual({ app: [GRANT_DECODED] });
     }).pipe(Effect.scoped),

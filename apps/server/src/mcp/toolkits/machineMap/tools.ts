@@ -92,7 +92,7 @@ export const MachinesCommandInput = Schema.Struct({
   }),
   command: TrimmedNonEmptyString.annotate({
     description:
-      "The command id of the T3 card: restart-server, install-update, stop-all-agents, pause-scheduled-tasks or collect-diagnostics. The machine runs only the commands that its T3 card lists.",
+      "The command id of the T3 card: restart-server, install-update, stop-all-agents, pause-scheduled-tasks or collect-diagnostics. With row: run-task, pause-task or resume-task for a row of the tasks list, revoke-session for a row of the sessions list. The machine runs only the commands that its T3 card lists.",
   }),
   resource: Schema.optionalKey(
     TrimmedNonEmptyString.annotate({
@@ -102,7 +102,7 @@ export const MachinesCommandInput = Schema.Struct({
   row: Schema.optionalKey(
     TrimmedNonEmptyString.annotate({
       description:
-        "The row of a card list that the command is for. Omit it: the T3 card has no lists yet.",
+        'The row id of a card list that the command is for, for example "task:<taskId>" or "session:<sessionId>". The T3 card of each machine on the kitshn map lists its scheduled tasks and client sessions. Omit it for a command of the whole card.',
     }),
   ),
 });
