@@ -70,6 +70,8 @@ export class KitshnCli extends Context.Service<
     ) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
     /** Registers `url` as the T3 attester of this machine's daemon, without a credential. */
     readonly setAttester: (url: string) => Effect.Effect<void, KitshnCliError>;
+    /** The path of the machine's kitshn 2 binary, after its version check. */
+    readonly binary: Effect.Effect<string, KitshnCliError>;
   }
 >()("t3/fork/kitshn/KitshnCli") {}
 
@@ -223,7 +225,7 @@ const make = Effect.gen(function* () {
     },
   );
 
-  return KitshnCli.of({ run, setAttester });
+  return KitshnCli.of({ run, setAttester, binary });
 });
 
 export const layer = Layer.effect(KitshnCli, make);

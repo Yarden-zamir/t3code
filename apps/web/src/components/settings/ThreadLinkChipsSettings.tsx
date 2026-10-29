@@ -48,12 +48,14 @@ export function ForkServerSwitchRow(props: {
     | "threadLinkChips"
     | "threadLinksOpenDesktopApp"
     | "messageLinks"
-    | "accessChangeNotices";
+    | "accessChangeNotices"
+    | "kitshnProvider";
   readonly searchId:
     | "thread-link-chips"
     | "thread-links-open-desktop-app"
     | "message-links"
-    | "access-change-notices";
+    | "access-change-notices"
+    | "kitshn-provider";
   readonly label: string;
   readonly description: string;
 }) {
