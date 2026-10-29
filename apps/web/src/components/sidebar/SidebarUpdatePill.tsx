@@ -135,7 +135,7 @@ const toastUpdateError: ReportLocalUpdateError = (title, description) => {
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
 };
 
-async function downloadLocalUpdate(
+export async function downloadLocalUpdate(
   bridge: DesktopBridge,
   {
     notifyDownloaded,
@@ -164,13 +164,19 @@ async function downloadLocalUpdate(
 export async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
-  { unattended = false }: { readonly unattended?: boolean } = {},
+  {
+    unattended = false,
+    expectedVersion,
+  }: { readonly unattended?: boolean; readonly expectedVersion?: string } = {},
 ): Promise<boolean> {
-  // Fork: a newer release can replace the download first.
-  if (!(await ForkUpdate.prepareNewestUpdateInstall(bridge, { unattended, reportError })))
+  // Fork: a newer release can replace the download first, unless the caller pinned this build.
+  if (
+    expectedVersion === undefined &&
+    !(await ForkUpdate.prepareNewestUpdateInstall(bridge, { unattended, reportError }))
+  )
     return false;
   try {
-    const result = await bridge.installUpdate();
+    const result = await bridge.installUpdate(expectedVersion);
     if (!result.accepted) {
       showDesktopUpdateDownloadedToast(bridge, result.state);
       return false;

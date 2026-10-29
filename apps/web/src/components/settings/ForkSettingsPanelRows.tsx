@@ -13,6 +13,12 @@ export {
 } from "../desktop/DesktopUpdateIdleInstall";
 export { prepareNewestUpdateInstall } from "../desktop/DesktopUpdateNewerCheck";
 
+/**
+ * The fork releases have one track, nightly, so the desktop app hides the upstream Stable/Nightly
+ * switch. That switch targets upstream npm releases. Revisit if the fork publishes a stable track.
+ */
+export const SHOWS_DESKTOP_UPDATE_TRACK = false;
+
 /** Appearance: the fork sections, after the upstream sections and before Motion. */
 export function AppearanceSections() {
   return (

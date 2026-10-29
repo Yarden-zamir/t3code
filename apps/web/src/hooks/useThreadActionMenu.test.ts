@@ -126,6 +126,7 @@ vi.mock("./useSettings", () => ({
     }),
 }));
 vi.mock("./useThreadActions", () => ({
+  canTurnThreadIntoProject: () => false,
   refuseBlockedArchive: () => false,
   useThreadActions: () =>
     Object.fromEntries(
