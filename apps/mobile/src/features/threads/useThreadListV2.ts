@@ -52,6 +52,7 @@ export function useThreadListV2(input: {
   readonly shelfPreferencesLoaded: boolean;
   readonly workingShelfEnabled: boolean;
   readonly workingShelfExpanded: boolean;
+  readonly waitingShelfExpanded: boolean;
   readonly snoozedShelfExpanded: boolean;
   readonly settledShelfExpanded: boolean;
   readonly selectedThreadKey: string | null;
@@ -117,6 +118,7 @@ export function useThreadListV2(input: {
     now: input.now,
     workingShelfEnabled,
     workingShelfExpanded: input.workingShelfExpanded,
+    waitingShelfExpanded: input.waitingShelfExpanded,
     inboxReturnAt: inbox.returnedAt,
     // Fork: a terminal thread also works while a program runs in its shell.
     isWorking: (thread) => forkThreadIsWorking(thread) || inbox.isWorking(thread),
@@ -158,6 +160,9 @@ export function useThreadListV2(input: {
     workingCount: layout.workingCount,
     workingShelfExpanded: input.workingShelfExpanded,
     workingShelfHeaderIndex: layout.workingShelfHeaderIndex,
+    waitingCount: layout.waitingCount,
+    waitingShelfExpanded: input.waitingShelfExpanded,
+    waitingShelfHeaderIndex: layout.waitingShelfHeaderIndex,
     snoozedCount: layout.snoozedCount,
     snoozedShelfExpanded: input.snoozedShelfExpanded,
     snoozedShelfHeaderIndex: layout.snoozedShelfHeaderIndex,

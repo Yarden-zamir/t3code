@@ -1148,33 +1148,38 @@ describe("Working shelf (beta)", () => {
       row("a2", "active"),
       marker("working-header"),
       row("w1", "working"),
+      marker("waiting-header"),
+      row("x1", "waiting"),
       marker("settled-header"),
       row("s1", "settled"),
     ];
 
-    it("never drops into the Working shelf, and keeps it out of the inbox order", () => {
+    it("never drops into the Working or Waiting shelf, and keeps them out of the inbox order", () => {
       expect(resolveSidebarDropTarget(items, "a1", "w1")).toBeNull();
+      expect(resolveSidebarDropTarget(items, "a1", "x1")).toBeNull();
       expect(resolveSidebarDropTarget(items, "p1", "a2")).toEqual({
         section: "active",
         pinnedOrder: [],
         activeOrder: ["a1", "a2", "p1"],
       });
       expect(resolveSidebarDropVerb("active", "working")).toBeNull();
+      expect(resolveSidebarDropVerb("active", "waiting")).toBeNull();
     });
 
     it.each([
-      ["pinned", "p1"],
-      ["active", "a2"],
-      ["settled", "s1"],
+      ["working", "w1", "pinned", "p1"],
+      ["working", "w1", "active", "a2"],
+      ["working", "w1", "settled", "s1"],
+      ["waiting", "x1", "active", "a2"],
     ] as const)(
-      "does not move a Working thread into %s when its reference drag ends in the sidebar",
-      (section, overKey) => {
-        const target = resolveSidebarDropTarget(items, "w1", overKey);
+      "does not move a %s thread into %s when its reference drag ends in the sidebar",
+      (activeSection, activeKey, section, overKey) => {
+        const target = resolveSidebarDropTarget(items, activeKey, overKey);
         expect(target?.section).toBe(section);
         expect(
           planSidebarThreadDrop({
-            activeKey: "w1",
-            activeSection: "working",
+            activeKey,
+            activeSection,
             target: target!,
             pinnedOrder: ["p1"],
             pinnedKeysById: new Map([["p1", "m"]]),
