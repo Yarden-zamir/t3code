@@ -5,6 +5,7 @@
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 
 export const PROVIDER_NAME = "t3";
 /** K-707: the longest `output` of a command result. */
@@ -36,6 +37,12 @@ export const ProviderFact = Schema.Struct({
   role: Schema.optionalKey(Schema.Literals(["version", "busy"])),
 });
 
+export const ProviderSticker = Schema.Struct({
+  text: Schema.String.check(Schema.isMaxLength(24)),
+  tone: Schema.Literals(["info", "good", "warn", "bad"]),
+  link: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512))),
+});
+
 const RESERVED_SITE_NAMES: ReadonlySet<string> = new Set(["pages", "files", "kit", "www"]);
 
 export const ProviderResource = Schema.Struct({
@@ -43,7 +50,10 @@ export const ProviderResource = Schema.Struct({
   kind: Schema.String,
   name: Schema.String,
   status: Schema.Literals(["running", "stopped", "deploying", "failed", "unknown"]),
+  /** K-508: the card stacks under the card of this resource. */
+  parent: Schema.optionalKey(Schema.String),
   facts: Schema.optionalKey(Schema.Array(ProviderFact)),
+  stickers: Schema.optionalKey(Schema.Array(ProviderSticker)),
   /** K-1104: the card as a live site. Phase A sends none. kitshn refuses its own names (K-817). */
   site: Schema.optionalKey(
     Schema.Struct({
@@ -76,6 +86,12 @@ export const Request = Schema.Union([
   }),
   Schema.Struct({
     id: Schema.String,
+    type: Schema.Literal("remove"),
+    provider: Schema.Literal(PROVIDER_NAME),
+    ids: Schema.Array(Schema.String),
+  }),
+  Schema.Struct({
+    id: Schema.String,
     type: Schema.Literal("command-result"),
     provider: Schema.Literal(PROVIDER_NAME),
     commandId: Schema.Int,
@@ -85,17 +101,37 @@ export const Request = Schema.Union([
 ]);
 export type Request = typeof Request.Type;
 
-export const GrantRule = Schema.Union([
+const KnownRule = Schema.Union([
   Schema.Struct({ email: Schema.String }),
   Schema.Struct({ domain: Schema.String }),
   Schema.Struct({ ip: Schema.String }),
   Schema.Struct({ device: Schema.Struct({ clientId: Schema.String, name: Schema.String }) }),
   Schema.Struct({ machine: Schema.Struct({ machineId: Schema.String, clientId: Schema.String }) }),
   Schema.Struct({ everyone: Schema.Literal(true) }),
-  // A rule type that this T3 does not know still decodes, so the rest of the table stays usable.
-  // It never matches, and it fails an `all` circle, so a new rule type cannot widen access.
-  Schema.Record(Schema.String, Schema.Unknown),
 ]);
+const isKnownRule = Schema.is(KnownRule);
+
+/**
+ * K-706: a rule of a type that this T3 does not know decodes as `{ unknown: <its key> }`, as in
+ * `@kitshn/local`, so the rest of the table stays usable. It never matches and fails an `all`
+ * circle, so a new rule type cannot widen access.
+ */
+export const GrantRule = Schema.Unknown.pipe(
+  Schema.decodeTo(Schema.Union([KnownRule, Schema.Struct({ unknown: Schema.String })]), {
+    decode: SchemaGetter.transform((value: unknown) =>
+      isKnownRule(value)
+        ? value
+        : {
+            unknown:
+              typeof value === "object" && value !== null
+                ? (Object.keys(value)[0] ?? "")
+                : typeof value,
+          },
+    ),
+    encode: SchemaGetter.transform((rule) => rule),
+  }),
+);
+export type GrantRule = typeof GrantRule.Type;
 
 export const Grant = Schema.Struct({
   circle: Schema.Struct({
@@ -108,6 +144,7 @@ export const Grant = Schema.Struct({
   level: Schema.String,
   endsAt: Schema.NullOr(Schema.Number),
 });
+export type Grant = typeof Grant.Type;
 
 /** K-706: the grants of each resource, by the provider's resource id. */
 export const GrantTables = Schema.Record(Schema.String, Schema.Array(Grant));
@@ -121,6 +158,7 @@ export const Answer = Schema.Union([
     grants: GrantTables,
   }),
   Schema.Struct({ id: Schema.String, type: Schema.Literal("upsert") }),
+  Schema.Struct({ id: Schema.String, type: Schema.Literal("remove") }),
   Schema.Struct({ id: Schema.String, type: Schema.Literal("command-result") }),
   Schema.Struct({
     id: Schema.NullOr(Schema.String),

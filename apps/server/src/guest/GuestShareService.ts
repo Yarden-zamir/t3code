@@ -134,10 +134,16 @@ const guestFailureReason = (cause: unknown): GuestShareAccessError["reason"] =>
           ? "files_busy"
           : "rejected";
 
+/** Fork: kitshn provider (K-706). A `t3.thread` grant opens the guest routes without an invite. */
+export const GuestGrant = Schema.Literals(["view", "send"]);
+export type GuestGrant = typeof GuestGrant.Type;
+
 const SessionClaims = Schema.Struct({
   kind: Schema.Literal("session"),
   threadId: ThreadId,
   shareId: GuestShareId,
+  /** Fork: set only on a token that the server signs per request for a grant; never a cookie. */
+  grant: Schema.optionalKey(GuestGrant),
 });
 type SessionClaims = typeof SessionClaims.Type;
 const decodeSessionClaims = Schema.decodeUnknownOption(Schema.fromJsonString(SessionClaims));
@@ -168,6 +174,14 @@ export class GuestShareService extends Context.Service<
     >;
     /** Succeeds while the session can still open its share. */
     readonly check: (session: string) => Effect.Effect<void, GuestShareAccessError>;
+    /**
+     * Fork: a session token for one request of a visitor whose `t3.thread` grant covers the
+     * thread of the share, or null without such a grant.
+     */
+    readonly grantSession: (
+      shareId: string,
+      grantFor: (threadId: ThreadId) => Effect.Effect<GuestGrant | null>,
+    ) => Effect.Effect<{ readonly token: string; readonly threadId: ThreadId } | null>;
     /** Stores the guest's files as the thread's attachments and records the message with them. */
     readonly submit: (
       session: string,
@@ -336,12 +350,12 @@ const make = Effect.gen(function* () {
       thread.archivedAt !== null ||
       thread.deletedAt !== null ||
       DateTime.toEpochMillis(now) >= Date.parse(share.expiresAt) ||
-      (kind === "session" && share.guestName === null) ||
+      (kind === "session" && share.guestName === null && claims.value.grant === undefined) ||
       (yield* connectHostname) !== share.host
     ) {
       return yield* inactive;
     }
-    return { thread, share };
+    return { thread, share, grant: claims.value.grant };
   });
 
   const create = Effect.fn("GuestShareService.create")(function* (input: GuestShareCreateInput) {
@@ -394,6 +408,21 @@ const make = Effect.gen(function* () {
 
   const check = Effect.fn("GuestShareService.check")(function* (session: string) {
     yield* authorize(session, "session");
+  });
+
+  const grantSession: GuestShareService["Service"]["grantSession"] = Effect.fn(
+    "GuestShareService.grantSession",
+  )(function* (shareId, grantFor) {
+    if (shareId.trim() !== shareId || shareId === "") return null;
+    const id = GuestShareId.make(shareId);
+    const threadId = yield* orchestrator
+      .findGuestShareThreadId(id)
+      .pipe(Effect.orElseSucceed(() => null));
+    if (threadId === null) return null;
+    const grant = yield* grantFor(threadId);
+    if (grant === null) return null;
+    const token = yield* signSession({ kind: "session", threadId, shareId: id, grant });
+    return { token, threadId };
   });
 
   const uploadFailed = new GuestShareAccessError({ reason: "rejected" });
@@ -461,7 +490,9 @@ const make = Effect.gen(function* () {
     request: GuestSubmitRequest,
     uploads: ReadonlyArray<GuestUpload>,
   ) {
-    const { thread, share } = yield* authorize(session, "session");
+    const { thread, share, grant } = yield* authorize(session, "session");
+    // Fork: a `view` grant reads the thread only.
+    if (grant === "view") return yield* new GuestShareAccessError({ reason: "rejected" });
     if (request.shareId !== share.id) {
       return yield* new GuestShareAccessError({ reason: "stale_page" });
     }
@@ -743,6 +774,7 @@ const make = Effect.gen(function* () {
     create,
     redeem,
     check,
+    grantSession,
     submit,
     stream,
     render,

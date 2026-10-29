@@ -24,6 +24,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import type * as Scope from "effect/Scope";
@@ -32,6 +33,8 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
+import { kitshnAgentsAllowMachine } from "../kitshn/kitshnAgents.ts";
+import * as KitshnGrants from "../kitshn/KitshnGrants.ts";
 import { historyCaller } from "./machineCallerAccess.ts";
 import { expandHomePath } from "../../os-jank.ts";
 import * as ProcessRunner from "../../processRunner.ts";
@@ -113,12 +116,16 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
 
-  const allowedNow = (from: MachineId) =>
-    Effect.all([state.activeDesired, Clock.currentTimeMillis]).pipe(
-      Effect.map(([desired, nowMs]) =>
-        desired === null ? undefined : execArrowInto(desired, from, nowMs),
-      ),
-    );
+  const allowedNow = Effect.fn("MachineExec.allowedNow")(function* (from: MachineId) {
+    const desired = yield* state.activeDesired;
+    if (desired === null) return undefined;
+    const arrow = execArrowInto(desired, from, yield* Clock.currentTimeMillis);
+    // kitshn provider (K-706): a `t3.agents` grant of `exec` as well.
+    if (arrow === undefined || !(yield* kitshnAgentsAllowMachine(desired, from, "exec"))) {
+      return undefined;
+    }
+    return arrow;
+  });
 
   /**
    * MM-1916: completes when the arrow stops allowing exec: a new desired state (arrow change,
@@ -131,13 +138,22 @@ const make = Effect.gen(function* () {
       Stream.runHead,
       Effect.asVoid,
     );
-    if (expiresAt === null) return changed;
+    const kitshnLost = Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
+      Effect.flatMap((grants) =>
+        Option.isNone(grants)
+          ? Effect.never
+          : grants.value.awaitLoss(
+              allowedNow(from).pipe(Effect.map((arrow) => arrow !== undefined)),
+            ),
+      ),
+    );
+    if (expiresAt === null) return Effect.raceFirst(changed, kitshnLost);
     const expired = Clock.currentTimeMillis.pipe(
       Effect.flatMap((nowMs) => Effect.sleep(Duration.millis(Date.parse(expiresAt) - nowMs))),
       Effect.andThen(allowedNow(from)),
       Effect.flatMap((arrow) => (arrow === undefined ? Effect.void : Effect.never)),
     );
-    return Effect.raceFirst(changed, expired);
+    return Effect.raceAllFirst([changed, expired, kitshnLost]);
   };
 
   /** MM-1908: a refused call in the History. No command ran, so it has no output or exit code. */

@@ -12,6 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -20,6 +21,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { CloudManagedEndpointRuntime } from "../cloud/ManagedEndpointRuntime.ts";
 import * as ServerConfig from "../config.ts";
+import { makeListSharedThreads } from "../fork/kitshn/sharedThreads.ts";
 import * as MachineMapState from "../fork/machineMap/MachineMapState.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as CommandOutputHub from "../orchestration-v2/CommandOutputHub.ts";
@@ -183,5 +185,45 @@ it.effect("refuses a link without T3 Connect and without a tunnel", () =>
     const guestShares = yield* GuestShareService.GuestShareService;
     const error = yield* Effect.flip(guestShares.create({ threadId }));
     assert.equal(error.reason, "connect_unavailable");
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("opens a shared thread for a kitshn t3.thread grant: view reads, send also sends", () =>
+  Effect.gen(function* () {
+    yield* Ref.set(paused, false);
+    yield* Ref.set(connectHost, "env.t3.test");
+    const threadId = ThreadId.make("thread:guest-share-grant");
+    yield* createThread(threadId);
+    const guestShares = yield* GuestShareService.GuestShareService;
+    const { url, share } = yield* guestShares.create({ threadId });
+
+    // The thread cards of the kitshn provider list the open share.
+    const shared = yield* yield* makeListSharedThreads;
+    assert.deepInclude(Option.getOrThrow(shared), {
+      threadId,
+      title: "Review me",
+      shareId: share.id,
+      host: "env.t3.test",
+      expiresAt: share.expiresAt,
+    });
+
+    const grantOf = (grant: GuestShareService.GuestGrant | null) => () => Effect.succeed(grant);
+    assert.isNull(yield* guestShares.grantSession(share.id, grantOf(null)));
+    assert.isNull(yield* guestShares.grantSession("no-such-share", grantOf("send")));
+
+    // A view grant reads before any guest joined, and never sends.
+    const view = (yield* guestShares.grantSession(share.id, grantOf("view")))!;
+    assert.equal(view.threadId, threadId);
+    yield* guestShares.check(view.token);
+    const refused = yield* Effect.flip(
+      guestShares.submit(view.token, { shareId: share.id, text: "Hello" }, []),
+    );
+    assert.equal(refused.reason, "rejected");
+
+    // A send grant sends as the guest does, so the share needs its guest.
+    const credential = url.slice(url.indexOf("#") + 1);
+    yield* guestShares.redeem({ credential, name: "Sam" });
+    const send = (yield* guestShares.grantSession(share.id, grantOf("send")))!;
+    yield* guestShares.submit(send.token, { shareId: share.id, text: "Hello" }, []);
   }).pipe(Effect.provide(layerTest)),
 );

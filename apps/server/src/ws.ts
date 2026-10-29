@@ -3400,7 +3400,10 @@ export const layer = Layer.unwrap(
                     failEnvironmentInternal("internal_error", error),
                 }),
               ),
-            ).pipe(Effect.raceFirst(ForkWs.awaitMachineMapLock(session.subject))),
+            ).pipe(
+              Effect.raceFirst(ForkWs.awaitMachineMapLock(session.subject)),
+              Effect.raceFirst(ForkWs.awaitKitshnLoss(request, session)),
+            ),
           () => sessions.markDisconnected(session.sessionId),
         );
       }).pipe(

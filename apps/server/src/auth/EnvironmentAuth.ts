@@ -44,6 +44,7 @@ import * as SessionStore from "./SessionStore.ts";
 import { REUSABLE_DEV_SESSION_EXPIRES_AT, resolveReusableDevAuth } from "./ReusableDevAuth.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
 import * as MachineMapState from "../fork/machineMap/MachineMapState.ts";
+import * as KitshnGrants from "../fork/kitshn/KitshnGrants.ts";
 import { clientBrowserSessionTtl } from "../fork/machineMap/machineAccess.ts";
 import * as ForkAuth from "../fork/forkEnvironmentAuth.ts";
 import { DESKTOP_RENDERER_ORIGINS } from "../httpCors.ts";
@@ -724,6 +725,22 @@ export const make = Effect.gen(function* () {
   // Fork: machine map (MM-718, MM-1305). Absent outside the server: no pause lock, no grants.
   const machineMap = yield* Effect.serviceOption(MachineMapState.MachineMapState);
   const rejectWhilePaused = ForkAuth.rejectWhilePaused(machineMap);
+  // Fork: kitshn provider (K-706). Absent outside the server: T3's own auth only.
+  const kitshnGrants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
+  const rejectOutsideKitshnGrants =
+    (request: HttpServerRequest.HttpServerRequest) =>
+    <S extends Parameters<typeof KitshnGrants.kitshnAllowsSession>[2]>(session: S) =>
+      KitshnGrants.kitshnAllowsSession(kitshnGrants, request, session).pipe(
+        Effect.flatMap((allowed) =>
+          allowed
+            ? Effect.succeed(session)
+            : Effect.fail(
+                new ServerAuthInvalidCredentialError({
+                  diagnostic: "The kitshn grants of this machine do not allow this session.",
+                }),
+              ),
+        ),
+      );
   const devAuth = resolveReusableDevAuth(config);
 
   const authenticateToken = (
@@ -833,6 +850,7 @@ export const make = Effect.gen(function* () {
         }
         return Effect.succeed(session);
       }),
+      Effect.flatMap(rejectOutsideKitshnGrants(request)),
     );
   };
 
@@ -1178,6 +1196,7 @@ export const make = Effect.gen(function* () {
     ForkAuth.makeIssueCloudflareAccessPairingCredential({
       cloudflareAccess: config.cloudflareAccess,
       machineMap,
+      kitshnGrants,
       secretStore,
       crypto,
       issuePairingCredentialForSubject,
@@ -1294,6 +1313,7 @@ export const make = Effect.gen(function* () {
             Effect.flatMap(rejectMcpClientAudience),
             // Fork: a machine that the machine map pauses refuses its sessions.
             Effect.flatMap(rejectWhilePaused),
+            Effect.flatMap(rejectOutsideKitshnGrants(request)),
           );
           if (session.audience !== undefined && session.audience !== use) {
             return yield* new ServerAuthInvalidCredentialError({
@@ -1345,6 +1365,7 @@ export const make = Effect.gen(function* () {
     if (token === null) return Effect.fail(new ServerAuthMissingCredentialError({}));
     return sessions.verify(token).pipe(
       mapSessionVerificationErrors,
+      Effect.flatMap(rejectOutsideKitshnGrants(request)),
       Effect.flatMap((session) =>
         session.subject === MCP_CLIENT_SUBJECT && session.method === "bearer-access-token"
           ? Effect.succeed({

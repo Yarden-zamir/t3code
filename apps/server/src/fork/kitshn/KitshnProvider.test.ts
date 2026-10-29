@@ -13,6 +13,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -24,7 +25,11 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as ServerSettings from "../../serverSettings.ts";
 import * as MachineHost from "../machineMap/MachineHost.ts";
 import * as KitshnCli from "./KitshnCli.ts";
+import * as KitshnGrants from "./KitshnGrants.ts";
+import { threadResourceId } from "./kitshnGrantRules.ts";
+import type { GrantTables } from "./kitshnProviderProtocol.ts";
 import * as KitshnProvider from "./KitshnProvider.ts";
+import type { SharedThread } from "./sharedThreads.ts";
 
 interface FakeChild {
   readonly args: ReadonlyArray<string>;
@@ -93,6 +98,11 @@ const GRANT = {
   endsAt: null,
 };
 
+const GRANT_DECODED = {
+  ...GRANT,
+  circle: { ...GRANT.circle, rules: [{ everyone: true }, { unknown: "passkeyGroup" }] },
+};
+
 const setup = (options: { readonly enabled: boolean; readonly installed?: boolean }) =>
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
@@ -101,14 +111,23 @@ const setup = (options: { readonly enabled: boolean; readonly installed?: boolea
     const ran = yield* Queue.unbounded<string>();
     const restarted = yield* Deferred.make<void>();
     const settingChanges = yield* Queue.unbounded<ServerSettingsValue>();
+    const tables = yield* Ref.make<GrantTables | null>(null);
+    const shared = yield* Ref.make<ReadonlyArray<SharedThread>>([]);
     const settings = (kitshnProvider: boolean): ServerSettingsValue => ({
       ...DEFAULT_SERVER_SETTINGS,
       kitshnProvider,
     });
 
-    const layer = KitshnProvider.layer.pipe(
+    const layer = Layer.effect(
+      KitshnProvider.KitshnProvider,
+      KitshnProvider.make(Effect.asSome(Ref.get(shared))),
+    ).pipe(
       Layer.provide(
         Layer.mergeAll(
+          Layer.mock(KitshnGrants.KitshnGrants)({
+            replaceTables: (next) => Ref.set(tables, next),
+            contact: Effect.void,
+          }),
           Layer.succeed(ServerConfig.ServerConfig, {
             ...config,
             devUrl: undefined,
@@ -187,6 +206,8 @@ const setup = (options: { readonly enabled: boolean; readonly installed?: boolea
     yield* Effect.forkScoped(provider.run);
     return {
       provider,
+      tables,
+      shared,
       children,
       binaryCalls,
       ran,
@@ -226,6 +247,7 @@ const EXPECTED_REGISTER = {
         { label: "Running turns", value: "1", role: "busy" },
       ],
     },
+    { id: "agents", kind: "t3.agents", name: "Agents on studio", status: "running", parent: "app" },
   ],
 };
 
@@ -261,12 +283,10 @@ it.layer(
       // The next line is answered only after the register answer above.
       yield* first.say(command(1, "stop-all-agents"));
       yield* Queue.take(first.written);
-      expect(yield* harness.provider.grants).toEqual({ app: [GRANT] });
+      expect(yield* Ref.get(harness.tables)).toEqual({ app: [GRANT_DECODED] });
       yield* first.exit(1);
       yield* TestClock.adjust("1 second");
       const second = yield* Queue.take(harness.children);
-      // Phase B starts fail-closed: the grants of the ended connection are gone.
-      expect(yield* harness.provider.grants).toEqual({});
       expect(yield* Queue.take(second.written)).toEqual({
         id: expect.any(String),
         ...EXPECTED_REGISTER,
@@ -303,7 +323,7 @@ it.layer(
         ok: false,
       });
       // An unknown rule type keeps the rest of the table readable.
-      expect(yield* harness.provider.grants).toEqual({ app: [GRANT] });
+      expect(yield* Ref.get(harness.tables)).toEqual({ app: [GRANT_DECODED] });
     }).pipe(Effect.scoped),
   );
 
@@ -328,6 +348,51 @@ it.layer(
       yield* Queue.take(harness.binaryCalls);
       expect(yield* Queue.size(harness.children)).toBe(0);
     }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "registers a card per shared thread, and upserts and removes them as shares change",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* setup({ enabled: true });
+        const share = (threadId: string, expiresAt = "2100-01-01T00:00:00.000Z") => ({
+          threadId,
+          title: `Thread ${threadId}`,
+          shareId: `share-${threadId}`,
+          host: "t3-studio.example.com",
+          expiresAt,
+        });
+        yield* Ref.set(harness.shared, [share("t1"), share("old", "1970-01-01T00:00:00.000Z")]);
+        const child = yield* Queue.take(harness.children);
+        const register = yield* Queue.take(child.written);
+        const card = (threadId: string) => ({
+          id: threadResourceId(threadId),
+          kind: "t3.thread",
+          name: `Thread ${threadId}`,
+          status: "running",
+          parent: "app",
+          stickers: [
+            {
+              text: "Open thread",
+              tone: "info",
+              link: `https://t3-studio.example.com/guest?share=share-${threadId}`,
+            },
+          ],
+        });
+        expect(register.resources).toEqual([...EXPECTED_REGISTER.resources, card("t1")]);
+        yield* child.say({ id: register.id, type: "register", machineId: "m-1", grants: {} });
+
+        yield* Ref.set(harness.shared, [share("t2")]);
+        yield* TestClock.adjust("15 seconds");
+        expect(yield* Queue.take(child.written)).toMatchObject({
+          type: "remove",
+          ids: [threadResourceId("t1")],
+        });
+        expect(yield* Queue.take(child.written)).toMatchObject({
+          type: "upsert",
+          resources: [card("t2")],
+        });
+      }).pipe(Effect.scoped),
   );
 
   it.effect("follows the setting: off spawns nothing, on starts and off stops the child", () =>

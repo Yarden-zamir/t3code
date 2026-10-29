@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { HttpServerResponse } from "effect/http";
+import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 import type * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
@@ -22,6 +23,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as ForkChangelog from "./ForkChangelog.ts";
+import * as KitshnGrants from "./kitshn/KitshnGrants.ts";
 import * as ForkUpdates from "./ForkUpdates.ts";
 import { requireLocalDesktop } from "./machineMap/browserAccess.ts";
 import * as MachineMap from "./machineMap/MachineMap.ts";
@@ -199,6 +201,29 @@ export const checkLaunchWorktreeBranch = (
           ),
         )
     : Effect.void;
+
+/**
+ * K-706: a socket that a kitshn grant opened closes when the grant no longer covers its session:
+ * a new table, an `endsAt` or the 24-hour limit. The upgrade then refuses it.
+ */
+export const awaitKitshnLoss = (
+  request: HttpServerRequest.HttpServerRequest,
+  session: Pick<EnvironmentAuth.AuthenticatedSession, "sessionId" | "subject" | "scopes">,
+) =>
+  Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
+    Effect.flatMap((grants) =>
+      Option.isNone(grants)
+        ? Effect.never
+        : grants.value.visitor(request).pipe(
+            Effect.flatMap((visitor) =>
+              visitor === null || isMachineSubject(session.subject)
+                ? Effect.never
+                : grants.value.awaitLoss(grants.value.allowsSession(visitor, session)),
+            ),
+            Effect.as(HttpServerResponse.empty()),
+          ),
+    ),
+  );
 
 /** MM-718: the pause closes the socket at once; the upgrade then refuses it. */
 export const awaitMachineMapLock = (subject: string) =>

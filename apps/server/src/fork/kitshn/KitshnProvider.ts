@@ -2,10 +2,11 @@
  * Fork: the T3 server as a kitshn provider (kitshn K-704 to K-707). While the server setting
  * `kitshnProvider` is on, the server runs `kitshn provider` of the machine's kitshn 2 and registers
  * its app card and commands. A missing kitshn, a refusal or an exit only logs, and the server
- * tries again later. Phase A: grants stay in memory and nothing checks them yet.
+ * tries again later. Its grant tables go to `KitshnGrants`, which enforces them.
  */
 import type { MachineCommandInput } from "@t3tools/contracts";
 import { THREAD_CREDENTIAL_AUTHORIZATION_ENV } from "@t3tools/provider-core/server/forkThreadCredential";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -14,7 +15,6 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
-import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -24,16 +24,24 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as ServerSettings from "../../serverSettings.ts";
 import * as MachineHost from "../machineMap/MachineHost.ts";
 import { redactSecretsInText } from "../redactUrlSecrets.ts";
+import { makeListSharedThreads, type SharedThread } from "./sharedThreads.ts";
 import { kitshnOwnerRefusal } from "./KitshnAttester.ts";
 import * as KitshnCli from "./KitshnCli.ts";
 import {
+  AGENTS_RESOURCE_ID,
+  APP_RESOURCE_ID,
+  KINDS,
+  threadResourceId,
+} from "./kitshnGrantRules.ts";
+import * as KitshnGrants from "./KitshnGrants.ts";
+import {
   type Answer,
   grantCount,
-  type GrantTables,
   MAX_COMMAND_OUTPUT_LENGTH,
   PROVIDER_NAME,
   type ProviderCommand,
   type ProviderResource,
+  ProviderResource as ProviderResourceSchema,
   type Request,
   decodeAnswer,
   requestLine,
@@ -44,22 +52,37 @@ const RETRY_AFTER_REGISTER = Duration.seconds(1);
 const RETRY_FIRST = Duration.seconds(5);
 // After a daemon restart, a queued command waits 60 seconds for `register` (K-707).
 const RETRY_CAP = Duration.seconds(30);
-// Known limit: the busy count is polled, so the card can lag by this much. Revisit if kitshn
-// starts "when idle" jobs (K-1608) that need a faster busy fact.
+// Known limit: the busy count and the thread cards are polled, so a card can lag by this much.
+// Revisit if kitshn starts "when idle" jobs (K-1608) that need a faster busy fact. A thread card
+// that lags grants nothing: the guest routes check the share itself on each request.
 const FACTS_POLL = Duration.seconds(15);
+// While the child runs, the daemon answers; this keeps the saved table fresh (K-706).
+const CONTACT_TICK = Duration.minutes(1);
+// kitshn holds 500 cards per machine for all providers (K-704).
+const THREAD_CARDS_LIMIT = 200;
 // Below the daemon's 5-minute limit, so T3 answers before the daemon gives up.
 const COMMAND_TIMEOUT = Duration.minutes(4.5);
 // Time for the result line to reach the daemon before the process ends.
 const RESTART_FLUSH = Duration.millis(500);
 const STDERR_KEEP = 4096;
 
-const APP_RESOURCE_ID = "app";
+const resourceKey = Schema.encodeSync(Schema.fromJsonString(ProviderResourceSchema));
 
-const KINDS = [
-  { id: "t3.app", name: "T3 app", levels: { view: "read", use: "standard", control: "admin" } },
-  { id: "t3.thread", name: "T3 thread", levels: { view: "view", use: "send" } },
-  { id: "t3.agents", name: "T3 agents", levels: { use: "use", control: "exec" } },
-] as const;
+/** A thread card: only threads with an open guest share (K-704), stacked under the app card. */
+const threadCard = (thread: SharedThread): ProviderResource => ({
+  id: threadResourceId(thread.threadId),
+  kind: "t3.thread",
+  name: (thread.title.trim() === "" ? "Untitled thread" : thread.title).slice(0, 80),
+  status: "running",
+  parent: APP_RESOURCE_ID,
+  stickers: [
+    {
+      text: "Open thread",
+      tone: "info",
+      link: `https://${thread.host}/guest?share=${encodeURIComponent(thread.shareId)}`,
+    },
+  ],
+});
 
 /** The kitshn commands, each the machine map command of the same name (MachineHost). */
 const COMMANDS = [
@@ -121,12 +144,13 @@ export class KitshnProvider extends Context.Service<
   {
     /** Follows the `kitshnProvider` setting for the life of the server. Never fails. */
     readonly run: Effect.Effect<void>;
-    /** K-706: the last grant tables from kitshn. Phase A keeps them only. */
-    readonly grants: Effect.Effect<GrantTables>;
   }
 >()("t3/fork/kitshn/KitshnProvider") {}
 
-const make = Effect.gen(function* () {
+export const make = Effect.fn("KitshnProvider.make")(function* (
+  /** The threads with an open guest share, or none when the read failed. */
+  listSharedThreads: Effect.Effect<Option.Option<ReadonlyArray<SharedThread>>>,
+) {
   const settings = yield* ServerSettings.ServerSettingsService;
   const cli = yield* KitshnCli.KitshnCli;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -135,7 +159,7 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const serviceScope = yield* Effect.scope;
   const ownerRefusal = yield* kitshnOwnerRefusal();
-  const grants = yield* Ref.make<GrantTables>({});
+  const grants = yield* KitshnGrants.KitshnGrants;
 
   const registered: ReadonlyArray<KitshnCommand> = COMMANDS.filter((command) =>
     host.supportedCommands({ desktopConnected: false }).includes(command.input._tag),
@@ -171,11 +195,30 @@ const make = Effect.gen(function* () {
     } satisfies ProviderResource;
   });
 
+  const agentsResource = environment.getDescriptor.pipe(
+    Effect.map((descriptor): ProviderResource => ({
+      id: AGENTS_RESOURCE_ID,
+      kind: "t3.agents",
+      name: `Agents on ${descriptor.label}`.slice(0, 80),
+      status: "running",
+      parent: APP_RESOURCE_ID,
+    })),
+  );
+
+  const threadCards = Effect.all([listSharedThreads, Clock.currentTimeMillis]).pipe(
+    Effect.map(([threads, nowMs]) =>
+      Option.map(threads, (all) =>
+        all
+          .filter((thread) => Date.parse(thread.expiresAt) > nowMs)
+          .slice(0, THREAD_CARDS_LIMIT)
+          .map(threadCard),
+      ),
+    ),
+  );
+
   /** One `kitshn provider` child, until it exits. Returns why it ended and whether it registered. */
   const connectOnce = Effect.scoped(
     Effect.gen(function* () {
-      // Phase B starts fail-closed: the grants of an ended connection are gone.
-      yield* Effect.addFinalizer(() => Ref.set(grants, {}));
       const binary = yield* cli.binary;
       const child = yield* spawner.spawn(
         ChildProcess.make(binary, ["provider"], {
@@ -207,14 +250,18 @@ const make = Effect.gen(function* () {
       const registerId = nextId();
       const registeredOnce = yield* Deferred.make<void>();
       const app = yield* appResource;
-      let sentFacts = app.facts;
+      let sentApp = resourceKey(app);
+      // K-704: register only with the full list; a card that it leaves out goes offline.
+      let sentThreads = new Map(
+        Option.getOrElse(yield* threadCards, () => []).map((card) => [card.id, card] as const),
+      );
       yield* send({
         id: registerId,
         type: "register",
         provider: PROVIDER_NAME,
         kinds: KINDS,
         commands: providerCommands,
-        resources: [app],
+        resources: [app, yield* agentsResource, ...sentThreads.values()],
       });
 
       const handleCommand = Effect.fn("KitshnProvider.handleCommand")(function* (
@@ -266,16 +313,17 @@ const make = Effect.gen(function* () {
           );
         }
         const answer = decoded.value;
+        if (yield* Deferred.isDone(registeredOnce)) yield* grants.contact;
         switch (answer.type) {
           case "register":
             if (answer.id !== registerId) return;
-            yield* Ref.set(grants, answer.grants);
+            yield* grants.replaceTables(answer.grants);
             yield* Deferred.succeed(registeredOnce, undefined);
             return yield* Effect.logInfo(
               `kitshn provider: registered, with ${grantCount(answer.grants)} grants`,
             );
           case "grants":
-            yield* Ref.set(grants, answer.tables);
+            yield* grants.replaceTables(answer.tables);
             return yield* Effect.logInfo(
               `kitshn provider: ${grantCount(answer.tables)} grants from kitshn`,
             );
@@ -287,23 +335,50 @@ const make = Effect.gen(function* () {
             }
             return yield* Effect.logWarning(`kitshn provider: kitshn refused: ${answer.error}`);
           case "upsert":
+          case "remove":
           case "command-result":
             return;
         }
       });
 
-      yield* Effect.sleep(FACTS_POLL).pipe(
-        Effect.andThen(appResource),
-        Effect.flatMap((current) => {
-          if (JSON.stringify(current.facts) === JSON.stringify(sentFacts)) return Effect.void;
-          sentFacts = current.facts;
-          return send({
+      yield* Deferred.await(registeredOnce).pipe(
+        Effect.andThen(
+          Effect.sleep(CONTACT_TICK).pipe(Effect.andThen(grants.contact), Effect.forever),
+        ),
+        Effect.forkScoped,
+      );
+
+      const refreshCards = Effect.gen(function* () {
+        const current = yield* appResource;
+        const changed: Array<ProviderResource> = [];
+        if (resourceKey(current) !== sentApp) {
+          sentApp = resourceKey(current);
+          changed.push(current);
+        }
+        const cards = yield* threadCards;
+        if (Option.isSome(cards)) {
+          const next = new Map(cards.value.map((card) => [card.id, card] as const));
+          for (const [id, card] of next) {
+            const sent = sentThreads.get(id);
+            if (sent === undefined || resourceKey(sent) !== resourceKey(card)) changed.push(card);
+          }
+          const gone = [...sentThreads.keys()].filter((id) => !next.has(id));
+          sentThreads = next;
+          if (gone.length > 0) {
+            yield* send({ id: nextId(), type: "remove", provider: PROVIDER_NAME, ids: gone });
+          }
+        }
+        if (changed.length > 0) {
+          yield* send({
             id: nextId(),
             type: "upsert",
             provider: PROVIDER_NAME,
-            resources: [current],
+            resources: changed,
           });
-        }),
+        }
+      });
+      yield* Effect.sleep(FACTS_POLL).pipe(
+        Effect.andThen(refreshCards),
         Effect.forever,
         Effect.forkScoped,
       );
@@ -375,7 +450,7 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  return KitshnProvider.of({ run, grants: Ref.get(grants) });
+  return KitshnProvider.of({ run });
 });
 
-export const layer = Layer.effect(KitshnProvider, make);
+export const layer = Layer.effect(KitshnProvider, Effect.flatMap(makeListSharedThreads, make));

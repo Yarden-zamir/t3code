@@ -63,7 +63,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Agent session import limits](docs/fork/features.md#agent-session-import-limits):** the import window and the message limit for imported sessions.
 - **[Thread identity check](docs/fork/features.md#thread-identity-check):** a local service checks which thread holds an agent's MCP credential.
 - **[Publish to kitshn](docs/fork/features.md#publish-to-kitshn):** agents publish a file or folder of their workspace to kitshn through the kitshn daemon of their machine, with no kitshn token.
-- **[kitshn provider](docs/fork/features.md#kitshn-provider):** the server shows itself as a card on the kitshn map, with commands such as Restart server (off by default; no access checks and no site yet).
+- **[kitshn provider](docs/fork/features.md#kitshn-provider):** the server shows itself as a card on the kitshn map, with commands such as Restart server, and its kitshn grants decide tunnel access to the app, shared threads and agent tools (off by default; no site yet).
 - **[Scheduled task model](docs/fork/features.md#scheduled-task-model):** a scheduled task runs on any provider instance, or on the project default model.
 
 **Threads**

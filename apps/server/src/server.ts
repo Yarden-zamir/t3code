@@ -138,6 +138,7 @@ import * as WebhookRoute from "./scheduledTasks/webhookRoute.ts";
 import * as RelayDeliveryProof from "./scheduledTasks/RelayDeliveryProof.ts";
 import * as HeldHooksWaker from "./relay/HeldHooksWaker.ts";
 import * as McpOAuth from "./auth/McpOAuth.ts";
+import * as SessionStore from "./auth/SessionStore.ts";
 import * as McpOAuthHttp from "./auth/mcpOAuthHttp.ts";
 import {
   relayHookBaseUrl,
@@ -195,6 +196,7 @@ import * as MachineExecRoute from "./fork/machineMap/machineExecRoute.ts";
 import * as ThreadIdentityRoute from "./fork/threadIdentityRoute.ts";
 import * as KitshnAttester from "./fork/kitshn/KitshnAttester.ts";
 import * as KitshnCli from "./fork/kitshn/KitshnCli.ts";
+import * as KitshnGrants from "./fork/kitshn/KitshnGrants.ts";
 import * as KitshnProvider from "./fork/kitshn/KitshnProvider.ts";
 import * as MachineHost from "./fork/machineMap/MachineHost.ts";
 import * as MachineMap from "./fork/machineMap/MachineMap.ts";
@@ -555,12 +557,23 @@ const layerMachineMap = MachineExec.layer.pipe(
   Layer.provide(NodeSocket.layerWebSocketConstructor),
 );
 
+// Fork: kitshn provider (K-706). One instance: the auth hooks, the guest routes and the provider
+// read the same tables. It shares the session store of the auth layer, so a revocation closes
+// the WebSockets of that session.
+const layerKitshnGrants = KitshnGrants.layer.pipe(
+  Layer.provide(SessionStore.layer),
+  Layer.provide(layerPersistence),
+  Layer.provide(layerServerEnvironment),
+  Layer.provide(layerServerSettings),
+);
+
 const layerAuth = EnvironmentAuth.layer.pipe(
   Layer.provideMerge(layerPersistence),
   Layer.provide(layerServerEnvironment),
   Layer.provide(ServerSecretStore.layer),
   // Fork: machine map. Machine identities pass Cloudflare Access too (MM-1305).
   Layer.provide(layerMachineMapState),
+  Layer.provide(layerKitshnGrants),
 );
 
 const layerCloudManagedEndpointRuntime = Layer.mergeAll(
@@ -770,6 +783,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerServerEnvironment),
   Layer.provideMerge(layerAuth),
   Layer.provideMerge(layerMachineMapState),
+  Layer.provideMerge(layerKitshnGrants),
   Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(
     Layer.mergeAll(

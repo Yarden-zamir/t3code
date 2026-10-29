@@ -33,6 +33,7 @@ import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import type * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
+import { kitshnAgentsAllowRequest } from "../fork/kitshn/kitshnAgents.ts";
 import * as MachineMapState from "../fork/machineMap/MachineMapState.ts";
 import {
   machineRequestNamespace,
@@ -576,7 +577,17 @@ export const layerMcpClientAuthenticator = Layer.effect(
             Effect.flatMap((client) =>
               client === undefined
                 ? Effect.fail(error)
-                : Effect.succeed({ client, requestNamespace: machineRequestNamespace(client) }),
+                : // Fork: kitshn provider (K-706): the tools also need a `t3.agents` grant of `use`.
+                  kitshnAgentsAllowRequest(request, "use").pipe(
+                    Effect.flatMap((allowed) =>
+                      allowed
+                        ? Effect.succeed({
+                            client,
+                            requestNamespace: machineRequestNamespace(client),
+                          })
+                        : Effect.fail(error),
+                    ),
+                  ),
             ),
           );
     return McpHttpServer.McpClientAuthenticator.of({

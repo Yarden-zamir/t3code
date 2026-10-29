@@ -433,14 +433,21 @@ Agents publish a file or a folder of their workspace to kitshn, and give the car
 The server shows itself as a card on the kitshn map, with its commands (kitshn K-704 to K-707). The server runs `kitshn provider` of the machine's kitshn 2 and keeps it running. The child sends JSON lines to the local kitshn daemon.
 
 - **Setting:** server setting `kitshnProvider` (off by default). Settings > Machines > "kitshn provider". Join the machine to kitshn first.
-- **Card:** one `t3.app` card "T3 on <environment name>", with the facts version and running turns. The server sends a new card only when a fact changes. It checks the facts every 15 seconds.
+- **Cards:** one `t3.app` card "T3 on <environment name>", with the facts version and running turns, and a `t3.agents` card "Agents on <environment name>" under it. Each thread with an open guest link also gets a `t3.thread` card under the app card, named by the thread title, with an "Open thread" sticker to its guest page. The card goes when the link ends. The server checks the facts and the shared threads every 15 seconds, and sends only the cards that changed.
+- **Grants:** while the setting is on, kitshn grants decide access for each request with a verified Cloudflare Access JWT (a tunnel request). The desktop window, loopback and tailnet pairing keep T3's own auth.
+  - `t3.app`: `read`, `standard` and `admin` give the scopes of the machine map levels of the same name, without pairing-link and relay rights. They replace the machine map client levels and the approved clients for those requests. Without a grant, the request is refused.
+  - `t3.thread`: opens only the guest page of that thread, without a guest link. `view` reads the thread. `send` also sends as the guest does, after the guest joined. The guest link itself works as before.
+  - `t3.agents`: another machine with an arrow needs `use` for the forwarded agent tools and `exec` for `machine_exec` and terminal threads. The arrow check stays.
+  - Matching: `email` and `domain` in lowercase, `ip` against `Cf-Connecting-IP`, `device` and `machine` against the service token. An unknown rule type never matches. The highest matching level applies. Access checks the passkey.
+  - The last table stays on disk (`kitshn-grants.json` in the server state dir) and applies after a restart or while kitshn is out of reach. `endsAt` still ends a grant on time. After 24 hours without contact with kitshn, every tunnel request is refused until a fresh table arrives.
+  - At `endsAt`, a level drop or a removed grant, the server ends the sessions and WebSockets that lost access. Failed ends wait on disk and run again, also after a restart. Turning the setting off ends every session that a grant gave.
 - **Commands:** Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. Each runs the machine map command of the same name. The card shows only the commands that this server can run now: Restart server needs a supervisor, and Install update needs the background service. A restart answers kitshn first and then restarts.
 - **Diagnostics:** the machine map portal and kitshn get the same redacted diagnostics. Each process shows only its program name, never its arguments. Secrets in error texts become `REDACTED`: URL tokens such as a pairing link, `key=value` and `"key":"value"` for secret key names such as `token` and `password`, `NAME=value` env values, the word after `Bearer`, `token:` or `--token`, and known token formats.
 - **Failures:** without kitshn 2, after a refusal, or when the child exits, T3 runs normally and tries again. After a connection that registered, T3 tries again after 1 second, because a daemon restart ends the child. Each further try waits 5, 10, 20 and then 30 seconds. After a daemon restart, kitshn holds a queued command for 60 seconds until T3 registers again, and these waits stay inside that time. The same start rules as the attester apply: only the server of the default T3 home `~/.t3`, no dev server and no Windows.
 - **Limits:**
-  - Phase A: kitshn sends grants, and T3 keeps them in memory only. T3 drops them when the connection ends. Nothing checks them yet, so a grant gives no access to T3 and takes none away.
+  - The owner needs a `t3.app` grant too: while the setting is on, the owner's own tunnel sign-in is refused without one.
+  - `machine_exec` checks a `machine` rule only: an `ip` rule does not count for it.
   - The card has no site yet. kitshn does not serve T3 through it, so the machine map host `t3-<machine>` stays the way in.
-  - No thread cards yet.
   - Turning the setting off makes the card offline. The card keeps its shares until the owner forgets it in kitshn. T3 never runs `kitshn provider forget t3`.
 - **Remove T3:** stop the T3 server first. Then run `kitshn provider forget t3` as the kitshn daemon user. The owner then selects "Forget provider" on the kitshn map.
 

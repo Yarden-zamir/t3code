@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import type * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
+import { kitshnAgentsAllowMachine } from "../kitshn/kitshnAgents.ts";
 import { execArrowInto, machineOfRequestNamespace } from "./machineAccess.ts";
 import * as MachineMapState from "./MachineMapState.ts";
 
@@ -30,7 +31,13 @@ export const refuseTerminalThreadWithoutExec = Effect.fn("refuseTerminalThreadWi
     const state = yield* Effect.serviceOption(MachineMapState.MachineMapState);
     const desired = Option.isSome(state) ? yield* state.value.activeDesired : null;
     const nowMs = yield* Clock.currentTimeMillis;
-    if (desired !== null && execArrowInto(desired, from, nowMs) !== undefined) return;
+    if (
+      desired !== null &&
+      execArrowInto(desired, from, nowMs) !== undefined &&
+      (yield* kitshnAgentsAllowMachine(desired, from, "exec"))
+    ) {
+      return;
+    }
     const model = Effect.isEffect(runsWith) ? yield* runsWith : runsWith;
     if (model.instanceId !== TERMINAL_THREAD_INSTANCE_ID) return;
     return yield* new OrchestratorMcpFailure({
