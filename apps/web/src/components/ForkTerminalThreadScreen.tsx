@@ -149,6 +149,9 @@ const scriptsUnavailable = () =>
  * them, because scripts run in the chat view's terminal drawer (`ChatView.runProjectScript`).
  * Revisit if a terminal thread runs scripts in its own terminals.
  */
+// A terminal thread has no provider, so the details card has no usage to show.
+const NO_USAGE = { providerInstanceId: null, providers: [], sources: [], contextWindow: null };
+
 const NO_SCRIPT_ACTIONS = {
   activeProjectScripts: undefined,
   preferredScriptId: null,
@@ -445,6 +448,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
             ? { onOpenChanges: rightPanel.openChangesFromThreadPanelStable }
             : {})}
           {...NO_SCRIPT_ACTIONS}
+          usage={NO_USAGE}
         />
         <PersistentThreadTerminalDrawer
           threadRef={threadRef}
