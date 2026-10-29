@@ -34,18 +34,18 @@ const arrowEnd = (link: PeerLinkSummary): string | null =>
     ? null
     : endFormat.format(DateTime.toDateUtc(link.expiresAt));
 
-/** The status line of an arrow link. Renewal happens in the portal, never with a new pairing. */
+/** The status line of a link. Renewal happens on the kitshn map, never with a new pairing. */
 export function arrowLinkStatus(link: PeerLinkSummary, health: PeerLinkHealth): string {
   switch (health.kind) {
     case "expired":
-      return "The arrow ended. Renew it in the portal.";
+      return "The share ended. Renew it on the kitshn map.";
     case "unreachable":
       return health.detail ?? "Not answering right now.";
     case "failing":
       return health.detail;
     case "reachable": {
       const end = arrowEnd(link);
-      return end === null ? "Reachable" : `Reachable until ${end}. Renew it in the portal.`;
+      return end === null ? "Reachable" : `Reachable until ${end}. Renew it on the kitshn map.`;
     }
   }
 }
