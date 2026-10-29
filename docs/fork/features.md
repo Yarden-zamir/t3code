@@ -187,7 +187,7 @@ The `t3.settings` state on kitshn holds a shared part and a part for each machin
 
 Settings > Machines shows how to join this machine to kitshn, and the kitshn settings of the selected environment. It also shows the kitshn connection: connected, connecting with the last error, or off with the reason, and the grants, reached machines, link proxy and kitshn's last answer. `machines_read` gives agents the same state.
 
-- A notice shows when the T3 host of this machine is not with kitshn yet. Run `scripts/fork-host-handover.ts` with the machine name to hand it over.
+- A notice shows while the portal still serves the T3 host of this machine. Hand it over with [Hand a T3 host over to kitshn](operations.md#hand-a-t3-host-over-to-kitshn).
 - The desktop app has "Join with a device invite": paste a kitshn device invite link there, see [Device invites](#device-invites).
 
 ### Device invites

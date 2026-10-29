@@ -401,7 +401,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     const before = yield* SubscriptionRef.getAndSet(hostNotice, notWithKitshn);
     if (notWithKitshn && !before) {
       yield* Effect.logWarning(
-        `This machine's host ${site.name} is not with kitshn. Run scripts/fork-host-handover.ts <machine>.`,
+        `This machine's host ${site.name} is not with kitshn. Select Take the address on its T3 card in kitshn, then run scripts/fork-host-handover.ts <machine>.`,
       );
     }
   });

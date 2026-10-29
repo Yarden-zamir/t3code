@@ -20,8 +20,8 @@ export function MachinesSettingsPanel() {
         <Alert variant="warning">
           <AlertTitle>This machine's host is not with kitshn</AlertTitle>
           <AlertDescription>
-            kitshn has no Access app for the T3 host of this machine yet. Run
-            scripts/fork-host-handover.ts with the machine name to hand the host over.
+            The portal still serves it. Select "Take the address" on its T3 card in kitshn, then run
+            scripts/fork-host-handover.ts with the machine name.
           </AlertDescription>
         </Alert>
       ) : null}
