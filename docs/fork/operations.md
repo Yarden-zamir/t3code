@@ -362,7 +362,7 @@ kitshn replaces the portal. The host `t3-<slug>.yarden-zamir.com` of each machin
 2. It deletes the ingress rule of the host on the portal tunnel `t3-<slug>`.
 3. It deletes no DNS record and changes no other Access application. The path applications on `t3-vps` stay.
 
-The script stops if kitshn did not take the address. Each step checks the current state first, so a second run changes nothing. Before step 2, the script saves the old ingress rule to `~/.local/state/t3-host-handover/<host>.json` (or below `T3_HOST_HANDOVER_STATE_DIR`). `--undo` reads that file.
+The script stops if kitshn did not take the address: the CNAME record must point at a tunnel that is not a `t3-` portal tunnel, and a `kitshn` Access application must cover `<host>/*`. It also stops if the portal tunnel is managed on its machine, or if "T3 Code servers" has no policies. Each step checks the current state first, so a second run changes nothing. Before step 2, the script saves the old ingress rule to `~/.local/state/t3-host-handover/<host>.json` (or below `T3_HOST_HANDOVER_STATE_DIR`). `--undo` reads that file.
 
 Do these steps for one machine at a time. The example uses `mac`.
 
@@ -383,6 +383,7 @@ Do these steps for one machine at a time. The example uses `mac`.
    ```
 
 7. Open `https://t3-mac.yarden-zamir.com` and check that the kitshn Access login and the T3 app open.
+8. After the last machine, delete the API token in the Cloudflare dashboard and delete the token file.
 
 To undo the part of the portal, run the script with `--undo`. It puts the host back into "T3 Code servers" and the old ingress rule back on the portal tunnel. It deletes nothing of kitshn. The DNS record still points at kitshn after the undo. To point the record back at the portal, select "Give the address back…" on the T3 card in kitshn.
 

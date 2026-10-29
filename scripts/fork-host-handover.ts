@@ -181,13 +181,20 @@ export async function runHandover(
     `tunnel named ${label}`,
   );
   const tunnelId = text(tunnel, "id", "The portal tunnel");
+  if (tunnel.config_src !== "cloudflare") {
+    throw new Error(
+      `The tunnel ${label} is managed on its machine, so its ingress is not in Cloudflare. Remove the rule of ${host} from the cloudflared config on the machine by hand.`,
+    );
+  }
   const configPath = `${account}/cfd_tunnel/${tunnelId}/configurations`;
-
-  const configuration = await get(configPath);
-  if (!isJson(configuration)) throw new Error(`The tunnel ${label} gave no configuration.`);
-  const config = isJson(configuration.config) ? configuration.config : {};
-  const rules = ingressOf(configuration);
-  const portalRule = rules.find((rule) => rule.hostname === host);
+  /** Read just before each use, so a PUT never sends back an old configuration. */
+  const readIngress = async () => {
+    const configuration = await get(configPath);
+    if (!isJson(configuration)) throw new Error(`The tunnel ${label} gave no configuration.`);
+    const config = isJson(configuration.config) ? configuration.config : {};
+    const rules = ingressOf(configuration);
+    return { config, rules, rule: rules.find((rule) => rule.hostname === host) };
+  };
 
   if (!undo) {
     log("3. Check that kitshn took the address.");
@@ -207,20 +214,32 @@ export async function runHandover(
     if (record.type !== "CNAME" || !content.endsWith(TUNNEL_SUFFIX)) {
       throw notTaken(`The DNS record of ${host} does not point at a tunnel.`);
     }
-    if (content === `${tunnelId}${TUNNEL_SUFFIX}`) {
-      throw notTaken(`The DNS record of ${host} still points at the portal tunnel ${label}.`);
+    const targetId = content.slice(0, -TUNNEL_SUFFIX.length);
+    const target = jsonList(
+      await get(`${account}/cfd_tunnel?is_deleted=false&uuid=${encodeURIComponent(targetId)}`),
+      "tunnels",
+    ).find((t) => t.id === targetId);
+    const targetName = target === undefined ? "" : String(target.name);
+    if (target === undefined || targetName.startsWith("t3-")) {
+      throw notTaken(
+        `The DNS record of ${host} points at ${targetName || "an unknown tunnel"}, not at a kitshn tunnel.`,
+      );
     }
     const kitshnApps = apps.filter(
-      (app) => app.name !== PORTAL_APP_NAME && appHosts(app).includes(`${host}/*`),
+      (app) =>
+        typeof app.name === "string" &&
+        app.name.startsWith("kitshn") &&
+        appHosts(app).includes(`${host}/*`),
     );
     if (kitshnApps.length === 0) {
-      throw notTaken(`No Access application covers ${host}/* next to "${PORTAL_APP_NAME}".`);
+      throw notTaken(`No kitshn Access application covers ${host}/*.`);
     }
     log(
-      `   ok: the record points at ${content}, and "${String(kitshnApps[0]?.name)}" covers ${host}/*.`,
+      `   ok: the record points at the tunnel ${targetName}, and "${String(kitshnApps[0]?.name)}" covers ${host}/*.`,
     );
 
     log(`4. Save the portal ingress rule of ${host} for --undo.`);
+    const portalRule = (await readIngress()).rule;
     if (portalRule === undefined) {
       log("   nothing to save: the tunnel has no rule for the host.");
     } else if (dryRun) {
@@ -238,13 +257,14 @@ export async function runHandover(
     );
 
     log(`6. Delete the ingress rule of ${host} on the portal tunnel ${label}.`);
-    if (portalRule === undefined) {
+    const { config, rules, rule } = await readIngress();
+    if (rule === undefined) {
       log("   already done.");
     } else {
       const next = rules.filter((rule) => rule.hostname !== host);
       checkCatchAllLast(next, label);
       await change("PUT", configPath, { config: { ...config, ingress: next } });
-      log(`   ${dryRun ? "would delete" : "deleted"} ${host} -> ${String(portalRule.service)}.`);
+      log(`   ${dryRun ? "would delete" : "deleted"} ${host} -> ${String(rule.service)}.`);
     }
 
     log(`Done. The portal deleted no DNS record and changed no other Access application.`);
@@ -265,7 +285,8 @@ export async function runHandover(
   const savedRule = saved.rule;
 
   log(`4. Put the ingress rule of ${host} back on the portal tunnel ${label}.`);
-  if (portalRule !== undefined) {
+  const { config, rules, rule } = await readIngress();
+  if (rule !== undefined) {
     log("   already done.");
   } else {
     const next =
@@ -296,6 +317,13 @@ export async function runHandover(
     const hosts = destinations.flatMap((d) =>
       d.type === "public" && typeof d.uri === "string" ? [d.uri] : [],
     );
+    const policies = Array.isArray(raw.policies) ? raw.policies.filter(isJson) : [];
+    // A PUT that dropped a policy locks the owner out, and a re-run must not walk past that.
+    if (policies.length === 0) {
+      throw new Error(
+        `"${PORTAL_APP_NAME}" has no policies. Check it in the Zero Trust dashboard now.`,
+      );
+    }
     const next = edit(hosts);
     if (next === null) {
       log("   already done.");
@@ -312,7 +340,6 @@ export async function runHandover(
       ...destinations.filter((d) => d.type !== "public"),
       ...next.map((uri) => ({ type: "public", uri })),
     ];
-    const policies = Array.isArray(raw.policies) ? raw.policies.filter(isJson) : [];
     if (Array.isArray(raw.policies)) {
       body.policies = policies.map((policy) => {
         const copy = { ...policy };

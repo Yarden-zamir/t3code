@@ -40,9 +40,10 @@ function makeCloudflare() {
     },
     guest: { id: "guest", name: "T3 guest links", domain: `${HOST}/guest` },
   };
-  const tunnels = [
-    { id: PORTAL_TUNNEL, name: "t3-vps" },
-    { id: KITSHN_TUNNEL, name: "kitshn vps-1" },
+  const tunnels: Array<Json> = [
+    { id: PORTAL_TUNNEL, name: "t3-vps", config_src: "cloudflare" },
+    { id: KITSHN_TUNNEL, name: "kitshn vps-1", config_src: "cloudflare" },
+    { id: "mac-tunnel", name: "t3-mac", config_src: "cloudflare" },
   ];
   const configs: Record<string, Json> = {
     [PORTAL_TUNNEL]: {
@@ -83,7 +84,13 @@ function makeCloudflare() {
       }
     }
     if (method === "GET" && path === "/accounts/acc/cfd_tunnel") {
-      return ok(tunnels.filter((t) => t.name === url.searchParams.get("name")));
+      const name = url.searchParams.get("name");
+      const uuid = url.searchParams.get("uuid");
+      return ok(
+        tunnels.filter(
+          (t) => (name === null || t.name === name) && (uuid === null || t.id === uuid),
+        ),
+      );
     }
     if (path.endsWith("/configurations")) {
       const id = parts[4] ?? "";
@@ -98,7 +105,7 @@ function makeCloudflare() {
       { status: 404 },
     );
   };
-  return { apps, configs, records, calls, fetch };
+  return { apps, tunnels, configs, records, calls, fetch };
 }
 
 const isJson = (value: unknown): value is Json =>
@@ -196,6 +203,38 @@ it.each([
       cf.apps.copy = { ...cf.apps.servers, id: "copy" };
     },
     "expected one",
+  ],
+  [
+    "the record points at another portal tunnel",
+    (cf: ReturnType<typeof makeCloudflare>) => {
+      cf.records[0] = { ...cf.records[0], content: "mac-tunnel.cfargotunnel.com" };
+    },
+    "Take the address",
+  ],
+  [
+    "the <host>/* application is not kitshn's",
+    (cf: ReturnType<typeof makeCloudflare>) => {
+      cf.apps.kitshn = { ...cf.apps.kitshn, name: "someone else" };
+    },
+    "Take the address",
+  ],
+  [
+    "the portal tunnel is managed on its machine",
+    (cf: ReturnType<typeof makeCloudflare>) => {
+      cf.tunnels[0] = { ...cf.tunnels[0], config_src: "local" };
+    },
+    "managed on its machine",
+  ],
+  [
+    "the portal application lost its policies, also with the host gone already",
+    (cf: ReturnType<typeof makeCloudflare>) => {
+      cf.apps.servers = {
+        ...cf.apps.servers,
+        destinations: [{ type: "public", uri: "t3-mac.yarden-zamir.com" }],
+        policies: [],
+      };
+    },
+    "no policies",
   ],
 ] as const)("refuses and changes nothing when %s", async (_name, arrange, message) => {
   using state = makeStateDir();
