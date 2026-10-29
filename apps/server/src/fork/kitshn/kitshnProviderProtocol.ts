@@ -84,7 +84,7 @@ export const ProviderResource = Schema.Struct({
   facts: Schema.optionalKey(Schema.Array(ProviderFact)),
   stickers: Schema.optionalKey(Schema.Array(ProviderSticker)),
   lists: Schema.optionalKey(Schema.Array(ProviderList)),
-  /** K-1104: the card as a live site. Phase A sends none. kitshn refuses its own names (K-817). */
+  /** K-1104: the card as a live site. kitshn refuses its own names (K-817). */
   site: Schema.optionalKey(
     Schema.Struct({
       name: Schema.String.check(

@@ -295,14 +295,6 @@ export interface KitshnProviderState {
   readonly reach: ReadonlyArray<ReachedCard>;
 }
 
-/**
- * K-1623: the `t3.app` card stays without `site` until kitshn keeps the address off a card while
- * its live site is not `ok`. Today kitshn makes an Access application on the portal's host at once,
- * and the portal holds every T3 host in one shared Access app, so a site could break access to
- * every machine. The lead turns it on once that kitshn fix is merged and deployed.
- */
-const SEND_SITE = false;
-
 /** K-1623: the card's site: the label of the machine's current tunnel host and the real port. */
 const appSite = (config: {
   readonly tunnelPairingUrl?: string | undefined;
@@ -337,7 +329,7 @@ export class KitshnProvider extends Context.Service<
     readonly linkSocket: Effect.Effect<string | null>;
     /**
      * K-1623: true while this machine's T3 host is not with kitshn: the card names its site, and
-     * kitshn has not named the Access app of the host. Always false while `SEND_SITE` is off.
+     * kitshn has not named the Access app of the host.
      */
     readonly hostNotice: Stream.Stream<boolean>;
     /** K-1611: the connection now, then each change. */
@@ -405,7 +397,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const setHostNotice = Effect.fn("KitshnProvider.setHostNotice")(function* (
     access: AccessApp | null,
   ) {
-    const notWithKitshn = SEND_SITE && site !== undefined && access === null;
+    const notWithKitshn = site !== undefined && access === null;
     const before = yield* SubscriptionRef.getAndSet(hostNotice, notWithKitshn);
     if (notWithKitshn && !before) {
       yield* Effect.logWarning(
@@ -431,7 +423,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       kind: "t3.app",
       name: `T3 on ${descriptor.label}`.slice(0, 80),
       status: "running",
-      ...(SEND_SITE && site !== undefined ? { site } : {}),
+      ...(site === undefined ? {} : { site }),
       facts: [
         { label: "Version", value: descriptor.serverVersion, role: "version" },
         {

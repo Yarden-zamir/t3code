@@ -133,6 +133,8 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
             ...config,
             devUrl: undefined,
             baseDir: "/home/owner/.t3",
+            port: 3773,
+            tunnelPairingUrl: "https://t3-studio.example.com",
           }),
           Layer.mock(KitshnCli.KitshnCli)({
             linkCheck: (socket) =>
@@ -303,6 +305,8 @@ const EXPECTED_REGISTER = {
       kind: "t3.app",
       name: "T3 on studio",
       status: "running",
+      // K-1623: the label of the tunnel host and the real port.
+      site: { name: "t3-studio", port: 3773 },
       facts: [
         { label: "Version", value: "1.2.3", role: "version" },
         { label: "Running turns", value: "1" },
@@ -383,9 +387,6 @@ it.layer(
       expect(first.args).toEqual(["provider"]);
       const register = yield* Queue.take(first.written);
       expect(register).toEqual({ id: expect.any(String), ...EXPECTED_REGISTER });
-      expect(register.resources).not.toContainEqual(
-        expect.objectContaining({ site: expect.anything() }),
-      );
       yield* first.say({
         id: register.id,
         type: "register",
