@@ -225,7 +225,7 @@ const make = Effect.gen(function* () {
 
   /**
    * MM-1919: runs a stream's command here. Each send waits for the network, so a slow reader slows
-   * the command instead of filling memory. The run ends at its timeout, when the arrow stops
+   * the command instead of filling memory. The run ends at its timeout, when the grants stop
    * allowing exec (MM-1916), or when the caller goes away. The History gets one entry at the end,
    * never the output (MM-1908).
    */
@@ -279,7 +279,7 @@ const make = Effect.gen(function* () {
               if (frame._tag === "data" && frame.channel === MachineExecStreamChannel.stdin) {
                 // A command that does not read its stdin holds the caller here, on purpose. Known
                 // limit: the silence check pauses meanwhile, so a caller that vanishes without a
-                // TCP close leaves such a command running until its timeout or a lost arrow.
+                // TCP close leaves such a command running until its timeout or a lost grant.
                 // Revisit if that happens: race the offer against the close of the socket.
                 yield* liveness.whileWaitingHere(Queue.offer(stdin, frame.bytes));
               } else if (frame._tag === "message" && frame.message.type === "eof") {
@@ -365,7 +365,7 @@ const make = Effect.gen(function* () {
   const exec: MachineExec["Service"]["exec"] = Effect.fn("MachineExec.exec")(function* (input) {
     const scope = yield* McpInvocationContext.McpInvocationContext;
     const from = machineOfRequestNamespace(scope.requestNamespace);
-    // A local agent goes out through the arrow of this machine; a machine session runs here.
+    // A local agent goes out through the links of this machine; a machine session runs here.
     if (from !== undefined) {
       yield* refuseNarrowedSource();
       return yield* runHere(from, input);
