@@ -58,7 +58,7 @@ const MachinesResourcesTool = Tool.make("machines_resources", {
 export const MachinesSetSettingInput = Schema.Struct({
   part: Schema.Literals(["machine", "shared"]).annotate({
     description:
-      "machine: this machine's own value, which applies over the shared one. shared: the value of every machine of this provider on kitshn; it needs a full-access/default caller.",
+      "machine: this machine's own value, which applies over the shared one. shared: the value of every machine on kitshn; only the owner sets it, so an agent thread is refused.",
   }),
   scope: SettingScope.annotate({
     description: "server: T3 server settings (settings.json). client: settings of all client apps.",

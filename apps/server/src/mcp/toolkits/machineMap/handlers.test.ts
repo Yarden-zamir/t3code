@@ -38,6 +38,13 @@ const machineCaller: McpInvocationContext.McpInvocationScope = {
   client: { sessionId: "session-1", label: "machine VPS", access: "full-access" },
 };
 
+/** The owner in a shell: `t3 tool call` has no thread. */
+const ownerCaller: McpInvocationContext.McpInvocationScope = {
+  ...threadCaller,
+  thread: undefined,
+  client: { sessionId: "cli", label: "CLI (local user)", access: "full-access" },
+};
+
 const mcpClient = McpSchema.McpServerClient.of({
   clientId: 1,
   protocolVersion: "2025-06-18",
@@ -178,7 +185,16 @@ it.effect("a setting goes into one part of the settings state, keeping its other
     const done: KitshnProvider.KitshnProvider["Service"]["request"] = () =>
       Effect.succeed({ id: "1", type: "desired-set" });
     const tools = toolsWith(liveThreadsLayer, requests, done);
-    const set = yield* callTool(threadCaller, "machines_set_setting", {
+    // The shared part reaches every machine, so an agent thread never sets it; the owner does.
+    const agent = yield* callTool(threadCaller, "machines_set_setting", {
+      part: "shared",
+      scope: "server",
+      key: "forkAutoUpdate",
+      value: true,
+    }).pipe(Effect.provide(tools));
+    expect(resultText(agent)).toContain("Agents do not change the shared settings");
+    expect(requests).toEqual([]);
+    const set = yield* callTool(ownerCaller, "machines_set_setting", {
       part: "shared",
       scope: "server",
       key: "forkAutoUpdate",

@@ -14,7 +14,6 @@ import * as KitshnGrants from "../../../fork/kitshn/KitshnGrants.ts";
 import * as KitshnProvider from "../../../fork/kitshn/KitshnProvider.ts";
 import { isMachineRequestNamespace } from "../../../fork/machineMap/machineAccess.ts";
 import * as MachineExec from "../../../fork/machineMap/MachineExec.ts";
-import { assertFullAccess, assertLiveCaller, readCaller } from "../../threadAccess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { MachineMapToolkit } from "./tools.ts";
@@ -64,13 +63,17 @@ const setSetting = Effect.fn("MachineMapMcp.setSetting")(function* (
       message: `${input.key} belongs to one machine and is not set through kitshn.`,
     });
   }
+  // The shared part reaches every machine, also machines whose grants this server cannot see, so
+  // only the owner changes it: in T3 Settings, or with `t3 tool call` from a shell.
   if (input.part === "shared") {
-    const caller = yield* readCaller();
-    yield* assertLiveCaller(caller);
-    yield* assertFullAccess(
-      caller,
-      "The shared settings of every machine need a live full-access/default caller.",
-    );
+    const scope = yield* McpInvocationContext.McpInvocationContext;
+    if (scope.thread !== undefined) {
+      return yield* new OrchestratorMcpFailure({
+        code: "capability_denied",
+        message:
+          "Agents do not change the shared settings of every machine. Set part machine for this machine, or ask the owner to change the shared value in T3 Settings with All environments.",
+      });
+    }
   }
   const provider = yield* KitshnProvider.KitshnProvider;
   const current = yield* provider.state.pipe(Stream.runHead);

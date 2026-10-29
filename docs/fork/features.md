@@ -178,7 +178,7 @@ The `t3.settings` state on kitshn holds a shared part and a part for each machin
 - Custom themes (the `themes/` folder, as `sharedThemes`) and `defaultTheme` sync too.
 - Keybindings sync while `keybindingSync` is on (off by default). Settings > Keybindings > "Sync keybindings". The shared value replaces the whole `keybindings.json` of each machine, and the machine keeps the file before it as `keybindings.json.bak`.
 - Web, desktop and mobile apply the client settings of the machine that serves them. A browser leaves out the settings that only the desktop app uses. The mobile app takes only the settings that it has. A change on the device stays until the synced value changes again.
-- Agents set one value with `machines_set_setting`.
+- Agents set one value of their own machine with `machines_set_setting`. Only the owner changes the shared part: in T3 Settings, or with `t3 tool call` from a shell.
 - Paths, secrets and project-keyed maps stay on each machine.
 
 ### Settings > Machines
@@ -720,7 +720,7 @@ The mobile app uses the themes that its servers publish.
 Fork in the mobile Settings holds the fork settings that apply to the mobile app: published themes, the camera in the composer, thread link chips, message links and what New thread opens. Threads also shows the camera, thread link chips, message links and what New thread opens. A change writes the setting to each selected environment.
 
 - **Works on:** mobile.
-- **Limits:** a change on the phone is the own value of each server, not the shared value on kitshn. Set the shared value with "All environments" in T3 Settings, or with `machines_set_setting`.
+- **Limits:** a change on the phone is the own value of each server, not the shared value on kitshn. Set the shared value with "All environments" in T3 Settings.
 
 ### Theme icon packs
 
