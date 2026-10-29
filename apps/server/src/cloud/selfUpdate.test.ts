@@ -195,6 +195,16 @@ it.layer(NodeServices.layer)("server self update", (it) => {
     }),
   );
 
+  // Fork: the fork release is chosen first, so the track check sees the release that installs.
+  it.effect("installs the newer fork release for a request on the other track", () =>
+    Effect.gen(function* () {
+      const { selfUpdate, order } = yield* makeHarness();
+      const result = yield* selfUpdate.update({ targetVersion: "0.1.5-nightly.20261028.1" });
+      expect(result.updateId).toBe("launcher-id");
+      expect(order).toEqual(["index", "download", "extract", "preflight", "accept"]);
+    }),
+  );
+
   it.effect("keeps preparing after the progress stream closes", () =>
     Effect.gen(function* () {
       const releaseDownload = yield* Deferred.make<void>();

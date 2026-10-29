@@ -44,7 +44,8 @@ export function serverUpdateStageLabel(stage: ServerUpdateStage): string {
   return UPDATE_STAGE_LABELS[stage];
 }
 
-const CROSS_TRACK_NOTE = "Switch tracks in About → Update track";
+// Fork: the fork hides the Update track switch, and its machines update only to fork releases.
+const CROSS_TRACK_NOTE = "Only fork releases install";
 
 /** Hosts refuse a Stable/Nightly crossing outside a track switch, which checks the database first. */
 function refusedCrossing(

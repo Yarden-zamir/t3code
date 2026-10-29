@@ -299,7 +299,8 @@ describe("DesktopSettings", () => {
     ),
   );
 
-  it.effect("preserves explicit stable update channel on nightly builds", () =>
+  // Fork: the fork publishes only nightly builds.
+  it.effect("reads an explicit stable update channel as nightly", () =>
     withSettings(
       Effect.gen(function* () {
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
@@ -323,7 +324,7 @@ describe("DesktopSettings", () => {
           cloudflareAccessTeamDomain: null,
           cloudflareAccessAud: null,
           cloudflareAccessSubjects: null,
-          updateChannel: "latest",
+          updateChannel: "nightly",
           updateChannelConfiguredByUser: true,
           wslBackendEnabled: false,
           wslOnly: false,

@@ -1339,6 +1339,7 @@ export function isSettingsSearchItemOnPlatform(item: SettingsSearchItem, platfor
   if (!isElectron && item.desktopOnly === true) return false;
   if (isElectron && item.webOnly === true) return false;
   if (item.releaseChannelOnly && !isElectron && HOSTED_APP_CHANNEL === null) return false;
+  if (item.id === "update-track" && !ForkSearch.SHOWS_DESKTOP_UPDATE_TRACK) return false;
   if (item.macOnly && !isMacPlatform(platform)) return false;
   if (item.windowsOnly && !isWindowsPlatform(platform)) return false;
   return true;

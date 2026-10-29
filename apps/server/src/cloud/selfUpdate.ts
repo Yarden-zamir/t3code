@@ -108,7 +108,8 @@ export function trackSwitchBlockReason(input: {
   if (!crossesReleaseTrack(input.serverVersion, input.targetVersion)) return null;
   const databaseMigration = input.databaseMigration();
   if (input.targetDatabaseMigration === undefined || databaseMigration === undefined) {
-    return `Cannot confirm this database works with t3@${input.targetVersion}. Switch tracks from Settings → About → Update track, which checks it first.`;
+    // Fork: the fork hides the Update track switch, and its machines update only to fork releases.
+    return `Cannot confirm this database works with t3@${input.targetVersion}. This machine updates only to fork releases.`;
   }
   return input.targetDatabaseMigration < databaseMigration
     ? `This database has changes t3@${input.targetVersion} does not support yet; it stays on this release.`

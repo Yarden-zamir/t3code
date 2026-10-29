@@ -4,6 +4,13 @@
  */
 import type { SettingsSearchItem, SettingsSearchScope } from "./settingsSearch";
 
+/**
+ * The fork releases have one track, nightly, so the desktop app hides the upstream Stable/Nightly
+ * switch and its search item. That switch targets upstream npm releases. Revisit if the fork
+ * publishes a stable track.
+ */
+export const SHOWS_DESKTOP_UPDATE_TRACK = false;
+
 export type ForkSettingsPath = "/settings/terminal" | "/settings/machines" | "/settings/fork";
 
 export const SECTION_LABELS: Readonly<Record<ForkSettingsPath, string>> = {

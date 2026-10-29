@@ -310,9 +310,8 @@ function normalizeDesktopSettingsDocument(
     ),
     cloudflareAccessAud: normalizeSettingText(parsed.cloudflareAccessAud),
     cloudflareAccessSubjects: normalizeSettingText(parsed.cloudflareAccessSubjects),
-    updateChannel: updateChannelConfiguredByUser
-      ? Option.getOrElse(parsedUpdateChannel, () => defaultSettings.updateChannel)
-      : defaultSettings.updateChannel,
+    // Fork: the fork publishes only nightly builds, so a saved Stable channel reads as nightly.
+    updateChannel: updateChannelConfiguredByUser ? "nightly" : defaultSettings.updateChannel,
     updateChannelConfiguredByUser,
     wslBackendEnabled,
     wslDistro: normalizeWslDistro(parsed.wslDistro),
