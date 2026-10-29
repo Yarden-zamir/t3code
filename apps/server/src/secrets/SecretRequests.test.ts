@@ -234,27 +234,6 @@ it.effect("a ref only works in the project it was entered for", () =>
   ),
 );
 
-it.effect("consumeAll spends no ref when one of them is not usable", () =>
-  withService(({ service }) =>
-    Effect.gen(function* () {
-      yield* service.answer({
-        threadId,
-        turnItemId,
-        answer: { type: "save", secret: "ghp_secret" },
-      });
-      const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-      const missing = SecretRef.make(`secret-ref:${"0".repeat(32)}`);
-      const failed = yield* service
-        .consumeAll({ refs: [ref, missing], projectId })
-        .pipe(Effect.flip);
-      assert.equal(failed.reason, "ref_unavailable");
-      const twice = yield* service.consumeAll({ refs: [ref, ref], projectId }).pipe(Effect.flip);
-      assert.equal(twice.reason, "invalid_ref");
-      assert.deepEqual(yield* service.consumeAll({ refs: [ref], projectId }), ["ghp_secret"]);
-    }),
-  ),
-);
-
 it.effect("declining stores nothing, and a request is answered once", () =>
   withService(({ service, stored, dispatched }) =>
     Effect.gen(function* () {

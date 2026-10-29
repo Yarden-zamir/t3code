@@ -1,173 +1,229 @@
 /**
- * Fork: the only module that knows how T3 reaches kitshn. It runs the kitshn CLI `kitshn.mjs` from a
- * pinned release with the agent key in its environment. kitshn section 17 (K-1732) replaces the agent
- * key with the local daemon (`kitshn agent …`): then only this module changes.
+ * Fork: the only module that knows how T3 reaches kitshn. It runs the machine's kitshn 2 CLI, which
+ * forwards each call through the local kitshn daemon. The daemon adds the machine identity and asks
+ * T3 who the calling thread is (`/api/thread-identity`) with the thread's MCP credential, so an agent
+ * never holds a kitshn token.
  */
+import { THREAD_CREDENTIAL_AUTHORIZATION_ENV } from "@t3tools/provider-core/server/forkThreadCredential";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
-import * as ServerConfig from "../../config.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 
-// Limit: a new kitshn CLI needs a manual bump of this tag and its hash. The CLI also owns the
-// kitshn routes (`/agent/...`), so the K-718 move to `/agent/key/<path>` is a pin bump too.
-// Revisit when kitshn publishes a stable release channel or T3 moves to the kitshn daemon.
-export const KITSHN_CLI_PIN = {
-  tag: "edge-b46829700699",
-  sha256: "33f5c8dcb59d1e8f6da96eca438843fbc165ca06cdc4c9ed33bec21b3238e398",
-} as const;
+/** The documented install path of kitshn 2. It goes before PATH, where KitSHn 1 can come first. */
+const KITSHN_2_HOME_PATH = [".local", "bin", "kitshn"] as const;
+// A little above the daemon's own 120-second call limit, so its error reaches the agent first.
+const RUN_TIMEOUT = "150 seconds";
+// KitSHn 1 starts through `uv run`, which can take a while the first time.
+const VERSION_TIMEOUT = "30 seconds";
+// The daemon itself gives `attester set` 10 seconds.
+const ATTESTER_TIMEOUT = "15 seconds";
+/** The label prefix of the T3 attester; kitshn reserves it for T3 (K-1755). */
+const T3_ATTESTER_PREFIX = "t3.";
 
-const MIN_NODE_MAJOR = 24;
-const DOWNLOAD_TIMEOUT = "2 minutes";
-// The pinned file is about 0.7 MB.
-const MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
-// A folder site uploads many files; kitshn caps one file at 100 MB (K-1116).
-const RUN_TIMEOUT = "10 minutes";
-
-/** The agent key: a Cloudflare Access service token for the `/agent` routes of `server` (K-718). */
-export const KitshnAgentKey = Schema.Struct({
-  server: Schema.String,
-  clientId: Schema.String,
-  clientSecret: Schema.String,
+/** The answer of `kitshn version --json` of kitshn 2. KitSHn 1 has no such command. */
+const Kitshn2Version = Schema.Struct({
+  product: Schema.Literal("kitshn"),
+  generation: Schema.Literal(2),
+  version: Schema.String,
 });
-export type KitshnAgentKey = typeof KitshnAgentKey.Type;
+const decodeKitshn2Version = Schema.decodeUnknownOption(Schema.fromJsonString(Kitshn2Version));
+
+/** The answer of `kitshn attester set`: the attesters of this machine after the change. */
+const Attesters = Schema.Array(
+  Schema.Struct({ prefix: Schema.String, address: Schema.String, tokenEnv: Schema.String }),
+);
+const decodeAttesters = Schema.decodeUnknownOption(Schema.fromJsonString(Attesters));
+
+/** The last stderr line that is not a `waiting:` note of a call that waits for the owner. */
+export const lastLine = (stderr: string) =>
+  stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .findLast((line) => line !== "" && !line.startsWith("waiting:"));
 
 export class KitshnCliError extends Schema.TaggedError<KitshnCliError>()("KitshnCliError", {
-  reason: Schema.Literals(["node_too_old", "download_failed", "checksum_mismatch", "run_failed"]),
+  reason: Schema.Literals(["not_installed", "not_kitshn_2", "run_failed", "attester_refused"]),
   message: Schema.String,
 }) {}
 
 export interface KitshnCliOutput {
   readonly exitCode: number;
   readonly stdout: string;
+  readonly stderr: string;
 }
 
 export class KitshnCli extends Context.Service<
   KitshnCli,
   {
-    /** Runs `kitshn <args>` and returns its exit code and stdout. */
+    /** Runs `kitshn <args>` of kitshn 2 as the thread that `threadAuthorization` belongs to. */
     readonly run: (
       args: ReadonlyArray<string>,
-      key: KitshnAgentKey,
+      threadAuthorization: Redacted.Redacted<string>,
     ) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
+    /** Registers `url` as the T3 attester of this machine's daemon, without a credential. */
+    readonly setAttester: (url: string) => Effect.Effect<void, KitshnCliError>;
   }
 >()("t3/fork/kitshn/KitshnCli") {}
 
+const fail = (reason: KitshnCliError["reason"], message: string) =>
+  new KitshnCliError({ reason, message });
+
 const make = Effect.gen(function* () {
-  const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
-  const httpClient = yield* HttpClient.HttpClient;
   const runner = yield* ProcessRunner.ProcessRunner;
+  /** Per path and mtime, so an update or a new install is checked again. */
+  const checked = new Map<string, boolean>();
 
-  const cliPath = path.join(config.stateDir, "kitshn-cli", `kitshn-${KITSHN_CLI_PIN.tag}.mjs`);
-  const url = `https://github.com/Yarden-zamir/kitshn/releases/download/${KITSHN_CLI_PIN.tag}/kitshn.mjs`;
-
-  const fail = (reason: KitshnCliError["reason"], message: string) =>
-    new KitshnCliError({ reason, message });
-
-  const verified = (bytes: Uint8Array) =>
-    crypto.digest("SHA-256", bytes).pipe(
-      Effect.orDie,
-      Effect.flatMap((digest) =>
-        Hex.encode(digest) === KITSHN_CLI_PIN.sha256
-          ? Effect.void
-          : Effect.fail(
-              fail(
-                "checksum_mismatch",
-                `The kitshn CLI at ${cliPath} does not match the pinned SHA-256 of ${KITSHN_CLI_PIN.tag}. T3 does not run it. Delete the file to download it again.`,
-              ),
-            ),
-      ),
-    );
-
-  const download = Effect.gen(function* () {
-    const response = yield* httpClient.execute(HttpClientRequest.get(url)).pipe(
-      Effect.flatMap(HttpClientResponse.filterStatusOk),
-      Effect.filterOrFail(
-        (ok) => Number(ok.headers["content-length"] ?? 0) <= MAX_DOWNLOAD_BYTES,
-        () => new Error("too large"),
-      ),
-      Effect.flatMap((ok) => ok.arrayBuffer),
-      Effect.timeout(DOWNLOAD_TIMEOUT),
-      Effect.mapError(() =>
-        fail("download_failed", `Could not download the kitshn CLI from ${url}.`),
-      ),
-    );
-    // A body without content-length is read whole first, then refused here.
-    if (response.byteLength > MAX_DOWNLOAD_BYTES) {
-      return yield* fail("download_failed", `The kitshn CLI at ${url} is larger than expected.`);
-    }
-    const bytes = new Uint8Array(response);
-    yield* verified(bytes);
-    // A unique partial file, so two first runs at once do not share one.
-    yield* fileSystem.makeDirectory(path.dirname(cliPath), { recursive: true }).pipe(
-      Effect.andThen(
-        fileSystem.makeTempFile({
-          directory: path.dirname(cliPath),
-          prefix: ".kitshn-",
-          suffix: ".partial",
-        }),
-      ),
-      Effect.tap((partial) => fileSystem.writeFile(partial, bytes)),
-      Effect.flatMap((partial) => fileSystem.rename(partial, cliPath)),
-      Effect.mapError(() =>
-        fail("download_failed", `Could not save the kitshn CLI to ${cliPath}.`),
-      ),
-    );
+  /** `~/.local/bin/kitshn`, then each `kitshn` on PATH (POSIX only), which the server reads from the login shell at start. */
+  const candidates = Effect.gen(function* () {
+    const home = yield* HostProcess.HomeDirectory;
+    const env = yield* HostProcess.Environment;
+    // A relative entry would make the spawn search PATH again, so the checked file may not run.
+    const pathDirectories = (env.PATH ?? "").split(":").filter((entry) => path.isAbsolute(entry));
+    return [
+      ...new Set([
+        path.join(home, ...KITSHN_2_HOME_PATH),
+        ...pathDirectories.map((directory) => path.join(directory, "kitshn")),
+      ]),
+    ];
   });
 
-  // Checked before every run, so a corrupt or replaced file never runs. Limit: Node reads the file
-  // again after the check, so a process of the same user can swap it in between; agents run as that
-  // user. Revisit when T3 moves to the kitshn daemon (K-1732) or runs agents as another user.
-  const ensureCli = Effect.gen(function* () {
-    if (!(yield* fileSystem.exists(cliPath).pipe(Effect.orDie))) yield* download;
-    yield* verified(yield* fileSystem.readFile(cliPath).pipe(Effect.orDie));
-  });
-
-  const run: KitshnCli["Service"]["run"] = Effect.fn("KitshnCli.run")(function* (args, key) {
-    const major = Number(process.versions.node.split(".")[0]);
-    if (!(major >= MIN_NODE_MAJOR)) {
-      return yield* fail(
-        "node_too_old",
-        `The kitshn CLI needs Node ${MIN_NODE_MAJOR} or newer. This T3 server runs on Node ${process.versions.node}.`,
-      );
-    }
-    yield* ensureCli;
+  const isKitshn2 = Effect.fn("KitshnCli.isKitshn2")(function* (
+    binary: string,
+    mtime: Option.Option<Date>,
+  ) {
+    const key = Option.map(mtime, (date) => `${binary}\0${date.getTime()}`);
+    const cached = Option.flatMap(key, (value) => Option.fromNullishOr(checked.get(value)));
+    if (Option.isSome(cached)) return cached.value;
     const output = yield* runner
       .run({
-        // The Node that runs this server. In the desktop app that is Electron, run as Node.
-        command: process.execPath,
-        args: [cliPath, ...args],
-        cwd: config.stateDir,
-        env: {
-          KITSHN_SERVER: key.server,
-          CF_ACCESS_CLIENT_ID: key.clientId,
-          CF_ACCESS_CLIENT_SECRET: key.clientSecret,
-          ...(process.versions.electron === undefined ? {} : { ELECTRON_RUN_AS_NODE: "1" }),
-        },
-        timeout: RUN_TIMEOUT,
+        command: binary,
+        args: ["version", "--json"],
+        // The server env can hold the credential of an agent shell that started it; kitshn skips "".
+        env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+        timeout: VERSION_TIMEOUT,
       })
-      .pipe(
-        Effect.mapError((error) =>
-          fail("run_failed", `The kitshn CLI did not run: ${error._tag}.`),
-        ),
-      );
-    if (output.timedOut || output.code === null) {
-      return yield* fail("run_failed", "The kitshn CLI did not finish in time.");
-    }
-    return { exitCode: Number(output.code), stdout: output.stdout };
+      .pipe(Effect.option);
+    const result =
+      Option.isSome(output) &&
+      output.value.code === 0 &&
+      Option.isSome(decodeKitshn2Version(output.value.stdout));
+    if (Option.isSome(key)) checked.set(key.value, result);
+    return result;
   });
 
-  return KitshnCli.of({ run });
+  const binary = Effect.gen(function* () {
+    if ((yield* HostProcess.Platform) === "win32") {
+      return yield* fail("not_installed", "kitshn 2 runs on macOS and Linux, not on Windows.");
+    }
+    const refused: Array<string> = [];
+    for (const candidate of yield* candidates) {
+      const info = yield* fileSystem.stat(candidate).pipe(Effect.option);
+      if (Option.isNone(info) || info.value.type !== "File" || (info.value.mode & 0o111) === 0) {
+        continue;
+      }
+      if (yield* isKitshn2(candidate, info.value.mtime)) return candidate;
+      refused.push(candidate);
+    }
+    return yield* refused.length === 0
+      ? fail("not_installed", "This machine has no kitshn 2. Join it to kitshn.")
+      : fail(
+          "not_kitshn_2",
+          `This machine has no kitshn 2. Join it to kitshn. Found, but not kitshn 2: ${refused.join(", ")}.`,
+        );
+  });
+
+  const run: KitshnCli["Service"]["run"] = Effect.fn("KitshnCli.run")(
+    function* (args, threadAuthorization) {
+      const command = yield* binary;
+      const output = yield* runner
+        .run({
+          command,
+          args,
+          env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: Redacted.value(threadAuthorization) },
+          timeout: RUN_TIMEOUT,
+          timeoutBehavior: "timedOutResult",
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            fail("run_failed", `kitshn at ${command} did not run: ${error._tag}.`),
+          ),
+        );
+      if (output.timedOut || output.code === null) {
+        return yield* fail(
+          "run_failed",
+          `kitshn did not finish in ${RUN_TIMEOUT}. The kitshn daemon gives each call 120 seconds.`,
+        );
+      }
+      return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
+    },
+  );
+
+  const setAttester: KitshnCli["Service"]["setAttester"] = Effect.fn("KitshnCli.setAttester")(
+    function* (url) {
+      const command = yield* binary;
+      const output = yield* runner
+        .run({
+          command,
+          args: [
+            "attester",
+            "set",
+            "--prefix",
+            T3_ATTESTER_PREFIX,
+            "--url",
+            url,
+            "--token-env",
+            THREAD_CREDENTIAL_AUTHORIZATION_ENV,
+          ],
+          env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+          timeout: ATTESTER_TIMEOUT,
+          timeoutBehavior: "timedOutResult",
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            fail("run_failed", `kitshn at ${command} did not run: ${error._tag}.`),
+          ),
+        );
+      if (output.timedOut || output.code === null) {
+        return yield* fail(
+          "run_failed",
+          `kitshn attester set did not finish in ${ATTESTER_TIMEOUT}.`,
+        );
+      }
+      if (output.code !== 0) {
+        return yield* fail(
+          "attester_refused",
+          lastLine(output.stderr) ?? `kitshn attester set exited ${output.code}.`,
+        );
+      }
+      const attesters = decodeAttesters(output.stdout);
+      const listed =
+        Option.isSome(attesters) &&
+        attesters.value.some(
+          (attester) =>
+            attester.prefix === T3_ATTESTER_PREFIX &&
+            attester.address === url &&
+            attester.tokenEnv === THREAD_CREDENTIAL_AUTHORIZATION_ENV,
+        );
+      if (!listed) {
+        return yield* fail(
+          "attester_refused",
+          `kitshn attester set did not list the ${T3_ATTESTER_PREFIX} attester at ${url}.`,
+        );
+      }
+    },
+  );
+
+  return KitshnCli.of({ run, setAttester });
 });
 
 export const layer = Layer.effect(KitshnCli, make);

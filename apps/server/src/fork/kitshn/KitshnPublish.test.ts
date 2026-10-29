@@ -1,33 +1,23 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import {
-  type OrchestrationV2ThreadShell,
-  ProjectId,
-  SecretRef,
-  SecretRequestError,
-  ThreadId,
-} from "@t3tools/contracts";
+import { type OrchestrationV2ThreadShell, ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Redacted from "effect/Redacted";
 
-import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
-import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as KitshnCli from "./KitshnCli.ts";
 import * as KitshnPublish from "./KitshnPublish.ts";
 
 const threadId = ThreadId.make("thread-kitshn");
 const projectId = ProjectId.make("project-kitshn");
-const KEY = { server: "https://kit.example.com", clientId: "id-1", clientSecret: "secret-1" };
+const AUTHORIZATION = Redacted.make("Bearer thread-token");
 
 /** A workspace with a page, a dot folder, and an outside file with a link to it. */
-const setup = (
-  options: { cli?: KitshnCli.KitshnCliOutput; key?: boolean; delegated?: boolean } = {},
-) =>
+const setup = (options: { cli?: Partial<KitshnCli.KitshnCliOutput> } = {}) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -40,41 +30,14 @@ const setup = (
     yield* fs.writeFileString(path.join(base, "outside.txt"), "private");
     yield* fs.symlink(path.join(base, "outside.txt"), path.join(workspace, "link.txt"));
 
-    const runs: Array<{ args: ReadonlyArray<string>; key: KitshnCli.KitshnAgentKey }> = [];
-    const stored = new Map<string, Uint8Array>();
-    if (options.key !== false)
-      stored.set("kitshn-agent-key", new TextEncoder().encode(JSON.stringify(KEY)));
-    const answers = new Map([
-      [SecretRef.make("secret-ref:server"), " https://kit.example.org/ "],
-      [SecretRef.make("secret-ref:bad-server"), "http://kit.example.org"],
-      [SecretRef.make("secret-ref:id"), "id-2"],
-      [SecretRef.make("secret-ref:secret"), "secret-2"],
-    ]);
+    const runs: Array<{ args: ReadonlyArray<string>; authorization: string }> = [];
     const dependencies = Layer.mergeAll(
-      Layer.succeed(
-        KitshnCli.KitshnCli,
-        KitshnCli.KitshnCli.of({
-          run: (args, key) =>
-            Effect.sync(() => {
-              runs.push({ args, key });
-              return options.cli ?? { exitCode: 0, stdout: "" };
-            }),
-        }),
-      ),
-      Layer.mock(ServerSecretStore.ServerSecretStore)({
-        get: (name) => Effect.sync(() => Option.fromNullishOr(stored.get(name))),
-        set: (name, value) => Effect.sync(() => void stored.set(name, value)),
-        remove: (name) => Effect.sync(() => void stored.delete(name)),
-      }),
-      Layer.mock(SecretRequests.SecretRequests)({
-        consumeAll: (input) => {
-          const values = input.refs.map((ref) => answers.get(ref));
-          if (input.projectId !== projectId || values.some((value) => value === undefined)) {
-            return Effect.fail(new SecretRequestError({ reason: "ref_unavailable" }));
-          }
-          for (const ref of input.refs) answers.delete(ref);
-          return Effect.succeed(values as Array<string>);
-        },
+      Layer.mock(KitshnCli.KitshnCli)({
+        run: (args, authorization) =>
+          Effect.sync(() => {
+            runs.push({ args, authorization: Redacted.value(authorization) });
+            return { exitCode: 0, stdout: "", stderr: "", ...options.cli };
+          }),
       }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({
         getThreadShell: () =>
@@ -83,9 +46,6 @@ const setup = (
             projectId,
             worktreePath: workspace,
             deletedAt: null,
-            lineage: {
-              parentThreadId: options.delegated === true ? ThreadId.make("thread-parent") : null,
-            },
           } as unknown as OrchestrationV2ThreadShell),
       }),
       Layer.mock(ProjectService.ProjectService)({}),
@@ -93,7 +53,7 @@ const setup = (
     const kitshn = yield* KitshnPublish.KitshnPublish.pipe(
       Effect.provide(KitshnPublish.layer.pipe(Layer.provide(dependencies))),
     );
-    return { kitshn, runs, stored, workspace, base };
+    return { kitshn, runs, workspace, base };
   });
 
 const reasonOf = <A>(effect: Effect.Effect<A, KitshnPublish.KitshnPublishError>) =>
@@ -115,7 +75,7 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
       const { kitshn, runs, workspace } = yield* setup({
         cli: { exitCode: 0, stdout: `${JSON.stringify({ ...answer, extra: 1 })}\n` },
       });
-      const result = yield* kitshn.publish(threadId, {
+      const result = yield* kitshn.publish(threadId, AUTHORIZATION, {
         path: "site",
         address: "calm-otter-42",
         circle: "Agents",
@@ -134,7 +94,7 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
             "--public",
             "--json",
           ],
-          key: KEY,
+          authorization: "Bearer thread-token",
         },
       ]);
     }),
@@ -149,7 +109,7 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
             '{"address":"pages.example.com/new","card":"c1","kind":"file","updated":true,"revision":4}',
         },
       });
-      expect(yield* kitshn.address({ card: "c1", name: "new" })).toEqual({
+      expect(yield* kitshn.address(AUTHORIZATION, { card: "c1", name: "new" })).toEqual({
         address: "pages.example.com/new",
         card: "c1",
         kind: "file",
@@ -192,24 +152,53 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
       expected: { reason: "unexpected_output" },
     },
     {
-      name: "a crash without JSON is unexpected",
+      name: "a failed thread check fails closed with the daemon's text",
+      cli: { exitCode: 1, stdout: '{"error":"could not check the T3 thread; try again."}' },
+      expected: { reason: "refused", message: "could not check the T3 thread; try again." },
+    },
+    {
+      name: "an inactive thread fails closed with the daemon's text",
+      cli: {
+        exitCode: 1,
+        stdout: '{"error":"the T3 thread of this call is not active (archived or deleted)."}',
+      },
+      expected: {
+        reason: "refused",
+        message: "the T3 thread of this call is not active (archived or deleted).",
+      },
+    },
+    {
+      name: "a waiting note on stderr does not change the decoded refusal",
+      cli: {
+        exitCode: 1,
+        stdout: '{"error":"The owner refused."}',
+        stderr: "waiting: proposal p1 asks its approver circle (K-1722).\n",
+      },
+      expected: { reason: "refused", message: "The owner refused." },
+    },
+    {
+      name: "a one-line failure on stderr, such as no daemon, returns that line",
+      cli: {
+        exitCode: 1,
+        stdout: "",
+        stderr: "kitshn: the daemon is not running (no daemon listens on /tmp/k.sock).\n",
+      },
+      expected: {
+        reason: "refused",
+        message: "kitshn: the daemon is not running (no daemon listens on /tmp/k.sock).",
+      },
+    },
+    {
+      name: "a crash without JSON or a line is unexpected",
       cli: { exitCode: 1, stdout: "" },
       expected: { reason: "unexpected_output" },
     },
   ])("$name", ({ cli, expected }) =>
     Effect.gen(function* () {
       const { kitshn } = yield* setup({ cli });
-      expect(yield* reasonOf(kitshn.publish(threadId, { path: "site/index.html" }))).toMatchObject(
-        expected,
-      );
-    }),
-  );
-
-  it.effect("without a key the tools refuse and run nothing", () =>
-    Effect.gen(function* () {
-      const { kitshn, runs } = yield* setup({ key: false });
-      expect((yield* reasonOf(kitshn.address({ card: "c1", name: "new" }))).reason).toBe("no_key");
-      expect(runs).toEqual([]);
+      expect(
+        yield* reasonOf(kitshn.publish(threadId, AUTHORIZATION, { path: "site/index.html" })),
+      ).toMatchObject(expected);
     }),
   );
 
@@ -223,63 +212,11 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
         ".git/config",
         ".git",
       ]) {
-        expect((yield* reasonOf(kitshn.publish(threadId, { path }))).reason).toBe(
+        expect((yield* reasonOf(kitshn.publish(threadId, AUTHORIZATION, { path }))).reason).toBe(
           "outside_workspace",
         );
       }
       expect(runs).toEqual([]);
-    }),
-  );
-
-  it.effect("set spends the three refs and status never shows the key; clear removes it", () =>
-    Effect.gen(function* () {
-      const { kitshn, stored } = yield* setup({ key: false });
-      const set = kitshn.setKey({
-        threadId,
-        serverRef: SecretRef.make("secret-ref:server"),
-        clientIdRef: SecretRef.make("secret-ref:id"),
-        clientSecretRef: SecretRef.make("secret-ref:secret"),
-      });
-      expect(yield* set).toEqual({ set: true, server: "https://kit.example.org" });
-      expect(JSON.parse(new TextDecoder().decode(stored.get("kitshn-agent-key")))).toEqual({
-        server: "https://kit.example.org",
-        clientId: "id-2",
-        clientSecret: "secret-2",
-      });
-      expect((yield* reasonOf(set)).reason).toBe("invalid_key");
-      expect(yield* kitshn.keyStatus).toEqual({ set: true, server: "https://kit.example.org" });
-      expect(yield* kitshn.clearKey(threadId)).toEqual({ set: false, server: null });
-      expect(yield* kitshn.keyStatus).toEqual({ set: false, server: null });
-    }),
-  );
-
-  it.effect("set refuses a server answer that is not https", () =>
-    Effect.gen(function* () {
-      const { kitshn, stored } = yield* setup({ key: false });
-      const set = kitshn.setKey({
-        threadId,
-        serverRef: SecretRef.make("secret-ref:bad-server"),
-        clientIdRef: SecretRef.make("secret-ref:id"),
-        clientSecretRef: SecretRef.make("secret-ref:secret"),
-      });
-      expect((yield* reasonOf(set)).reason).toBe("invalid_key");
-      expect(stored.has("kitshn-agent-key")).toBe(false);
-    }),
-  );
-
-  it.effect("a delegated thread reads the key status but cannot set or clear the key", () =>
-    Effect.gen(function* () {
-      const { kitshn, stored } = yield* setup({ delegated: true });
-      const set = kitshn.setKey({
-        threadId,
-        serverRef: SecretRef.make("secret-ref:server"),
-        clientIdRef: SecretRef.make("secret-ref:id"),
-        clientSecretRef: SecretRef.make("secret-ref:secret"),
-      });
-      expect((yield* reasonOf(set)).reason).toBe("not_top_level");
-      expect((yield* reasonOf(kitshn.clearKey(threadId))).reason).toBe("not_top_level");
-      expect(yield* kitshn.keyStatus).toEqual({ set: true, server: KEY.server });
-      expect(stored.has("kitshn-agent-key")).toBe(true);
     }),
   );
 });

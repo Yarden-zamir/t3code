@@ -12,6 +12,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Redacted from "effect/Redacted";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 
 const ALL_MCP_CAPABILITIES = [
@@ -29,6 +30,12 @@ export interface McpThreadCaller {
   readonly providerInstanceId: ProviderInstanceId;
   /** A delegated child task; its parent owns the work it hands back. */
   readonly subagent?: boolean;
+  /**
+   * Fork: the `Authorization` value of a request that this thread's own MCP credential made. It
+   * lives on the thread, so a scope rebuilt for another thread drops it. The kitshn tools pass it
+   * to the kitshn daemon, which asks `/api/thread-identity` about it.
+   */
+  readonly authorization?: Redacted.Redacted<string> | undefined;
 }
 
 export interface McpClientCaller {

@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -204,8 +205,14 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
       authorization?.startsWith("Bearer ") === true
         ? authorization.slice("Bearer ".length).trim()
         : "";
+    const threadInvocation = yield* registry.resolve(token);
     const invocation =
-      (yield* registry.resolve(token)) ??
+      (threadInvocation === undefined
+        ? undefined
+        : {
+            ...threadInvocation,
+            thread: { ...threadInvocation.thread, authorization: Redacted.make(`Bearer ${token}`) },
+          }) ??
       (Option.isSome(clients) && token.length > 0
         ? yield* clients.value.authenticate(request)
         : undefined);

@@ -61,11 +61,6 @@ export class SecretRequests extends Context.Service<
       readonly ref: SecretRef;
       readonly projectId: ProjectId;
     }) => Effect.Effect<string, SecretRequestError>;
-    /** Spends every ref, or none of them when one is not usable. Values keep the order of `refs`. */
-    readonly consumeAll: (input: {
-      readonly refs: ReadonlyArray<SecretRef>;
-      readonly projectId: ProjectId;
-    }) => Effect.Effect<ReadonlyArray<string>, SecretRequestError>;
     /** Moves a saved `file` request's value to an owner-only file and returns its path. */
     readonly saveToFile: (input: {
       readonly threadId: ThreadId;
@@ -201,31 +196,6 @@ const make = Effect.gen(function* () {
       Effect.withSpan("SecretRequests.consume"),
     );
 
-  const consumeAll: SecretRequests["Service"]["consumeAll"] = Effect.fn(
-    "SecretRequests.consumeAll",
-  )(
-    function* (input) {
-      if (new Set(input.refs).size !== input.refs.length) {
-        return yield* new SecretRequestError({ reason: "invalid_ref" });
-      }
-      // Every ref must be live before one is spent, so a bad ref does not burn the others.
-      const values = yield* Effect.forEach(input.refs, (ref) =>
-        readRef({ ref, projectId: input.projectId }),
-      );
-      for (const ref of input.refs) {
-        if (!(yield* removeLogged(storeName(ref)))) {
-          return yield* new SecretRequestError({ reason: "consume_failed" });
-        }
-      }
-      return values;
-    },
-    consumeLock.withPermits(1),
-    Effect.tap(() => Metrics.increment(Metrics.secretRefsConsumedTotal, { result: "used" })),
-    Effect.tapError(() =>
-      Metrics.increment(Metrics.secretRefsConsumedTotal, { result: "rejected" }),
-    ),
-  );
-
   /** A live ref's value, left in the store. */
   const readRef = Effect.fn("SecretRequests.readRef")(function* (input: {
     readonly ref: SecretRef;
@@ -360,7 +330,7 @@ const make = Effect.gen(function* () {
     Effect.forkScoped,
   );
 
-  return SecretRequests.of({ answer, savedRef, consume, consumeAll, saveToFile });
+  return SecretRequests.of({ answer, savedRef, consume, saveToFile });
 });
 
 export const layer = Layer.effect(SecretRequests, make);

@@ -193,6 +193,8 @@ import * as ForkUpdates from "./fork/ForkUpdates.ts";
 import * as MachineExec from "./fork/machineMap/MachineExec.ts";
 import * as MachineExecRoute from "./fork/machineMap/machineExecRoute.ts";
 import * as ThreadIdentityRoute from "./fork/threadIdentityRoute.ts";
+import * as KitshnAttester from "./fork/kitshn/KitshnAttester.ts";
+import * as KitshnCli from "./fork/kitshn/KitshnCli.ts";
 import * as MachineHost from "./fork/machineMap/MachineHost.ts";
 import * as MachineMap from "./fork/machineMap/MachineMap.ts";
 import * as MachineMapState from "./fork/machineMap/MachineMapState.ts";
@@ -969,6 +971,16 @@ const layerMakeServer = Layer.unwrap(
           ),
         )
       : Layer.empty;
+    // Fork: registers the T3 attester of the kitshn daemon once this server is active.
+    const layerKitshnAttester = Layer.effectDiscard(
+      ServerActivation.forkParked(
+        Effect.gen(function* () {
+          const address = (yield* HttpServer.HttpServer).address;
+          if (typeof address === "string" || !("port" in address)) return;
+          yield* (yield* KitshnAttester.KitshnAttester).register(address);
+        }),
+      ),
+    ).pipe(Layer.provide(KitshnAttester.layer.pipe(Layer.provide(KitshnCli.layer))));
     const layerCloudDesiredLinkReconcile = Layer.effectDiscard(
       Effect.gen(function* () {
         const cloudLink = yield* CloudLink.CloudLink;
@@ -1177,6 +1189,7 @@ const layerMakeServer = Layer.unwrap(
       layerRuntimeState.pipe(Layer.provide(layerLauncher)),
       layerTailscaleServe,
       layerCloudDesiredLinkReconcile,
+      layerKitshnAttester,
       HeapSnapshot.layer,
     );
 
