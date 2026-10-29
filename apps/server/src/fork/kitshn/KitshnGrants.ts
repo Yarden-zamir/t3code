@@ -159,7 +159,7 @@ export class KitshnGrants extends Context.Service<
     ) => Effect.Effect<boolean>;
     /** Completes once `allowed` is false: at once, or after a new table, an `endsAt` or the limit. */
     readonly awaitLoss: (allowed: Effect.Effect<boolean>) => Effect.Effect<void>;
-    /** K-706: a `register` answer or `grants` event. It replaces the whole set; nothing merges. */
+    /** K-706: a `register` answer or `grants` event replaces the whole set; it never moves the clock. */
     readonly replaceTables: (tables: GrantTables) => Effect.Effect<void>;
     /** kitshn answered, so the saved table stays good for another 24 hours. */
     readonly contact: Effect.Effect<void>;
@@ -373,8 +373,8 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
   const replaceTables: KitshnGrants["Service"]["replaceTables"] = Effect.fn(
     "KitshnGrants.replaceTables",
   )(function* (tables) {
-    const nowMs = yield* Clock.currentTimeMillis;
-    const next = { tables, lastContactAt: nowMs };
+    // The `register` answer replays the daemon's saved tables, so only `contact` moves the clock.
+    const next = { tables, lastContactAt: (yield* SubscriptionRef.get(state)).lastContactAt };
     yield* SubscriptionRef.set(state, next);
     yield* save;
     // At once, so a lost session is on disk before anything else runs.

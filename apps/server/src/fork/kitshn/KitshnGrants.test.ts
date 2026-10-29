@@ -58,6 +58,10 @@ const kitshnSession = (id: string, scopes = appLevelScopes("standard")) => ({
   scopes,
 });
 
+/** A `grants` push that arrives live from kitshn: the provider records contact, then the tables. */
+const livePush = (grants: KitshnGrants.KitshnGrants["Service"], tables: GrantTables) =>
+  grants.contact.pipe(Effect.andThen(grants.replaceTables(tables)));
+
 const harness = Effect.gen(function* () {
   const revoked = yield* Queue.unbounded<AuthSessionId>();
   const revokeFails = yield* Ref.make(false);
@@ -82,7 +86,7 @@ const harness = Effect.gen(function* () {
   return {
     start,
     /** A server that kitshn answered once, so its grants apply. */
-    registered: start.pipe(Effect.tap((grants) => grants.replaceTables({}))),
+    registered: start.pipe(Effect.tap((grants) => livePush(grants, {}))),
     revoked,
     revokeFails,
   };
@@ -120,7 +124,7 @@ describe("KitshnGrants", () => {
         yield* KitshnGrants.kitshnAllowsSession(Option.some(grants), tunnelRequest(sam), owner),
       ).toBe(true);
 
-      yield* grants.replaceTables({});
+      yield* livePush(grants, {});
       expect(yield* grants.active).toBe(true);
       expect(yield* grants.visitor(localRequest)).toBeNull();
       expect(
@@ -162,9 +166,9 @@ describe("KitshnGrants", () => {
     Effect.gen(function* () {
       const grants = yield* (yield* harness).registered;
       const visitor = (yield* grants.visitor(tunnelRequest(sam)))!;
-      yield* grants.replaceTables(decodeTables({ app: [grant([{ everyone: true }], "admin")] }));
+      yield* livePush(grants, decodeTables({ app: [grant([{ everyone: true }], "admin")] }));
       expect(yield* grants.level("t3.app", "app", visitor)).toBe("admin");
-      yield* grants.replaceTables(decodeTables({ agents: [grant([{ everyone: true }], "use")] }));
+      yield* livePush(grants, decodeTables({ agents: [grant([{ everyone: true }], "use")] }));
       expect(yield* grants.level("t3.app", "app", visitor)).toBeNull();
       expect(yield* grants.level("t3.agents", "agents", visitor)).toBe("use");
     }).pipe(isolated),
@@ -178,12 +182,12 @@ describe("KitshnGrants", () => {
       const everyone = (level: string, endsAt: number | null = null) =>
         decodeTables({ app: [grant([{ email: "sam@example.com" }], level, endsAt)] });
 
-      yield* grants.replaceTables(everyone("standard"));
+      yield* livePush(grants, everyone("standard"));
       expect(yield* grants.allowsSession(visitor, kitshnSession("drop"))).toBe(true);
-      yield* grants.replaceTables(everyone("read"));
+      yield* livePush(grants, everyone("read"));
       expect(yield* Queue.take(test.revoked)).toBe("drop");
 
-      yield* grants.replaceTables(everyone("standard", 2 * HOUR));
+      yield* livePush(grants, everyone("standard", 2 * HOUR));
       expect(yield* grants.allowsSession(visitor, kitshnSession("ends"))).toBe(true);
       yield* TestClock.adjust("1 hour");
       expect(yield* Queue.size(test.revoked)).toBe(0);
@@ -191,12 +195,14 @@ describe("KitshnGrants", () => {
       expect(yield* Queue.take(test.revoked)).toBe("ends");
 
       // Contact keeps the table good; 24 hours without it refuses every JWT request.
-      yield* grants.replaceTables(everyone("standard"));
+      yield* livePush(grants, everyone("standard"));
       expect(yield* grants.allowsSession(visitor, kitshnSession("stale"))).toBe(true);
       yield* TestClock.adjust("23 hours");
       yield* grants.contact;
       yield* TestClock.adjust("23 hours");
       expect(yield* grants.level("t3.app", "app", visitor)).toBe("standard");
+      // K-706: a register answer replays the daemon's saved tables, so it never moves the clock.
+      yield* grants.replaceTables(everyone("standard"));
       yield* TestClock.adjust("1 hour");
       expect(yield* grants.level("t3.app", "app", visitor)).toBeNull();
       expect(yield* Queue.take(test.revoked)).toBe("stale");
@@ -210,12 +216,13 @@ describe("KitshnGrants", () => {
         Effect.gen(function* () {
           const grants = yield* test.registered;
           const visitor = (yield* grants.visitor(tunnelRequest(sam)))!;
-          yield* grants.replaceTables(
+          yield* livePush(
+            grants,
             decodeTables({ app: [grant([{ domain: "example.com" }], "standard")] }),
           );
           yield* grants.allowsSession(visitor, kitshnSession("saved"));
           yield* Ref.set(test.revokeFails, true);
-          yield* grants.replaceTables({});
+          yield* livePush(grants, {});
         }),
       );
       yield* Ref.set(test.revokeFails, false);
@@ -223,9 +230,7 @@ describe("KitshnGrants", () => {
         Effect.gen(function* () {
           const restarted = yield* test.start;
           expect(yield* Queue.take(test.revoked)).toBe("saved");
-          yield* restarted.replaceTables(
-            decodeTables({ app: [grant([{ everyone: true }], "read")] }),
-          );
+          yield* livePush(restarted, decodeTables({ app: [grant([{ everyone: true }], "read")] }));
         }),
       );
       // The table saved before the restart applies until a fresh one arrives.
@@ -250,7 +255,7 @@ describe("KitshnGrants", () => {
       };
 
       expect(yield* gate(kitshnMachineAllows(PEER, "use"))).toBe(false);
-      yield* grants.replaceTables(tables("standard", "use"));
+      yield* livePush(grants, tables("standard", "use"));
       expect(yield* gate(kitshnMachineAllows(PEER, "use"))).toBe(true);
       expect(yield* gate(kitshnMachineAllows(PEER, "exec"))).toBe(false);
       expect(
@@ -262,10 +267,10 @@ describe("KitshnGrants", () => {
       ).toBeUndefined();
       expect(yield* gate(kitshnMachineMcpClient(localRequest, session))).toBeUndefined();
 
-      yield* grants.replaceTables(tables("standard", "exec"));
+      yield* livePush(grants, tables("standard", "exec"));
       expect(yield* gate(kitshnMachineAllows(PEER, "exec"))).toBe(true);
       // exec also needs t3.app at standard or higher.
-      yield* grants.replaceTables(tables("read", "exec"));
+      yield* livePush(grants, tables("read", "exec"));
       expect(yield* gate(kitshnMachineAllows(PEER, "exec"))).toBe(false);
     }).pipe(isolated),
   );
