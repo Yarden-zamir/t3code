@@ -74,15 +74,21 @@ describe("exchangeDeviceInvite", () => {
     ).rejects.toThrow(text);
   });
 
-  it("never sends a lost exchange again", async () => {
-    let sent = 0;
-    const lost: DeviceTransport = async () => {
-      sent++;
-      throw new Error("offline");
-    };
-    await expect(exchangeDeviceInvite(INVITE, "Pixel", lost)).rejects.toThrow("new invite");
-    expect(sent).toBe(1);
-  });
+  // kitshn may have changed the secret already, so a retry would only get 404.
+  it.each(["no answer", "connection lost before the body"])(
+    "never sends the code again after a network error: %s",
+    async (failure) => {
+      let sent = 0;
+      const lost: DeviceTransport = async () => {
+        sent++;
+        throw new Error(failure);
+      };
+      await expect(exchangeDeviceInvite(INVITE, "Pixel", lost)).rejects.toThrow(
+        "ask the owner for a new invite",
+      );
+      expect(sent).toBe(1);
+    },
+  );
 });
 
 describe("readDeviceMachines", () => {
