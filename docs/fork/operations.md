@@ -354,6 +354,45 @@ Use these steps only when the join dialog says "No tunnel", for example when the
    systemctl --user daemon-reload && systemctl --user restart t3code.service
    ```
 
+## Hand a T3 host over to kitshn
+
+kitshn replaces the portal. The host `t3-<slug>.yarden-zamir.com` of each machine moves to kitshn one machine at a time. The machines are `mac`, `vps`, `win` and `oracle-vps`. kitshn makes its own Access application for `<host>/*` and its own ingress rule. Then it moves the CNAME record of the host to its tunnel. After that, `scripts/fork-host-handover.ts` removes the part of the portal:
+
+1. It takes the host out of the Access application "T3 Code servers".
+2. It deletes the ingress rule of the host on the portal tunnel `t3-<slug>`.
+3. It deletes no DNS record and changes no other Access application. The path applications on `t3-vps` stay.
+
+The script stops if kitshn did not take the address: the CNAME record must point at a tunnel that is not a `t3-` portal tunnel, and a `kitshn` Access application must cover `<host>/*`. It also stops if the portal tunnel is managed on its machine, or if "T3 Code servers" has no policies. Each step checks the current state first, so a second run changes nothing. Before step 2, the script saves the old ingress rule to `~/.local/state/t3-host-handover/<host>.json` (or below `T3_HOST_HANDOVER_STATE_DIR`). `--undo` reads that file.
+
+Do these steps for one machine at a time. The example uses `mac`.
+
+1. Before the `oracle-vps` handover, check what `t3-oracle-vps.yarden-zamir.com` serves. Its DNS record comment says "T3 machine map".
+2. In kitshn, open the T3 card of the machine and select "Take the address…". Wait until the card shows the address.
+3. Make a Cloudflare API token with "Access: Apps and Policies Edit", "Cloudflare Tunnel Edit" and "DNS Read" for the account and the zone `yarden-zamir.com`.
+4. Write the token to a file, for example with T3 `request_secret` and delivery "file". Do not paste the token in a chat.
+5. Run a dry run, and read the steps and API calls that it prints:
+
+   ```sh
+   CLOUDFLARE_HANDOVER_TOKEN_FILE=<token file> node scripts/fork-host-handover.ts mac --dry-run
+   ```
+
+6. Run the handover:
+
+   ```sh
+   CLOUDFLARE_HANDOVER_TOKEN_FILE=<token file> node scripts/fork-host-handover.ts mac
+   ```
+
+7. Open `https://t3-mac.yarden-zamir.com` and check that the kitshn Access login and the T3 app open.
+8. After the last machine, delete the API token in the Cloudflare dashboard and delete the token file.
+
+To undo the part of the portal, run the script with `--undo`. It puts the host back into "T3 Code servers" and the old ingress rule back on the portal tunnel. It deletes nothing of kitshn. The DNS record still points at kitshn after the undo. To point the record back at the portal, select "Give the address back…" on the T3 card in kitshn.
+
+```sh
+CLOUDFLARE_HANDOVER_TOKEN_FILE=<token file> node scripts/fork-host-handover.ts mac --undo
+```
+
+Do not remove a handed-over machine in the portal. The portal then deletes the DNS record that it made, and kitshn uses that record now.
+
 ## Guest links through Cloudflare Access
 
 A guest link on a tunnel host needs two more Cloudflare Access applications: an Allow application for the guest page and routes, and a Bypass application for the public web build files. See [Guest links over the tunnel](features.md#guest-links-over-the-tunnel). The Guests view of the machine map portal makes them for each machine host (MM-1210 to MM-1214 in [SPEC.md](../../apps/machine-map/SPEC.md)).
