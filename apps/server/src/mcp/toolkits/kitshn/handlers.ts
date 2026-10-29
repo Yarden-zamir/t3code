@@ -20,13 +20,13 @@ export const callingThread = Effect.fn("KitshnMcp.callingThread")(function* (ope
     });
   }
   const { thread } = yield* McpInvocationContext.requireThreadScope(scope, operation);
-  if (scope.threadAuthorization === undefined) {
+  if (thread.authorization === undefined) {
     return yield* new OrchestratorMcpFailure({
       code: "capability_denied",
       message: `${operation} needs the MCP credential of an agent thread on this machine, so kitshn knows the thread that asks.`,
     });
   }
-  return { threadId: thread.threadId, authorization: scope.threadAuthorization };
+  return { threadId: thread.threadId, authorization: thread.authorization };
 });
 
 const toFailure = (error: KitshnPublish.KitshnPublishError) =>

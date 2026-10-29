@@ -209,7 +209,10 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     const invocation =
       (threadInvocation === undefined
         ? undefined
-        : { ...threadInvocation, threadAuthorization: Redacted.make(`Bearer ${token}`) }) ??
+        : {
+            ...threadInvocation,
+            thread: { ...threadInvocation.thread, authorization: Redacted.make(`Bearer ${token}`) },
+          }) ??
       (Option.isSome(clients) && token.length > 0
         ? yield* clients.value.authenticate(request)
         : undefined);

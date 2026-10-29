@@ -850,9 +850,9 @@ it.effect("admits provider and OAuth client credentials and points only clients 
       // Fork: only a thread's own credential reaches the kitshn daemon as that thread.
       expect(
         seen.map((scope) =>
-          scope.threadAuthorization === undefined
+          scope.thread?.authorization === undefined
             ? undefined
-            : Redacted.value(scope.threadAuthorization),
+            : Redacted.value(scope.thread.authorization),
         ),
       ).toEqual([`Bearer ${providerToken}`, undefined]);
 

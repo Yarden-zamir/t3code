@@ -11,14 +11,20 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as KitshnCli from "./KitshnCli.ts";
 
-const KITSHN_2 = '{"product":"kitshn","generation":2,"version":"b46829700699"}';
+// kitshn may add fields; a source run prints version "dev".
+const KITSHN_2 = '{"product":"kitshn","generation":2,"version":"dev","added":true}';
 const AUTHORIZATION = Redacted.make("Bearer thread-token");
 
 /**
  * Fake `kitshn` files: each answers `version --json` with its own text, and the fake runner records
  * every call. `home` gets `~/.local/bin/kitshn` when given; `path` lists the PATH folders in order.
  */
-const setup = (binaries: { home?: string; path: ReadonlyArray<string> }) =>
+const setup = (binaries: {
+  home?: string;
+  path: ReadonlyArray<string>;
+  /** PATH folders to give as paths relative to the cwd. */
+  relative?: ReadonlyArray<string>;
+}) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -39,6 +45,9 @@ const setup = (binaries: { home?: string; path: ReadonlyArray<string> }) =>
         : yield* install(path.join(home, ".local", "bin"), binaries.home);
     const pathBinaries = yield* Effect.forEach(binaries.path, (version, index) =>
       install(path.join(base, `bin${index}`), version),
+    );
+    const relativeBinaries = yield* Effect.forEach(binaries.relative ?? [], (version, index) =>
+      install(path.join(base, `relative${index}`), version),
     );
     const runs: Array<ProcessRunner.ProcessRunInput> = [];
     const cli = yield* KitshnCli.KitshnCli.pipe(
@@ -72,7 +81,10 @@ const setup = (binaries: { home?: string; path: ReadonlyArray<string> }) =>
       Effect.provideService(HostProcess.Platform, "darwin"),
       Effect.provideService(HostProcess.HomeDirectory, home),
       Effect.provideService(HostProcess.Environment, {
-        PATH: pathBinaries.map((file) => path.dirname(file)).join(":"),
+        PATH: [
+          ...relativeBinaries.map((file) => path.relative(process.cwd(), path.dirname(file))),
+          ...pathBinaries.map((file) => path.dirname(file)),
+        ].join(":"),
       }),
     );
     return { run, runs, homeBinary, pathBinaries };
@@ -97,7 +109,9 @@ it.layer(NodeServices.layer)("KitshnCli", (it) => {
         [pathBinaries[1], "address"],
         [pathBinaries[1], "address"],
       ]);
-      expect(runs[0]?.env).toBeUndefined();
+      // The runner merges `env` over the server env, so a credential there never reaches the probe
+      // and the real run gets exactly this thread's value.
+      expect(runs[0]?.env).toEqual({ T3_ACP_MCP_AUTHORIZATION: "" });
       expect(runs[2]?.env).toEqual({ T3_ACP_MCP_AUTHORIZATION: "Bearer thread-token" });
     }),
   );
@@ -127,10 +141,13 @@ it.layer(NodeServices.layer)("KitshnCli", (it) => {
     }),
   );
 
-  it.effect("names the missing install when no kitshn exists", () =>
+  it.effect("names the missing install when no kitshn exists on an absolute PATH entry", () =>
     Effect.gen(function* () {
-      const { run, runs } = yield* setup({ path: [] });
-      expect((yield* Effect.flip(run)).reason).toBe("not_installed");
+      const { run, runs } = yield* setup({ path: [], relative: [KITSHN_2] });
+      expect(yield* Effect.flip(run)).toMatchObject({
+        reason: "not_installed",
+        message: "This machine has no kitshn 2. Join it to kitshn.",
+      });
       expect(runs).toEqual([]);
     }),
   );

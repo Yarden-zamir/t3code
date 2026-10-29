@@ -30,6 +30,12 @@ export interface McpThreadCaller {
   readonly providerInstanceId: ProviderInstanceId;
   /** A delegated child task; its parent owns the work it hands back. */
   readonly subagent?: boolean;
+  /**
+   * Fork: the `Authorization` value of a request that this thread's own MCP credential made. It
+   * lives on the thread, so a scope rebuilt for another thread drops it. The kitshn tools pass it
+   * to the kitshn daemon, which asks `/api/thread-identity` about it.
+   */
+  readonly authorization?: Redacted.Redacted<string> | undefined;
 }
 
 export interface McpClientCaller {
@@ -107,11 +113,6 @@ export interface McpInvocationScope {
   readonly client: McpClientCaller | undefined;
   /** False while the Linked environments beta is off here; `/mcp` reads it per request. */
   readonly linkedEnvironments?: boolean;
-  /**
-   * Fork: the `Authorization` value of a request that a thread's own MCP credential made. The kitshn
-   * tools pass it on to the kitshn daemon, which asks `/api/thread-identity` about it.
-   */
-  readonly threadAuthorization?: Redacted.Redacted<string> | undefined;
 }
 
 /**

@@ -418,10 +418,11 @@ Agents publish a file or a folder of their workspace to kitshn, and give the car
 - Only a live full-access/default thread on this machine can publish. An agent on another machine cannot.
 - The call runs with the thread's MCP credential in `T3_ACP_MCP_AUTHORIZATION`. The daemon checks it at [Thread identity check](#thread-identity-check) (`/api/thread-identity`), so kitshn knows the thread that asks. A caller without a thread credential, such as an OAuth client, gets a refusal.
 - `path` is relative to the thread's worktree, or its project folder. The tool refuses a path outside that folder after links resolve, and a path in a dot folder or to a dotfile.
-- The server uses `~/.local/bin/kitshn`, else the first `kitshn` on its PATH that is kitshn 2. The PATH is the one that the server reads from the login shell at start. A binary is kitshn 2 when `kitshn version --json` prints `{"product":"kitshn","generation":2,…}`. KitSHn 1 never runs. When no binary is kitshn 2, the error names the paths that it found.
+- The server uses `~/.local/bin/kitshn`, else the first `kitshn` in an absolute PATH folder that is kitshn 2. The PATH is the one that the server reads from the login shell at start. The check runs without a credential. A binary is kitshn 2 when `kitshn version --json` prints `{"product":"kitshn","generation":2,…}`. KitSHn 1 never runs. When no binary is kitshn 2, the error names the paths that it found.
 - A call stops after 150 seconds, a little above the daemon's own 120-second call limit. kitshn refuses at once when a right is unset or set to "ask".
 - **Limits:**
   - The server checks a binary once per path and change time. A new install at the same path with the same change time is not checked again. Revisit if kitshn installs keep the change time.
+  - A process of the same user, such as an agent in another full-access thread, can replace `~/.local/bin/kitshn` with a file that answers the version check. That file then gets the credential of the next thread that calls a kitshn tool. The change-time cache does not stop this, because the file can keep the old change time. Revisit when agents run as a user other than the server, or when kitshn signs its binary.
 
 ### Scheduled task model
 

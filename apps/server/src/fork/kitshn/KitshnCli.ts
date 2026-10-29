@@ -68,7 +68,8 @@ const make = Effect.gen(function* () {
   const candidates = Effect.gen(function* () {
     const home = yield* HostProcess.HomeDirectory;
     const env = yield* HostProcess.Environment;
-    const pathDirectories = (env.PATH ?? "").split(":").filter((entry) => entry !== "");
+    // A relative entry would make the spawn search PATH again, so the checked file may not run.
+    const pathDirectories = (env.PATH ?? "").split(":").filter((entry) => path.isAbsolute(entry));
     return [
       ...new Set([
         path.join(home, ...KITSHN_2_HOME_PATH),
@@ -85,7 +86,13 @@ const make = Effect.gen(function* () {
     const cached = Option.flatMap(key, (value) => Option.fromNullishOr(checked.get(value)));
     if (Option.isSome(cached)) return cached.value;
     const output = yield* runner
-      .run({ command: binary, args: ["version", "--json"], timeout: VERSION_TIMEOUT })
+      .run({
+        command: binary,
+        args: ["version", "--json"],
+        // The server env can hold the credential of an agent shell that started it; kitshn skips "".
+        env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+        timeout: VERSION_TIMEOUT,
+      })
       .pipe(Effect.option);
     const result =
       Option.isSome(output) &&
@@ -109,13 +116,10 @@ const make = Effect.gen(function* () {
       refused.push(candidate);
     }
     return yield* refused.length === 0
-      ? fail(
-          "not_installed",
-          "kitshn 2 is not installed on this machine. Join this machine to kitshn; it installs kitshn at ~/.local/bin/kitshn.",
-        )
+      ? fail("not_installed", "This machine has no kitshn 2. Join it to kitshn.")
       : fail(
           "not_kitshn_2",
-          `${refused.join(", ")} is not kitshn 2 (kitshn version --json did not answer as kitshn 2). Put kitshn 2 at ~/.local/bin/kitshn or first on PATH.`,
+          `This machine has no kitshn 2. Join it to kitshn. Found, but not kitshn 2: ${refused.join(", ")}.`,
         );
   });
 
