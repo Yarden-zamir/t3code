@@ -105,14 +105,26 @@ const setSetting = Effect.fn("MachineMapMcp.setSetting")(function* (
 export const layer = McpToolAccess.toLayer(MachineMapToolkit, {
   machines_read: McpToolAccess.reads(() =>
     Effect.gen(function* () {
-      const answer = yield* ask({ type: "ask", action: "state", target: "" });
-      const machine = yield* (yield* KitshnGrants.KitshnGrants).machine;
-      const askResults = yield* (yield* KitshnProvider.KitshnProvider).askResults;
+      yield* refuseMachineCaller;
+      const grants = yield* KitshnGrants.KitshnGrants;
+      const provider = yield* KitshnProvider.KitshnProvider;
+      // K-1611: the connection shows also when kitshn cannot answer the state ask.
+      const answer = yield* ask({ type: "ask", action: "state", target: "" }).pipe(Effect.result);
+      const connection = yield* provider.connection.pipe(Stream.runHead);
+      const grantState = yield* grants.state;
       return {
         _tag: "read",
-        machine,
-        state: "result" in answer ? answer.result : null,
-        askResults,
+        machine: yield* grants.machine,
+        connection: {
+          ...Option.getOrNull(connection),
+          linkProxy: yield* provider.linkProxyState,
+          lastContactAt: grantState.lastContactAt,
+          paused: yield* grants.paused,
+        },
+        state:
+          answer._tag === "Success" && "result" in answer.success ? answer.success.result : null,
+        stateError: answer._tag === "Failure" ? answer.failure.message : null,
+        askResults: yield* provider.askResults,
       };
     }),
   ),

@@ -281,6 +281,12 @@ const REGISTERED_KINDS = [
   { id: SETTINGS_KIND, name: "T3 settings", levels: {}, state: {} },
 ];
 
+/** K-1611: the connection of this provider to the kitshn daemon, for Settings and agents. */
+export type KitshnConnection =
+  | { readonly status: "off"; readonly detail: string }
+  | { readonly status: "connecting"; readonly detail: string | null }
+  | { readonly status: "registered"; readonly detail: null };
+
 /** What kitshn keeps for this provider besides grants: the settings state and card settings. */
 export interface KitshnProviderState {
   readonly settings: DesiredParts | null;
@@ -334,6 +340,10 @@ export class KitshnProvider extends Context.Service<
      * kitshn has not named the Access app of the host. Always false while `SEND_SITE` is off.
      */
     readonly hostNotice: Stream.Stream<boolean>;
+    /** K-1611: the connection now, then each change. */
+    readonly connection: Stream.Stream<KitshnConnection>;
+    /** K-1609: whether the daemon named a link proxy, and whether `kitshn link-check` passed. */
+    readonly linkProxyState: Effect.Effect<"none" | "unchecked" | "checked">;
     /** K-1722: the answers to this machine's waiting asks, newest first, at most 50. */
     readonly askResults: Effect.Effect<ReadonlyArray<AskResult>>;
     /** A call on the link socket failed: the next use runs `kitshn link-check` again first. */
@@ -369,6 +379,10 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const linkChecks = yield* Semaphore.make(1);
   const hostNotice = yield* SubscriptionRef.make(false);
   const askResults = yield* Ref.make<ReadonlyArray<AskResult>>([]);
+  const connection = yield* SubscriptionRef.make<KitshnConnection>({
+    status: "connecting",
+    detail: null,
+  });
   // The live registered connection, so `request` can use it.
   const live = yield* Ref.make<
     Option.Option<(request: LocalRequestInput) => Effect.Effect<Answer, KitshnRequestError>>
@@ -603,6 +617,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
             yield* grants.setAccess(answer.access ?? null);
             yield* setHostNotice(answer.access ?? null);
             yield* Ref.set(live, Option.some(localRequest));
+            yield* SubscriptionRef.set(connection, { status: "registered", detail: null });
             yield* Deferred.succeed(registeredOnce, undefined);
             return yield* Effect.logInfo(
               `kitshn provider: registered, with ${grantCount(answer.grants)} grants`,
@@ -746,12 +761,14 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       // A machine without kitshn says the same thing on each try; log it once.
       yield* ended === lastEnded ? Effect.logDebug(message) : Effect.logInfo(message);
       lastEnded = ended;
+      yield* SubscriptionRef.set(connection, { status: "connecting", detail: ended });
       yield* Effect.sleep(delay);
     }
   });
 
   const run: KitshnProvider["Service"]["run"] = Effect.gen(function* () {
     if (Option.isSome(ownerRefusal)) {
+      yield* SubscriptionRef.set(connection, { status: "off", detail: ownerRefusal.value });
       return yield* Effect.logDebug(`kitshn provider: ${ownerRefusal.value}`);
     }
     return yield* connectForever;
@@ -791,6 +808,10 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     state: SubscriptionRef.changes(providerState),
     hostNotice: SubscriptionRef.changes(hostNotice),
     askResults: Ref.get(askResults),
+    connection: SubscriptionRef.changes(connection),
+    linkProxyState: Ref.get(linkProxy).pipe(
+      Effect.map((proxy) => (proxy === null ? "none" : proxy.checked ? "checked" : "unchecked")),
+    ),
     linkSocket: linkChecks.withPermits(1)(
       Effect.gen(function* () {
         const current = yield* Ref.get(linkProxy);

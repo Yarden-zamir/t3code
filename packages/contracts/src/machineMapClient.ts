@@ -23,6 +23,20 @@ export const MachineMapClientState = Schema.Struct({
   settings: ScopedSettingValues,
   /** K-1623: this machine's T3 host is not with kitshn yet; run the host handover for it. */
   hostNotWithKitshn: Schema.Boolean,
+  /** K-1611: the provider connection to the kitshn daemon and what kitshn gave it. */
+  connection: Schema.Struct({
+    /** `off`: this server does not speak for the machine, with the reason in `detail`. */
+    status: Schema.Literals(["off", "connecting", "registered"]),
+    /** Why it is off, or why the last connection ended. */
+    detail: Schema.NullOr(Schema.String),
+    grants: NonNegativeInt,
+    reachedMachines: NonNegativeInt,
+    linkProxy: Schema.Literals(["none", "unchecked", "checked"]),
+    /** Epoch ms of kitshn's last answer; the saved grants hold 24 hours after it. */
+    lastContactAt: Schema.NullOr(Schema.Number),
+    /** K-1618: kitshn's emergency pause is on. */
+    paused: Schema.Boolean,
+  }),
 });
 export type MachineMapClientState = typeof MachineMapClientState.Type;
 

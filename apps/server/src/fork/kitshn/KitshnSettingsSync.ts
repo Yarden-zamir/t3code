@@ -18,6 +18,7 @@ import {
 } from "@t3tools/contracts";
 import { stableStringify } from "@t3tools/shared/relaySigning";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -35,11 +36,12 @@ import {
   THEME_SETTING_KEYS,
   withSharedThemes,
 } from "../machineMap/themeSync.ts";
-import type { DesiredParts } from "./kitshnProviderProtocol.ts";
+import { type DesiredParts, grantCount } from "./kitshnProviderProtocol.ts";
 import * as KitshnGrants from "./KitshnGrants.ts";
 import * as KitshnProvider from "./KitshnProvider.ts";
 
 const decodePatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
+const CLIENT_STATE_REFRESH = Duration.seconds(30);
 const encodeServerSettings = Schema.encodeEffect(ServerSettingsSchema);
 const decodePart = Schema.decodeUnknownOption(ScopedSettingValues);
 
@@ -195,17 +197,36 @@ const make = Effect.gen(function* () {
     Effect.provideService(Path.Path, path),
   );
 
-  const clientState: KitshnSettingsSync["Service"]["clientState"] = Stream.zipLatest(
+  // The grants, the link proxy and the last contact change without an event of their own, so a
+  // tick reads them again; the dedupe below sends only a real change.
+  const clientState: KitshnSettingsSync["Service"]["clientState"] = Stream.zipLatestAll(
     provider.state,
     provider.hostNotice,
+    provider.connection,
+    Stream.tick(CLIENT_STATE_REFRESH),
   ).pipe(
-    Stream.mapEffect(([state, hostNotWithKitshn]) =>
-      Effect.all([grants.active, grants.machine]).pipe(
-        Effect.map(([joined, machine]): MachineMapClientState => ({
+    Stream.mapEffect(([state, hostNotWithKitshn, connection]) =>
+      Effect.all([
+        grants.active,
+        grants.machine,
+        grants.state,
+        grants.paused,
+        provider.linkProxyState,
+      ]).pipe(
+        Effect.map(([joined, machine, grantState, paused, linkProxy]): MachineMapClientState => ({
           joined,
           machine,
           settings: effectiveSettings(state.settings),
           hostNotWithKitshn,
+          connection: {
+            status: connection.status,
+            detail: connection.detail,
+            grants: grantCount(grantState.tables),
+            reachedMachines: new Set(state.reach.map((card) => card.machineId)).size,
+            linkProxy,
+            lastContactAt: grantState.lastContactAt,
+            paused,
+          },
         })),
       ),
     ),

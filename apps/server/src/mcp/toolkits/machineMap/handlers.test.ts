@@ -98,11 +98,19 @@ const toolsWith = (
           reach: [],
           linkSocket: null,
         }),
+        connection: Stream.make({
+          status: "connecting" as const,
+          detail: "kitshn provider stopped",
+        }),
+        linkProxyState: Effect.succeed("none" as const),
+        askResults: Effect.succeed([]),
       }),
     ),
     Layer.provide(
       Layer.mock(KitshnGrants.KitshnGrants)({
         machine: Effect.succeed(null),
+        state: Effect.succeed({ tables: {}, lastContactAt: null }),
+        paused: Effect.succeed(false),
         trustsPeerOrigin: () => false,
         peerOrigins: () => [],
       }),
@@ -113,11 +121,12 @@ const toolsWith = (
 
 const layerTools = toolsWith(liveThreadsLayer);
 
-it.effect("a machine tool without a kitshn connection says so", () =>
+it.effect("machines_read shows the connection when kitshn cannot answer (K-1611)", () =>
   Effect.gen(function* () {
     const result = yield* callTool(threadCaller, "machines_read", {});
-    expect(result.isError).toBe(true);
+    expect(result.isError).not.toBe(true);
     expect(resultText(result)).toContain("no connection to kitshn");
+    expect(resultText(result)).toContain("kitshn provider stopped");
   }).pipe(Effect.provide(layerTools)),
 );
 
