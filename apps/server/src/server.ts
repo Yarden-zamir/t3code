@@ -198,6 +198,7 @@ import * as KitshnAttester from "./fork/kitshn/KitshnAttester.ts";
 import * as KitshnCli from "./fork/kitshn/KitshnCli.ts";
 import * as KitshnGrants from "./fork/kitshn/KitshnGrants.ts";
 import * as KitshnProvider from "./fork/kitshn/KitshnProvider.ts";
+import * as KitshnSettingsSync from "./fork/kitshn/KitshnSettingsSync.ts";
 import * as MachineHost from "./fork/machineMap/MachineHost.ts";
 import * as MachineMap from "./fork/machineMap/MachineMap.ts";
 import * as MachineMapState from "./fork/machineMap/MachineMapState.ts";
@@ -558,6 +559,7 @@ const layerServerSelfUpdate = ServerSelfUpdate.layer.pipe(Layer.provide(layerDes
 
 const layerMachineMap = MachineExec.layer.pipe(
   // Fork: the kitshn provider connection; the machine tools send their kitshn requests over it.
+  Layer.provideMerge(KitshnSettingsSync.layer),
   Layer.provideMerge(KitshnProvider.layer),
   Layer.provideMerge(KitshnCli.layer),
   Layer.provideMerge(MachineMap.layer),
@@ -1004,7 +1006,13 @@ const layerMakeServer = Layer.unwrap(
     const layerKitshnProvider = Layer.effectDiscard(
       ServerActivation.forkParked(
         Effect.gen(function* () {
-          yield* (yield* KitshnProvider.KitshnProvider).run;
+          yield* Effect.all(
+            [
+              (yield* KitshnProvider.KitshnProvider).run,
+              (yield* KitshnSettingsSync.KitshnSettingsSync).run,
+            ],
+            { concurrency: "unbounded", discard: true },
+          );
         }),
       ),
     );
