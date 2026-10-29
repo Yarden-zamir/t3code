@@ -428,6 +428,22 @@ Agents publish a file or a folder of their workspace to kitshn, and give the car
   - A server that stopped leaves its `t3.` entry in the daemon. kitshn calls then fail with "could not check the T3 thread; try again." until the installed server starts again.
   - A process of the same user, such as an agent in another full-access thread, can replace `~/.local/bin/kitshn` with a file that answers the version check. That file then gets the credential of the next thread that calls a kitshn tool. The change-time cache does not stop this, because the file can keep the old change time. Revisit when agents run as a user other than the server, or when kitshn signs its binary.
 
+### kitshn provider
+
+The server shows itself as a card on the kitshn map, with its commands (kitshn K-704 to K-707). The server runs `kitshn provider` of the machine's kitshn 2 and keeps it running. The child sends JSON lines to the local kitshn daemon.
+
+- **Setting:** server setting `kitshnProvider` (off by default). Settings > Machines > "kitshn provider". Join the machine to kitshn first.
+- **Card:** one `t3.app` card "T3 on <environment name>", with the facts version and running turns. The server sends a new card only when a fact changes. It checks the facts every 15 seconds.
+- **Commands:** Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. Each runs the machine map command of the same name. The card shows only the commands that this server can run now: Restart server needs a supervisor, and Install update needs the background service. A restart answers kitshn first and then restarts.
+- **Diagnostics:** the machine map portal and kitshn get the same redacted diagnostics. Each process shows only its program name, never its arguments. Secrets in error texts become `REDACTED`: URL tokens such as a pairing link, `key=value` and `"key":"value"` for secret key names such as `token` and `password`, `NAME=value` env values, the word after `Bearer`, `token:` or `--token`, and known token formats.
+- **Failures:** without kitshn 2, after a refusal, or when the child exits, T3 runs normally and tries again. After a connection that registered, T3 tries again after 1 second, because a daemon restart ends the child. Each further try waits 5, 10, 20 and then 30 seconds. After a daemon restart, kitshn holds a queued command for 60 seconds until T3 registers again, and these waits stay inside that time. The same start rules as the attester apply: only the server of the default T3 home `~/.t3`, no dev server and no Windows.
+- **Limits:**
+  - Phase A: kitshn sends grants, and T3 keeps them in memory only. T3 drops them when the connection ends. Nothing checks them yet, so a grant gives no access to T3 and takes none away.
+  - The card has no site yet. kitshn does not serve T3 through it, so the machine map host `t3-<machine>` stays the way in.
+  - No thread cards yet.
+  - Turning the setting off makes the card offline. The card keeps its shares until the owner forgets it in kitshn. T3 never runs `kitshn provider forget t3`.
+- **Remove T3:** stop the T3 server first. Then run `kitshn provider forget t3` as the kitshn daemon user. The owner then selects "Forget provider" on the kitshn map.
+
 ### Scheduled task model
 
 A scheduled task runs on any provider instance, or on the project default model. Pick it in the scheduled task editor.

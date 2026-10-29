@@ -62,6 +62,7 @@ const FORK_PAGE_ROWS: Record<
   restartReconnectWarningGrace: "restart-reconnect-warning-grace",
   settingsFind: "settings-find",
   accessChangeNotices: "access-change-notices",
+  kitshnProvider: "kitshn-provider",
   worktreePathTemplate: "storage-worktree-path-template",
   recoverInterruptedTurns: "recover-interrupted-turns",
   recoverInterruptedTurnsMessage: "recover-interrupted-turns",

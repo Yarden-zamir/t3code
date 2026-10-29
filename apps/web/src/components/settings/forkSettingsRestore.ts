@@ -69,6 +69,7 @@ const FORK_RESTORED_SETTINGS = [
   ["restartReconnectWarningGrace", "Quiet reconnect after restart"],
   ["settingsFind", "Find in settings"],
   ["accessChangeNotices", "Access change notices"],
+  ["kitshnProvider", "kitshn provider"],
 ] as const satisfies ReadonlyArray<
   readonly [keyof UnifiedSettings & keyof ScopedSettingsPatch, string]
 >;

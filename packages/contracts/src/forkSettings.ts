@@ -459,6 +459,11 @@ export const ForkServerSettingsFields = {
    * behavior that changes what clients show.
    */
   accessChangeNotices: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Fork: the server runs `kitshn provider` and shows itself as a card on the kitshn map, with
+   * its commands. See docs/fork/features.md "kitshn provider".
+   */
+  kitshnProvider: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Fork: machine map connection. See `MachineMapSettings`. */
   machineMap: MachineMapSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /** Fork: how a Cloudflare Access sign-in of a browser meets the clients of the map. See `ClientAccessMode`. */
@@ -549,6 +554,7 @@ export const ForkServerSettingsPatchFields = {
   threadLinksOpenDesktopApp: Schema.optionalKey(Schema.Boolean),
   messageLinks: Schema.optionalKey(Schema.Boolean),
   accessChangeNotices: Schema.optionalKey(Schema.Boolean),
+  kitshnProvider: Schema.optionalKey(Schema.Boolean),
   keybindingSync: Schema.optionalKey(Schema.Boolean),
   previewLocalServerGroups: Schema.optionalKey(Schema.Boolean),
   mobilePublishedThemes: Schema.optionalKey(Schema.Boolean),
