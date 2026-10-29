@@ -277,3 +277,127 @@ export function redactTurnItemUrlSecrets(item: OrchestrationV2TurnItem): Orchest
       return item;
   }
 }
+
+const TOKEN_PREFIXES = [
+  "ghp_",
+  "gho_",
+  "ghs_",
+  "ghu_",
+  "github_pat_",
+  "sk-",
+  "xoxb-",
+  "xoxp-",
+  "eyJ",
+];
+// The word after one of these is a secret. Narrower than SECRET_KEYS: "exit code 1" stays.
+const SECRET_LEADS: ReadonlySet<string> = new Set([
+  "bearer",
+  "token",
+  "password",
+  "secret",
+  "api_key",
+  "apikey",
+  "client_secret",
+]);
+// Quotes and JSON punctuation around a word, as in `"token":"abc",`.
+const WRAPPERS: ReadonlySet<string> = new Set([
+  '"',
+  "'",
+  "`",
+  ",",
+  ";",
+  "{",
+  "}",
+  "[",
+  "]",
+  "(",
+  ")",
+]);
+
+const isEnvName = (name: string) =>
+  name.length >= 2 &&
+  name[0]! >= "A" &&
+  name[0]! <= "Z" &&
+  [...name].every(
+    (char) => (char >= "A" && char <= "Z") || (char >= "0" && char <= "9") || char === "_",
+  );
+
+const unwrap = (text: string) => {
+  let start = 0;
+  let end = text.length;
+  while (start < end && WRAPPERS.has(text[start]!)) start += 1;
+  while (end > start && WRAPPERS.has(text[end - 1]!)) end -= 1;
+  return { start, end, core: text.slice(start, end) };
+};
+
+/** `--api-key`, `API-KEY` and `api_key` all name the key `api_key`. */
+const keyName = (raw: string) => {
+  let start = 0;
+  while (raw[start] === "-") start += 1;
+  return unwrap(raw.slice(start)).core.toLowerCase().replaceAll("-", "_");
+};
+
+/** True when the word before announces a secret: `Bearer`, `token:`, `"Authorization":"Bearer`, `--token`. */
+function leadsSecret(previous: string): boolean {
+  let core = unwrap(previous).core;
+  if (core.startsWith("--")) return SECRET_KEYS.has(keyName(core));
+  if (core.endsWith(":")) core = core.slice(0, -1);
+  return SECRET_LEADS.has(keyName(core.slice(core.lastIndexOf(":") + 1)));
+}
+
+function redactWord(word: string, previous: string | undefined): string {
+  const { start, end, core } = unwrap(word);
+  if (core === "") return word;
+  const wrap = (inner: string) => word.slice(0, start) + inner + word.slice(end);
+  if (previous !== undefined && leadsSecret(previous)) return wrap(REDACTED);
+  if (TOKEN_PREFIXES.some((prefix) => core.startsWith(prefix))) return wrap(REDACTED);
+  for (const separator of ["=", ":"]) {
+    const at = core.indexOf(separator);
+    if (at <= 0) continue;
+    const key = core.slice(0, at);
+    const value = core.slice(at + 1);
+    const valueStart = unwrap(value).start;
+    if (value.slice(valueStart) === "" || value.slice(valueStart) === REDACTED) continue;
+    if (SECRET_KEYS.has(keyName(key)) || (separator === "=" && isEnvName(unwrap(key).core))) {
+      return wrap(`${core.slice(0, at + 1)}${value.slice(0, valueStart)}${REDACTED}`);
+    }
+  }
+  return word;
+}
+
+/**
+ * Hides URL secrets, `key=value` and `"key":"value"` for SECRET_KEYS, env values, the word after
+ * `Bearer`, `token:` or `--token`, and known token formats. Known limit: a secret with a space
+ * inside quotes keeps its second word. Revisit if diagnostics leak one.
+ */
+export function redactSecretsInText(text: string): string {
+  const source = redactUrlSecretsInText(text);
+  let result = "";
+  let previous: string | undefined;
+  let index = 0;
+  while (index < source.length) {
+    let end = index;
+    const isSpace = source[index]!.trim() === "";
+    while (end < source.length && (source[end]!.trim() === "") === isSpace) end += 1;
+    const piece = source.slice(index, end);
+    if (isSpace) {
+      result += piece;
+    } else {
+      result += redactWord(piece, previous);
+      previous = piece;
+    }
+    index = end;
+  }
+  return result;
+}
+
+/**
+ * The program of a process for diagnostics: its process name, else the base name of the first
+ * word of its command line. The arguments can hold tokens, so they never leave the machine.
+ * Known limit: the fallback cuts a path with a space. Revisit if telemetry often lacks names.
+ */
+export function programName(processName: string | undefined, commandLine: string): string {
+  if (processName !== undefined && processName.trim() !== "") return processName.trim();
+  const program = commandLine.trim().split(" ")[0] ?? "";
+  return program.slice(program.lastIndexOf("/") + 1);
+}
