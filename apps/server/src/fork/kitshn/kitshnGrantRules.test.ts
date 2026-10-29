@@ -7,6 +7,7 @@ import {
   type AccessVisitor,
   type GrantState,
   appLevelScopes,
+  kitshnPaused,
   levelFor,
   nextChangeAt,
   SAVED_GRANTS_LIFETIME,
@@ -168,5 +169,15 @@ describe("nextChangeAt", () => {
       ),
     ).toBe(NOW + 10);
     expect(nextChangeAt(stateOf([], null), NOW)).toBeNull();
+  });
+});
+
+describe("kitshnPaused", () => {
+  it("reads a T3 card without any grant after kitshn answered as the emergency pause", () => {
+    expect(kitshnPaused(stateOf([grant([], "admin")]))).toBe(false);
+    expect(kitshnPaused(stateOf([]))).toBe(true);
+    expect(kitshnPaused({ tables: {}, lastContactAt: NOW })).toBe(true);
+    // Before kitshn answered, nothing is enforced, so nothing is paused.
+    expect(kitshnPaused(stateOf([], null))).toBe(false);
   });
 });

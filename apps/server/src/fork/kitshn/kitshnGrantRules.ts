@@ -51,6 +51,14 @@ const ranked = <K extends Kind>(kind: K): ReadonlyArray<LevelOf<K>> => {
 };
 
 export const APP_RESOURCE_ID = "app";
+
+/**
+ * K-1618: kitshn's emergency pause. The Owner circle always holds a share of the T3 card (K-719),
+ * and only a pause closes it (K-1504), so a T3 card with no grant means a pause. Known limit: a
+ * new provider has no table until kitshn's first push; that also reads as a pause, with no harm.
+ */
+export const kitshnPaused = (state: GrantState) =>
+  state.lastContactAt !== null && (state.tables[APP_RESOURCE_ID] ?? []).length === 0;
 export const AGENTS_RESOURCE_ID = "agents";
 
 /**

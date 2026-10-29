@@ -227,11 +227,15 @@ const make = Effect.gen(function* () {
   >();
 
   /** The reach and the link proxy now; no proxy (Windows for now) means no links, not an error. */
-  const current = Effect.all([provider.state.pipe(Stream.runHead), provider.linkSocket]).pipe(
-    Effect.map(([state, socket]) =>
+  const current = Effect.all([
+    provider.state.pipe(Stream.runHead),
+    provider.linkSocket,
+    grants.paused,
+  ]).pipe(
+    Effect.map(([state, socket, paused]) =>
       socket === null || Option.isNone(state)
-        ? { targets: [] as ReadonlyArray<LinkTarget>, socket: null }
-        : { targets: linkTargets(state.value.reach), socket },
+        ? { targets: [] as ReadonlyArray<LinkTarget>, socket: null, paused }
+        : { targets: paused ? [] : linkTargets(state.value.reach), socket, paused },
     ),
   );
 
@@ -592,7 +596,13 @@ const make = Effect.gen(function* () {
 
   /** A linked machine by id or name. */
   const resolvePeer = Effect.fn("MachinePeers.resolvePeer")(function* (machine: string) {
-    const { targets, socket } = yield* current;
+    const { targets, socket, paused } = yield* current;
+    if (paused) {
+      return yield* new MachinePeerError({
+        reason: "no-links",
+        detail: `No link to ${machine}: kitshn's emergency pause is on.`,
+      });
+    }
     if (socket === null) {
       return yield* new MachinePeerError({
         reason: "no-links",

@@ -32,6 +32,7 @@ import {
   type GrantState,
   type Kind,
   type LevelOf,
+  kitshnPaused,
   levelFor,
   nextChangeAt,
   sessionAllowed,
@@ -104,6 +105,8 @@ export class KitshnGrants extends Context.Service<
   {
     /** `kitshnAccessActive` now. */
     readonly active: Effect.Effect<boolean>;
+    /** K-1618: kitshn's emergency pause is on, so links and exec stop. */
+    readonly paused: Effect.Effect<boolean>;
     /**
      * The visitor of a request with a verified Access JWT while this server is a kitshn
      * provider, else null: the request keeps T3's own auth.
@@ -251,6 +254,7 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
   );
 
   const active = Effect.map(SubscriptionRef.get(state), kitshnAccessActive);
+  const paused = Effect.map(SubscriptionRef.get(state), kitshnPaused);
 
   const visitor: KitshnGrants["Service"]["visitor"] = Effect.fn("KitshnGrants.visitor")(
     function* (request) {
@@ -376,6 +380,7 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
 
   return KitshnGrants.of({
     active,
+    paused,
     visitor,
     level,
     allowsSession,

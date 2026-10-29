@@ -286,6 +286,18 @@ it.effect("a restricted thread's shell is refused with its own thread credential
   }),
 );
 
+it.effect("kitshn's emergency pause refuses a call to another machine (K-1618)", () =>
+  Effect.gen(function* () {
+    // A pause closes every grant, also the Owner share of the T3 card.
+    const paused = yield* harness({ grants: { tables: {}, lastContactAt: 1 } });
+    const error = yield* paused
+      .exec(localThread, { machine: "VPS", command: "true" })
+      .pipe(Effect.flip);
+    expect(error.message).toContain("emergency pause");
+    expect(paused.requests).toEqual([]);
+  }),
+);
+
 it.effect("losing the exec grant stops a running command at once", () =>
   Effect.gen(function* () {
     const started = yield* Deferred.make<void>();

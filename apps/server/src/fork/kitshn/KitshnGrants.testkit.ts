@@ -4,7 +4,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { PEER, PEER_TOKEN, SELF } from "../machineMap/MachineMap.testkit.ts";
-import { type GrantState, levelFor } from "./kitshnGrantRules.ts";
+import { type GrantState, kitshnPaused, levelFor } from "./kitshnGrantRules.ts";
 import type * as KitshnGrants from "./KitshnGrants.ts";
 
 /** `PEER`'s token holds `t3.app` and `t3.agents` at these levels; null is no grant. */
@@ -34,6 +34,7 @@ export const peerGrants = (app: string | null, agents: string | null): GrantStat
 export const fakeKitshnGrants = (state: SubscriptionRef.SubscriptionRef<GrantState>) =>
   ({
     state: SubscriptionRef.get(state),
+    paused: Effect.map(SubscriptionRef.get(state), kitshnPaused),
     machine: Effect.succeed({ id: SELF, name: "Mac" }),
     level: (kind, resourceId, visitor) =>
       Effect.map(SubscriptionRef.get(state), (current) =>
@@ -48,18 +49,19 @@ export const fakeKitshnGrants = (state: SubscriptionRef.SubscriptionRef<GrantSta
       ),
   }) as Pick<
     KitshnGrants.KitshnGrants["Service"],
-    "state" | "machine" | "level" | "awaitLoss"
+    "state" | "paused" | "machine" | "level" | "awaitLoss"
   > as KitshnGrants.KitshnGrants["Service"];
 
 /** The rules of `KitshnGrants` on a table that never changes. */
 export const fixedKitshnGrants = (grants: GrantState) =>
   ({
     state: Effect.succeed(grants),
+    paused: Effect.succeed(kitshnPaused(grants)),
     machine: Effect.succeed({ id: SELF, name: "Mac" }),
     level: (kind, resourceId, visitor) =>
       Effect.succeed(levelFor(grants, kind, resourceId, visitor, grants.lastContactAt ?? 0)),
     awaitLoss: () => Effect.never,
   }) as Pick<
     KitshnGrants.KitshnGrants["Service"],
-    "state" | "machine" | "level" | "awaitLoss"
+    "state" | "paused" | "machine" | "level" | "awaitLoss"
   > as KitshnGrants.KitshnGrants["Service"];
