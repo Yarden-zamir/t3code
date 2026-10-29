@@ -1,6 +1,6 @@
 /** Fork: the desktop app's machines from its kitshn device token (K-1617), as pure decisions. */
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { ClientMachine, EnvironmentId } from "@t3tools/contracts";
 
 export interface SavedEnvironment {
   readonly environmentId: EnvironmentId;
@@ -55,4 +55,18 @@ export function planDeviceMachines(input: {
             environmentId: savedByOrigin.get(origin)?.environmentId ?? null,
           }));
   return { keep, pair, remove };
+}
+
+/**
+ * The origins of the listed machines that this app adds. This machine's own card is left out:
+ * the primary environment already is that machine, under its loopback address.
+ */
+export function listedOrigins(
+  machines: ReadonlyArray<ClientMachine>,
+  ownMachineId: string | null,
+  originOf: (url: string) => string | null,
+): ReadonlyArray<string> {
+  return machines.flatMap((machine) =>
+    machine.id === ownMachineId ? [] : (originOf(machine.origin) ?? []),
+  );
 }

@@ -27,11 +27,12 @@ import {
 } from "../connection/onboarding";
 import { pairSiblingWhenDue } from "../connection/siblingEnvironments";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
+import { useMachineMapState } from "../state/machineMap";
 import { useAtomCommand } from "../state/use-atom-command";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { SettingsRow } from "../components/settings/settingsLayout";
-import { planDeviceMachines, type SavedEnvironment } from "./deviceMachines.logic";
+import { listedOrigins, planDeviceMachines, type SavedEnvironment } from "./deviceMachines.logic";
 
 const CLIENT_KEY = "t3code:kitshn:device-client";
 const MANAGED_KEY = "t3code:kitshn:device-origins";
@@ -185,6 +186,8 @@ export function DeviceInviteSettingsRow() {
  */
 export function DesktopDeviceMachines() {
   const primaryEnvironmentId = usePrimaryEnvironment()?.environmentId ?? null;
+  // kitshn's id of this machine, so its own card never becomes a second environment.
+  const ownMachineId = useMachineMapState(primaryEnvironmentId).state?.machine?.id ?? null;
   const { isReady, environments } = useEnvironments();
   const steps = useDeviceSteps();
   const running = useRef(false);
@@ -200,7 +203,8 @@ export function DesktopDeviceMachines() {
   const syncOnce = async () => {
     const client = readClient();
     const listOrigin = client === null ? null : requestHeaderOrigin(client.machinesUrl);
-    if (client === null || listOrigin === null) return;
+    // Until the server knows its kitshn id, its own card could look like another machine.
+    if (client === null || listOrigin === null || ownMachineId === null) return;
     const token = await steps.tokenOf(listOrigin);
     if (token === null) return;
     const list = await readDeviceMachines(client.machinesUrl, token, desktopTransport);
@@ -208,7 +212,7 @@ export function DesktopDeviceMachines() {
     if (list._tag !== "machines") return;
     const managed = readManaged();
     const plan = planDeviceMachines({
-      listed: list.machines.flatMap((machine) => requestHeaderOrigin(machine.origin) ?? []),
+      listed: listedOrigins(list.machines, ownMachineId, requestHeaderOrigin),
       managed,
       saved,
     });
