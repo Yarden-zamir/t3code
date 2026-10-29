@@ -1,14 +1,9 @@
 /**
- * Fork: the kitshn grant tables (K-706) and their enforcement for requests that carry a verified
- * Cloudflare Access JWT, while the server setting `kitshnProvider` is on. Requests without that
- * JWT (desktop window, loopback, tailnet) keep T3's own auth. `KitshnProvider` feeds the tables;
- * the auth hooks, the guest routes and the machine map ask this service.
+ * Fork: the kitshn grant tables (K-706), enforced for requests with a verified Access JWT once
+ * this server is a kitshn provider. Requests without that JWT keep T3's own auth, and without
+ * kitshn 2 the server behaves as upstream (K-712). `KitshnProvider` feeds the tables.
  */
-import {
-  AuthSessionId,
-  type AuthEnvironmentScope,
-  type ServerSettings as ServerSettingsValue,
-} from "@t3tools/contracts";
+import { AuthSessionId, type AuthEnvironmentScope } from "@t3tools/contracts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -32,7 +27,6 @@ import {
 import * as SessionStore from "../../auth/SessionStore.ts";
 import { isMachineSubject } from "../machineMap/machineAccess.ts";
 import * as ServerConfig from "../../config.ts";
-import * as ServerSettings from "../../serverSettings.ts";
 import {
   type AccessVisitor,
   type GrantState,
@@ -45,15 +39,17 @@ import {
 import { GrantTables } from "./kitshnProviderProtocol.ts";
 
 /**
- * The one switch for grant enforcement: today the `kitshnProvider` setting. Every gate reads it
- * through `KitshnGrants.active`, so a later "this server is a kitshn provider" check goes here.
+ * The one switch for grant enforcement: this server is a kitshn provider, so kitshn answered a
+ * `register` once. The saved file keeps that across a restart. Every gate reads it through
+ * `KitshnGrants.active`.
  */
-const kitshnAccessActive = (settings: ServerSettingsValue) => settings.kitshnProvider;
+const kitshnAccessActive = (state: GrantState) => state.lastContactAt !== null;
 
 /** The subject of a session that an Access visitor got through a `t3.app` grant. */
 export const KITSHN_SESSION_SUBJECT_PREFIX = "kitshn:";
-const isKitshnSessionSubject = (subject: string) =>
-  subject.startsWith(KITSHN_SESSION_SUBJECT_PREFIX);
+/** A session that exists only through a grant: a person or device, or another machine. */
+const isGrantSubject = (subject: string) =>
+  subject.startsWith(KITSHN_SESSION_SUBJECT_PREFIX) || isMachineSubject(subject);
 
 const CONNECTING_IP_HEADER = "cf-connecting-ip";
 // The time of the last contact goes to disk at most this often, so the 24-hour limit can come
@@ -63,10 +59,18 @@ const REVOKE_RETRY = Duration.seconds(30);
 // Only sessions of kitshn visitors are kept, one per browser, so the cap is a safety net.
 const TRACKED_SESSIONS_LIMIT = 1000;
 
+/** This machine on the kitshn map (K-704). The name is null before the daemon reached kitshn. */
+export const KitshnMachine = Schema.Struct({
+  id: Schema.String,
+  name: Schema.NullOr(Schema.String),
+});
+export type KitshnMachine = typeof KitshnMachine.Type;
+
 const Saved = Schema.Struct({
   tables: GrantTables,
   lastContactAt: Schema.NullOr(Schema.Number),
   pendingRevocations: Schema.Array(AuthSessionId),
+  machine: Schema.NullOr(KitshnMachine).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 type Saved = typeof Saved.Type;
 const SavedJson = Schema.fromJsonString(Saved);
@@ -81,11 +85,11 @@ interface Tracked {
 export class KitshnGrants extends Context.Service<
   KitshnGrants,
   {
-    /** `kitshnAccessActive` for the settings of now. */
+    /** `kitshnAccessActive` now. */
     readonly active: Effect.Effect<boolean>;
     /**
-     * The visitor of a request with a verified Access JWT while `kitshnProvider` is on, else
-     * null: the request keeps T3's own auth.
+     * The visitor of a request with a verified Access JWT while this server is a kitshn
+     * provider, else null: the request keeps T3's own auth.
      */
     readonly visitor: (
       request: HttpServerRequest.HttpServerRequest,
@@ -96,7 +100,7 @@ export class KitshnGrants extends Context.Service<
       visitor: AccessVisitor,
     ) => Effect.Effect<LevelOf<K> | null>;
     /**
-     * True when the session holds no scope above the `t3.app` level of the visitor. A kitshn
+     * True when the session holds no scope above the `t3.app` level of the visitor. A grant
      * session that passes is tracked, so it ends when its visitor loses that level.
      */
     readonly allowsSession: (
@@ -114,14 +118,16 @@ export class KitshnGrants extends Context.Service<
     /** kitshn answered, so the saved table stays good for another 24 hours. */
     readonly contact: Effect.Effect<void>;
     readonly state: Effect.Effect<GrantState>;
+    /** This machine, from the last `register` answer; saved, so it holds across a restart. */
+    readonly machine: Effect.Effect<KitshnMachine | null>;
+    readonly setMachine: (machine: KitshnMachine) => Effect.Effect<void>;
   }
 >()("t3/fork/kitshn/KitshnGrants") {}
 
 /**
- * kitshn provider (K-706): while `kitshnAccessActive` holds, the `t3.app` grants replace the map
- * levels and approved clients for a request with a verified Access JWT. A machine session keeps
- * its arrow; `t3.agents` gates its tools. A kitshn session needs such a request every time, so
- * it stops working when access goes off or the JWT is missing.
+ * kitshn provider (K-706): the `t3.app` grants decide every request with a verified Access JWT,
+ * the sessions of other machines too. A grant session needs such a request every time, so it
+ * stops working without the JWT.
  */
 export const kitshnAllowsSession = (
   grants: Option.Option<KitshnGrants["Service"]>,
@@ -139,10 +145,8 @@ export const kitshnAllowsSession = (
         .pipe(
           Effect.flatMap((visitor) =>
             visitor === null
-              ? Effect.succeed(!isKitshnSessionSubject(session.subject))
-              : isMachineSubject(session.subject)
-                ? Effect.succeed(true)
-                : grants.value.allowsSession(visitor, session),
+              ? Effect.succeed(!isGrantSubject(session.subject))
+              : grants.value.allowsSession(visitor, session),
           ),
         );
 
@@ -153,7 +157,6 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
   ) => Effect.Effect<CloudflareAccessClaims | undefined>;
 }) {
   const config = yield* ServerConfig.ServerConfig;
-  const settings = yield* ServerSettings.ServerSettingsService;
   const sessions = yield* SessionStore.SessionStore;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -178,7 +181,7 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
               })
             : Effect.void,
         ),
-        Effect.as({ tables: {}, lastContactAt: null, pendingRevocations: [] }),
+        Effect.as({ tables: {}, lastContactAt: null, pendingRevocations: [], machine: null }),
       ),
     ),
   );
@@ -187,6 +190,7 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
     lastContactAt: loaded.lastContactAt,
   });
   const pending = new Set<AuthSessionId>(loaded.pendingRevocations);
+  let machine = loaded.machine;
   let savedContactAt = loaded.lastContactAt;
   const tracked = new Map<AuthSessionId, Tracked>();
   const writes = yield* Semaphore.make(1);
@@ -195,7 +199,7 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
     Effect.gen(function* () {
       const current = yield* SubscriptionRef.get(state);
       savedContactAt = current.lastContactAt;
-      yield* encodeSaved({ ...current, pendingRevocations: [...pending] }).pipe(
+      yield* encodeSaved({ ...current, pendingRevocations: [...pending], machine }).pipe(
         Effect.flatMap((contents) => writeFileStringAtomically({ filePath: statePath, contents })),
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
@@ -207,10 +211,7 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
     ),
   );
 
-  const active = settings.getSettings.pipe(
-    Effect.map(kitshnAccessActive),
-    Effect.orElseSucceed(() => false),
-  );
+  const active = Effect.map(SubscriptionRef.get(state), kitshnAccessActive);
 
   const visitor: KitshnGrants["Service"]["visitor"] = Effect.fn("KitshnGrants.visitor")(
     function* (request) {
@@ -239,7 +240,7 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
       Clock.currentTimeMillis,
     ]);
     const allowed = sessionAllowed(current, session, visitor, nowMs);
-    if (allowed && isKitshnSessionSubject(session.subject)) {
+    if (allowed && isGrantSubject(session.subject)) {
       tracked.delete(session.sessionId);
       tracked.set(session.sessionId, { visitor, scopes: session.scopes });
       if (tracked.size > TRACKED_SESSIONS_LIMIT) {
@@ -307,29 +308,6 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
     Stream.runDrain,
     Effect.forkScoped,
   );
-  // The setting off ends every kitshn session; they exist only through the grants.
-  yield* settings.streamChanges.pipe(
-    Stream.map(kitshnAccessActive),
-    Stream.changes,
-    Stream.filter((on) => !on),
-    Stream.runForEach(() =>
-      sessions.listActive().pipe(
-        Effect.flatMap((active) => {
-          const ended = active.filter((session) => isKitshnSessionSubject(session.subject));
-          if (ended.length === 0) return Effect.void;
-          tracked.clear();
-          for (const session of ended) pending.add(session.sessionId);
-          return revokePending;
-        }),
-        Effect.catch((cause) =>
-          Effect.logWarning("kitshn grants: could not list the kitshn sessions.", {
-            cause: String(cause),
-          }),
-        ),
-      ),
-    ),
-    Effect.forkScoped,
-  );
   yield* Effect.suspend(() => (pending.size === 0 ? Effect.void : revokePending)).pipe(
     Effect.repeat(Schedule.spaced(REVOKE_RETRY)),
     Effect.forkScoped,
@@ -366,6 +344,12 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
     replaceTables,
     contact,
     state: SubscriptionRef.get(state),
+    machine: Effect.sync(() => machine),
+    setMachine: Effect.fn("KitshnGrants.setMachine")(function* (next) {
+      if (machine?.id === next.id && machine.name === next.name) return;
+      machine = next;
+      yield* save;
+    }),
   });
 });
 

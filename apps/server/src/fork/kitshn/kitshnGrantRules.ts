@@ -19,9 +19,20 @@ import type { Grant, GrantRule, GrantTables } from "./kitshnProviderProtocol.ts"
 
 /** K-713: each kind with its levels, named by the kitshn level that they stand for. */
 export const KINDS = [
-  { id: "t3.app", name: "T3 app", levels: { view: "read", use: "standard", control: "admin" } },
+  {
+    id: "t3.app",
+    name: "T3 app",
+    levels: { view: "read", use: "standard", control: "admin" },
+    // K-719 (cutover): the owner is never locked out of the app or the agent tools.
+    ownerControl: true,
+  },
   { id: "t3.thread", name: "T3 thread", levels: { view: "view", use: "send" } },
-  { id: "t3.agents", name: "T3 agents", levels: { use: "use", control: "exec" } },
+  {
+    id: "t3.agents",
+    name: "T3 agents",
+    levels: { use: "use", control: "exec" },
+    ownerControl: true,
+  },
 ] as const;
 type KindEntry = (typeof KINDS)[number];
 export type Kind = KindEntry["id"];

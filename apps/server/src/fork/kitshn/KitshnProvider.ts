@@ -1,8 +1,8 @@
 /**
- * Fork: the T3 server as a kitshn provider (kitshn K-704 to K-707). While the server setting
- * `kitshnProvider` is on, the server runs `kitshn provider` of the machine's kitshn 2 and registers
- * its app card and commands. A missing kitshn, a refusal or an exit only logs, and the server
- * tries again later. Its grant tables go to `KitshnGrants`, which enforces them.
+ * Fork: the T3 server as a kitshn provider (kitshn K-704 to K-707), the only way this server joins
+ * other machines. The server runs `kitshn provider` of the machine's kitshn 2 and registers its
+ * cards and commands. A missing kitshn, a refusal or an exit only logs, and the server tries again
+ * later; without kitshn 2 the server behaves as upstream (K-712). Its grant tables go to `KitshnGrants`, which enforces them.
  */
 import type { MachineCommandInput } from "@t3tools/contracts";
 import { THREAD_CREDENTIAL_AUTHORIZATION_ENV } from "@t3tools/provider-core/server/forkThreadCredential";
@@ -15,13 +15,13 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
-import * as ServerSettings from "../../serverSettings.ts";
 import * as MachineHost from "../machineMap/MachineHost.ts";
 import { redactSecretsInText } from "../redactUrlSecrets.ts";
 import { makeListSharedThreads, type SharedThread } from "./sharedThreads.ts";
@@ -42,6 +42,8 @@ import {
   type ProviderCommand,
   type ProviderResource,
   ProviderResource as ProviderResourceSchema,
+  type LocalRequest,
+  type LocalRequestInput,
   type Request,
   decodeAnswer,
   requestLine,
@@ -65,6 +67,8 @@ const COMMAND_TIMEOUT = Duration.minutes(4.5);
 // Time for the result line to reach the daemon before the process ends.
 const RESTART_FLUSH = Duration.millis(500);
 const STDERR_KEEP = 4096;
+// Above the daemon's own 30-second limit of a local request.
+const LOCAL_REQUEST_TIMEOUT = Duration.seconds(35);
 
 const resourceKey = Schema.encodeSync(Schema.fromJsonString(ProviderResourceSchema));
 
@@ -139,11 +143,24 @@ class RegisterRefused extends Schema.TaggedError<RegisterRefused>()("RegisterRef
   error: Schema.String,
 }) {}
 
+/** Why a local request to kitshn did not get an answer. */
+export class KitshnRequestError extends Schema.TaggedError<KitshnRequestError>()(
+  "KitshnRequestError",
+  { message: Schema.String },
+) {}
+
 export class KitshnProvider extends Context.Service<
   KitshnProvider,
   {
-    /** Follows the `kitshnProvider` setting for the life of the server. Never fails. */
+    /** Connects to kitshn for the life of the server, and again after each exit. Never fails. */
     readonly run: Effect.Effect<void>;
+    /**
+     * One ask or local request over the live connection, and its answer. An `error` answer
+     * fails with its text, as does a server without a registered connection.
+     */
+    readonly request: (
+      request: LocalRequestInput,
+    ) => Effect.Effect<Exclude<Answer, { readonly type: "error" }>, KitshnRequestError>;
   }
 >()("t3/fork/kitshn/KitshnProvider") {}
 
@@ -151,7 +168,6 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   /** The threads with an open guest share, or none when the read failed. */
   listSharedThreads: Effect.Effect<Option.Option<ReadonlyArray<SharedThread>>>,
 ) {
-  const settings = yield* ServerSettings.ServerSettingsService;
   const cli = yield* KitshnCli.KitshnCli;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const host = yield* MachineHost.MachineHost;
@@ -160,6 +176,10 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const serviceScope = yield* Effect.scope;
   const ownerRefusal = yield* kitshnOwnerRefusal();
   const grants = yield* KitshnGrants.KitshnGrants;
+  // The live registered connection, so `request` can use it.
+  const live = yield* Ref.make<
+    Option.Option<(request: LocalRequestInput) => Effect.Effect<Answer, KitshnRequestError>>
+  >(Option.none());
 
   const registered: ReadonlyArray<KitshnCommand> = COMMANDS.filter((command) =>
     host.supportedCommands({ desktopConnected: false }).includes(command.input._tag),
@@ -246,6 +266,24 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       let lastId = 0;
       const nextId = () => String(++lastId);
       const send = (request: Request) => Queue.offer(outbox, requestLine(request));
+      const waiting = new Map<string, Deferred.Deferred<Answer>>();
+      const localRequest = Effect.fn("KitshnProvider.localRequest")(function* (
+        request: LocalRequestInput,
+      ) {
+        const id = nextId();
+        const answer = yield* Deferred.make<Answer>();
+        waiting.set(id, answer);
+        yield* send({ ...request, id } as LocalRequest);
+        const received = yield* Deferred.await(answer).pipe(
+          Effect.timeoutOption(LOCAL_REQUEST_TIMEOUT),
+          Effect.ensuring(Effect.sync(() => waiting.delete(id))),
+        );
+        if (Option.isNone(received)) {
+          return yield* new KitshnRequestError({ message: "kitshn did not answer in time." });
+        }
+        return received.value;
+      });
+      yield* Effect.addFinalizer(() => Ref.set(live, Option.none()));
 
       const registerId = nextId();
       const registeredOnce = yield* Deferred.make<void>();
@@ -314,10 +352,14 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         }
         const answer = decoded.value;
         if (yield* Deferred.isDone(registeredOnce)) yield* grants.contact;
+        const asked = "id" in answer && answer.id !== null ? waiting.get(answer.id) : undefined;
+        if (asked !== undefined) return yield* Deferred.succeed(asked, answer);
         switch (answer.type) {
           case "register":
             if (answer.id !== registerId) return;
             yield* grants.replaceTables(answer.grants);
+            yield* grants.setMachine({ id: answer.machineId, name: answer.machineName ?? null });
+            yield* Ref.set(live, Option.some(localRequest));
             yield* Deferred.succeed(registeredOnce, undefined);
             return yield* Effect.logInfo(
               `kitshn provider: registered, with ${grantCount(answer.grants)} grants`,
@@ -337,6 +379,9 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
           case "upsert":
           case "remove":
           case "command-result":
+          case "ask":
+          case "job-cancel":
+          case "samples":
             return;
         }
       });
@@ -438,19 +483,29 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     if (Option.isSome(ownerRefusal)) {
       return yield* Effect.logDebug(`kitshn provider: ${ownerRefusal.value}`);
     }
-    yield* Stream.concat(Stream.fromEffect(settings.getSettings), settings.streamChanges).pipe(
-      Stream.map((current) => current.kitshnProvider),
-      Stream.changes,
-      Stream.switchMap((enabled) => (enabled ? Stream.fromEffect(connectForever) : Stream.empty)),
-      Stream.runDrain,
-    );
+    return yield* connectForever;
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.logWarning("kitshn provider stopped.", { cause: String(cause) }),
     ),
   );
 
-  return KitshnProvider.of({ run });
+  const request: KitshnProvider["Service"]["request"] = Effect.fn("KitshnProvider.request")(
+    function* (input) {
+      const current = yield* Ref.get(live);
+      if (Option.isNone(current)) {
+        return yield* new KitshnRequestError({
+          message:
+            "This server has no connection to kitshn. It needs kitshn 2 on this machine, joined to kitshn, with its daemon running.",
+        });
+      }
+      const answer = yield* current.value(input);
+      if (answer.type === "error") return yield* new KitshnRequestError({ message: answer.error });
+      return answer;
+    },
+  );
+
+  return KitshnProvider.of({ run, request });
 });
 
 export const layer = Layer.effect(KitshnProvider, Effect.flatMap(makeListSharedThreads, make));

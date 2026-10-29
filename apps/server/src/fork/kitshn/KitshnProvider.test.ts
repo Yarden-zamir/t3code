@@ -1,16 +1,12 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import {
-  DEFAULT_SERVER_SETTINGS,
-  EnvironmentId,
-  type MachineCommandInput,
-  type ServerSettings as ServerSettingsValue,
-} from "@t3tools/contracts";
+import { EnvironmentId, type MachineCommandInput } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -22,7 +18,6 @@ import { ChildProcessSpawner } from "effect/process";
 import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
-import * as ServerSettings from "../../serverSettings.ts";
 import * as MachineHost from "../machineMap/MachineHost.ts";
 import * as KitshnCli from "./KitshnCli.ts";
 import * as KitshnGrants from "./KitshnGrants.ts";
@@ -103,20 +98,16 @@ const GRANT_DECODED = {
   circle: { ...GRANT.circle, rules: [{ everyone: true }, { unknown: "passkeyGroup" }] },
 };
 
-const setup = (options: { readonly enabled: boolean; readonly installed?: boolean }) =>
+const setup = (options: { readonly installed?: boolean } = {}) =>
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     const children = yield* Queue.unbounded<FakeChild>();
     const binaryCalls = yield* Queue.unbounded<void>();
     const ran = yield* Queue.unbounded<string>();
     const restarted = yield* Deferred.make<void>();
-    const settingChanges = yield* Queue.unbounded<ServerSettingsValue>();
     const tables = yield* Ref.make<GrantTables | null>(null);
     const shared = yield* Ref.make<ReadonlyArray<SharedThread>>([]);
-    const settings = (kitshnProvider: boolean): ServerSettingsValue => ({
-      ...DEFAULT_SERVER_SETTINGS,
-      kitshnProvider,
-    });
+    const machine = yield* Ref.make<KitshnGrants.KitshnMachine | null>(null);
 
     const layer = Layer.effect(
       KitshnProvider.KitshnProvider,
@@ -127,15 +118,12 @@ const setup = (options: { readonly enabled: boolean; readonly installed?: boolea
           Layer.mock(KitshnGrants.KitshnGrants)({
             replaceTables: (next) => Ref.set(tables, next),
             contact: Effect.void,
+            setMachine: (next) => Ref.set(machine, next),
           }),
           Layer.succeed(ServerConfig.ServerConfig, {
             ...config,
             devUrl: undefined,
             baseDir: "/home/owner/.t3",
-          }),
-          Layer.mock(ServerSettings.ServerSettingsService)({
-            getSettings: Effect.succeed(settings(options.enabled)),
-            streamChanges: Stream.fromQueue(settingChanges),
           }),
           Layer.mock(KitshnCli.KitshnCli)({
             binary: Queue.offer(binaryCalls, undefined).pipe(
@@ -212,7 +200,7 @@ const setup = (options: { readonly enabled: boolean; readonly installed?: boolea
       binaryCalls,
       ran,
       restarted,
-      setEnabled: (enabled: boolean) => Queue.offer(settingChanges, settings(enabled)),
+      machine,
     };
   });
 
@@ -220,9 +208,19 @@ const EXPECTED_REGISTER = {
   type: "register",
   provider: "t3",
   kinds: [
-    { id: "t3.app", name: "T3 app", levels: { view: "read", use: "standard", control: "admin" } },
+    {
+      id: "t3.app",
+      name: "T3 app",
+      levels: { view: "read", use: "standard", control: "admin" },
+      ownerControl: true,
+    },
     { id: "t3.thread", name: "T3 thread", levels: { view: "view", use: "send" } },
-    { id: "t3.agents", name: "T3 agents", levels: { use: "use", control: "exec" } },
+    {
+      id: "t3.agents",
+      name: "T3 agents",
+      levels: { use: "use", control: "exec" },
+      ownerControl: true,
+    },
   ],
   commands: [
     { id: "restart-server", title: "Restart server", kinds: ["t3.app"], confirm: true },
@@ -266,7 +264,7 @@ it.layer(
 )("KitshnProvider", (it) => {
   it.effect("registers on connect, and again 1 second after a registered child exits", () =>
     Effect.gen(function* () {
-      const harness = yield* setup({ enabled: true });
+      const harness = yield* setup();
       const first = yield* Queue.take(harness.children);
       expect(first.args).toEqual(["provider"]);
       const register = yield* Queue.take(first.written);
@@ -296,7 +294,7 @@ it.layer(
 
   it.effect("answers each command once, skips bad lines and refuses unknown commands", () =>
     Effect.gen(function* () {
-      const harness = yield* setup({ enabled: true });
+      const harness = yield* setup();
       const child = yield* Queue.take(harness.children);
       const register = yield* Queue.take(child.written);
       yield* child.say({
@@ -329,7 +327,7 @@ it.layer(
 
   it.effect("answers a restart before it restarts", () =>
     Effect.gen(function* () {
-      const harness = yield* setup({ enabled: true });
+      const harness = yield* setup();
       const child = yield* Queue.take(harness.children);
       yield* Queue.take(child.written);
       yield* child.say(command(9, "restart-server"));
@@ -342,7 +340,7 @@ it.layer(
 
   it.effect("runs normally without kitshn and tries again later", () =>
     Effect.gen(function* () {
-      const harness = yield* setup({ enabled: true, installed: false });
+      const harness = yield* setup({ installed: false });
       yield* Queue.take(harness.binaryCalls);
       yield* TestClock.adjust("5 seconds");
       yield* Queue.take(harness.binaryCalls);
@@ -354,7 +352,7 @@ it.layer(
     "registers a card per shared thread, and upserts and removes them as shares change",
     () =>
       Effect.gen(function* () {
-        const harness = yield* setup({ enabled: true });
+        const harness = yield* setup();
         const share = (threadId: string, expiresAt = "2100-01-01T00:00:00.000Z") => ({
           threadId,
           title: `Thread ${threadId}`,
@@ -395,15 +393,30 @@ it.layer(
       }).pipe(Effect.scoped),
   );
 
-  it.effect("follows the setting: off spawns nothing, on starts and off stops the child", () =>
+  it.effect("sends local requests over the live connection and keeps the machine name", () =>
     Effect.gen(function* () {
-      const harness = yield* setup({ enabled: false });
-      yield* harness.setEnabled(true);
+      const harness = yield* setup();
       const child = yield* Queue.take(harness.children);
-      // The first spawn is the one after the switch: nothing ran while the setting was off.
-      expect(yield* Queue.takeAll(harness.binaryCalls)).toHaveLength(1);
-      yield* harness.setEnabled(false);
-      yield* Deferred.await(child.stopped);
+      const register = yield* Queue.take(child.written);
+      // Before kitshn answers the register, nothing goes out.
+      const early = yield* Effect.flip(harness.provider.request({ type: "samples" }));
+      expect(early.message).toContain("no connection to kitshn");
+      yield* child.say({
+        id: register.id,
+        type: "register",
+        machineId: "m-1",
+        machineName: "studio",
+        grants: {},
+      });
+      const asking = yield* harness.provider
+        .request({ type: "job-cancel", jobId: 42 })
+        .pipe(Effect.forkChild);
+      const sent = yield* Queue.take(child.written);
+      expect(sent).toEqual({ id: expect.any(String), type: "job-cancel", jobId: 42 });
+      yield* child.say({ id: sent.id, type: "error", error: "not queued" });
+      const refused = yield* Effect.flip(Fiber.join(asking));
+      expect(refused.message).toBe("not queued");
+      expect(yield* Ref.get(harness.machine)).toEqual({ id: "m-1", name: "studio" });
     }).pipe(Effect.scoped),
   );
 });

@@ -407,13 +407,6 @@ export const MACHINE_MAP_ITEMS = [
     environmentOnly: true,
   },
   {
-    id: "kitshn-provider",
-    title: "kitshn provider",
-    to: "/settings/machines",
-    searchTerms: ["kitshn card map commands restart diagnostics provider daemon"],
-    environmentOnly: true,
-  },
-  {
     id: "environment-label-from-machine-map",
     title: "Environment name from machine map",
     to: "/settings/machines",

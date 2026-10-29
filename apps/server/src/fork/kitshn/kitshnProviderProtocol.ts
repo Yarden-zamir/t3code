@@ -1,7 +1,7 @@
 /**
- * Fork: every message of `kitshn provider` (kitshn K-702 to K-707), the only copy in T3. The
- * source of truth is `packages/local/src/provider.ts` and `index.ts` of kitshn. One JSON value
- * per line: T3 writes requests to stdin, and reads answers and events from stdout.
+ * Fork: every message of `kitshn provider` (K-702 to K-707), the only copy in T3. Source of truth:
+ * kitshn `packages/local/src/provider.ts` and `index.ts`. The child bridges the local socket, so
+ * asks and local requests use it too. "cutover" marks a shape that kitshn has not merged yet.
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -21,6 +21,8 @@ export const ProviderKind = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   levels: ProviderLevels,
+  /** K-719 (cutover): the Owner circle always holds each card of the kind at its top level. */
+  ownerControl: Schema.optionalKey(Schema.Boolean),
 });
 
 export const ProviderCommand = Schema.Struct({
@@ -98,8 +100,34 @@ export const Request = Schema.Union([
     ok: Schema.Boolean,
     output: Schema.String.check(Schema.isMaxLength(MAX_COMMAND_OUTPUT_LENGTH)),
   }),
+  /** K-1710, K-1711: an ask as this machine. T3 sends only `state`. */
+  Schema.Struct({
+    id: Schema.String,
+    type: Schema.Literal("ask"),
+    action: Schema.Literal("state"),
+    target: Schema.String,
+  }),
+  /** K-1612 (cutover): cancels a queued job that runs on this machine or that it queued. */
+  Schema.Struct({ id: Schema.String, type: Schema.Literal("job-cancel"), jobId: Schema.Int }),
+  /** K-605 (cutover): the resource sample now and the samples of the last hour. */
+  Schema.Struct({ id: Schema.String, type: Schema.Literal("samples") }),
 ]);
 export type Request = typeof Request.Type;
+/** The requests that wait for an answer of the same id. */
+export type LocalRequest = Extract<Request, { readonly type: "ask" | "job-cancel" | "samples" }>;
+export type LocalRequestInput = LocalRequest extends infer R
+  ? R extends LocalRequest
+    ? Omit<R, "id">
+    : never
+  : never;
+
+/** K-605 (cutover): one resource sample; each share is between 0 and 1. */
+export const Sample = Schema.Struct({
+  at: Schema.Number,
+  cpu: Schema.Number,
+  memory: Schema.Number,
+  disk: Schema.Number,
+});
 
 const KnownRule = Schema.Union([
   Schema.Struct({ email: Schema.String }),
@@ -156,6 +184,23 @@ export const Answer = Schema.Union([
     type: Schema.Literal("register"),
     machineId: Schema.String,
     grants: GrantTables,
+    /** K-704 (cutover): the name of this machine on the map; null before its first connection. */
+    machineName: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  }),
+  /** K-1710: kitshn ran the ask (`done`), holds it for the owner, or refused it. */
+  Schema.Struct({
+    id: Schema.String,
+    type: Schema.Literal("ask"),
+    outcome: Schema.Literals(["done", "waiting", "refused", "not-kitshn"]),
+    result: Schema.optionalKey(Schema.Unknown),
+    reason: Schema.optionalKey(Schema.String),
+  }),
+  Schema.Struct({ id: Schema.String, type: Schema.Literal("job-cancel") }),
+  Schema.Struct({
+    id: Schema.String,
+    type: Schema.Literal("samples"),
+    newest: Sample,
+    history: Schema.Array(Sample),
   }),
   Schema.Struct({ id: Schema.String, type: Schema.Literal("upsert") }),
   Schema.Struct({ id: Schema.String, type: Schema.Literal("remove") }),

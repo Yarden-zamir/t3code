@@ -1,12 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import {
-  AuthSessionId,
-  DEFAULT_SERVER_SETTINGS,
-  MACHINE_LEVEL_SCOPES,
-  type AuthClientSession,
-  type ServerSettings as ServerSettingsValue,
-} from "@t3tools/contracts";
+import { AuthSessionId, MACHINE_LEVEL_SCOPES } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -15,13 +9,11 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as SessionStore from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
-import * as ServerSettings from "../../serverSettings.ts";
 import { PEER, PEER_TOKEN, desiredState } from "../machineMap/MachineMap.testkit.ts";
 import { kitshnAgentsAllowMachine, kitshnAgentsAllowRequest } from "./kitshnAgents.ts";
 import { appLevelScopes } from "./kitshnGrantRules.ts";
@@ -66,19 +58,9 @@ const kitshnSession = (id: string, scopes = appLevelScopes("standard")) => ({
 });
 
 const harness = Effect.gen(function* () {
-  const settingsRef = yield* Ref.make<ServerSettingsValue>({
-    ...DEFAULT_SERVER_SETTINGS,
-    kitshnProvider: true,
-  });
-  const settingChanges = yield* Queue.unbounded<ServerSettingsValue>();
   const revoked = yield* Queue.unbounded<AuthSessionId>();
   const revokeFails = yield* Ref.make(false);
-  const active = yield* Ref.make<ReadonlyArray<AuthClientSession>>([]);
   const dependencies = Layer.mergeAll(
-    Layer.mock(ServerSettings.ServerSettingsService)({
-      getSettings: Ref.get(settingsRef),
-      streamChanges: Stream.fromQueue(settingChanges),
-    }),
     Layer.mock(SessionStore.SessionStore)({
       cookieName: "t3_session",
       legacyCookieName: undefined,
@@ -88,7 +70,6 @@ const harness = Effect.gen(function* () {
             ? Effect.fail(new SessionStore.SessionRevocationError({ sessionId, cause: "offline" }))
             : Queue.offer(revoked, sessionId).pipe(Effect.as(true)),
         ),
-      listActive: () => Ref.get(active),
     }),
   );
   /** One server lifetime: closing its scope is a restart. */
@@ -99,13 +80,10 @@ const harness = Effect.gen(function* () {
   ).pipe(Effect.map((context) => Context.get(context, KitshnGrants.KitshnGrants)));
   return {
     start,
+    /** A server that kitshn answered once, so its grants apply. */
+    registered: start.pipe(Effect.tap((grants) => grants.replaceTables({}))),
     revoked,
     revokeFails,
-    active,
-    setAccess: (on: boolean) =>
-      Ref.updateAndGet(settingsRef, (current) => ({ ...current, kitshnProvider: on })).pipe(
-        Effect.flatMap((next) => Queue.offer(settingChanges, next)),
-      ),
   };
 });
 
@@ -125,16 +103,24 @@ const isolated = <A, E>(
   );
 
 describe("KitshnGrants", () => {
-  it.effect("leaves requests without a JWT, and every request while access is off, to T3", () =>
+  it.effect("leaves requests without a JWT, and every request before kitshn answered, to T3", () =>
     Effect.gen(function* () {
       const test = yield* harness;
       const grants = yield* test.start;
-      yield* grants.replaceTables({});
       const owner = {
         sessionId: AuthSessionId.make("owner"),
         subject: "desktop-paired",
         scopes: MACHINE_LEVEL_SCOPES.admin,
       };
+      // Not a kitshn provider yet (K-712): T3's own auth, also for a JWT request.
+      expect(yield* grants.active).toBe(false);
+      expect(yield* grants.visitor(tunnelRequest(sam))).toBeNull();
+      expect(
+        yield* KitshnGrants.kitshnAllowsSession(Option.some(grants), tunnelRequest(sam), owner),
+      ).toBe(true);
+
+      yield* grants.replaceTables({});
+      expect(yield* grants.active).toBe(true);
       expect(yield* grants.visitor(localRequest)).toBeNull();
       expect(
         yield* KitshnGrants.kitshnAllowsSession(Option.some(grants), localRequest, owner),
@@ -148,7 +134,7 @@ describe("KitshnGrants", () => {
       expect(
         yield* KitshnGrants.kitshnAllowsSession(Option.some(grants), tunnelRequest(sam), owner),
       ).toBe(false);
-      // A map machine keeps its arrow; `t3.agents` gates its tools instead.
+      // Another machine needs a grant too, and its session works only with the JWT.
       const machine = { ...owner, subject: "machine:vps" };
       expect(
         yield* KitshnGrants.kitshnAllowsSession(
@@ -156,7 +142,10 @@ describe("KitshnGrants", () => {
           tunnelRequest({ commonName: "x" }),
           machine,
         ),
-      ).toBe(true);
+      ).toBe(false);
+      expect(
+        yield* KitshnGrants.kitshnAllowsSession(Option.some(grants), localRequest, machine),
+      ).toBe(false);
       // A kitshn session works only through a request that the grants checked.
       expect(
         yield* KitshnGrants.kitshnAllowsSession(
@@ -165,18 +154,12 @@ describe("KitshnGrants", () => {
           kitshnSession("k"),
         ),
       ).toBe(false);
-
-      yield* test.setAccess(false);
-      expect(yield* grants.visitor(tunnelRequest(sam))).toBeNull();
-      expect(
-        yield* KitshnGrants.kitshnAllowsSession(Option.some(grants), tunnelRequest(sam), owner),
-      ).toBe(true);
     }).pipe(isolated),
   );
 
   it.effect("replaces the whole table on each event", () =>
     Effect.gen(function* () {
-      const grants = yield* (yield* harness).start;
+      const grants = yield* (yield* harness).registered;
       const visitor = (yield* grants.visitor(tunnelRequest(sam)))!;
       yield* grants.replaceTables(decodeTables({ app: [grant([{ everyone: true }], "admin")] }));
       expect(yield* grants.level("t3.app", "app", visitor)).toBe("admin");
@@ -189,7 +172,7 @@ describe("KitshnGrants", () => {
   it.effect("ends a kitshn session when its level drops, at endsAt and after 24 hours", () =>
     Effect.gen(function* () {
       const test = yield* harness;
-      const grants = yield* test.start;
+      const grants = yield* test.registered;
       const visitor = (yield* grants.visitor(tunnelRequest(sam)))!;
       const everyone = (level: string, endsAt: number | null = null) =>
         decodeTables({ app: [grant([{ email: "sam@example.com" }], level, endsAt)] });
@@ -224,7 +207,7 @@ describe("KitshnGrants", () => {
       const test = yield* harness;
       yield* Effect.scoped(
         Effect.gen(function* () {
-          const grants = yield* test.start;
+          const grants = yield* test.registered;
           const visitor = (yield* grants.visitor(tunnelRequest(sam)))!;
           yield* grants.replaceTables(
             decodeTables({ app: [grant([{ domain: "example.com" }], "standard")] }),
@@ -251,24 +234,10 @@ describe("KitshnGrants", () => {
     }).pipe(isolated),
   );
 
-  it.effect("ends every kitshn session when access goes off", () =>
-    Effect.gen(function* () {
-      const test = yield* harness;
-      yield* test.start;
-      yield* Ref.set(test.active, [
-        { sessionId: AuthSessionId.make("k1"), subject: "kitshn:sam@example.com" },
-        { sessionId: AuthSessionId.make("o1"), subject: "desktop-paired" },
-      ] as never);
-      yield* test.setAccess(false);
-      expect(yield* Queue.take(test.revoked)).toBe("k1");
-      expect(yield* Queue.size(test.revoked)).toBe(0);
-    }).pipe(isolated),
-  );
-
   it.effect("gates the agent tools on use and machine_exec on exec", () =>
     Effect.gen(function* () {
       const test = yield* harness;
-      const grants = yield* test.start;
+      const grants = yield* test.registered;
       const machine = tunnelRequest({ commonName: PEER_TOKEN });
       const desired = desiredState({});
       const gate = Effect.provideService(KitshnGrants.KitshnGrants, grants);
@@ -287,11 +256,8 @@ describe("KitshnGrants", () => {
         }),
       );
       expect(yield* gate(kitshnAgentsAllowMachine(desired, PEER, "exec"))).toBe(true);
-      // Without a JWT, or while access is off, the arrow alone decides.
+      // Without a JWT, the request keeps T3's own auth.
       expect(yield* gate(kitshnAgentsAllowRequest(localRequest, "exec"))).toBe(true);
-      yield* grants.replaceTables({});
-      yield* test.setAccess(false);
-      expect(yield* gate(kitshnAgentsAllowMachine(desired, PEER, "exec"))).toBe(true);
     }).pipe(isolated),
   );
 });

@@ -120,7 +120,6 @@ const FORK_SETTING_GROUPS = [
       { ids: ["keybinding-sync"], place: "keybindings-machine-map" },
       { ids: ["environment-label-from-machine-map"], place: "machines-machine-map" },
       { ids: ["access-change-notices"], place: "machines-machine-map" },
-      { ids: ["kitshn-provider"], place: "machines-machine-map" },
     ],
   },
   {

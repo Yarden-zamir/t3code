@@ -33,7 +33,6 @@ import { GlobalScriptsSettingsRows } from "./GlobalScriptsSettings";
 import { InAppNotificationSettingsRows } from "./InAppNotificationSettingsRows";
 import { InstalledAppSettingsRow } from "./InstalledAppSettingsRow";
 import { KeybindingSyncSettingsRow } from "./KeybindingSyncSettingsRow";
-import { KitshnProviderSettingsRow } from "./KitshnProviderSettingsRow";
 import { MachineMapSettingsRows } from "./MachineMapSettingsRows";
 import {
   MobileComposerCameraSettingsRow,
@@ -89,7 +88,6 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "worktree-artifact-eviction": WorktreeArtifactSettingsRows,
   "environment-label-from-machine-map": EnvironmentLabelSettingsRow,
   "access-change-notices": AccessChangeNoticesSettingsRow,
-  "kitshn-provider": KitshnProviderSettingsRow,
   "tunnel-pairing": TunnelPairingSettingsRow,
   "restart-reconnect-warning-grace": RestartReconnectWarningGraceSettingsRow,
   "in-app-notification-seconds": InAppNotificationSettingsRows,

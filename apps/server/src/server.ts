@@ -536,7 +536,18 @@ const layerMachineMapState = MachineMapState.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
 );
 
+// Fork: kitshn provider (K-706). One instance: the auth hooks, the guest routes and the provider
+// read the same tables. It shares the session store of the auth layer, so a revocation closes
+// the WebSockets of that session.
+const layerKitshnGrants = KitshnGrants.layer.pipe(
+  Layer.provide(SessionStore.layer),
+  Layer.provide(layerPersistence),
+  Layer.provide(ServerEnvironment.layerIdentity),
+);
+
 const layerServerEnvironment = ServerEnvironment.layer.pipe(
+  // Fork: the environment name can be the kitshn name of this machine.
+  Layer.provide(layerKitshnGrants),
   Layer.provide(ServerSecretStore.layer),
   Layer.provide(layerMachineMapState),
   Layer.provide(layerServerSettings),
@@ -546,6 +557,8 @@ const layerServerEnvironment = ServerEnvironment.layer.pipe(
 const layerServerSelfUpdate = ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate));
 
 const layerMachineMap = MachineExec.layer.pipe(
+  // Fork: the kitshn provider connection; the machine tools send their kitshn requests over it.
+  Layer.provideMerge(KitshnProvider.layer.pipe(Layer.provide(KitshnCli.layer))),
   Layer.provideMerge(MachineMap.layer),
   Layer.provideMerge(MachineHost.layer),
   // Fork: updates from the fork releases. It runs also when the machine map is off.
@@ -555,16 +568,6 @@ const layerMachineMap = MachineExec.layer.pipe(
   Layer.provide(MachineTunnel.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provide(ProcessRunner.layer),
   Layer.provide(NodeSocket.layerWebSocketConstructor),
-);
-
-// Fork: kitshn provider (K-706). One instance: the auth hooks, the guest routes and the provider
-// read the same tables. It shares the session store of the auth layer, so a revocation closes
-// the WebSockets of that session.
-const layerKitshnGrants = KitshnGrants.layer.pipe(
-  Layer.provide(SessionStore.layer),
-  Layer.provide(layerPersistence),
-  Layer.provide(layerServerEnvironment),
-  Layer.provide(layerServerSettings),
 );
 
 const layerAuth = EnvironmentAuth.layer.pipe(
@@ -996,14 +999,14 @@ const layerMakeServer = Layer.unwrap(
         }),
       ),
     ).pipe(Layer.provide(KitshnAttester.layer.pipe(Layer.provide(KitshnCli.layer))));
-    // Fork: runs `kitshn provider` while the `kitshnProvider` setting is on.
+    // Fork: runs `kitshn provider` for the life of the server (K-712: without kitshn 2, it only logs).
     const layerKitshnProvider = Layer.effectDiscard(
       ServerActivation.forkParked(
         Effect.gen(function* () {
           yield* (yield* KitshnProvider.KitshnProvider).run;
         }),
       ),
-    ).pipe(Layer.provide(KitshnProvider.layer.pipe(Layer.provide(KitshnCli.layer))));
+    );
     const layerCloudDesiredLinkReconcile = Layer.effectDiscard(
       Effect.gen(function* () {
         const cloudLink = yield* CloudLink.CloudLink;
