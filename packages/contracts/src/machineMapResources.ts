@@ -150,17 +150,6 @@ export const HealthThresholds = Schema.Struct({
 export type HealthThresholds = typeof HealthThresholds.Type;
 
 /** MM-1504. */
-export const DEFAULT_HEALTH_THRESHOLDS: HealthThresholds = {
-  cpuPercent: 95,
-  cpuPressurePercent: 20,
-  cpuMinutes: 30,
-  memoryPercent: 90,
-  diskPercent: 90,
-  swapMegabytesPerSecond: 10,
-  swapMinutes: 5,
-  offlineMinutes: 15,
-  batteryPercent: 15,
-};
 
 /** MM-1505: an alert. `endedAt` is null while it is active. */
 export const HealthAlert = Schema.Struct({
@@ -176,11 +165,7 @@ export const HealthAlert = Schema.Struct({
 export type HealthAlert = typeof HealthAlert.Type;
 
 export type ResourceRange = NonNullable<(typeof MapToolInputs.machines_resources.Type)["range"]>;
-export const RESOURCE_RANGES = [
-  "hour",
-  "day",
-  "month",
-] as const satisfies ReadonlyArray<ResourceRange>;
+const RESOURCE_RANGES = ["hour", "day", "month"] as const satisfies ReadonlyArray<ResourceRange>;
 
 /**
  * MM-1503: the history of one machine, one entry per step. The arrays have the same length.

@@ -86,38 +86,9 @@ A terminal thread is a thread whose view is a live shell. See [Terminal threads]
 | Update the Mac               | Merge to main. Each code push publishes a desktop release; the app updates itself. Then `machines_command` with `{"_tag":"installUpdate","whenIdle":true}` for the Mac or ask the owner to press the update button. The app must run.                                                                                                                                                                                                                                                                                                                                                      |
 | Deploy a local build         | Run `scripts/fork-deploy-local.sh <ssh-host>` from the checkout. Use it only when the owner asks, because it restarts the server at once. See [Deploy a local build](fork/operations.md#deploy-a-local-build).                                                                                                                                                                                                                                                                                                                                                                             |
 | Update a headless server     | A server that runs as the background service updates itself when `forkAutoUpdate` is on. To update it now, `machines_command` with `{"_tag":"installUpdate","whenIdle":true}` for that machine.                                                                                                                                                                                                                                                                                                                                                                                            |
-| Deploy the portal            | Merge a change in `apps/machine-map` or `packages/contracts/src/machineMap*.ts` to main. The workflow "Machine map deploy" tests and deploys it. A deploy from a branch rolls back main.                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Release a desktop app        | Merge to main. Each code push runs the workflow "Fork Release". It builds the Mac, Windows and Linux apps, the Linux server archives and `SHA256SUMS`. Then "Fork Android" adds the Android APK when the app changed.                                                                                                                                                                                                                                                                                                                                                                      |
 | Take upstream changes        | Run the workflow "Fork Sync", or wait for the VPS task "Fork Sync trigger", which starts it every 2 hours. It also merges the new heads of the open upstream pull requests in `scripts/fork-adopted-upstream-prs.json`; see [Adopted upstream pull requests](fork/operations.md#adopted-upstream-pull-requests). A conflict comments on the issue "Fork sync: upstream merge failed". After a sync that adds an upstream workflow, the job "Check upstream workflows" fails and prints its `gh workflow disable` command. Run that command: the fork keeps only `fork-*` workflows active. |
 | Build and install on the Mac | Run `PATH="$PWD/node_modules/.bin:$PATH" ./scripts/fork-desktop-mac.sh --install` from `~/Github/t3code/main`. Use it only when the owner asks, because it replaces the running app.                                                                                                                                                                                                                                                                                                                                                                                                       |
-
-## Portal data recovery
-
-The portal keeps all its state in one SQLite Durable Object. A change that rewrites stored data cannot be undone by a revert alone. The absolute map places (MM-1114) are such a change: on its first start, the portal moves every place from fractions to map pixels once, and it writes the time in the meta key `absolute_places`.
-
-- Fix forward first. Merge a fix to main; the workflow "Machine map deploy" deploys it.
-- Do not revert past the change "accept any finite map place" (#144). Older code decodes places with a 0..1 bound in the Durable Object constructor, so the portal does not start. A revert to a build with #144 and without the migration keeps the portal up, but it shows pixel places as fractions.
-- Point-in-time recovery restores the Durable Object to a time in the last 30 days. It does not work in local development. Data written after that time is lost: revisions, commands, alerts and resource points.
-
-To restore, ask the owner first. Then:
-
-1. Find the time. Use the start time of the "Machine map deploy" run that deployed the change, or the `absolute_places` value. Take one minute before it.
-2. Merge one change to main that reverts the migration and adds a temporary owner-only route, for example `POST /api/admin/restore` with `{ "at": <milliseconds> }`, that calls this Durable Object method:
-
-   ```ts
-   /** Temporary: restores the whole storage to `atMs`. Returns the bookmark that undoes it. */
-   async restoreTo(atMs: number): Promise<string> {
-     const bookmark = await this.ctx.storage.getBookmarkForTime(atMs);
-     const undo = await this.ctx.storage.onNextSessionRestoreBookmark(bookmark);
-     this.ctx.abort();
-     return undo;
-   }
-   ```
-
-   Revert the migration in the same change. Otherwise the next start migrates the restored data again.
-
-3. After the deploy, call the route once as the owner. Keep the returned bookmark: a second restore to it undoes the first.
-4. Check the map in the portal. Then remove the route in a follow-up change.
 
 ## Repair agent
 

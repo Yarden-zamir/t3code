@@ -21,7 +21,7 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ClientAccessMode } from "./settings.ts";
 
 /** Wire version of the machine and page protocols. Bump on a breaking change. */
-export const MACHINE_MAP_PROTOCOL = 1 as const;
+const MACHINE_MAP_PROTOCOL = 1 as const;
 
 /** An ISO 8601 time, for example `2026-10-13T08:00:00.000Z`. */
 export const MapTime = TrimmedNonEmptyString;
@@ -73,7 +73,6 @@ export const MACHINE_LEVEL_LINK_ACCESS = {
 export const machineSessionSubject = (machineId: MachineId): string => `machine:${machineId}`;
 
 /** The session subject of a client on a machine (MM-911). */
-export const clientSessionSubject = (clientId: string): string => `client:${clientId}`;
 
 const MapPixels = Schema.Number.check(Schema.isFinite());
 
@@ -194,8 +193,6 @@ export type ClientRecord = typeof ClientRecord.Type;
  * portal both show it, so the owner can tell that they approve the right sign-in. It keeps 8
  * base64url characters with their case, about 48 bits, so a look-alike key is not practical.
  */
-export const clientKeyCode = (thumbprint: string): string =>
-  `${thumbprint.slice(0, 4)}-${thumbprint.slice(4, 8)}`;
 
 /** What one client can do on one machine (MM-309). A client never gets agent tools. */
 export const ClientArrowRecord = Schema.Struct({
