@@ -10,7 +10,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 
-import type { LinkAudit } from "./kitshnProviderProtocol.ts";
+import * as Schema from "effect/Schema";
+
+import { LinkAudit } from "./kitshnProviderProtocol.ts";
 import * as KitshnProvider from "./KitshnProvider.ts";
 
 /**
@@ -30,6 +32,17 @@ export const execName = (command: string) => {
   return (first === "" ? "command" : first).slice(0, NAME_LIMIT);
 };
 
+const isLinkAudit = Schema.is(LinkAudit);
+
+/** A report cut to kitshn's limits, so one long field never drops the report. */
+const fitted = (audit: LinkAudit): LinkAudit => ({
+  ...audit,
+  target: audit.target.slice(0, 64),
+  thread: audit.thread?.slice(0, 200) ?? null,
+  name: execName(audit.name),
+  cwd: audit.cwd?.slice(0, 500) ?? null,
+});
+
 export class KitshnAudit extends Context.Service<
   KitshnAudit,
   {
@@ -44,15 +57,19 @@ const make = Effect.gen(function* () {
 
   // One report at a time. A failed send means kitshn is out of reach: the report waits and the
   // worker tries again later; the sliding queue drops the oldest reports past the limit.
+  // A report that kitshn's schema still refuses is dropped with a log line, never the worker.
   yield* Queue.take(queue).pipe(
     Effect.flatMap((audit) =>
-      provider
-        .request({ type: "audit", provider: "t3", audit })
-        .pipe(
-          Effect.catch(() =>
-            Queue.offer(queue, audit).pipe(Effect.andThen(Effect.sleep(RETRY_AFTER))),
-          ),
+      provider.request({ type: "audit", provider: "t3", audit }).pipe(
+        Effect.catch(() =>
+          Queue.offer(queue, audit).pipe(Effect.andThen(Effect.sleep(RETRY_AFTER))),
         ),
+        Effect.catchDefect((defect) =>
+          Effect.logWarning("kitshn audit: dropped a report that kitshn cannot take.", {
+            cause: String(defect),
+          }),
+        ),
+      ),
     ),
     Effect.forever,
     Effect.forkScoped,
@@ -60,8 +77,11 @@ const make = Effect.gen(function* () {
 
   return KitshnAudit.of({
     report: Effect.fn("KitshnAudit.report")(function* (audit) {
-      const at = yield* Clock.currentTimeMillis;
-      yield* Queue.offer(queue, { ...audit, at });
+      const report = fitted({ ...audit, at: yield* Clock.currentTimeMillis });
+      if (!isLinkAudit(report)) {
+        return yield* Effect.logWarning("kitshn audit: dropped a report that kitshn cannot take.");
+      }
+      yield* Queue.offer(queue, report);
     }),
   });
 });
