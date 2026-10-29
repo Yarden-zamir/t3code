@@ -20,8 +20,8 @@ import * as ProcessRunner from "../../processRunner.ts";
 // kitshn routes (`/agent/...`), so the K-718 move to `/agent/key/<path>` is a pin bump too.
 // Revisit when kitshn publishes a stable release channel or T3 moves to the kitshn daemon.
 export const KITSHN_CLI_PIN = {
-  tag: "edge-edb49410904c",
-  sha256: "ea55b48c88fe3e0e4d7b4e526738323610b67f9a0c2334f449cef70f8256c1f9",
+  tag: "edge-b46829700699",
+  sha256: "33f5c8dcb59d1e8f6da96eca438843fbc165ca06cdc4c9ed33bec21b3238e398",
 } as const;
 
 const MIN_NODE_MAJOR = 24;
