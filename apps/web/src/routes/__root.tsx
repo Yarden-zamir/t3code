@@ -36,6 +36,7 @@ import { DesktopWebLinkCoordinator } from "../components/desktop/DesktopWebLinkC
 import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
 import { DesktopUpdateIdleInstall } from "../components/desktop/DesktopUpdateIdleInstall";
 import { KitshnClientSettings } from "../components/KitshnClientSettings";
+import { DesktopDeviceMachines } from "../machineMap/desktopDevice";
 import { MachinePausedSurface, MachinePauseWatcher } from "../components/auth/MachinePausedSurface";
 import { InstalledAppCoordinator } from "../components/InstalledAppCoordinator";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
@@ -219,6 +220,7 @@ function RootRouteBranch() {
         {isElectron ? <RunningThreadKeepAlive /> : null}
         {isElectron ? <DesktopUpdateIdleInstall /> : null}
         {primaryEnvironmentAuthenticated ? <KitshnClientSettings /> : null}
+        {isElectron && primaryEnvironmentAuthenticated ? <DesktopDeviceMachines /> : null}
         {primaryEnvironmentAuthenticated ? <MachinePauseWatcher /> : null}
         <RelayClientInstallDialog />
         <ConnectOnboardingDialog />

@@ -188,11 +188,18 @@ The `t3.settings` state on kitshn holds a shared part and a part for each machin
 Settings > Machines shows how to join this machine to kitshn, and the kitshn settings of the selected environment. It also shows the kitshn connection: connected, connecting with the last error, or off with the reason, and the grants, reached machines, link proxy and kitshn's last answer. `machines_read` gives agents the same state.
 
 - A notice shows when the T3 host of this machine is not with kitshn yet. Run `scripts/fork-host-handover.ts` with the machine name to hand it over.
-- The desktop app shows "Machine list needs kitshn device tokens". It does not add the other machines as environments yet. Add a machine by hand in Settings > Connections.
+- The desktop app has "Join with a device invite": paste a kitshn device invite link there, see [Device invites](#device-invites).
 
-### Mobile app machines
+### Device invites
 
-The mobile app reads its machines from kitshn (`/device/machines`) with its device token when it opens and when it returns to the foreground. Settings > Fork > App token > Refresh machines reads them at once. An empty or refused list disables no saved machine; the machine shows the reason instead.
+A phone or a desktop app joins kitshn with its own device token (K-1601). On the kitshn map, "Add device" gives a one-time link `https://<kitshn>/join/device#code=…`. It works once and expires after 15 minutes.
+
+- **Phone:** scan the link in Add environment, or paste it in Address.
+- **Desktop:** paste the link in Settings > Machines > "Join with a device invite". The desktop app never uses the machine token of the kitshn daemon.
+- The app keeps only the `t3.app` cards that the token opens, and pairs with each machine. It reads the list at start, when it comes back to the foreground, and on Settings > Fork > App token > Refresh machines (phone). The desktop app also reads it every 30 seconds, adds each new machine as an environment, and removes an environment that it added when the list drops the machine.
+- A refused machine pairs again with a backoff, because Access can take some seconds to accept a new token.
+- An empty or refused list disables or removes no saved machine. The machine shows the reason instead.
+- If kitshn is paused (423) or Cloudflare refused the new token (502), the invite stays: try it again. A lost answer uses the invite up, so ask the owner for a new one.
 
 ### Machines panel
 

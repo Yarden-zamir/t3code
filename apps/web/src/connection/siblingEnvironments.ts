@@ -189,7 +189,7 @@ const delayAfter = (issue: SiblingIssue, failures: number): number => {
  * `afterSuccessMs` before the next pairing; a failure waits 30 seconds, doubled per failure, up to
  * 10 minutes.
  */
-async function pairSiblingWhenDue(
+export async function pairSiblingWhenDue(
   origin: string,
   connectPairing: Parameters<typeof pairSiblingOrigin>[1],
   options: { readonly credentials?: RequestCredentials; readonly afterSuccessMs?: number } = {},

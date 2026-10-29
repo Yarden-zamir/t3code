@@ -1,4 +1,5 @@
 import { isElectron } from "../../env";
+import { DeviceInviteSettingsRow } from "../../machineMap/desktopDevice";
 import { useMachineMapState } from "../../state/machineMap";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { ForkSettingsSlot } from "./ForkSettingsSlot";
@@ -24,18 +25,9 @@ export function MachinesSettingsPanel() {
           </AlertDescription>
         </Alert>
       ) : null}
-      {/* Revisit when kitshn gives the desktop app device tokens (K-1617). */}
-      {isElectron ? (
-        <Alert variant="info">
-          <AlertTitle>Machine list needs kitshn device tokens</AlertTitle>
-          <AlertDescription>
-            The desktop app does not add your other machines yet. Add a machine by hand in Settings
-            &gt; Connections.
-          </AlertDescription>
-        </Alert>
-      ) : null}
       <SettingsSection title="kitshn">
         {state === null ? null : <ConnectionRow connection={state.connection} />}
+        {isElectron ? <DeviceInviteSettingsRow /> : null}
         <ForkSettingsSlot place="machines-machine-map" />
       </SettingsSection>
     </SettingsPageContainer>

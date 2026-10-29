@@ -141,6 +141,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   getConnectionCatalog: () => ipcRenderer.invoke(IpcChannels.GET_CONNECTION_CATALOG_CHANNEL),
   setConnectionCatalog: (catalog) =>
     ipcRenderer.invoke(IpcChannels.SET_CONNECTION_CATALOG_CHANNEL, catalog),
+  kitshnDeviceRequest: (request) =>
+    ipcRenderer.invoke(IpcChannels.KITSHN_DEVICE_REQUEST_CHANNEL, request),
   isCloudflareAccessChallenged: (url) =>
     ipcRenderer.invoke(IpcChannels.IS_CLOUDFLARE_ACCESS_CHALLENGED_CHANNEL, url),
   discoverSshHosts: () => ipcRenderer.invoke(IpcChannels.DISCOVER_SSH_HOSTS_CHANNEL),
