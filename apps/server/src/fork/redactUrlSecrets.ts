@@ -277,3 +277,199 @@ export function redactTurnItemUrlSecrets(item: OrchestrationV2TurnItem): Orchest
       return item;
   }
 }
+
+// Known token formats. A word must be longer than its prefix by 8, so `ASIA` alone stays.
+const TOKEN_PREFIXES = [
+  "ghp_",
+  "gho_",
+  "ghs_",
+  "ghu_",
+  "ghr_",
+  "github_pat_",
+  "glpat-",
+  "npm_",
+  "sk-",
+  "xapp-",
+  "eyJ",
+  "AKIA",
+  "ASIA",
+  "AIza",
+  "ya29.",
+];
+// A key whose name holds one of these words has a secret value, as in `accessToken=x`.
+const SECRET_WORDS = [
+  "token",
+  "secret",
+  "password",
+  "passwd",
+  "pwd",
+  "api_key",
+  "apikey",
+  "private_key",
+  "access_key",
+  "account_key",
+  "auth",
+  "credential",
+  "session",
+  "cookie",
+];
+// Bare words that announce a secret. `token` or `password` alone does not, so
+// `Unexpected token '<'` and `password authentication failed` stay readable.
+const SECRET_LEADS: ReadonlySet<string> = new Set(["bearer", "basic"]);
+// After a secret key, these name the scheme, as in `Authorization: token x`. The scheme stays.
+const AUTH_SCHEMES: ReadonlySet<string> = new Set(["bearer", "basic", "token", "digest"]);
+// Quotes and JSON punctuation around a word, as in `"token":"abc",`.
+const WRAPPERS: ReadonlySet<string> = new Set([
+  '"',
+  "'",
+  "`",
+  ",",
+  ";",
+  "{",
+  "}",
+  "[",
+  "]",
+  "(",
+  ")",
+]);
+
+const unwrap = (text: string) => {
+  let start = 0;
+  let end = text.length;
+  while (start < end && WRAPPERS.has(text[start]!)) start += 1;
+  while (end > start && WRAPPERS.has(text[end - 1]!)) end -= 1;
+  return { start, end, core: text.slice(start, end) };
+};
+
+const isLower = (char: string) => (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
+const isUpper = (char: string) => char >= "A" && char <= "Z";
+
+/** `--api-key`, `X-Api-Key`, `apiKey` and `API_KEY` all become `api_key`. */
+const keyName = (raw: string) => {
+  let start = 0;
+  while (raw[start] === "-") start += 1;
+  const core = unwrap(raw.slice(start)).core;
+  let name = "";
+  for (let index = 0; index < core.length; index += 1) {
+    const char = core[index]!;
+    if (index > 0 && isUpper(char) && isLower(core[index - 1]!)) name += "_";
+    name += char;
+  }
+  return name.toLowerCase().replaceAll("-", "_");
+};
+
+const isSecretKey = (raw: string) => {
+  const name = keyName(raw);
+  return SECRET_WORDS.some((word) => name.includes(word));
+};
+
+const isToken = (text: string) => {
+  const core = unwrap(text).core;
+  // `npm_config_cache=/x` is a key: redactPair checks its value.
+  if (core.includes("=") || core.includes(":")) return false;
+  const slack = core.startsWith("xox") && isLower(core[3] ?? "") && core[4] === "-";
+  return (
+    slack ||
+    TOKEN_PREFIXES.some((prefix) => core.startsWith(prefix) && core.length >= prefix.length + 8)
+  );
+};
+
+/** One `key=value` or `key:value`, as in `AccountKey=x` or `"token":"x"`. */
+function redactPair(pair: string): string {
+  for (const separator of ["=", ":"]) {
+    const at = pair.indexOf(separator);
+    if (at <= 0) continue;
+    const value = pair.slice(at + 1);
+    const valueStart = unwrap(value).start;
+    const secret = value.slice(valueStart);
+    if (secret === "" || secret === REDACTED) return pair;
+    if (AUTH_SCHEMES.has(unwrap(secret).core.toLowerCase())) return pair;
+    if (isSecretKey(pair.slice(0, at)) || isToken(secret)) {
+      return `${pair.slice(0, at + 1)}${value.slice(0, valueStart)}${REDACTED}`;
+    }
+    return pair;
+  }
+  return pair;
+}
+
+/** True when the word announces a secret in the next word: `Bearer`, `token:`, `x-api-key:`, `--token`. */
+function leadsSecret(word: string): boolean {
+  const core = unwrap(word).core;
+  if (core.endsWith(":") || core.endsWith("=")) return isSecretKey(core.slice(0, -1));
+  if (core.startsWith("--")) return !core.includes("=") && isSecretKey(core);
+  // `"Authorization":"token` keeps its scheme, and the next word is the secret.
+  for (const separator of ["=", ":"]) {
+    const at = core.indexOf(separator);
+    if (at > 0 && isSecretKey(core.slice(0, at))) {
+      return AUTH_SCHEMES.has(unwrap(core.slice(at + 1)).core.toLowerCase());
+    }
+  }
+  return SECRET_LEADS.has(keyName(core));
+}
+
+/** Hides the body of each PEM private key block, also of a block that a cut left open. */
+function redactPrivateKeys(text: string): string {
+  let result = text;
+  for (
+    let at = result.indexOf("-----BEGIN ");
+    at >= 0;
+    at = result.indexOf("-----BEGIN ", at + 1)
+  ) {
+    const headerEnd = result.indexOf("-----", at + 11);
+    if (headerEnd < 0 || !result.slice(at, headerEnd).includes("PRIVATE KEY")) continue;
+    const bodyStart = headerEnd + 5;
+    const footer = result.indexOf("-----END", bodyStart);
+    const bodyEnd = footer < 0 ? result.length : footer;
+    result = `${result.slice(0, bodyStart)}${REDACTED}${result.slice(bodyEnd)}`;
+  }
+  return result;
+}
+
+/**
+ * Hides URL secrets, private key blocks, known token formats, values of keys whose name holds a
+ * secret word (`k=v`, `k: v`, `"k":"v"`), and the word after `Bearer`, `Basic` or `--token`.
+ * Known limits: short flags (`-p x`), a quoted secret with a space, and `user:pass@host` without
+ * a scheme stay. Revisit if diagnostics leak one.
+ */
+export function redactSecretsInText(text: string): string {
+  const source = redactPrivateKeys(redactUrlSecretsInText(text));
+  let result = "";
+  let lead = false;
+  let index = 0;
+  while (index < source.length) {
+    let end = index;
+    const isSpace = source[index]!.trim() === "";
+    while (end < source.length && (source[end]!.trim() === "") === isSpace) end += 1;
+    const word = source.slice(index, end);
+    index = end;
+    if (isSpace) {
+      result += word;
+      continue;
+    }
+    const { start, end: coreEnd, core } = unwrap(word);
+    if (lead && AUTH_SCHEMES.has(core.toLowerCase())) {
+      result += word;
+      continue;
+    }
+    const redacted =
+      core === "" || core === REDACTED
+        ? word
+        : lead || isToken(core)
+          ? `${word.slice(0, start)}${REDACTED}${word.slice(coreEnd)}`
+          : `${word.slice(0, start)}${core.split(";").map(redactPair).join(";")}${word.slice(coreEnd)}`;
+    result += redacted;
+    lead = !lead && leadsSecret(word);
+  }
+  return result;
+}
+
+/**
+ * The program of a process for diagnostics: its process name, else the base name of the first
+ * word of its command line. The arguments can hold tokens, so they never leave the machine.
+ * Known limit: the fallback cuts a path with a space. Revisit if telemetry often lacks names.
+ */
+export function programName(processName: string | undefined, commandLine: string): string {
+  if (processName !== undefined && processName.trim() !== "") return processName.trim();
+  const program = commandLine.trim().split(" ")[0] ?? "";
+  return program.slice(program.lastIndexOf("/") + 1);
+}
