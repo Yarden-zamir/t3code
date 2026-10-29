@@ -190,6 +190,7 @@ import * as AbandonedTerminalDrafts from "./fork/AbandonedTerminalDrafts.ts";
 import * as TerminalThreadMove from "./fork/TerminalThreadMove.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkPreviewServerGroups from "./fork/PreviewServerGroups.ts";
+import { layerPortalTunnel } from "./fork/portalTunnelFile.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
 import * as MachineExec from "./fork/machineMap/MachineExec.ts";
 import * as MachineExecRoute from "./fork/machineMap/machineExecRoute.ts";
@@ -557,6 +558,10 @@ const layerMachineMap = MachineExec.layer.pipe(
   Layer.provideMerge(MachineHost.layer),
   // Fork: updates from the fork releases.
   Layer.provideMerge(ForkUpdates.layer.pipe(Layer.provide(layerServerSelfUpdate))),
+  // Fork: the portal tunnel of an older join serves the host until its handover to kitshn.
+  Layer.provide(
+    layerPortalTunnel.pipe(Layer.provide(ServerSecretStore.layer), Layer.provide(layerRelayClient)),
+  ),
   Layer.provide(ProcessRunner.layer),
   Layer.provide(NodeSocket.layerWebSocketConstructor),
 );
