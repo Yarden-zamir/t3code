@@ -2,11 +2,8 @@ import { expect, it, vi } from "vite-plus/test";
 
 import { createMachineAccessWatcher } from "./forkMachineAccessWatcher";
 
-it.each([
-  { machinePaused: true },
-  { clientPending: { code: "ABCD", portalUrl: "https://portal.example" } },
-  { clientPending: { code: null, portalUrl: "https://portal.example" } },
-])("enters the root lock surface after a connected client is refused: %j", async (session) => {
+it("enters the root lock surface after a connected client is refused", async () => {
+  const session = { machinePaused: true };
   const reload = vi.fn();
   const read = vi.fn().mockResolvedValue(session);
   const watch = createMachineAccessWatcher(read, reload);

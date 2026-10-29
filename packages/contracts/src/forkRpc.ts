@@ -56,7 +56,7 @@ export const FORK_WS_METHODS = {
   forkChangelogSyncStatus: "forkChangelog.syncStatus",
   forkChangelogStartSync: "forkChangelog.startSync",
 
-  // Fork: machine map (apps/machine-map/SPEC.md)
+  // Fork: kitshn client state; the method names stay from the machine map.
   machineMapSubscribe: "machineMap.subscribe",
   machineMapShareSettings: "machineMap.shareSettings",
   machineMapReadableEnvironments: "machineMap.readableEnvironments",

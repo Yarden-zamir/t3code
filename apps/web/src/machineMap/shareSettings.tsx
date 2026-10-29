@@ -1,5 +1,5 @@
 /**
- * Fork: machine map settings in T3 Settings (apps/machine-map/SPEC.md, MM-411, MM-412).
+ * Fork: kitshn's shared `t3.settings` in T3 Settings (MM-411, MM-412).
  * A change saved for all environments becomes the shared value of the map, so offline and new
  * machines get it too. A row shows a marker when the map syncs its value.
  */

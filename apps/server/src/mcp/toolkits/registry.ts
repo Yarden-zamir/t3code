@@ -53,7 +53,7 @@ export const McpToolkits = {
   device: DeviceToolkit,
   pullRequests: PullRequestsToolkit,
   html: HtmlToolkit,
-  // Fork: machine map (apps/machine-map/SPEC.md, MM-801).
+  // Fork: the machine tools on kitshn (MM-801).
   machineMap: MachineMapToolkit,
   // Fork: kitshn publishing.
   kitshn: KitshnToolkit,

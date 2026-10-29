@@ -397,7 +397,7 @@ export const CONNECTIONS_ITEMS = [
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
-// Fork: machine map (apps/machine-map/SPEC.md MM-203).
+// Fork: kitshn (MM-203).
 export const MACHINE_MAP_ITEMS = [
   {
     id: "environment-label-from-machine-map",

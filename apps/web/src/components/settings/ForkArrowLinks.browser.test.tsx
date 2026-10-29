@@ -30,7 +30,7 @@ vi.mock(import("~/state/environments"), async (original) => ({
     environments: [
       {
         environmentId: EnvironmentId.make("mac"),
-        serverConfig: { settings: { machineMap: { portalUrl: "https://portal.example.com" } } },
+        serverConfig: { settings: {} },
       },
     ],
   })) as never,

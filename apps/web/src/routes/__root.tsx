@@ -36,7 +36,6 @@ import { DesktopWebLinkCoordinator } from "../components/desktop/DesktopWebLinkC
 import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
 import { DesktopUpdateIdleInstall } from "../components/desktop/DesktopUpdateIdleInstall";
 import { KitshnClientSettings } from "../components/KitshnClientSettings";
-import { ClientPendingSurface } from "../components/auth/ClientPendingSurface";
 import { MachinePausedSurface, MachinePauseWatcher } from "../components/auth/MachinePausedSurface";
 import { InstalledAppCoordinator } from "../components/InstalledAppCoordinator";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
@@ -167,10 +166,6 @@ function RootRouteBranch() {
 
   if (authGateState.status === "machine-paused") {
     return <MachinePausedSurface />;
-  }
-
-  if (authGateState.status === "client-pending") {
-    return <ClientPendingSurface pending={authGateState.pending} />;
   }
 
   if (pathname === "/pair" || pathname === "/connect" || pathname === "/connect-agent") {

@@ -160,20 +160,6 @@ export const PullRequestWatchRemarkFilter = Schema.Struct({
 });
 export type PullRequestWatchRemarkFilter = typeof PullRequestWatchRemarkFilter.Type;
 
-const DEFAULT_MACHINE_MAP_PORTAL_URL = "https://t3.yarden-zamir.com";
-
-/**
- * Fork: machine map (`apps/machine-map/SPEC.md`, MM-1301). Off means no portal connection and no
- * change to auth. The machine token lives in the server secret store, never here (MM-1302).
- */
-export const MachineMapSettings = Schema.Struct({
-  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  portalUrl: TrimmedNonEmptyString.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MACHINE_MAP_PORTAL_URL)),
-  ),
-});
-export type MachineMapSettings = typeof MachineMapSettings.Type;
-
 export const ForkClientSettingsFields = {
   confirmTerminalClose: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Fork: a focused terminal hands keys that match an app keybinding to the app first. */
@@ -462,7 +448,7 @@ export const ForkServerSettingsFields = {
   sidebarTabs: SidebarTabs.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /**
    * Fork: the machine map reports and applies the rules of `keybindings.json` as the server
-   * setting `keybindings` (`KEYBINDINGS_SETTING_KEY`). See apps/machine-map/README.md "Keybinding sync".
+   * setting `keybindings` (`KEYBINDINGS_SETTING_KEY`).
    */
   keybindingSync: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**

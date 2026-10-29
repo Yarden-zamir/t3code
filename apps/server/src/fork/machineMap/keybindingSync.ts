@@ -1,5 +1,5 @@
 /**
- * Fork: keybinding sync through the machine map settings (apps/machine-map/SPEC.md, MM-414). The
+ * Fork: keybinding sync through kitshn's `t3.settings` (MM-414). The
  * `keybindings` setting is the rule list of `keybindings.json`, synced only while `keybindingSync`
  * is on. Unknown commands stay for a later build. A written value is decoded, so it reads back
  * equal (MM-404). A write replaces the whole file and keeps the old one as `keybindings.json.bak`.
