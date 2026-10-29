@@ -7,6 +7,7 @@ import { AttachmentToolkit } from "./attachment/tools.ts";
 import { DeviceToolkit } from "./device/tools.ts";
 import { EnvironmentToolkit } from "./environment/tools.ts";
 import { HtmlToolkit } from "./html/tools.ts";
+import { KitshnToolkit } from "./kitshn/tools.ts";
 import { MachineMapToolkit } from "./machineMap/tools.ts";
 import { OrchestratorToolkit } from "./orchestrator/tools.ts";
 import { PreviewToolkit } from "./preview/tools.ts";
@@ -54,6 +55,8 @@ export const McpToolkits = {
   html: HtmlToolkit,
   // Fork: machine map (apps/machine-map/SPEC.md, MM-801).
   machineMap: MachineMapToolkit,
+  // Fork: kitshn publishing.
+  kitshn: KitshnToolkit,
 } as const;
 
 export type McpToolkitName = keyof typeof McpToolkits;

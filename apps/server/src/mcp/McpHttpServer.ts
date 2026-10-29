@@ -27,6 +27,8 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as DeviceService from "../device/DeviceService.ts";
+import * as KitshnCli from "../fork/kitshn/KitshnCli.ts";
+import * as KitshnPublish from "../fork/kitshn/KitshnPublish.ts";
 import * as HtmlRender from "../htmlRender/HtmlRender.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -68,6 +70,7 @@ import {
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
+import * as KitshnHandlers from "./toolkits/kitshn/handlers.ts";
 import * as MachineMapHandlers from "./toolkits/machineMap/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 import { McpToolkits, type McpToolkitName } from "./toolkits/registry.ts";
@@ -1156,6 +1159,10 @@ const toolkitRegistrations = {
   html: layerHtmlToolkit,
   // Fork: machine map tools.
   machineMap: toolkitRegistration(McpToolkits.machineMap, MachineMapHandlers.layer),
+  // Fork: kitshn tools.
+  kitshn: toolkitRegistration(McpToolkits.kitshn, KitshnHandlers.layer).pipe(
+    Layer.provide(KitshnPublish.layer.pipe(Layer.provide(KitshnCli.layer))),
+  ),
 } satisfies { readonly [Name in McpToolkitName]: Layer.Layer<never, unknown, unknown> };
 
 /** Every tool the T3 MCP server advertises. AgentContextBudget.test.ts measures this set. */
