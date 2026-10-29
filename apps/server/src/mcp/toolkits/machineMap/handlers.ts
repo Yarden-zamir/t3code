@@ -1,17 +1,12 @@
-import {
-  isMachineLocalSetting,
-  isOwnerOnlySetting,
-  OrchestratorMcpFailure,
-  ScopedSettingValues,
-} from "@t3tools/contracts";
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as KitshnCli from "../../../fork/kitshn/KitshnCli.ts";
 import * as KitshnGrants from "../../../fork/kitshn/KitshnGrants.ts";
 import * as KitshnProvider from "../../../fork/kitshn/KitshnProvider.ts";
+import * as KitshnSettingsSync from "../../../fork/kitshn/KitshnSettingsSync.ts";
 import { isMachineRequestNamespace } from "../../../fork/machineMap/machineAccess.ts";
 import * as MachineExec from "../../../fork/machineMap/MachineExec.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -49,55 +44,22 @@ const ask = (
     Effect.mapError(toFailure),
   );
 
-const EMPTY_PART: ScopedSettingValues = { server: {}, client: {} };
-const decodePart = Schema.decodeUnknownOption(ScopedSettingValues);
-
 /** K-709: set or clear one key of one part of the `t3.settings` state. */
 const setSetting = Effect.fn("MachineMapMcp.setSetting")(function* (
   input: typeof import("./tools.ts").MachinesSetSettingInput.Type,
 ) {
-  yield* refuseMachineCaller;
-  if (isMachineLocalSetting(input.scope, input.key) || isOwnerOnlySetting(input.scope, input.key)) {
-    return yield* new OrchestratorMcpFailure({
-      code: "capability_denied",
-      message: `${input.key} belongs to one machine and is not set through kitshn.`,
-    });
-  }
-  // The shared part reaches every machine, also machines whose grants this server cannot see, so
-  // only the owner changes it: in T3 Settings, or with `t3 tool call` from a shell.
-  if (input.part === "shared") {
-    const scope = yield* McpInvocationContext.McpInvocationContext;
-    if (scope.thread !== undefined) {
-      return yield* new OrchestratorMcpFailure({
-        code: "capability_denied",
-        message:
-          "Agents do not change the shared settings of every machine. Set part machine for this machine, or ask the owner to change the shared value in T3 Settings with All environments.",
-      });
-    }
-  }
-  const provider = yield* KitshnProvider.KitshnProvider;
-  const current = yield* provider.state.pipe(Stream.runHead);
-  const parts = Option.flatMap(current, (state) => Option.fromNullishOr(state.settings));
-  const before = Option.getOrElse(
-    Option.flatMap(parts, (state) => decodePart(state[input.part])),
-    () => EMPTY_PART,
-  );
-  const { [input.key]: _old, ...rest } = before[input.scope];
-  const next: ScopedSettingValues = {
-    ...before,
-    [input.scope]:
-      input.clear === true || input.value === undefined
-        ? rest
-        : { ...rest, [input.key]: input.value },
-  };
-  yield* provider
-    .request({
-      type: "desired-set",
-      provider: "t3",
-      kind: KitshnProvider.SETTINGS_KIND,
-      part: input.part,
-      value: next,
-    })
+  const scope = yield* refuseMachineCaller;
+  // A thread is an agent; `t3 tool call` without a thread credential is the owner in a shell.
+  yield* (yield* KitshnSettingsSync.KitshnSettingsSync)
+    .setOne(
+      {
+        part: input.part,
+        scope: input.scope,
+        key: input.key,
+        value: input.clear === true ? undefined : input.value,
+      },
+      scope.thread === undefined ? "owner" : "agent",
+    )
     .pipe(Effect.mapError(toFailure));
   return { _tag: "setting", part: input.part, scope: input.scope, key: input.key };
 });

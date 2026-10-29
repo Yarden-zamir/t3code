@@ -18,6 +18,7 @@ import * as Toolkit from "effect/ai/Toolkit";
 import * as KitshnCli from "../../../fork/kitshn/KitshnCli.ts";
 import * as KitshnGrants from "../../../fork/kitshn/KitshnGrants.ts";
 import * as KitshnProvider from "../../../fork/kitshn/KitshnProvider.ts";
+import * as KitshnSettingsSync from "../../../fork/kitshn/KitshnSettingsSync.ts";
 import * as MachineExec from "../../../fork/machineMap/MachineExec.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -29,6 +30,7 @@ const shared = {
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
     KitshnProvider.KitshnProvider,
+    KitshnSettingsSync.KitshnSettingsSync,
     KitshnGrants.KitshnGrants,
     KitshnCli.KitshnCli,
     MachineExec.MachineExec,

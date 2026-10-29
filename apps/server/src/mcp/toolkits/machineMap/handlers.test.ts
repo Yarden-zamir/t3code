@@ -9,6 +9,7 @@ import { McpSchema, McpServer } from "effect/ai";
 import * as MachineExec from "../../../fork/machineMap/MachineExec.ts";
 import * as KitshnCli from "../../../fork/kitshn/KitshnCli.ts";
 import * as KitshnGrants from "../../../fork/kitshn/KitshnGrants.ts";
+import * as KitshnSettingsSync from "../../../fork/kitshn/KitshnSettingsSync.ts";
 import * as KitshnProvider from "../../../fork/kitshn/KitshnProvider.ts";
 import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -84,26 +85,29 @@ const toolsWith = (
   threads: Layer.Layer<ThreadManagement.ThreadManagementService>,
   requests: Array<unknown> = [],
   answer: KitshnProvider.KitshnProvider["Service"]["request"] = () => Effect.fail(notConnected),
-) =>
-  McpHttpServer.toolkitRegistration(MachineMapToolkit, MachineMapHandlers.layer).pipe(
+) => {
+  const provider = {
+    request: (input) =>
+      Effect.sync(() => void requests.push(input)).pipe(Effect.andThen(answer(input))),
+    state: Stream.make({
+      settings: { shared: { server: { a: 1 }, client: {} }, machine: null },
+      cardSettings: {},
+      reach: [],
+    }),
+    connection: Stream.make({ status: "connecting" as const, detail: "kitshn provider stopped" }),
+    linkProxyState: Effect.succeed("none" as const),
+    askResults: Effect.succeed([]),
+  } satisfies Partial<KitshnProvider.KitshnProvider["Service"]>;
+  return McpHttpServer.toolkitRegistration(MachineMapToolkit, MachineMapHandlers.layer).pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provide(threads),
+    Layer.provide(Layer.mock(KitshnProvider.KitshnProvider)(provider)),
+    // The real rule of the settings service, on the mocked provider connection.
     Layer.provide(
-      Layer.mock(KitshnProvider.KitshnProvider)({
-        request: (input) =>
-          Effect.sync(() => void requests.push(input)).pipe(Effect.andThen(answer(input))),
-        state: Stream.make({
-          settings: { shared: { server: { a: 1 }, client: {} }, machine: null },
-          cardSettings: {},
-          reach: [],
-          linkSocket: null,
-        }),
-        connection: Stream.make({
-          status: "connecting" as const,
-          detail: "kitshn provider stopped",
-        }),
-        linkProxyState: Effect.succeed("none" as const),
-        askResults: Effect.succeed([]),
+      Layer.mock(KitshnSettingsSync.KitshnSettingsSync)({
+        setOne: KitshnSettingsSync.makeSetOne(
+          provider as unknown as KitshnProvider.KitshnProvider["Service"],
+        ),
       }),
     ),
     Layer.provide(
@@ -118,6 +122,7 @@ const toolsWith = (
     Layer.provide(Layer.mock(KitshnCli.KitshnCli)({})),
     Layer.provide(Layer.mock(MachineExec.MachineExec)({})),
   );
+};
 
 const layerTools = toolsWith(liveThreadsLayer);
 

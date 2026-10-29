@@ -75,6 +75,55 @@ export const sharedPartAfterShare = (
   };
 };
 
+/** Why one setting could not be set in `t3.settings`. */
+export class KitshnSettingRefused extends Schema.TaggedError<KitshnSettingRefused>()(
+  "KitshnSettingRefused",
+  { message: Schema.String },
+) {}
+
+export interface SettingChange {
+  readonly part: "machine" | "shared";
+  readonly scope: "server" | "client";
+  readonly key: string;
+  /** Undefined clears the key. */
+  readonly value: unknown;
+}
+
+/** K-709: the rule and the write of `KitshnSettingsSync.setOne`, on this provider connection. */
+export const makeSetOne = (provider: KitshnProvider.KitshnProvider["Service"]) =>
+  Effect.fn("KitshnSettingsSync.setOne")(function* (change: SettingChange, by: "owner" | "agent") {
+    if (isMachineLocalSetting(change.scope, change.key)) {
+      return yield* new KitshnSettingRefused({
+        message: `${change.key} belongs to one machine and is not set through kitshn.`,
+      });
+    }
+    if (change.part === "shared" && by === "agent") {
+      return yield* new KitshnSettingRefused({
+        message:
+          "Agents do not change the shared settings of every machine. Set part machine for this machine, or ask the owner to change the shared value in T3 Settings with All environments.",
+      });
+    }
+    const current = yield* provider.state.pipe(Stream.runHead);
+    const before: ScopedSettingValues = Option.getOrElse(
+      Option.flatMap(current, (state) => decodePart(state.settings?.[change.part] ?? null)),
+      () => ({ server: {}, client: {} }),
+    );
+    const { [change.key]: _old, ...rest } = before[change.scope];
+    const next: ScopedSettingValues = {
+      ...before,
+      [change.scope]: change.value === undefined ? rest : { ...rest, [change.key]: change.value },
+    };
+    yield* provider
+      .request({
+        type: "desired-set",
+        provider: "t3",
+        kind: KitshnProvider.SETTINGS_KIND,
+        part: change.part,
+        value: next,
+      })
+      .pipe(Effect.mapError((error) => new KitshnSettingRefused({ message: error.message })));
+  });
+
 export class KitshnSettingsSync extends Context.Service<
   KitshnSettingsSync,
   {
@@ -89,6 +138,16 @@ export class KitshnSettingsSync extends Context.Service<
     readonly share: (
       input: MachineMapShareSettingsInput,
     ) => Effect.Effect<MachineMapShareSettingsResult>;
+    /**
+     * K-709: sets or clears one key of one part. The shared part reaches every machine, also
+     * machines whose grants this server cannot see, so an agent never sets it; the owner does.
+     * Known limit: an agent shell can still send `desired-set` to the daemon socket itself; only
+     * kitshn can close that path (a shared part that only the owner sets).
+     */
+    readonly setOne: (
+      change: SettingChange,
+      by: "owner" | "agent",
+    ) => Effect.Effect<void, KitshnSettingRefused>;
   }
 >()("t3/fork/kitshn/KitshnSettingsSync") {}
 
@@ -268,7 +327,9 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  return KitshnSettingsSync.of({ run, clientState, share });
+  const setOne = makeSetOne(provider);
+
+  return KitshnSettingsSync.of({ run, clientState, share, setOne });
 });
 
 export const layer = Layer.effect(KitshnSettingsSync, make);
