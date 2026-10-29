@@ -49,7 +49,7 @@ import * as PeerMcpClient from "../../peer/PeerMcpClient.ts";
 import { execName } from "../kitshn/KitshnAudit.ts";
 import * as KitshnAudit from "../kitshn/KitshnAudit.ts";
 import * as KitshnGrants from "../kitshn/KitshnGrants.ts";
-import type { ReachedCard } from "../kitshn/kitshnProviderProtocol.ts";
+import { PROVIDER_NAME, type ReachedCard } from "../kitshn/kitshnProviderProtocol.ts";
 import * as KitshnProvider from "../kitshn/KitshnProvider.ts";
 import {
   CLI_LOCAL_USER_REFUSAL,
@@ -127,7 +127,7 @@ export class MachinePeers extends Context.Service<
 /** K-1609: one link from the reach: B's `t3.app` and `t3.agents` cards. */
 export interface LinkTarget {
   readonly machine: { readonly id: MachineId; readonly name: string };
-  /** The link proxy address of B; the proxy answers on the daemon's socket. */
+  /** K-1609: the link proxy address of B, `/<provider>/<machine id>`, on the daemon's socket. */
   readonly origin: string;
   readonly access: AuthMcpClientAccess;
   /** `t3.agents` at exec, and `t3.app` at use or control (MM-1908). */
@@ -159,9 +159,9 @@ export const linkTargets = (reach: ReadonlyArray<ReachedCard>): ReadonlyArray<Li
     return [
       {
         machine: { id: MachineId.make(machineId), name: app.machineName },
-        origin: `http://link/${encodeURIComponent(machineId)}`,
+        origin: `http://link/${PROVIDER_NAME}/${encodeURIComponent(machineId)}`,
         access,
-        exec: (agents.level === "exec" || agents.level === "control") && access !== "read-only",
+        exec: agents.level === "exec" && access !== "read-only",
       },
     ];
   });
