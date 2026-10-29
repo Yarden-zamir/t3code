@@ -118,6 +118,38 @@ export const CardSettingValues = Schema.Record(
 );
 export type CardSettingValues = typeof CardSettingValues.Type;
 
+/** K-1609: a card of another machine that this machine reaches. `address` is null for `t3.agents`. */
+export const ReachedCard = Schema.Struct({
+  machineId: Schema.String,
+  machineName: Schema.String,
+  kind: Schema.String,
+  id: Schema.String,
+  address: Schema.NullOr(Schema.String),
+  level: Schema.String,
+});
+export type ReachedCard = typeof ReachedCard.Type;
+
+/** K-1610: what this machine reports of one call on another machine; never arguments or output. */
+export const LinkAudit = Schema.Struct({
+  kind: Schema.Literals(["exec", "tool"]),
+  target: Schema.String.check(Schema.isMaxLength(64)),
+  thread: Schema.NullOr(Schema.String.check(Schema.isMaxLength(200))),
+  /** One word: the first word of the command, or the tool name. */
+  name: Schema.String.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(100),
+    Schema.makeFilter(
+      (name: string) =>
+        ![...name].some((char) => char.trim() === "") || "one word, with no arguments",
+    ),
+  ),
+  cwd: Schema.NullOr(Schema.String.check(Schema.isMaxLength(500))),
+  outcome: Schema.Literals(["succeeded", "refused", "failed"]),
+  exitCode: Schema.NullOr(Schema.Int),
+  at: Schema.Number,
+});
+export type LinkAudit = typeof LinkAudit.Type;
+
 export const Request = Schema.Union([
   Schema.Struct({
     id: Schema.String,
@@ -172,7 +204,14 @@ export const Request = Schema.Union([
     part: Schema.Literals(["shared", "machine"]),
     value: Schema.Unknown,
   }),
-  /** K-1612 (cutover): cancels a queued job that runs on this machine or that it queued. */
+  /** K-1610: report one call on another machine. */
+  Schema.Struct({
+    id: Schema.String,
+    type: Schema.Literal("audit"),
+    provider: Schema.Literal(PROVIDER_NAME),
+    audit: LinkAudit,
+  }),
+  /** K-1612 (cutover): cancels a queued job that this machine queued. */
   Schema.Struct({ id: Schema.String, type: Schema.Literal("job-cancel"), jobId: Schema.Int }),
   /** K-605 (cutover): the resource sample now and the samples of the last hour. */
   Schema.Struct({ id: Schema.String, type: Schema.Literal("samples") }),
@@ -181,7 +220,7 @@ export type Request = typeof Request.Type;
 /** The requests that wait for an answer of the same id. */
 export type LocalRequest = Extract<
   Request,
-  { readonly type: "ask" | "job-cancel" | "samples" | "desired-set" }
+  { readonly type: "ask" | "job-cancel" | "samples" | "desired-set" | "audit" }
 >;
 export type LocalRequestInput = LocalRequest extends infer R
   ? R extends LocalRequest
@@ -258,6 +297,20 @@ export const Answer = Schema.Union([
     desired: Schema.optionalKey(Schema.Record(Schema.String, DesiredParts)),
     /** K-717: the saved card setting values. */
     settings: Schema.optionalKey(CardSettingValues),
+    /** K-1609: the saved reach of this machine. */
+    reach: Schema.optionalKey(Schema.Array(ReachedCard)),
+    /**
+     * K-1609: the link proxy: a Unix socket path, or a `\\.\pipe\` name on Windows. Null while
+     * the machine has no link proxy, so it has no outgoing links.
+     */
+    linkSocket: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  }),
+  Schema.Struct({ id: Schema.String, type: Schema.Literal("audit") }),
+  /** K-1609: an event: the cards of other machines that this machine reaches, on each change. */
+  Schema.Struct({
+    type: Schema.Literal("reach"),
+    provider: Schema.String,
+    cards: Schema.Array(ReachedCard),
   }),
   Schema.Struct({ id: Schema.String, type: Schema.Literal("desired-set") }),
   /** K-709: an event: the desired state of one kind, on each change. */

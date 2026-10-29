@@ -46,6 +46,7 @@ import {
   type CardSettingValues,
   type DesiredParts,
   type LocalRequest,
+  type ReachedCard,
   type LocalRequestInput,
   type Request,
   decodeAnswer,
@@ -174,6 +175,10 @@ const REGISTERED_KINDS = [
 export interface KitshnProviderState {
   readonly settings: DesiredParts | null;
   readonly cardSettings: CardSettingValues;
+  /** K-1609: the cards of other machines that this machine reaches. */
+  readonly reach: ReadonlyArray<ReachedCard>;
+  /** K-1609: the link proxy, or null while this machine has none (no outgoing links). */
+  readonly linkSocket: string | null;
 }
 
 /** Why a local request to kitshn did not get an answer. */
@@ -214,6 +219,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const providerState = yield* SubscriptionRef.make<KitshnProviderState>({
     settings: null,
     cardSettings: {},
+    reach: [],
+    linkSocket: null,
   });
   // The live registered connection, so `request` can use it.
   const live = yield* Ref.make<
@@ -248,6 +255,14 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         {
           label: "Running turns",
           value: Option.match(busy, { onNone: () => "unknown", onSome: String }),
+        },
+        // K-1608: "true" holds jobs sent "when idle"; T3 keeps its own idle check as well.
+        {
+          label: "Busy",
+          value: Option.match(busy, {
+            onNone: () => "false",
+            onSome: (count) => String(count > 0),
+          }),
           role: "busy",
         },
       ],
@@ -401,6 +416,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
             yield* SubscriptionRef.set(providerState, {
               settings: answer.desired?.[SETTINGS_KIND] ?? null,
               cardSettings: answer.settings ?? {},
+              reach: answer.reach ?? [],
+              linkSocket: answer.linkSocket ?? null,
             });
             yield* Ref.set(live, Option.some(localRequest));
             yield* Deferred.succeed(registeredOnce, undefined);
@@ -417,6 +434,11 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
             return yield* SubscriptionRef.update(providerState, (current) => ({
               ...current,
               cardSettings: answer.values,
+            }));
+          case "reach":
+            return yield* SubscriptionRef.update(providerState, (current) => ({
+              ...current,
+              reach: answer.cards,
             }));
           case "grants":
             yield* grants.replaceTables(answer.tables);
@@ -437,6 +459,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
           case "job-cancel":
           case "samples":
           case "desired-set":
+          case "audit":
             return;
         }
       });

@@ -49,7 +49,7 @@ const MachinesReadTool = Tool.make("machines_read", {
 
 const MachinesResourcesTool = Tool.make("machines_resources", {
   ...shared,
-  description: `Read the resource samples of this machine from its kitshn daemon: CPU, memory and disk as shares from 0 to 1. Only this machine. Changes nothing. The result is {"_tag":"resources", newest, history}: newest is {at, cpu, memory, disk} taken now, and history holds the samples of the last hour, oldest first. ${KITSHN_NOTE}`,
+  description: `Read the resource samples of this machine from its kitshn daemon: CPU, memory and disk as shares from 0 to 1. Only this machine. Changes nothing. The result is {"_tag":"resources", newest, history}: newest is {at, cpu, memory, disk} taken now, and history holds the samples of the last hour, oldest first; nothing older. ${KITSHN_NOTE}`,
   success: Schema.Unknown,
 })
   .annotate(Tool.Readonly, true)
@@ -115,13 +115,13 @@ const MachinesCommandTool = Tool.make("machines_command", {
 
 export const MachinesQueueCancelInput = Schema.Struct({
   jobId: Schema.Int.annotate({
-    description: "Id of a queued kitshn job that runs on this machine or that this machine queued.",
+    description: "Id of a queued kitshn job that this machine queued, from machines_command.",
   }),
 });
 
 const MachinesQueueCancelTool = Tool.make("machines_queue_cancel", {
   ...shared,
-  description: `Cancel a kitshn job while it waits in the queue: one that runs on this machine, or one that this machine queued. A job that started cannot be cancelled. The result is {"_tag":"cancelled", jobId}. ${KITSHN_NOTE}`,
+  description: `Cancel a kitshn job that this machine queued, while it waits in the queue. A job that started, or one that another machine queued, cannot be cancelled. The result is {"_tag":"cancelled", jobId}. ${KITSHN_NOTE}`,
   parameters: MachinesQueueCancelInput,
   success: Schema.Unknown,
 }).annotate(Tool.Destructive, true);

@@ -88,6 +88,8 @@ const toolsWith = (
         state: Stream.make({
           settings: { shared: { server: { a: 1 }, client: {} }, machine: null },
           cardSettings: {},
+          reach: [],
+          linkSocket: null,
         }),
       }),
     ),

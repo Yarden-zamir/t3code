@@ -251,7 +251,8 @@ const EXPECTED_REGISTER = {
       status: "running",
       facts: [
         { label: "Version", value: "1.2.3", role: "version" },
-        { label: "Running turns", value: "1", role: "busy" },
+        { label: "Running turns", value: "1" },
+        { label: "Busy", value: "true", role: "busy" },
       ],
     },
     { id: "agents", kind: "t3.agents", name: "Agents on studio", status: "running", parent: "app" },
