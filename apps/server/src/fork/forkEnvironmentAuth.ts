@@ -1,28 +1,22 @@
 /**
- * Fork parts of `EnvironmentAuth`: the Cloudflare Access login and the machine map pause lock and
+ * Fork parts of `EnvironmentAuth`: the kitshn Access login and the machine map pause lock and
  * peer origins. `EnvironmentAuth.ts` keeps one-line hooks into this file.
  */
 import {
-  MACHINE_LEVEL_SCOPES,
   type AuthEnvironmentScope,
   type AuthPairingCredentialResult,
+  machineSessionSubject,
 } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 
-import { makeCloudflareAccessVerifier } from "../auth/CloudflareAccess.ts";
 import type { ServerAuthInternalError } from "../auth/EnvironmentAuth.ts";
-import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import type { CloudflareAccessConfig } from "../config.ts";
 import { APP_RESOURCE_ID, type AccessVisitor, appLevelScopes } from "./kitshn/kitshnGrantRules.ts";
-import { type KitshnGrants, KITSHN_SESSION_SUBJECT_PREFIX } from "./kitshn/KitshnGrants.ts";
-import { type ClientPending, ownerBrowserAccess } from "./machineMap/browserAccess.ts";
-import { isMachineSubject } from "./machineMap/machineAccess.ts";
-import { CLOUDFLARE_ACCESS_LABEL_PREFIX } from "./forkSessions.ts";
+import { kitshnMachineOf } from "./kitshn/kitshnAgents.ts";
+import { KitshnGrants, KITSHN_SESSION_SUBJECT_PREFIX } from "./kitshn/KitshnGrants.ts";
 import type * as MachineMapState from "./machineMap/MachineMapState.ts";
 
 type MachineMap = Option.Option<MachineMapState.MachineMapState["Service"]>;
@@ -65,24 +59,21 @@ export const withPeerOrigins = (
 });
 
 /**
- * A one-use pairing credential for a request that carries a valid Cloudflare Access JWT, or
- * undefined when the login is off or the JWT fails. It fails while the machine map pause locks
- * every Access subject (MM-718). `ClientPending` (MM-918): `enforce` refuses this browser until
- * the owner approves its key.
+ * A one-use pairing credential for a request with a verified Access JWT whose visitor holds a
+ * `t3.app` grant (K-706), or undefined. A machine's token gets the session `machine:<id>`; any
+ * other visitor `kitshn:<email or token>`. Without kitshn 2 there is no Access login (K-712). It
+ * fails while the machine map pause locks every Access subject (MM-718).
  */
 export type IssueCloudflareAccessPairingCredential = (
   request: HttpServerRequest.HttpServerRequest,
 ) => Effect.Effect<
-  AuthPairingCredentialResult | ClientPending | undefined,
+  AuthPairingCredentialResult | undefined,
   ServerAuthInternalError | ServerAuthMachinePausedError
 >;
 
 export const makeIssueCloudflareAccessPairingCredential = (input: {
-  readonly cloudflareAccess: CloudflareAccessConfig | undefined;
   readonly machineMap: MachineMap;
   readonly kitshnGrants: Grants;
-  readonly secretStore: ServerSecretStore.ServerSecretStore["Service"];
-  readonly crypto: Crypto.Crypto;
   readonly issuePairingCredentialForSubject: (grant: {
     readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
     readonly subject: string;
@@ -91,39 +82,30 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
   }) => Effect.Effect<AuthPairingCredentialResult, ServerAuthInternalError>;
 }): IssueCloudflareAccessPairingCredential => {
   const { machineMap, kitshnGrants, issuePairingCredentialForSubject } = input;
-  const verifyCloudflareAccess =
-    input.cloudflareAccess === undefined
-      ? undefined
-      : makeCloudflareAccessVerifier(input.cloudflareAccess);
 
-  // MM-917, MM-918: see `ownerBrowserAccess`.
-  const ownerBrowserAccessFor = (request: HttpServerRequest.HttpServerRequest, subject: string) =>
-    ownerBrowserAccess(machineMap, request, subject).pipe(
-      Effect.provideService(ServerSecretStore.ServerSecretStore, input.secretStore),
-      Effect.provideService(Crypto.Crypto, input.crypto),
-    );
-
-  // K-706: the arrow of a map machine stays; any other visitor gets its `t3.app` level, or nothing.
   const kitshnCredential = Effect.fn("EnvironmentAuth.kitshnCredential")(function* (
     grants: KitshnGrants["Service"],
     visitor: AccessVisitor,
   ) {
-    if (visitor.clientId !== null && Option.isSome(machineMap)) {
-      const grant = yield* machineMap.value.machineGrant(visitor.clientId);
-      if (grant !== undefined && isMachineSubject(grant.subject)) {
-        return yield* issuePairingCredentialForSubject({ ...grant, ttl: Duration.minutes(2) });
-      }
-    }
     const level = yield* grants.level("t3.app", APP_RESOURCE_ID, visitor);
     if (level === null) return undefined;
+    const machineId = yield* kitshnMachineOf(visitor).pipe(
+      Effect.provideService(KitshnGrants, grants),
+    );
     return yield* issuePairingCredentialForSubject({
       scopes: appLevelScopes(level),
-      subject: `${KITSHN_SESSION_SUBJECT_PREFIX}${visitorName(visitor)}`,
-      label: `kitshn ${visitorName(visitor)}`,
+      ...(machineId === null
+        ? {
+            subject: `${KITSHN_SESSION_SUBJECT_PREFIX}${visitorName(visitor)}`,
+            label: `kitshn ${visitorName(visitor)}`,
+          }
+        : { subject: machineSessionSubject(machineId), label: `machine ${machineId}` }),
       ttl: Duration.minutes(2),
     });
   });
 
+  // MM-718: an Access visitor is never the local desktop app, so the pause locks it. A session
+  // made now would only be refused on its first use.
   const rejectWhileLocked = Option.isNone(machineMap)
     ? Effect.void
     : machineMap.value
@@ -134,68 +116,19 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
           ),
         );
 
-  const kitshnVisitor = (request: HttpServerRequest.HttpServerRequest) =>
-    Option.isNone(kitshnGrants) ? Effect.succeed(null) : kitshnGrants.value.visitor(request);
-
   return (request) =>
-    kitshnVisitor(request).pipe(
-      Effect.flatMap((visitor) =>
-        visitor === null || Option.isNone(kitshnGrants)
-          ? accessCredential(request)
-          : rejectWhileLocked.pipe(
-              Effect.andThen(kitshnCredential(kitshnGrants.value, visitor)),
-              Effect.withSpan("EnvironmentAuth.issueKitshnPairingCredential"),
-            ),
-      ),
-    );
-
-  function accessCredential(request: HttpServerRequest.HttpServerRequest) {
-    return verifyCloudflareAccess === undefined
+    Option.isNone(kitshnGrants)
       ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
         Effect.succeed(undefined)
-      : verifyCloudflareAccess(request).pipe(
-          // MM-718: an Access subject is never the local desktop app, so the pause locks it.
-          // A session made now would only be refused on its first use.
-          Effect.tap((identity) => (identity === undefined ? Effect.void : rejectWhileLocked)),
-          Effect.flatMap((identity) =>
-            identity === undefined
+      : kitshnGrants.value.visitor(request).pipe(
+          Effect.flatMap((visitor) =>
+            visitor === null
               ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
                 Effect.succeed(undefined)
-              : identity.kind === "owner"
-                ? ownerBrowserAccessFor(request, identity.subject).pipe(
-                    Effect.flatMap((access) =>
-                      access._tag === "ClientPending"
-                        ? Effect.succeed<ClientPending | AuthPairingCredentialResult>(access)
-                        : issuePairingCredentialForSubject({
-                            ...(access._tag === "client"
-                              ? access.grant
-                              : {
-                                  // A Cloudflare Access cookie must not mint pairing links or relay
-                                  // grants that outlive it (MM-922), so no upstream default here.
-                                  scopes: MACHINE_LEVEL_SCOPES.standard,
-                                  subject: "one-time-token",
-                                  label: `${CLOUDFLARE_ACCESS_LABEL_PREFIX}${identity.subject}`,
-                                }),
-                            ttl: Duration.minutes(2),
-                          }),
-                    ),
-                  )
-                : Option.isNone(machineMap)
-                  ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-                    Effect.succeed(undefined)
-                  : machineMap.value.machineGrant(identity.commonName).pipe(
-                      Effect.flatMap((grant) =>
-                        grant === undefined
-                          ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-                            Effect.succeed(undefined)
-                          : issuePairingCredentialForSubject({
-                              ...grant,
-                              ttl: Duration.minutes(2),
-                            }),
-                      ),
-                    ),
+              : rejectWhileLocked.pipe(
+                  Effect.andThen(kitshnCredential(kitshnGrants.value, visitor)),
+                ),
           ),
           Effect.withSpan("EnvironmentAuth.issueCloudflareAccessPairingCredential"),
         );
-  }
 };

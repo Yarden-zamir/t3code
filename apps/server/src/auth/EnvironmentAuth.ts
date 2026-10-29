@@ -1194,11 +1194,8 @@ export const make = Effect.gen(function* () {
 
   const issueCloudflareAccessPairingCredential =
     ForkAuth.makeIssueCloudflareAccessPairingCredential({
-      cloudflareAccess: config.cloudflareAccess,
       machineMap,
       kitshnGrants,
-      secretStore,
-      crypto,
       issuePairingCredentialForSubject,
     });
 

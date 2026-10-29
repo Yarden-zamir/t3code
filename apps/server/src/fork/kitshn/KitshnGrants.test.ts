@@ -14,8 +14,8 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as SessionStore from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
-import { PEER, PEER_TOKEN, desiredState } from "../machineMap/MachineMap.testkit.ts";
-import { kitshnAgentsAllowMachine, kitshnAgentsAllowRequest } from "./kitshnAgents.ts";
+import { PEER, PEER_TOKEN } from "../machineMap/MachineMap.testkit.ts";
+import { kitshnMachineAllows, kitshnMachineMcpClient } from "./kitshnAgents.ts";
 import { appLevelScopes } from "./kitshnGrantRules.ts";
 import * as KitshnGrants from "./KitshnGrants.ts";
 import { GrantTables } from "./kitshnProviderProtocol.ts";
@@ -234,30 +234,38 @@ describe("KitshnGrants", () => {
     }).pipe(isolated),
   );
 
-  it.effect("gates the agent tools on use and machine_exec on exec", () =>
+  it.effect("gives another machine its session, agent tools and exec through grants only", () =>
     Effect.gen(function* () {
       const test = yield* harness;
       const grants = yield* test.registered;
-      const machine = tunnelRequest({ commonName: PEER_TOKEN });
-      const desired = desiredState({});
       const gate = Effect.provideService(KitshnGrants.KitshnGrants, grants);
+      const vps = { machine: { machineId: PEER, clientId: PEER_TOKEN } };
+      const tables = (app: string, agents: string) =>
+        decodeTables({ app: [grant([vps], app)], agents: [grant([vps], agents)] });
+      const session = {
+        subject: `machine:${PEER}`,
+        method: "bearer-access-token",
+        scopes: appLevelScopes("standard"),
+      };
 
-      expect(yield* gate(kitshnAgentsAllowRequest(machine, "use"))).toBe(false);
-      yield* grants.replaceTables(
-        decodeTables({
-          agents: [grant([{ machine: { machineId: PEER, clientId: PEER_TOKEN } }], "use")],
-        }),
-      );
-      expect(yield* gate(kitshnAgentsAllowRequest(machine, "use"))).toBe(true);
-      expect(yield* gate(kitshnAgentsAllowMachine(desired, PEER, "exec"))).toBe(false);
-      yield* grants.replaceTables(
-        decodeTables({
-          agents: [grant([{ machine: { machineId: PEER, clientId: PEER_TOKEN } }], "exec")],
-        }),
-      );
-      expect(yield* gate(kitshnAgentsAllowMachine(desired, PEER, "exec"))).toBe(true);
-      // Without a JWT, the request keeps T3's own auth.
-      expect(yield* gate(kitshnAgentsAllowRequest(localRequest, "exec"))).toBe(true);
+      expect(yield* gate(kitshnMachineAllows(PEER, "use"))).toBe(false);
+      yield* grants.replaceTables(tables("standard", "use"));
+      expect(yield* gate(kitshnMachineAllows(PEER, "use"))).toBe(true);
+      expect(yield* gate(kitshnMachineAllows(PEER, "exec"))).toBe(false);
+      expect(
+        yield* gate(kitshnMachineMcpClient(tunnelRequest({ commonName: PEER_TOKEN }), session)),
+      ).toMatchObject({ machineId: PEER, access: "auto", peerLink: true });
+      // The session of a machine works only with the JWT of that machine's token.
+      expect(
+        yield* gate(kitshnMachineMcpClient(tunnelRequest({ commonName: "other" }), session)),
+      ).toBeUndefined();
+      expect(yield* gate(kitshnMachineMcpClient(localRequest, session))).toBeUndefined();
+
+      yield* grants.replaceTables(tables("standard", "exec"));
+      expect(yield* gate(kitshnMachineAllows(PEER, "exec"))).toBe(true);
+      // exec also needs t3.app at standard or higher.
+      yield* grants.replaceTables(tables("read", "exec"));
+      expect(yield* gate(kitshnMachineAllows(PEER, "exec"))).toBe(false);
     }).pipe(isolated),
   );
 });

@@ -282,10 +282,6 @@ const createCloudflareAccessBrowserSession = Effect.fn(
   if (issued === undefined) {
     return unauthenticated;
   }
-  // Fork (MM-920): the browser shows that its key waits for approval.
-  if ("_tag" in issued) {
-    return { ...unauthenticated, clientPending: issued.pending } satisfies AuthSessionState;
-  }
   const created = yield* serverAuth
     .createBrowserSession(
       issued.credential,
@@ -540,10 +536,6 @@ export const layer = HttpApiBuilder.group(
             );
             if (issued === undefined) {
               return yield* failEnvironmentAuthInvalid("invalid_credential");
-            }
-            // Fork (MM-918): a sibling of a waiting browser stays unpaired until the approval.
-            if ("_tag" in issued) {
-              return yield* failEnvironmentAuthInvalid("client_pending");
             }
             yield* appendCredentialResponseHeaders;
             return issued;

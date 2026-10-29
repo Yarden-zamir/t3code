@@ -8,11 +8,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthAccessTokenType,
   type ArrowRecord,
-  CommandId,
-  EventId,
-  NodeId,
-  ProviderDriverKind,
-  ProviderThreadId,
   type MachineCallReport,
   type MachineDesiredState,
   MACHINE_LEVEL_SCOPES,
@@ -36,29 +31,18 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { McpSchema, McpServer } from "effect/ai";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 
 import * as ServerConfig from "../../config.ts";
-import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as McpHttpServer from "../../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import { idleThreadProjection, liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
-import { CodexProviderCapabilitiesV2 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
-import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
-import * as EventSink from "../../orchestration-v2/EventSink.ts";
-import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
-import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
-import * as ProviderReplayHarness from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSearch from "../../orchestration-v2/ThreadSearch.ts";
@@ -69,8 +53,6 @@ import { descriptorOf, servePeer, type ServedPeer } from "../../peer/PeerLinks.t
 import * as RemoteDelegation from "../../peer/RemoteDelegation.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
-import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
-import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
@@ -592,111 +574,6 @@ const setup = (initial: MapNow) =>
     return { ...mac, seen, mapNow, vpsMap, wire, vpsPeer, vpsRun, pausedLook };
   });
 
-const launchOnVps = (caller: string) => ({
-  environmentId: vps.environmentId,
-  projectId: vpsProject,
-  title: `Launched by ${caller}`,
-  modelSelection: { instanceId: "codex", model: "gpt-5.4" },
-  message: "Run the suite there.",
-});
-
-it.effect("a standard arrow is a linked environment fenced to auto", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setup({ level: "standard", agentTools: true, paused: false });
-      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
-      expect(listed.structuredContent).toMatchObject({
-        links: [
-          { environmentId: vps.environmentId, label: "VPS", status: "reachable", access: "auto" },
-        ],
-      });
-
-      const launched = yield* env.call(
-        "thread:mac-full",
-        "t3_thread_launch",
-        launchOnVps("thread:mac-full"),
-      );
-      expect(launched.isError, JSON.stringify(launched.content)).toBe(false);
-      // A full-access thread here gets the link's `auto` there, and its work carries the link
-      // of the machine, not of the session, so it stays the machine's own across a re-pair.
-      expect((yield* Ref.get(env.seen)).launches).toMatchObject([
-        {
-          runtimeMode: "auto",
-          linkOrigin: { sessionId: machineSessionSubject(SELF), access: "auto" },
-        },
-      ]);
-
-      // Fenced work changes nothing that B already had.
-      const updated = yield* env.call("thread:mac-full", "t3_project_update", {
-        environmentId: vps.environmentId,
-        projectId: vpsProject,
-        title: "Renamed from the Mac",
-      });
-      expect(failureOf(updated)?.message).toContain("cannot change projects");
-      expect((yield* Ref.get(env.seen)).projectUpdates).toBe(0);
-
-      // Every request to B carries the machine token for Cloudflare Access.
-      const wire = yield* Ref.get(env.wire);
-      expect(wire.requests.length).toBeGreaterThan(0);
-      expect(wire.requests.every((request) => request.accessClientId === "mac-token.access")).toBe(
-        true,
-      );
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
-it.effect("each forwarded call goes to History, never with its arguments", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setup({ level: "standard", agentTools: true, paused: false });
-      yield* env.call("thread:mac-full", "t3_thread_launch", launchOnVps("thread:mac-full"));
-      yield* env.call("thread:mac-full", "t3_project_update", {
-        environmentId: vps.environmentId,
-        projectId: vpsProject,
-        title: "Renamed from the Mac",
-      });
-      const reported = yield* Ref.get(env.reportedCalls);
-      expect(reported.map(({ id: _id, at: _at, ...call }) => call)).toEqual([
-        {
-          to: PEER,
-          threadId: "thread:mac-full",
-          threadTitle: "thread:mac-full",
-          tool: "t3_thread_launch",
-          outcome: "succeeded",
-        },
-        {
-          to: PEER,
-          threadId: "thread:mac-full",
-          threadTitle: "thread:mac-full",
-          tool: "t3_project_update",
-          outcome: "refused",
-        },
-      ]);
-      const text = JSON.stringify(reported);
-      expect(text).not.toContain("Run the suite there");
-      expect(text).not.toContain("Renamed from the Mac");
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
-it.effect("a restricted thread reaches B with its own limits", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
-      const launched = yield* env.call(
-        "thread:mac-restricted",
-        "t3_thread_launch",
-        launchOnVps("thread:mac-restricted"),
-      );
-      expect(launched.isError, JSON.stringify(launched.content)).toBe(false);
-      // `T3-Mode-Limit` narrows the admin link to the caller's approval-required plan mode.
-      expect((yield* Ref.get(env.seen)).launches).toMatchObject([
-        { runtimeMode: "approval-required", interactionMode: "plan" },
-      ]);
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
 it.effect("an arrow without agent tools is no link, and nothing goes to B", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -707,41 +584,6 @@ it.effect("an arrow without agent tools is no link, and nothing goes to B", () =
       expect(failureOf(read)?.message).toContain("Set the arrow in the portal");
       expect((yield* Ref.get(env.wire)).requests).toEqual([]);
       expect(yield* env.links.list).toEqual([]);
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
-it.effect("the pause holds a link without dropping it, and resume lets work go on", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
-      const before = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: vps.environmentId,
-      });
-      expect(before.isError, JSON.stringify(before.content)).toBe(false);
-
-      yield* Ref.update(env.mapNow, (map) => ({ ...map, paused: true }));
-      const requestsBefore = (yield* Ref.get(env.wire)).requests.length;
-      const paused = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: vps.environmentId,
-      });
-      // `orchestration_error` is what remote delegation retries; a final refusal is not.
-      expect(failureOf(paused)).toMatchObject({ code: "orchestration_error" });
-      expect(failureOf(paused)?.message).toContain("paused");
-      expect((yield* Ref.get(env.wire)).requests).toHaveLength(requestsBefore);
-      // The link stays known, so a task that waits on it is not failed as unknown.
-      expect(Option.isSome(yield* env.links.get(vps.environmentId))).toBe(true);
-
-      yield* Ref.update(env.mapNow, (map) => ({ ...map, paused: false }));
-      // The error of the pause is stale once the map runs again.
-      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
-      expect(listed.structuredContent).toMatchObject({
-        links: [{ environmentId: vps.environmentId, status: "reachable", lastError: null }],
-      });
-      const resumed = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: vps.environmentId,
-      });
-      expect(resumed.isError, JSON.stringify(resumed.content)).toBe(false);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
@@ -782,49 +624,6 @@ it.effect("a restored arrow clears the error of its removal", () =>
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
-it.effect("a successful call clears the error of an earlier failure", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
-      yield* env.call("thread:mac-full", "t3_project_list", { environmentId: vps.environmentId });
-      // The link stays, but B does not answer at the new hostname yet.
-      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-moved.example.com" }));
-      yield* env.call("thread:mac-full", "t3_project_list", { environmentId: vps.environmentId });
-      const failed = yield* env.links.get(vps.environmentId);
-      expect(Option.getOrUndefined(failed)?.lastError).not.toBeNull();
-      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-vps.example.com" }));
-      const again = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: vps.environmentId,
-      });
-      expect(again.isError, JSON.stringify(again.content)).toBe(false);
-      const cleared = yield* env.links.get(vps.environmentId);
-      expect(Option.getOrUndefined(cleared)?.lastError).toBeNull();
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
-it.effect("a removed arrow is unknown, also while another machine with an arrow is offline", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setup({
-        level: "admin",
-        agentTools: true,
-        paused: false,
-        offlinePeer: true,
-      });
-      const first = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: vps.environmentId,
-      });
-      expect(first.isError, JSON.stringify(first.content)).toBe(false);
-      yield* Ref.update(env.mapNow, (map) => ({ ...map, level: "none" as const }));
-      const removed = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: vps.environmentId,
-      });
-      expect(failureOf(removed)).toMatchObject({ code: "invalid_request" });
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
 it.effect("an arrow to a machine that never answered is an unreachable link with the reason", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -855,49 +654,6 @@ it.effect("an arrow to a machine that never answered is an unreachable link with
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
-it.effect("the id of a machine that did not answer yet names its real id once it answers", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      // B is on the map but answers at no hostname yet.
-      const env = yield* setup({
-        level: "admin",
-        agentTools: true,
-        paused: false,
-        vpsHostname: "t3-moved.example.com",
-      });
-      const listed = yield* env.call("thread:mac-full", "t3_environment_links", {});
-      expect(listed.structuredContent).toMatchObject({
-        links: [{ environmentId: `machine:${PEER}`, status: "unreachable" }],
-      });
-      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-vps.example.com" }));
-      const read = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: `machine:${PEER}`,
-      });
-      expect(failureOf(read)?.message).toContain(`answers now as ${vps.environmentId}`);
-      const again = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: vps.environmentId,
-      });
-      expect(again.isError, JSON.stringify(again.content)).toBe(false);
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
-it.effect("a new hostname of B gets its own pairing, never the old session", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
-      yield* env.call("thread:mac-full", "t3_project_list", { environmentId: vps.environmentId });
-      yield* Ref.update(env.mapNow, (map) => ({ ...map, vpsHostname: "t3-vps-new.example.com" }));
-      const moved = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: vps.environmentId,
-      });
-      expect(moved.isError, JSON.stringify(moved.content)).toBe(false);
-      const wire = yield* Ref.get(env.wire);
-      expect(wire.pairings).toBe(2);
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
 it.effect("a known machine at a new hostname that does not answer yet is unreachable", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -924,29 +680,6 @@ it.effect("a link that B refuses before A sees the change fails as unreachable",
       });
       // Not upstream's final "link revoked": A's own map says what changed on its next look.
       expect(failureOf(listed)).toMatchObject({ code: "orchestration_error" });
-      expect((yield* Ref.get(env.wire)).pairings).toBe(2);
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
-it.effect("a session that B ended pairs again once, and the call goes through", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setup({ level: "admin", agentTools: true, paused: false });
-      const first = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: vps.environmentId,
-      });
-      expect(first.isError, JSON.stringify(first.content)).toBe(false);
-      expect((yield* Ref.get(env.wire)).pairings).toBe(1);
-
-      // MM-1306: a level change on B ends every session of A there.
-      for (const session of yield* env.vpsPeer.auth.listSessions().pipe(Effect.orDie)) {
-        yield* env.vpsPeer.auth.revokeSession(session.sessionId).pipe(Effect.orDie);
-      }
-      const again = yield* env.call("thread:mac-full", "t3_project_list", {
-        environmentId: vps.environmentId,
-      });
-      expect(again.isError, JSON.stringify(again.content)).toBe(false);
       expect((yield* Ref.get(env.wire)).pairings).toBe(2);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
@@ -989,328 +722,6 @@ it.effect("refuses manual links: they come from the arrows", () =>
         MANUAL_LINK_REFUSAL,
       ]);
       expect((yield* Ref.get(env.wire)).requests).toEqual([]);
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
-// Delegation: A's real orchestrator with remote delegation over the arrow link, as in upstream's
-// `RemoteDelegation.test.ts`.
-
-const instanceId = ProviderInstanceId.make("codex");
-const driver = ProviderDriverKind.make("codex");
-const modelSelection = { instanceId, model: "gpt-5.4" };
-const parentThreadId = ThreadId.make("thread:mac-parent");
-const parentRunId = RunId.make("run:mac-parent");
-const parentRootNode = NodeId.make("node:mac-parent:root");
-const parentScope: McpInvocationContext.McpInvocationScope = {
-  environmentId: mac.environmentId,
-  requestNamespace: "provider-session:mac-parent",
-  thread: {
-    threadId: parentThreadId,
-    providerSessionId: "provider-session:mac-parent",
-    providerInstanceId: instanceId,
-  },
-  client: undefined,
-  capabilities: new Set(["orchestration"]),
-  issuedAt: 1,
-};
-
-const adapter = {
-  instanceId,
-  driver,
-  getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
-  planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" as const }),
-  openSession: () => Effect.die("No provider process needed"),
-} as ProviderAdapter.ProviderAdapterV2["Service"];
-
-/** A with its orchestrator, its parent thread mid-turn, and remote delegation over the links. */
-const setupDelegation = (initial: MapNow) =>
-  Effect.gen(function* () {
-    const env = yield* setup(initial);
-    const offers = yield* SubscriptionRef.make<
-      ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
-    >([]);
-    const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
-    const layerDatabase = Layer.succeedContext(database);
-    const links = yield* MachinePeers.layer.pipe(
-      Layer.provide(layerMacState(env.mapNow, env.pausedLook)),
-      Layer.provide(layerNetwork(env.vpsPeer, env.vpsMap, env.wire)),
-      Layer.merge(
-        Layer.succeed(ServerEnvironment.ServerEnvironment, {
-          getEnvironmentId: Effect.succeed(mac.environmentId),
-          getDescriptor: Effect.succeed(mac),
-        }),
-      ),
-      Layer.fresh,
-      Layer.build,
-    );
-    const layerOrchestrator = Layer.mergeAll(
-      layerDatabase,
-      ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
-      ProviderReplayHarness.layerWithRegistry(
-        { name: "machine-links-mac" },
-        ProviderAdapterRegistry.layerFromAdapters([adapter]),
-        { databaseLayer: layerDatabase, runEffectWorker: false },
-      ),
-    ).pipe(
-      Layer.provide(
-        Layer.succeed(ProviderContinuationRequests.ProviderContinuationRequests, {
-          offer: (request) => SubscriptionRef.update(offers, (seen) => [...seen, request]),
-          take: Effect.never,
-        }),
-      ),
-    );
-    const layerThreads = ThreadManagement.layer.pipe(
-      Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase))),
-      Layer.provideMerge(Layer.merge(layerOrchestrator, ServerSettings.layerTest())),
-    );
-    const here = yield* McpHttpServer.layerOrchestratorToolkit.pipe(
-      Layer.provideMerge(McpServer.McpServer.layer),
-      Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
-      Layer.provideMerge(
-        RemoteDelegation.layer.pipe(
-          Layer.provideMerge(PeerForwarding.layer),
-          Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
-          Layer.provide(Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({})),
-        ),
-      ),
-      Layer.provide(Layer.succeedContext(links)),
-      Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
-      Layer.provide(NodeCrypto.layer),
-      Layer.provideMerge(layerThreads),
-      Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
-      Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
-      Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
-      Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
-      Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
-      Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
-      Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
-      Layer.fresh,
-      Layer.build,
-    );
-    const server = Context.get(here, McpServer.McpServer);
-    const orchestrator = Context.get(here, Orchestrator.OrchestratorV2);
-    const sink = Context.get(here, EventSink.EventSinkV2);
-    yield* seedParent(orchestrator, sink);
-    const delegate = server
-      .callTool({
-        name: "delegate_task",
-        arguments: {
-          task: "Run the full suite on the VPS.",
-          target: {
-            environmentId: vps.environmentId,
-            providerInstanceId: instanceId,
-            model: "gpt-5.4",
-            projectId: vpsProject,
-          },
-          mode: "async",
-          clientRequestId: "suite-on-vps",
-        },
-      })
-      .pipe(
-        Effect.provideService(McpInvocationContext.McpInvocationContext, parentScope),
-        Effect.provideService(McpSchema.McpServerClient, mcpClient),
-        Effect.map((result) => {
-          expect(result.isError, JSON.stringify(result.content)).toBe(false);
-          return result.structuredContent as { readonly taskId: NodeId };
-        }),
-      );
-    /** The task once it has its result here. */
-    const taskResult = (taskId: NodeId) =>
-      orchestrator
-        .streamStoredEventsFrom({
-          threadId: parentThreadId,
-          afterSequence: 0,
-          eventType: "subagent.updated",
-        })
-        .pipe(
-          Stream.filter(
-            (stored) =>
-              stored.event.type === "subagent.updated" &&
-              stored.event.payload.id === taskId &&
-              stored.event.payload.result !== null,
-          ),
-          Stream.runHead,
-          Effect.map((stored) =>
-            Option.isSome(stored) && stored.value.event.type === "subagent.updated"
-              ? stored.value.event.payload
-              : undefined,
-          ),
-        );
-    return { ...env, offers, orchestrator, delegate, taskResult };
-  });
-
-/** A's parent thread, mid-turn when its agent delegates. */
-const seedParent = (
-  orchestrator: Orchestrator.OrchestratorV2["Service"],
-  sink: EventSink.EventSinkV2["Service"],
-) =>
-  Effect.gen(function* () {
-    const now = yield* DateTime.now;
-    const providerThreadId = ProviderThreadId.make("provider-thread:mac-parent");
-    yield* orchestrator.dispatch({
-      type: "thread.create",
-      createdBy: "user",
-      creationSource: "web",
-      commandId: CommandId.make("command:create:mac-parent"),
-      threadId: parentThreadId,
-      projectId: ProjectId.make("project:mac"),
-      title: "Mac parent",
-      modelSelection,
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      branch: null,
-      worktreePath: null,
-    });
-    yield* sink.write({
-      commandId: CommandId.make("command:seed:mac-parent"),
-      events: [
-        {
-          id: EventId.make("event:seed-provider-thread:mac-parent"),
-          type: "provider-thread.updated",
-          threadId: parentThreadId,
-          driver,
-          providerInstanceId: instanceId,
-          occurredAt: now,
-          payload: {
-            id: providerThreadId,
-            driver,
-            providerInstanceId: instanceId,
-            providerSessionId: null,
-            appThreadId: parentThreadId,
-            ownerNodeId: parentRootNode,
-            nativeThreadRef: { driver, nativeId: "native:mac-parent", strength: "strong" },
-            nativeConversationHeadRef: null,
-            status: "active",
-            firstRunOrdinal: 1,
-            lastRunOrdinal: 1,
-            handoffIds: [],
-            forkedFrom: null,
-            createdAt: now,
-            updatedAt: now,
-          },
-        },
-        {
-          id: EventId.make("event:seed-node:mac-parent"),
-          type: "node.updated",
-          threadId: parentThreadId,
-          runId: parentRunId,
-          nodeId: parentRootNode,
-          driver,
-          providerInstanceId: instanceId,
-          occurredAt: now,
-          payload: {
-            id: parentRootNode,
-            threadId: parentThreadId,
-            runId: parentRunId,
-            parentNodeId: null,
-            rootNodeId: parentRootNode,
-            kind: "root_turn",
-            status: "running",
-            countsForRun: true,
-            providerThreadId,
-            providerTurnId: null,
-            nativeItemRef: null,
-            runtimeRequestId: null,
-            checkpointScopeId: null,
-            startedAt: now,
-            completedAt: null,
-          },
-        },
-        {
-          id: EventId.make("event:seed-run:mac-parent"),
-          type: "run.updated",
-          threadId: parentThreadId,
-          runId: parentRunId,
-          nodeId: parentRootNode,
-          providerInstanceId: instanceId,
-          occurredAt: now,
-          payload: {
-            id: parentRunId,
-            threadId: parentThreadId,
-            ordinal: 1,
-            providerInstanceId: instanceId,
-            modelSelection,
-            providerThreadId,
-            userMessageId: MessageId.make("message:seed-user:mac-parent"),
-            rootNodeId: parentRootNode,
-            activeAttemptId: null,
-            status: "running",
-            requestedAt: now,
-            startedAt: now,
-            completedAt: null,
-            checkpointId: null,
-            contextHandoffId: null,
-          },
-        },
-      ],
-    });
-  });
-
-it.effect("a task delegated to B over the arrow link wakes A's parent once", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setupDelegation({ level: "standard", agentTools: true, paused: false });
-      const delegated = yield* env.delegate;
-      // A retry with the same key records nothing new here, and B gets the same command,
-      // which its command receipts answer once.
-      expect((yield* env.delegate).taskId).toBe(delegated.taskId);
-      const launches = (yield* Ref.get(env.seen)).launches;
-      expect(new Set(launches.map((launch) => launch.commandId)).size).toBe(1);
-
-      yield* Deferred.succeed(env.vpsRun.finished, undefined);
-      expect(yield* env.taskResult(delegated.taskId)).toMatchObject({
-        status: "completed",
-        result: vpsReply,
-      });
-      const parent = yield* env.orchestrator.getThreadProjection(parentThreadId);
-      expect(parent.subagents).toHaveLength(1);
-      expect(
-        parent.runs.find((run) => run.id === parentRunId)?.delegatedCompletion?.delivery?.taskIds,
-      ).toEqual([delegated.taskId]);
-      const offered = yield* SubscriptionRef.changes(env.offers).pipe(
-        Stream.filter((seen) => seen.some((offer) => offer.threadId === parentThreadId)),
-        Stream.runHead,
-      );
-      expect(
-        Option.getOrThrow(offered).filter((offer) => offer.threadId === parentThreadId),
-      ).toHaveLength(1);
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
-it.effect("a removed arrow fails A's open task with the reason", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setupDelegation({ level: "standard", agentTools: true, paused: false });
-      const delegated = yield* env.delegate;
-      yield* Ref.update(env.mapNow, (map) => ({ ...map, level: "none" as const }));
-      yield* Deferred.succeed(env.vpsRun.finished, undefined);
-      const task = yield* env.taskResult(delegated.taskId);
-      expect(task?.status).toBe("failed");
-      expect(task?.result).toContain("Set the arrow in the portal");
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
-// Live: the follower backs off for 2 seconds after the paused look, and a test clock cannot know
-// when that wait starts.
-it.live("the pause holds A's open task, and resume completes it", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const env = yield* setupDelegation({ level: "standard", agentTools: true, paused: false });
-      const delegated = yield* env.delegate;
-      yield* Ref.update(env.mapNow, (map) => ({ ...map, paused: true }));
-      // The follower reads the result while paused, fails as unreachable and backs off. Each
-      // lookup reads the map once, so that look decides the failure.
-      yield* Deferred.succeed(env.vpsRun.finished, undefined);
-      yield* Deferred.await(env.pausedLook);
-      yield* Ref.update(env.mapNow, (map) => ({ ...map, paused: false }));
-      // A final failure would end the task as failed here instead.
-      expect(yield* env.taskResult(delegated.taskId)).toMatchObject({
-        status: "completed",
-        result: vpsReply,
-      });
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

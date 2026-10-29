@@ -33,12 +33,12 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
-import { kitshnAgentsAllowMachine } from "../kitshn/kitshnAgents.ts";
+import { kitshnMachineAllows } from "../kitshn/kitshnAgents.ts";
 import * as KitshnGrants from "../kitshn/KitshnGrants.ts";
 import { historyCaller } from "./machineCallerAccess.ts";
 import { expandHomePath } from "../../os-jank.ts";
 import * as ProcessRunner from "../../processRunner.ts";
-import { execArrowInto, machineOfRequestNamespace } from "./machineAccess.ts";
+import { machineOfRequestNamespace } from "./machineAccess.ts";
 import { dataFrame, type ExecSocket, makeLiveness, readFrame } from "./machineExecStream.ts";
 import * as MachineMap from "./MachineMap.ts";
 import * as MachineMapState from "./MachineMapState.ts";
@@ -116,45 +116,20 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
 
-  const allowedNow = Effect.fn("MachineExec.allowedNow")(function* (from: MachineId) {
-    const desired = yield* state.activeDesired;
-    if (desired === null) return undefined;
-    const arrow = execArrowInto(desired, from, yield* Clock.currentTimeMillis);
-    // kitshn provider (K-706): a `t3.agents` grant of `exec` as well.
-    if (arrow === undefined || !(yield* kitshnAgentsAllowMachine(desired, from, "exec"))) {
-      return undefined;
-    }
-    return arrow;
-  });
+  const kitshnGrants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
+  /** K-706: the token of `from` holds `t3.agents` = `exec` and `t3.app` at `standard` or higher. */
+  const allowedNow = (from: MachineId) =>
+    Option.match(kitshnGrants, {
+      onNone: () => Effect.succeed(false),
+      onSome: (grants) =>
+        kitshnMachineAllows(from, "exec").pipe(
+          Effect.provideService(KitshnGrants.KitshnGrants, grants),
+        ),
+    });
 
-  /**
-   * MM-1916: completes when the arrow stops allowing exec: a new desired state (arrow change,
-   * removal, pause, map off) or the expiry of a temporary level.
-   */
-  const lostAccess = (from: MachineId, expiresAt: string | null) => {
-    const changed = state.changes.pipe(
-      Stream.mapEffect(() => allowedNow(from)),
-      Stream.filter((arrow) => arrow === undefined),
-      Stream.runHead,
-      Effect.asVoid,
-    );
-    const kitshnLost = Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
-      Effect.flatMap((grants) =>
-        Option.isNone(grants)
-          ? Effect.never
-          : grants.value.awaitLoss(
-              allowedNow(from).pipe(Effect.map((arrow) => arrow !== undefined)),
-            ),
-      ),
-    );
-    if (expiresAt === null) return Effect.raceFirst(changed, kitshnLost);
-    const expired = Clock.currentTimeMillis.pipe(
-      Effect.flatMap((nowMs) => Effect.sleep(Duration.millis(Date.parse(expiresAt) - nowMs))),
-      Effect.andThen(allowedNow(from)),
-      Effect.flatMap((arrow) => (arrow === undefined ? Effect.void : Effect.never)),
-    );
-    return Effect.raceAllFirst([changed, expired, kitshnLost]);
-  };
+  /** Completes when the grants stop allowing exec: a new table, an `endsAt` or a stale table. */
+  const lostAccess = (from: MachineId) =>
+    Option.isNone(kitshnGrants) ? Effect.void : kitshnGrants.value.awaitLoss(allowedNow(from));
 
   /** MM-1908: a refused call in the History. No command ran, so it has no output or exit code. */
   const reportRefused = Effect.fn("MachineExec.reportRefused")(function* (refusal: {
@@ -182,42 +157,29 @@ const make = Effect.gen(function* () {
 
   /** The checks of a run here, and the report of its end (MM-1908). */
   const admit = Effect.fn("MachineExec.admit")(function* (from: MachineId, input: ExecRequest) {
-    const desired = yield* state.activeDesired;
-    const self = desired?.self;
+    const machine = Option.isNone(kitshnGrants) ? null : yield* kitshnGrants.value.machine;
+    const self =
+      machine === null ? undefined : { id: machine.id, name: machine.name ?? machine.id };
     const wanted = input.machine.trim().toLowerCase();
     if (self === undefined || (input.machine !== self.id && self.name.toLowerCase() !== wanted)) {
-      // MM-1904: a machine never lends its own arrows onward.
-      const reason = "machine_exec from another machine runs only on the machine it calls.";
-      if (self !== undefined) yield* reportRefused({ from, input, reason });
-      return yield* denied(reason);
+      // MM-1904: a machine never lends its own access onward.
+      return yield* denied("machine_exec from another machine runs only on the machine it calls.");
     }
-    const arrow = yield* allowedNow(from);
-    if (arrow === undefined) {
-      const reason = `The arrow into ${self.name} does not allow exec now. It needs exec, agent tools and the level standard or admin, and no emergency pause.`;
-      yield* reportRefused({ from, input, reason });
-      return yield* denied(reason);
+    if (!(yield* allowedNow(from))) {
+      return yield* denied(
+        `The kitshn grants of ${self.name} do not allow exec now. It needs t3.agents at exec and t3.app at standard or higher on its cards, and no pause.`,
+      );
     }
     const cwd = path.resolve(
       yield* expandHomePath(input.cwd ?? "~").pipe(Effect.provideService(Path.Path, path)),
     );
     const startedAt = yield* Clock.currentTimeMillis;
+    // The calling machine reports the run (K-1610: audit on the source side only).
     const report = Effect.fn("MachineExec.report")(function* (
-      outcome: MachineExecOutcome,
-      exitCode: number | null,
+      _outcome: MachineExecOutcome,
+      _exitCode: number | null,
     ) {
       const endedAt = yield* Clock.currentTimeMillis;
-      yield* machineMap.reportExec({
-        id: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
-        at: DateTime.formatIso(DateTime.makeUnsafe(startedAt)),
-        from,
-        threadId: input.caller?.threadId ?? null,
-        threadTitle: input.caller?.threadTitle ?? null,
-        command: input.command.slice(0, REPORTED_COMMAND_CHARS),
-        cwd,
-        outcome,
-        exitCode,
-        durationMs: Math.max(0, endedAt - startedAt),
-      });
       return endedAt - startedAt;
     });
     const isDirectory = yield* fileSystem.stat(cwd).pipe(
@@ -232,14 +194,14 @@ const make = Effect.gen(function* () {
       });
     }
     const shell = shellFor(yield* HostProcess.Platform, yield* HostProcess.Environment);
-    return { self, arrow, cwd, shell, report };
+    return { self, cwd, shell, report };
   });
 
   const runHere = Effect.fn("MachineExec.runHere")(function* (
     from: MachineId,
     input: MachineExecInput,
   ) {
-    const { self, arrow, cwd, shell, report } = yield* admit(from, input);
+    const { self, cwd, shell, report } = yield* admit(from, input);
     const run = processRunner
       .run({
         command: shell.command,
@@ -255,7 +217,7 @@ const make = Effect.gen(function* () {
         truncatedMarker: TRUNCATED_MARKER,
       })
       .pipe(Effect.map((output) => ({ _tag: "ran" as const, output })));
-    const stop = lostAccess(from, arrow.expiresAt).pipe(Effect.as({ _tag: "stopped" as const }));
+    const stop = lostAccess(from).pipe(Effect.as({ _tag: "stopped" as const }));
     const ended = yield* Effect.raceFirst(run, stop).pipe(
       // A caller that goes away ends the run too; History still lists it.
       Effect.onInterrupt(() => report("stopped", null)),
@@ -275,7 +237,7 @@ const make = Effect.gen(function* () {
     if (ended._tag === "stopped") {
       yield* report("stopped", null);
       return yield* denied(
-        `${self.name} stopped the command: the arrow no longer allows exec, or the owner paused the map.`,
+        `${self.name} stopped the command: its kitshn grants no longer allow exec.`,
       );
     }
     const { output } = ended;
@@ -306,7 +268,7 @@ const make = Effect.gen(function* () {
     input: MachineExecStreamStart,
     client: ExecSocket,
   ) {
-    const { self, arrow, cwd, shell, report } = yield* admit(from, input);
+    const { self, cwd, shell, report } = yield* admit(from, input);
     const liveness = yield* makeLiveness;
     const stopped = (message: string): StreamEnd => ({ _tag: "stopped", message });
     const timedOut: StreamEnd = { _tag: "timedOut" };
@@ -370,11 +332,9 @@ const make = Effect.gen(function* () {
           timeoutSeconds === undefined
             ? Effect.never
             : Effect.sleep(Duration.seconds(timeoutSeconds)).pipe(Effect.as(timedOut)),
-          lostAccess(from, arrow.expiresAt).pipe(
+          lostAccess(from).pipe(
             Effect.as(
-              stopped(
-                `${self.name} stopped the command: the arrow no longer allows exec, or the owner paused the map.`,
-              ),
+              stopped(`${self.name} stopped the command: its kitshn grants no longer allow exec.`),
             ),
           ),
         ]);

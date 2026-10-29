@@ -187,3 +187,30 @@ export const nextChangeAt = (state: GrantState, nowMs: number): number | null =>
   }
   return next;
 };
+
+/**
+ * The machine that a service token stands for: the `machineId` of a `machine` rule with that
+ * token, or null. A machine session is named by it.
+ */
+export const machineIdOfToken = (tables: GrantTables, clientId: string): string | null => {
+  for (const grants of Object.values(tables)) {
+    for (const grant of grants) {
+      for (const rule of grant.circle.rules) {
+        if ("machine" in rule && rule.machine.clientId === clientId) return rule.machine.machineId;
+      }
+    }
+  }
+  return null;
+};
+
+/** The service token of a machine, from a `machine` rule, or null. */
+export const tokenOfMachine = (tables: GrantTables, machineId: string): string | null => {
+  for (const grants of Object.values(tables)) {
+    for (const grant of grants) {
+      for (const rule of grant.circle.rules) {
+        if ("machine" in rule && rule.machine.machineId === machineId) return rule.machine.clientId;
+      }
+    }
+  }
+  return null;
+};

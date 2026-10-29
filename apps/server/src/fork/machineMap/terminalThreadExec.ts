@@ -4,21 +4,18 @@ import {
   TERMINAL_THREAD_INSTANCE_ID,
   type ThreadId,
 } from "@t3tools/contracts";
-import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 
 import type * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
-import { kitshnAgentsAllowMachine } from "../kitshn/kitshnAgents.ts";
-import { execArrowInto, machineOfRequestNamespace } from "./machineAccess.ts";
-import * as MachineMapState from "./MachineMapState.ts";
+import { kitshnMachineAllows } from "../kitshn/kitshnAgents.ts";
+import { machineOfRequestNamespace } from "./machineAccess.ts";
 
 type RunsWith = Pick<ModelSelection, "instanceId">;
 
 /**
  * Fork (MM-1923): a terminal thread types messages into a shell, so a launch, send, interrupt or
- * terminal scheduled task runs shell commands, as `machine_exec` does. A machine session needs an
- * arrow that allows exec; metadata writes skip this (`metadataOnly`). `runsWith` is the work model,
+ * terminal scheduled task runs shell commands, as `machine_exec` does. A machine session needs
+ * kitshn grants that allow exec; metadata writes skip this (`metadataOnly`). `runsWith` is the work model,
  * an effect that resolves only for a machine session without exec, so others never pay for it.
  */
 export const refuseTerminalThreadWithoutExec = Effect.fn("refuseTerminalThreadWithoutExec")(
@@ -28,22 +25,13 @@ export const refuseTerminalThreadWithoutExec = Effect.fn("refuseTerminalThreadWi
   ) {
     const from = machineOfRequestNamespace(requestNamespace);
     if (from === undefined) return;
-    const state = yield* Effect.serviceOption(MachineMapState.MachineMapState);
-    const desired = Option.isSome(state) ? yield* state.value.activeDesired : null;
-    const nowMs = yield* Clock.currentTimeMillis;
-    if (
-      desired !== null &&
-      execArrowInto(desired, from, nowMs) !== undefined &&
-      (yield* kitshnAgentsAllowMachine(desired, from, "exec"))
-    ) {
-      return;
-    }
+    if (yield* kitshnMachineAllows(from, "exec")) return;
     const model = Effect.isEffect(runsWith) ? yield* runsWith : runsWith;
     if (model.instanceId !== TERMINAL_THREAD_INSTANCE_ID) return;
     return yield* new OrchestratorMcpFailure({
       code: "capability_denied",
       message:
-        "A terminal thread runs its messages in a shell, so a call from another machine that runs or stops code in one needs an arrow with exec, agent tools and the level standard or admin. The owner can turn exec on in the machine map.",
+        "A terminal thread runs its messages in a shell, so a call from another machine that runs or stops code in one needs kitshn grants: t3.agents at exec and t3.app at standard or higher. The owner shares them on the kitshn map.",
     });
   },
 );

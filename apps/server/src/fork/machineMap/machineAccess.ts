@@ -276,20 +276,6 @@ export const arrowAllowsExec = (arrow: ArrowRecord, nowMs: number): boolean => {
   return arrow.agentTools && arrow.exec && (level === "standard" || level === "admin");
 };
 
-/**
- * MM-1908, MM-1916: the arrow from `from` into this machine while it allows `exec` now, else
- * undefined. The pause refuses every run.
- */
-export const execArrowInto = (
-  desired: MachineDesiredState,
-  from: MachineId,
-  nowMs: number,
-): ArrowRecord | undefined => {
-  if (desired.paused === true || from === desired.self.id) return undefined;
-  const arrow = arrowFrom(desired, from);
-  return arrow !== undefined && arrowAllowsExec(arrow, nowMs) ? arrow : undefined;
-};
-
 type Leveled = Pick<ArrowRecord, "level" | "expiresAt" | "revertLevel">;
 
 /**
