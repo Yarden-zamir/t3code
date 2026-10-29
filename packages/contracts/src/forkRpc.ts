@@ -35,7 +35,6 @@ import {
   MachineMapDesktopReport,
   MachineMapShareSettingsInput,
   MachineMapShareSettingsResult,
-  MachineMapJoinInput,
   MachineMapPanelState,
   MachineMapReadableEnvironment,
   MachineMapRequestError,
@@ -61,8 +60,6 @@ export const FORK_WS_METHODS = {
 
   // Fork: machine map (apps/machine-map/SPEC.md)
   machineMapSubscribe: "machineMap.subscribe",
-  machineMapJoin: "machineMap.join",
-  machineMapLeave: "machineMap.leave",
   machineMapReportDesktop: "machineMap.reportDesktop",
   machineMapShareSettings: "machineMap.shareSettings",
   machineMapRead: "machineMap.read",
@@ -120,16 +117,6 @@ const WsMachineMapSubscribeRpc = Rpc.make(FORK_WS_METHODS.machineMapSubscribe, {
   success: MachineMapClientState,
   error: machineMapError,
   stream: true,
-});
-const WsMachineMapJoinRpc = Rpc.make(FORK_WS_METHODS.machineMapJoin, {
-  payload: MachineMapJoinInput,
-  success: MachineMapClientState,
-  error: machineMapError,
-});
-const WsMachineMapLeaveRpc = Rpc.make(FORK_WS_METHODS.machineMapLeave, {
-  payload: Schema.Struct({}),
-  success: MachineMapClientState,
-  error: machineMapError,
 });
 /** Fork: only the local desktop app reports. Other sessions get `desktop-only`. */
 const WsMachineMapReportDesktopRpc = Rpc.make(FORK_WS_METHODS.machineMapReportDesktop, {
@@ -225,8 +212,6 @@ export const ForkWsRpcGroup = RpcGroup.make(
   WsForkChangelogSyncStatusRpc,
   WsForkChangelogStartSyncRpc,
   WsMachineMapSubscribeRpc,
-  WsMachineMapJoinRpc,
-  WsMachineMapLeaveRpc,
   WsMachineMapReportDesktopRpc,
   WsMachineMapShareSettingsRpc,
   WsMachineMapReadRpc,
@@ -245,9 +230,6 @@ export const ForkWsRpcGroup = RpcGroup.make(
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   // Fork: starts the Fork Sync workflow, which pushes to fork main on GitHub.
   [FORK_WS_METHODS.forkChangelogStartSync]: AuthSourceControlWriteScope,
-  // Fork: joining or leaving the machine map turns the `machineMap` setting on or off.
-  [FORK_WS_METHODS.machineMapJoin]: AuthSettingsWriteScope,
-  [FORK_WS_METHODS.machineMapLeave]: AuthSettingsWriteScope,
   // Fork: MM-411. Sets shared values of the map, like a settings change on every machine.
   [FORK_WS_METHODS.machineMapShareSettings]: AuthSettingsWriteScope,
   // Fork: the local desktop app reports desktop command results and its waiting update.

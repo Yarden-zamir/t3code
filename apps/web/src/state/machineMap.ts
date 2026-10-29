@@ -22,18 +22,6 @@ const machineMapState = createEnvironmentRpcSubscriptionAtomFamily(connectionAto
   idleTtlMs: 0,
 });
 
-export const joinMachineMap = createEnvironmentRpcCommand(connectionAtomRuntime, {
-  label: "environment-data:machine-map:join",
-  tag: WS_METHODS.machineMapJoin,
-  concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
-});
-
-export const leaveMachineMap = createEnvironmentRpcCommand(connectionAtomRuntime, {
-  label: "environment-data:machine-map:leave",
-  tag: WS_METHODS.machineMapLeave,
-  concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
-});
-
 export const reportMachineMapDesktop = createEnvironmentRpcCommand(connectionAtomRuntime, {
   label: "environment-data:machine-map:report-desktop",
   tag: WS_METHODS.machineMapReportDesktop,

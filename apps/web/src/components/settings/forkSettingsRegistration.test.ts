@@ -78,10 +78,6 @@ const FORK_PAGE_ROWS: Record<
   threadLinkChips: "thread-link-chips",
   threadLinksOpenDesktopApp: "thread-links-open-desktop-app",
   messageLinks: "message-links",
-  machineMap: "machine-map",
-  clientAccess: {
-    notListed: "The portal sets it. Settings > Machines holds the way back in (MM-919).",
-  },
   threadCardLayouts: "thread-card-layout",
   sidebarTabs: { notListed: "Content that the user builds in the sidebar." },
   keybindingSync: "keybinding-sync",
@@ -108,8 +104,6 @@ const KEPT_BY_RESTORE: Partial<Record<ForkSettingKey, string>> = {
   pinnedMessages: "User data, like project scripts.",
   sidebarTabs: "Content that the user built, like keybindings.",
   threadCardLayouts: "Content that the user built, like keybindings.",
-  machineMap: "A reset leaves the machine map.",
-  clientAccess: "A reset changes access.",
 };
 
 const forkSettingKeys = [

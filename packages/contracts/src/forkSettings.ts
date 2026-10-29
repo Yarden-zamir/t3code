@@ -459,10 +459,6 @@ export const ForkServerSettingsFields = {
    * behavior that changes what clients show.
    */
   accessChangeNotices: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /** Fork: machine map connection. See `MachineMapSettings`. */
-  machineMap: MachineMapSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  /** Fork: how a Cloudflare Access sign-in of a browser meets the clients of the map. See `ClientAccessMode`. */
-  clientAccess: ClientAccessMode.pipe(Schema.withDecodingDefault(Effect.succeed("off"))),
   /** Fork: user-built thread card layouts. See `ThreadCardLayouts`. */
   threadCardLayouts: ThreadCardLayouts.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /**
@@ -566,14 +562,6 @@ export const ForkServerSettingsPatchFields = {
     Schema.Struct({
       desktop: Schema.optionalKey(Schema.NullOr(StoredThreadCardLayout)),
       mobile: Schema.optionalKey(Schema.NullOr(StoredThreadCardLayout)),
-    }),
-  ),
-  clientAccess: Schema.optionalKey(ClientAccessMode),
-  /** Merges per field: a patched field replaces the saved one. */
-  machineMap: Schema.optionalKey(
-    Schema.Struct({
-      enabled: Schema.optionalKey(Schema.Boolean),
-      portalUrl: Schema.optionalKey(TrimmedNonEmptyString),
     }),
   ),
   /** Merges per field: a patched field replaces the saved one. */

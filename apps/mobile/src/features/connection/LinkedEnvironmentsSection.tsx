@@ -13,7 +13,6 @@ import { peerLinkEnvironment } from "../../state/peerLinks";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { SettingsSection } from "../settings/components/SettingsSection";
-import { ArrowLinksPortalLink } from "./ForkArrowLinksPortalLink";
 
 export function LinkedEnvironmentsSection(props: {
   readonly environmentId: EnvironmentId;
@@ -46,10 +45,7 @@ export function LinkedEnvironmentsSection(props: {
   const now = DateTime.makeUnsafe(nowMs);
   return (
     <View className="mt-5 gap-3">
-      <SettingsSection
-        title={`Linked from ${props.environmentLabel}`}
-        trailing={<ArrowLinksPortalLink portalUrl={config?.settings.machineMap.portalUrl} />}
-      >
+      <SettingsSection title={`Linked from ${props.environmentLabel}`}>
         {links.data.links.map((link) => {
           const health = peerLinkHealth(link, now);
           const status = arrowLinkStatus(link, health);
