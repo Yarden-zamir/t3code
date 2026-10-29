@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { deviceMachinesUrl, t3AppMachines } from "./machineMap.ts";
+import { deviceMachinesUrl, MachineId, t3AppMachines } from "./machineMap.ts";
 
 describe("device machine list (K-1601)", () => {
   it("asks kitshn of the zone of a T3 host", () => {
@@ -12,7 +12,7 @@ describe("device machine list (K-1601)", () => {
 
   it("keeps only the T3 app cards, in the shape of the portal list", () => {
     const machine = (kind: string) => ({
-      id: "vps",
+      id: MachineId.make("vps"),
       name: "VPS",
       origin: "https://t3-vps.example.com",
       card: "c1",

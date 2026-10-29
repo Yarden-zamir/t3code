@@ -16,10 +16,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
-type CloudflareAccessField =
-  | "cloudflareAccessTeamDomain"
-  | "cloudflareAccessAud"
-  | "cloudflareAccessSubjects";
+type CloudflareAccessField = "cloudflareAccessTeamDomain" | "cloudflareAccessAud";
 const CLOUDFLARE_ACCESS_FIELDS: ReadonlyArray<{
   readonly field: CloudflareAccessField;
   readonly label: string;
@@ -34,11 +31,6 @@ const CLOUDFLARE_ACCESS_FIELDS: ReadonlyArray<{
     field: "cloudflareAccessAud",
     label: "Cloudflare Access audience tag",
     placeholder: "Access application audience (AUD) tag",
-  },
-  {
-    field: "cloudflareAccessSubjects",
-    label: "Cloudflare Access allowed emails and service tokens",
-    placeholder: "Allowed emails or service token client IDs, comma separated",
   },
 ];
 
@@ -69,7 +61,6 @@ export function TunnelPairingSettingsRow() {
     readonly trustedBrowserOrigins: string | null;
     readonly cloudflareAccessTeamDomain: string | null;
     readonly cloudflareAccessAud: string | null;
-    readonly cloudflareAccessSubjects: string | null;
   }) => {
     if (
       !desktopBridge ||
@@ -123,7 +114,6 @@ export function TunnelPairingSettingsRow() {
       trustedBrowserOrigins: origins.length > 0 ? origins : null,
       cloudflareAccessTeamDomain: accessValue("cloudflareAccessTeamDomain"),
       cloudflareAccessAud: accessValue("cloudflareAccessAud"),
-      cloudflareAccessSubjects: accessValue("cloudflareAccessSubjects"),
     };
   };
   return (

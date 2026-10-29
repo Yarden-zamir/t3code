@@ -44,7 +44,6 @@ export interface DesktopSettings {
   // gets these only while tunnel pairing is on and all three are set.
   readonly cloudflareAccessTeamDomain: string | null;
   readonly cloudflareAccessAud: string | null;
-  readonly cloudflareAccessSubjects: string | null;
   readonly updateChannel: DesktopUpdateChannel;
   readonly updateChannelConfiguredByUser: boolean;
   readonly wslBackendEnabled: boolean;
@@ -88,7 +87,6 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   trustedBrowserOrigins: null,
   cloudflareAccessTeamDomain: null,
   cloudflareAccessAud: null,
-  cloudflareAccessSubjects: null,
   updateChannel: "latest",
   updateChannelConfiguredByUser: false,
   wslBackendEnabled: false,
@@ -116,7 +114,6 @@ const DesktopSettingsDocument = Schema.Struct({
   trustedBrowserOrigins: Schema.optionalKey(Schema.NullOr(Schema.String)),
   cloudflareAccessTeamDomain: Schema.optionalKey(Schema.NullOr(Schema.String)),
   cloudflareAccessAud: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  cloudflareAccessSubjects: Schema.optionalKey(Schema.NullOr(Schema.String)),
   updateChannel: Schema.optionalKey(DesktopUpdateChannelSchema),
   updateChannelConfiguredByUser: Schema.optionalKey(Schema.Boolean),
   wslBackendEnabled: Schema.optionalKey(Schema.Boolean),
@@ -248,7 +245,7 @@ export function normalizeTrustedBrowserOrigins(value: unknown): string | null | 
 
 export type CloudflareAccessSettings = Pick<
   DesktopSettings,
-  "cloudflareAccessTeamDomain" | "cloudflareAccessAud" | "cloudflareAccessSubjects"
+  "cloudflareAccessTeamDomain" | "cloudflareAccessAud"
 >;
 
 /** Fork: trimmed text, or null when blank or not a string. */
@@ -309,7 +306,6 @@ function normalizeDesktopSettingsDocument(
       parsed.cloudflareAccessTeamDomain,
     ),
     cloudflareAccessAud: normalizeSettingText(parsed.cloudflareAccessAud),
-    cloudflareAccessSubjects: normalizeSettingText(parsed.cloudflareAccessSubjects),
     // Fork: the fork publishes only nightly builds, so a saved Stable channel reads as nightly.
     updateChannel: updateChannelConfiguredByUser ? "nightly" : defaultSettings.updateChannel,
     updateChannelConfiguredByUser,
@@ -361,9 +357,6 @@ function toDesktopSettingsDocument(
   }
   if (settings.cloudflareAccessAud !== defaults.cloudflareAccessAud) {
     document.cloudflareAccessAud = settings.cloudflareAccessAud;
-  }
-  if (settings.cloudflareAccessSubjects !== defaults.cloudflareAccessSubjects) {
-    document.cloudflareAccessSubjects = settings.cloudflareAccessSubjects;
   }
   if (settings.updateChannel !== defaults.updateChannel) {
     document.updateChannel = settings.updateChannel;
@@ -443,8 +436,7 @@ function setTunnelPairing(
     settings.tunnelPairingUrl === input.url &&
     settings.trustedBrowserOrigins === input.trustedBrowserOrigins &&
     settings.cloudflareAccessTeamDomain === cloudflareAccess.cloudflareAccessTeamDomain &&
-    settings.cloudflareAccessAud === cloudflareAccess.cloudflareAccessAud &&
-    settings.cloudflareAccessSubjects === cloudflareAccess.cloudflareAccessSubjects
+    settings.cloudflareAccessAud === cloudflareAccess.cloudflareAccessAud
     ? settings
     : {
         ...settings,

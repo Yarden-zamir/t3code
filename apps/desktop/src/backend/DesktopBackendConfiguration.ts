@@ -82,7 +82,6 @@ const DESKTOP_BACKEND_ENV_NAMES = [
   "T3CODE_TRUSTED_BROWSER_ORIGINS",
   "T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN",
   "T3CODE_CLOUDFLARE_ACCESS_AUD",
-  "T3CODE_CLOUDFLARE_ACCESS_SUBJECTS",
 ] as const;
 
 // Windows forwards these variables into WSL only through WSLENV.
@@ -525,7 +524,6 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         onSome: (access) => ({
           cloudflareAccessTeamDomain: access.teamDomain,
           cloudflareAccessAud: access.aud,
-          cloudflareAccessSubjects: access.subjects,
         }),
       }),
       desktopTelemetryFd: 4,
