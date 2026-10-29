@@ -1,3 +1,4 @@
+import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -53,6 +54,7 @@ it.effect("project settings written by t3_project_update are the ones the app re
     const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
     const aggregateUpdates: Array<Parameters<Project.ProjectService["Service"]["update"]>[0]> = [];
     const layerDependencies = Layer.mergeAll(
+      Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
       NodeCrypto.layer,
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment"),
@@ -175,6 +177,7 @@ const clientLaunchHarness = (input: {
     model: input.overrideModel === undefined ? modelSelection : null,
   };
   const layerDependencies = Layer.mergeAll(
+    Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
     ServerSettings.layerTest({
       ...(input.defaultRuntimeMode === undefined
         ? {}
