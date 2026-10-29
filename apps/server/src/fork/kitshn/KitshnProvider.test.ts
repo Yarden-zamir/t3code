@@ -11,6 +11,7 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Sink from "effect/Sink";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/process";
@@ -551,6 +552,26 @@ it.layer(
         expect(refused.message).toBe("not queued");
         expect(yield* Ref.get(harness.machine)).toEqual({ id: "m-1", name: "studio" });
         expect(yield* Ref.get(harness.contacts)).toBe(1);
+        // K-1623: before the handover the host notice shows, also for an empty audience list.
+        const hostNotice = harness.provider.hostNotice.pipe(Stream.runHead);
+        expect(yield* hostNotice).toEqual(Option.some(true));
+        const team = "team.cloudflareaccess.com";
+        yield* child.say({
+          type: "access",
+          provider: "t3",
+          access: { teamDomain: team, audiences: [] },
+        });
+        yield* child.say(command(4, "collect-diagnostics"));
+        yield* Queue.take(child.written);
+        expect(yield* hostNotice).toEqual(Option.some(true));
+        yield* child.say({
+          type: "access",
+          provider: "t3",
+          access: { teamDomain: team, audiences: ["a"] },
+        });
+        yield* child.say(command(5, "collect-diagnostics"));
+        yield* Queue.take(child.written);
+        expect(yield* hostNotice).toEqual(Option.some(false));
         // K-1722: the answer to a waiting ask is kept for machines_read.
         yield* child.say({ type: "ask-result", proposalId: "p1", outcome: "approved" });
         yield* child.say(command(3, "collect-diagnostics"));

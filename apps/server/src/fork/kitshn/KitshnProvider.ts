@@ -397,7 +397,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const setHostNotice = Effect.fn("KitshnProvider.setHostNotice")(function* (
     access: AccessApp | null,
   ) {
-    const notWithKitshn = site !== undefined && access === null;
+    // Before the handover kitshn sends no access, or access with no audience (contract §10).
+    const notWithKitshn = site !== undefined && (access === null || access.audiences.length === 0);
     const before = yield* SubscriptionRef.getAndSet(hostNotice, notWithKitshn);
     if (notWithKitshn && !before) {
       yield* Effect.logWarning(
