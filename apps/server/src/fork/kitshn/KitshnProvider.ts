@@ -23,7 +23,7 @@ import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as MachineHost from "../machineMap/MachineHost.ts";
-import { redactUrlSecretsInText } from "../redactUrlSecrets.ts";
+import { redactSecretsInText } from "../redactUrlSecrets.ts";
 import { kitshnOwnerRefusal } from "./KitshnAttester.ts";
 import * as KitshnCli from "./KitshnCli.ts";
 import {
@@ -39,6 +39,8 @@ import {
   requestLine,
 } from "./kitshnProviderProtocol.ts";
 
+// After a connection that registered: a daemon restart ends the child, and T3 comes back fast.
+const RETRY_AFTER_REGISTER = Duration.seconds(1);
 const RETRY_FIRST = Duration.seconds(5);
 // After a daemon restart, a queued command waits 60 seconds for `register` (K-707).
 const RETRY_CAP = Duration.seconds(30);
@@ -99,73 +101,11 @@ const COMMANDS = [
 }>;
 type KitshnCommand = (typeof COMMANDS)[number];
 
-const REDACTED = "REDACTED";
-const TOKEN_PREFIXES = [
-  "ghp_",
-  "gho_",
-  "ghs_",
-  "ghu_",
-  "github_pat_",
-  "sk-",
-  "xoxb-",
-  "xoxp-",
-  "eyJ",
-];
-const isEnvName = (name: string) =>
-  name.length >= 2 &&
-  name[0]! >= "A" &&
-  name[0]! <= "Z" &&
-  [...name].every(
-    (char) => (char >= "A" && char <= "Z") || (char >= "0" && char <= "9") || char === "_",
-  );
-
-/**
- * Hides secrets in free text: URL secrets such as a pairing link token, `NAME=value` env values,
- * the word after `Bearer` or `token`, and known token formats.
- */
-function redactSecretsInText(text: string): string {
-  const words = redactUrlSecretsInText(text).split(" ");
-  return words
-    .map((word, index) => {
-      const before = words[index - 1]?.toLowerCase();
-      if (before === "bearer" || before === "token" || before === "token:") return REDACTED;
-      if (TOKEN_PREFIXES.some((prefix) => word.startsWith(prefix))) return REDACTED;
-      const equals = word.indexOf("=");
-      if (equals > 0 && isEnvName(word.slice(0, equals))) {
-        return `${word.slice(0, equals)}=${REDACTED}`;
-      }
-      return word;
-    })
-    .join(" ");
-}
-
-/** A process command line keeps only its program name: its arguments can hold tokens. */
-const programName = (commandLine: string) => {
-  const program = commandLine.trim().split(" ")[0] ?? "";
-  return program.slice(program.lastIndexOf("/") + 1);
-};
-
-/** Redacts every string of a command result before it leaves the machine. */
-function redactCommandResult(value: unknown, key?: string): unknown {
-  if (typeof value === "string") {
-    return key === "command" ? programName(value) : redactSecretsInText(value);
-  }
-  if (Array.isArray(value)) return value.map((entry) => redactCommandResult(entry, key));
-  if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([entryKey, entry]) => [
-        entryKey,
-        redactCommandResult(entry, entryKey),
-      ]),
-    );
-  }
-  return value;
-}
-
 const CUT_NOTE = "\n[cut at 64 KiB]";
+// MachineHost redacts the diagnostics at the source, which the machine map portal shares.
 const commandOutput = (outcome: MachineHost.CommandOutcome) => {
   const text = outcome.ok
-    ? JSON.stringify(redactCommandResult(outcome.result) ?? null, null, 2)
+    ? JSON.stringify(outcome.result ?? null, null, 2)
     : redactSecretsInText(outcome.error ?? "The command failed.");
   return text.length <= MAX_COMMAND_OUTPUT_LENGTH
     ? text
@@ -234,6 +174,8 @@ const make = Effect.gen(function* () {
   /** One `kitshn provider` child, until it exits. Returns why it ended and whether it registered. */
   const connectOnce = Effect.scoped(
     Effect.gen(function* () {
+      // Phase B starts fail-closed: the grants of an ended connection are gone.
+      yield* Effect.addFinalizer(() => Ref.set(grants, {}));
       const binary = yield* cli.binary;
       const child = yield* spawner.spawn(
         ChildProcess.make(binary, ["provider"], {
@@ -396,8 +338,11 @@ const make = Effect.gen(function* () {
     ),
   );
 
+  /** 1 s after a registered connection, then 5, 10, 20 and 30 s: 36 s in all, inside the 60 s. */
   const retryDelay = (failures: number) =>
-    Duration.min(Duration.times(RETRY_FIRST, 2 ** Math.min(failures, 10)), RETRY_CAP);
+    failures === 0
+      ? RETRY_AFTER_REGISTER
+      : Duration.min(Duration.times(RETRY_FIRST, 2 ** Math.min(failures - 1, 10)), RETRY_CAP);
 
   const connectForever = Effect.gen(function* () {
     let failures = 0;

@@ -36,12 +36,25 @@ export const ProviderFact = Schema.Struct({
   role: Schema.optionalKey(Schema.Literals(["version", "busy"])),
 });
 
+const RESERVED_SITE_NAMES: ReadonlySet<string> = new Set(["pages", "files", "kit", "www"]);
+
 export const ProviderResource = Schema.Struct({
   id: Schema.String,
   kind: Schema.String,
   name: Schema.String,
   status: Schema.Literals(["running", "stopped", "deploying", "failed", "unknown"]),
   facts: Schema.optionalKey(Schema.Array(ProviderFact)),
+  /** K-1104: the card as a live site. Phase A sends none. kitshn refuses its own names (K-817). */
+  site: Schema.optionalKey(
+    Schema.Struct({
+      name: Schema.String.check(
+        Schema.makeFilter(
+          (name: string) => !RESERVED_SITE_NAMES.has(name) || `${name} is a site name of kitshn`,
+        ),
+      ),
+      port: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })),
+    }),
+  ),
 });
 export type ProviderResource = typeof ProviderResource.Type;
 
@@ -52,7 +65,8 @@ export const Request = Schema.Union([
     provider: Schema.Literal(PROVIDER_NAME),
     kinds: Schema.Array(ProviderKind),
     commands: Schema.Array(ProviderCommand),
-    resources: Schema.Array(ProviderResource),
+    // K-704: a card that a register leaves out goes offline, so a register is never empty.
+    resources: Schema.NonEmptyArray(ProviderResource),
   }),
   Schema.Struct({
     id: Schema.String,

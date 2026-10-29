@@ -435,13 +435,14 @@ The server shows itself as a card on the kitshn map, with its commands (kitshn K
 - **Setting:** server setting `kitshnProvider` (off by default). Settings > Machines > "kitshn provider". Join the machine to kitshn first.
 - **Card:** one `t3.app` card "T3 on <environment name>", with the facts version and running turns. The server sends a new card only when a fact changes. It checks the facts every 15 seconds.
 - **Commands:** Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. Each runs the machine map command of the same name. The card shows only the commands that this server can run now: Restart server needs a supervisor, and Install update needs the background service. A restart answers kitshn first and then restarts.
-- **Diagnostics:** the output to kitshn keeps only the program name of each process. Secrets in error texts become `REDACTED`: URL tokens such as a pairing link, `NAME=value` values, the word after `Bearer` or `token`, and known token formats.
-- **Failures:** without kitshn 2, after a refusal, or when the child exits, T3 runs normally and tries again. The wait starts at 5 seconds, doubles after each failed try and stops at 30 seconds. After a daemon restart, kitshn holds a queued command for 60 seconds until T3 registers again. The same start rules as the attester apply: only the server of the default T3 home `~/.t3`, no dev server and no Windows.
+- **Diagnostics:** the machine map portal and kitshn get the same redacted diagnostics. Each process shows only its program name, never its arguments. Secrets in error texts become `REDACTED`: URL tokens such as a pairing link, `key=value` and `"key":"value"` for secret key names such as `token` and `password`, `NAME=value` env values, the word after `Bearer`, `token:` or `--token`, and known token formats.
+- **Failures:** without kitshn 2, after a refusal, or when the child exits, T3 runs normally and tries again. After a connection that registered, T3 tries again after 1 second, because a daemon restart ends the child. Each further try waits 5, 10, 20 and then 30 seconds. After a daemon restart, kitshn holds a queued command for 60 seconds until T3 registers again, and these waits stay inside that time. The same start rules as the attester apply: only the server of the default T3 home `~/.t3`, no dev server and no Windows.
 - **Limits:**
-  - Phase A: kitshn sends grants, and T3 keeps them in memory only. Nothing checks them yet, so a grant gives no access to T3 and takes none away.
+  - Phase A: kitshn sends grants, and T3 keeps them in memory only. T3 drops them when the connection ends. Nothing checks them yet, so a grant gives no access to T3 and takes none away.
   - The card has no site yet. kitshn does not serve T3 through it, so the machine map host `t3-<machine>` stays the way in.
   - No thread cards yet.
-  - Turning the setting off leaves the card offline. kitshn forgets it with its shares after 24 hours. T3 does not run `kitshn provider forget t3`.
+  - Turning the setting off makes the card offline. The card keeps its shares until the owner forgets it in kitshn. T3 never runs `kitshn provider forget t3`.
+- **Remove T3:** stop the T3 server first. Then run `kitshn provider forget t3` as the kitshn daemon user. The owner then selects "Forget provider" on the kitshn map.
 
 ### Scheduled task model
 

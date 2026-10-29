@@ -79,19 +79,18 @@ const makeChild = (args: ReadonlyArray<string>) =>
 
 const RESULTS: Partial<Record<MachineCommandInput["_tag"], MachineHost.CommandOutcome>> = {
   restartServer: { ok: true, result: { restarting: true }, error: null, restartAfterReply: true },
-  collectDiagnostics: {
-    ok: true,
-    result: {
-      processes: [{ pid: 7, command: "/usr/bin/node /srv/server.js --token abc123" }],
-      recentErrors: [
-        {
-          message:
-            "open https://t3.example/pair#token=PAIRSECRET failed with GITHUB_TOKEN=gh-value and Bearer jwt-value",
-        },
-      ],
-    },
-    error: null,
+};
+
+const GRANT = {
+  circle: {
+    id: "c",
+    name: "Team",
+    match: "any",
+    needsPasskey: false,
+    rules: [{ everyone: true }, { passkeyGroup: "future rule type" }],
   },
+  level: "read",
+  endsAt: null,
 };
 
 const setup = (options: { readonly enabled: boolean; readonly installed?: boolean }) =>
@@ -243,7 +242,7 @@ it.layer(
     Layer.provideMerge(NodeServices.layer),
   ),
 )("KitshnProvider", (it) => {
-  it.effect("registers on connect and again on each reconnect", () =>
+  it.effect("registers on connect, and again 1 second after a registered child exits", () =>
     Effect.gen(function* () {
       const harness = yield* setup({ enabled: true });
       const first = yield* Queue.take(harness.children);
@@ -257,11 +256,17 @@ it.layer(
         id: register.id,
         type: "register",
         machineId: "m-1",
-        grants: { app: [] },
+        grants: { app: [GRANT] },
       });
+      // The next line is answered only after the register answer above.
+      yield* first.say(command(1, "stop-all-agents"));
+      yield* Queue.take(first.written);
+      expect(yield* harness.provider.grants).toEqual({ app: [GRANT] });
       yield* first.exit(1);
-      yield* TestClock.adjust("5 seconds");
+      yield* TestClock.adjust("1 second");
       const second = yield* Queue.take(harness.children);
+      // Phase B starts fail-closed: the grants of the ended connection are gone.
+      expect(yield* harness.provider.grants).toEqual({});
       expect(yield* Queue.take(second.written)).toEqual({
         id: expect.any(String),
         ...EXPECTED_REGISTER,
@@ -274,22 +279,11 @@ it.layer(
       const harness = yield* setup({ enabled: true });
       const child = yield* Queue.take(harness.children);
       const register = yield* Queue.take(child.written);
-      const grant = {
-        circle: {
-          id: "c",
-          name: "Team",
-          match: "any",
-          needsPasskey: false,
-          rules: [{ everyone: true }, { passkeyGroup: "future rule type" }],
-        },
-        level: "read",
-        endsAt: null,
-      };
       yield* child.say({
         id: register.id,
         type: "register",
         machineId: "m-1",
-        grants: { app: [grant] },
+        grants: { app: [GRANT] },
       });
       yield* child.say("not json");
       yield* child.say({ type: "something-new" });
@@ -302,18 +296,14 @@ it.layer(
         ok: true,
       });
       expect(yield* Queue.take(harness.ran)).toBe("kitshn:7 collectDiagnostics");
-      const output = String(result.output);
-      expect(output).toContain('"node"');
-      for (const secret of ["abc123", "PAIRSECRET", "gh-value", "jwt-value", "server.js"]) {
-        expect(output).not.toContain(secret);
-      }
       yield* child.say(command(8, "format-disk"));
       expect(yield* Queue.take(child.written)).toMatchObject({
         type: "command-result",
         commandId: 8,
         ok: false,
       });
-      expect(yield* harness.provider.grants).toEqual({ app: [grant] });
+      // An unknown rule type keeps the rest of the table readable.
+      expect(yield* harness.provider.grants).toEqual({ app: [GRANT] });
     }).pipe(Effect.scoped),
   );
 
@@ -334,7 +324,7 @@ it.layer(
     Effect.gen(function* () {
       const harness = yield* setup({ enabled: true, installed: false });
       yield* Queue.take(harness.binaryCalls);
-      yield* TestClock.adjust("10 seconds");
+      yield* TestClock.adjust("5 seconds");
       yield* Queue.take(harness.binaryCalls);
       expect(yield* Queue.size(harness.children)).toBe(0);
     }).pipe(Effect.scoped),
