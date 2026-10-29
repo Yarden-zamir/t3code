@@ -269,3 +269,20 @@ describe("KitshnGrants", () => {
     }).pipe(isolated),
   );
 });
+
+it("checks kitshn's audiences and the portal's audience while the portal serves hosts", () => {
+  const portal = { teamDomain: "team.cloudflareaccess.com", aud: "portal-aud" };
+  const kitshn = { teamDomain: "team.cloudflareaccess.com", audiences: ["kitshn-aud"] };
+  expect(KitshnGrants.accessChecks(portal, kitshn)).toEqual([
+    { teamDomain: "team.cloudflareaccess.com", audiences: ["kitshn-aud", "portal-aud"] },
+  ]);
+  expect(KitshnGrants.accessChecks(portal, null)).toEqual([
+    { teamDomain: "team.cloudflareaccess.com", audiences: ["portal-aud"] },
+  ]);
+  expect(KitshnGrants.accessChecks(undefined, kitshn)).toEqual([kitshn]);
+  // No application yet: kitshn sends an empty list, and the portal's audience still holds.
+  expect(KitshnGrants.accessChecks(undefined, { ...kitshn, audiences: [] })).toEqual([]);
+  expect(
+    KitshnGrants.accessChecks({ ...portal, teamDomain: "old.cloudflareaccess.com" }, kitshn),
+  ).toEqual([kitshn, { teamDomain: "old.cloudflareaccess.com", audiences: ["portal-aud"] }]);
+});

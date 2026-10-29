@@ -82,6 +82,23 @@ interface Tracked {
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
 }
 
+/**
+ * K-1623: the Access checks of this server: the audiences of kitshn's applications on its host,
+ * and the portal's audience from the config. Known limit: the portal's audience stays valid while
+ * the portal Worker serves hosts; drop `configured` here when the portal Worker goes.
+ */
+export const accessChecks = (
+  configured: { readonly teamDomain: string; readonly aud: string } | undefined,
+  kitshn: AccessApp | null,
+): ReadonlyArray<{ readonly teamDomain: string; readonly audiences: ReadonlyArray<string> }> => {
+  const fromKitshn = kitshn === null || kitshn.audiences.length === 0 ? [] : [kitshn];
+  if (configured === undefined) return fromKitshn;
+  const sameTeam = fromKitshn.find((check) => check.teamDomain === configured.teamDomain);
+  if (sameTeam === undefined) {
+    return [...fromKitshn, { teamDomain: configured.teamDomain, audiences: [configured.aud] }];
+  }
+  return [{ teamDomain: sameTeam.teamDomain, audiences: [...sameTeam.audiences, configured.aud] }];
+};
 export class KitshnGrants extends Context.Service<
   KitshnGrants,
   {
@@ -171,14 +188,21 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const statePath = path.join(config.stateDir, "kitshn-grants.json");
-  const configured =
-    config.cloudflareAccess === undefined
-      ? undefined
-      : makeCloudflareAccessClaimsVerifier({
-          teamDomain: config.cloudflareAccess.teamDomain,
-          audiences: [config.cloudflareAccess.aud],
-        });
-  let verifyClaims = options?.verifyClaims ?? configured;
+  const verifierOf = (access: AccessApp | null) => {
+    const verifiers = accessChecks(config.cloudflareAccess, access).map((check) =>
+      makeCloudflareAccessClaimsVerifier(check),
+    );
+    if (verifiers.length === 0) return undefined;
+    return (request: HttpServerRequest.HttpServerRequest) =>
+      Effect.gen(function* () {
+        for (const verify of verifiers) {
+          const claims = yield* verify(request);
+          if (claims !== undefined) return claims;
+        }
+        return undefined;
+      });
+  };
+  let verifyClaims = options?.verifyClaims ?? verifierOf(null);
   let accessKey: string | null = null;
 
   // A missing file starts with no table, so every Access request is refused until kitshn
@@ -366,10 +390,7 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
         const key = access === null ? null : `${access.teamDomain} ${access.audiences.join(",")}`;
         if (key === accessKey) return;
         accessKey = key;
-        verifyClaims =
-          access === null || access.audiences.length === 0
-            ? configured
-            : makeCloudflareAccessClaimsVerifier(access);
+        verifyClaims = verifierOf(access);
       }),
     ),
     trustsPeerOrigin: (origin) => peerOrigins.has(origin),

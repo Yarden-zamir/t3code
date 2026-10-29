@@ -150,10 +150,7 @@ export const LinkAudit = Schema.Struct({
 });
 export type LinkAudit = typeof LinkAudit.Type;
 
-/**
- * The Access app in front of this machine's `t3.app` host: its team domain and audience tags.
- * Pending contract: the kitshn lead sends the exact shape with its PR.
- */
+/** K-1623: the team domain and the AUD tags of kitshn's Access applications on this provider's hosts. */
 export const AccessApp = Schema.Struct({
   teamDomain: Schema.String,
   audiences: Schema.Array(Schema.String),
@@ -314,7 +311,7 @@ export const Answer = Schema.Union([
      * the machine has no link proxy, so it has no outgoing links.
      */
     linkSocket: Schema.optionalKey(Schema.NullOr(Schema.String)),
-    /** Pending contract: the Access app of this machine's host; absent until kitshn sends it. */
+    /** K-1623: the Access audiences of this provider's hosts; null before kitshn sent them. */
     access: Schema.optionalKey(Schema.NullOr(AccessApp)),
   }),
   /** Pending contract: an event: the Access app of this machine's host changed. */

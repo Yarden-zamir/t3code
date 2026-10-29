@@ -24,6 +24,7 @@ import * as CliError from "effect/cli/CliError";
 import { readBootstrapEnvelope } from "../bootstrap.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
+import { readPortalTunnel } from "../fork/portalTunnelFile.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 
@@ -488,14 +489,22 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     () => 443,
   );
   const explicitTunnelUrl = env.tunnelPairingUrl ?? bootstrap?.tunnelPairingUrl;
-  const tunnelPairingUrl = yield* resolveTunnelPairingUrl(explicitTunnelUrl);
+  const explicitAccess = {
+    teamDomain: env.cloudflareAccessTeamDomain ?? bootstrap?.cloudflareAccessTeamDomain,
+    aud: env.cloudflareAccessAud ?? bootstrap?.cloudflareAccessAud,
+  };
+  const portalTunnel = yield* readPortalTunnel(derivedPaths.stateDir);
+  const tunnelPairingUrl = yield* resolveTunnelPairingUrl(
+    explicitTunnelUrl ?? portalTunnel?.origin,
+  );
   const trustedBrowserOrigins = yield* resolveTrustedBrowserOrigins(
     env.trustedBrowserOrigins ?? bootstrap?.trustedBrowserOrigins,
   );
-  const cloudflareAccess = yield* resolveCloudflareAccess({
-    teamDomain: env.cloudflareAccessTeamDomain ?? bootstrap?.cloudflareAccessTeamDomain,
-    aud: env.cloudflareAccessAud ?? bootstrap?.cloudflareAccessAud,
-  });
+  const cloudflareAccess = yield* resolveCloudflareAccess(
+    portalTunnel !== undefined && Object.values(explicitAccess).every((v) => v === undefined)
+      ? portalTunnel.access
+      : explicitAccess,
+  );
   const staticDir = devUrl ? undefined : yield* ServerConfig.resolveStaticDir();
   const explicitHost = resolveOptionPrecedence(
     normalizedFlags.host,
