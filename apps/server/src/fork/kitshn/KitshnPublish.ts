@@ -170,7 +170,7 @@ const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.mapError((error) =>
-            fail("invalid_key", `${error.message} No secretRef was spent.`),
+            fail("invalid_key", `${error.message} Ask the owner for all three values again.`),
           ),
         );
       const [serverText, clientId, clientSecret] = values;
