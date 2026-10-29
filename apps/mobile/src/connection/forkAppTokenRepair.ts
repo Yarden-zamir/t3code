@@ -4,8 +4,6 @@
  * empty or refused list disables nothing and shows its reason.
  */
 import {
-  CLOUDFLARE_ACCESS_CLIENT_ID_HEADER,
-  CLOUDFLARE_ACCESS_CLIENT_SECRET_HEADER,
   cloudflareAccessServiceToken,
   ConnectionOnboarding,
   type ConnectionCatalogEntry,
@@ -14,19 +12,17 @@ import {
   requestHeaderOrigin,
   routeHttpBaseUrl,
 } from "@t3tools/client-runtime/connection";
+import { readDeviceMachines } from "@t3tools/client-runtime/fork/deviceInvite";
 import {
   type ClientMachinesResponse,
-  DeviceMachinesResponse,
   deviceMachinesUrl,
   type EnvironmentId,
-  t3AppMachines,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult } from "effect/reactivity";
@@ -40,7 +36,7 @@ import {
 } from "../state/forkAppTokenRepairErrors";
 import type { AppTokenClient } from "../persistence/mobile-preferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../state/preferences";
-import { issueMachinePairingCredential } from "./clientEnroll";
+import { issueMachinePairingCredential, kitshnTransport } from "./clientEnroll";
 import {
   appTokenOrigins,
   type AppTokenEnvironment,
@@ -54,9 +50,7 @@ import {
 } from "./forkAppTokenClient";
 import { requestHeaderRules } from "./requestHeaders";
 
-const decodeMachines = Schema.decodeUnknownOption(Schema.toCodecJson(DeviceMachinesResponse));
-
-type PortalAnswer =
+type KitshnAnswer =
   | {
       readonly _tag: "machines";
       readonly machinesUrl: string;
@@ -68,62 +62,38 @@ type PortalAnswer =
 
 /**
  * kitshn's `GET /device/machines` (K-1601) of the zone of each origin that holds a token answers
- * with the machine list. A phone without an app token has none. kitshn answers 403 for a login,
- * and Cloudflare Access refuses a deleted token on every origin.
+ * with the machine list. A phone without an app token has none.
  */
-const readPortal = Effect.fn("mobile.appTokenRepair.readPortal")(function* (
+const readKitshn = Effect.fn("mobile.appTokenRepair.readKitshn")(function* (
   savedMachinesUrl: string | null,
 ) {
-  // Each origin that holds a token names its zone, and so the kitshn list of that zone.
   const rules = requestHeaderRules().filter(
     (rule) => cloudflareAccessServiceToken(rule.headers) !== null,
   );
   let refused = 0;
   for (const rule of rules) {
-    // A list URL saved by a portal enrollment is not kitshn's, so the zone of the token decides.
+    // A list URL saved by an older portal enrollment is not kitshn's, so the token's zone decides.
     const machinesUrl =
       savedMachinesUrl?.endsWith("/device/machines") === true
         ? savedMachinesUrl
         : deviceMachinesUrl(rule.origin);
     const token = cloudflareAccessServiceToken(rule.headers);
     if (machinesUrl === null || token === null) continue;
-    // The phone saves its token for the T3 origins only, so it sends it to kitshn here itself.
-    const response = yield* Effect.tryPromise(() =>
-      fetch(machinesUrl, {
-        headers: {
-          [CLOUDFLARE_ACCESS_CLIENT_ID_HEADER]: token.clientId,
-          [CLOUDFLARE_ACCESS_CLIENT_SECRET_HEADER]: token.clientSecret,
-        },
-      }),
-    ).pipe(Effect.option);
-    if (Option.isNone(response)) continue;
-    const { status } = response.value;
-    const finalHost = (() => {
-      try {
-        return new URL(response.value.url).hostname;
-      } catch {
-        return "";
-      }
-    })();
-    if (status === 401 || status === 403 || finalHost.endsWith(".cloudflareaccess.com")) {
-      refused++;
-      continue;
-    }
-    if (!response.value.ok) continue;
-    const body = yield* Effect.tryPromise(() => response.value.json()).pipe(Effect.option);
-    const answer = Option.flatMap(body, decodeMachines);
-    if (Option.isSome(answer)) {
-      return {
-        _tag: "machines",
-        machinesUrl,
-        tokenClientId: token.clientId,
-        answer: t3AppMachines(answer.value),
-      } as PortalAnswer;
-    }
+    const list = yield* Effect.promise(() =>
+      readDeviceMachines(machinesUrl, token, kitshnTransport),
+    );
+    if (list._tag === "refused") refused++;
+    if (list._tag !== "machines") continue;
+    return {
+      _tag: "machines",
+      machinesUrl,
+      tokenClientId: token.clientId,
+      answer: { machines: list.machines },
+    } as KitshnAnswer;
   }
   return (
     rules.length > 0 && refused === rules.length ? { _tag: "refused" } : { _tag: "none" }
-  ) as PortalAnswer;
+  ) as KitshnAnswer;
 });
 
 /** The machine origin of each saved environment with a bearer route. */
@@ -206,7 +176,7 @@ export const layer = Layer.effectDiscard(
 
     const sync = Effect.gen(function* () {
       const saved = savedClient();
-      const portal = yield* readPortal(saved?.machinesUrl ?? null);
+      const portal = yield* readKitshn(saved?.machinesUrl ?? null);
       if (portal._tag === "none") return;
       if (portal._tag === "refused") {
         // Access refused the token on every origin that holds one, so each of them is affected.

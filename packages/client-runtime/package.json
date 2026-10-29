@@ -235,13 +235,13 @@
       "types": "./src/fork/arrowLinks.ts",
       "default": "./src/fork/arrowLinks.ts"
     },
+    "./fork/deviceInvite": {
+      "types": "./src/fork/deviceInvite.ts",
+      "default": "./src/fork/deviceInvite.ts"
+    },
     "./fork/sharedClientSettings": {
       "types": "./src/fork/sharedClientSettings.ts",
       "default": "./src/fork/sharedClientSettings.ts"
-    },
-    "./fork/accessChange": {
-      "types": "./src/fork/accessChange.ts",
-      "default": "./src/fork/accessChange.ts"
     },
     "./fork/worktreeRecreate": {
       "types": "./src/fork/worktreeRecreate.ts",
