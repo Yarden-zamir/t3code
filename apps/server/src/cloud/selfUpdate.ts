@@ -141,7 +141,10 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
       ? new ServerSelfUpdateError({ reason })
       : new ServerSelfUpdateError({ reason, cause });
 
-  const crossesTrackUnsafely = (input: ServerSelfUpdateInput) =>
+  const crossesTrackUnsafely = (input: {
+    readonly targetVersion: string;
+    readonly targetDatabaseMigration?: number | undefined;
+  }) =>
     trackSwitchBlockReason({
       serverVersion: packageJson.version,
       targetVersion: input.targetVersion,
@@ -190,7 +193,6 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
       );
       // Fork: check the release that installs, and the database migration only of the requested one.
       const unsafeCrossing = crossesTrackUnsafely({
-        ...input,
         targetVersion,
         targetDatabaseMigration:
           targetVersion === requestedVersion ? input.targetDatabaseMigration : undefined,

@@ -448,6 +448,7 @@ it.effect("a bound run follows its thread when promotion moves it mid-send", () 
             namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),
           }),
+          ServerSettings.layerTest(),
           NodeCrypto.layer,
           Scheduler.layer,
         ),
