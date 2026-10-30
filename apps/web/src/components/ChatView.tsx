@@ -579,8 +579,11 @@ export default function ChatView(props: ChatViewProps) {
     select: (location) => location.state.assistantCitationActivation ?? location.state.__TSR_key,
   });
   const citationLocation = { href: citationHref, key: citationKey };
-  const forkMessageLink = useForkMessageLinkRequest(routeThreadDetailRef);
+  const { link: forkMessageLink, revisit: forkHistoryRevisit } =
+    useForkMessageLinkRequest(routeThreadDetailRef);
   const citationRequest = (() => {
+    // Fork: Back and Forward return to where the user left the entry, not to its citation.
+    if (forkHistoryRevisit) return null;
     const citation = assistantCitationFromLocation(citationLocation.href);
     return citation && citation.environmentId === environmentId && citation.threadId === threadId
       ? { citation, key: citationLocation.key ?? citationLocation.href }
