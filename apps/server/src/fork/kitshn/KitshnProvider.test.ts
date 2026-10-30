@@ -688,7 +688,7 @@ it.layer(
 
       // The daemon went away but the child did not exit: the next probe gets no answer.
       yield* Ref.set(harness.answersSamples, false);
-      yield* TestClock.adjust("3 minutes");
+      yield* TestClock.adjust("150 seconds");
       expect(yield* Queue.take(first.written)).toMatchObject({ type: "samples" });
       yield* TestClock.adjust("35 seconds");
       yield* Deferred.await(first.stopped);
@@ -703,6 +703,25 @@ it.layer(
         status: "registered",
         detail: "the kitshn provider did not answer in 35s, so T3 ended it",
       });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("replaces a child that never answers register", () =>
+    Effect.gen(function* () {
+      const harness = yield* setup();
+      const first = yield* Queue.take(harness.children);
+      yield* Queue.take(first.written);
+      yield* TestClock.adjust("35 seconds");
+      yield* Deferred.await(first.stopped);
+      const connection = yield* harness.provider.connection.pipe(Stream.runHead);
+      expect(Option.getOrThrow(connection)).toEqual({
+        status: "connecting",
+        detail: "kitshn did not answer register in 35s, so T3 ended it",
+      });
+      // Not registered, so the next try waits 5 seconds.
+      yield* TestClock.adjust("5 seconds");
+      const second = yield* Queue.take(harness.children);
+      expect(yield* Queue.take(second.written)).toMatchObject({ type: "register" });
     }).pipe(Effect.scoped),
   );
 

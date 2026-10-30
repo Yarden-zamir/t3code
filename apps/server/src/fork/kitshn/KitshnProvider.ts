@@ -89,6 +89,8 @@ const LOCAL_REQUEST_TIMEOUT = Duration.seconds(35);
 // gets no answer. Known limit: that takes up to this interval plus LOCAL_REQUEST_TIMEOUT. Revisit
 // if local requests need a faster recovery.
 const LIVENESS_PROBE = Duration.minutes(3);
+// The daemon answers `register` itself; a child without that answer is stuck like one above.
+const REGISTER_TIMEOUT = Duration.seconds(35);
 
 const resourceKey = Schema.encodeSync(Schema.fromJsonString(ProviderResourceSchema));
 
@@ -584,6 +586,18 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         commands: providerCommands,
         resources: [app, yield* agentsResource, ...sentThreads.values()],
       });
+      yield* Deferred.await(registeredOnce).pipe(
+        Effect.timeoutOption(REGISTER_TIMEOUT),
+        Effect.flatMap((answered) =>
+          Option.isSome(answered)
+            ? Effect.void
+            : Deferred.succeed(
+                unanswered,
+                `kitshn did not answer register in ${Duration.format(REGISTER_TIMEOUT)}, so T3 ended it`,
+              ),
+        ),
+        Effect.forkScoped,
+      );
 
       const handleCommand = Effect.fn("KitshnProvider.handleCommand")(function* (
         event: Extract<Answer, { readonly type: "command" }>,
