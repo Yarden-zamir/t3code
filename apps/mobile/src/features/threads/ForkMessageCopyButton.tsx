@@ -3,7 +3,7 @@ import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@t3tools/shared/promptLinks";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
-import type { ComponentProps, ReactElement } from "react";
+import type { ComponentProps } from "react";
 
 import * as Dialog from "../../components/ui/Dialog";
 import { LongPressMenu, type LongPressMenuEntry } from "../../components/LongPressMenu";
@@ -108,36 +108,4 @@ export function ForkMessageCopyButton({
     />
   );
   return <LongPressMenu entries={entries}>{button}</LongPressMenu>;
-}
-
-/** Fork: the long-press menu of a whole message bubble: Copy message, then the message actions. */
-export function MessageBubbleMenu(props: {
-  readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
-  readonly messageId: string | null;
-  readonly text: string;
-  readonly promptLink?: boolean;
-  readonly children: ReactElement;
-}) {
-  const { entries } = useForkMessageMenuEntries({
-    ...props,
-    promptLink: props.promptLink ?? false,
-  });
-  return (
-    <LongPressMenu
-      entries={[
-        props.text.trim().length > 0
-          ? {
-              id: "copy-message",
-              title: "Copy message",
-              image: "doc.on.doc",
-              run: () => void tryCopyTextWithHaptic(props.text, { target: "message" }),
-            }
-          : null,
-        ...entries,
-      ]}
-    >
-      {props.children}
-    </LongPressMenu>
-  );
 }
