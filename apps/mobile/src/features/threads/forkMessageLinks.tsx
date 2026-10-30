@@ -1,7 +1,11 @@
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { useNavigation } from "@react-navigation/native";
-import type { EnvironmentId, RunId } from "@t3tools/contracts";
-import { isLinkedMessage, messageLinkStep } from "@t3tools/shared/threadMessageLinks";
+import { type EnvironmentId, MessageId, type RunId } from "@t3tools/contracts";
+import {
+  isLinkedMessage,
+  linkedMessageLoadId,
+  messageLinkStep,
+} from "@t3tools/shared/threadMessageLinks";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { View } from "react-native";
 
@@ -149,7 +153,9 @@ export function useForkMessageLinkTarget(input: {
     if (step === "load") {
       progress.pages.add(cursor);
       setLoadInFlight(true);
-      void Promise.resolve(history?.onLoadEarlier(messageId)).finally(() => setLoadInFlight(false));
+      void Promise.resolve(
+        history?.onLoadEarlier(MessageId.make(linkedMessageLoadId(messageId))),
+      ).finally(() => setLoadInFlight(false));
       return;
     }
     if (step === "missing") {

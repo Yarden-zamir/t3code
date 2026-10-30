@@ -10,6 +10,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   isLinkedMessage,
+  linkedMessageLoadId,
   messageLinkFromLocation,
   messageLinkStep,
 } from "@t3tools/shared/threadMessageLinks";
@@ -259,7 +260,7 @@ export function useForkMessageLinkTarget({
       if (attemptId !== undefined) expandAttempt(attemptId);
     } else if (step === "load") {
       progress.requestedPages.add(cursor);
-      historyControls?.onLoadEarlier(messageId);
+      historyControls?.onLoadEarlier(linkedMessageLoadId(messageId));
     }
   }, [
     expandAttempt,
