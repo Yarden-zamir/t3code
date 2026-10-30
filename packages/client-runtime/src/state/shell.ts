@@ -38,6 +38,7 @@ import {
 } from "./shellReducer.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
+import { syncTimings } from "../fork/syncTimings.ts";
 
 export type EnvironmentShellStatus = "empty" | "cached" | "synchronizing" | "live";
 
@@ -80,6 +81,11 @@ function withoutDeferredPullRequests(value: DeferredShellSnapshot): Orchestratio
 }
 
 const SHELL_SYNCHRONIZATION_ERROR_MESSAGE = "Could not synchronize environment data.";
+const SHELL_TIMING_MARKS = {
+  cached: "cached",
+  synchronizing: "synchronizing",
+  live: "live",
+} as const;
 
 export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")(function* () {
   const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
@@ -87,6 +93,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   const snapshotLoader = yield* ShellSnapshotLoader.ShellSnapshotLoader;
   const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
   const environmentId = supervisor.target.environmentId;
+  yield* Effect.annotateCurrentSpan("environment.id", environmentId);
   const cached = yield* cache.loadShell(environmentId).pipe(
     Effect.catch((error) =>
       Effect.logWarning("Could not load cached environment shell.").pipe(
@@ -104,6 +111,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     snapshot: cachedSnapshot,
     status: shellStatusForSnapshot(cachedSnapshot),
   });
+  yield* syncTimings.followStatus(environmentId, state, SHELL_TIMING_MARKS);
   const awaitingCompletion = yield* Ref.make(false);
   const lastAuthoritativeSession = yield* Ref.make<RpcSession | null>(null);
   const activeSubscriptionSession = yield* Ref.make<RpcSession | null>(null);
@@ -413,6 +421,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
                 : httpSnapshot.value.threads.map((thread) => thread.id),
             );
             yield* applyItems([{ kind: "snapshot", snapshot }], pendingLinkIds);
+            syncTimings.mark(environmentId, "httpSnapshotApplied");
             canResume = true;
             current = yield* SubscriptionRef.get(state);
             if (Option.isSome(current.snapshot)) {

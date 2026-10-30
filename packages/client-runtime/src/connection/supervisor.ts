@@ -30,6 +30,7 @@ import * as RpcSession from "../rpc/session.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import { NETWORK_BLOCKING_HINT } from "../errors/network.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
+import { syncTimings } from "../fork/syncTimings.ts";
 import {
   connectionRouteId,
   connectionRouteKind,
@@ -743,12 +744,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           continue;
         }
         if (probeEvent._tag === "SocketSilent") {
+          syncTimings.probe(target.environmentId, "silent");
           // The host is reachable, so replace the socket at once, even while
           // the network reports offline.
           yield* stopProbe;
           return true;
         }
         if (probeEvent._tag === "TimedOut") {
+          syncTimings.probe(target.environmentId, "timed-out");
           yield* stopProbe;
           // A long suspension leaves the socket suspect even when the network
           // reports offline, so it is replaced like a silent one.
@@ -760,6 +763,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         }
         if (probeEvent._tag === "ProbeCompleted") {
           if (silentSocket) yield* Fiber.interrupt(silentSocket);
+          syncTimings.probe(
+            target.environmentId,
+            Exit.isSuccess(probeEvent.exit) ? "alive" : "failed",
+          );
           if (Exit.isSuccess(probeEvent.exit)) {
             yield* Ref.set(probeUnanswered, false);
           }

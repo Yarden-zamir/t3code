@@ -243,6 +243,10 @@
       "types": "./src/fork/sharedClientSettings.ts",
       "default": "./src/fork/sharedClientSettings.ts"
     },
+    "./fork/syncTimings": {
+      "types": "./src/fork/syncTimings.ts",
+      "default": "./src/fork/syncTimings.ts"
+    },
     "./fork/worktreeRecreate": {
       "types": "./src/fork/worktreeRecreate.ts",
       "default": "./src/fork/worktreeRecreate.ts"

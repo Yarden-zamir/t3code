@@ -12,6 +12,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Guest links over the tunnel](docs/fork/features.md#guest-links-over-the-tunnel):** guest links work through the Cloudflare tunnel without T3 Connect.
 - **[Trusted sibling environments](docs/fork/features.md#trusted-sibling-environments):** one browser page pairs with and reaches the other hosts.
 - **[Quiet reconnect after restart](docs/fork/features.md#quiet-reconnect-after-restart):** right after the app starts, the composer waits before it warns that a server is reconnecting (off by default).
+- **[Sync timings on mobile](docs/fork/features.md#sync-timings-on-mobile):** Settings > Diagnostics shows how long each step of a chat sync takes, per environment.
 
 **kitshn** (each line needs kitshn 2 on the machine, joined to kitshn)
 

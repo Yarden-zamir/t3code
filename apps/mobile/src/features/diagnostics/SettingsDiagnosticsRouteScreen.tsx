@@ -25,6 +25,7 @@ import {
   parseStartupCrashRecords,
   type StartupCrashRecord,
 } from "./crash-log-model";
+import { ForkSyncTimingsSection } from "./ForkSyncTimingsSection";
 
 // expo-updates retains only seven days of logs.
 const LOG_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -91,6 +92,8 @@ export function SettingsDiagnosticsRouteScreen() {
         contentContainerClassName="gap-6 px-5 pt-4 pb-[18px]"
       >
         {crashReportingAvailable ? <CrashReportsSetting /> : null}
+
+        <ForkSyncTimingsSection />
 
         <SettingsSection title="Startup crashes">
           {state.status === "loading" ? (
