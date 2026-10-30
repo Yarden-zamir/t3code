@@ -95,6 +95,21 @@ After an update, the app and the remote servers restart at about the same time. 
 - **Works on:** web, desktop. The sidebar, the environment chips and Settings > Environments still show the state at once. A send in that time still shows "Not connected: message not sent".
 - **Limits:** a refused sign-in or an offline device shows at once. Later reconnects keep the upstream wait of 2 seconds. The mobile app shows only a small "Reconnecting" status, so it has no wait. Revisit the 45 seconds when a normal restart takes longer.
 
+### Sync timings on mobile
+
+Settings > Diagnostics > Sync timings shows how long the app needs to sync chats, so that a slow sync can be measured on the phone. Each run is one cold start or one return to the foreground. For each environment, a run shows the time of each sync step and the duration of the connection steps:
+
+- the cached list shown, "synchronizing", the socket ready, the HTTP snapshot applied and "live";
+- the open thread from "synchronizing" to "live";
+- the foreground probe result: alive, silent, timed out or failed;
+- the route checks, the bearer authorization, the connection, the HTTP snapshot, the cached shell load and the silent socket check.
+
+"Copy sync timings" copies all runs as text. The text names environments by their label, never by address.
+
+- **Setting:** none. The timings stay in memory and cost no network traffic.
+- **Works on:** mobile. The recorder is in `packages/client-runtime`, so web can show it later.
+- **Limits:** the app keeps the cold start and the last 10 returns to the foreground. A restart clears them. The cold start time counts from the start of the JavaScript bundle, not from the start of the process.
+
 ## kitshn
 
 kitshn connects the T3 machines of the owner. Each T3 server is the provider `t3` of the kitshn daemon on its machine. The owner shares access between machines on the kitshn map. T3 Code has no map of its own.
