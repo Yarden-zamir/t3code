@@ -13,6 +13,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Trusted sibling environments](docs/fork/features.md#trusted-sibling-environments):** one browser page pairs with and reaches the other hosts.
 - **[Quiet reconnect after restart](docs/fork/features.md#quiet-reconnect-after-restart):** right after the app starts, the composer waits before it warns that a server is reconnecting (off by default).
 - **[Sync timings on mobile](docs/fork/features.md#sync-timings-on-mobile):** Settings > Diagnostics shows how long each step of a chat sync takes, per environment.
+- **[Message cache warm-up on mobile](docs/fork/features.md#message-cache-warm-up-on-mobile):** after the chat list syncs, the mobile app loads the newest chats into its message cache, so they open without a wait.
 
 **kitshn** (each line needs kitshn 2 on the machine, joined to kitshn)
 

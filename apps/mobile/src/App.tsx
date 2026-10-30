@@ -2,6 +2,7 @@ import { installPermissionUpdateNotice } from "./features/connection/permissionU
 import { ForkSharedClientSettings } from "./features/settings/ForkSharedClientSettings";
 import { installComposerAttachmentUploads } from "./state/composer-attachment-uploads";
 import { installThreadOutboxDelivery } from "./state/threadOutboxDelivery";
+import { installCacheWarmup } from "./state/forkCacheWarmup";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
@@ -185,6 +186,7 @@ const appServiceDisposers = [
   installSubscriptionUsageRefresh(),
   installPermissionUpdateNotice(),
   installThreadOutboxDelivery(),
+  installCacheWarmup(),
   installComposerAttachmentUploads(),
   startIncomingShareInbox(),
   installAgentNotificationNavigation(linkToAppPath),

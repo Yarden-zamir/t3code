@@ -62,11 +62,6 @@ function statusWithoutLiveData(
   return Option.isSome(data) ? "cached" : "empty";
 }
 
-const THREAD_TIMING_MARKS = {
-  synchronizing: "threadSynchronizing",
-  live: "threadLive",
-} as const;
-
 function formatThreadError(cause: Cause.Cause<unknown>): string {
   const error = Cause.squash(cause);
   return error instanceof Error && error.message.trim().length > 0
@@ -248,7 +243,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         sequence: initialSequence,
       };
   const state = yield* SubscriptionRef.make(initialState);
-  yield* syncTimings.followStatus(environmentId, state, THREAD_TIMING_MARKS);
+  yield* syncTimings.followThread(environmentId, state);
   const canLoadHistory = Option.isSome(httpClient) && Option.isSome(historyController);
   const acceptsBoundedSocketSnapshots = yield* Ref.make(canLoadHistory);
   const lastSequence = yield* SubscriptionRef.make(initialSequence);

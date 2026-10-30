@@ -1,6 +1,8 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Scope from "effect/Scope";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Tracer from "effect/Tracer";
 
@@ -166,6 +168,36 @@ describe("syncTimings", () => {
       expect(recorder.snapshot().coldStart.environments.get(MAC)?.marks).toEqual({
         cached: 0,
         live: 100,
+      });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("waits until no followed thread synchronizes, also when a thread state closes", () =>
+    Effect.gen(function* () {
+      const { recorder } = makeRecorder();
+      type Status = "cached" | "synchronizing" | "live";
+      const open = yield* SubscriptionRef.make<{ readonly status: Status }>({ status: "cached" });
+      const warm = yield* SubscriptionRef.make<{ readonly status: Status }>({
+        status: "synchronizing",
+      });
+      const warmScope = yield* Scope.make();
+      yield* recorder.followThread(MAC, open);
+      yield* recorder.followThread(MAC, warm).pipe(Scope.provide(warmScope));
+      yield* SubscriptionRef.set(open, { status: "synchronizing" as Status });
+      let idle = false;
+      void recorder.whenNoThreadSynchronizes().then(() => (idle = true));
+      const flush = Effect.promise(() => Promise.resolve());
+
+      yield* SubscriptionRef.set(open, { status: "live" as Status });
+      yield* flush;
+      expect(idle).toBe(false);
+
+      yield* Scope.close(warmScope, Exit.void);
+      yield* flush;
+      expect(idle).toBe(true);
+      expect(recorder.snapshot().coldStart.environments.get(MAC)?.marks).toMatchObject({
+        threadSynchronizing: 0,
+        threadLive: 0,
       });
     }).pipe(Effect.scoped),
   );

@@ -16,6 +16,7 @@ const SYNC_TIMING_SPANS = [
   "ConnectionDriver.connect",
   "ShellSnapshotLoader.load",
   "EnvironmentSupervisor.awaitSilentSocket",
+  "CacheWarmup.thread",
 ] as const;
 export type SyncTimingSpan = (typeof SYNC_TIMING_SPANS)[number];
 
@@ -27,18 +28,21 @@ const SYNC_TIMING_MARKS = [
   "live",
   "threadSynchronizing",
   "threadLive",
+  "cacheWarmupStarted",
+  "cacheWarmupDone",
 ] as const;
 export type SyncTimingMark = (typeof SYNC_TIMING_MARKS)[number];
 
 export type SyncRunTrigger = "cold-start" | "application-active-probe" | "application-active-long";
 export type SyncProbeResult = "alive" | "silent" | "timed-out" | "failed";
+type SyncOutcome = "success" | "failure" | "interrupted";
 
 export interface SyncSpanTiming {
   readonly name: SyncTimingSpan;
   /** Milliseconds from the start of the run. */
   readonly startMs: number;
   readonly durationMs: number;
-  readonly outcome: "success" | "failure" | "interrupted";
+  readonly outcome: SyncOutcome;
 }
 
 export interface SyncEnvironmentTimings {
@@ -93,7 +97,7 @@ function spanEnvironment(span: Tracer.AnySpan): EnvironmentId | undefined {
   return undefined;
 }
 
-function exitOutcome(exit: Exit.Exit<unknown, unknown>): SyncSpanTiming["outcome"] {
+function exitOutcome(exit: Exit.Exit<unknown, unknown>): SyncOutcome {
   if (Exit.isSuccess(exit)) return "success";
   return Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failure";
 }
@@ -176,17 +180,36 @@ export function makeSyncTimingsRecorder(options: {
     if (span.name === "ConnectionDriver.connect" && outcome === "success") {
       markIn(run, environmentId, "socketReady");
     }
+    pushTiming(run, environmentId, span.name as SyncTimingSpan, startedAt, outcome);
+  };
+
+  const pushTiming = (
+    run: MutableRun,
+    environmentId: EnvironmentId,
+    name: SyncTimingSpan,
+    startedAt: number,
+    outcome: SyncOutcome,
+  ) => {
     const timings = environment(run, environmentId);
     if (timings.spans.length >= maxSpans) {
       timings.droppedSpans += 1;
       return;
     }
     timings.spans.push({
-      name: span.name as SyncTimingSpan,
+      name,
       startMs: Math.round(startedAt - run.origin),
       durationMs: Math.round(options.now() - startedAt),
       outcome,
     });
+  };
+
+  /** Starts a timed step outside a tracer span. Call the result when the step ends. */
+  const startStep = (environmentId: EnvironmentId, name: SyncTimingSpan) => {
+    const run = current;
+    const startedAt = options.now();
+    return (outcome: SyncOutcome) => {
+      if (enabled) pushTiming(run, environmentId, name, startedAt, outcome);
+    };
   };
 
   /** Wraps a tracer so that the spans in `SYNC_TIMING_SPANS` also land in the recorder. */
@@ -231,6 +254,47 @@ export function makeSyncTimingsRecorder(options: {
     );
   });
 
+  let threadsSynchronizing = 0;
+  let idleWaiters: Array<() => void> = [];
+  const setThreadSynchronizing = (synchronizing: boolean) => {
+    threadsSynchronizing += synchronizing ? 1 : -1;
+    if (threadsSynchronizing > 0) return;
+    const waiters = idleWaiters;
+    idleWaiters = [];
+    for (const resolve of waiters) resolve();
+  };
+
+  /** Follows a thread state for its marks and for `whenNoThreadSynchronizes`. */
+  const followThread = Effect.fnUntraced(function* <
+    S extends { readonly status: "empty" | "cached" | "synchronizing" | "live" | "deleted" },
+  >(environmentId: EnvironmentId, state: SubscriptionRef.SubscriptionRef<S>) {
+    if (!enabled) return;
+    let synchronizing = false;
+    const track = (status: S["status"]) => {
+      if ((status === "synchronizing") === synchronizing) return;
+      synchronizing = !synchronizing;
+      setThreadSynchronizing(synchronizing);
+    };
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => synchronizing && setThreadSynchronizing(false)),
+    );
+    track((yield* SubscriptionRef.get(state)).status);
+    yield* followStatus(environmentId, state, {
+      synchronizing: "threadSynchronizing",
+      live: "threadLive",
+    } as Partial<Record<S["status"], SyncTimingMark>>);
+    yield* SubscriptionRef.changes(state).pipe(
+      Stream.runForEach((value) => Effect.sync(() => track(value.status))),
+      Effect.forkScoped({ startImmediately: true }),
+    );
+  });
+
+  /** Resolves once no followed thread state is synchronizing. */
+  const whenNoThreadSynchronizes = () =>
+    threadsSynchronizing === 0
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => idleWaiters.push(resolve));
+
   const freeze = (run: MutableRun): SyncRun => ({
     trigger: run.trigger,
     startedAtEpochMs: run.startedAtEpochMs,
@@ -260,6 +324,9 @@ export function makeSyncTimingsRecorder(options: {
     probe,
     tracer,
     followStatus,
+    followThread,
+    whenNoThreadSynchronizes,
+    startStep,
     snapshot: (): SyncTimingsSnapshot => ({
       coldStart: freeze(coldStart),
       wakeups: wakeups.map(freeze),
@@ -287,6 +354,8 @@ const MARK_LABELS: Record<SyncTimingMark, string> = {
   live: "live",
   threadSynchronizing: "open thread synchronizing",
   threadLive: "open thread live",
+  cacheWarmupStarted: "cache warm-up started",
+  cacheWarmupDone: "cache warm-up done",
 };
 
 const SPAN_LABELS: Record<SyncTimingSpan, string> = {
@@ -296,6 +365,7 @@ const SPAN_LABELS: Record<SyncTimingSpan, string> = {
   "ConnectionDriver.connect": "connect",
   "ShellSnapshotLoader.load": "HTTP snapshot",
   "EnvironmentSupervisor.awaitSilentSocket": "silent socket check",
+  "CacheWarmup.thread": "cache warm-up thread",
 };
 
 function runTitle(run: SyncRun): string {
