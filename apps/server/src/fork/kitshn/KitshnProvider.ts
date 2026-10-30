@@ -82,6 +82,12 @@ const REGISTER_TIMEOUT = Duration.seconds(10);
 const ATTEST_LIMIT = Duration.millis(1800);
 const RESULTS_KEPT = 50;
 
+/**
+ * K-704: the daemon has no error code for this, only the text. The connection is new to the daemon,
+ * so nothing on this child can work again; T3 ends it and registers on a new one.
+ */
+const isNotRegistered = (error: string) => error.includes("on this connection first");
+
 const resourceKey = (resource: ProviderResource) => JSON.stringify(resource);
 
 /** A thread card: only threads with an open guest share (K-704), stacked under the app card. */
@@ -675,6 +681,9 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
           );
         }
         const answer = decoded.value;
+        if (answer.type === "error" && isNotRegistered(answer.error)) {
+          yield* Deferred.succeed(unanswered, `kitshn answered: ${answer.error}`);
+        }
         if (!KitshnConnection.isDaemonEvent(answer)) {
           if (answer.id === null) {
             return answer.type === "error"

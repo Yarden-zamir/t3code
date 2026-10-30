@@ -73,6 +73,8 @@ type Script = {
   readonly frames: ReadonlyArray<KitshnConnection.DaemonEvent>;
   /** The frames that it sends once the stdin of the run ended. */
   readonly afterStdin?: ReadonlyArray<KitshnConnection.DaemonEvent>;
+  /** It refuses stdin and ends the run with these frames instead. */
+  readonly refusesStdin?: ReadonlyArray<KitshnConnection.DaemonEvent>;
 };
 
 /** A daemon that runs the script of each `exec`, and records the requests and the notices. */
@@ -87,6 +89,10 @@ const harness = Effect.fn("MachineExecTest.harness")(function* (script: Script) 
         yield* Queue.offer(requests, input);
         if (input.type === "exec-close") {
           for (const frame of script.afterStdin ?? []) yield* connection.publish(frame);
+        }
+        if (input.type === "exec-input" && script.refusesStdin !== undefined) {
+          for (const frame of script.refusesStdin) yield* connection.publish(frame);
+          return { id: "x", type: "error", error: "stdin refused" } satisfies Answer;
         }
         if (input.type !== "exec") return { id: "x", type: input.type } as Answer;
         for (const frame of script.frames) yield* connection.publish(frame);
@@ -169,6 +175,7 @@ it.effect("runs a command through kitshn as the calling thread (K-722)", () =>
     expect(yield* Queue.take(test.requests)).toEqual({
       type: "exec",
       target: PEER,
+      targetProvider: "t3",
       command: "git status",
       cwd: "~/x",
       timeoutSeconds: 30,
@@ -247,6 +254,42 @@ it.effect("answers waiting after a minute without approval, and keeps the late r
   }),
 );
 
+it.effect("ends a run with 'the relay was lost' when the provider connection drops", () =>
+  Effect.gen(function* () {
+    const test = yield* harness({ state: "running", frames: [] });
+    const call = yield* test
+      .caller(test.machineExec.exec({ machine: "VPS", command: "sleep 30" }))
+      .pipe(Effect.forkChild);
+    yield* Queue.take(test.requests);
+    // The daemon kills a run of a closed connection without a last frame.
+    yield* test.connection.attach(null);
+    const error = yield* Fiber.join(call).pipe(Effect.flip);
+    expect(error).toMatchObject({ code: "orchestration_error", message: "the relay was lost" });
+  }),
+);
+
+it.effect("keeps the output that came before a late approval's call gave up", () =>
+  Effect.gen(function* () {
+    const test = yield* harness({ state: "waiting", frames: [] });
+    const call = yield* test
+      .caller(test.machineExec.exec({ machine: "VPS", command: "uptime" }))
+      .pipe(Effect.forkChild);
+    yield* Queue.take(test.requests);
+    yield* test.connection.publish(output("stdout", "early\n"));
+    yield* TestClock.adjust("60 seconds");
+    expect(yield* Fiber.join(call)).toMatchObject({ outcome: "waiting" });
+    yield* test.connection.publish(output("stdout", "late\n"));
+    yield* test.connection.publish(exit({ exitCode: 0 }));
+    const late = yield* test.machineExec.lateResults.pipe(
+      Stream.filter((results) => results.length > 0),
+      Stream.runHead,
+    );
+    expect(Option.getOrThrow(late)).toMatchObject([
+      { result: { outcome: "exited", stdout: "early\nlate\n" } },
+    ]);
+  }),
+);
+
 it.effect("refuses restricted callers, other machines and unknown machines before kitshn", () =>
   Effect.gen(function* () {
     const test = yield* harness({ state: "running", frames: [exit({ exitCode: 0 })] });
@@ -313,4 +356,30 @@ it.effect(
         { type: "exec-close", execId: EXEC_ID, what: "stdin" },
       ]);
     }),
+);
+
+it.effect("keeps waiting for the exit after kitshn refuses the stdin of a stream", () =>
+  Effect.gen(function* () {
+    const test = yield* harness({
+      state: "running",
+      frames: [],
+      refusesStdin: [exit({ exitCode: 1 })],
+    });
+    const cli = yield* cliSocket;
+    yield* Queue.offer(cli.fromCli, [
+      JSON.stringify({ type: "start", machine: "VPS", command: "cat" }),
+      dataFrame(MachineExecStreamChannel.stdin, new TextEncoder().encode("hello\n")),
+      JSON.stringify({ type: "eof" }),
+    ]);
+    yield* test.caller(Effect.scoped(test.machineExec.stream(cli.socket)));
+    const received = (yield* Queue.takeAll(cli.toCli)).map(readFrame);
+    expect(received).toEqual([
+      { _tag: "message", message: { type: "exit", outcome: "exited", exitCode: 1 } },
+    ]);
+    // After the refused chunk, no more stdin and no stdin end go to kitshn.
+    expect((yield* Queue.takeAll(test.requests)).map((request) => request.type)).toEqual([
+      "exec",
+      "exec-input",
+    ]);
+  }),
 );

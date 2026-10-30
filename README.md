@@ -6,7 +6,6 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 **Remote access**
 
-- **[Cloudflare Access login](docs/fork/features.md#cloudflare-access-login):** the server accepts the Cloudflare Access JWT as the owner login.
 - **[Request headers per environment](docs/fork/features.md#request-headers-per-environment):** a saved environment sends its own headers, for example a Cloudflare Access service token.
 - **[Tunnel pairing](docs/fork/features.md#tunnel-pairing):** a desktop server on loopback makes pairing links with its tunnel URL.
 - **[Guest links over the tunnel](docs/fork/features.md#guest-links-over-the-tunnel):** guest links work through the Cloudflare tunnel without T3 Connect.

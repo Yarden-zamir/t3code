@@ -69,6 +69,11 @@ export class KitshnConnection extends Context.Service<
     /** The registered connection now, then each change; null while none is open. */
     readonly live: Stream.Stream<LiveConnection | null>;
     readonly current: Effect.Effect<LiveConnection | null>;
+    /**
+     * Counts `grants-changed` events and new connections at the moment they arrive, so an answer
+     * to a request sent before the latest count is known to be old.
+     */
+    readonly grantsEpoch: Effect.Effect<number>;
     /** The daemon's events from now on, so a caller subscribes before it sends its request. */
     readonly subscribe: Effect.Effect<PubSub.Subscription<DaemonEvent>, never, Scope.Scope>;
     /** One request over the live connection. An `error` answer fails with its text. */
@@ -85,6 +90,7 @@ export class KitshnConnection extends Context.Service<
 export const make = Effect.gen(function* () {
   const live = yield* SubscriptionRef.make<LiveConnection | null>(null);
   const events = yield* PubSub.unbounded<DaemonEvent>();
+  let grantsEpoch = 0;
 
   const requireLive = SubscriptionRef.get(live).pipe(
     Effect.filterOrFail(
@@ -112,15 +118,20 @@ export const make = Effect.gen(function* () {
   return KitshnConnection.of({
     live: SubscriptionRef.changes(live),
     current: SubscriptionRef.get(live),
+    grantsEpoch: Effect.sync(() => grantsEpoch),
     subscribe: PubSub.subscribe(events),
     request,
     notify: Effect.fn("KitshnConnection.notify")(function* (notice) {
       const connection = yield* requireLive;
       yield* connection.notify(notice);
     }),
-    attach: Effect.fn("KitshnConnection.attach")((next) => SubscriptionRef.set(live, next)),
+    attach: Effect.fn("KitshnConnection.attach")(function* (next) {
+      grantsEpoch++;
+      yield* SubscriptionRef.set(live, next);
+    }),
     publish: Effect.fnUntraced(function* (event) {
       // Untraced: one span per daemon event would be noise.
+      if (event.type === "grants-changed") grantsEpoch++;
       yield* PubSub.publish(events, event);
     }),
   });

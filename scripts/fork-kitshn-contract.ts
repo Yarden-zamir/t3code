@@ -84,7 +84,9 @@ try {
     "--daemon",
     daemon,
     "--provider",
-    `node ${server} serve --port ${SERVER_PORT} --host 127.0.0.1`,
+    // `exec`: the scenario stops the provider by the PID of its shell, so T3 must be that process.
+    // Its own data folder: the scenario removes the daemon's home while T3 still shuts down.
+    `exec node ${server} serve --port ${SERVER_PORT} --host 127.0.0.1 --base-dir "$(mktemp -d)"`,
   ]);
 } finally {
   NodeFS.rmSync(folder, { recursive: true, force: true });

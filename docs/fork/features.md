@@ -49,14 +49,6 @@ The measured Mac examples were 6.91 GiB logical `node_modules` removed for 0.13 
 
 ## Remote access
 
-### Cloudflare Access login
-
-The server accepts the Cloudflare Access JWT as the owner login, so a browser behind Cloudflare Access needs no pairing link.
-
-- **Setting:** `cloudflareAccessTeamDomain`, `cloudflareAccessAud` and `cloudflareAccessSubjects` (empty by default). On the desktop app, set them in Settings > Sharing & access, under "Allow pairing through a tunnel". On a headless server, set `T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `T3CODE_CLOUDFLARE_ACCESS_AUD` and `T3CODE_CLOUDFLARE_ACCESS_SUBJECTS`.
-- **Works on:** server. The mobile app signs in with a Cloudflare Access service token, see [Request headers per environment](#request-headers-per-environment).
-- **Limits:** the subjects list must hold the client id of the service token that the desktop app uses for remote machines. Without it, the desktop app cannot open the machine. Revisit when that service token is retired.
-
 ### Request headers per environment
 
 A saved environment sends its own request headers, for example a Cloudflare Access service token.

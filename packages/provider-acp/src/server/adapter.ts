@@ -65,6 +65,7 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { makeAcpMcpOverAcpBridge, type AcpMcpOverAcpBridge } from "./mcpOverAcpBridge.ts";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { threadCredentialEnvironment } from "@t3tools/provider-core/server/forkThreadCredential";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import {
   applyAcpAgentTerminalUpdate,
@@ -621,8 +622,7 @@ function acpMcpContext(
     endpoint: session.endpoint,
     authorization: session.authorizationHeader,
     processEnvironment: {
-      T3_ACP_MCP_ENDPOINT: session.endpoint,
-      T3_ACP_MCP_AUTHORIZATION: session.authorizationHeader,
+      ...threadCredentialEnvironment(session),
       T3_ACP_MCP_NODE: self.command,
       ...(self.entrypoint === undefined ? {} : { T3_ACP_MCP_ENTRYPOINT: self.entrypoint }),
     },

@@ -371,7 +371,7 @@ The script stops if kitshn did not take the address: the CNAME record must point
 
 Do these steps for one machine at a time. The example uses `mac`.
 
-1. Install a T3 release with the kitshn provider on the machine, and check that it registers with kitshn: Settings > Machines shows "Connected to kitshn". Until the handover, the host keeps its portal path: the portal Access application and the portal tunnel.
+1. Install a T3 release with the kitshn provider on the machine, and check that it registers with kitshn: Settings > Machines shows "Connected to kitshn". Until the handover, the host keeps its portal path: the portal Access application and a portal tunnel that its own cloudflared service runs. T3 runs no portal tunnel.
 2. Give each phone that used a portal app token a kitshn device invite, see [Device invites](features.md#device-invites). Its saved sessions keep working, but a new pairing needs the device token.
 3. Before the `oracle-vps` handover, check what `t3-oracle-vps.yarden-zamir.com` serves. Its DNS record comment says "T3 machine map".
 4. In kitshn, open the T3 card of the machine and select "Take the address…". Wait until the card shows the address.

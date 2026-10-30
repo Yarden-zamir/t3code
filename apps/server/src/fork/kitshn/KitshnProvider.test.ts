@@ -392,6 +392,22 @@ it.layer(
     }).pipe(Effect.scoped),
   );
 
+  it.effect("ends a child that the daemon no longer knows, and registers on a new one", () =>
+    Effect.gen(function* () {
+      const harness = yield* setup();
+      const { child } = yield* harness.registered();
+      yield* child.say({
+        id: "7",
+        type: "error",
+        error: "register t3 on this connection first (K-704).",
+      });
+      yield* Deferred.await(child.stopped);
+      yield* TestClock.adjust("1 second");
+      const second = yield* Queue.take(harness.children);
+      expect(yield* Queue.take(second.written)).toMatchObject({ type: "register", protocol: 2 });
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("answers a restart before it restarts", () =>
     Effect.gen(function* () {
       const harness = yield* setup();

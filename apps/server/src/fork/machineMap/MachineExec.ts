@@ -15,7 +15,9 @@ import {
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -56,6 +58,7 @@ type RanResult = Extract<MachineExecResult, { readonly outcome: "exited" | "time
 /** A run that `machine_exec` stopped waiting for; its result comes when the owner approves. */
 export interface LateExecResult {
   readonly proposalId: string;
+  /** `refused`: kitshn's reason when the run did not run or was cut. */
   readonly result: RanResult | { readonly machine: string; readonly refused: string };
 }
 
@@ -100,8 +103,20 @@ const unreachable = (message: string) =>
 /** K-722: a timeout ends the run with a signal and the reason "timed out after …". */
 const timedOut = (exit: ExecExit) =>
   exit.signal !== null && exit.reason?.startsWith("timed out") === true;
-/** The run never ran: refused by kitshn or the owner, the target offline, or a lost relay. */
+/** The run never ran or was cut: refused by kitshn or the owner, the target offline, or a lost relay. */
 const neverRan = (exit: ExecExit) => exit.exitCode === null && exit.signal === null;
+/** K-722: kitshn's reasons for a refusal start with "refused"; the others are failures of the way. */
+const failureOf = (reason: string) =>
+  reason.startsWith("refused") ? denied(reason) : unreachable(reason);
+/** The end of a run whose provider connection closed: the daemon kills it without a last frame. */
+const relayLost = (execId: string): ExecExit => ({
+  type: "exec-exit",
+  execId,
+  exitCode: null,
+  signal: null,
+  durationMs: 0,
+  reason: "the relay was lost",
+});
 
 /** Output that keeps at most `MACHINE_EXEC_MAX_OUTPUT_BYTES`, then a marker. */
 const makeCollector = () => {
@@ -173,10 +188,13 @@ const make = Effect.gen(function* () {
     const header = authorization === undefined ? undefined : Redacted.value(authorization);
     const token = header?.startsWith(BEARER) === true ? header.slice(BEARER.length) : undefined;
     const subscription = yield* kitshn.subscribe;
+    const connection = yield* kitshn.current;
     const answer = yield* kitshn
       .request({
         type: "exec",
         target: target.id,
+        // T3's own exec user on B, also when this machine reaches cards of other providers there.
+        targetProvider: KitshnProvider.PROVIDER_NAME,
         command: input.command,
         ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
         timeoutSeconds: input.timeoutSeconds,
@@ -190,8 +208,20 @@ const make = Effect.gen(function* () {
         event.type === "exec-exit" ||
         event.type === "exec-stdin-credit") &&
       event.execId === execId;
-    const next: Effect.Effect<ExecEvent> = PubSub.take(subscription).pipe(
-      Effect.filterOrElse(isOwnFrame, () => next),
+    const nextFrame: Effect.Effect<ExecEvent> = PubSub.take(subscription).pipe(
+      Effect.filterOrElse(isOwnFrame, () => nextFrame),
+    );
+    // A run lives on the connection that started it; another or none means the run is gone.
+    const lost = yield* Deferred.make<void>();
+    yield* kitshn.live.pipe(
+      Stream.filter((live) => live !== connection),
+      Stream.runHead,
+      Effect.andThen(Deferred.succeed(lost, undefined)),
+      Effect.forkScoped,
+    );
+    const next: Effect.Effect<ExecEvent> = Effect.raceFirst(
+      nextFrame,
+      Deferred.await(lost).pipe(Effect.as(relayLost(execId))),
     );
     return { target, execId, state: answer.state, proposalId: answer.proposalId, next };
   });
@@ -227,7 +257,7 @@ const make = Effect.gen(function* () {
       }
       if (event.type !== "exec-exit") continue;
       if (neverRan(event)) {
-        return { refused: event.reason ?? "kitshn did not run the command." } as const;
+        return { notRun: event.reason ?? "kitshn did not run the command." } as const;
       }
       return {
         machine: run.target.name,
@@ -257,28 +287,31 @@ const make = Effect.gen(function* () {
       Scope.provide(runScope),
       Effect.onError(() => release),
     );
+    // One reader of the run: a late approval keeps the output that came before the call gave up.
+    const reader = yield* collect(run).pipe(Effect.forkIn(serviceScope));
     const kill = kitshn
       .request({ type: "exec-close", execId: run.execId, what: "kill" })
       .pipe(Effect.ignore);
     const collected = yield* (
       run.state === "waiting"
-        ? collect(run).pipe(Effect.timeoutOption(APPROVAL_WAIT))
-        : Effect.asSome(collect(run))
-    ).pipe(Effect.onInterrupt(() => Effect.andThen(kill, release)));
+        ? Fiber.join(reader).pipe(Effect.timeoutOption(APPROVAL_WAIT))
+        : Effect.asSome(Fiber.join(reader))
+    ).pipe(Effect.onInterrupt(() => Effect.all([kill, Fiber.interrupt(reader), release])));
     if (Option.isSome(collected)) {
       yield* release;
       const ended = collected.value;
-      return "refused" in ended ? yield* denied(ended.refused) : ended;
+      return "notRun" in ended ? yield* failureOf(ended.notRun) : ended;
     }
     // The owner has not answered: the run goes on in the background, and its result waits.
     const proposalId = run.proposalId ?? run.execId;
-    yield* collect(run).pipe(
+    yield* Fiber.join(reader).pipe(
       Effect.flatMap((ended) =>
         SubscriptionRef.update(late, (results) =>
           [
             {
               proposalId,
-              result: "refused" in ended ? { machine: run.target.name, ...ended } : ended,
+              result:
+                "notRun" in ended ? { machine: run.target.name, refused: ended.notRun } : ended,
             },
             ...results,
           ].slice(0, WAITING_RESULTS_KEPT),
@@ -322,16 +355,30 @@ const make = Effect.gen(function* () {
         });
       }
     });
+    // A stdin that kitshn refused stays closed; the run goes on and its exit still comes.
+    let stdinOpen = true;
+    const closeStdinOnError = <E>(effect: Effect.Effect<unknown, E>) =>
+      effect.pipe(
+        Effect.catch(() =>
+          Effect.sync(() => {
+            stdinOpen = false;
+          }),
+        ),
+      );
     const handleClientFrames = Effect.fn("MachineExec.handleClientFrames")(function* (
       frames: ReadonlyArray<Uint8Array | string>,
     ) {
       yield* liveness.touch;
       for (const raw of frames) {
         const frame = readFrame(raw);
+        if (!stdinOpen) continue;
         if (frame._tag === "data" && frame.channel === MachineExecStreamChannel.stdin) {
-          yield* sendStdin(frame.bytes);
+          yield* closeStdinOnError(sendStdin(frame.bytes));
         } else if (frame._tag === "message" && frame.message.type === "eof") {
-          yield* kitshn.request({ type: "exec-close", execId: run.execId, what: "stdin" });
+          stdinOpen = false;
+          yield* closeStdinOnError(
+            kitshn.request({ type: "exec-close", execId: run.execId, what: "stdin" }),
+          );
         }
       }
     });

@@ -48,6 +48,8 @@ const harness = Effect.gen(function* () {
   /** The daemon's answer for each token; a missing token is anonymous. */
   const answers = yield* Ref.make(new Map<string, CheckAnswer>());
   const checks = yield* Ref.make(0);
+  /** Runs inside the next `check`, before the daemon answers it. */
+  const duringNextCheck = yield* Ref.make<Effect.Effect<void> | null>(null);
   const connection = yield* KitshnConnection.make;
   const daemon = {
     answer: registerAnswer(),
@@ -55,6 +57,8 @@ const harness = Effect.gen(function* () {
       Effect.gen(function* () {
         yield* Ref.update(checks, (count) => count + 1);
         const current = yield* Ref.get(answers);
+        const during = yield* Ref.getAndSet(duringNextCheck, null);
+        if (during !== null) yield* during;
         return yield* answerCheck(
           (headers) => current.get(headers["cf-access-jwt-assertion"] ?? "") ?? { anonymous: true },
         )(input);
@@ -85,6 +89,7 @@ const harness = Effect.gen(function* () {
     grantsChanged: connection.publish({ type: "grants-changed", at: 0 }),
     answers,
     checks,
+    duringNextCheck,
     revoked,
     revokeFails,
   };
@@ -216,6 +221,27 @@ describe("KitshnGrants (K-721)", () => {
       yield* test.grantsChanged;
       yield* grants.awaitLoss(kept, (latest) => latest.levels.app === "standard");
       expect(yield* Queue.poll(test.revoked)).toEqual(Option.none());
+    }).pipe(isolated),
+  );
+
+  it.effect("never caches an answer that is older than a grants change", () =>
+    Effect.gen(function* () {
+      const test = yield* harness;
+      yield* Ref.set(test.answers, new Map([["sam", person({ app: "admin" })]]));
+      yield* test.connect;
+      const grants = yield* test.start;
+      // The grants drop to standard while the check that answers admin is on its way.
+      yield* Ref.set(
+        test.duringNextCheck,
+        Ref.set(test.answers, new Map([["sam", person({ app: "standard" })]])).pipe(
+          Effect.andThen(test.grantsChanged),
+        ),
+      );
+      const sam = visitorOf(yield* grants.visitor(tunnelRequest("sam")));
+      expect(sam.levels).toEqual({ app: "standard" });
+      expect(visitorOf(yield* grants.visitor(tunnelRequest("sam"))).levels).toEqual({
+        app: "standard",
+      });
     }).pipe(isolated),
   );
 

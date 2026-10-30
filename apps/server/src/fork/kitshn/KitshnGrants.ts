@@ -88,6 +88,8 @@ export type VisitorResult =
 
 type Cached =
   | { readonly _tag: "anonymous"; readonly until: number }
+  /** A refusal holds until the next `grants-changed`, so refused requests do not each ask. */
+  | { readonly _tag: "refused"; readonly code: CheckRefusal }
   | { readonly _tag: "visitor"; readonly visitor: AccessVisitor };
 
 interface Tracked {
@@ -276,12 +278,14 @@ const make = Effect.gen(function* () {
       const nowMs = yield* Clock.currentTimeMillis;
       const cached = cache.get(key);
       if (cached !== undefined) {
+        if (cached._tag === "refused") return cached;
         const until = cached._tag === "visitor" ? cached.visitor.until : cached.until;
         if (until > nowMs) {
           return cached._tag === "visitor" ? cached : ({ _tag: "anonymous" } as const);
         }
         cache.delete(key);
       }
+      const sentAt = yield* kitshn.grantsEpoch;
       const answer = yield* kitshn
         .request({ type: "check", requests: [{ key, headers }] })
         .pipe(Effect.option);
@@ -289,8 +293,13 @@ const make = Effect.gen(function* () {
         ? answer.value.results.find((entry) => entry.key === key)
         : undefined;
       if (result === undefined) return { _tag: "refused", code: "unavailable" } as const;
+      // The grants changed while this check ran: its answer can be older than a re-check's.
+      if ((yield* kitshn.grantsEpoch) !== sentAt) return yield* visitor(request);
       const next = toCached(result, headers, nowMs);
-      if (next._tag === "refused") return next;
+      if (next._tag === "refused") {
+        if (!isTemporary(next.code)) remember(key, next);
+        return next;
+      }
       remember(key, next);
       return next._tag === "visitor" ? next : ({ _tag: "anonymous" } as const);
     },
@@ -354,15 +363,18 @@ const make = Effect.gen(function* () {
     const entries = [...cache].flatMap(([key, entry]) =>
       entry._tag === "visitor" ? [{ key, headers: entry.visitor.headers }] : [],
     );
-    // Anonymous answers can turn into a subject, so they are asked again on the next request.
-    for (const [key, entry] of cache) if (entry._tag === "anonymous") cache.delete(key);
+    // Anonymous answers and refusals can change, so they are asked again on the next request.
+    for (const [key, entry] of cache) if (entry._tag !== "visitor") cache.delete(key);
     const expired = new Set<string>();
     const lostAccess = new Set<string>();
     for (let start = 0; start < entries.length; start += CHECK_BATCH) {
       const batch = entries.slice(start, start + CHECK_BATCH);
+      const sentAt = yield* kitshn.grantsEpoch;
       const answer = yield* kitshn.request({ type: "check", requests: batch }).pipe(Effect.option);
       // No answer: the cached levels hold until their `until` (fail closed for new sessions only).
       if (Option.isNone(answer)) continue;
+      // A newer change came in meanwhile; its own re-check, queued behind this one, decides.
+      if ((yield* kitshn.grantsEpoch) !== sentAt) continue;
       const nowMs = yield* Clock.currentTimeMillis;
       for (const { key, headers } of batch) {
         const result = answer.value.results.find((entry) => entry.key === key);
