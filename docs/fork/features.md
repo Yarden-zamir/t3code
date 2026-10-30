@@ -459,11 +459,12 @@ Upstream shows every `t3-thread://` link in chat as the chip of an attached thre
 
 A thread link that names a message opens the thread at that message. Use **Copy message link** beside a message on web and desktop, or hold its copy button on mobile. The command palette copies the message under the timeline cursor; bind `timeline.copyMessageLink` in Settings > Keybindings if needed. The app loads earlier history and opens a folded turn when needed, scrolls to the message and highlights it for a moment.
 
-- **Setting:** server setting `messageLinks` (on by default). Settings > Appearance > Thread links > "Message links". In the mobile Settings: Threads, or Fork. Off: the link opens the thread only, and **Copy message link** is hidden.
+- **Setting:** server setting `messageLinks` (on by default). Settings > Appearance > Thread links > "Message links". In the mobile Settings: Threads, or Fork. Off: **Copy message link** is hidden. A link that names a message still opens the thread at that message.
 - **Works on:** web, desktop, mobile.
 - **Forms:** `t3-thread://v2/<environmentId>/<threadId>#<messageId>`, `t3-thread://v1/<threadId>#<messageId>`, and a thread address or app link with `#<messageId>` or `?message=<messageId>`. Agents take `messageId` from `t3_thread_read`, also for a thread on another machine.
 - A message that the thread does not have shows "Message not found", and the thread stays open.
-- **Limits:** on mobile, a reply hidden in the fold of a prompt without a run shows as not found. Revisit when upstream pingdotgg/t3code#19203 merges; then use its scroll code.
+- **History:** on web and desktop, each jump to a message is a history entry. This includes links, pins and citations. Back and Forward return to where you were in each entry. A scroll by hand adds no entry. No setting turns this off.
+- **Limits:** the app keeps the position of each entry in memory, so after a reload Back opens the message of the entry again. On mobile, a jump in the same thread adds no Back step. On mobile, a reply hidden in the fold of a prompt without a run shows as not found. Revisit when upstream pingdotgg/t3code#19203 merges; then use its scroll code.
 
 ### Message pins
 

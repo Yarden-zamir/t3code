@@ -104,7 +104,7 @@ const FORK_MOBILE_SWITCHES = [
     icon: "text.bubble",
     label: "Message links",
     subtitle:
-      "A thread link that names a message opens the thread at that message and highlights it.",
+      "Holding the copy button of a message copies a link to it. A link that names a message always opens it.",
     place: "threads",
   },
 ] as const satisfies ReadonlyArray<{
