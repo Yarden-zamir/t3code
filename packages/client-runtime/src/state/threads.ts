@@ -48,6 +48,7 @@ import {
   type ThreadHistoryMeta,
 } from "./threadHistoryMerge.ts";
 import * as ThreadSnapshotLoader from "./threadSnapshotHttp.ts";
+import { syncTimings } from "../fork/syncTimings.ts";
 import { makeThreadRequestsResolvedAnnouncer, pendingRuntimeRequestIds } from "./threadRequests.ts";
 import {
   EMPTY_ENVIRONMENT_THREAD_STATE,
@@ -60,6 +61,11 @@ function statusWithoutLiveData(
 ): EnvironmentThreadStatus {
   return Option.isSome(data) ? "cached" : "empty";
 }
+
+const THREAD_TIMING_MARKS = {
+  synchronizing: "threadSynchronizing",
+  live: "threadLive",
+} as const;
 
 function formatThreadError(cause: Cause.Cause<unknown>): string {
   const error = Cause.squash(cause);
@@ -242,6 +248,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         sequence: initialSequence,
       };
   const state = yield* SubscriptionRef.make(initialState);
+  yield* syncTimings.followStatus(environmentId, state, THREAD_TIMING_MARKS);
   const canLoadHistory = Option.isSome(httpClient) && Option.isSome(historyController);
   const acceptsBoundedSocketSnapshots = yield* Ref.make(canLoadHistory);
   const lastSequence = yield* SubscriptionRef.make(initialSequence);
