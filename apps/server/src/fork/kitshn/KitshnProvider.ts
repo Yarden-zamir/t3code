@@ -347,14 +347,30 @@ export interface KitshnProviderState {
   readonly reach: ReadonlyArray<ReachedCard>;
 }
 
-/** K-1623: the card's site: the label of the machine's current tunnel host and the real port. */
-const appSite = (config: {
-  readonly tunnelPairingUrl?: string | undefined;
-  readonly port: number;
-}) => {
-  if (config.tunnelPairingUrl === undefined) return undefined;
-  const label = new URL(config.tunnelPairingUrl).hostname.split(".", 1)[0] ?? "";
-  return label.startsWith("t3-") ? { name: label, port: config.port } : undefined;
+/** K-1623: the label of the machine's portal tunnel host, which kitshn takes over by handover. */
+const portalSiteName = (tunnelPairingUrl: string | undefined) => {
+  if (tunnelPairingUrl === undefined) return undefined;
+  const label = new URL(tunnelPairingUrl).hostname.split(".", 1)[0] ?? "";
+  return label.startsWith("t3-") ? label : undefined;
+};
+
+/**
+ * K-705: the card's site and the real port. Without a portal host it is `t3-<kitshn machine name>`,
+ * so kitshn gives a new machine its address; without a site the link proxy refuses every link.
+ */
+export const appSite = (
+  config: { readonly tunnelPairingUrl?: string | undefined; readonly port: number },
+  machineName: string | null,
+) => {
+  const slug = (machineName ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .filter((part) => part.length > 0)
+    .join("-")
+    .slice(0, 60)
+    .replace(/-+$/u, "");
+  const name = portalSiteName(config.tunnelPairingUrl) ?? (slug === "" ? undefined : `t3-${slug}`);
+  return name === undefined ? undefined : { name, port: config.port };
 };
 
 /** Why a local request to kitshn did not get an answer. */
@@ -451,18 +467,20 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     }),
   );
 
-  const site = appSite(yield* ServerConfig.ServerConfig);
+  const serverConfig = yield* ServerConfig.ServerConfig;
+  const portalSite = portalSiteName(serverConfig.tunnelPairingUrl);
   /** K-1623: one log line when the host is not with kitshn; Settings > Machines shows it too. */
   const setHostNotice = Effect.fn("KitshnProvider.setHostNotice")(function* (
     access: AccessApp | null,
   ) {
     // Before the handover kitshn sends no access, or access with no audience (contract §10).
-    const notWithKitshn = site !== undefined && (access === null || access.audiences.length === 0);
+    const notWithKitshn =
+      portalSite !== undefined && (access === null || access.audiences.length === 0);
     yield* SubscriptionRef.set(servedHosts, access?.served ?? []);
     const before = yield* SubscriptionRef.getAndSet(hostNotice, notWithKitshn);
     if (notWithKitshn && !before) {
       yield* Effect.logWarning(
-        `This machine's host ${site.name} is not with kitshn. Select Take the address on its T3 card in kitshn, then run scripts/fork-host-handover.ts <machine>.`,
+        `This machine's host ${portalSite} is not with kitshn. Select Take the address on its T3 card in kitshn, then run scripts/fork-host-handover.ts <machine>.`,
       );
     }
   });
@@ -474,6 +492,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const appResource = Effect.gen(function* () {
     const descriptor = yield* environment.getDescriptor;
     const status = yield* appStatus;
+    const site = appSite(serverConfig, (yield* grants.machine)?.name ?? null);
     const busy = yield* threads.getShellSnapshot().pipe(
       Effect.map(
         (snapshot) => snapshot.threads.filter((thread) => thread.activeRunId !== null).length,

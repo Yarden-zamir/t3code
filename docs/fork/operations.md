@@ -281,7 +281,7 @@ scripts/fork-deploy-local.sh <ssh-host>
 - The version follows the rule of the local Mac build in [Versions](#versions), so `forkAutoUpdate` replaces it with the next release.
 - On the server, the script unpacks the build into `<T3 home>/runtime/versions/<version>` and runs `t3 update <version> --yes`. The service restarts at once, and the restart stops running agent turns.
 - After the switch, the script waits up to 90 seconds until `/.well-known/t3/environment` of the server reports the new version. If it does not, the script runs `t3 update <previous version> --yes --allow-downgrade` on the server and fails. If that rollback fails, it prints the command to run on the server. The earlier version is still in `runtime/versions`.
-- `<T3 home>` is `~/.t3` of the SSH user, or `T3CODE_HOME` of the SSH session.
+- `<T3 home>` is `~/.t3` of the SSH user, or `T3CODE_HOME` of the SSH session. Connect as the user that runs the service. On the VPS, this user is `t3`, not root.
 - To build only, run `scripts/fork-deploy-local.sh --archive linux-x64` or `--archive linux-arm64`. The archive is in `release/`.
 
 ## Install the fork
