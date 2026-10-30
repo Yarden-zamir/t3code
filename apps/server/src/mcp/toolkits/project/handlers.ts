@@ -36,6 +36,7 @@ import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
 import { refuseTerminalThreadWithoutExec } from "../../../fork/machineMap/terminalThreadExec.ts";
+import { refuseTerminalThreadWhileOff } from "../../../fork/terminalProvider/terminalThreadsOff.ts";
 
 function projectFailure(error: Project.ProjectServiceError) {
   if (error._tag === "ProjectOperationError") return unavailable();
@@ -279,6 +280,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             message:
               "Pass modelSelection: the project has no default model. orchestrator_capabilities lists providers and models.",
           });
+        yield* refuseTerminalThreadWhileOff(modelSelection.instanceId);
         yield* refuseTerminalThreadWithoutExec(scope.requestNamespace, modelSelection);
         const startedRuntimeMode =
           projectDefaults !== undefined && input.runtimeMode === undefined
