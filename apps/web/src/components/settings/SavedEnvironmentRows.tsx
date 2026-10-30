@@ -262,6 +262,7 @@ export function SavedBackendListRow({
       icon: "trash",
       destructive: true,
       separatorBefore: true,
+      disabled: isRemoving,
       run: () => onRemove(environment),
     },
   ];
