@@ -299,7 +299,6 @@ export const TunnelPairingInput = Schema.Struct({
   // Fork: Cloudflare Access login; null or blank clears a value.
   cloudflareAccessTeamDomain: Schema.NullOr(Schema.String),
   cloudflareAccessAud: Schema.NullOr(Schema.String),
-  cloudflareAccessSubjects: Schema.NullOr(Schema.String),
 });
 
 export const DesktopServerExposureSetModeError = Schema.Union([
@@ -329,7 +328,6 @@ export interface DesktopServerExposureBackendConfig {
   readonly cloudflareAccess: Option.Option<{
     readonly teamDomain: string;
     readonly aud: string;
-    readonly subjects: string;
   }>;
 }
 
@@ -417,27 +415,17 @@ const activeTrustedBrowserOrigins = (state: RuntimeState): Option.Option<string>
 const activeCloudflareAccess = (
   state: RuntimeState,
 ): DesktopServerExposureBackendConfig["cloudflareAccess"] => {
-  const { cloudflareAccessTeamDomain, cloudflareAccessAud, cloudflareAccessSubjects } =
-    state.cloudflareAccess;
+  const { cloudflareAccessTeamDomain, cloudflareAccessAud } = state.cloudflareAccess;
   return state.tunnelPairingEnabled &&
     cloudflareAccessTeamDomain !== null &&
-    cloudflareAccessAud !== null &&
-    cloudflareAccessSubjects !== null
-    ? Option.some({
-        teamDomain: cloudflareAccessTeamDomain,
-        aud: cloudflareAccessAud,
-        subjects: cloudflareAccessSubjects,
-      })
+    cloudflareAccessAud !== null
+    ? Option.some({ teamDomain: cloudflareAccessTeamDomain, aud: cloudflareAccessAud })
     : Option.none();
 };
 const sameCloudflareAccess = (previous: RuntimeState, next: RuntimeState) => {
   const left = Option.getOrNull(activeCloudflareAccess(previous));
   const right = Option.getOrNull(activeCloudflareAccess(next));
-  return (
-    left?.teamDomain === right?.teamDomain &&
-    left?.aud === right?.aud &&
-    left?.subjects === right?.subjects
-  );
+  return left?.teamDomain === right?.teamDomain && left?.aud === right?.aud;
 };
 
 const toBackendConfig = (state: RuntimeState): DesktopServerExposureBackendConfig => ({
@@ -484,7 +472,6 @@ function runtimeStateFromResolvedExposure(input: {
     cloudflareAccess: {
       cloudflareAccessTeamDomain: input.settings.cloudflareAccessTeamDomain,
       cloudflareAccessAud: input.settings.cloudflareAccessAud,
-      cloudflareAccessSubjects: input.settings.cloudflareAccessSubjects,
     },
   };
 }
@@ -710,9 +697,6 @@ export const make = Effect.gen(function* () {
     const cloudflareAccess = {
       cloudflareAccessTeamDomain,
       cloudflareAccessAud: DesktopAppSettings.normalizeSettingText(input.cloudflareAccessAud),
-      cloudflareAccessSubjects: DesktopAppSettings.normalizeSettingText(
-        input.cloudflareAccessSubjects,
-      ),
     };
     const result = yield* desktopSettings
       .setTunnelPairing({ enabled: input.enabled, url, trustedBrowserOrigins, cloudflareAccess })
@@ -730,7 +714,6 @@ export const make = Effect.gen(function* () {
       cloudflareAccess: {
         cloudflareAccessTeamDomain: result.settings.cloudflareAccessTeamDomain,
         cloudflareAccessAud: result.settings.cloudflareAccessAud,
-        cloudflareAccessSubjects: result.settings.cloudflareAccessSubjects,
       },
     }));
     return {

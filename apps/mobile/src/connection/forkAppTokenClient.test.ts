@@ -3,6 +3,8 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   appTokenOrigins,
+  deviceTokensNewestFirst,
+  firstDeviceList,
   isRefusedSession,
   planMachineSync,
   repairDelayMs,
@@ -23,6 +25,15 @@ describe("planMachineSync", () => {
     expect(plan.pair).toEqual([vps]);
     expect(plan.disable).toEqual([macEnvironment]);
     expect(plan.enable).toEqual([]);
+  });
+
+  it("never disables a saved machine while the list is empty", () => {
+    const plan = planMachineSync({
+      machines: [],
+      saved: [{ environmentId: macEnvironment, origin: mac.origin, enabled: true }],
+      disabledByRepair: new Set(),
+    });
+    expect(plan).toEqual({ pair: [], disable: [], enable: [] });
   });
 
   it("enables again only the environments that the repair disabled", () => {
@@ -78,5 +89,49 @@ describe("isRefusedSession", () => {
       false,
     );
     expect(isRefusedSession({ phase: "connecting", lastFailure: null })).toBe(false);
+  });
+});
+
+describe("deviceTokensNewestFirst", () => {
+  it("tries the device invite's token before an old portal token that comes first", () => {
+    const token = (clientId: string) => [
+      { name: "CF-Access-Client-Id", value: clientId },
+      { name: "CF-Access-Client-Secret", value: "secret" },
+    ];
+    const rules = [
+      { origin: mac.origin, headers: token("portal.access") },
+      { origin: vps.origin, headers: token("portal.access") },
+      { origin: "https://kit.example.com", headers: token("device.access") },
+      { origin: "https://other.example.com", headers: [] },
+    ];
+    expect(
+      deviceTokensNewestFirst(rules, "https://kit.example.com").map(
+        (entry) => entry.token.clientId,
+      ),
+    ).toEqual(["device.access", "portal.access"]);
+    // Without a saved kitshn origin, the newest rule still comes first.
+    expect(deviceTokensNewestFirst(rules, null).map((entry) => entry.origin)).toEqual([
+      "https://kit.example.com",
+      vps.origin,
+    ]);
+  });
+});
+
+describe("firstDeviceList", () => {
+  it("falls through an old portal token's empty list to the device token's machines", async () => {
+    const portal = { clientId: "portal.access", clientSecret: "a" };
+    const device = { clientId: "device.access", clientSecret: "b" };
+    const answer = await firstDeviceList(
+      [
+        { origin: mac.origin, token: portal },
+        { origin: "https://kit.example.com", token: device },
+      ],
+      () => "https://kit.example.com/device/machines",
+      async (_url, token) => ({
+        _tag: "machines",
+        machines: token.clientId === device.clientId ? [vps] : [],
+      }),
+    );
+    expect(answer).toMatchObject({ _tag: "machines", token: device, machines: [vps] });
   });
 });

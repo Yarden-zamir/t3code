@@ -1,5 +1,5 @@
 /**
- * Fork: theme sync through the machine map settings (apps/machine-map/SPEC.md, MM-408 to MM-410).
+ * Fork: theme sync through kitshn's `t3.settings` (MM-408 to MM-410).
  * `sharedThemes` is the content of the `themes/` folder: the machine reports what it publishes, and
  * a desired value writes theme files. `defaultTheme` changes through the `t3 theme set` code path,
  * so `defaultThemeSetAt` updates and connected clients switch.

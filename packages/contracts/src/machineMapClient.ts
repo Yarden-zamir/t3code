@@ -1,8 +1,7 @@
 /**
- * Fork: machine map contract between a T3 server and its own clients. The portal protocol is in
- * `machineMap.ts`, and MM-xxx refers to `apps/machine-map/SPEC.md`. `machineMap.subscribe` sends
- * the whole state on each change. The local desktop app also gets `tokenHeaders`, runs
- * `desktopCommands`, and reports back with `machineMap.reportDesktop`.
+ * Fork: the contract between a T3 server and its own clients for kitshn (K-704 to K-1609).
+ * `machineMap.subscribe` sends the whole state on each change. The RPC names stay from the
+ * machine map.
  */
 import * as Schema from "effect/Schema";
 
@@ -12,183 +11,59 @@ import {
   PositiveInt,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
-import {
-  MachineCommand,
-  MachineDesiredState,
-  MachineLevel,
-  MachineMapDocument,
-  MachinePresence,
-  MapTime,
-  PeerMachine,
-  SettingValues,
-} from "./machineMap.ts";
-import { HealthAlert, ResourcesOverview } from "./machineMapResources.ts";
+import { ScopedSettingValues, SettingValues } from "./machineMap.ts";
 
-/**
- * - `off`: the `machineMap` setting is off.
- * - `not-joined`: the setting is on, but no machine token is saved. Join with a code.
- * - `connecting`: the server dials the portal, or waits before the next attempt.
- * - `online`: the portal connection is open.
- */
-export const MachineMapConnectionStatus = Schema.Literals([
-  "off",
-  "not-joined",
-  "connecting",
-  "online",
-]);
-export type MachineMapConnectionStatus = typeof MachineMapConnectionStatus.Type;
-
-export const MachineMapConnection = Schema.Struct({
-  status: MachineMapConnectionStatus,
-  /** When the connection entered this status. */
-  since: MapTime,
-  /** Why the last attempt failed, while `connecting`. Never a secret. */
-  lastError: Schema.NullOr(Schema.String),
-  /** Failed attempts since the last open connection. */
-  failedAttempts: NonNegativeInt,
-});
-export type MachineMapConnection = typeof MachineMapConnection.Type;
-
-/**
- * The machine token as request headers. Cloudflare Access accepts them on the hostname of every
- * machine that has an arrow from this machine (MM-306).
- */
-export const MachineMapTokenHeaders = Schema.Struct({
-  "CF-Access-Client-Id": TrimmedNonEmptyString,
-  "CF-Access-Client-Secret": TrimmedNonEmptyString,
-});
-export type MachineMapTokenHeaders = typeof MachineMapTokenHeaders.Type;
-
-/** A peer that this machine can use: its arrow is above `none` and its hostname is known. */
-export const MachineMapReachablePeer = Schema.Struct({
-  machine: PeerMachine,
-  level: MachineLevel,
-  agentTools: Schema.Boolean,
-  /** `https://<hostname>`, the T3 server of the peer behind its tunnel. */
-  origin: TrimmedNonEmptyString,
-});
-export type MachineMapReachablePeer = typeof MachineMapReachablePeer.Type;
-
+/** What a client needs of this server's kitshn connection. */
 export const MachineMapClientState = Schema.Struct({
-  enabled: Schema.Boolean,
-  portalUrl: TrimmedNonEmptyString,
-  /** A machine token is saved. */
+  /** kitshn answered a `register` of this server, so it is a kitshn provider (K-704). */
   joined: Schema.Boolean,
-  connection: MachineMapConnection,
-  /** The last desired state that this machine applied, or null before the first one. */
-  desired: Schema.NullOr(MachineDesiredState),
-  /** MM-306, MM-1401: the desktop app keeps one saved environment for each of these. */
-  reachable: Schema.Array(MachineMapReachablePeer),
-  /**
-   * Only for the local desktop app (a `desktop-bootstrap` session). Null for every other client,
-   * and while no token is saved.
-   */
-  tokenHeaders: Schema.NullOr(MachineMapTokenHeaders),
-  /**
-   * MM-1402: commands that only the desktop app can run (`installUpdate`, `reloadWindows`). They
-   * wait here until a desktop app reports their result. Empty for every client but the desktop.
-   */
-  desktopCommands: Schema.Array(MachineCommand),
+  /** This machine on the kitshn map; the name is null before the daemon reached kitshn. */
+  machine: Schema.NullOr(Schema.Struct({ id: Schema.String, name: Schema.NullOr(Schema.String) })),
+  /** K-709: the effective `t3.settings`: the shared part with this machine's part over it. */
+  settings: ScopedSettingValues,
+  /** K-1623: this machine's T3 host is not with kitshn yet; run the host handover for it. */
+  hostNotWithKitshn: Schema.Boolean,
+  /** K-1611: the provider connection to the kitshn daemon and what kitshn gave it. */
+  connection: Schema.Struct({
+    /** `off`: this server does not speak for the machine, with the reason in `detail`. */
+    status: Schema.Literals(["off", "connecting", "registered"]),
+    /** Why it is off, or why the last connection ended. */
+    detail: Schema.NullOr(Schema.String),
+    grants: NonNegativeInt,
+    reachedMachines: NonNegativeInt,
+    linkProxy: Schema.Literals(["none", "unchecked", "checked"]),
+    /** Epoch ms of kitshn's last answer; the saved grants hold 24 hours after it. */
+    lastContactAt: Schema.NullOr(Schema.Number),
+    /** K-1618: kitshn's emergency pause is on. */
+    paused: Schema.Boolean,
+  }),
 });
 export type MachineMapClientState = typeof MachineMapClientState.Type;
 
 /**
  * MM-1907: an environment whose threads the agents of this server can read: the server itself,
- * then each machine that an arrow with agent tools from it reaches now.
+ * then each machine that a kitshn link reaches now.
  */
 export const MachineMapReadableEnvironment = Schema.Struct({
   environmentId: EnvironmentId,
-  /** The machine name, or the environment label of a server that is not on the map. */
+  /** The machine name, or the environment label of a server that is not linked. */
   name: TrimmedNonEmptyString,
 });
 export type MachineMapReadableEnvironment = typeof MachineMapReadableEnvironment.Type;
 
-export const MachineMapJoinInput = Schema.Struct({
-  code: TrimmedNonEmptyString.annotate({
-    description:
-      "One-time join code from Add machine in the portal, for example K7QM-2XPA. It works once.",
-  }),
-  portalUrl: Schema.optionalKey(
-    TrimmedNonEmptyString.annotate({
-      description:
-        "Portal origin, for example https://t3.yarden-zamir.com. Omit to keep the portal of the machineMap setting.",
-    }),
-  ),
-});
-export type MachineMapJoinInput = typeof MachineMapJoinInput.Type;
-
-export const MachineMapDesktopCommandResult = Schema.Struct({
-  commandId: TrimmedNonEmptyString,
-  ok: Schema.Boolean,
-  result: Schema.NullOr(Schema.Unknown),
-  error: Schema.NullOr(Schema.String),
-});
-export type MachineMapDesktopCommandResult = typeof MachineMapDesktopCommandResult.Type;
-
-/** What the local desktop app reports. Each omitted field keeps its last reported value. */
-export const MachineMapDesktopReport = Schema.Struct({
-  commandResult: Schema.optionalKey(MachineMapDesktopCommandResult),
-  /** The version of the desktop update that waits to install, or null when none waits. */
-  updateWaiting: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  /** The build the desktop app runs (MM-1002). Null for the release. */
-  build: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  /** The current client settings of the desktop app (MM-403, MM-404, MM-405). */
-  clientSettings: Schema.optionalKey(SettingValues),
-});
-export type MachineMapDesktopReport = typeof MachineMapDesktopReport.Type;
-
 /**
- * MM-411: a change that T3 Settings saved for all environments. The server sends the saved values
- * of `server` and the given `client` values to the portal as shared values.
+ * MM-411 on kitshn: "All environments" settings become the shared part of `t3.settings`.
+ * `server` names server settings keys; the server reads their saved values.
  */
 export const MachineMapShareSettingsInput = Schema.Struct({
-  /** Server settings keys. The server reads their saved values. */
   server: Schema.Array(Schema.String),
   client: SettingValues,
 });
 export type MachineMapShareSettingsInput = typeof MachineMapShareSettingsInput.Type;
 
-/** False when this machine is not on the map or not connected: the change stays a bulk edit. */
+/** False when this server is not a kitshn provider: the change stays a bulk edit. */
 export const MachineMapShareSettingsResult = Schema.Struct({ shared: Schema.Boolean });
 export type MachineMapShareSettingsResult = typeof MachineMapShareSettingsResult.Type;
-
-/**
- * MM-1701: an alert as the Machines panel reads it. The kind is an open string, so an alert kind
- * that a newer portal adds does not break the panel of this build.
- */
-const PanelHealthAlert = Schema.Struct({ ...HealthAlert.fields, kind: Schema.String });
-
-/** MM-1701: the part of a `machines_read` result that the Machines panel shows. */
-export const MachinesReadResult = Schema.TaggedStruct("read", {
-  map: MachineMapDocument,
-  presence: Schema.Record(Schema.String, MachinePresence),
-  commands: Schema.Array(MachineCommand),
-  resources: Schema.Struct({ ...ResourcesOverview.fields, alerts: Schema.Array(PanelHealthAlert) }),
-});
-export type MachinesReadResult = typeof MachinesReadResult.Type;
-
-/**
- * MM-1701: what the Machines panel gets. `unavailable` says why there is no map: `off` (setting
- * off or no machine token), `paused` (emergency pause, MM-711), `not-connected`, `timed-out` and
- * `refused` (the portal call failed), or `unreadable` (a portal result that this server does not
- * understand).
- */
-export const MachineMapPanelState = Schema.Union([
-  MachinesReadResult,
-  Schema.TaggedStruct("unavailable", {
-    reason: Schema.Literals([
-      "off",
-      "paused",
-      "not-connected",
-      "timed-out",
-      "refused",
-      "unreadable",
-    ]),
-    /** A message safe to show. Never a secret. */
-    detail: Schema.String,
-  }),
-]);
-export type MachineMapPanelState = typeof MachineMapPanelState.Type;
 
 export class MachineMapRequestError extends Schema.TaggedError<MachineMapRequestError>()(
   "MachineMapRequestError",

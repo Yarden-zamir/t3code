@@ -17,7 +17,6 @@ on:
     paths-ignore:
       - docs/**
       - "**/*.md"
-      - apps/machine-map/**
   workflow_dispatch:
     inputs:
       notify_agent:

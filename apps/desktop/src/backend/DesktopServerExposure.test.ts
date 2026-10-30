@@ -214,7 +214,6 @@ describe("DesktopServerExposure", () => {
           trustedBrowserOrigins: null,
           cloudflareAccessTeamDomain: null,
           cloudflareAccessAud: null,
-          cloudflareAccessSubjects: null,
         });
 
         const backendConfig = yield* serverExposure.backendConfig;

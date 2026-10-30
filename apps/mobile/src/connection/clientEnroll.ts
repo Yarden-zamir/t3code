@@ -1,103 +1,50 @@
 /**
- * Fork: native app clients of the machine map (MM-913, MM-914). A portal invite gives this app its
- * own Cloudflare Access service token and its machines. The app keeps the token as request headers
- * for each machine origin and the portal origin, then pairs with each machine through
+ * Fork: a phone with a kitshn device invite (K-1601). The invite gives this app its own Cloudflare
+ * Access service token and its machines. The app keeps the token as request headers for each
+ * machine origin and for kitshn, then pairs with each machine through
  * `/api/auth/cloudflare-access/pairing-credential`.
  */
-import { AuthPairingCredentialResult, ClientEnrollResponse } from "@t3tools/contracts";
+import type { DeviceTransport } from "@t3tools/client-runtime/fork/deviceInvite";
+import { AuthPairingCredentialResult } from "@t3tools/contracts";
 import * as Device from "expo-device";
 import * as Schema from "effect/Schema";
 import { Platform } from "react-native";
 
 import { fetchWithRequestHeaders, isCloudflareAccessChallenged } from "./requestHeaders";
 
-export interface ClientInvite {
-  readonly enrollUrl: string;
-  readonly code: string;
-}
-
-/** The invite in `https://<portal>/enroll/client#code=<code>`, or null for any other text. */
-export function parseClientInvite(text: string): ClientInvite | null {
-  let url: URL;
-  try {
-    url = new URL(text.trim());
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "https:" || url.pathname !== "/enroll/client") return null;
-  const code = new URLSearchParams(url.hash.slice(1)).get("code")?.trim() ?? "";
-  return code === "" ? null : { enrollUrl: `${url.origin}/enroll/client`, code };
-}
-
-// After 404 and 423 the portal deletes any token it made, so a new invite is the only way on.
-const ENROLL_ERRORS: Readonly<Record<number, string>> = {
-  404: "This invite is unknown, used or cancelled, or its client is gone. Ask for a new invite.",
-  410: "This invite expired. Invites last 15 minutes. Ask for a new invite.",
-  423: "Everything is paused. Ask for a new invite after Resume.",
-  429: "Too many attempts. Wait 15 minutes, then scan again.",
-  503: "The portal has no Cloudflare API token, so it cannot make a token for this phone.",
-};
-
-const decodeEnrollResponse = Schema.decodeUnknownSync(Schema.toCodecJson(ClientEnrollResponse));
 const decodePairingCredential = Schema.decodeUnknownSync(
   Schema.toCodecJson(AuthPairingCredentialResult),
 );
 
-function deviceName(): string {
+const KITSHN_TIMEOUT_MS = 20_000;
+
+/** The name of this phone on the kitshn map, for example "Pixel 8 · Android 16". */
+export function deviceName(): string {
   const model = Device.modelName ?? "Phone";
-  return `${model} · ${Platform.OS === "android" ? "Android" : "iOS"} ${Device.osVersion ?? ""}`
-    .trim()
-    .slice(0, 200);
+  return `${model} · ${Platform.OS === "android" ? "Android" : "iOS"} ${Device.osVersion ?? ""}`.trim();
 }
 
-const ENROLL_TIMEOUT_MS = 20_000;
-
-// Before the owner runs "Set up approvals" in the portal, Cloudflare Access
-// answers the invite path with its login page instead of the Worker.
-function isAccessLoginPage(response: Response): boolean {
-  try {
-    return new URL(response.url).hostname.endsWith(".cloudflareaccess.com");
-  } catch {
-    return false;
-  }
-}
-
-/** Uses the invite once. The answer holds the only copy of the token secret. */
-export async function redeemClientInvite(invite: ClientInvite): Promise<ClientEnrollResponse> {
+/** Calls kitshn directly: the phone has no CORS, and it passes its token headers itself. */
+export const kitshnTransport: DeviceTransport = async (request) => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ENROLL_TIMEOUT_MS);
-  let response: Response;
+  const timeout = setTimeout(() => controller.abort(), KITSHN_TIMEOUT_MS);
   try {
-    response = await fetch(invite.enrollUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: invite.code, device: deviceName() }),
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      ...(request.body === undefined ? {} : { body: request.body }),
       signal: controller.signal,
     });
-  } catch (cause) {
-    throw new Error(
-      controller.signal.aborted
-        ? "The portal did not answer. Check the connection, then scan again."
-        : `The portal is unreachable (${cause instanceof Error ? cause.message : String(cause)}).`,
-      { cause },
-    );
+    return {
+      status: response.status,
+      contentType: response.headers.get("content-type") ?? "",
+      body: await response.text(),
+      finalUrl: response.url || request.url,
+    };
   } finally {
     clearTimeout(timeout);
   }
-  if (isAccessLoginPage(response)) {
-    throw new Error("The portal is not set up for app invites yet. Run Set up approvals in it.");
-  }
-  // Cloudflare answers 520-530 with an HTML page when the Worker is down.
-  if (!(response.headers.get("content-type") ?? "").includes("application/json")) {
-    throw new Error(`The portal is unreachable (${response.status}). Try again later.`);
-  }
-  if (!response.ok) {
-    throw new Error(
-      ENROLL_ERRORS[response.status] ?? `The portal refused the invite (${response.status}).`,
-    );
-  }
-  return decodeEnrollResponse(await response.json());
-}
+};
 
 // Right after an enroll, Access may not accept the new token yet, and the machine
 // may not know the new client until the portal's desired state reaches it.

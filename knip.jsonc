@@ -101,11 +101,6 @@
         "src/state/npmRelease.ts": ["exports"],
       },
     },
-    "apps/machine-map": {
-      // Wrangler bundles the Worker from `main` in wrangler.jsonc. Vite builds the page from index.html
-      // and the service worker from its second input in vite.config.ts.
-      "entry": ["src/worker.ts!", "src/ui/main.tsx!", "src/sw/sw.ts!"],
-    },
     "apps/marketing": {
       // `astro check` runs from the typecheck task in vite.config.ts, which knip does not read.
       "ignoreDependencies": ["@astrojs/check"],

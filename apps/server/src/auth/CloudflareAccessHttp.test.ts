@@ -1,11 +1,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentHttpApi } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as FileSystem from "effect/FileSystem";
 import * as Etag from "effect/http/Etag";
 import * as HttpPlatform from "effect/http/HttpPlatform";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
@@ -16,9 +18,13 @@ import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as KitshnGrants from "../fork/kitshn/KitshnGrants.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
+import * as SessionStore from "./SessionStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as AuthHttp from "./http.ts";
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 class AuthTestApi extends HttpApi.make("environment").add(EnvironmentHttpApi.groups.auth) {}
 
@@ -41,10 +47,49 @@ const layerConfig = Layer.effect(
     const config = yield* ServerConfig.ServerConfig;
     return {
       ...config,
-      cloudflareAccess: { teamDomain: ACCESS_TEAM, aud: "aud-tag", subjects: ["dev@example.com"] },
+      cloudflareAccess: { teamDomain: ACCESS_TEAM, aud: "aud-tag" },
     } satisfies ServerConfig.ServerConfig["Service"];
   }),
 ).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-auth-access-test-" })));
+
+// The saved table of a server that kitshn answered: dev@example.com holds `t3.app` at standard.
+const layerSavedGrants = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const { stateDir } = yield* ServerConfig.ServerConfig;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const grant = {
+      circle: {
+        id: "c",
+        name: "Dev",
+        match: "any",
+        needsPasskey: false,
+        rules: [{ email: "dev@example.com" }],
+      },
+      level: "standard",
+      endsAt: null,
+    };
+    yield* fileSystem.makeDirectory(stateDir, { recursive: true });
+    yield* fileSystem.writeFileString(
+      `${stateDir}/kitshn-grants.json`,
+      encodeJson({
+        tables: { app: [grant] },
+        lastContactAt: yield* Clock.currentTimeMillis,
+        pendingRevocations: [],
+        machine: null,
+      }),
+    );
+  }),
+).pipe(Layer.provide(layerConfig), Layer.provide(NodeServices.layer));
+
+const layerGrants = KitshnGrants.layer.pipe(
+  Layer.provide(layerSavedGrants),
+  Layer.provide(SessionStore.layer),
+  Layer.provide(ServerSecretStore.layer),
+  Layer.provide(SqlitePersistence.layerMemory),
+  Layer.provide(ServerEnvironment.layerIdentity),
+  Layer.provide(layerConfig),
+  Layer.provide(NodeServices.layer),
+);
 
 const layerRoutes = HttpApiBuilder.layer(AuthTestApi).pipe(
   Layer.provide(AuthHttp.layer),
@@ -54,6 +99,7 @@ const layerRoutes = HttpApiBuilder.layer(AuthTestApi).pipe(
       Layer.provide(SqlitePersistence.layerMemory),
       Layer.provide(ServerSecretStore.layer),
       Layer.provide(ServerEnvironment.layerIdentity),
+      Layer.provide(layerGrants),
       Layer.provide(layerConfig),
     ),
   ),
@@ -67,7 +113,6 @@ const layerRoutes = HttpApiBuilder.layer(AuthTestApi).pipe(
   Layer.provide(NodeServices.layer),
 );
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const request = (path: string, init?: { method?: string; headers?: Record<string, string> }) =>
   new Request(`http://127.0.0.1${path}`, {
     method: init?.method ?? "GET",
@@ -98,7 +143,7 @@ const withCertsFetch = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     (realFetch) => Effect.sync(() => (globalThis.fetch = realFetch)),
   );
 
-it.effect("logs a Cloudflare Access caller in without a pairing link", () =>
+it.effect("logs a visitor with a kitshn grant in through Access, without a pairing link", () =>
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
     const requestContext = Context.make(Crypto.Crypto, crypto).pipe(
@@ -126,17 +171,25 @@ it.effect("logs a Cloudflare Access caller in without a pairing link", () =>
           const cookie = session.headers.getSetCookie()[0]?.split(";", 1)[0] ?? "";
           expect(cookie).toMatch(/^t3_session_/);
           const withCookie = await environment.handler(
-            request("/api/auth/session", { headers: { cookie } }),
+            request("/api/auth/session", {
+              headers: { cookie, "cf-access-jwt-assertion": allowed },
+            }),
             requestContext,
           );
           expect(await withCookie.json()).toMatchObject({ authenticated: true });
+          // A grant session works only through a request that the grants check.
+          const cookieOnly = await environment.handler(
+            request("/api/auth/session", { headers: { cookie } }),
+            requestContext,
+          );
+          expect(await cookieOnly.json()).toMatchObject({ authenticated: false });
         }),
       (environment) => Effect.promise(() => environment.dispose()),
     );
   }).pipe(withCertsFetch, Effect.provide(NodeServices.layer)),
 );
 
-it.effect("gives a pairing credential only to a Cloudflare Access caller", () =>
+it.effect("gives a pairing credential only to an Access visitor with a kitshn grant", () =>
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
     const requestContext = Context.make(Crypto.Crypto, crypto).pipe(

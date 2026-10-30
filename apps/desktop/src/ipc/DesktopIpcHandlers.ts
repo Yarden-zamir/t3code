@@ -1,3 +1,4 @@
+import { kitshnDeviceRequest } from "./methods/kitshnDevice.ts";
 import * as Effect from "effect/Effect";
 
 import { receiveProviderAuthCallback, cancelProviderAuthCallback } from "./methods/providerAuth.ts";
@@ -128,6 +129,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(acknowledgeSnapShot);
   yield* ipc.handle(setConnectionCatalog);
   yield* ipc.handle(isCloudflareAccessChallenged);
+  yield* ipc.handle(kitshnDeviceRequest);
 
   yield* ipc.handle(discoverSshHosts);
   yield* ipc.handle(resolveSshHost);

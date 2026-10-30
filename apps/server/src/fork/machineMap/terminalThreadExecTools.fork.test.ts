@@ -32,8 +32,9 @@ import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import { machineRequestNamespace } from "./machineAccess.ts";
-import { PEER, SELF, arrow, desiredState } from "./MachineMap.testkit.ts";
-import * as MachineMapState from "./MachineMapState.ts";
+import * as KitshnGrants from "../kitshn/KitshnGrants.ts";
+import { fixedKitshnGrants, peerGrants } from "../kitshn/KitshnGrants.testkit.ts";
+import { PEER } from "./MachineMap.testkit.ts";
 
 // MM-1923 through the real tools: another machine needs exec only to run or stop code in a
 // terminal thread. The handlers behind the gate meet unimplemented mocks, so any outcome other
@@ -85,12 +86,11 @@ const mcpClient = McpSchema.McpServerClient.of({
   getClient: Effect.die("unused"),
 });
 
-const standardArrow = (exec: boolean) =>
-  Effect.provideService(MachineMapState.MachineMapState, {
-    activeDesired: Effect.succeed(
-      desiredState({ arrowsIn: [arrow(PEER, SELF, "standard", { agentTools: true, exec })] }),
-    ),
-  } as unknown as MachineMapState.MachineMapState["Service"]);
+const standardGrants = (exec: boolean) =>
+  Effect.provideService(
+    KitshnGrants.KitshnGrants,
+    fixedKitshnGrants(peerGrants("standard", exec ? "exec" : "use")),
+  );
 
 /** "refused" when the exec gate refused the call, else "passed". */
 const call = (name: string, args: Record<string, unknown>, exec: boolean) =>
@@ -98,7 +98,7 @@ const call = (name: string, args: Record<string, unknown>, exec: boolean) =>
     Effect.flatMap((server) => server.callTool({ name, arguments: args })),
     Effect.provideService(McpInvocationContext.McpInvocationContext, machineSession),
     Effect.provideService(McpSchema.McpServerClient, mcpClient),
-    standardArrow(exec),
+    standardGrants(exec),
     Effect.exit,
     Effect.map((exit) => {
       if (Exit.isFailure(exit)) return "passed";
@@ -107,7 +107,7 @@ const call = (name: string, args: Record<string, unknown>, exec: boolean) =>
         exit.value.isError === true &&
         text?.type === "text" &&
         text.text.includes('"capability_denied"') &&
-        text.text.includes("arrow with exec");
+        text.text.includes("t3.agents at exec");
       return refused ? "refused" : "passed";
     }),
   );
@@ -156,7 +156,7 @@ it.effect.each([
   ["t3_thread_organize", { threadId, action: "archive" }],
   ["t3_queue", { threadId, action: "cancel", queuedRunId }],
   ["t3_queue", { threadId, action: "reorder", queuedRunId, beforeRunId: null }],
-] as const)("a metadata write %s %o passes through a standard arrow", ([name, args]) =>
+] as const)("a metadata write %s %o passes with standard grants", ([name, args]) =>
   call(name, args, false).pipe(
     Effect.map((outcome) => expect(outcome).toBe("passed")),
     Effect.provide(layerTools),

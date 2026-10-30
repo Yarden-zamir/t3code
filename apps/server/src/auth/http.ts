@@ -270,21 +270,9 @@ const createCloudflareAccessBrowserSession = Effect.fn(
   request: HttpServerRequest.HttpServerRequest,
   unauthenticated: AuthSessionState,
 ) {
-  const issued = yield* serverAuth
-    .issueCloudflareAccessPairingCredential(request)
-    .pipe(
-      Effect.catchTags({ ServerAuthMachinePausedError: () => Effect.succeed("paused" as const) }),
-    );
-  // Fork (MM-718): the pause shows the lock page, with no new session.
-  if (issued === "paused") {
-    return { ...unauthenticated, machinePaused: true } satisfies AuthSessionState;
-  }
+  const issued = yield* serverAuth.issueCloudflareAccessPairingCredential(request);
   if (issued === undefined) {
     return unauthenticated;
-  }
-  // Fork (MM-920): the browser shows that its key waits for approval.
-  if ("_tag" in issued) {
-    return { ...unauthenticated, clientPending: issued.pending } satisfies AuthSessionState;
   }
   const created = yield* serverAuth
     .createBrowserSession(
@@ -322,16 +310,14 @@ export const layer = HttpApiBuilder.group(
             yield* annotateEnvironmentRequest(args.endpoint.name);
             const request = yield* HttpServerRequest.HttpServerRequest;
             const sessionState = yield* serverAuth.getSessionState(request);
-            // Fork (MM-718): a session that the pause refused gets no new Access session.
-            const result =
-              sessionState.authenticated || sessionState.machinePaused === true
-                ? sessionState
-                : yield* createCloudflareAccessBrowserSession(
-                    serverAuth,
-                    sessions,
-                    request,
-                    sessionState,
-                  );
+            const result = sessionState.authenticated
+              ? sessionState
+              : yield* createCloudflareAccessBrowserSession(
+                  serverAuth,
+                  sessions,
+                  request,
+                  sessionState,
+                );
             const credential = EnvironmentAuth.selectRequestCredential(
               request,
               sessions.cookieName,
@@ -533,17 +519,9 @@ export const layer = HttpApiBuilder.group(
           function* (args) {
             yield* annotateEnvironmentRequest(args.endpoint.name);
             const request = yield* HttpServerRequest.HttpServerRequest;
-            const issued = yield* serverAuth.issueCloudflareAccessPairingCredential(request).pipe(
-              Effect.catchTags({
-                ServerAuthMachinePausedError: () => failEnvironmentAuthInvalid("machine_paused"),
-              }),
-            );
+            const issued = yield* serverAuth.issueCloudflareAccessPairingCredential(request);
             if (issued === undefined) {
               return yield* failEnvironmentAuthInvalid("invalid_credential");
-            }
-            // Fork (MM-918): a sibling of a waiting browser stays unpaired until the approval.
-            if ("_tag" in issued) {
-              return yield* failEnvironmentAuthInvalid("client_pending");
             }
             yield* appendCredentialResponseHeaders;
             return issued;

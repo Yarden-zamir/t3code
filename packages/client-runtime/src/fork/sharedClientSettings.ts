@@ -1,5 +1,5 @@
 /**
- * Fork: shared client settings on a browser or a phone (apps/machine-map/SPEC.md MM-416). Such a
+ * Fork: shared client settings on a browser or a phone (MM-416). Such a
  * device is not a machine of the map, so it reports nothing. A change on the device stays until
  * the shared value of that key changes again.
  */

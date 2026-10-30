@@ -15,7 +15,7 @@ import GithubSlugger from "github-slugger";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
-const DOC_GLOBS = ["README.md", "docs/fork*.md", "docs/fork/**/*.md", "apps/machine-map/*.md"];
+const DOC_GLOBS = ["README.md", "docs/fork*.md", "docs/fork/**/*.md"];
 
 interface MarkdownNode {
   readonly type: string;

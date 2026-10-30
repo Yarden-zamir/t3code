@@ -1,26 +1,25 @@
 /**
- * Fork: machine map agent tools (`apps/machine-map/SPEC.md`, MM-801). The `machines_*` tools run
- * through the portal connection of this machine, and the portal checks the map role of this
- * machine on every call (MM-802, MM-805). `machine_exec` goes to the other machine directly. Other
- * T3 tools reach another machine with `environmentId`, through the arrow links (MM-303).
+ * Fork: the machine tools. kitshn is the only path: the `machines_*` tools ask the kitshn daemon of
+ * this machine (K-1710 to K-1712), and kitshn checks the circles of this machine on each ask. The
+ * tool names stay from the machine map. `machine_exec` goes to the other machine directly.
  */
 import {
   MACHINE_EXEC_MAX_OUTPUT_BYTES,
   MachineExecInput,
   MachineExecResult,
-  MachineMapClientState,
-  MachineMapJoinInput,
-  MapToolInputs,
-  type MapToolName,
   OrchestratorMcpFailure,
+  SettingScope,
+  TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Tool from "effect/ai/Tool";
 import * as Toolkit from "effect/ai/Toolkit";
 
+import * as KitshnCli from "../../../fork/kitshn/KitshnCli.ts";
+import * as KitshnGrants from "../../../fork/kitshn/KitshnGrants.ts";
+import * as KitshnProvider from "../../../fork/kitshn/KitshnProvider.ts";
+import * as KitshnSettingsSync from "../../../fork/kitshn/KitshnSettingsSync.ts";
 import * as MachineExec from "../../../fork/machineMap/MachineExec.ts";
-import * as MachineMap from "../../../fork/machineMap/MachineMap.ts";
-import * as MachinePeers from "../../../fork/machineMap/MachinePeers.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
@@ -30,35 +29,21 @@ const shared = {
   dependencies: [
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
-    MachineMap.MachineMap,
-    MachinePeers.MachinePeers,
+    KitshnProvider.KitshnProvider,
+    KitshnSettingsSync.KitshnSettingsSync,
+    KitshnGrants.KitshnGrants,
+    KitshnCli.KitshnCli,
     MachineExec.MachineExec,
   ],
 };
 
-/** Appended to every tool that runs through the portal. */
-const PORTAL_NOTE =
-  "The call goes through the portal connection of this machine, and the portal checks the map role of this machine (machines_read shows it). It fails when this machine has no portal connection, when the portal does not answer within 30 seconds, and while the owner's emergency pause is on. Only the owner can end the pause, in the portal.";
+/** Appended to every tool that asks kitshn. */
+const KITSHN_NOTE =
+  "The call goes to the kitshn daemon of this machine. It fails when this machine has no kitshn 2, is not joined to kitshn, or its daemon does not run. Access between machines, history, undo and presets are on the kitshn map, not in these tools.";
 
-/** Appended to every map change. */
-const MAP_WRITE_NOTE =
-  'With the map role `edit`, a change that raises no access applies at once and the result is {"_tag":"applied","revision":n}. Only the owner raises access: a change that raises a level, turns on agent tools or exec, or raises a map role, for any machine, waits in the portal Inbox, and so does every change with the role `propose`. Then the result is {"_tag":"proposed","proposalId":"...","reason":"map-role"|"self-escalation"|"owner-only"}. The owner approves or rejects a proposal; it expires after 24 hours. Each applied change is a revision that machines_undo can reverse. An offline machine applies the change when it connects.';
-
-const mapTool = <const Name extends Exclude<MapToolName, "machines_read" | "machines_resources">>(
-  name: Name,
-  description: string,
-) =>
-  Tool.make(name, {
-    ...shared,
-    description: `${description} Needs a live full-access/default calling thread or a full-access client; the map role never raises a caller's limits. ${PORTAL_NOTE}`,
-    parameters: MapToolInputs[name],
-    success: Schema.Unknown,
-  });
-
-// MCP needs an object root for parameters, so the tool without inputs declares none.
 const MachinesReadTool = Tool.make("machines_read", {
   ...shared,
-  description: `Read the machine map. Call it first to find machine ids, map roles, revision numbers and command ids. Needs the map role \`read\`. Changes nothing. The result is {"_tag":"read", map, presence, commands, history, proposals, resources, capabilities, execs, calls}: map holds the machines, arrows, shared settings with the overrides of each machine, and presets, and the owner's display data: notes (sticky notes with text and a place), which no machine applies; presence.<machineId> holds online, lastSeenAt and status (build, running turns, supported commands, clients); resources holds latest.<machineId> (the newest resource sample), thresholds.<machineId> (health thresholds) and alerts (the active health alerts); capabilities lists for each arrow with any what agents on \`from\` can do on \`to\` (readThreads, launch, exec, settings); execs and calls list the newest machine_exec runs and T3 tool calls forwarded to other machines, without their output; history holds the newest 50 revisions and makes most of the size, often more than 50,000 characters. ${PORTAL_NOTE}`,
+  description: `Read what kitshn shows this machine. Changes nothing. The result is {"_tag":"read", machine, connection, state, stateError, askResults}: machine is {id, name} of this machine on the kitshn map, or null before it registered. connection is {status ("off", "connecting" or "registered"), detail (why it is off or why the last connection ended), linkProxy ("none", "unchecked" or "checked"), lastContactAt (epoch ms of kitshn's last answer), paused (kitshn's emergency pause)}. state is null with stateError when kitshn cannot answer; otherwise it is the answer of the kitshn state ask: rights (what kitshn lets this machine do), circles ({id, name, level} that this machine can see), cards (the cards that this machine manages, with kind, name, addresses, status, circles, deploy, backup and uptime), proposals (open asks that this machine may answer) and repos. askResults lists the answers to this machine's waiting jobs, newest first: {proposalId, outcome ("approved", "denied" or "expired"), result, reason}. It does not list other machines or their status. ${KITSHN_NOTE}`,
   success: Schema.Unknown,
 })
   .annotate(Tool.Readonly, true)
@@ -66,54 +51,104 @@ const MachinesReadTool = Tool.make("machines_read", {
 
 const MachinesResourcesTool = Tool.make("machines_resources", {
   ...shared,
-  description: `Read the resource history of the machine with id machineId (from machines_read): CPU, memory, disk, swap and agent processes. Range \`hour\` and \`day\` give one point a minute, \`month\` one point an hour; the default is \`hour\`. The result is {"_tag":"resources", history, alerts}: alerts holds the health alerts of that machine that were active in the range. Needs the map role \`read\`. Changes nothing. ${PORTAL_NOTE}`,
-  parameters: MapToolInputs.machines_resources,
+  description: `Read the resource samples of this machine from its kitshn daemon: CPU, memory and disk as shares from 0 to 1. Only this machine. Changes nothing. The result is {"_tag":"resources", newest, history}: newest is {at, cpu, memory, disk} taken now, and history holds the samples of the last hour, oldest first; nothing older. ${KITSHN_NOTE}`,
   success: Schema.Unknown,
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
 
-const MachinesSetAccessTool = mapTool(
-  "machines_set_access",
-  `Set the arrow from machine \`from\` to machine \`to\`: its access level, whether agents on \`from\` can call tools on \`to\`, and an optional expiry. \`from\` and \`to\` are machine ids from machines_read. Use it to remove or lower access between two machines, or to propose more access to the owner. A lower level ends the sessions of \`from\` on \`to\` at once. The owner keeps full access to every machine whatever the arrows say. Needs the map role \`propose\` or \`edit\`. ${MAP_WRITE_NOTE}`,
-).annotate(Tool.Destructive, true);
+export const MachinesSetSettingInput = Schema.Struct({
+  part: Schema.Literals(["machine", "shared"]).annotate({
+    description:
+      "machine: this machine's own value, which applies over the shared one. shared: the value of every machine on kitshn; only the owner sets it, so an agent thread is refused.",
+  }),
+  scope: SettingScope.annotate({
+    description: "server: T3 server settings (settings.json). client: settings of all client apps.",
+  }),
+  key: TrimmedNonEmptyString.annotate({
+    description:
+      "Top-level settings key, for example recoverInterruptedTurns. Any key works except the machine-local ones, such as paths and secrets.",
+  }),
+  value: Schema.optionalKey(
+    Schema.Unknown.annotate({
+      description: "New value, in the type of the settings schema. Omit with clear.",
+    }),
+  ),
+  clear: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description: "True removes the value from that part, also when `value` is set.",
+    }),
+  ),
+});
 
-const MachinesSetSettingTool = mapTool(
-  "machines_set_setting",
-  `Set or clear a setting: the shared value of every machine, or the override of one machine when machineId (a machine id from machines_read) is set. \`key\` is a top-level settings key, for example recoverInterruptedTurns. Every key works except the machine-local ones (machineMap, paths, secrets, project-keyed maps), which fail. A key without a shared value changes nothing on any machine until a shared value is set. Each machine applies the value live through its settings service. Needs the map role \`propose\` or \`edit\`. ${MAP_WRITE_NOTE}`,
-).annotate(Tool.Destructive, true);
+const MachinesSetSettingTool = Tool.make("machines_set_setting", {
+  ...shared,
+  description: `Set or clear one setting in the T3 settings state on kitshn (K-709): this machine's own part, or the shared part of every machine. Each machine applies the shared part, then its own part over it. It cannot change the part of another machine. The result is {"_tag":"setting", part, scope, key}. ${KITSHN_NOTE}`,
+  parameters: MachinesSetSettingInput,
+  success: Schema.Unknown,
+}).annotate(Tool.Destructive, true);
 
-const MachinesCommandTool = mapTool(
-  "machines_command",
-  'Send a one-time command to the machine with id machineId (from machines_read), for example {"_tag":"stopAllAgents"} or {"_tag":"collectDiagnostics"}. Use only a command that the machine lists in presence.<machineId>.status.commands. Needs the map role `edit`; a command never becomes a proposal and cannot be undone. restartServer and stopAllAgents stop the running agent turns on that machine, the turn of the caller too when it runs there. An offline machine gets the command when it connects; delivery `idle` also waits until no agent runs there. A queued command expires after 24 hours unless expiresInMinutes says otherwise; cancel it with machines_queue_cancel. The result is {"_tag":"command", command} with status `queued`. Read the outcome later in `commands` of machines_read.',
-).annotate(Tool.Destructive, true);
+export const MachinesCommandInput = Schema.Struct({
+  machineId: TrimmedNonEmptyString.annotate({
+    description: "Id of the machine on the kitshn map that runs the command.",
+  }),
+  command: TrimmedNonEmptyString.annotate({
+    description:
+      "The command id of the T3 card: restart-server, install-update, stop-all-agents, pause-scheduled-tasks or collect-diagnostics. With row: run-task, pause-task or resume-task for a row of the tasks list, revoke-session for a row of the sessions list. The machine runs only the commands that its T3 card lists.",
+  }),
+  resource: Schema.optionalKey(
+    TrimmedNonEmptyString.annotate({
+      description: 'The card id of the command. Default "app", the T3 card.',
+    }),
+  ),
+  row: Schema.optionalKey(
+    TrimmedNonEmptyString.annotate({
+      description:
+        'The row id of a card list that the command is for, for example "task:<taskId>" or "session:<sessionId>". The T3 card of each machine on the kitshn map lists its scheduled tasks and client sessions. Omit it for a command of the whole card.',
+    }),
+  ),
+});
 
-const MachinesQueueCancelTool = mapTool(
-  "machines_queue_cancel",
-  'Cancel a command that its machine did not take yet (status `queued`). commandId comes from `commands` in machines_read. A delivered or finished command cannot be cancelled. Needs the map role `edit`. The result is {"_tag":"command", command} with status `cancelled`.',
-).annotate(Tool.Destructive, true);
+const MachinesCommandTool = Tool.make("machines_command", {
+  ...shared,
+  description: `Run a command of the T3 card on a machine as a kitshn job (K-1612). kitshn runs it at once only when a circle that holds this machine may run commands there. Otherwise the job waits for the owner. The result is {"_tag":"command", outcome} with outcome "done" and result (it holds the job id), or "waiting" and proposalId, whose answer shows later in askResults of machines_read; a refusal fails with its reason. restart-server and stop-all-agents stop the running agent turns there, the caller's too when it runs there. Cancel a queued job with machines_queue_cancel. ${KITSHN_NOTE}`,
+  parameters: MachinesCommandInput,
+  success: Schema.Unknown,
+}).annotate(Tool.Destructive, true);
 
-const MachinesUndoTool = mapTool(
-  "machines_undo",
-  `Undo one revision of the map. The undo is a new revision, so the history keeps both and the undo can be undone too. Commands are not revisions and cannot be undone. Needs the map role \`propose\` or \`edit\`. ${MAP_WRITE_NOTE}`,
-).annotate(Tool.Destructive, true);
+export const MachinesQueueCancelInput = Schema.Struct({
+  jobId: Schema.Int.annotate({
+    description: "Id of a queued kitshn job that this machine queued, from machines_command.",
+  }),
+});
 
-const MachinesPresetTool = mapTool(
-  "machines_preset",
-  `Save the current arrows as a named preset, or apply a saved preset. To cut all access and stop running agents, the owner uses the emergency pause in the portal; agents cannot press it. Needs the map role \`propose\` or \`edit\`. ${MAP_WRITE_NOTE}`,
-).annotate(Tool.Destructive, true);
+const MachinesQueueCancelTool = Tool.make("machines_queue_cancel", {
+  ...shared,
+  description: `Cancel a kitshn job that this machine queued, while it waits in the queue. A job that started, or one that another machine queued, cannot be cancelled. The result is {"_tag":"cancelled", jobId}. ${KITSHN_NOTE}`,
+  parameters: MachinesQueueCancelInput,
+  success: Schema.Unknown,
+}).annotate(Tool.Destructive, true);
+
+export const MachinesJoinInput = Schema.Struct({
+  code: TrimmedNonEmptyString.annotate({
+    description: "One-time join code from Add machine on the kitshn map.",
+  }),
+  server: TrimmedNonEmptyString.annotate({
+    description: "The kitshn address, for example https://kit.example.com.",
+  }),
+});
 
 const MachinesJoinTool = Tool.make("machines_join", {
   ...shared,
   description:
-    "Join this machine to the machine map with a one-time join code from Add machine in the portal. Agents cannot join (MM-919). On a headless machine, the owner runs t3 machine-map join <code>; on desktop, use Settings > Machines. A joined machine with the map on refuses another join. To leave, the owner uses Settings > Machines > Leave.",
-  parameters: MachineMapJoinInput,
-  success: MachineMapClientState,
+    'Join this machine to kitshn with a one-time join code: it runs `kitshn join` of the machine\'s kitshn 2. Agents cannot join. On a machine, the owner runs `kitshn join <code> --server <address>` in a shell. The result is {"_tag":"joined", output}.',
+  parameters: MachinesJoinInput,
+  success: Schema.Unknown,
 }).annotate(Tool.Destructive, true);
 
 const MachineExecTool = Tool.make("machine_exec", {
   ...shared,
-  description: `Run a shell command on another machine of the map, through the T3 server of that machine, as its user. Use it for work that needs that machine: logs, builds, git, services. It needs an arrow from this machine to that machine with exec and agent tools on and the level standard or admin, and a live full-access/default caller with orchestration, worktree and pull-requests tool capabilities. Restricted callers are refused. The other machine checks the arrow again, and an emergency pause, a removed arrow or exec turned off stops a running command at once. It does not need the portal. The portal History records the machine, the calling thread, the command, the exit code and the time, never the output. The call waits for the command, at most the timeout. Background jobs of the command end with it, also with nohup: start long work as a service and poll it. With a shell, \`t3 machine exec <machine> -- <command>\` runs the same command with stdin, streamed and binary output, its exit code and no time limit, and a background job of a command that exits 0 keeps running. The result is {machine, cwd, shell, outcome ("exited" or "timedOut"), exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, durationMs}. stdout and stderr keep at most ${MACHINE_EXEC_MAX_OUTPUT_BYTES} bytes each and then end with a truncation marker. A timeout loses the output.`,
+  description: `Run a shell command on another machine, through the T3 server of that machine, as its user. Use it for work that needs that machine: logs, builds, git, services. The other machine runs it only while its kitshn grants give this machine t3.agents at exec and t3.app at standard or higher, and a live full-access/default caller with orchestration, worktree and pull-requests tool capabilities sends it. Restricted callers are refused. Losing the grant stops a running command at once. This machine reaches another machine only through kitshn links; until kitshn offers them, the call fails. The call waits for the command, at most the timeout. Background jobs of the command end with it, also with nohup: start long work as a service and poll it. With a shell, \`t3 machine exec <machine> -- <command>\` runs the same command with stdin, streamed and binary output, its exit code and no time limit. The result is {machine, cwd, shell, outcome ("exited" or "timedOut"), exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, durationMs}. stdout and stderr keep at most ${MACHINE_EXEC_MAX_OUTPUT_BYTES} bytes each and then end with a truncation marker. A timeout loses the output.`,
   parameters: MachineExecInput,
   success: MachineExecResult,
 }).annotate(Tool.Destructive, true);
@@ -121,12 +156,9 @@ const MachineExecTool = Tool.make("machine_exec", {
 export const MachineMapToolkit = Toolkit.make(
   MachinesReadTool,
   MachinesResourcesTool,
-  MachinesSetAccessTool,
   MachinesSetSettingTool,
   MachinesCommandTool,
   MachinesQueueCancelTool,
-  MachinesUndoTool,
-  MachinesPresetTool,
   MachinesJoinTool,
   MachineExecTool,
 );

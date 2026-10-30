@@ -37,7 +37,7 @@ export const requireMachineExecCaller = Effect.fn("MachinePeers.requireMachineEx
       return yield* new OrchestratorMcpFailure({
         code: "capability_denied",
         message:
-          "machine_exec cannot grant missing tool capabilities or use another machine's arrows.",
+          "machine_exec cannot grant missing tool capabilities or use another machine's links.",
       });
     }
     return caller;

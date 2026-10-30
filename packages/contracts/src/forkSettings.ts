@@ -160,20 +160,6 @@ export const PullRequestWatchRemarkFilter = Schema.Struct({
 });
 export type PullRequestWatchRemarkFilter = typeof PullRequestWatchRemarkFilter.Type;
 
-export const DEFAULT_MACHINE_MAP_PORTAL_URL = "https://t3.yarden-zamir.com";
-
-/**
- * Fork: machine map (`apps/machine-map/SPEC.md`, MM-1301). Off means no portal connection and no
- * change to auth. The machine token lives in the server secret store, never here (MM-1302).
- */
-export const MachineMapSettings = Schema.Struct({
-  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  portalUrl: TrimmedNonEmptyString.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MACHINE_MAP_PORTAL_URL)),
-  ),
-});
-export type MachineMapSettings = typeof MachineMapSettings.Type;
-
 export const ForkClientSettingsFields = {
   confirmTerminalClose: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Fork: a focused terminal hands keys that match an app keybinding to the app first. */
@@ -452,22 +438,6 @@ export const ForkServerSettingsFields = {
    * highlights it. Off: the link opens the thread only.
    */
   messageLinks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /**
-   * Fork: a notice when the machine map changes the access of a client to this server, or the
-   * access of the agents of this server to another machine. A server setting, so the mobile app
-   * reads it, and the machine map turns it on for every machine. Off by default, like every fork
-   * behavior that changes what clients show.
-   */
-  accessChangeNotices: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /**
-   * Fork: the server runs `kitshn provider` and shows itself as a card on the kitshn map, with
-   * its commands. See docs/fork/features.md "kitshn provider".
-   */
-  kitshnProvider: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /** Fork: machine map connection. See `MachineMapSettings`. */
-  machineMap: MachineMapSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  /** Fork: how a Cloudflare Access sign-in of a browser meets the clients of the map. See `ClientAccessMode`. */
-  clientAccess: ClientAccessMode.pipe(Schema.withDecodingDefault(Effect.succeed("off"))),
   /** Fork: user-built thread card layouts. See `ThreadCardLayouts`. */
   threadCardLayouts: ThreadCardLayouts.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /**
@@ -478,7 +448,7 @@ export const ForkServerSettingsFields = {
   sidebarTabs: SidebarTabs.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /**
    * Fork: the machine map reports and applies the rules of `keybindings.json` as the server
-   * setting `keybindings` (`KEYBINDINGS_SETTING_KEY`). See apps/machine-map/README.md "Keybinding sync".
+   * setting `keybindings` (`KEYBINDINGS_SETTING_KEY`).
    */
   keybindingSync: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
@@ -553,8 +523,6 @@ export const ForkServerSettingsPatchFields = {
   threadLinkChips: Schema.optionalKey(Schema.Boolean),
   threadLinksOpenDesktopApp: Schema.optionalKey(Schema.Boolean),
   messageLinks: Schema.optionalKey(Schema.Boolean),
-  accessChangeNotices: Schema.optionalKey(Schema.Boolean),
-  kitshnProvider: Schema.optionalKey(Schema.Boolean),
   keybindingSync: Schema.optionalKey(Schema.Boolean),
   previewLocalServerGroups: Schema.optionalKey(Schema.Boolean),
   mobilePublishedThemes: Schema.optionalKey(Schema.Boolean),
@@ -572,14 +540,6 @@ export const ForkServerSettingsPatchFields = {
     Schema.Struct({
       desktop: Schema.optionalKey(Schema.NullOr(StoredThreadCardLayout)),
       mobile: Schema.optionalKey(Schema.NullOr(StoredThreadCardLayout)),
-    }),
-  ),
-  clientAccess: Schema.optionalKey(ClientAccessMode),
-  /** Merges per field: a patched field replaces the saved one. */
-  machineMap: Schema.optionalKey(
-    Schema.Struct({
-      enabled: Schema.optionalKey(Schema.Boolean),
-      portalUrl: Schema.optionalKey(TrimmedNonEmptyString),
     }),
   ),
   /** Merges per field: a patched field replaces the saved one. */

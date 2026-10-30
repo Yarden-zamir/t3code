@@ -1,5 +1,5 @@
 /**
- * Fork: machine map settings in T3 Settings (apps/machine-map/SPEC.md, MM-411, MM-412).
+ * Fork: kitshn's shared `t3.settings` in T3 Settings (MM-411, MM-412).
  * A change saved for all environments becomes the shared value of the map, so offline and new
  * machines get it too. A row shows a marker when the map syncs its value.
  */
@@ -110,7 +110,7 @@ export function useShareKeybindingsToMachineMap() {
   const { state } = useMachineMapState(environmentId);
   const share = useAtomCommand(shareMachineMapSettings, { reportFailure: false });
   return () => {
-    if (environmentId === null || state === null || state.connection.status === "off") return;
+    if (environmentId === null || state === null || !state.joined) return;
     const syncOn = targets.find((target) => target.environmentId === environmentId)?.settings
       .keybindingSync;
     // The server reports no `keybindings` with the sync off, so the share would send nothing.
@@ -118,7 +118,7 @@ export function useShareKeybindingsToMachineMap() {
       toastManager.add({
         type: "info",
         title: "Keybindings not shared",
-        description: "Turn on Sync keybindings to share them through the machine map.",
+        description: "Turn on Sync keybindings to share them through kitshn.",
       });
       return;
     }
@@ -133,11 +133,7 @@ export function MachineMapSyncedMarker({ keys }: { keys: readonly (keyof ServerS
   const environmentId =
     context?.scope.kind === "environment" ? context.scope.environmentId : primaryEnvironmentId;
   const { state } = useMachineMapState(keys.length === 0 ? null : environmentId);
-  // A desired state saved before the map turned off syncs nothing.
-  const synced =
-    state === null || state.connection.status === "off"
-      ? {}
-      : (state.desired?.settings.server ?? {});
+  const synced = state === null || !state.joined ? {} : state.settings.server;
   if (!keys.some((key) => Object.hasOwn(synced, key))) return null;
   return (
     <Tooltip>
@@ -145,7 +141,7 @@ export function MachineMapSyncedMarker({ keys }: { keys: readonly (keyof ServerS
         render={
           <span
             tabIndex={0}
-            aria-label="Synced by the machine map"
+            aria-label="Synced through kitshn"
             className="inline-flex text-muted-foreground"
           />
         }
@@ -153,7 +149,7 @@ export function MachineMapSyncedMarker({ keys }: { keys: readonly (keyof ServerS
         <RefreshCwIcon className="size-3" />
       </TooltipTrigger>
       <TooltipPopup side="top">
-        Synced by the machine map. A change for all environments updates the shared value.
+        Synced through kitshn. A change for all environments updates the shared value.
       </TooltipPopup>
     </Tooltip>
   );

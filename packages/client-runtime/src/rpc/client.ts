@@ -72,7 +72,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeProjectClones
   | typeof WS_METHODS.terminalAttach
   | typeof WS_METHODS.terminalObserve
-  // Fork: machine map client state (apps/machine-map/SPEC.md).
+  // Fork: kitshn client state.
   | typeof WS_METHODS.machineMapSubscribe
   // Fork: preview local server groups (forkPreview.ts).
   | typeof WS_METHODS.forkPreviewSubscribeLocalListeners

@@ -39,7 +39,10 @@ import { ServerSettingsService } from "../serverSettings.ts";
 import { SourceControlRepositoryService } from "../sourceControl/SourceControlRepositoryService.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { MachineExec } from "../fork/machineMap/MachineExec.ts";
-import { MachineMap } from "../fork/machineMap/MachineMap.ts";
+import { KitshnCli } from "../fork/kitshn/KitshnCli.ts";
+import { KitshnGrants } from "../fork/kitshn/KitshnGrants.ts";
+import { KitshnProvider } from "../fork/kitshn/KitshnProvider.ts";
+import { KitshnSettingsSync } from "../fork/kitshn/KitshnSettingsSync.ts";
 import { MachinePeers } from "../fork/machineMap/MachinePeers.ts";
 import { ProcessRunner } from "../processRunner.ts";
 import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
@@ -87,7 +90,10 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(VcsStatusBroadcaster)({}),
   // Fork: the machine map and linked environment tools.
   Layer.mock(MachineExec)({}),
-  Layer.mock(MachineMap)({}),
+  Layer.mock(KitshnCli)({}),
+  Layer.mock(KitshnGrants)({ trustsPeerOrigin: () => false, peerOrigins: () => [] }),
+  Layer.mock(KitshnProvider)({}),
+  Layer.mock(KitshnSettingsSync)({}),
   Layer.mock(MachinePeers)({ machineOf: () => undefined }),
   Layer.mock(PeerForwarding)({}),
   Layer.mock(RemoteDelegation)({}),

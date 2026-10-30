@@ -45,7 +45,7 @@ const FORK_RESTORED_SETTINGS = [
   ["terminalThreadFontSizeMin", "Terminal thread smallest font"],
   ["terminalThreadFontSizeMax", "Terminal thread largest font"],
   ["keybindingSync", "Keybinding sync"],
-  ["environmentLabelFromMachineMap", "Environment name from machine map"],
+  ["environmentLabelFromMachineMap", "Environment name from kitshn"],
   ["pullRequestWatchRemarkFilter", "Pull request watch remarks"],
   ["agentSessionImportWindowDays", "Session import window"],
   ["agentSessionImportMaxMessages", "Imported messages per session"],
@@ -68,8 +68,6 @@ const FORK_RESTORED_SETTINGS = [
   ["confirmTerminalClose", "Terminal close confirmation"],
   ["restartReconnectWarningGrace", "Quiet reconnect after restart"],
   ["settingsFind", "Find in settings"],
-  ["accessChangeNotices", "Access change notices"],
-  ["kitshnProvider", "kitshn provider"],
 ] as const satisfies ReadonlyArray<
   readonly [keyof UnifiedSettings & keyof ScopedSettingsPatch, string]
 >;

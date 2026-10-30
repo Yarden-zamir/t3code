@@ -482,7 +482,10 @@ export const make = Effect.gen(function* () {
   ) {
     yield* Effect.annotateCurrentSpan({ channel });
     const allowsPrerelease = channel === "nightly";
-    yield* electronUpdater.setChannel(channel);
+    // Fork: every release carries only the nightly feed files. Without prereleases, the updater
+    // reads them from the GitHub latest release, the one that "Fork daily release" promotes.
+    // So the saved "latest" (Stable) is the daily feed.
+    yield* electronUpdater.setChannel("nightly");
     yield* electronUpdater.setAllowPrerelease(allowsPrerelease);
     // An older build can lack migrations this one ran. Only a guarded track switch's own check
     // may offer one. Fork: a local build (scripts/fork-desktop-mac.sh --install) carries a

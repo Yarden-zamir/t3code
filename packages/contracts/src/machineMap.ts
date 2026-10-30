@@ -1,8 +1,7 @@
 /**
- * Fork: machine map. Shared types of the portal (`apps/machine-map`), the T3 server and the
- * desktop app. Requirement numbers (MM-xxx) refer to `apps/machine-map/SPEC.md`.
+ * Fork: shared types of the T3 machines on kitshn: levels, settings sync, machine commands and
+ * device machine lists. MM-xxx numbers name the older machine map rules that kitshn's SPEC cites.
  */
-import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
@@ -18,10 +17,6 @@ import {
   AuthTerminalReadScope,
 } from "./auth.ts";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { ClientAccessMode } from "./settings.ts";
-
-/** Wire version of the machine and page protocols. Bump on a breaking change. */
-export const MACHINE_MAP_PROTOCOL = 1 as const;
 
 /** An ISO 8601 time, for example `2026-10-13T08:00:00.000Z`. */
 export const MapTime = TrimmedNonEmptyString;
@@ -30,16 +25,9 @@ export type MapTime = typeof MapTime.Type;
 export const MachineId = TrimmedNonEmptyString.pipe(Schema.brand("MachineId"));
 export type MachineId = typeof MachineId.Type;
 
-export const MachineKind = Schema.Literals(["laptop", "desktop", "server"]);
-export type MachineKind = typeof MachineKind.Type;
-
 /** What one machine can do on another (MM-302). */
 export const MachineLevel = Schema.Literals(["none", "read", "standard", "admin"]);
 export type MachineLevel = typeof MachineLevel.Type;
-
-/** What agents on a machine can do on the map itself (MM-802). */
-export const MachineMapRole = Schema.Literals(["none", "read", "propose", "edit"]);
-export type MachineMapRole = typeof MachineMapRole.Type;
 
 export const MACHINE_LEVEL_SCOPES: Readonly<Record<MachineLevel, ReadonlyArray<AuthGrantScope>>> = {
   none: [],
@@ -73,85 +61,6 @@ export const MACHINE_LEVEL_LINK_ACCESS = {
 export const machineSessionSubject = (machineId: MachineId): string => `machine:${machineId}`;
 
 /** The session subject of a client on a machine (MM-911). */
-export const clientSessionSubject = (clientId: string): string => `client:${clientId}`;
-
-const MapPixels = Schema.Number.check(Schema.isFinite());
-
-/**
- * A place on the map in map pixels (MM-1114). The map has no edges, so a place can be negative
- * or far out. Places of older portals were fractions; the portal moved them once.
- */
-export const MapPosition = Schema.Struct({ x: MapPixels, y: MapPixels });
-export type MapPosition = typeof MapPosition.Type;
-
-export const MachineRecord = Schema.Struct({
-  id: MachineId,
-  name: TrimmedNonEmptyString,
-  kind: MachineKind,
-  /** Client id of the machine token: the `common_name` of its Cloudflare Access JWT. */
-  tokenClientId: TrimmedNonEmptyString,
-  /** Tunnel hostname that the machine reports (MM-209). Null until its first report. */
-  hostname: Schema.NullOr(TrimmedNonEmptyString),
-  position: MapPosition,
-  mapRole: MachineMapRole,
-  createdAt: MapTime,
-});
-export type MachineRecord = typeof MachineRecord.Type;
-
-export const ArrowRecord = Schema.Struct({
-  from: MachineId,
-  to: MachineId,
-  level: MachineLevel,
-  /** Agents on `from` can call T3 tools on `to` (MM-303). */
-  agentTools: Schema.Boolean,
-  /**
-   * MM-1908: agents on `from` can run commands on `to` with `machine_exec`. It works only with
-   * agent tools on and a level of `standard` or `admin`. Maps before exec decode with false, and
-   * older machines ignore the field.
-   */
-  exec: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
-  /** MM-304: at this time the arrow returns to `revertLevel`. */
-  expiresAt: Schema.NullOr(MapTime),
-  revertLevel: Schema.NullOr(MachineLevel),
-});
-export type ArrowRecord = typeof ArrowRecord.Type;
-
-/**
- * MM-1915: what agents on `from` can do on `to`. Each capability follows from fields that the
- * target enforces: agent tools give a link (MM-1921) with the access of the level (MM-302), and
- * exec needs agent tools and `standard` or `admin` (MM-1908). Copy-secrets waits for MM-1917.
- */
-export const ArrowCapability = Schema.Literals(["readThreads", "launch", "exec", "settings"]);
-export type ArrowCapability = typeof ArrowCapability.Type;
-
-/** MM-1915: the capabilities of an arrow at its level now, in the order of `ArrowCapability`. */
-export const arrowCapabilities = (
-  arrow: Pick<ArrowRecord, "level" | "agentTools" | "exec">,
-): ReadonlyArray<ArrowCapability> => {
-  if (!arrow.agentTools || arrow.level === "none") return [];
-  // `read` links are read-only; `standard` launches fenced to its own threads; `admin` is not fenced.
-  const works = arrow.level === "standard" || arrow.level === "admin";
-  return ArrowCapability.literals.filter((capability) => {
-    switch (capability) {
-      case "readThreads":
-        return true;
-      case "launch":
-        return works;
-      case "exec":
-        return works && arrow.exec;
-      case "settings":
-        return arrow.level === "admin";
-    }
-  });
-};
-
-/** MM-1915: each capability in words, for lists such as "Mac on VPS: read threads, exec". */
-export const ARROW_CAPABILITY_TEXT: Record<ArrowCapability, string> = {
-  readThreads: "read threads",
-  launch: "launch and delegate",
-  exec: "exec",
-  settings: "settings",
-};
 
 /**
  * MM-1921: upstream links always expire, so a permanent arrow link reports this expiry. Clients
@@ -163,50 +72,11 @@ export const ARROW_LINK_NO_EXPIRY = "9999-12-31T00:00:00.000Z";
 export const ClientId = TrimmedNonEmptyString.pipe(Schema.brand("ClientId"));
 export type ClientId = typeof ClientId.Type;
 
-/** One browser key of a client (MM-905): the JWK thumbprint of its DPoP key. */
-const ClientKey = Schema.Struct({
-  thumbprint: TrimmedNonEmptyString,
-  addedAt: MapTime,
-  /** The browser and system that the key came from, for example "Safari on iPhone". */
-  describedAs: Schema.String,
-});
-
-export const ClientRecord = Schema.Struct({
-  id: ClientId,
-  name: TrimmedNonEmptyString,
-  /** The Cloudflare Access email that the client signed in with. */
-  email: Schema.NullOr(TrimmedNonEmptyString),
-  keys: Schema.Array(ClientKey),
-  /**
-   * MM-911: the Cloudflare Access service token of a native app, by its client id. The portal
-   * makes it when the app uses its invite, and never stores the secret. Older maps decode with none.
-   */
-  serviceToken: Schema.NullOr(Schema.Struct({ clientId: TrimmedNonEmptyString })).pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed(null)),
-  ),
-  position: MapPosition,
-  createdAt: MapTime,
-});
-export type ClientRecord = typeof ClientRecord.Type;
-
 /**
  * MM-906: the short code of a browser key, for example `K7qP-3m_x`. The waiting browser and the
  * portal both show it, so the owner can tell that they approve the right sign-in. It keeps 8
  * base64url characters with their case, about 48 bits, so a look-alike key is not practical.
  */
-export const clientKeyCode = (thumbprint: string): string =>
-  `${thumbprint.slice(0, 4)}-${thumbprint.slice(4, 8)}`;
-
-/** What one client can do on one machine (MM-309). A client never gets agent tools. */
-export const ClientArrowRecord = Schema.Struct({
-  client: ClientId,
-  to: MachineId,
-  level: MachineLevel,
-  /** MM-304: at this time the arrow returns to `revertLevel`. */
-  expiresAt: Schema.NullOr(MapTime),
-  revertLevel: Schema.NullOr(MachineLevel),
-});
-export type ClientArrowRecord = typeof ClientArrowRecord.Type;
 
 export const SettingScope = Schema.Literals(["server", "client"]);
 export type SettingScope = typeof SettingScope.Type;
@@ -277,61 +147,11 @@ const MACHINE_LOCAL_SETTINGS: Readonly<Record<SettingScope, ReadonlySet<string>>
 export const isMachineLocalSetting = (scope: SettingScope, key: string): boolean =>
   MACHINE_LOCAL_SETTINGS[scope].has(key);
 
-/**
- * MM-919: settings that only the owner changes, in the portal on the approval path (MM-1207) or
- * in the local desktop app. Agents, the "All environments" path (MM-411) and other clients cannot.
- */
-export const isOwnerOnlySetting = (scope: SettingScope, key: string): boolean =>
-  scope === "server" && key === "clientAccess";
-
 export const withoutMachineLocalSettings = (
   scope: SettingScope,
   values: Readonly<Record<string, unknown>>,
 ): SettingValues =>
   Object.fromEntries(Object.entries(values).filter(([key]) => !isMachineLocalSetting(scope, key)));
-
-/** MM-406: a key is shared when it has a shared value. Older maps also hold `managed`, which decodes away. */
-export const MapSettings = Schema.Struct({
-  shared: ScopedSettingValues,
-  overrides: Schema.Record(Schema.String, ScopedSettingValues),
-});
-export type MapSettings = typeof MapSettings.Type;
-
-export const MapPreset = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  arrows: Schema.Array(ArrowRecord),
-  createdAt: MapTime,
-});
-export type MapPreset = typeof MapPreset.Type;
-
-export const NoteColor = Schema.Literals(["yellow", "pink", "blue", "green"]);
-export type NoteColor = typeof NoteColor.Type;
-
-/** A sticky note on the map (MM-1109). */
-export const MapNote = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  text: TrimmedNonEmptyString.check(Schema.isMaxLength(500)),
-  color: NoteColor,
-  position: MapPosition,
-});
-export type MapNote = typeof MapNote.Type;
-
-export const MachineMapDocument = Schema.Struct({
-  revision: NonNegativeInt,
-  machines: Schema.Array(MachineRecord),
-  arrows: Schema.Array(ArrowRecord),
-  settings: MapSettings,
-  presets: Schema.Array(MapPreset),
-  /** Display data (MM-1109): no machine applies it. Older maps decode with none. */
-  notes: Schema.Array(MapNote).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
-  /** MM-904. Older maps decode with none. */
-  clients: Schema.Array(ClientRecord).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
-  /** MM-309: only arrows above the default `none` are stored. */
-  clientArrows: Schema.Array(ClientArrowRecord).pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed([])),
-  ),
-});
-export type MachineMapDocument = typeof MachineMapDocument.Type;
 
 /** Who made a change or sent a command (MM-702). */
 export const MapActor = Schema.Union([
@@ -344,64 +164,6 @@ export const MapActor = Schema.Union([
   Schema.TaggedStruct("portal", { reason: TrimmedNonEmptyString }),
 ]);
 export type MapActor = typeof MapActor.Type;
-
-/**
- * One change of the map. A revision, a proposal and an undo are lists of changes. The portal
- * computes the inverse of each change when it applies it, so any revision can be undone.
- */
-export const MapChange = Schema.Union([
-  Schema.TaggedStruct("setArrow", { arrow: ArrowRecord }),
-  Schema.TaggedStruct("setSetting", {
-    /** Null sets the shared value. */
-    machineId: Schema.NullOr(MachineId),
-    scope: SettingScope,
-    key: TrimmedNonEmptyString,
-    /** False clears the value: a machine follows the shared value again. */
-    present: Schema.Boolean,
-    value: Schema.Unknown,
-  }),
-  Schema.TaggedStruct("putMachine", { machine: MachineRecord }),
-  Schema.TaggedStruct("removeMachine", { machineId: MachineId }),
-  Schema.TaggedStruct("putPreset", { preset: MapPreset }),
-  Schema.TaggedStruct("removePreset", { name: TrimmedNonEmptyString }),
-  Schema.TaggedStruct("putNote", { note: MapNote }),
-  Schema.TaggedStruct("removeNote", { id: TrimmedNonEmptyString }),
-  Schema.TaggedStruct("putClient", { client: ClientRecord }),
-  Schema.TaggedStruct("removeClient", { clientId: ClientId }),
-  /** MM-907: only an approval adds a key. No owner change and no undo can add one. */
-  Schema.TaggedStruct("addClientKey", { clientId: ClientId, key: ClientKey }),
-  /** MM-909: removes one browser key. Its undo refuses, because the inverse adds a key. */
-  Schema.TaggedStruct("removeClientKey", { clientId: ClientId, thumbprint: TrimmedNonEmptyString }),
-  Schema.TaggedStruct("setClientArrow", { arrow: ClientArrowRecord }),
-]);
-export type MapChange = typeof MapChange.Type;
-
-export const MapRevision = Schema.Struct({
-  revision: NonNegativeInt,
-  at: MapTime,
-  actor: MapActor,
-  summary: TrimmedNonEmptyString,
-  changes: Schema.Array(MapChange),
-  /** The changes that undo this revision (MM-703). */
-  inverse: Schema.Array(MapChange),
-});
-export type MapRevision = typeof MapRevision.Type;
-
-/** A change from an agent that waits for the owner (MM-804). */
-export const MapProposal = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  at: MapTime,
-  expiresAt: MapTime,
-  actor: MapActor,
-  summary: TrimmedNonEmptyString,
-  changes: Schema.Array(MapChange),
-  /**
-   * Why it waits: the map role is `propose`, the change raises access for its own machine, or it
-   * raises access for another machine, which only the owner does (MM-803).
-   */
-  reason: Schema.Literals(["map-role", "self-escalation", "owner-only"]),
-});
-export type MapProposal = typeof MapProposal.Type;
 
 /** MM-501. `rotateToken` is not here: the portal sends it as its own message. */
 export const MachineCommandInput = Schema.Union([
@@ -568,92 +330,6 @@ export const MachineStatus = Schema.Struct({
 });
 export type MachineStatus = typeof MachineStatus.Type;
 
-export const MachinePresence = Schema.Struct({
-  online: Schema.Boolean,
-  lastSeenAt: Schema.NullOr(MapTime),
-  appliedRevision: Schema.NullOr(NonNegativeInt),
-  status: Schema.NullOr(MachineStatus),
-});
-export type MachinePresence = typeof MachinePresence.Type;
-
-export const PeerMachine = Schema.Struct({
-  id: MachineId,
-  name: TrimmedNonEmptyString,
-  kind: MachineKind,
-  hostname: Schema.NullOr(TrimmedNonEmptyString),
-  tokenClientId: TrimmedNonEmptyString,
-});
-export type PeerMachine = typeof PeerMachine.Type;
-
-/**
- * MM-213: the tunnel that "Add machine" made for a machine. `/enroll` delivers it once. The token
- * runs `cloudflared` (MM-1309). The Access values are the Cloudflare Access login of the server.
- */
-export const MachineTunnelGrant = Schema.Struct({
-  hostname: TrimmedNonEmptyString,
-  token: TrimmedNonEmptyString,
-  access: Schema.Struct({
-    teamDomain: TrimmedNonEmptyString,
-    aud: TrimmedNonEmptyString,
-    subjects: Schema.NonEmptyArray(TrimmedNonEmptyString),
-  }),
-});
-export type MachineTunnelGrant = typeof MachineTunnelGrant.Type;
-
-/** MM-912: a native client as the machine that it may use sees it. */
-export const DesiredClient = Schema.Struct({
-  id: ClientId,
-  name: TrimmedNonEmptyString,
-  tokenClientId: TrimmedNonEmptyString,
-  level: MachineLevel,
-  expiresAt: Schema.NullOr(MapTime),
-  revertLevel: Schema.NullOr(MachineLevel),
-});
-export type DesiredClient = typeof DesiredClient.Type;
-
-/** MM-917: a browser client as the machine that it may use sees it, by the keys it holds. */
-export const DesiredBrowserClient = Schema.Struct({
-  id: ClientId,
-  name: TrimmedNonEmptyString,
-  thumbprints: Schema.Array(TrimmedNonEmptyString),
-  level: MachineLevel,
-  expiresAt: Schema.NullOr(MapTime),
-  revertLevel: Schema.NullOr(MachineLevel),
-});
-export type DesiredBrowserClient = typeof DesiredBrowserClient.Type;
-
-/** What one machine must apply (MM-603, MM-1202). */
-export const MachineDesiredState = Schema.Struct({
-  revision: NonNegativeInt,
-  self: MachineRecord,
-  peers: Schema.Array(PeerMachine),
-  arrowsIn: Schema.Array(ArrowRecord),
-  arrowsOut: Schema.Array(ArrowRecord),
-  /** The shared values with this machine's overrides on top. Keys without a value are absent. */
-  settings: ScopedSettingValues,
-  /** MM-718: true while the emergency pause is on. The machine then locks every client except its own desktop app. Absent means false. */
-  paused: Schema.optionalKey(Schema.Boolean),
-  /**
-   * MM-912: the clients with a service token and an arrow above `none` to this machine. Absent
-   * from portals before native clients.
-   */
-  clients: Schema.optionalKey(Schema.Array(DesiredClient)),
-  /**
-   * MM-917: the clients with browser keys and an arrow above `none` to this machine. Absent from
-   * portals before browser keys; an older machine ignores it.
-   */
-  browserClients: Schema.optionalKey(Schema.Array(DesiredBrowserClient)),
-});
-export type MachineDesiredState = typeof MachineDesiredState.Type;
-
-/** MM-913: what a native app sends to `POST /enroll/client` with the code of its invite. */
-export const ClientEnrollRequest = Schema.Struct({
-  code: TrimmedNonEmptyString,
-  /** The phone or device, for example "Pixel 8 · Android 16". */
-  device: Schema.String.check(Schema.isMaxLength(200)),
-});
-export type ClientEnrollRequest = typeof ClientEnrollRequest.Type;
-
 /** MM-914: a machine that a client can reach, with the origin of its T3 server. */
 export const ClientMachine = Schema.Struct({
   id: MachineId,
@@ -666,9 +342,38 @@ export type ClientMachine = typeof ClientMachine.Type;
 export const ClientMachinesResponse = Schema.Struct({ machines: Schema.Array(ClientMachine) });
 export type ClientMachinesResponse = typeof ClientMachinesResponse.Type;
 
+/** K-1601: one provider card that a device token opens, with its machine and its T3 origin. */
+export const DeviceMachine = Schema.Struct({
+  ...ClientMachine.fields,
+  card: Schema.String,
+  kind: Schema.String,
+  level: Schema.String,
+});
+export type DeviceMachine = typeof DeviceMachine.Type;
+
+/** K-1601, K-1617: `GET https://kit.<zone>/device/machines` with the device's service token. */
+export const DeviceMachinesResponse = Schema.Struct({ machines: Schema.Array(DeviceMachine) });
+export type DeviceMachinesResponse = typeof DeviceMachinesResponse.Type;
+
+/** The device machine list of the zone of `origin` (`https://t3-<machine>.<zone>`), or null. */
+export const deviceMachinesUrl = (origin: string): string | null => {
+  const host = URL.parse(origin)?.hostname ?? "";
+  const dot = host.indexOf(".");
+  return dot <= 0 ? null : `https://kit.${host.slice(dot + 1)}/device/machines`;
+};
+
+/** The T3 servers of a device machine list: only `t3.app` cards. */
+export const t3AppMachines = (response: {
+  readonly machines: ReadonlyArray<DeviceMachine>;
+}): ClientMachinesResponse => ({
+  machines: response.machines
+    .filter((machine) => machine.kind === "t3.app")
+    .map(({ id, name, origin }) => ({ id, name, origin })),
+});
+
 /**
- * MM-913: the answer to a used invite. The secret is in this answer only. The app keeps it and
- * sends both values as `CF-Access-Client-Id` and `CF-Access-Client-Secret` on every request.
+ * K-1601: kitshn's answer to `POST /join/device`. The secret is in this answer only. The app
+ * keeps it and sends both values as `CF-Access-Client-Id` and `CF-Access-Client-Secret`.
  */
 export const ClientEnrollResponse = Schema.Struct({
   clientId: ClientId,
@@ -677,24 +382,11 @@ export const ClientEnrollResponse = Schema.Struct({
     clientId: TrimmedNonEmptyString,
     clientSecret: TrimmedNonEmptyString,
   }),
-  machines: Schema.Array(ClientMachine),
-  /** The absolute URL of `GET /client/machines`. */
+  machines: Schema.Array(DeviceMachine),
+  /** The absolute URL of `GET /device/machines`. */
   machinesUrl: TrimmedNonEmptyString,
 });
 export type ClientEnrollResponse = typeof ClientEnrollResponse.Type;
-
-/** Agent tools that run through the portal (MM-801). `machine_exec` goes machine to machine. */
-export const MapToolName = Schema.Literals([
-  "machines_read",
-  "machines_set_access",
-  "machines_set_setting",
-  "machines_command",
-  "machines_queue_cancel",
-  "machines_undo",
-  "machines_preset",
-  "machines_resources",
-]);
-export type MapToolName = typeof MapToolName.Type;
 
 /**
  * MM-1908: the outcome of one `machine_exec` run. `stopped`: a pause or an arrow change ended it.
@@ -709,254 +401,6 @@ export const MachineExecOutcome = Schema.Literals([
 ]);
 export type MachineExecOutcome = typeof MachineExecOutcome.Type;
 
-/** MM-1908: one `machine_exec` run, as the machine that ran it reports it. No output of the command. */
-export const MachineExecReport = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  at: MapTime,
-  /** The machine whose agent asked for the run. */
-  from: MachineId,
-  /** The calling thread on `from`, as `from` reports it. */
-  threadId: Schema.NullOr(Schema.String),
-  threadTitle: Schema.NullOr(Schema.String),
-  command: Schema.String,
-  cwd: Schema.String,
-  outcome: MachineExecOutcome,
-  exitCode: Schema.NullOr(Schema.Int),
-  durationMs: NonNegativeInt,
-  /** Why the call was refused. Only with the outcome `refused`. */
-  reason: Schema.optionalKey(Schema.String),
-  /**
-   * The machine that the command was for, when the calling machine reports its own refusal. The
-   * portal accepts it only from `from`. Absent: the reporting machine.
-   */
-  target: Schema.optionalKey(MachineId),
-});
-export type MachineExecReport = typeof MachineExecReport.Type;
-
-/** MM-1908: one run in the History view. The portal adds `to`: the machine that reported it. */
-export const MachineExecRecord = Schema.Struct({ ...MachineExecReport.fields, to: MachineId });
-export type MachineExecRecord = typeof MachineExecRecord.Type;
-
 /** MM-1922: `refused`: the link or the target refused the call, so the tool did not run. */
 export const MachineCallOutcome = Schema.Literals(["succeeded", "refused", "failed"]);
 export type MachineCallOutcome = typeof MachineCallOutcome.Type;
-
-/**
- * MM-1922: one T3 tool call that a machine forwarded over an arrow link, as that machine reports
- * it. Never the arguments or the output of the call.
- */
-export const MachineCallReport = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  at: MapTime,
-  /** The machine that the call went to. */
-  to: MachineId,
-  /** The calling thread on the reporting machine. */
-  threadId: Schema.NullOr(Schema.String),
-  threadTitle: Schema.NullOr(Schema.String),
-  tool: TrimmedNonEmptyString,
-  outcome: MachineCallOutcome,
-});
-export type MachineCallReport = typeof MachineCallReport.Type;
-
-/** MM-1922: one call in the History. The portal adds `from`: the machine that reported it. */
-export const MachineCallRecord = Schema.Struct({ ...MachineCallReport.fields, from: MachineId });
-export type MachineCallRecord = typeof MachineCallRecord.Type;
-
-export const MachineToPortal = Schema.Union([
-  Schema.TaggedStruct("hello", {
-    protocol: Schema.Literal(MACHINE_MAP_PROTOCOL),
-    appliedRevision: Schema.NullOr(NonNegativeInt),
-    status: MachineStatus,
-    /** Current values of every setting but the machine-local ones (MM-405, MM-406). */
-    settings: ScopedSettingValues,
-    /**
-     * MM-919: a `clientAccess` value that the local desktop app set and the portal has not seen
-     * yet. The portal records it before it sends the desired state.
-     */
-    localClientAccess: Schema.optionalKey(ClientAccessMode),
-  }),
-  Schema.TaggedStruct("status", { status: MachineStatus }),
-  Schema.TaggedStruct("applied", { revision: NonNegativeInt }),
-  /**
-   * MM-404: settings that changed on the machine, not through the map. MM-411: `shared` is true
-   * for a change made in T3 Settings for all environments.
-   */
-  Schema.TaggedStruct("localSettings", {
-    scope: SettingScope,
-    values: SettingValues,
-    shared: Schema.optionalKey(Schema.Boolean),
-  }),
-  Schema.TaggedStruct("commandResult", {
-    commandId: TrimmedNonEmptyString,
-    ok: Schema.Boolean,
-    result: Schema.NullOr(Schema.Unknown),
-    error: Schema.NullOr(Schema.String),
-  }),
-  Schema.TaggedStruct("toolCall", {
-    requestId: TrimmedNonEmptyString,
-    tool: MapToolName,
-    input: Schema.Unknown,
-    threadId: Schema.NullOr(Schema.String),
-    threadTitle: Schema.NullOr(Schema.String),
-  }),
-  /** MM-1908: this machine ran a command for another machine. */
-  Schema.TaggedStruct("execRan", { report: MachineExecReport }),
-  /** MM-1922: this machine forwarded a T3 tool call over an arrow link. */
-  Schema.TaggedStruct("callForwarded", { report: MachineCallReport }),
-  /** MM-207: the machine saved the new token secret. */
-  Schema.TaggedStruct("rotated", { tokenClientId: TrimmedNonEmptyString }),
-  /** MM-906: a browser key that no client holds signed in through Cloudflare Access. */
-  Schema.TaggedStruct("clientSeen", {
-    thumbprint: TrimmedNonEmptyString,
-    describedAs: Schema.String.check(Schema.isMaxLength(200)),
-    /** The Access subject: an email, or the client id of an owner service token. */
-    email: Schema.NullOr(TrimmedNonEmptyString),
-  }),
-]);
-export type MachineToPortal = typeof MachineToPortal.Type;
-
-export const PortalToMachine = Schema.Union([
-  Schema.TaggedStruct("desired", { state: MachineDesiredState }),
-  Schema.TaggedStruct("command", { command: MachineCommand }),
-  Schema.TaggedStruct("toolResult", {
-    requestId: TrimmedNonEmptyString,
-    ok: Schema.Boolean,
-    result: Schema.NullOr(Schema.Unknown),
-    error: Schema.NullOr(Schema.String),
-  }),
-  Schema.TaggedStruct("rotate", {
-    tokenClientId: TrimmedNonEmptyString,
-    tokenSecret: TrimmedNonEmptyString,
-  }),
-]);
-export type PortalToMachine = typeof PortalToMachine.Type;
-
-/** Everything a portal page shows (MM-1102). */
-export const PortalSnapshot = Schema.Struct({
-  /**
-   * MM-1120: the unit of map places. A page decodes only the unit of its own bundle, so a
-   * snapshot in a newer unit fails to decode and the page loads the new bundle. Pixels since
-   * MM-1114; a page of the fractions bundle reloads.
-   */
-  placeUnits: Schema.Literal("pixels"),
-  map: MachineMapDocument,
-  presence: Schema.Record(Schema.String, MachinePresence),
-  /** Current values that each machine reported, by machine id. */
-  reportedSettings: Schema.Record(Schema.String, ScopedSettingValues),
-  commands: Schema.Array(MachineCommand),
-  history: Schema.Array(MapRevision),
-  proposals: Schema.Array(MapProposal),
-});
-export type PortalSnapshot = typeof PortalSnapshot.Type;
-
-export const PortalEvent = Schema.Union([
-  Schema.TaggedStruct("snapshot", { snapshot: PortalSnapshot }),
-  Schema.TaggedStruct("revision", { revision: MapRevision, map: MachineMapDocument }),
-  Schema.TaggedStruct("presence", { machineId: MachineId, presence: MachinePresence }),
-  Schema.TaggedStruct("reportedSettings", { machineId: MachineId, settings: ScopedSettingValues }),
-  Schema.TaggedStruct("command", { command: MachineCommand }),
-  Schema.TaggedStruct("proposals", { proposals: Schema.Array(MapProposal) }),
-]);
-export type PortalEvent = typeof PortalEvent.Type;
-
-const PositiveInt = NonNegativeInt.check(Schema.isGreaterThan(0));
-
-/**
- * Inputs of the agent tools that run through the portal (MM-801). The T3 server declares its MCP
- * tools with these schemas, and the portal decodes `toolCall.input` with the same ones.
- */
-export const MapToolInputs = {
-  machines_read: Schema.Struct({}),
-  machines_set_access: Schema.Struct({
-    from: MachineId.annotate({ description: "Id of the machine that gets access." }),
-    to: MachineId.annotate({ description: "Id of the machine that it gets access to." }),
-    level: MachineLevel.annotate({
-      description:
-        "none: no access. read: read threads, files, terminals and diagnostics. standard: a normal client, which also changes settings. admin: standard plus client access and relay management.",
-    }),
-    agentTools: Schema.optionalKey(
-      Schema.Boolean.annotate({
-        description:
-          "True makes `to` a linked environment of `from`: agents on `from` call T3 tools there with environmentId. Omit to keep the current value. False also turns exec off.",
-      }),
-    ),
-    exec: Schema.optionalKey(
-      Schema.Boolean.annotate({
-        description:
-          "True lets agents on `from` run shell commands on `to` with machine_exec. It needs agent tools and the level standard or admin. Omit to keep the current value.",
-      }),
-    ),
-    expiresInMinutes: Schema.optionalKey(
-      PositiveInt.annotate({
-        description:
-          "Minutes until the arrow returns to its current permanent level. Omit for a permanent change.",
-      }),
-    ),
-  }),
-  machines_set_setting: Schema.Struct({
-    machineId: Schema.optionalKey(
-      MachineId.annotate({
-        description: "Machine to override. Omit to set the shared value of every machine.",
-      }),
-    ),
-    scope: SettingScope.annotate({
-      description:
-        "server: T3 server settings (settings.json). client: settings of all client apps.",
-    }),
-    key: TrimmedNonEmptyString.annotate({
-      description:
-        "Top-level settings key, for example recoverInterruptedTurns. Any key works except the machine-local ones, such as paths, secrets and machineMap.",
-    }),
-    value: Schema.optionalKey(
-      Schema.Unknown.annotate({
-        description:
-          "New value, in the type of the settings schema. Omit to clear: the machine follows the shared value again.",
-      }),
-    ),
-    clear: Schema.optionalKey(
-      Schema.Boolean.annotate({
-        description: "True removes the value, also when `value` is set.",
-      }),
-    ),
-  }),
-  machines_command: Schema.Struct({
-    machineId: MachineId.annotate({ description: "Id of the machine that runs the command." }),
-    command: MachineCommandInput.annotate({
-      description:
-        'The command, tagged by `_tag`, for example {"_tag":"stopAllAgents"}. The machine must list the tag in presence.<machineId>.status.commands.',
-    }),
-    delivery: Schema.optionalKey(
-      CommandDelivery.annotate({
-        description:
-          "online (default): run when the machine is connected. idle: also wait until no agent runs there.",
-      }),
-    ),
-    expiresInMinutes: Schema.optionalKey(
-      PositiveInt.annotate({
-        description: "Minutes until a queued command expires. Default 1440 (24 hours).",
-      }),
-    ),
-  }),
-  machines_queue_cancel: Schema.Struct({
-    commandId: TrimmedNonEmptyString.annotate({
-      description: "Id of a command with status queued, from `commands` in machines_read.",
-    }),
-  }),
-  machines_undo: Schema.Struct({
-    revision: NonNegativeInt.annotate({
-      description: "Revision number to undo, from `history` in machines_read.",
-    }),
-  }),
-  machines_preset: Schema.Struct({
-    action: Schema.Literals(["save", "apply"]).annotate({
-      description:
-        "save: store the current arrows as preset `name`. apply: set every arrow from preset `name`.",
-    }),
-    name: TrimmedNonEmptyString.annotate({ description: "Preset name." }),
-  }),
-  /** MM-1507: the resource history of one machine. The range defaults to `hour`. */
-  machines_resources: Schema.Struct({
-    machineId: MachineId,
-    range: Schema.optionalKey(Schema.Literals(["hour", "day", "month"])),
-  }),
-} satisfies Record<MapToolName, Schema.Top>;

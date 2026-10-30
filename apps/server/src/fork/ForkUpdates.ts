@@ -31,7 +31,7 @@ import * as ServerConfig from "../config.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
-import { newerForkRelease } from "./forkReleases.ts";
+import { type ForkUpdateChannel, newerForkRelease } from "./forkReleases.ts";
 
 // Each check reads the GitHub release index once. Unauthenticated, GitHub
 // allows 60 requests an hour for each address.
@@ -94,6 +94,8 @@ export class ForkUpdates extends Context.Service<
      * `heldSince` (epoch ms). The headless hold rules apply, and the stream prints the notice.
      */
     readonly terminalHold: (heldSince: number) => Stream.Stream<ForkUpdateTerminalHold>;
+    /** K-717: the release feed that updates follow, from the T3 card. Nightly until kitshn says. */
+    readonly setChannel: (channel: ForkUpdateChannel) => Effect.Effect<void>;
   }
 >()("t3/fork/ForkUpdates") {}
 
@@ -114,7 +116,9 @@ const make = Effect.gen(function* () {
   const installWhenIdle = yield* Ref.make(false);
   const headlessHold = yield* Ref.make<TerminalHold>(null);
 
-  const newerRelease = newerForkRelease(httpClient, packageJson.version).pipe(
+  const channel = yield* Ref.make<ForkUpdateChannel>("nightly");
+  const newerRelease = Ref.get(channel).pipe(
+    Effect.flatMap((current) => newerForkRelease(httpClient, packageJson.version, current)),
     Effect.mapError((error) => new ForkUpdateError({ reason: error.message })),
   );
 
@@ -292,7 +296,14 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  return ForkUpdates.of({ available, install, terminalHold });
+  return ForkUpdates.of({
+    available,
+    install,
+    terminalHold,
+    setChannel: Effect.fn("ForkUpdates.setChannel")(function* (next) {
+      yield* Ref.set(channel, next);
+    }),
+  });
 });
 
 export const layer = Layer.effect(ForkUpdates, make);

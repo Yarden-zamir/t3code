@@ -70,6 +70,19 @@ export class KitshnCli extends Context.Service<
     ) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
     /** Registers `url` as the T3 attester of this machine's daemon, without a credential. */
     readonly setAttester: (url: string) => Effect.Effect<void, KitshnCliError>;
+    /**
+     * K-602: `kitshn join <code> --server <server>` as the server user, which joins this machine
+     * and starts its daemon. Its output, or the reason that it failed.
+     */
+    readonly join: (input: {
+      readonly code: string;
+      readonly server: string;
+    }) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
+    /**
+     * K-1609, K-621: `kitshn link-check <socket>` exits 0 when this account's daemon serves that
+     * link socket or pipe. It runs with no credential.
+     */
+    readonly linkCheck: (socket: string) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
     /** The path of the machine's kitshn 2 binary, after its version check. */
     readonly binary: Effect.Effect<string, KitshnCliError>;
   }
@@ -89,14 +102,27 @@ const make = Effect.gen(function* () {
   const candidates = Effect.gen(function* () {
     const home = yield* HostProcess.HomeDirectory;
     const env = yield* HostProcess.Environment;
+    const windows = (yield* HostProcess.Platform) === "win32";
+    const name = windows ? "kitshn.exe" : "kitshn";
+    // K-625: the Windows join puts kitshn in %LOCALAPPDATA%\Programs\kitshn.
+    const installed = windows
+      ? path.join(
+          env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"),
+          "Programs",
+          "kitshn",
+          name,
+        )
+      : path.join(home, ...KITSHN_2_HOME_PATH);
     // A relative entry would make the spawn search PATH again, so the checked file may not run.
-    const pathDirectories = (env.PATH ?? "").split(":").filter((entry) => path.isAbsolute(entry));
-    return [
-      ...new Set([
-        path.join(home, ...KITSHN_2_HOME_PATH),
-        ...pathDirectories.map((directory) => path.join(directory, "kitshn")),
-      ]),
-    ];
+    const pathDirectories = (env.PATH ?? env.Path ?? "")
+      .split(windows ? ";" : ":")
+      .filter((entry) => path.isAbsolute(entry));
+    return {
+      windows,
+      files: [
+        ...new Set([installed, ...pathDirectories.map((directory) => path.join(directory, name))]),
+      ],
+    };
   });
 
   const isKitshn2 = Effect.fn("KitshnCli.isKitshn2")(function* (
@@ -124,15 +150,13 @@ const make = Effect.gen(function* () {
   });
 
   const binary = Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") {
-      return yield* fail("not_installed", "kitshn 2 runs on macOS and Linux, not on Windows.");
-    }
     const refused: Array<string> = [];
-    for (const candidate of yield* candidates) {
+    const { windows, files } = yield* candidates;
+    for (const candidate of files) {
       const info = yield* fileSystem.stat(candidate).pipe(Effect.option);
-      if (Option.isNone(info) || info.value.type !== "File" || (info.value.mode & 0o111) === 0) {
-        continue;
-      }
+      if (Option.isNone(info) || info.value.type !== "File") continue;
+      // Windows has no execute bit; the `.exe` name marks a program there.
+      if (!windows && (info.value.mode & 0o111) === 0) continue;
       if (yield* isKitshn2(candidate, info.value.mtime)) return candidate;
       refused.push(candidate);
     }
@@ -165,6 +189,50 @@ const make = Effect.gen(function* () {
           "run_failed",
           `kitshn did not finish in ${RUN_TIMEOUT}. The kitshn daemon gives each call 120 seconds.`,
         );
+      }
+      return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
+    },
+  );
+
+  const join: KitshnCli["Service"]["join"] = Effect.fn("KitshnCli.join")(function* (input) {
+    const command = yield* binary;
+    const output = yield* runner
+      .run({
+        command,
+        args: ["join", input.code, "--server", input.server],
+        env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+        timeout: RUN_TIMEOUT,
+        timeoutBehavior: "timedOutResult",
+      })
+      .pipe(
+        Effect.mapError((error) =>
+          fail("run_failed", `kitshn at ${command} did not run: ${error._tag}.`),
+        ),
+      );
+    if (output.timedOut || output.code === null) {
+      return yield* fail("run_failed", `kitshn join did not finish in ${RUN_TIMEOUT}.`);
+    }
+    return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
+  });
+
+  const linkCheck: KitshnCli["Service"]["linkCheck"] = Effect.fn("KitshnCli.linkCheck")(
+    function* (socket) {
+      const command = yield* binary;
+      const output = yield* runner
+        .run({
+          command,
+          args: ["link-check", socket],
+          env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+          timeout: VERSION_TIMEOUT,
+          timeoutBehavior: "timedOutResult",
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            fail("run_failed", `kitshn at ${command} did not run: ${error._tag}.`),
+          ),
+        );
+      if (output.timedOut || output.code === null) {
+        return yield* fail("run_failed", `kitshn link-check did not finish in ${VERSION_TIMEOUT}.`);
       }
       return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
     },
@@ -225,7 +293,7 @@ const make = Effect.gen(function* () {
     },
   );
 
-  return KitshnCli.of({ run, setAttester, binary });
+  return KitshnCli.of({ run, join, linkCheck, setAttester, binary });
 });
 
 export const layer = Layer.effect(KitshnCli, make);

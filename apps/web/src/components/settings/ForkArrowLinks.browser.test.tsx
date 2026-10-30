@@ -30,7 +30,7 @@ vi.mock(import("~/state/environments"), async (original) => ({
     environments: [
       {
         environmentId: EnvironmentId.make("mac"),
-        serverConfig: { settings: { machineMap: { portalUrl: "https://portal.example.com" } } },
+        serverConfig: { settings: {} },
       },
     ],
   })) as never,
@@ -54,7 +54,7 @@ const setup = (links: ReadonlyArray<PeerLinkSummary>) => {
   state.links = links;
 };
 
-it("shows arrow links read-only, with the portal and the real end of a temporary arrow", async () => {
+it("shows kitshn links read-only, with the real end of a share", async () => {
   setup([link("vps", ARROW_LINK_NO_EXPIRY), link("win", "2099-01-02T03:04:00.000Z")]);
   await using screen = await render(
     <LinkedEnvironmentsSettings
@@ -63,19 +63,18 @@ it("shows arrow links read-only, with the portal and the real end of a temporary
       isSearchTarget={false}
     />,
   );
-  await expect
-    .element(screen.getByRole("link", { name: "Set arrows in the portal" }))
-    .toHaveAttribute("href", "https://portal.example.com");
+  // A page outside a kitshn zone (here localhost) has no map to open.
+  expect(screen.getByRole("link", { name: "Change access on the map" }).query()).toBeNull();
   expect(screen.getByRole("button", { name: "Link" }).query()).toBeNull();
   expect(screen.getByRole("button", { name: "Forget" }).query()).toBeNull();
   await expect
-    .element(screen.getByText(/Reachable until .*2099.*Renew it in the portal/))
+    .element(screen.getByText(/Reachable until .*2099.*Renew it on the kitshn map/))
     .toBeVisible();
   expect(screen.getByText(/Link it again/).query()).toBeNull();
   expect(screen.getByText(/9999/).query()).toBeNull();
 });
 
-it("points an empty list to the portal instead of manual linking", async () => {
+it("points an empty list to the kitshn map instead of manual linking", async () => {
   setup([]);
   await using screen = await render(
     <LinkedEnvironmentsSettings
@@ -84,7 +83,7 @@ it("points an empty list to the portal instead of manual linking", async () => {
       isSearchTarget={false}
     />,
   );
-  await expect.element(screen.getByText(/Set arrows in the portal\.$/)).toBeVisible();
+  await expect.element(screen.getByText(/on the kitshn map\.$/)).toBeVisible();
   expect(screen.getByText(/Link another machine/).query()).toBeNull();
   expect(screen.getByRole("button", { name: "Link" }).query()).toBeNull();
 });

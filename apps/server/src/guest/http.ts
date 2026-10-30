@@ -30,6 +30,7 @@ import { htmlRenderFileName } from "@t3tools/shared/htmlRender";
 
 import { assetFileResponse, downloadContentDisposition } from "../http.ts";
 import type { GuestUpload } from "./guestAttachments.ts";
+import { kitshnGuestAccess } from "../fork/kitshn/kitshnGuest.ts";
 import { GuestShareAccessError, GuestShareService } from "./GuestShareService.ts";
 
 // Cloudflare closes idle streams after about 100 seconds.
@@ -81,10 +82,18 @@ const sessionFor = (request: HttpServerRequest.HttpServerRequest, shareId: strin
 const requestedShareId = (request: HttpServerRequest.HttpServerRequest) =>
   new URLSearchParams(request.url.split("?", 2)[1] ?? "").get(GUEST_SHARE_PARAM);
 
-/** The session for the share the request names in `?share=`. */
-const sessionToken = Effect.map(HttpServerRequest.HttpServerRequest, (request) =>
-  sessionFor(request, requestedShareId(request)),
-);
+/**
+ * The session for the share the request names in `?share=`: the guest cookie, or else a fork
+ * kitshn `t3.thread` grant. `lost` completes when that grant ends.
+ */
+const guestAccess = Effect.gen(function* () {
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const shareId = requestedShareId(request);
+  const cookie = sessionFor(request, shareId);
+  if (cookie !== "" || shareId === null) return { token: cookie, lost: Effect.never };
+  return (yield* kitshnGuestAccess(request, shareId)) ?? { token: "", lost: Effect.never };
+});
+const sessionToken = Effect.map(guestAccess, (access) => access.token);
 
 /** The `?item=` a per-item route names. */
 const itemParam = Effect.map(HttpServerRequest.HttpServerRequest, (request) =>
@@ -213,7 +222,7 @@ const submitRoute = HttpRouter.add(
     // The session is checked before the body is read, so only a guest can make the server parse
     // and store up to 10 MB.
     const shareId = requestedShareId(request);
-    const session = sessionFor(request, shareId);
+    const session = yield* sessionToken;
     yield* guestShares.check(session);
     const submission = yield* readSubmission;
     if (submission === null || submission.fields.shareId !== shareId) return yield* badRequest;
@@ -231,8 +240,11 @@ const streamRoute = HttpRouter.add(
   `${GUEST_ROUTE_PREFIX}/stream`,
   Effect.gen(function* () {
     const guestShares = yield* GuestShareService;
-    return yield* guestShares.stream(yield* sessionToken).pipe(
-      Effect.map((events) => eventStreamResponse(events, encodeStreamEvent)),
+    const access = yield* guestAccess;
+    return yield* guestShares.stream(access.token).pipe(
+      Effect.map((events) =>
+        eventStreamResponse(events.pipe(Stream.interruptWhen(access.lost)), encodeStreamEvent),
+      ),
       Effect.catchTags({ GuestShareAccessError: errorResponse }),
     );
   }),
@@ -301,8 +313,11 @@ const commandOutputRoute = HttpRouter.add(
     const itemId = yield* itemParam;
     if (!itemId) return yield* badRequest;
     const guestShares = yield* GuestShareService;
-    return yield* guestShares.commandOutput(yield* sessionToken, itemId).pipe(
-      Effect.map((frames) => eventStreamResponse(frames, encodeOutputFrame)),
+    const access = yield* guestAccess;
+    return yield* guestShares.commandOutput(access.token, itemId).pipe(
+      Effect.map((frames) =>
+        eventStreamResponse(frames.pipe(Stream.interruptWhen(access.lost)), encodeOutputFrame),
+      ),
       Effect.catchTags({ GuestShareAccessError: errorResponse }),
     );
   }),

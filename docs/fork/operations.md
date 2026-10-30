@@ -55,15 +55,15 @@ To adopt another open pull request, merge its head with `git merge --no-ff` on a
 
 The fork rules for upstream's linked environments:
 
-- The fork does not use upstream's manual links. `MachinePeers` gives `PeerLinks` and `PeerMcpClient` the machine map arrows (MM-1921), and its `link` and `unlink` refuse.
+- The fork does not use upstream's manual links. `MachinePeers` gives `PeerLinks` and `PeerMcpClient` the kitshn links, and its `link` and `unlink` refuse.
 - The fork hooks in upstream files: `MachinePeers.layer` in the runtime core of `server.ts`, and the refusal layer in `cli/environment.ts`.
-- Upstream's Labs setting `linkedEnvironmentsEnabled` gates links on each machine, also the arrow links. Set it on the owner's machines through the machine map.
+- Upstream's Labs setting `linkedEnvironmentsEnabled` gates links on each machine, also the kitshn links. Set it on the owner's machines through the shared `t3.settings` on kitshn.
 
 ### Fork Release
 
 `.github/workflows/fork-release.yml` builds the desktop apps and the server archives on each push to main and on manual dispatch.
 
-- A push that changes only `docs`, `*.md` or `apps/machine-map` builds no release. The next release lists its commits. If the commit already has a release, the run stops early.
+- A push that changes only `docs` or `*.md` builds no release. The next release lists its commits. If the commit already has a release, the run stops early.
 - Only one release run works at a time, and no run is cancelled, so a release is never half published. GitHub keeps one waiting run, and a newer push replaces it. A burst of pushes thus builds only the running commit and the newest commit.
 - `scripts/fork-release-notes.ts` writes the release notes from the first-parent commits on main after the previous release tag. Each line names its source, upstream or fork. The fork pull requests come last, because the update popover shows the last lines first and drops headings.
 - The release builds macOS arm64 (signed), Windows x64 (unsigned), and Linux x64 and arm64 AppImages (unsigned) in parallel, on GitHub-hosted runners. Each platform publishes when its build is done.
@@ -102,7 +102,7 @@ Each day at 09:00 Israel time, the VPS task "Fork daily release" promotes a nigh
 - The job "Fork CI result" fails when any Fork CI job fails or is cancelled. Branch protection requires this one check.
 - Fork CI compares a push with the commit of the last green push run, and a pull request with its base. Upstream's `.github/scripts/ci-changes.cjs` maps the changed files to packages and their dependents. A pull request runs only the jobs that those packages need. When only `docs/` or Markdown files changed, only the Lint job runs, on the changed files. A code push to main and a manual run run every job.
 - Each job installs through upstream's `.github/actions/setup-ci-deps`. A cache hit makes no request to npm.
-- The Lint job also runs `scripts/fork-check-doc-links.ts`. It fails on a relative link or an anchor that does not resolve in `README.md`, `docs/fork*`, `docs/fork/` or `apps/machine-map/*.md`.
+- The Lint job also runs `scripts/fork-check-doc-links.ts`. It fails on a relative link or an anchor that does not resolve in `README.md`, `docs/fork*` or `docs/fork/`.
 - The Lint job also fetches upstream main and runs `scripts/fork-check-migrations.ts`. See [Migrations](#migrations).
 - The Lint job also fetches the commits of HEAD without their files and runs `node scripts/fork-adopted-prs.ts check`. See [Adopted upstream pull requests](#adopted-upstream-pull-requests).
 - Fork runs skip the upstream tests in `apps/server/src/fork/excludedUpstreamTests.ts` and `apps/web/src/forkExcludedUpstreamTests.ts`, each with its reason. The web list holds browser tests that the smaller runner of Fork CI cannot run in time.
@@ -143,7 +143,7 @@ Name the fork PRs that the plan builds on. Check fork merges first, then upstrea
 - A merge without conflicts can still break a fork feature. Each fork feature that changes upstream behavior needs a test of that behavior, so that the fork tests catch the break.
 - Put fork tests in a fork test file next to the upstream test file: `foo.fork.test.ts` next to `foo.test.ts`, `Foo.fork.browser.test.tsx` next to `Foo.browser.test.tsx`. Do not add tests to an upstream test file. Change an upstream test only when a fork change breaks it, and keep that change small. Upstream changes its test files often, so fork tests in them cause sync conflicts.
 - Prefer automated setup over manual instructions when the permission cost is acceptable. Keep documentation for steps that code cannot do.
-- If setup lacks permission or an API refuses it, show the manual step, dashboard links and documentation links. Name the missing permission; never show the raw API error. Apply the portal's MM-1209 fallback rule to all fork automation.
+- If setup lacks permission or an API refuses it, show the manual step, dashboard links and documentation links. Name the missing permission; never show the raw API error. Apply this rule to all fork automation.
 
 ### Harmless verification
 
@@ -256,12 +256,13 @@ A local build is the fast way to test a change on this Mac. It does not replace 
 
 A headless server that runs as the upstream background service (`t3 service install`) updates from the fork releases. The install is the upstream self-update. It unpacks the release into `<T3 home>/runtime/versions/<version>`, and the service launcher starts it on trial. If the new version does not start, the launcher goes back to the old version.
 
-- Keep a release on each code push to main; never slow the update path. See [Fork Release](#fork-release) for docs-only and portal-only exceptions.
-- Servers install updates only when idle. Use `whenIdle: true` for manual machine map updates too.
+- Keep a release on each code push to main; never slow the update path. See [Fork Release](#fork-release) for the docs-only exception.
+- Servers install updates only when idle.
 - Ask the owner before migrating Oracle-VPS or VPS to another install path. Routine version-directory updates are not install-path migrations.
 - The user setting is [Server auto-update](features.md#server-auto-update). It checks the fork releases every 5 minutes.
 - A release is ready when it has `SHA256SUMS`. A version that rolled back or failed is not tried again. A newer release is tried.
-- The machine map command `installUpdate` works on such a server too (MM-505). Use `whenIdle: true`: it waits for no running agent turn or background shell, even with `forkAutoUpdate` off. A program in a terminal thread holds it for at most 6 hours, then the update ends the program after a notice in its terminal. `whenIdle: false` restarts immediately; do not use it for routine updates.
+- The kitshn command install-update of the T3 card works on such a server too. It waits for no running agent turn or background shell, even with `forkAutoUpdate` off. A program in a terminal thread holds it for at most 6 hours, then the update ends the program after a notice in its terminal.
+- The `updateChannel` setting of the T3 card picks the feed: `nightly` (default) takes each nightly, `daily` takes only the releases that [Daily release](#daily-release) promoted. A server never installs an older build when the feed changes.
 - A restart stops the running turns. "Continue threads after restarts" (`continueThreadsAfterServerUpdate`) and [Recover interrupted agents](features.md#recover-interrupted-agents) continue them.
 - "Update everything" and `t3 update` also install fork releases. A self-update request for a version without a fork release installs the newest fork release instead. The Play Store app checks upstream releases, so its "Check for updates" installs the newest fork release.
 
@@ -284,22 +285,21 @@ scripts/fork-deploy-local.sh <ssh-host>
 
 ## Install the fork
 
-`scripts/fork-install/` installs the fork on a new machine and joins the machine map. The join dialog of the portal shows these commands with the join code (MM-211).
+`scripts/fork-install/` installs the fork on a new machine. Then join the machine to kitshn: `kitshn join <code> --server <address>`. "Add machine" on the kitshn map gives the code.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Yarden-zamir/t3code/main/scripts/fork-install/install.sh | bash -s -- --join <code>
+curl -fsSL https://raw.githubusercontent.com/Yarden-zamir/t3code/main/scripts/fork-install/install.sh | bash
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Yarden-zamir/t3code/main/scripts/fork-install/install.ps1))) -Join <code>
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Yarden-zamir/t3code/main/scripts/fork-install/install.ps1)))
 ```
 
 - On macOS, `install.sh` downloads the newest nightly `.dmg`, copies the app to `/Applications` and opens it.
 - On Windows, `install.ps1` downloads and runs the newest nightly `.exe`.
 - On Linux with a display (`DISPLAY` or `WAYLAND_DISPLAY`), `install.sh` downloads the newest nightly AppImage to `~/Applications/T3-Code.AppImage`, adds a menu entry and starts it. AppImages need FUSE 2, for example `sudo apt install libfuse2t64`.
 - The macOS and Linux desktop installs keep an installed app, because the app updates itself. `--force` replaces it.
-- With a join code, a desktop install writes the code to `~/.t3/userdata/machine-map-join-code` (or below `T3CODE_HOME`). The app server joins with it at its next start and deletes it. If the app was open, quit it and open it again. The code expires after 10 minutes.
-- On Linux without a display, `install.sh` runs `scripts/install.sh`, the upstream installer pointed at the fork releases. It unpacks the newest release into `~/.t3/runtime/versions/<version>` and links `~/.local/bin/t3` to it. Then it runs `t3 service install` and `t3 machine-map join <code>`. The machine needs no Node.
+- On Linux without a display, `install.sh` runs `scripts/install.sh`, the upstream installer pointed at the fork releases. It unpacks the newest release into `~/.t3/runtime/versions/<version>` and links `~/.local/bin/t3` to it. Then it runs `t3 service install`. The machine needs no Node.
 - The drop-in file `~/.config/systemd/user/t3code.service.d/fork.conf` keeps the headless server on `127.0.0.1:3773` with the PATH of the installer shell.
 - `t3 service install` turns on lingering, so the server keeps running after logout. If that needs an administrator, it says so. See [background-service.md](../user/background-service.md#troubleshooting).
 - The installers read the release list of the GitHub API, because the nightlies are prereleases and `releases/latest` skips them.
@@ -309,26 +309,23 @@ curl -fsSL https://raw.githubusercontent.com/Yarden-zamir/t3code/main/scripts/fo
 
 These steps set up a Linux server without a display, for example an Oracle Cloud Ubuntu 24.04 machine on Ampere (arm64). Run them over SSH as the normal user, for example `ubuntu`. Do not run the installer with `sudo` or `su`, because the server runs as a systemd user service.
 
-1. In the portal, click "Add machine". The join dialog shows the Linux command with the join code.
-2. On the machine, run that command:
+1. On the machine, install the fork:
 
    ```sh
    sudo apt-get update && sudo apt-get install -y curl tar ca-certificates libatomic1
-   curl -fsSL https://raw.githubusercontent.com/Yarden-zamir/t3code/main/scripts/fork-install/install.sh | bash -s -- --join <code>
+   curl -fsSL https://raw.githubusercontent.com/Yarden-zamir/t3code/main/scripts/fork-install/install.sh | bash
    ```
 
-3. Wait until the join dialog shows that the machine joined.
+2. Install kitshn 2 and join the machine with a code from "Add machine" on the kitshn map.
+3. Set up the tunnel, see [Set up the tunnel by hand](#set-up-the-tunnel-by-hand).
 
-The portal makes the tunnel `t3-<name>.yarden-zamir.com` for the machine (MM-213). The server saves it, restarts once and runs the pinned `cloudflared` from `~/.t3/tools/cloudflared/` as a child process (MM-1309).
-
-- If the join code expired, make a new code in the machine panel of the portal.
 - The tunnel connects outbound, and the server listens only on `127.0.0.1`, so the cloud firewall needs no change. On Oracle Cloud, keep the default security list and the `iptables` rules of the image.
-- To check the server, run `t3 service status` and `systemctl --user status t3code.service`. The `cloudflared` log is `~/.t3/userdata/logs/cloudflared.log`.
+- To check the server, run `t3 service status` and `systemctl --user status t3code.service`.
 - To update the server by hand, run `t3 update`. See [Server updates](#server-updates).
 
 ### Set up the tunnel by hand
 
-Use these steps only when the join dialog says "No tunnel", for example when the portal token lacks "Cloudflare Tunnel: Edit". A tunnel from the environment wins over the tunnel of a join (MM-1310).
+T3 does not make the tunnel of a machine. Until kitshn makes it from the `site` of the T3 card, set it up with these steps.
 
 1. In Cloudflare Zero Trust, create a tunnel, for example `t3-oracle`. Give it the public hostname `t3-oracle.yarden-zamir.com` with the service `http://127.0.0.1:3773`. Keep the tunnel token.
 2. Make sure that the Access app "T3 Code servers" covers the new hostname.
@@ -340,7 +337,7 @@ Use these steps only when the join dialog says "No tunnel", for example when the
    sudo cloudflared service install <tunnel-token>
    ```
 
-4. Give the server its tunnel hostname and the Cloudflare Access login. Copy the Access values from the server environment of the VPS. The subjects list holds the owner email and the client id of the service token that the desktop app uses for remote machines. Without that client id, the desktop app cannot open this machine. `t3 service install` and `t3 update` replace only the unit file, so this drop-in file stays after an update.
+4. Give the server its tunnel hostname and the Cloudflare Access login. Copy the Access values from the server environment of the VPS. The kitshn grants decide who gets in. `t3 service install` and `t3 update` replace only the unit file, so this drop-in file stays after an update.
 
    ```sh
    mkdir -p ~/.config/systemd/user/t3code.service.d
@@ -349,7 +346,6 @@ Use these steps only when the join dialog says "No tunnel", for example when the
    Environment=T3CODE_TUNNEL_PAIRING_URL=https://t3-oracle.yarden-zamir.com
    Environment=T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN=<team>.cloudflareaccess.com
    Environment=T3CODE_CLOUDFLARE_ACCESS_AUD=<audience tag of the Access app>
-   Environment=T3CODE_CLOUDFLARE_ACCESS_SUBJECTS=<owner email>,<client id of the desktop service token>
    EOF
    systemctl --user daemon-reload && systemctl --user restart t3code.service
    ```
@@ -366,24 +362,26 @@ The script stops if kitshn did not take the address: the CNAME record must point
 
 Do these steps for one machine at a time. The example uses `mac`.
 
-1. Before the `oracle-vps` handover, check what `t3-oracle-vps.yarden-zamir.com` serves. Its DNS record comment says "T3 machine map".
-2. In kitshn, open the T3 card of the machine and select "Take the address…". Wait until the card shows the address.
-3. Make a Cloudflare API token with "Access: Apps and Policies Edit", "Cloudflare Tunnel Edit" and "DNS Read" for the account and the zone `yarden-zamir.com`.
-4. Write the token to a file, for example with T3 `request_secret` and delivery "file". Do not paste the token in a chat.
-5. Run a dry run, and read the steps and API calls that it prints:
+1. Install a T3 release with the kitshn provider on the machine, and check that it registers with kitshn: Settings > Machines shows "Connected to kitshn". kitshn refuses "Take the address…" until the daemon reports `access`. Until the handover, the host keeps its portal path: the portal Access application, the portal tunnel, and on `oracle-vps` the tunnel that T3 runs from `machine-map-tunnel.json`.
+2. Give each phone that used a portal app token a kitshn device invite, see [Device invites](features.md#device-invites). Its saved sessions keep working, but a new pairing needs the device token.
+3. Before the `oracle-vps` handover, check what `t3-oracle-vps.yarden-zamir.com` serves. Its DNS record comment says "T3 machine map".
+4. In kitshn, open the T3 card of the machine and select "Take the address…". Wait until the card shows the address.
+5. Make a Cloudflare API token with "Access: Apps and Policies Edit", "Cloudflare Tunnel Edit" and "DNS Read" for the account and the zone `yarden-zamir.com`.
+6. Write the token to a file, for example with T3 `request_secret` and delivery "file". Do not paste the token in a chat.
+7. Run a dry run, and read the steps and API calls that it prints:
 
    ```sh
    CLOUDFLARE_HANDOVER_TOKEN_FILE=<token file> node scripts/fork-host-handover.ts mac --dry-run
    ```
 
-6. Run the handover:
+8. Run the handover:
 
    ```sh
    CLOUDFLARE_HANDOVER_TOKEN_FILE=<token file> node scripts/fork-host-handover.ts mac
    ```
 
-7. Open `https://t3-mac.yarden-zamir.com` and check that the kitshn Access login and the T3 app open.
-8. After the last machine, delete the API token in the Cloudflare dashboard and delete the token file.
+9. Open `https://t3-mac.yarden-zamir.com` and check that the kitshn Access login and the T3 app open.
+10. After the last machine, delete the API token in the Cloudflare dashboard and delete the token file.
 
 To undo the part of the portal, run the script with `--undo`. It puts the host back into "T3 Code servers" and the old ingress rule back on the portal tunnel. It deletes nothing of kitshn. The DNS record still points at kitshn after the undo. To point the record back at the portal, select "Give the address back…" on the T3 card in kitshn.
 
@@ -391,11 +389,13 @@ To undo the part of the portal, run the script with `--undo`. It puts the host b
 CLOUDFLARE_HANDOVER_TOKEN_FILE=<token file> node scripts/fork-host-handover.ts mac --undo
 ```
 
+On `oracle-vps`, T3 runs the portal tunnel only while kitshn does not serve the host. It stops the tunnel when kitshn lists the host in `served`, after the DNS record moved to kitshn's tunnel, and starts it again when a give-back drops the host from that list. `machine-map-tunnel.json` stays.
+
 Do not remove a handed-over machine in the portal. The portal then deletes the DNS record that it made, and kitshn uses that record now.
 
 ## Guest links through Cloudflare Access
 
-A guest link on a tunnel host needs two more Cloudflare Access applications: an Allow application for the guest page and routes, and a Bypass application for the public web build files. See [Guest links over the tunnel](features.md#guest-links-over-the-tunnel). The Guests view of the machine map portal makes them for each machine host (MM-1210 to MM-1214 in [SPEC.md](../../apps/machine-map/SPEC.md)).
+A guest link on a tunnel host needs two more Cloudflare Access applications: an Allow application for the guest page and routes, and a Bypass application for the public web build files. See [Guest links over the tunnel](features.md#guest-links-over-the-tunnel). The machine map portal made them for each machine host. The portal is gone, and the applications stay.
 
 The guest page loads only these paths. A real load of the page and the guest code give the list.
 
@@ -408,31 +408,25 @@ The guest page loads only these paths. A real load of the page and the guest cod
 | `/favicon.ico`          | The tab icon.                                                            |
 | `/manifest.webmanifest` | The app manifest. Without it, the browser only logs an error.            |
 
-The page opens no WebSocket and calls no other route. `GuestPage.browser.test.tsx` and `runtime.browser.test.ts` check that it opens no environment connection. When this list changes, change `GUEST_PATHS` and `GUEST_BUILD_PATHS` in `apps/machine-map/src/guestLinks.ts` and `scripts/fork-guest-access-check.ts` too.
+The page opens no WebSocket and calls no other route. `GuestPage.browser.test.tsx` and `runtime.browser.test.ts` check that it opens no environment connection. When this list changes, change `scripts/fork-guest-access-check.ts` and the Access applications of each host too.
 
 All guest requests go to the same origin, with the browser's cookies. So the Access cookie of the guest login also covers `/api/guest/*`.
 
 The build files (`/assets/*` and the three files in the root) are the public open-source web build and hold no data. The owner page loads the same files. The `CF_Authorization` cookie of a host holds the token of one application at a time, and a script cannot follow a redirect to the Access login. So an Allow application on the build files breaks the owner page, and a Bypass application does not.
 
-The owner Access application "T3 Code servers" keeps every other path of the host. Access uses the application with the most specific path, so the two guest applications apply only to the paths above. The portal never changes the owner application.
+The owner Access application "T3 Code servers" keeps every other path of the host. Access uses the application with the most specific path, so the two guest applications apply only to the paths above.
 
 The guest application has its own token, which replaces the owner token in the cookie of the host. If the owner opens a guest link in the owner browser, the next owner page asks for the owner login again. Open guest links in a private window.
 
-### Set it up in the portal
+### Change it
 
-1. Open the Guests view of the portal.
-2. Fill in the rules. They apply to every machine. Include rules (emails, email domains, IP ranges) allow a visitor that matches one of them. Required IP ranges must also match. The owner emails always get in. For example, for people from the Qlik network only, add the Qlik network ranges under "IP ranges". For Qlik people on the Qlik network, add `qlik.com` under "Email domains" and the ranges under "Required IP ranges".
-3. Select "Save and apply".
-4. Turn on the switch of each machine that serves guest links. The switch sets `guestSharingEnabled` for that machine and makes the Access applications of its host. The host is the hostname that the machine reports, also for a tunnel made by hand. It must be the tunnel host that the portal made, or `t3-<name>.<MACHINE_DOMAIN>`.
-5. If the view shows a Cloudflare step, do it, or add the named permission to the API token of the portal. Then select Apply.
+Change the guest applications and the rate limit rule in the Cloudflare Zero Trust dashboard. Turn on guest links for a machine with `guestSharingEnabled` through `t3.settings` on kitshn.
 
-"Apply" repairs a changed application and removes the applications of a machine with guest links off. It also keeps the zone rate limit rule `t3_guest_routes`: 100 requests per 10 seconds per IP address on `/api/guest/`, then a block of 10 seconds. One open guest page sends one stream request, plus one request for each row or image that the guest opens, so a normal guest stays far below the limit. The Free plan allows only the path field in the expression, period 10 and timeout 10, so the rule covers the guest routes of every host in the zone.
-
-If an application that the portal did not make covers a guest path, the view names it as blocked. Delete it in the Zero Trust dashboard, then select Apply. The applications of the old manual steps were named `T3 guest links (<host>)` and `T3 web build (<host>)`. Apply takes over the rate limit rule of the old manual steps, because its expression is the same.
+- The zone rate limit rule `t3_guest_routes` allows 100 requests per 10 seconds per IP address on `/api/guest/`, then blocks for 10 seconds. One open guest page sends one stream request, plus one request for each row or image that the guest opens.
 
 ### Check it
 
-1. Without a login, run the check. The build files must be open, and every other path must stop at Access. The Guests view shows this command for each ready machine:
+1. Without a login, run the check. The build files must be open, and every other path must stop at Access:
 
    ```sh
    node scripts/fork-guest-access-check.ts https://t3-vps.yarden-zamir.com
@@ -445,7 +439,7 @@ If an application that the portal did not make covers a guest path, the view nam
    ```
 
 - If the page says that the link is not valid after the Access login, open the guest link again. The Access login can drop the part of the link after `#`.
-- A guest Access login does not open the owner paths. Access checks each application on its own, and the server accepts only the audience tag and the subjects of the owner login (`T3CODE_CLOUDFLARE_ACCESS_*`).
+- A guest Access login does not open the owner paths. Access checks each application on its own, and the server accepts only the audience tag of the owner login (`T3CODE_CLOUDFLARE_ACCESS_*`) and the kitshn grants.
 
 ## Central build caches
 
@@ -477,7 +471,6 @@ A later T3 storage-cleanup hook can spawn `node scripts/fork-build-cache-prune.t
 - The APK is the nightly ("Preview") app with the package `com.yardenzamir.t3code`. It holds arm64 code only.
 - The version name is the fork release version. The version code is the commit time in minutes since 2026-01-01, so it only grows along main.
 - The fork key in `_shared/android-signing/` signs every APK. The repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS` hold the same key. Only the signing step sees them. Android refuses an update with another key, so do not replace the key.
-- The Obtainium link in the portal "Invite an app" dialog is in `apps/machine-map/src/ui/obtainium.ts`.
 - Upstream's mobile workflows need Expo, Google Play or Blacksmith runners. They are disabled on the fork. After a sync that adds a `mobile-*` workflow, disable it with `gh workflow disable "<name>" -R Yarden-zamir/t3code`.
 
 ## Android emulator on the Mac
@@ -529,6 +522,5 @@ Use these raw-emulator steps only after the owner approves a workaround:
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`             | secret             | Android signing key. See [Android APK build](#android-apk-build).                                                                                                                         |
 | `FORK_SYNC_TOKEN`                                                                       | secret             | Fine-grained token for this repository with Contents and Workflows read and write. Without it, the push fails when upstream changes a workflow file, and the push does not start Fork CI. |
 | `T3_AGENT_WEBHOOK_URL`, `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`                | secret, optional   | Webhook URL of the repair agent task, and the Cloudflare Access service token that the call needs. Without the URL, no agent is notified.                                                 |
-| `CLOUDFLARE_DEPLOY_TOKEN`                                                               | secret             | Deploy of the machine map portal. See [apps/machine-map/README.md](../../apps/machine-map/README.md#deploy).                                                                              |
 | `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_TEMPLATE`, `CLERK_CLI_OAUTH_CLIENT_ID`, `RELAY_URL` | variable, optional | T3 Connect config. Without them, the build has no T3 Connect.                                                                                                                             |
 | `T3_FORK_CENTRAL_BUILD_CACHE`, `XDG_CACHE_HOME`                                         | variable, optional | Opt in to [central build caches](#central-build-caches), and choose their base directory.                                                                                                 |

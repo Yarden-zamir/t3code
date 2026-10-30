@@ -1,8 +1,7 @@
 /**
- * Fork: an app token client pairs again by itself (MM-921). A machine ends client sessions at a
- * level change, an arrow expiry or a `clientAccess` change (MM-912). The app then pairs again with
- * its saved token headers. At start and on each return to the foreground, it reads its machines
- * from the portal (MM-914): it pairs with new arrows and disables machines whose arrow is `none`.
+ * Fork: an app token client pairs again by itself when a machine ends its session (MM-921). At
+ * start and on each return to the foreground, it reads its machines from kitshn (K-1601). An
+ * empty or refused list disables nothing and shows its reason.
  */
 import {
   cloudflareAccessServiceToken,
@@ -10,22 +9,23 @@ import {
   type ConnectionCatalogEntry,
   connectionRoutes,
   EnvironmentRegistry,
+  RequestHeaderStore,
   requestHeaderOrigin,
   routeHttpBaseUrl,
+  withCloudflareAccessServiceToken,
 } from "@t3tools/client-runtime/connection";
-import { ClientMachinesResponse, type EnvironmentId } from "@t3tools/contracts";
+import { readDeviceMachines } from "@t3tools/client-runtime/fork/deviceInvite";
+import { deviceMachinesUrl, type EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult } from "effect/reactivity";
 import { AppState } from "react-native";
 
-import { noticeAccessEnded } from "../features/connection/forkAccessChangeTracker";
 import { buildPairingUrl } from "../features/connection/pairing";
 import { appAtomRegistry } from "../state/atom-registry";
 import {
@@ -34,10 +34,14 @@ import {
 } from "../state/forkAppTokenRepairErrors";
 import type { AppTokenClient } from "../persistence/mobile-preferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../state/preferences";
-import { issueMachinePairingCredential } from "./clientEnroll";
+import { issueMachinePairingCredential, kitshnTransport } from "./clientEnroll";
 import {
   appTokenOrigins,
+  type DeviceListAnswer,
+  deviceTokensNewestFirst,
+  firstDeviceList,
   type AppTokenEnvironment,
+  EMPTY_LIST_MESSAGE,
   isRefusedSession,
   NO_ACCESS_MESSAGE,
   REPAIRING_MESSAGE,
@@ -45,72 +49,52 @@ import {
   repairDelayMs,
   TOKEN_REFUSED_MESSAGE,
 } from "./forkAppTokenClient";
-import { fetchWithRequestHeaders, requestHeaderRules } from "./requestHeaders";
-
-const decodeMachines = Schema.decodeUnknownOption(Schema.toCodecJson(ClientMachinesResponse));
-
-type PortalAnswer =
-  | {
-      readonly _tag: "machines";
-      readonly machinesUrl: string;
-      readonly tokenClientId: string;
-      readonly answer: ClientMachinesResponse;
-    }
-  | { readonly _tag: "refused" }
-  | { readonly _tag: "none" };
+import { requestHeaderRules } from "./requestHeaders";
 
 /**
- * The portal is the origin whose `GET /client/machines` answers with the machine list. A phone
- * without an app token has no such origin. The portal answers 403 for a removed client, and
- * Cloudflare Access refuses a deleted token on every origin.
+ * kitshn's `GET /device/machines` (K-1601). Each saved token is tried, newest first, until one
+ * gets machines: an old portal token gets an empty list. A token that kitshn refuses counts as
+ * refused. A phone without an app token has none.
  */
-const readPortal = Effect.fn("mobile.appTokenRepair.readPortal")(function* (
+const readKitshn = Effect.fn("mobile.appTokenRepair.readKitshn")(function* (
   savedMachinesUrl: string | null,
 ) {
-  const savedOrigin = savedMachinesUrl === null ? null : requestHeaderOrigin(savedMachinesUrl);
-  // The enrollment saves the machine list URL. A phone enrolled before that finds it by asking
-  // each origin that holds a token.
-  const rules = requestHeaderRules().filter(
-    (rule) =>
-      cloudflareAccessServiceToken(rule.headers) !== null &&
-      (savedOrigin === null || rule.origin === savedOrigin),
+  const kitshnUrl =
+    savedMachinesUrl?.endsWith("/device/machines") === true ? savedMachinesUrl : null;
+  const candidates = deviceTokensNewestFirst(
+    requestHeaderRules(),
+    kitshnUrl === null ? null : requestHeaderOrigin(kitshnUrl),
   );
-  let refused = 0;
-  for (const rule of rules) {
-    const machinesUrl = savedMachinesUrl ?? `${rule.origin}/client/machines`;
-    const response = yield* Effect.tryPromise(() => fetchWithRequestHeaders(machinesUrl)).pipe(
-      Effect.option,
-    );
-    if (Option.isNone(response)) continue;
-    const { status } = response.value;
-    const finalHost = (() => {
-      try {
-        return new URL(response.value.url).hostname;
-      } catch {
-        return "";
-      }
-    })();
-    if (status === 401 || status === 403 || finalHost.endsWith(".cloudflareaccess.com")) {
-      refused++;
-      continue;
-    }
-    if (!response.value.ok) continue;
-    const body = yield* Effect.tryPromise(() => response.value.json()).pipe(Effect.option);
-    const answer = Option.flatMap(body, decodeMachines);
-    if (Option.isSome(answer)) {
-      const token = cloudflareAccessServiceToken(rule.headers);
-      if (token === null) continue;
-      return {
-        _tag: "machines",
-        machinesUrl,
-        tokenClientId: token.clientId,
-        answer: answer.value,
-      } as PortalAnswer;
-    }
+  return yield* Effect.promise(() =>
+    firstDeviceList(
+      candidates,
+      (origin) => kitshnUrl ?? deviceMachinesUrl(origin),
+      (machinesUrl, token) => readDeviceMachines(machinesUrl, token, kitshnTransport),
+    ),
+  );
+});
+
+/**
+ * The kitshn token answered with machines: its listed origins and kitshn's own get it in place of
+ * an old portal token, so pairing and the list use one token from now on.
+ */
+const adoptKitshnToken = Effect.fn("mobile.appTokenRepair.adoptKitshnToken")(function* (
+  answer: Extract<DeviceListAnswer, { _tag: "machines" }>,
+) {
+  const store = yield* RequestHeaderStore;
+  const origins = new Set(
+    [answer.machinesUrl, ...answer.machines.map((machine) => machine.origin)].flatMap(
+      (url) => requestHeaderOrigin(url) ?? [],
+    ),
+  );
+  for (const rule of requestHeaderRules()) {
+    const current = cloudflareAccessServiceToken(rule.headers);
+    if (!origins.has(rule.origin) || current === null) continue;
+    if (current.clientId === answer.token.clientId) continue;
+    yield* store
+      .set(rule.origin, withCloudflareAccessServiceToken(rule.headers, answer.token))
+      .pipe(Effect.ignore);
   }
-  return (
-    rules.length > 0 && refused === rules.length ? { _tag: "refused" } : { _tag: "none" }
-  ) as PortalAnswer;
 });
 
 /** The machine origin of each saved environment with a bearer route. */
@@ -135,7 +119,7 @@ function savedClient(): AppTokenClient | null {
 
 let requestSyncFromApp: (() => void) | null = null;
 
-/** Reads the machine list from the portal now: after an enrollment, or from "Refresh machines". */
+/** Reads the machine list from kitshn now: after an enrollment, or from "Refresh machines". */
 export function requestAppTokenSync(): void {
   requestSyncFromApp?.();
 }
@@ -164,7 +148,7 @@ export const layer = Layer.effectDiscard(
           requestSyncFromApp = null;
         }),
     );
-    // The client id of the app token, once the portal answered with it.
+    // The client id of the app token, once kitshn answered with it.
     let tokenClientId: string | null = null;
 
     const pair = (origin: string, expectedEnvironmentId?: EnvironmentId) =>
@@ -193,7 +177,7 @@ export const layer = Layer.effectDiscard(
 
     const sync = Effect.gen(function* () {
       const saved = savedClient();
-      const portal = yield* readPortal(saved?.machinesUrl ?? null);
+      const portal = yield* readKitshn(saved?.machinesUrl ?? null);
       if (portal._tag === "none") return;
       if (portal._tag === "refused") {
         // Access refused the token on every origin that holds one, so each of them is affected.
@@ -210,14 +194,15 @@ export const layer = Layer.effectDiscard(
         }
         return;
       }
-      const token = portal.tokenClientId;
+      const token = portal.token.clientId;
       tokenClientId = token;
-      if (saved?.machinesUrl !== portal.machinesUrl) {
+      if (portal.machines.length > 0) yield* adoptKitshnToken(portal);
+      if (saved?.machinesUrl !== portal.machinesUrl || saved.clientId !== token) {
         appAtomRegistry.set(updateMobilePreferencesAtom, {
-          appTokenClient: { ...saved, machinesUrl: portal.machinesUrl },
+          appTokenClient: { ...saved, machinesUrl: portal.machinesUrl, clientId: token },
         });
       }
-      const machines = portal.answer.machines.flatMap((machine) => {
+      const machines = portal.machines.flatMap((machine) => {
         const origin = requestHeaderOrigin(machine.origin);
         return origin === null ? [] : [{ ...machine, origin }];
       });
@@ -227,6 +212,12 @@ export const layer = Layer.effectDiscard(
         appTokenEnvironmentIdsAtom,
         savedEnvironments.map((environment) => environment.environmentId),
       );
+      if (machines.length === 0) {
+        for (const environment of savedEnvironments) {
+          setError(environment.environmentId, EMPTY_LIST_MESSAGE);
+        }
+        return;
+      }
       const plan = planMachineSync({
         machines,
         saved: savedEnvironments,
@@ -235,7 +226,6 @@ export const layer = Layer.effectDiscard(
       for (const environmentId of plan.disable) {
         yield* registry.setEnabled(environmentId, false).pipe(Effect.ignore);
         setError(environmentId, NO_ACCESS_MESSAGE);
-        noticeAccessEnded(environmentId);
       }
       for (const environmentId of plan.enable) {
         yield* registry.setEnabled(environmentId, true).pipe(Effect.ignore);

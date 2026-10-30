@@ -107,13 +107,6 @@ const FORK_MOBILE_SWITCHES = [
       "A thread link that names a message opens the thread at that message and highlights it.",
     place: "threads",
   },
-  {
-    key: "accessChangeNotices",
-    icon: "bell.badge",
-    label: "Access change notices",
-    subtitle:
-      "A popup when a machine map arrow changes what this phone can do on a server, or what its agents can do on another machine.",
-  },
 ] as const satisfies ReadonlyArray<{
   readonly key: keyof ServerSettingsPatch;
   readonly icon: ComponentProps<typeof SettingsSwitchRow>["icon"];

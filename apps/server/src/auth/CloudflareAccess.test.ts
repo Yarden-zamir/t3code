@@ -3,12 +3,14 @@ import * as Effect from "effect/Effect";
 import { HttpServerRequest } from "effect/http";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 
-import { CLOUDFLARE_ACCESS_JWT_HEADER, makeCloudflareAccessVerifier } from "./CloudflareAccess.ts";
+import {
+  CLOUDFLARE_ACCESS_JWT_HEADER,
+  makeCloudflareAccessClaimsVerifier,
+} from "./CloudflareAccess.ts";
 
 const config = {
   teamDomain: "team.cloudflareaccess.com",
-  aud: "aud-tag",
-  subjects: ["dev@example.com", "client.access"],
+  audiences: ["aud-tag"],
 };
 
 const makeKeys = Effect.promise(async () => {
@@ -41,37 +43,28 @@ const requestWith = (token: string | undefined) =>
     }),
   );
 
-it.effect("accepts an Access JWT whose email or service token name is allowed", () =>
+it.effect("reads the email or the service token name of a verified Access JWT", () =>
   Effect.gen(function* () {
     const { privateKey, getKey } = yield* makeKeys;
-    const verify = makeCloudflareAccessVerifier(config, getKey);
+    const verify = makeCloudflareAccessClaimsVerifier(config, getKey);
     const user = yield* sign(privateKey, { email: "dev@example.com" });
     const serviceToken = yield* sign(privateKey, { common_name: "client.access" });
-    expect(yield* verify(requestWith(user))).toEqual({ kind: "owner", subject: "dev@example.com" });
+    expect(yield* verify(requestWith(user))).toEqual({
+      email: "dev@example.com",
+      commonName: undefined,
+    });
     expect(yield* verify(requestWith(serviceToken))).toEqual({
-      kind: "owner",
-      subject: "client.access",
+      email: undefined,
+      commonName: "client.access",
     });
   }),
 );
 
-it.effect("names another service token without making it an owner", () =>
-  Effect.gen(function* () {
-    const { privateKey, getKey } = yield* makeKeys;
-    const verify = makeCloudflareAccessVerifier(config, getKey);
-    const machineToken = yield* sign(privateKey, { common_name: "machine.access" });
-    expect(yield* verify(requestWith(machineToken))).toEqual({
-      kind: "service-token",
-      commonName: "machine.access",
-    });
-  }),
-);
-
-it.effect("rejects a missing, foreign, expired or unlisted Access JWT", () =>
+it.effect("rejects a missing, foreign or expired Access JWT", () =>
   Effect.gen(function* () {
     const { privateKey, getKey } = yield* makeKeys;
     const other = yield* makeKeys;
-    const verify = makeCloudflareAccessVerifier(config, getKey);
+    const verify = makeCloudflareAccessClaimsVerifier(config, getKey);
     const claims = { email: "dev@example.com" };
     const rejected = [
       undefined,
@@ -80,7 +73,6 @@ it.effect("rejects a missing, foreign, expired or unlisted Access JWT", () =>
       yield* sign(privateKey, claims, { issuer: "https://other.cloudflareaccess.com" }),
       yield* sign(privateKey, claims, { audience: "other-aud" }),
       yield* sign(privateKey, claims, { exp: "-1m" }),
-      yield* sign(privateKey, { email: "someone@example.com" }),
     ];
     for (const token of rejected) {
       expect(yield* verify(requestWith(token))).toBeUndefined();

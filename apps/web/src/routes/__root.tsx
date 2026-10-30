@@ -1,4 +1,3 @@
-import { ForkAccessChangeNotices } from "../components/ForkAccessChangeNotices";
 import { ForkContextMenuHost } from "../components/ForkContextMenuHost";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -36,10 +35,8 @@ import { DesktopAppActivationCoordinator } from "../components/desktop/DesktopAp
 import { DesktopWebLinkCoordinator } from "../components/desktop/DesktopWebLinkCoordinator";
 import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
 import { DesktopUpdateIdleInstall } from "../components/desktop/DesktopUpdateIdleInstall";
-import { MachineMapDesktop } from "../components/desktop/MachineMapDesktop";
-import { MachineMapBrowserSettings } from "../components/MachineMapBrowserSettings";
-import { ClientPendingSurface } from "../components/auth/ClientPendingSurface";
-import { MachinePausedSurface, MachinePauseWatcher } from "../components/auth/MachinePausedSurface";
+import { KitshnClientSettings } from "../components/KitshnClientSettings";
+import { DesktopDeviceMachines } from "../machineMap/desktopDevice";
 import { InstalledAppCoordinator } from "../components/InstalledAppCoordinator";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
@@ -167,14 +164,6 @@ function RootRouteBranch() {
 
   if (pathname === GUEST_PAGE_PATH) return <Outlet />;
 
-  if (authGateState.status === "machine-paused") {
-    return <MachinePausedSurface />;
-  }
-
-  if (authGateState.status === "client-pending") {
-    return <ClientPendingSurface pending={authGateState.pending} />;
-  }
-
   if (pathname === "/pair" || pathname === "/connect" || pathname === "/connect-agent") {
     return <Outlet />;
   }
@@ -225,9 +214,8 @@ function RootRouteBranch() {
         ) : null}
         {isElectron ? <RunningThreadKeepAlive /> : null}
         {isElectron ? <DesktopUpdateIdleInstall /> : null}
-        {isElectron && primaryEnvironmentAuthenticated ? <MachineMapDesktop /> : null}
-        {!isElectron && primaryEnvironmentAuthenticated ? <MachineMapBrowserSettings /> : null}
-        {primaryEnvironmentAuthenticated ? <MachinePauseWatcher /> : null}
+        {primaryEnvironmentAuthenticated ? <KitshnClientSettings /> : null}
+        {isElectron && primaryEnvironmentAuthenticated ? <DesktopDeviceMachines /> : null}
         <RelayClientInstallDialog />
         <ConnectOnboardingDialog />
         <SshPasswordPromptDialog />
@@ -238,7 +226,6 @@ function RootRouteBranch() {
         <ForkContextMenuHost />
         <CustomSnoozeDialogHost />
         <GuestShareDialogHost />
-        <ForkAccessChangeNotices />
         <ProjectCloneToastCoordinator />
         <AddProjectToMachineDialogHost />
         {import.meta.env.DEV && primaryEnvironmentAuthenticated ? <DevReplayHost /> : null}

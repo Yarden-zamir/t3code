@@ -457,6 +457,23 @@ export const DesktopSshEnvironmentEnsureResultSchema = Schema.Union([
   DesktopSshPasswordPromptCancelledResultSchema,
 ]);
 
+/** Fork: one request to kitshn's device routes (K-1601), sent by the main process: no CORS. */
+export const DesktopKitshnDeviceRequestSchema = Schema.Struct({
+  url: Schema.String,
+  method: Schema.Literals(["GET", "POST"]),
+  headers: Schema.Record(Schema.String, Schema.String),
+  body: Schema.optionalKey(Schema.String),
+});
+export type DesktopKitshnDeviceRequest = typeof DesktopKitshnDeviceRequestSchema.Type;
+
+export const DesktopKitshnDeviceResponseSchema = Schema.Struct({
+  status: Schema.Number,
+  contentType: Schema.String,
+  body: Schema.String,
+  finalUrl: Schema.String,
+});
+export type DesktopKitshnDeviceResponse = typeof DesktopKitshnDeviceResponseSchema.Type;
+
 export const DesktopSshHttpBaseUrlInputSchema = Schema.Struct({
   httpBaseUrl: Schema.String,
 });
@@ -513,7 +530,6 @@ export interface DesktopServerExposureState {
   // Fork: Cloudflare Access login, sent as T3CODE_CLOUDFLARE_ACCESS_*.
   cloudflareAccessTeamDomain: string | null;
   cloudflareAccessAud: string | null;
-  cloudflareAccessSubjects: string | null;
 }
 
 export const DesktopServerExposureStateSchema = Schema.Struct({
@@ -527,7 +543,6 @@ export const DesktopServerExposureStateSchema = Schema.Struct({
   trustedBrowserOrigins: Schema.NullOr(Schema.String),
   cloudflareAccessTeamDomain: Schema.NullOr(Schema.String),
   cloudflareAccessAud: Schema.NullOr(Schema.String),
-  cloudflareAccessSubjects: Schema.NullOr(Schema.String),
 });
 
 export interface PickFolderOptions {
@@ -1068,6 +1083,10 @@ export interface DesktopBridge {
   setConnectionCatalog: (catalog: string) => Promise<boolean>;
   /** True when the last response from the origin of `url` was a Cloudflare Access login challenge. */
   isCloudflareAccessChallenged?: (url: string) => Promise<boolean>;
+  /** Fork: kitshn's device invite and machine list (K-1601), from the main process. */
+  kitshnDeviceRequest?: (
+    request: DesktopKitshnDeviceRequest,
+  ) => Promise<DesktopKitshnDeviceResponse>;
   discoverSshHosts: () => Promise<readonly DesktopDiscoveredSshHost[]>;
   resolveSshHost: (alias: string) => Promise<DesktopSshEnvironmentTarget>;
   requestSnapShotPermissions: (includeAccessibility: boolean) => Promise<void>;
@@ -1116,7 +1135,6 @@ export interface DesktopBridge {
     // Cloudflare Access login; null or blank clears a value.
     readonly cloudflareAccessTeamDomain: string | null;
     readonly cloudflareAccessAud: string | null;
-    readonly cloudflareAccessSubjects: string | null;
   }) => Promise<DesktopServerExposureState>;
   getAdvertisedEndpoints: () => Promise<readonly AdvertisedEndpoint[]>;
   getWslState: () => Promise<DesktopWslState>;

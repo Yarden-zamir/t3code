@@ -396,15 +396,6 @@ export const AuthSessionState = Schema.Struct({
   permissions: authScopeResponseFields.permissions,
   sessionMethod: Schema.optionalKey(ServerAuthSessionMethod),
   expiresAt: Schema.optionalKey(Schema.DateTimeUtc),
-  /** Fork: MM-718. True while the machine map pause locks this client. Absent means false. */
-  machinePaused: Schema.optionalKey(Schema.Boolean),
-  /**
-   * Fork: MM-918. The browser key of this browser waits for approval in the portal. `code` is
-   * its short code (`clientKeyCode`), or null when the browser sent no valid key proof.
-   */
-  clientPending: Schema.optionalKey(
-    Schema.Struct({ code: Schema.NullOr(Schema.String), portalUrl: Schema.String }),
-  ),
 });
 export type AuthSessionState = typeof AuthSessionState.Type;
 

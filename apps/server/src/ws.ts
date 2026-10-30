@@ -250,7 +250,6 @@ import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.
 import * as OtlpEndpointCheck from "./observability/OtlpEndpointCheck.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkWs from "./fork/forkWs.ts";
-import { guardOwnerOnlyPatch } from "./fork/machineMap/browserAccess.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as SourceControlSignIn from "./sourceControl/SourceControlSignIn.ts";
 import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts";
@@ -2515,7 +2514,6 @@ export const layerWsRpc = (
         [WS_METHODS.serverUpdateSettings]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* ({ patch, providerInstanceMutation }) {
-            yield* guardOwnerOnlyPatch(patch, currentSession.subject);
             const deviceHosts = patch.deviceHosts
               ? yield* remoteSshDeviceHosts(patch.deviceHosts).pipe(
                   Effect.provide(deviceHostContext),
@@ -3400,7 +3398,7 @@ export const layer = Layer.unwrap(
                     failEnvironmentInternal("internal_error", error),
                 }),
               ),
-            ).pipe(Effect.raceFirst(ForkWs.awaitMachineMapLock(session.subject))),
+            ).pipe(Effect.raceFirst(ForkWs.awaitKitshnLoss(request, session))),
           () => sessions.markDisconnected(session.sessionId),
         );
       }).pipe(

@@ -12,8 +12,8 @@ import { machineMapState } from "../../state/forkMachineMap";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 
 /**
- * The shared client values of the first environment with a map state. The machine map syncs the
- * same shared values to every machine, so the first one decides, like the published themes.
+ * The client values of `t3.settings` from the first environment on kitshn. kitshn gives every
+ * machine the same shared part, so the first one decides, like the published themes.
  */
 const firstSharedClientSettings = Atom.family((joinedIds: string) =>
   Atom.make((get): SettingValues | null => {
@@ -22,9 +22,9 @@ const firstSharedClientSettings = Atom.family((joinedIds: string) =>
       const result = get(
         machineMapState({ environmentId: EnvironmentId.make(environmentId), input: {} }),
       );
+      const state = Option.getOrNull(AsyncResult.value(result));
       // oxlint-disable-next-line t3code/no-rpc-permission-bypass -- the client settings scope, not an RPC client.
-      const desired = Option.getOrNull(AsyncResult.value(result))?.desired?.settings.client;
-      if (desired !== undefined) return desired;
+      if (state?.joined === true) return state.settings.client;
     }
     return null;
   }).pipe(Atom.withLabel("mobile:fork:shared-client-settings")),
@@ -32,7 +32,7 @@ const firstSharedClientSettings = Atom.family((joinedIds: string) =>
 
 /**
  * Fork, MM-416: the app takes the shared client settings that it has as preferences, from the
- * map state that its connections already stream.
+ * kitshn state that its connections already stream.
  */
 export function ForkSharedClientSettings() {
   const { environments } = useEnvironments();

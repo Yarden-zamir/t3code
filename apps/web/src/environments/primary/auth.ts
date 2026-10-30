@@ -131,10 +131,6 @@ export interface ServerClientSessionRecord {
 
 type ServerAuthGateState =
   | { status: "authenticated" }
-  // Fork: MM-718. The machine map pause locks this client; pairing cannot help.
-  | { status: "machine-paused" }
-  // Fork: MM-920. The browser key of this browser waits for approval in the portal.
-  | { status: "client-pending"; pending: NonNullable<AuthSessionState["clientPending"]> }
   | {
       status: "requires-auth";
       auth: AuthSessionState["auth"];
@@ -319,18 +315,11 @@ function isTransientBootstrapError(error: unknown): boolean {
 
 async function bootstrapServerAuth(urlCredential: string | null): Promise<ServerAuthGateState> {
   const currentSession = await fetchSessionState();
-  if (currentSession.machinePaused === true) {
-    return { status: "machine-paused" };
-  }
   if (currentSession.authenticated && !urlCredential) {
     return { status: "authenticated" };
   }
 
   const bootstrapCredential = urlCredential ?? getDesktopBootstrapCredential();
-  // A pairing link still works while the key waits (MM-920).
-  if (!bootstrapCredential && currentSession.clientPending !== undefined) {
-    return { status: "client-pending", pending: currentSession.clientPending };
-  }
   if (!bootstrapCredential) {
     return {
       status: "requires-auth",
@@ -454,9 +443,7 @@ export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGat
   }
   if (explicitPairingRequested) {
     const currentSession = await fetchSessionState();
-    return currentSession.machinePaused === true
-      ? { status: "machine-paused" }
-      : { status: "requires-auth", auth: currentSession.auth };
+    return { status: "requires-auth", auth: currentSession.auth };
   }
 
   const urlCredential = takePairingTokenFromUrl();

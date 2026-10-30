@@ -138,6 +138,7 @@ import * as WebhookRoute from "./scheduledTasks/webhookRoute.ts";
 import * as RelayDeliveryProof from "./scheduledTasks/RelayDeliveryProof.ts";
 import * as HeldHooksWaker from "./relay/HeldHooksWaker.ts";
 import * as McpOAuth from "./auth/McpOAuth.ts";
+import * as SessionStore from "./auth/SessionStore.ts";
 import * as McpOAuthHttp from "./auth/mcpOAuthHttp.ts";
 import {
   relayHookBaseUrl,
@@ -189,21 +190,21 @@ import * as AbandonedTerminalDrafts from "./fork/AbandonedTerminalDrafts.ts";
 import * as TerminalThreadMove from "./fork/TerminalThreadMove.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkPreviewServerGroups from "./fork/PreviewServerGroups.ts";
+import { layerPortalTunnel } from "./fork/portalTunnelFile.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
 import * as MachineExec from "./fork/machineMap/MachineExec.ts";
 import * as MachineExecRoute from "./fork/machineMap/machineExecRoute.ts";
 import * as ThreadIdentityRoute from "./fork/threadIdentityRoute.ts";
 import * as KitshnAttester from "./fork/kitshn/KitshnAttester.ts";
 import * as KitshnCli from "./fork/kitshn/KitshnCli.ts";
+import * as KitshnGrants from "./fork/kitshn/KitshnGrants.ts";
+import * as KitshnAudit from "./fork/kitshn/KitshnAudit.ts";
 import * as KitshnProvider from "./fork/kitshn/KitshnProvider.ts";
+import * as KitshnSettingsSync from "./fork/kitshn/KitshnSettingsSync.ts";
 import * as MachineHost from "./fork/machineMap/MachineHost.ts";
-import * as MachineMap from "./fork/machineMap/MachineMap.ts";
-import * as MachineMapState from "./fork/machineMap/MachineMapState.ts";
 import * as WebPush from "./fork/webPush/WebPush.ts";
 import * as MachineCallHistory from "./fork/machineMap/MachineCallHistory.ts";
 import * as MachinePeers from "./fork/machineMap/MachinePeers.ts";
-import * as MachineResources from "./fork/machineMap/MachineResources.ts";
-import * as MachineTunnel from "./fork/machineMap/MachineTunnel.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -527,30 +528,40 @@ const layerProjectFaviconResolver = ProjectFaviconResolver.layer.pipe(
   Layer.provide(T3ProjectFileLoader.layer),
 );
 
-// Fork: machine map (apps/machine-map/SPEC.md). One instance: the auth hooks and the portal
-// connection read the same desired state.
-const layerMachineMapState = MachineMapState.layer.pipe(
-  Layer.provide(layerServerSettings),
-  Layer.provide(ServerSecretStore.layer),
+// Fork: kitshn provider (K-706). One instance: the auth hooks, the guest routes and the provider
+// read the same tables. It shares the session store of the auth layer, so a revocation closes
+// the WebSockets of that session.
+const layerKitshnGrants = KitshnGrants.layer.pipe(
+  Layer.provide(SessionStore.layer),
+  Layer.provide(layerPersistence),
+  Layer.provide(ServerEnvironment.layerIdentity),
 );
 
 const layerServerEnvironment = ServerEnvironment.layer.pipe(
+  // Fork: the environment name can be the kitshn name of this machine.
+  Layer.provide(layerKitshnGrants),
   Layer.provide(ServerSecretStore.layer),
-  Layer.provide(layerMachineMapState),
   Layer.provide(layerServerSettings),
 );
 
 // One instance for the update RPC and the fork updates, so both share the in-flight guard.
 const layerServerSelfUpdate = ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate));
 
+// Fork: kitshn is the only way this server joins other machines (K-704 to K-1610).
 const layerMachineMap = MachineExec.layer.pipe(
-  Layer.provideMerge(MachineMap.layer),
-  Layer.provideMerge(MachineHost.layer),
-  // Fork: updates from the fork releases. It runs also when the machine map is off.
-  Layer.provideMerge(ForkUpdates.layer.pipe(Layer.provide(layerServerSelfUpdate))),
+  // Fork: the portal tunnel of an older join serves the host until its handover to kitshn.
+  Layer.provideMerge(
+    layerPortalTunnel.pipe(Layer.provide(ServerSecretStore.layer), Layer.provide(layerRelayClient)),
+  ),
+  Layer.provideMerge(KitshnSettingsSync.layer),
   Layer.provideMerge(MachinePeers.layer),
-  Layer.provide(MachineResources.layer),
-  Layer.provide(MachineTunnel.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+  Layer.provideMerge(KitshnAudit.layer),
+  // The kitshn provider connection; the machine tools send their kitshn requests over it.
+  Layer.provideMerge(KitshnProvider.layer),
+  Layer.provideMerge(KitshnCli.layer),
+  Layer.provideMerge(MachineHost.layer),
+  // Fork: updates from the fork releases.
+  Layer.provideMerge(ForkUpdates.layer.pipe(Layer.provide(layerServerSelfUpdate))),
   Layer.provide(ProcessRunner.layer),
   Layer.provide(NodeSocket.layerWebSocketConstructor),
 );
@@ -559,8 +570,8 @@ const layerAuth = EnvironmentAuth.layer.pipe(
   Layer.provideMerge(layerPersistence),
   Layer.provide(layerServerEnvironment),
   Layer.provide(ServerSecretStore.layer),
-  // Fork: machine map. Machine identities pass Cloudflare Access too (MM-1305).
-  Layer.provide(layerMachineMapState),
+  // Fork: kitshn grants decide every request with an Access JWT (K-706).
+  Layer.provide(layerKitshnGrants),
 );
 
 const layerCloudManagedEndpointRuntime = Layer.mergeAll(
@@ -769,7 +780,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(CodexManagedTokenBroker.layer),
   Layer.provideMerge(layerServerEnvironment),
   Layer.provideMerge(layerAuth),
-  Layer.provideMerge(layerMachineMapState),
+  Layer.provideMerge(layerKitshnGrants),
   Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(
     Layer.mergeAll(
@@ -859,8 +870,8 @@ const layerMakeRoutes = Layer.mergeAll(
   ),
   Layer.provide(PreviewBrowser.layer),
   // Links to other environments, shared by Settings (WebSocket) and agents (/mcp).
-  // Fork: `MachinePeers.layer` in the runtime core provides the links, from the machine map arrows,
-  // and `MachineCallHistory` reports each forwarded call to the portal History (MM-1922).
+  // Fork: `MachinePeers.layer` in the runtime core provides the links, from the kitshn reach,
+  // and `MachineCallHistory` reports each forwarded call to the kitshn audit (MM-1922, K-1610).
   Layer.provide(MachineCallHistory.layer),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(layerServerSelfUpdate),
@@ -982,14 +993,20 @@ const layerMakeServer = Layer.unwrap(
         }),
       ),
     ).pipe(Layer.provide(KitshnAttester.layer.pipe(Layer.provide(KitshnCli.layer))));
-    // Fork: runs `kitshn provider` while the `kitshnProvider` setting is on.
+    // Fork: runs `kitshn provider` for the life of the server (K-712: without kitshn 2, it only logs).
     const layerKitshnProvider = Layer.effectDiscard(
       ServerActivation.forkParked(
         Effect.gen(function* () {
-          yield* (yield* KitshnProvider.KitshnProvider).run;
+          yield* Effect.all(
+            [
+              (yield* KitshnProvider.KitshnProvider).run,
+              (yield* KitshnSettingsSync.KitshnSettingsSync).run,
+            ],
+            { concurrency: "unbounded", discard: true },
+          );
         }),
       ),
-    ).pipe(Layer.provide(KitshnProvider.layer.pipe(Layer.provide(KitshnCli.layer))));
+    );
     const layerCloudDesiredLinkReconcile = Layer.effectDiscard(
       Effect.gen(function* () {
         const cloudLink = yield* CloudLink.CloudLink;

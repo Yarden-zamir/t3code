@@ -236,7 +236,7 @@ const make = Effect.gen(function* () {
    * empty list reads as a dead end and agents go looking elsewhere.
    */
   const NOT_LISTED =
-    "Not listed: not linked yet. Links come from arrows on the machine map, so ask the user to set one in the portal.";
+    "Not listed: not linked yet. Links come from kitshn, so ask the user to share that machine's T3 app and T3 agents cards with this machine on the kitshn map.";
 
   const listLinks: PeerForwarding["Service"]["links"] = Effect.fn("PeerForwarding.listLinks")(
     function* (scope) {

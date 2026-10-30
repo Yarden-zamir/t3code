@@ -25,6 +25,6 @@ it("hides the manual link tools that /mcp publishes, also with links on", () => 
     )?.(client),
   ).toBe(true);
   expect(McpToolkits.orchestrator.tools.t3_environment_links.description).toContain(
-    "arrows on the machine map",
+    "links come from kitshn",
   );
 });

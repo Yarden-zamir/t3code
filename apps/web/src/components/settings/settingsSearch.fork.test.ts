@@ -7,7 +7,7 @@ import {
 } from "./settingsSearch";
 
 describe("searchSettings", () => {
-  it.each(["machine map", "join code", "portal"])("finds the fork machine map for %s", (query) => {
+  it.each(["kitshn", "machine map", "join"])("finds the kitshn settings for %s", (query) => {
     expect(searchSettings(query)).toContainEqual(
       expect.objectContaining({ id: "machine-map", to: "/settings/machines" }),
     );

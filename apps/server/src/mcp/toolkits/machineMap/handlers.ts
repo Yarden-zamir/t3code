@@ -1,17 +1,21 @@
-import { type MapToolName, OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 
+import * as KitshnCli from "../../../fork/kitshn/KitshnCli.ts";
+import * as KitshnGrants from "../../../fork/kitshn/KitshnGrants.ts";
+import * as KitshnProvider from "../../../fork/kitshn/KitshnProvider.ts";
+import * as KitshnSettingsSync from "../../../fork/kitshn/KitshnSettingsSync.ts";
 import { isMachineRequestNamespace } from "../../../fork/machineMap/machineAccess.ts";
-import { historyCaller } from "../../../fork/machineMap/machineCallerAccess.ts";
 import * as MachineExec from "../../../fork/machineMap/MachineExec.ts";
-import * as MachineMap from "../../../fork/machineMap/MachineMap.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { MachineMapToolkit } from "./tools.ts";
 
 /**
- * An agent on another machine reaches this server through its arrow link. It must not use the map
- * role or the arrows of this machine, so a machine session gets none of these tools.
+ * An agent on another machine reaches this server through a link. It must not ask kitshn as this
+ * machine, so a machine session gets none of these tools.
  */
 const refuseMachineCaller = McpInvocationContext.McpInvocationContext.pipe(
   Effect.filterOrFail(
@@ -19,7 +23,7 @@ const refuseMachineCaller = McpInvocationContext.McpInvocationContext.pipe(
     () =>
       new OrchestratorMcpFailure({
         code: "capability_denied",
-        message: "Machine map tools are not available to another machine.",
+        message: "The machine tools are not available to another machine.",
       }),
   ),
 );
@@ -27,60 +31,136 @@ const refuseMachineCaller = McpInvocationContext.McpInvocationContext.pipe(
 const toFailure = (error: { readonly message: string }) =>
   new OrchestratorMcpFailure({ code: "capability_denied", message: error.message });
 
-/** MM-806: the portal records the calling thread and its title with each change. */
-const callThroughPortal = Effect.fn("MachineMapMcp.callThroughPortal")(function* (
-  tool: MapToolName,
-  input: unknown,
+const ask = (
+  request: KitshnProvider.KitshnProvider["Service"] extends {
+    readonly request: (input: infer I) => unknown;
+  }
+    ? I
+    : never,
+) =>
+  refuseMachineCaller.pipe(
+    Effect.andThen(KitshnProvider.KitshnProvider),
+    Effect.flatMap((provider) => provider.request(request)),
+    Effect.mapError(toFailure),
+  );
+
+/** K-709: set or clear one key of one part of the `t3.settings` state. */
+const setSetting = Effect.fn("MachineMapMcp.setSetting")(function* (
+  input: typeof import("./tools.ts").MachinesSetSettingInput.Type,
 ) {
-  yield* refuseMachineCaller;
-  const machineMap = yield* MachineMap.MachineMap;
-  return yield* machineMap
-    .callMapTool({ tool, input, ...(yield* historyCaller()) })
+  const scope = yield* refuseMachineCaller;
+  // A thread is an agent; `t3 tool call` without a thread credential is the owner in a shell.
+  yield* (yield* KitshnSettingsSync.KitshnSettingsSync)
+    .setOne(
+      {
+        part: input.part,
+        scope: input.scope,
+        key: input.key,
+        value: input.clear === true ? undefined : input.value,
+      },
+      scope.thread === undefined ? "owner" : "agent",
+    )
     .pipe(Effect.mapError(toFailure));
+  return { _tag: "setting", part: input.part, scope: input.scope, key: input.key };
 });
 
 export const layer = McpToolAccess.toLayer(MachineMapToolkit, {
-  machines_read: McpToolAccess.reads(() => callThroughPortal("machines_read", {})),
-  machines_resources: McpToolAccess.reads((input) =>
-    callThroughPortal("machines_resources", input),
+  machines_read: McpToolAccess.reads(() =>
+    Effect.gen(function* () {
+      yield* refuseMachineCaller;
+      const grants = yield* KitshnGrants.KitshnGrants;
+      const provider = yield* KitshnProvider.KitshnProvider;
+      // K-1611: the connection shows also when kitshn cannot answer the state ask.
+      const answer = yield* ask({ type: "ask", action: "state", target: "" }).pipe(Effect.result);
+      const connection = yield* provider.connection.pipe(Stream.runHead);
+      const grantState = yield* grants.state;
+      return {
+        _tag: "read",
+        machine: yield* grants.machine,
+        connection: {
+          ...Option.getOrNull(connection),
+          linkProxy: yield* provider.linkProxyState,
+          lastContactAt: grantState.lastContactAt,
+          paused: yield* grants.paused,
+        },
+        state:
+          answer._tag === "Success" && "result" in answer.success ? answer.success.result : null,
+        stateError: answer._tag === "Failure" ? answer.failure.message : null,
+        askResults: yield* provider.askResults,
+      };
+    }),
   ),
-  machines_set_access: McpToolAccess.writesEnvironment((input) =>
-    callThroughPortal("machines_set_access", input),
+  machines_resources: McpToolAccess.reads(() =>
+    ask({ type: "samples" }).pipe(
+      Effect.map((answer) =>
+        answer.type === "samples"
+          ? { _tag: "resources", newest: answer.newest, history: answer.history }
+          : { _tag: "resources", newest: null, history: [] },
+      ),
+    ),
   ),
-  machines_set_setting: McpToolAccess.writesEnvironment((input) =>
-    callThroughPortal("machines_set_setting", input),
-  ),
+  machines_set_setting: McpToolAccess.writesEnvironment(setSetting),
   machines_command: McpToolAccess.writesEnvironment((input) =>
-    callThroughPortal("machines_command", input),
+    ask({
+      type: "ask",
+      action: "job",
+      target: input.machineId,
+      body: {
+        command: {
+          kind: "provider",
+          provider: "t3",
+          command: input.command,
+          resource: input.resource ?? "app",
+          ...(input.row === undefined ? {} : { row: input.row }),
+        },
+      },
+    }).pipe(
+      Effect.flatMap((answer) => {
+        if (answer.type !== "ask") return Effect.succeed({ _tag: "command", outcome: "done" });
+        switch (answer.outcome) {
+          case "done":
+            return Effect.succeed({ _tag: "command", outcome: "done", result: answer.result });
+          case "waiting":
+            return Effect.succeed({
+              _tag: "command",
+              outcome: "waiting",
+              proposalId: answer.proposalId ?? null,
+            });
+          default:
+            return Effect.fail(toFailure({ message: answer.reason ?? "kitshn refused the job." }));
+        }
+      }),
+    ),
   ),
   machines_queue_cancel: McpToolAccess.writesEnvironment((input) =>
-    callThroughPortal("machines_queue_cancel", input),
+    ask({ type: "job-cancel", jobId: input.jobId }).pipe(
+      Effect.as({ _tag: "cancelled", jobId: input.jobId }),
+    ),
   ),
-  machines_undo: McpToolAccess.writesEnvironment((input) =>
-    callThroughPortal("machines_undo", input),
-  ),
-  machines_preset: McpToolAccess.writesEnvironment((input) =>
-    callThroughPortal("machines_preset", input),
-  ),
-  // Joining changes the settings and the auth of this server, like an environment setting.
+  // Joining changes the auth of this server, like an environment setting.
   machines_join: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
       const scope = yield* refuseMachineCaller;
-      // MM-919: joining sets the portal and turns the map on, so an agent never does it.
-      // `t3 machine-map join` on a headless machine has no thread. A joined machine refuses a
-      // second join while the map is on (`MachineMap.join`).
+      // K-1603: an agent never joins a machine. `t3 tool call` from a shell has no thread.
       if (scope.thread !== undefined) {
         return yield* new OrchestratorMcpFailure({
           code: "capability_denied",
-          message: "Agents do not join the machine map. Run t3 machine-map join on the machine.",
+          message: "Agents do not join kitshn. Run kitshn join on the machine.",
         });
       }
-      const machineMap = yield* MachineMap.MachineMap;
-      return yield* machineMap.join(input).pipe(Effect.mapError(toFailure));
+      const cli = yield* KitshnCli.KitshnCli;
+      const output = yield* cli.join(input).pipe(Effect.mapError(toFailure));
+      if (output.exitCode !== 0) {
+        return yield* toFailure({
+          message:
+            KitshnCli.lastLine(output.stderr) ?? `kitshn join exited with ${output.exitCode}.`,
+        });
+      }
+      return { _tag: "joined", output: output.stdout.trim() };
     }),
   ),
-  // MM-1908: the one map tool that a machine session may call. The service checks the arrow:
-  // here it needs a live full-access/default caller, and a machine session needs the exec arrow.
+  // MM-1908: the one machine tool that a machine session may call. The service checks the grants:
+  // here it needs a live full-access/default caller, and a machine session needs the exec grant.
   // The link access of the level does not limit it, so linked callers pass this declaration.
   machine_exec: McpToolAccess.writes(
     (input) =>

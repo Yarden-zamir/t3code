@@ -18,13 +18,13 @@ export function EnvironmentLabelSettingsRow() {
       {...searchableSetting("environment-label-from-machine-map")}
       serverScoped
       settingKeys={["environmentLabelFromMachineMap"]}
-      description="Use the machine map name for this environment. Name changes in the portal appear without a restart."
+      description="Use the kitshn map name of this machine for this environment. Name changes on the kitshn map appear without a restart."
       resetAction={
         mixed ||
         settings.environmentLabelFromMachineMap !==
           DEFAULT_SERVER_SETTINGS.environmentLabelFromMachineMap ? (
           <SettingResetButton
-            label="environment name from machine map"
+            label="environment name from kitshn"
             onClick={() =>
               updateSettings({
                 environmentLabelFromMachineMap:
@@ -41,7 +41,7 @@ export function EnvironmentLabelSettingsRow() {
           onCheckedChange={(checked) =>
             updateSettings({ environmentLabelFromMachineMap: Boolean(checked) })
           }
-          aria-label="Use machine map environment name"
+          aria-label="Use the kitshn environment name"
         />
       }
     />

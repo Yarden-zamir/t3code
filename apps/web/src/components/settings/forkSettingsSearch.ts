@@ -397,46 +397,20 @@ export const CONNECTIONS_ITEMS = [
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
-// Fork: machine map (apps/machine-map/SPEC.md MM-203).
+// Fork: kitshn (MM-203).
 export const MACHINE_MAP_ITEMS = [
   {
-    id: "access-change-notices",
-    title: "Access change notices",
-    to: "/settings/machines",
-    searchTerms: ["machine map arrow permissions scopes access changed toast notice popup"],
-    environmentOnly: true,
-  },
-  {
-    id: "kitshn-provider",
-    title: "kitshn provider",
-    to: "/settings/machines",
-    searchTerms: ["kitshn card map commands restart diagnostics provider daemon"],
-    environmentOnly: true,
-  },
-  {
     id: "environment-label-from-machine-map",
-    title: "Environment name from machine map",
+    title: "Environment name from kitshn",
     to: "/settings/machines",
-    searchTerms: ["machine map environment label name hostname computer portal"],
+    searchTerms: ["kitshn machine map environment label name hostname computer"],
     environmentOnly: true,
   },
   {
     id: "machine-map",
-    title: "Machine map",
+    title: "kitshn",
     to: "/settings/machines",
-    searchTerms: ["portal join code leave connection status cloudflare access token tunnel"],
-  },
-  {
-    id: "machine-map-client-access",
-    title: "Client access",
-    to: "/settings/machines",
-    searchTerms: ["browser clients enforce observe approval cloudflare access lockout way back in"],
-  },
-  {
-    id: "machine-map-reachable",
-    title: "Machines this machine can use",
-    to: "/settings/machines",
-    searchTerms: ["reachable peers arrows levels read standard admin agent tools open"],
+    searchTerms: ["kitshn join machines map access links grants"],
   },
   {
     id: "keybinding-sync",

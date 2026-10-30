@@ -22,7 +22,7 @@ import {
 import { clientBrowserSessionTtl, isMachineSubject } from "./machineMap/machineAccess.ts";
 
 /** The label prefix of a session that an owner got through Cloudflare Access. */
-export const CLOUDFLARE_ACCESS_LABEL_PREFIX = "cloudflare-access ";
+const CLOUDFLARE_ACCESS_LABEL_PREFIX = "cloudflare-access ";
 
 /**
  * A fork session that is not connected and was not seen for this long ends. "Seen" is the later

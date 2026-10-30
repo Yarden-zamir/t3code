@@ -1,160 +1,14 @@
 /**
- * Fork: machine map. What another machine may do on this one, from the desired state. Pure
- * functions, so the auth hooks and their tests share one rule set.
+ * Fork: the session subjects and MCP namespaces of other machines, and the refusals of calls that
+ * must not cross machines. kitshn grants decide what another machine may do (K-706, K-1609).
  */
-import {
-  type ArrowRecord,
-  AuthAccessWriteScope,
-  AuthOrchestrationOperateScope,
-  AuthRelayWriteScope,
-  type AuthEnvironmentScope,
-  clientSessionSubject,
-  type DesiredBrowserClient,
-  type DesiredClient,
-  MACHINE_LEVEL_LINK_ACCESS,
-  type AuthMcpClientAccess,
-  MACHINE_LEVEL_SCOPES,
-  type MachineDesiredState,
-  MachineId,
-  type MachineLevel,
-  type PeerMachine,
-  machineSessionSubject,
-} from "@t3tools/contracts";
+import { MachineId } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 
 import type { McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
 
-/** What a pairing credential for a machine holds (MM-1305). */
-export interface MachineGrant {
-  readonly subject: string;
-  readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
-  readonly label: string;
-}
-
-/**
- * The level of an arrow at `nowMs`. An arrow past its expiry has its revert level, so a machine
- * that missed the expiry revision of the portal (MM-304) still enforces it.
- */
-const effectiveLevel = (
-  arrow: Pick<ArrowRecord, "level" | "expiresAt" | "revertLevel">,
-  nowMs: number,
-): MachineLevel =>
-  arrow.expiresAt !== null && Date.parse(arrow.expiresAt) <= nowMs
-    ? (arrow.revertLevel ?? "none")
-    : arrow.level;
-
-const arrowFrom = (desired: MachineDesiredState, from: MachineId) =>
-  desired.arrowsIn.find((arrow) => arrow.from === from && arrow.to === desired.self.id);
-
-/** MM-1305: the grant for the machine whose token signed the request. Undefined for `none`. */
-export const machineGrantFor = (
-  desired: MachineDesiredState,
-  tokenClientId: string,
-  nowMs: number,
-): MachineGrant | undefined => {
-  const peer = desired.peers.find((candidate) => candidate.tokenClientId === tokenClientId);
-  if (peer === undefined || peer.id === desired.self.id) return undefined;
-  const arrow = arrowFrom(desired, peer.id);
-  if (arrow === undefined) return undefined;
-  const level = effectiveLevel(arrow, nowMs);
-  if (level === "none") return undefined;
-  return {
-    subject: machineSessionSubject(peer.id),
-    scopes: MACHINE_LEVEL_SCOPES[level],
-    label: `machine ${peer.name}`,
-  };
-};
-
-/**
- * MM-912: the grant for the native client whose app token signed the request. A client token is
- * never an owner subject, so without this grant it gets nothing. Undefined for `none`.
- */
-export const clientGrantFor = (
-  desired: MachineDesiredState,
-  tokenClientId: string,
-  nowMs: number,
-): MachineGrant | undefined => {
-  const client = desired.clients?.find((candidate) => candidate.tokenClientId === tokenClientId);
-  if (client === undefined) return undefined;
-  const level = effectiveLevel(client, nowMs);
-  if (level === "none") return undefined;
-  return {
-    subject: clientSessionSubject(client.id),
-    scopes: MACHINE_LEVEL_SCOPES[level],
-    label: `client ${client.name}`,
-  };
-};
-
-/**
- * MM-912, MM-909: the clients whose sessions on this machine must end: the level changed between
- * two desired states, read like `sourcesWithChangedLevel`, or a browser key left the client. A
- * client that left the desired state counts as a change to `none`.
- */
-export const clientsWithChangedLevel = (
-  previous: MachineDesiredState | null,
-  previousAtMs: number | null,
-  next: MachineDesiredState | null,
-  nowMs: number,
-): ReadonlyArray<DesiredClient["id"]> => {
-  const lostKey = (previous?.browserClients ?? []).flatMap((before) => {
-    const after = next?.browserClients?.find((client) => client.id === before.id);
-    return after !== undefined && before.thumbprints.some((key) => !after.thumbprints.includes(key))
-      ? [before.id]
-      : [];
-  });
-  return [
-    ...new Set([
-      ...sourcesWithChangedLevel(clientArrows(previous), previousAtMs, clientArrows(next), nowMs),
-      ...lostKey,
-    ]),
-  ];
-};
-
-/**
- * MM-917, MM-918: the grant for a browser that proved a key that an approved client holds, or
- * undefined for an unknown key, `none` or an expired arrow. `observe` caps it at `standard`, so it
- * never gives more than the owner login; `enforce` gives the full level without `access:write`
- * and `relay:write`.
- */
-export const browserGrantFor = (
-  desired: MachineDesiredState,
-  thumbprint: string,
-  nowMs: number,
-  mode: "observe" | "enforce",
-): MachineGrant | undefined => {
-  const client = desired.browserClients?.find((candidate) =>
-    candidate.thumbprints.includes(thumbprint),
-  );
-  if (client === undefined) return undefined;
-  const level = effectiveLevel(client, nowMs);
-  if (level === "none") return undefined;
-  return {
-    subject: clientSessionSubject(client.id),
-    // A browser session is not bound to its key yet, so a stolen cookie must not mint pairing
-    // links or relay grants that outlive it. Revisit when browser sessions are key-bound.
-    scopes: MACHINE_LEVEL_SCOPES[
-      mode === "observe" && level === "admin" ? "standard" : level
-    ].filter((scope) => scope !== AuthAccessWriteScope && scope !== AuthRelayWriteScope),
-    label: `${BROWSER_CLIENT_LABEL_PREFIX}${client.name}`,
-  };
-};
-
-/** Every client of a desired state with its arrow: app tokens (MM-912) and browser keys (MM-917). */
-const clientArrows = (desired: MachineDesiredState | null) =>
-  [...(desired?.clients ?? []), ...(desired?.browserClients ?? [])].map(
-    (client: DesiredClient | DesiredBrowserClient) => [client.id, client] as const,
-  );
-
 const MACHINE_SUBJECT_PREFIX = "machine:";
 const CLIENT_SUBJECT_PREFIX = "client:";
-
-/** The peer of a session subject `machine:<id>`, or undefined for any other subject. */
-const peerOfSubject = (desired: MachineDesiredState, subject: string): PeerMachine | undefined =>
-  subject.startsWith(MACHINE_SUBJECT_PREFIX)
-    ? desired.peers.find(
-        (peer) => machineSessionSubject(peer.id) === subject && peer.id !== desired.self.id,
-      )
-    : undefined;
 
 export const isMachineSubject = (subject: string) => subject.startsWith(MACHINE_SUBJECT_PREFIX);
 
@@ -162,10 +16,8 @@ export const isMachineSubject = (subject: string) => subject.startsWith(MACHINE_
 const BROWSER_CLIENT_LABEL_PREFIX = "browser client ";
 
 /**
- * MM-922: a session that a browser client got through Cloudflare Access with its key (the page
- * cookie or a sibling bearer) lasts 1 day, because neither is bound to the key; the browser renews
- * it without user action. Known limit: a stolen one works for up to 1 day. Revisit when upstream
- * DPoP gets a bootstrap source other than the T3 Connect cloud session, for key-bound tokens.
+ * MM-922: a session that a browser client got through Cloudflare Access with its key lasts 1 day.
+ * Known limit: a stolen one works for up to 1 day. Revisit when browser sessions are key-bound.
  */
 export const clientBrowserSessionTtl = (grant: {
   readonly subject: string;
@@ -176,79 +28,15 @@ export const clientBrowserSessionTtl = (grant: {
     ? Duration.days(1)
     : undefined;
 
-/** A session that exists only through the map: a machine (MM-1305) or a client (MM-912). */
-export const isMapSubject = (subject: string) =>
-  isMachineSubject(subject) || subject.startsWith(CLIENT_SUBJECT_PREFIX);
-
-/**
- * MM-1307: the MCP access of a machine session, or undefined when its arrow has no agent tools.
- * The source sends the limits of its calling thread in `T3-Mode-Limit`, and this machine narrows
- * the access to them (MM-1902). A session without `orchestration:operate`, as an older source
- * pairs for reads, stays read-only whatever the level.
- */
-export const machineMcpAccessFor = (
-  desired: MachineDesiredState,
-  session: { readonly subject: string; readonly scopes: ReadonlyArray<AuthEnvironmentScope> },
-  nowMs: number,
-): { readonly peer: PeerMachine; readonly access: AuthMcpClientAccess } | undefined => {
-  const peer = peerOfSubject(desired, session.subject);
-  if (peer === undefined) return undefined;
-  const arrow = arrowFrom(desired, peer.id);
-  if (arrow === undefined || !arrow.agentTools) return undefined;
-  const level = effectiveLevel(arrow, nowMs);
-  if (level === "none") return undefined;
-  return {
-    peer,
-    access: session.scopes.includes(AuthOrchestrationOperateScope)
-      ? MACHINE_LEVEL_LINK_ACCESS[level]
-      : "read-only",
-  };
-};
-
-/**
- * MM-1307, MM-1921: the MCP client of a machine session whose arrow has agent tools, with the
- * access of its level. Bearer tokens only, never a cookie. Its `sessionId` names the source
- * machine, because sessions end on every level change (MM-1306) and the machine's work (upstream
- * `linkOrigin`) and request keys must stay its own.
- */
-export const machineMcpClientFor = (
-  desired: MachineDesiredState,
-  session: {
-    readonly subject: string;
-    readonly method: string;
-    readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
-  },
-  nowMs: number,
-) => {
-  if (session.method !== "bearer-access-token") return undefined;
-  const granted = machineMcpAccessFor(desired, session, nowMs);
-  return granted === undefined
-    ? undefined
-    : {
-        sessionId: machineSessionSubject(granted.peer.id),
-        label: `machine ${granted.peer.name}`,
-        access: granted.access,
-        peerLink: true as const,
-        machineId: granted.peer.id,
-      };
-};
-
-/**
- * The session subject of the desktop app that runs this server. Its bootstrap credential comes
- * over the desktop IPC channel, and with tunnel pairing on, the server refuses it through the
- * tunnel. So only the local desktop app gets the machine token (MM-306, MM-1401).
- */
-export const isLocalDesktopSubject = (subject: string) => subject === "desktop-bootstrap";
-
 const MACHINE_REQUEST_NAMESPACE_PREFIX = "machine-session:";
 
 /** MM-1902: forwarding must not grant a capability absent from the source credential. */
 export const MACHINE_MCP_CAPABILITIES = ["orchestration", "worktree", "pull-requests"] as const;
 
 /**
- * The MCP request namespace of a machine session. The machine map tools refuse such callers, so
- * an agent on another machine cannot borrow the map role or the arrows of this machine. It names
- * the source machine for `machine_exec` (MM-1908). The id is URI-encoded, so it holds no `:`.
+ * The MCP request namespace of a machine session. The machine tools refuse such callers, so an
+ * agent on another machine cannot ask kitshn as this machine or use its links. It names the
+ * source machine for `machine_exec` (MM-1908). The id is URI-encoded, so it holds no `:`.
  */
 export const machineRequestNamespace = (client: {
   readonly machineId: MachineId;
@@ -268,165 +56,21 @@ export const machineOfRequestNamespace = (requestNamespace: string): MachineId |
 };
 
 /**
- * MM-1908: `exec` works only with agent tools, because `machine_exec` is an MCP tool on the
- * target, and only at `standard` or `admin`, because a command can do what the user can do.
- */
-export const arrowAllowsExec = (arrow: ArrowRecord, nowMs: number): boolean => {
-  const level = effectiveLevel(arrow, nowMs);
-  return arrow.agentTools && arrow.exec && (level === "standard" || level === "admin");
-};
-
-/**
- * MM-1908, MM-1916: the arrow from `from` into this machine while it allows `exec` now, else
- * undefined. The pause refuses every run.
- */
-export const execArrowInto = (
-  desired: MachineDesiredState,
-  from: MachineId,
-  nowMs: number,
-): ArrowRecord | undefined => {
-  if (desired.paused === true || from === desired.self.id) return undefined;
-  const arrow = arrowFrom(desired, from);
-  return arrow !== undefined && arrowAllowsExec(arrow, nowMs) ? arrow : undefined;
-};
-
-type Leveled = Pick<ArrowRecord, "level" | "expiresAt" | "revertLevel">;
-
-/**
- * MM-1306: the sources whose sessions must end. The old side reads the arrow level at the arrival
- * of the old desired state (`previousAtMs`), the new side the level now. So an arrow that expired
- * between the states counts as a change, and one that expired earlier does not. A state saved
- * without that time (`null`) reads its raw level.
- */
-const sourcesWithChangedLevel = <K>(
-  previous: ReadonlyArray<readonly [K, Leveled]>,
-  previousAtMs: number | null,
-  next: ReadonlyArray<readonly [K, Leveled]>,
-  nowMs: number,
-): ReadonlyArray<K> => {
-  const before = new Map(
-    previous.map(
-      ([source, arrow]) =>
-        [
-          source,
-          previousAtMs === null ? arrow.level : effectiveLevel(arrow, previousAtMs),
-        ] as const,
-    ),
-  );
-  const after = new Map(
-    next.map(([source, arrow]) => [source, effectiveLevel(arrow, nowMs)] as const),
-  );
-  return [...new Set([...before.keys(), ...after.keys()])].filter(
-    (source) => (before.get(source) ?? "none") !== (after.get(source) ?? "none"),
-  );
-};
-
-/**
- * MM-1306: the peers whose level into this machine changed between two desired states. A peer
- * that left the map counts as a change to `none`.
- */
-export const peersWithChangedLevel = (
-  previous: MachineDesiredState | null,
-  previousAtMs: number | null,
-  next: MachineDesiredState | null,
-  nowMs: number,
-): ReadonlyArray<MachineId> => {
-  const arrowsIn = (desired: MachineDesiredState | null) =>
-    (desired?.arrowsIn ?? [])
-      .filter((arrow) => arrow.to === desired?.self.id)
-      .map((arrow) => [arrow.from, arrow] as const);
-  return sourcesWithChangedLevel(arrowsIn(previous), previousAtMs, arrowsIn(next), nowMs);
-};
-
-/**
- * MM-304, MM-912: the next arrow into this machine that expires after `afterMs`, with the session
- * subjects whose level drops at that time. Undefined when no arrow expires later.
- */
-export const nextExpiry = (
-  desired: MachineDesiredState,
-  afterMs: number,
-): { readonly atMs: number; readonly subjects: ReadonlyArray<string> } | undefined => {
-  const expiring = [
-    ...desired.arrowsIn
-      .filter((arrow) => arrow.to === desired.self.id)
-      .map((arrow) => [machineSessionSubject(arrow.from), arrow] as const),
-    ...clientArrows(desired).map(([id, client]) => [clientSessionSubject(id), client] as const),
-  ].flatMap(([subject, arrow]) => {
-    if (arrow.expiresAt === null || (arrow.revertLevel ?? "none") === arrow.level) return [];
-    const atMs = Date.parse(arrow.expiresAt);
-    // A time that does not parse never fires, and the portal revision still ends the sessions.
-    return atMs > afterMs ? [{ subject, atMs }] : [];
-  });
-  if (expiring.length === 0) return undefined;
-  const atMs = Math.min(...expiring.map((e) => e.atMs));
-  return { atMs, subjects: expiring.filter((e) => e.atMs === atMs).map((e) => e.subject) };
-};
-
-/** MM-306: the peers this machine can use, with the origin of their T3 server. */
-export const reachablePeers = (desired: MachineDesiredState | null, nowMs: number) =>
-  (desired?.arrowsOut ?? []).flatMap((arrow) => {
-    if (arrow.from !== desired?.self.id) return [];
-    const level = effectiveLevel(arrow, nowMs);
-    const machine = desired.peers.find((peer) => peer.id === arrow.to);
-    if (level === "none" || machine === undefined || machine.hostname === null) return [];
-    return [
-      { machine, level, agentTools: arrow.agentTools, origin: `https://${machine.hostname}` },
-    ];
-  });
-
-/** MM-1921: an arrow out of this machine that is a linked environment now. */
-export interface ArrowLinkTarget {
-  readonly machine: PeerMachine;
-  readonly origin: string;
-  readonly access: AuthMcpClientAccess;
-  /** When the link ends: the expiry of a temporary level that reverts to `none`. */
-  readonly endsAtMs: number | null;
-}
-
-/**
- * MM-1921: the arrows out of this machine with agent tools and a level above `none`. These are
- * its only linked environments. A temporary level that reverts to a level above `none` keeps the
- * link, so only a revert to `none` ends it.
- */
-export const arrowLinkTargets = (
-  desired: MachineDesiredState,
-  nowMs: number,
-): ReadonlyArray<ArrowLinkTarget> =>
-  reachablePeers(desired, nowMs).flatMap((peer) => {
-    if (!peer.agentTools) return [];
-    const arrow = desired.arrowsOut.find(
-      (candidate) => candidate.from === desired.self.id && candidate.to === peer.machine.id,
-    );
-    const endsAtMs =
-      arrow?.expiresAt != null && (arrow.revertLevel ?? "none") === "none"
-        ? Date.parse(arrow.expiresAt)
-        : null;
-    return [
-      {
-        machine: peer.machine,
-        origin: peer.origin,
-        access: MACHINE_LEVEL_LINK_ACCESS[peer.level],
-        endsAtMs: endsAtMs !== null && Number.isFinite(endsAtMs) ? endsAtMs : null,
-      },
-    ];
-  });
-
-/**
  * MM-1920: the label of the thread-less session that the `t3` CLI issues for the local user when
  * its shell has no thread credential. An OAuth client that names itself so is refused the same way.
  */
 export const CLI_LOCAL_USER_LABEL = "CLI (local user)";
 
 export const CLI_LOCAL_USER_REFUSAL =
-  "Cross-machine calls need a thread credential: run them from an agent shell that has T3_ACP_MCP_ENDPOINT and T3_ACP_MCP_AUTHORIZATION, or use the portal. The local-user session of the t3 CLI has no thread, so no thread limits could go with the call.";
+  "Cross-machine calls need a thread credential: run them from an agent shell that has T3_ACP_MCP_ENDPOINT and T3_ACP_MCP_AUTHORIZATION. The local-user session of the t3 CLI has no thread, so no thread limits could go with the call.";
 
 /** MM-1920: the local-user session of the CLI works on this machine only. */
 export const isCliLocalUser = (scope: McpInvocationScope) =>
   scope.thread === undefined && scope.client?.label === CLI_LOCAL_USER_LABEL;
 
-/** MM-1921: the answer to a manual link or unlink, from the CLI, Connections or an agent. */
-/** `McpSchema.EnabledWhen` of `t3_environment_link` and `t3_environment_unlink`: links are arrows. */
+/** `McpSchema.EnabledWhen` of `t3_environment_link` and `t3_environment_unlink`: links come from kitshn. */
 export const manualLinkToolsEnabled = (): boolean => false;
 
+/** MM-1921: the answer to a manual link or unlink, from the CLI, Connections or an agent. */
 export const MANUAL_LINK_REFUSAL =
-  "Links to other machines come from the machine map. Set the arrow with agent tools in the portal.";
+  "Links to other machines come from kitshn. The owner shares a machine's T3 app and T3 agents cards with this machine on the kitshn map.";

@@ -317,7 +317,7 @@ export function CheckNewerBeforeUpdateInstallSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("check-newer-before-update-install")}
-      description="Desktop app: before it installs a downloaded update, look for a newer release and offer it. Install when idle and the machine map take the newer release."
+      description="Desktop app: before it installs a downloaded update, look for a newer release and offer it. Install when idle and the kitshn install-update command take the newer release."
       resetAction={
         settings.checkNewerBeforeUpdateInstall !==
         DEFAULT_UNIFIED_SETTINGS.checkNewerBeforeUpdateInstall ? (

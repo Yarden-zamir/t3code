@@ -43,19 +43,9 @@ export function MessageLinksSettingsRow() {
 }
 
 /** Fork: a switch row of a boolean fork server setting. */
-export function ForkServerSwitchRow(props: {
-  readonly settingKey:
-    | "threadLinkChips"
-    | "threadLinksOpenDesktopApp"
-    | "messageLinks"
-    | "accessChangeNotices"
-    | "kitshnProvider";
-  readonly searchId:
-    | "thread-link-chips"
-    | "thread-links-open-desktop-app"
-    | "message-links"
-    | "access-change-notices"
-    | "kitshn-provider";
+function ForkServerSwitchRow(props: {
+  readonly settingKey: "threadLinkChips" | "threadLinksOpenDesktopApp" | "messageLinks";
+  readonly searchId: "thread-link-chips" | "thread-links-open-desktop-app" | "message-links";
   readonly label: string;
   readonly description: string;
 }) {

@@ -13,7 +13,7 @@ Each section names:
 Local builds can keep their disposable Vite caches and Android app outputs outside checkouts.
 
 - **Setting:** `T3_FORK_CENTRAL_BUILD_CACHE=1` in the build environment (off by default). `XDG_CACHE_HOME` chooses the cache base; otherwise it is `~/.cache`. No installed-app setting is needed.
-- **Works on:** local web, server, desktop, portal and marketing Vite tools, shared-client tests, and Android prebuilds. Each canonical checkout path has its own SHA-256 key. APKs remain at `apps/mobile/android/app/build/outputs/apk` through a link.
+- **Works on:** local web, server, desktop and marketing Vite tools, shared-client tests, and Android prebuilds. Each canonical checkout path has its own SHA-256 key. APKs remain at `apps/mobile/android/app/build/outputs/apk` through a link.
 - **Limits:** existing local outputs are not moved or deleted. Enable before a clean Android prebuild. Root Android outputs, dependency codegen and `.cxx` stay in place. Disabling the variable does not remove an existing link; the next clean prebuild restores the normal layout. `node scripts/fork-build-cache-prune.ts --dry-run` previews central-only cleanup, with 14 days as the default age. See [operations](operations.md#central-build-caches).
 
 ## Worktrees
@@ -76,7 +76,7 @@ A desktop server that listens on loopback makes pairing links with its tunnel UR
 
 Upstream guest links ([Guest links](../user/guest-links.md)) need T3 Connect, and fork builds have no T3 Connect. Without T3 Connect, a guest link uses the host of the server's Cloudflare tunnel.
 
-- **Setting:** the upstream beta `guestSharingEnabled` (off by default), Settings > Labs > Guest links, or the switch of the machine in the Guests view of the portal. The tunnel address is `T3CODE_TUNNEL_PAIRING_URL`, or the tunnel of a machine map join.
+- **Setting:** the upstream beta `guestSharingEnabled` (off by default), Settings > Labs > Guest links. The tunnel address is `T3CODE_TUNNEL_PAIRING_URL`.
 - **Works on:** server. The guest uses any browser. The owner creates links from web, desktop and mobile, as upstream.
 - **Limits:** the tunnel host must let guests reach the guest paths. See [Guest links through Cloudflare Access](operations.md#guest-links-through-cloudflare-access). When T3 Connect starts to serve the machine, links on the tunnel host stop working, because each guest request must match the current host. Revisit when upstream guest links accept a host other than T3 Connect.
 
@@ -84,7 +84,7 @@ Upstream guest links ([Guest links](../user/guest-links.md)) need T3 Connect, an
 
 Trusted browser origins get credentialed CORS and session cookies. One browser page then pairs with and reaches the other hosts.
 
-- **Setting:** `trustedBrowserOrigins` (empty by default). Settings > Sharing & access > "Allow pairing through a tunnel", in the desktop app. On a headless server, set `T3CODE_TRUSTED_BROWSER_ORIGINS`. A server on the machine map trusts the origins of the other machines without this setting (MM-1311).
+- **Setting:** `trustedBrowserOrigins` (empty by default). Settings > Sharing & access > "Allow pairing through a tunnel", in the desktop app. On a headless server, set `T3CODE_TRUSTED_BROWSER_ORIGINS`. A server with kitshn trusts the origins of the machines that it reaches without this setting.
 - **Works on:** web, desktop. Mobile does not need it.
 
 ### Quiet reconnect after restart
@@ -95,60 +95,62 @@ After an update, the app and the remote servers restart at about the same time. 
 - **Works on:** web, desktop. The sidebar, the environment chips and Settings > Environments still show the state at once. A send in that time still shows "Not connected: message not sent".
 - **Limits:** a refused sign-in or an offline device shows at once. Later reconnects keep the upstream wait of 2 seconds. The mobile app shows only a small "Reconnecting" status, so it has no wait. Revisit the 45 seconds when a normal restart takes longer.
 
-## Machine map
+## kitshn
 
-One portal at `https://t3.yarden-zamir.com` (a Cloudflare Worker) maps every T3 machine and sets what each machine can do on the others.
+kitshn connects the T3 machines of the owner. Each T3 server is the provider `t3` of the kitshn daemon on its machine. The owner shares access between machines on the kitshn map. T3 Code has no map of its own.
 
-- **Setting:** `machineMap` (off by default). A join turns it on. Settings > Machines.
-- **Works on:** server and desktop. The portal is a web app that also works in a phone browser. The mobile app joins through [app invites](#app-invites-and-app-tokens), but has no Settings > Machines and no Machines panel.
-- **Reference:** the requirements are in [apps/machine-map/SPEC.md](../../apps/machine-map/SPEC.md) (MM-xxx). Portal setup, client access steps and sync details are in [apps/machine-map/README.md](../../apps/machine-map/README.md). Agents use [fork-agents.md](../fork-agents.md).
+- **Setting:** none. The server uses kitshn when the machine has kitshn 2, is joined, and its daemon runs. Without kitshn, the server keeps the owner login only.
+- **Join:** on the machine, run `kitshn join <code> --server <address>`. "Add machine" on the kitshn map gives the code. Agents cannot join.
+- **Works on:** server, web, desktop and mobile.
+- **Reference:** agents use [fork-agents.md](../fork-agents.md).
 
-### Environment name from machine map
+### Cards
 
-Use the machine map name as the server environment name. A name change in the portal updates connected clients without a restart. Turn the setting off to use the operating system name again.
+The server puts these cards on the kitshn map:
 
-- **Setting:** `environmentLabelFromMachineMap` (server setting, off by default). Settings > Machines > Machine map > "Environment name from machine map".
-- **Works on:** server, web, desktop and mobile, through direct and relay connections.
-- **Limits:** the server must join the map and receive its machine record. Without a name, it keeps the operating system name. An offline server keeps the last map name until the portal connects again. Disconnected clients get the current name when they connect. Older clients need an update for live display changes.
+- `t3.app`, "T3 on <machine>": the version, the running turns and a busy fact. Its commands are Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. Its lists hold the scheduled tasks (Run now, Pause, Resume) and the client sessions (Revoke session), at most 100 rows each. Its setting `updateChannel` picks the release feed, see [Fork releases](#fork-releases).
+- `t3.agents`, "Agents on <machine>": what agents of other machines can do on this machine.
+- `t3.thread`: one card for each thread with an open guest link.
+- `t3.settings`: the T3 settings state, see [Settings and theme sync](#settings-and-theme-sync).
 
-### Access change notices
+kitshn runs a command at once when a grant allows it. Otherwise the command waits for the owner as a kitshn job.
 
-When the owner changes an arrow or a client arrow, open clients get the new access without a reload. A notice names the change, for example "Access to VPS changed: You can now send messages." A change of an arrow with agent tools names what the agents of the server can now do on the other machine.
+- **Limits:** the busy fact and the lists refresh every 15 seconds.
 
-- **Setting:** server setting `accessChangeNotices` (off by default). Settings > Machines > "Access change notices", and Settings > Fork in the mobile app. A shared value in the portal turns it on for every machine.
-- **Works on:** web, desktop (a toast) and mobile (a popup). The mobile app shows the notices of one update in one popup.
-- **How it works:** the portal sends the new desired state to the target machine at once. A changed level ends the sessions of that machine or client (MM-305, MM-912, MM-917), and the client pairs again with the new scopes. The desktop app pairs again at most once in 30 seconds per machine (MM-306), so a second change soon after can take up to 30 seconds. A link of agents follows the map state that the server sends to its clients on each change. Clients subscribe to that state only while the setting is on.
-- **Limits:** a launch or a reload shows no notice, because there is no earlier access to compare. A removed arrow shows "Access to <machine> ended" when the desktop app removes the machine or the mobile app turns it off.
+### Access from kitshn
 
-### Portal views
+The kitshn grants decide who gets in: browsers through Cloudflare Access, other machines and guests. On `t3.app`, view gives `read`, use gives `standard` and control gives `admin`.
 
-The portal has the views Map, Levels, Health, Settings, Queue, Tasks, History, Inbox and Clients (MM-1102). Each view and each selected item has its own link. Agents use the `machines_*` and `machine_exec` tools for machine operations, and the T3 tools with `environmentId` for work on other machines. Client approvals, invites and the resume after an emergency pause stay with the owner.
+- A grant that drops ends the sessions that it no longer allows.
+- The server accepts an Access token for the audiences of kitshn's applications on its host. Until the portal Worker goes, it also accepts the portal's audience, from the environment or from `machine-map-tunnel.json` of an older portal join.
+- **Pause:** kitshn's emergency pause closes every grant, so links and `machine_exec` stop at once (K-1618).
+- **Limits:** while kitshn is out of reach, the server uses the grants that it saved, for at most 24 hours after kitshn's last answer. The server asks kitshn once an hour to prove contact.
 
-The map role never raises a thread's limits. Map writes need a live full-access/default caller, even with `edit`. These checks run on the server for agents started from web, desktop and mobile.
+### Environment name from kitshn
 
-Each arrow lists what agents on the source can do on the target: read threads, launch and delegate, exec and settings (MM-1915). The arrow panel, Map, Levels and `machines_read` show the list. Secret copy waits for MM-1917.
+Use the kitshn map name of the machine as the server environment name. A name change on the kitshn map updates connected clients without a restart.
+
+- **Setting:** `environmentLabelFromMachineMap` (server setting, off by default). Settings > Machines > kitshn > "Environment name from kitshn".
+- **Limits:** without a kitshn name, the server keeps the operating system name.
 
 ### Work on other machines
 
-An arrow with agent tools makes the target machine a linked environment of the source (MM-1921). Agents on the source pass its `environmentId` to the T3 tools, for example `t3_thread_list`, `t3_thread_launch` or `delegate_task` with `target.environmentId`. `t3_environment_links` lists the linked machines. A delegated task runs on the other machine and wakes the parent thread when it ends (MM-1910).
+A kitshn link makes another machine a linked environment. Agents pass its `environmentId` to the T3 tools, for example `t3_thread_list`, `t3_thread_launch` or `delegate_task` with `target.environmentId`. `t3_environment_links` lists the linked machines. A delegated task runs on the other machine and wakes the parent thread when it ends.
 
-- **Setting:** an arrow with agent tools and a level above `none`, from the machine that runs the agent to the other machine. Set it in the portal.
-- **Access:** `read` gives read-only access. `standard` gives `auto`, and it changes only the threads that its own link started: not the projects, settings or threads of the other machine. `admin` gives full access (MM-302).
-- **Thread limits:** each call carries the limits of the calling thread, and the other machine applies the narrower of those and the level. A thread in plan or approval-required mode can work on another machine within its own mode (MM-1902).
-- **Pause and removal:** while the owner's emergency pause is on, work on other machines waits and tries again after Resume. Removing the arrow or its agent tools fails that work with the reason (MM-1914).
-- **Manual links:** `t3 environment link` and `t3 environment unlink` refuse. Settings > Environments on web, desktop and mobile shows the arrow links read-only, with "Set arrows in the portal". A permanent arrow shows no expiry. A temporary arrow shows its end; renew it in the portal.
-- **History:** each tool call that an agent forwards to another machine shows in the portal History, with the machines, the calling thread, the tool, the outcome and the time. The arguments and the output stay out of the portal (MM-1922).
-- **Unanswered machines:** a machine that has not answered since this server started shows as an unreachable link with the reason, under the id `machine:<machine id>`. A call with that id fails with the reason, and names the real id once the machine answers. An offline machine or an old T3 Code version is the usual cause; the portal shows its presence and version.
-- **Limits:** a link reaches the other machine through its tunnel hostname.
+- **Setting:** on the kitshn map, the owner shares the `t3.app` and `t3.agents` cards of the other machine with this machine. A link needs both.
+- **Access:** the level of the `t3.app` grant applies. `read` is read-only. `standard` gives `auto` and changes only the threads that its own link started. `admin` gives full access.
+- **Thread limits:** each call carries the limits of the calling thread. The other machine applies the narrower of those and the level.
+- **Manual links:** `t3 environment link` and `t3 environment unlink` refuse. Settings > Environments shows the kitshn links read-only.
+- **Audit:** each forwarded tool call and each exec run goes to the kitshn audit, without arguments or output.
+- **Limits:** a call goes through the link socket of the kitshn daemon, a named pipe on Windows. While kitshn is out of reach, at most 100 audit reports wait, and older ones drop.
 
 ### Commands on other machines
 
-An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr (MM-1908). In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's (MM-1919).
+An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr. In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's.
 
-- **Setting:** "Agents on A run commands on B" on the arrow from A to B in the portal. It is off by default. It needs agent tools and the level Standard or Admin. Map, Levels and the arrow panel show an "exec" sticker.
-- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Without a thread credential it is refused (MM-1920). The arrow and the thread limits are the only controls: no command list grants or refuses a command (MM-1909).
-- **Stop:** the emergency pause, a removed arrow or exec turned off stops a running command at once (MM-1916).
-- **History:** each run shows in the portal History with the machines, the calling thread, the command, the exit code and the time. A refused call shows too, with the reason and no exit code. The output stays out of the portal. `machines_read` lists the newest 50 runs as `execs`. A `t3 machine exec` run gives one entry when it ends.
+- **Setting:** the `t3.agents` grant at `exec`, and the `t3.app` grant at `standard` or higher, from the other machine to this machine.
+- **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Without a thread credential it is refused. No command list grants or refuses a command.
+- **Stop:** a lost grant stops a running command at once.
 - **In a shell:** in a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
   - `t3 machine exec vps -- uname -a`
   - `t3 machine exec vps --cwd ~/app -- git status`
@@ -158,128 +160,59 @@ An agent runs a shell command on another machine with `machine_exec`. The comman
   - Folder to the other machine: `tar c -C dist . | t3 machine exec vps -- tar x -C /srv/app`
   - Folder from the other machine: `t3 machine exec vps -- tar c -C /srv/app . | tar x -C ./backup`
   - One file to the other machine: `t3 machine exec vps -- 'cat > /tmp/file' < file`
-- **Exit codes:** the exit code of the command. 124 when `--timeout` stops it. 255 when the stream fails: a refusal, a lost connection, or an arrow that stops allowing exec. The reason goes to stderr.
-- **Long jobs:** `t3 machine exec` has no time limit. A ping every 25 seconds keeps the connection open through Cloudflare. The end of the agent's turn does not stop it, so an agent can run it in the background. A lost connection stops the command, as with ssh. For a job that must outlive the connection, start it with `nohup <command> > job.log 2>&1 &` in a command that exits 0, and read the log later. A command that exits with another code stops its background jobs too. A command that a signal ends keeps them.
-- **Limits:** a `machine_exec` run lasts at most 90 seconds, because the answer goes through Cloudflare. Use `t3 machine exec` for longer work. `machine_exec` keeps 50,000 bytes of stdout and of stderr. A timeout loses the output. A command that reads stdin waits for the timeout. On a Windows machine, Windows PowerShell runs the command. `t3 machine exec` joins the words of the command with spaces, so quote the command for PowerShell, not for a POSIX shell. Byte-exact stdin to a command on Windows is not tested yet. A machine that is offline from the portal still runs commands and sends the History entry when it connects, unless it restarts first.
+- **Exit codes:** the exit code of the command. 124 when `--timeout` stops it. 255 when the stream fails: a refusal, a lost connection, or a grant that stops allowing exec. The reason goes to stderr.
+- **Long jobs:** `t3 machine exec` has no time limit. A ping every 25 seconds keeps the connection open. The end of the agent's turn does not stop it, so an agent can run it in the background. A lost connection stops the command, as with ssh. For a job that must outlive the connection, start it with `nohup <command> > job.log 2>&1 &` in a command that exits 0, and read the log later.
+- **Limits:** a `machine_exec` run lasts at most 90 seconds. Use `t3 machine exec` for longer work. `machine_exec` keeps 50,000 bytes of stdout and of stderr. A timeout loses the output. A command that reads stdin waits for the timeout. On a Windows machine, Windows PowerShell runs the command, so quote the command for PowerShell.
 
 ### Thread mentions across machines
 
-The `@` menu lists the threads of this machine and of the machines that it links to through the machine map arrows. Each thread of another machine names its machine. The agent reads an attached thread of another machine through the arrow, on the T3 server of that machine (MM-1905 to MM-1907).
+The `@` menu lists the threads of this machine and of the machines that its kitshn links reach. Each thread of another machine names its machine. The agent reads an attached thread of another machine through the link, on the T3 server of that machine.
 
-- **Setting:** an arrow with agent tools and a level above `none`, from the machine that runs the agent to the machine of the thread. Set it in the portal. Upstream's Labs setting `linkedEnvironmentsEnabled` must be on for both machines.
-- **Works on:** web, desktop and mobile, through local, relay and tunnel connections. The client lists the threads of a machine only when it also connects to that machine.
+- **Setting:** a kitshn link to the machine of the thread, see [Work on other machines](#work-on-other-machines). Upstream's Labs setting `linkedEnvironmentsEnabled` must be on for both machines.
+- **Works on:** web, desktop and mobile. The client lists the threads of a machine only when it also connects to that machine.
 - A send stops when the target machine cannot read an attached thread. Remove the thread, or switch to a machine that can read it.
-- Agents in every mode can read these threads. The read carries the limits of the agent's thread, so the other machine refuses what that thread may not do.
-- **Limits:** a machine asks each peer once for its environment id. An offline peer is not listed until it answers. A send that starts before the list of linked machines loads refuses a thread of another machine; send again.
-
-### Join and install
-
-In the portal, "Add machine" shows a one-time join code and one install command per system. The command installs the fork and joins the map, see [Install the fork](operations.md#install-the-fork). On a machine that runs the fork, enter the code in Settings > Machines, or run `t3 machine-map join <code>`. The portal makes the tunnel of the machine when it can (MM-213).
-
-- The open join dialog shows when a machine uses the code, and whether it connected.
-- The code expires after 10 minutes.
-
-### Settings > Machines
-
-Settings > Machines joins or leaves the map with a code. It shows the connection status, the last error, the portal link, the name of this machine, and the machines that this machine can use with their levels. Join and leave need the `settings:write` scope. Only the desktop app of a machine joins, leaves and changes "Client access" (MM-919).
-
-### Desktop app on the map
-
-The desktop app adds each machine that its server can use as an environment, with the machine token headers, and removes it when the arrow drops to `none` (MM-1401). It applies the shared client settings, and runs the commands Reload windows and Install update (MM-1402). Environments that you saved by hand stay as they are.
-
-A browser that a machine serves, and the mobile app, also take the shared client settings. A change on the device stays until the shared value changes again. The mobile app takes only the settings that it has: follow-up behavior, math rendering, plan mode and the working shelf (MM-416).
-
-When a machine refuses the connection, the app pairs again with a backoff: at least 30 seconds between two pairings of one machine, and up to 10 minutes after repeated failures. The target gives a machine its live session again, so a new pairing adds no session (MM-1305). Machine, client and Cloudflare Access sessions without a connection for 7 days end. The Clients view shows one row for each machine, client or sign-in on a machine (MM-903).
+- **Limits:** a machine asks each linked machine once for its environment id. An offline machine is not listed until it answers.
 
 ### Settings and theme sync
 
-A setting with a shared value syncs to every machine, also to an offline or a new machine (MM-406). In T3 Settings, a change with "All environments" selected sets the shared value, when the machine has the map role `edit` (MM-411). A change for one environment becomes the own value of that machine. A synced row shows a sync marker.
+The `t3.settings` state on kitshn holds a shared part and a part for each machine, each with server and client settings. Each machine applies the shared part, then its own part over it. In T3 Settings, a change with "All environments" selected goes into the shared part. A synced row shows a sync marker.
 
-- Custom themes (the `themes/` folder, as `sharedThemes`) and `defaultTheme` sync too (MM-408 to MM-410).
-- Keybindings sync while `keybindingSync` is on (off by default). Settings > Keybindings > Machine map > "Sync keybindings". The shared value replaces the whole `keybindings.json` of each machine, and the machine keeps the file before it as `keybindings.json.bak`. Details: [Keybinding sync](../../apps/machine-map/README.md#keybinding-sync).
-- Paths, secrets, project-keyed maps and the map connection stay on each machine.
+- Custom themes (the `themes/` folder, as `sharedThemes`) and `defaultTheme` sync too.
+- Keybindings sync while `keybindingSync` is on (off by default). Settings > Keybindings > "Sync keybindings". The shared value replaces the whole `keybindings.json` of each machine, and the machine keeps the file before it as `keybindings.json.bak`.
+- Web, desktop and mobile apply the client settings of the machine that serves them. A browser leaves out the settings that only the desktop app uses. The mobile app takes only the settings that it has. A change on the device stays until the synced value changes again.
+- Agents set one value of their own machine with `machines_set_setting`. Only the owner changes the shared part: in T3 Settings, or with `t3 tool call` from a shell.
+- Paths, secrets and project-keyed maps stay on each machine.
 
-### Zoom and pan
+### Settings > Machines
 
-The map has no edges. Cards stay where you drop them. The map zooms, pans and fits all cards, also on phones and small windows. "Auto layout" places every card so that the map reads well, as one change with Undo.
+Settings > Machines shows how to join this machine to kitshn, and the kitshn settings of the selected environment. It also shows the kitshn connection: connected, connecting with the last error, or off with the reason, and the grants, reached machines, link proxy and kitshn's last answer. `machines_read` gives agents the same state.
 
-Before rotating a machine token, check that it can connect within 24 hours. The old secret stops at confirmation or at that deadline. If the deadline passes without confirmation, select "Join again with a new code" on the machine and use the code there. The portal keeps that recovery notice until the machine joins again or confirms the new secret.
+- A notice shows while the portal still serves the T3 host of this machine. Hand it over with [Hand a T3 host over to kitshn](operations.md#hand-a-t3-host-over-to-kitshn).
+- The desktop app has "Join with a device invite": paste a kitshn device invite link there, see [Device invites](#device-invites).
 
-### Approved clients
+### Device invites
 
-Clients are the browsers and phones of the owner (MM-904). A new browser waits in the Clients view until the owner approves it with a fresh MFA step. Each client gets a card and a level per machine.
+A phone or a desktop app joins kitshn with its own device token (K-1601). On the kitshn map, "Add device" gives a one-time link `https://<kitshn>/join/device#code=…`. It works once and expires after 15 minutes.
 
-### Client access
-
-Each machine decides which browsers get in through Cloudflare Access.
-
-- **Setting:** `clientAccess` (`off` by default). Change it per machine in the portal Settings view, with the passkey step. In the desktop app of a machine, change it in Settings > Machines > "Client access".
-- `off` keeps the owner login. `observe` gives a browser of an approved client the level of its arrow, at most `standard`. `enforce` lets in only browsers of approved clients. Other browsers wait for approval.
-- An open browser also enters the waiting page if its key is removed or the machine switches to `enforce`. It checks for approval automatically.
-- To turn it on safely, and to get back in after a lockout, follow [Client access](../../apps/machine-map/README.md#client-access) in the portal README.
-
-### Sibling client sessions
-
-A browser client session lasts 1 day, also on sibling machines (MM-922). A refused sibling pairs again by itself with the browser key. Settings > Environments shows why a sibling is not paired: sign in, waiting for approval, or paused.
-
-- **Limits:** a stolen bearer of a sibling works for up to 1 day. Revisit as MM-922 says.
-
-### Owner-only access changes
-
-Only the owner changes `clientAccess` and `machineMap`: in the portal with the passkey step, or in the desktop app of the machine (MM-919). Agents cannot change them, not even as a proposal.
-
-Only the owner raises access between machines, in the portal (MM-803). When an agent raises a level, turns on agent tools or exec, or raises a map role, the change waits in the Inbox as "owner only", also with the map role `edit`. An agent with `edit` still lowers or removes access at once.
-
-### App invites and app tokens
-
-Only the owner makes an invite, in the portal. "Invite an app" shows a QR code that a native app, such as the T3 Android app, uses once (MM-913). The app gets its own Cloudflare Access token, and each machine gives it the level of its arrow.
-
-To add a phone from the map, select "Add phone", or double-click empty map space (long-press on a phone) and select "Add phone here". Check the name and arrows, which start at `standard`, then make the invite with the passkey check. The same dialog shows the QR code, link and "Add with Obtainium". The phone card appears at the chosen point. "Invite an app" in Clients still starts new arrows at `none`.
-
-After a successful passkey check, the dialog returns and makes the invite without another click. Browser approvals and owner-only settings changes, including held changes, resume the same way. The saved request expires after 10 minutes. If confirmation fails or expires, select "Try again". If an affected item changed while you confirmed, the portal asks you to review it before applying anything.
-
-On the same phone, select "Open in the T3 app" in the dialog or invite page, then tap Add environment in the app. Or copy the link, open the T3 app, open Environments, tap +, and paste it in Address. Older app builds need this copy-and-paste path.
-
-- In the mobile app, scan the code in Add environment, or paste its link in Address. The app then pairs with every machine that it may reach.
-- The app keeps the token, also when a machine does not pair at once. It pairs again by itself when a machine ends its session, for example after an access change, an expiry, a resume or a `clientAccess` change.
-- The app reads its machines from the portal when it opens and when it returns to the foreground. Settings > Fork > App token > Refresh machines reads them at once. A machine with access `none` is disabled, and comes back when it gets access again.
-- When the portal no longer accepts the token, for example after "Remove client", the machine says so. Use "Invite an app" for this phone again.
-
-### Emergency pause
-
-A big red button in the portal stops all agents and sets all access to `none` (MM-708 to MM-713). While paused, each machine locks T3 Code for every client except its own desktop app (MM-718). Guest links stop too: a guest's open thread closes, and the guest gets back in after Resume. Only the owner resumes, in the portal.
-
-- **Limits:** what the mobile app shows while a machine is locked is not checked. Revisit when the pause is tested on Android.
-
-### Scheduled tasks
-
-The Tasks view lists the scheduled tasks of every machine, with Pause, Resume and "Run now" (MM-1601 to MM-1605).
-
-### Health alerts
-
-Each machine sends CPU, memory, disk, swap and battery samples. The portal keeps 30 days of history and raises the alerts HOT, FULL, DISK, SWAP, DOWN and LOW (MM-1501 to MM-1511).
-
-- The CPU alert starts when a machine is starved for CPU, not when it is only busy. On Linux, it uses CPU pressure.
-- The battery alert (LOW) starts below 15% on battery, by default. macOS and Linux report the battery.
-
-### Installable portal
-
-The portal installs as an app, with an offline page and an app badge. Turn on Web Push per device in Clients > "Notifications on this device". Pushes go out for health alerts, Inbox proposals, sign-ins that wait for approval, and the pause (MM-1801 to MM-1809).
-
-"Sign out everywhere" turns notifications off on every device. Signing in again keeps them off until you select "Turn on" on that device, even if the browser still holds its old push subscription.
+- **Phone:** scan the link in Add environment, or paste it in Address.
+- **Desktop:** paste the link in Settings > Machines > "Join with a device invite". The desktop app never uses the machine token of the kitshn daemon.
+- The app keeps only the `t3.app` cards that the token opens, and pairs with each machine. It reads the list at start, when it comes back to the foreground, and on Settings > Fork > App token > Refresh machines (phone). The desktop app also reads it every 30 seconds, adds each new machine as an environment, and removes an environment that it added when the list drops the machine.
+- A refused machine pairs again with a backoff, because Access can take some seconds to accept a new token.
+- An empty or refused list disables or removes no saved machine. The machine shows the reason instead.
+- If kitshn is paused (423), Cloudflare refused the new token (502), or kitshn has no Cloudflare API token (503), the invite stays: try it again. A lost answer uses the invite up, so ask the owner for a new one.
 
 ### Machines panel
 
-A read-only map in the right panel of a thread. Open it from the "+" menu of the panel, or with "Show machines" in the command palette.
+The right panel of a thread lists the machines that the kitshn links of this machine reach, with a link to the kitshn map. Open it from the "+" menu of the panel, or with "Show machines" in the command palette.
 
 - **Works on:** web, desktop.
-- **Limits:** the mobile app has no Machines panel. Revisit when the mobile app needs to show machine state.
+- **Limits:** the mobile app has no Machines panel.
 
 ## Updates and releases
 
 ### Fork releases
 
-Nightly desktop builds for macOS, Windows and Linux, plus Linux server archives and `SHA256SUMS`. A release builds on each push to main that changes more than docs or the portal. `t3 update`, "Update everything" and `scripts/install.sh` install from the fork releases. Each morning one nightly becomes a release with notes in three sections: fork changes, upstream changes and their integration. How releases build: [Fork Release](operations.md#fork-release) and [Daily release](operations.md#daily-release).
+Nightly desktop builds for macOS, Windows and Linux, plus Linux server archives and `SHA256SUMS`. A release builds on each push to main that changes more than docs. `t3 update`, "Update everything" and `scripts/install.sh` install from the fork releases. Each morning one nightly becomes a release with notes in three sections: fork changes, upstream changes and their integration. How releases build: [Fork Release](operations.md#fork-release) and [Daily release](operations.md#daily-release).
 
 - **Works on:** desktop and server.
 - **Limits:** macOS builds use a self-made certificate and are not notarized, so the first install needs Control-click > Open. Revisit if the fork gets an Apple developer account.
@@ -289,7 +222,7 @@ Nightly desktop builds for macOS, Windows and Linux, plus Linux server archives 
 
 A signed Android APK of fork main, on fork releases that changed the app. It installs next to the store app and speaks the protocol of fork main.
 
-- **Install:** on the phone, open [Add with Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.yardenzamir.t3code%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FYarden-zamir%2Ft3code%22%2C%22author%22%3A%22Yarden-zamir%22%2C%22name%22%3A%22T3%20Code%20fork%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22android%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D). It tracks the fork releases with "Include prereleases" and "Fallback to older releases" on, and the APK filter `android\.apk$`. The portal "Invite an app" dialog has the same link.
+- **Install:** on the phone, open [Add with Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.yardenzamir.t3code%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FYarden-zamir%2Ft3code%22%2C%22author%22%3A%22Yarden-zamir%22%2C%22name%22%3A%22T3%20Code%20fork%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22android%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D). It tracks the fork releases with "Include prereleases" and "Fallback to older releases" on, and the APK filter `android\.apk$`.
 - **Install by hand:** open the APK of the newest release that has one, and allow installs from that browser. Install a newer APK over it to update. Most releases have no APK, because only a release that changed the app builds one.
 - **Limits:**
   - No push notifications, because the build has no `google-services.json`. Revisit when the fork has a Firebase project.
@@ -299,7 +232,7 @@ A signed Android APK of fork main, on fork releases that changed the app. It ins
 
 ### Fork installers
 
-One command installs the fork from the fork releases on macOS, Windows or Linux and joins the machine map. The installer does not build from source. Commands and options: [Install the fork](operations.md#install-the-fork).
+One command installs the fork from the fork releases on macOS, Windows or Linux, then names the kitshn join step. The installer does not build from source. Commands and options: [Install the fork](operations.md#install-the-fork).
 
 ### Install when idle
 
@@ -318,7 +251,7 @@ A headless server that runs as the background service installs each newer fork r
 
 ### Newer update before install
 
-Before the desktop app installs a downloaded update, it checks for a newer release. If one exists, it asks "Download newer" or "Install this one". Install when idle and the machine map take the newer release.
+Before the desktop app installs a downloaded update, it checks for a newer release. If one exists, it asks "Download newer" or "Install this one". Install when idle and the kitshn install-update command take the newer release.
 
 - **Setting:** client setting `checkNewerBeforeUpdateInstall` (off by default). Settings > About > App > "Check for a newer update before install".
 - **Works on:** desktop.
@@ -430,18 +363,27 @@ Agents publish a file or a folder of their workspace to kitshn, and give the car
 
 ### kitshn provider
 
-The server shows itself as a card on the kitshn map, with its commands (kitshn K-704 to K-707). The server runs `kitshn provider` of the machine's kitshn 2 and keeps it running. The child sends JSON lines to the local kitshn daemon.
+The server shows itself as cards on the kitshn map, with its commands (kitshn K-704 to K-709). kitshn is the only way this server joins other machines. The server runs `kitshn provider` of the machine's kitshn 2 and keeps it running. The child sends JSON lines to the local kitshn daemon. Without kitshn 2, the server works as upstream T3 Code, with no machine features.
 
-- **Setting:** server setting `kitshnProvider` (off by default). Settings > Machines > "kitshn provider". Join the machine to kitshn first.
-- **Card:** one `t3.app` card "T3 on <environment name>", with the facts version and running turns. The server sends a new card only when a fact changes. It checks the facts every 15 seconds.
-- **Commands:** Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. Each runs the machine map command of the same name. The card shows only the commands that this server can run now: Restart server needs a supervisor, and Install update needs the background service. A restart answers kitshn first and then restarts.
-- **Diagnostics:** the machine map portal and kitshn get the same redacted diagnostics. Each process shows only its program name, never its arguments. Secrets in error texts become `REDACTED`: URL tokens such as a pairing link, `key=value` and `"key":"value"` for secret key names such as `token` and `password`, `NAME=value` env values, the word after `Bearer`, `token:` or `--token`, and known token formats.
+- **Start:** join the machine with `kitshn join <code> --server <address>`, or with the agent tool `machines_join` from a shell (agents cannot join). There is no setting: the server connects whenever kitshn 2 is on the machine.
+- **Cards:** one `t3.app` card "T3 on <environment name>", with the version, the running turns and a busy fact, and a `t3.agents` card "Agents on <environment name>" under it. The busy fact is "true" while an agent turn runs, so kitshn holds jobs sent "when idle". Each thread with an open guest link also gets a `t3.thread` card under the app card, named by the thread title, with an "Open thread" sticker to its guest page. The card goes when the link ends. The server checks the facts and the shared threads every 15 seconds, and sends only the cards that changed. The `t3.app` and `t3.agents` kinds have owner control, so the owner always holds them.
+- **Name:** with "Environment name from kitshn" on, the environment name is the machine name on the kitshn map.
+- **Grants:** once kitshn answered, kitshn grants decide access for each request with a verified Cloudflare Access JWT (a tunnel request). The desktop window, loopback and tailnet pairing keep T3's own auth. Without a grant, a tunnel request is refused; there is no other Access login.
+  - `t3.app`: `read`, `standard` and `admin` give the scopes of the levels of the same name, without pairing-link and relay rights. A machine's service token, named by a `machine` rule, gets the session of that machine.
+  - `t3.thread`: opens only the guest page of that thread, without a guest link. `view` reads the thread. `send` also sends as the guest does, after the guest joined. The guest link itself works as before.
+  - `t3.agents`: another machine needs `use` for the forwarded agent tools, and `exec` with `t3.app` at `standard` or higher for `machine_exec` and terminal threads. Losing the grant stops a running command.
+  - Matching: `email` and `domain` in lowercase, `ip` against `Cf-Connecting-IP`, `device` and `machine` against the service token. An unknown rule type never matches. The highest matching level applies. Access checks the passkey.
+  - The last table stays on disk (`kitshn-grants.json` in the server state dir) and applies after a restart or while kitshn is out of reach. `endsAt` still ends a grant on time. After 24 hours without contact with kitshn, every tunnel request is refused until a fresh table arrives.
+  - At `endsAt`, a level drop or a removed grant, the server ends the sessions and WebSockets that lost access. Failed ends wait on disk and run again, also after a restart.
+- **Settings:** the `t3.settings` state on kitshn sets the server settings, themes and keybindings: the shared part first, then this machine's own part over it. `machines_set_setting` sets one key of this machine's part or of the shared part; the shared part needs a full-access caller, and machine-local keys are refused.
+- **Commands:** Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. The card shows only the commands that this server can run now: Restart server needs a supervisor, and Install update needs the background service. A restart answers kitshn first and then restarts. An agent sends a command to a machine with `machines_command`, as a kitshn job; it can wait for the owner.
+- **Agent tools:** `machines_read` (what kitshn shows this machine), `machines_command`, `machines_queue_cancel` (only jobs that this machine queued), `machines_resources` (CPU, memory and disk of this machine for the last hour), `machines_set_setting` and `machines_join`. Access between machines, history, undo and presets are on the kitshn map.
+- **Diagnostics:** kitshn gets redacted diagnostics. Each process shows only its program name, never its arguments. Secrets in error texts become `REDACTED`: URL tokens such as a pairing link, `key=value` and `"key":"value"` for secret key names such as `token` and `password`, `NAME=value` env values, the word after `Bearer`, `token:` or `--token`, and known token formats.
 - **Failures:** without kitshn 2, after a refusal, or when the child exits, T3 runs normally and tries again. After a connection that registered, T3 tries again after 1 second, because a daemon restart ends the child. Each further try waits 5, 10, 20 and then 30 seconds. After a daemon restart, kitshn holds a queued command for 60 seconds until T3 registers again, and these waits stay inside that time. The same start rules as the attester apply: only the server of the default T3 home `~/.t3`, no dev server and no Windows.
 - **Limits:**
-  - Phase A: kitshn sends grants, and T3 keeps them in memory only. T3 drops them when the connection ends. Nothing checks them yet, so a grant gives no access to T3 and takes none away.
-  - The card has no site yet. kitshn does not serve T3 through it, so the machine map host `t3-<machine>` stays the way in.
-  - No thread cards yet.
-  - Turning the setting off makes the card offline. The card keeps its shares until the owner forgets it in kitshn. T3 never runs `kitshn provider forget t3`.
+  - `machine_exec` checks a `machine` rule only: an `ip` rule does not count for it.
+  - The card has no site yet, so kitshn does not serve T3 through it.
+  - Links to other machines (`machine_exec` from this machine, linked environments) wait for the kitshn link proxy support in T3.
 - **Remove T3:** stop the T3 server first. Then run `kitshn provider forget t3` as the kitshn daemon user. The owner then selects "Forget provider" on the kitshn map.
 
 ### Scheduled task model
@@ -458,7 +400,7 @@ The model applies to runs that launch a new thread. A run that posts into a boun
 
 Tabs under the sidebar search hold threads. A thread lives in one tab, so the tabs act like folders.
 
-- **Setting:** client settings `sidebarTabsEnabled` (off by default) and `sidebarTabSingleThreadOpens` (off by default). Settings > General > Sidebar > "Sidebar tabs" and "Single-thread tabs". The tabs are the server setting `sidebarTabs` of the primary server. The machine map syncs them to every machine (MM-411). The mobile app shows the tabs while the server setting `mobileSidebarTabs` is on (off by default): Settings > Appearance > Mobile app, or Fork in the mobile Settings.
+- **Setting:** client settings `sidebarTabsEnabled` (off by default) and `sidebarTabSingleThreadOpens` (off by default). Settings > General > Sidebar > "Sidebar tabs" and "Single-thread tabs". The tabs are the server setting `sidebarTabs` of the primary server. kitshn syncs them to every machine. The mobile app shows the tabs while the server setting `mobileSidebarTabs` is on (off by default): Settings > Appearance > Mobile app, or Fork in the mobile Settings.
 - **Works on:** web, desktop, mobile. On mobile the tabs show above the thread list. Tap a tab to show its threads. Long-press a tab to edit, move or delete it, and tap + to make a tab. Long-press a thread and pick "Assign to tab". Settings > Fork > Sidebar tabs lists the tabs too.
 - **Use it:**
   - The first tab, "Threads", holds every thread that is in no other tab. It can be renamed, and it can show all threads.
@@ -477,7 +419,7 @@ Tabs under the sidebar search hold threads. A thread lives in one tab, so the ta
   - The hosted app at app.t3.codes has no primary server to keep the tabs, so it shows no tabs. Revisit if hosted clients get a place for shared settings.
   - When two devices change tabs at the same moment, the last change wins. Revisit if tabs get lost in practice.
   - A machine without the map role `edit`, or off the map, keeps a change on its own server only.
-  - Tabs were called groups before. A server moves `sidebarGroups` and `mobileSidebarGroups` in `settings.json` to the new keys once at start, and renames the old `sidebar.group.*`, `sidebar.previousGroup` and `sidebar.nextGroup` keybindings. A client moves `sidebarGroupsEnabled` and `sidebarGroupSingleThreadOpens` when it loads. The portal moves the shared values and overrides of the map once. A machine on an older version keeps the old keys, so it does not sync tabs with a machine on a newer version until both update. The open tab resets to "Threads" once.
+  - Tabs were called groups before. A server moves `sidebarGroups` and `mobileSidebarGroups` in `settings.json` to the new keys once at start, and renames the old `sidebar.group.*`, `sidebar.previousGroup` and `sidebar.nextGroup` keybindings. A client moves `sidebarGroupsEnabled` and `sidebarGroupSingleThreadOpens` when it loads. A machine on an older version keeps the old keys, so it does not sync tabs with a machine on a newer version until both update. The open tab resets to "Threads" once.
   - Applies only after upstream thread groups merge ([pingdotgg/t3code#15988](https://github.com/pingdotgg/t3code/pull/15988) "feat: related threads stay together as a group"): a nested thread always shows in the tab of its top thread, so a nested group never splits across tabs. This holds for views too. A drag or "Assign to tab" on a nested thread assigns its top thread. Fork Sync resolves that merge with this rule.
 
 ### Waiting shelf
@@ -529,7 +471,7 @@ Pin a message with the pin button beside its copy buttons, or with the command p
 
 - **Settings:** client setting `messagePins` (off by default), Settings > General > Display > "Message pins". Server setting `mobileMessagePins` (off by default), Settings > Appearance > Mobile app > "Message pins on mobile": a long press on a message in the mobile app offers Pin and Unpin.
 - **Works on:** web and desktop. Mobile: Pin and Unpin only, no list.
-- **Storage:** the server setting `pinnedMessages` of the environment, so all its clients show the same pins. Restore defaults keeps the pins. The machine map does not sync them, because thread ids belong to one environment.
+- **Storage:** the server setting `pinnedMessages` of the environment, so all its clients show the same pins. Restore defaults keeps the pins. kitshn does not sync them, because thread ids belong to one environment.
 - **Limits:** an environment keeps 200 pins. A pin keeps a 160-character excerpt and the thread title from the time of the pin. A pin of a thread that the sidebar does not list shows "Thread archived or deleted". "Message deleted" shows only for the open thread, when all its history is loaded. Agents have no MCP tool for pins.
 
 ### Thread addresses open the desktop app
@@ -766,7 +708,7 @@ Published themes can set shape, fonts, a canvas pattern and user CSS, in the the
 
 The mobile app uses the themes that its servers publish.
 
-- **Setting:** server setting `mobilePublishedThemes` (off by default). Settings > Appearance > Mobile app, or Fork in the mobile Settings. The machine map syncs it.
+- **Setting:** server setting `mobilePublishedThemes` (off by default). Settings > Appearance > Mobile app, or Fork in the mobile Settings. kitshn syncs it.
 - **Works on:** mobile.
 - Appearance in the mobile app shows the published themes under "From your servers". A theme with colors for one appearance offers that appearance only.
 - The app takes the server setting `defaultTheme` once for each theme id, for the appearances that the theme has colors for. The color scheme mode stays as set on the phone.
@@ -787,7 +729,7 @@ The mobile app uses the themes that its servers publish.
 Fork in the mobile Settings holds the fork settings that apply to the mobile app: published themes, the camera in the composer, thread link chips, message links and what New thread opens. Threads also shows the camera, thread link chips, message links and what New thread opens. A change writes the setting to each selected environment.
 
 - **Works on:** mobile.
-- **Limits:** a change on the phone is the own value of each server, not the shared value of the machine map. Set the shared value in the portal or from a machine with the map role `edit`.
+- **Limits:** a change on the phone is the own value of each server, not the shared value on kitshn. Set the shared value with "All environments" in T3 Settings.
 
 ### Theme icon packs
 
@@ -856,10 +798,10 @@ Right-click menus use the app's own menu, also in the desktop app, in place of t
 `t3 tool list`, `t3 tool describe <name>` and `t3 tool call <name> --input '<json>'` run T3 MCP tools from the command line. In a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
 
 - **Works on:** server.
-- In an agent's shell, the command uses the credential of the agent's thread, so the limits of that thread apply. See [MM-1920](../../apps/machine-map/SPEC.md#19-cross-machine-work). `t3 machine exec` uses the same credential; see [Commands on other machines](#commands-on-other-machines).
-- Elsewhere, also in a T3 terminal, it calls the running server of its T3 home with a short full-access session. Machine map History names that caller "CLI (local user)".
+- In an agent's shell, the command uses the credential of the agent's thread, so the limits of that thread apply. `t3 machine exec` uses the same credential; see [Commands on other machines](#commands-on-other-machines).
+- Elsewhere, also in a T3 terminal, it calls the running server of its T3 home with a short full-access session.
 - To call a dev server from an agent shell, unset `T3_ACP_MCP_ENDPOINT` and `T3_ACP_MCP_AUTHORIZATION`. The CLI refuses a `--base-dir` or `T3CODE_HOME` that does not match the shell's thread credential.
-- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session. That session runs nothing on another machine and forwards no tool there: `machine_exec`, `t3 machine exec`, and tools or delegation with the `environmentId` of another machine refuse it. Use a thread, or the portal. The `machines_*` portal tools follow the map role of the machine.
+- **Limits:** the shells of Cursor and OpenCode 2 agents get no thread credential, so they use the full-access session. That session runs nothing on another machine and forwards no tool there: `machine_exec`, `t3 machine exec`, and tools or delegation with the `environmentId` of another machine refuse it. Use a thread. The `machines_*` tools ask the kitshn daemon of this machine.
 
 ### Open workspace with a checkout
 

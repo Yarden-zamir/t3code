@@ -33,7 +33,8 @@ import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import type * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
-import * as MachineMapState from "../fork/machineMap/MachineMapState.ts";
+import { kitshnMachineMcpClient } from "../fork/kitshn/kitshnAgents.ts";
+import * as KitshnGrants from "../fork/kitshn/KitshnGrants.ts";
 import {
   machineRequestNamespace,
   MACHINE_MCP_CAPABILITIES,
@@ -563,16 +564,17 @@ export const layerMcpClientAuthenticator = Layer.effect(
     const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
     const environment = yield* ServerEnvironment.ServerEnvironment;
     const environmentId = yield* environment.getEnvironmentId;
-    // Fork: machine map (MM-1307). A session of another machine whose arrow has agent tools.
-    const machineMap = yield* Effect.serviceOption(MachineMapState.MachineMapState);
+    // Fork: kitshn provider (K-706). A session of another machine whose token holds `t3.agents`.
+    const kitshnGrants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
     const machineClient = (
       request: HttpServerRequest.HttpServerRequest,
       error: EnvironmentAuth.ServerAuthCredentialError,
     ) =>
-      Option.isNone(machineMap)
+      Option.isNone(kitshnGrants)
         ? Effect.fail(error)
         : environmentAuth.authenticateHttpRequest(request).pipe(
-            Effect.flatMap(machineMap.value.mcpClient),
+            Effect.flatMap((session) => kitshnMachineMcpClient(request, session)),
+            Effect.provideService(KitshnGrants.KitshnGrants, kitshnGrants.value),
             Effect.flatMap((client) =>
               client === undefined
                 ? Effect.fail(error)

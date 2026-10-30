@@ -16,7 +16,7 @@ export function SidebarTabsSettingsRow() {
     <>
       <SettingsRow
         {...searchableSetting("sidebar-tabs")}
-        description="Put threads in tabs above the sidebar list. Drag a thread onto a tab, or onto the end of the tab bar for a new tab. Rules fill tabs too. The machine map syncs the tabs."
+        description="Put threads in tabs above the sidebar list. Drag a thread onto a tab, or onto the end of the tab bar for a new tab. Rules fill tabs too. kitshn syncs the tabs."
         resetAction={
           enabled !== DEFAULT_CLIENT_SETTINGS.sidebarTabsEnabled ? (
             <SettingResetButton

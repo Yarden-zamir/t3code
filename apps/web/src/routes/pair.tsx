@@ -42,11 +42,6 @@ function PairRouteView() {
     return <HostedPairingRouteSurface />;
   }
 
-  // The root route shows the lock page or the waiting page instead of this route (MM-718, MM-920).
-  if (authGateState.status === "machine-paused" || authGateState.status === "client-pending") {
-    return null;
-  }
-
   return (
     <PairingRouteSurface
       auth={authGateState.auth}
