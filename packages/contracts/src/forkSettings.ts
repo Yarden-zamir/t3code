@@ -294,9 +294,9 @@ export const ForkClientSettingsFields = {
   ),
   /**
    * Fork: right-click menus use the app's own menu, also on desktop, in place of the system menu
-   * and the plain web menu. Off by default, because it changes how every menu looks and works.
+   * and the plain web menu. On by default: only this menu can open Keybinds… on a menu item.
    */
-  richContextMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  richContextMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 };
 
 export const ForkClientSettingsPatchFields = {

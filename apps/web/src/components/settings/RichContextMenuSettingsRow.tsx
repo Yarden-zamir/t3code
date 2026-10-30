@@ -13,7 +13,7 @@ export function RichContextMenuSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("rich-context-menu")}
-      description="Right-click menus use the app's own menu, also in the desktop app: the app theme, icons, group names, and arrow keys and typing to pick an item. Text fields and pages in the browser panel keep the system menu."
+      description="Right-click menus use the app's own menu, also in the desktop app: the app theme, icons, group names, arrow keys and typing to pick an item, and Keybinds… on items that a shortcut can run. Turn it off to use the system menu. Text fields and pages in the browser panel always keep the system menu."
       resetAction={
         enabled !== DEFAULT_CLIENT_SETTINGS.richContextMenu ? (
           <SettingResetButton
