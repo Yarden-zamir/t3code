@@ -195,12 +195,11 @@ jobs:
     if: needs.changes.outputs.test == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    # Three runners: on one runner, the slowest packages wait for each other. Mobile
-    # took 190 seconds next to desktop and oxlint, the longest test job of the run.
+    # Two runners: on one runner, the slowest packages wait for each other.
     strategy:
       fail-fast: false
       matrix:
-        group: [apps, mobile, packages]
+        group: [apps, packages]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -208,11 +207,9 @@ jobs:
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
-      - if: matrix.group != 'mobile'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libsecret-1-dev pkg-config
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libsecret-1-dev pkg-config
       - uses: ./.github/actions/setup-ci-deps
-      - if: matrix.group != 'mobile'
-        run: vp run --filter @t3tools/desktop ensure:electron
+      - run: vp run --filter @t3tools/desktop ensure:electron
       - if: matrix.group == 'packages'
         run: python3 -B .github/scripts/stage-preview-bundle.test.py
       - if: matrix.group == 'packages'
@@ -224,23 +221,19 @@ jobs:
           GROUP: ${{ matrix.group }}
           TEST_PACKAGES: ${{ needs.changes.outputs.test_packages }}
         run: |
-          apps=(@t3tools/desktop @t3tools/oxlint-plugin-t3code)
-          mobile=@t3tools/mobile
+          apps=(@t3tools/mobile @t3tools/desktop @t3tools/oxlint-plugin-t3code)
           filters=()
           if [[ -z "$TEST_PACKAGES" ]]; then
-            case "$GROUP" in
-              apps) for package in "${apps[@]}"; do filters+=(--filter "$package"); done ;;
-              mobile) filters=(--filter "$mobile") ;;
-              *)
-                filters=(--filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' --filter "!$mobile")
-                for package in "${apps[@]}"; do filters+=(--filter "!$package"); done
-                ;;
-            esac
+            if [[ "$GROUP" == apps ]]; then
+              for package in "${apps[@]}"; do filters+=(--filter "$package"); done
+            else
+              filters=(--filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web')
+              for package in "${apps[@]}"; do filters+=(--filter "!$package"); done
+            fi
           else
             for package in $TEST_PACKAGES; do
               group=packages
               case " ${apps[*]} " in *" $package "*) group=apps ;; esac
-              if [[ "$package" == "$mobile" ]]; then group=mobile; fi
               if [[ "$group" == "$GROUP" ]]; then filters+=(--filter "$package"); fi
             done
           fi
@@ -281,9 +274,8 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      # With 8 shards, the slowest shard job took 280 seconds and the fastest 200.
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v6
         with:
