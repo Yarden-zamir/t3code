@@ -35,10 +35,11 @@ permissions:
   contents: read
 
 jobs:
+  # Also builds the JS bundle: a second job spent a minute on its own checkout and setup.
   prepare:
-    name: Prepare release
+    name: Prepare release and build JS bundle
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     outputs:
       sha: ${{ steps.commit.outputs.sha }}
       released: ${{ steps.released.outputs.released }}
@@ -83,13 +84,14 @@ jobs:
           cache: true
           run-install: false
 
+      - run: vp install --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+
       # <base>-nightly.<UTC date>.<run number x 10000>. The date and the run number
       # only grow. The gap of 10000 leaves room for local builds between two CI
       # releases (scripts/fork-desktop-mac.sh). The app needs one integer here.
       - id: version
         name: Resolve release version
         run: |
-          vp install --filter=@t3tools/scripts...
           node scripts/resolve-nightly-release.ts \
             --date "$(date -u +%Y%m%d)" \
             --run-number "$(( ${{ github.run_number }} * 10000 ))" \
@@ -115,36 +117,20 @@ jobs:
             echo "FORK_RELEASE_NOTES_EOF"
           } >> "$GITHUB_OUTPUT"
 
-  build_bundle:
-    name: Build JS bundle
-    needs: [prepare]
-    if: needs.prepare.outputs.released != 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      # Optional T3 Connect config. Empty values build the app without T3 Connect.
-      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
-      T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
-      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
-      T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: false
-      - run: vp install --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
-      - run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
-      - run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
-      - run: vp run build:desktop
-      - uses: actions/upload-artifact@v7
+      - if: steps.released.outputs.released != 'true'
+        run: node scripts/update-release-package-versions.ts "${{ steps.version.outputs.version }}"
+      - if: steps.released.outputs.released != 'true'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+      - if: steps.released.outputs.released != 'true'
+        env:
+          # Optional T3 Connect config. Empty values build the app without T3 Connect.
+          T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+          T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+          T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
+        run: vp run build:desktop
+      - if: steps.released.outputs.released != 'true'
+        uses: actions/upload-artifact@v7
         with:
           name: js-bundle
           path: |
@@ -155,7 +141,8 @@ jobs:
 
   desktop:
     name: Desktop ${{ matrix.label }}
-    needs: [prepare, build_bundle]
+    needs: [prepare]
+    if: needs.prepare.outputs.released != 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -171,11 +158,13 @@ jobs:
             platform: mac
             target: dmg
             arch: arm64
+            rust_target: aarch64-apple-darwin
           - label: Windows x64
             runner: windows-2025
             platform: win
             target: nsis
             arch: x64
+            rust_target: x86_64-pc-windows-msvc
           # node-pty compiles from source on Linux, so each arch builds on its own hardware.
           - label: Linux x64
             runner: ubuntu-24.04
@@ -216,7 +205,27 @@ jobs:
         if: matrix.platform == 'linux'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config imagemagick
 
-      - if: matrix.platform == 'linux'
+      # Same caches as upstream's release-desktop.yml. An uncached build took up to 105 seconds.
+      # Limit: the keys hold the crate sources, not the Rust version, so a new stable Rust
+      # alone rebuilds nothing. Add the Rust version to the keys if a toolchain change matters.
+      - name: Cache resource monitor
+        id: resource_monitor_cache
+        uses: actions/cache@v6
+        with:
+          path: native/resource-monitor/target/${{ matrix.rust_target }}/release/t3-resource-monitor${{ matrix.platform == 'win' && '.exe' || '' }}
+          key: resource-monitor-${{ matrix.rust_target }}-${{ hashFiles('native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
+
+      - name: Cache Linux capture helpers
+        id: capture_helper_cache
+        if: matrix.platform == 'linux'
+        uses: actions/cache@v6
+        with:
+          path: |
+            native/kde-snap-shot/target/${{ matrix.rust_target }}/release/t3-kde-snap-shot
+            native/hyprland-snap-shot/target/${{ matrix.rust_target }}/release/t3-hyprland-snap-shot
+          key: linux-capture-helpers-${{ matrix.rust_target }}-${{ hashFiles('native/kde-snap-shot/Cargo.lock', 'native/kde-snap-shot/Cargo.toml', 'native/kde-snap-shot/src/**', 'native/hyprland-snap-shot/Cargo.lock', 'native/hyprland-snap-shot/Cargo.toml', 'native/hyprland-snap-shot/src/**', 'native/hyprland-snap-shot/protocols/**') }}
+
+      - if: matrix.platform == 'linux' && (steps.resource_monitor_cache.outputs.cache-hit != 'true' || steps.capture_helper_cache.outputs.cache-hit != 'true')
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_target }}
@@ -225,7 +234,7 @@ jobs:
       # The Visual Studio Installer takes minutes, so cache the library folder.
       - id: spectre
         name: Find Spectre-mitigated MSVC lib folder
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win' && steps.resource_monitor_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -235,14 +244,14 @@ jobs:
           "key=msvc-spectre-${env:ImageOS}-${env:ImageVersion}-$($msvc.Name)" >> $env:GITHUB_OUTPUT
 
       - id: spectre_cache
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win' && steps.resource_monitor_cache.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v6
         with:
           path: ${{ steps.spectre.outputs.path }}
           key: ${{ steps.spectre.outputs.key }}
 
       - name: Install Spectre-mitigated MSVC libs
-        if: matrix.platform == 'win' && steps.spectre_cache.outputs.cache-hit != 'true'
+        if: matrix.platform == 'win' && steps.resource_monitor_cache.outputs.cache-hit != 'true' && steps.spectre_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -257,11 +266,17 @@ jobs:
             exit 1
           }
 
-      - if: matrix.platform == 'win' && steps.spectre_cache.outputs.cache-hit != 'true'
+      - if: matrix.platform == 'win' && steps.resource_monitor_cache.outputs.cache-hit != 'true' && steps.spectre_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ steps.spectre.outputs.path }}
           key: ${{ steps.spectre.outputs.key }}
+
+      # Built here, so the desktop build below always reuses it.
+      - name: Build resource monitor
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target "${{ matrix.rust_target }}"
 
       # electron-builder only signs with a trusted identity. The self-made
       # certificate is its own root, so trust it on the runner for code signing.
@@ -286,6 +301,8 @@ jobs:
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
           T3CODE_DESKTOP_MAC_SELF_SIGNED: "true"
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
+          T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS: ${{ steps.capture_helper_cache.outputs.cache-hit == 'true' }}
           CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || '' }}
           CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
         run: |
@@ -411,8 +428,8 @@ jobs:
   # with a missing archive as ready. A desktop failure does not stop it.
   checksums:
     name: Server checksums
-    needs: [prepare, build_bundle, desktop]
-    if: always() && needs.build_bundle.result == 'success'
+    needs: [prepare, desktop]
+    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.released != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -456,7 +473,7 @@ jobs:
   # Off until the T3_AGENT_WEBHOOK_URL secret is set.
   notify_agent:
     name: Notify repair agent
-    needs: [prepare, build_bundle, desktop, checksums]
+    needs: [prepare, desktop, checksums]
     if: failure() && github.event.inputs.notify_agent != 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
