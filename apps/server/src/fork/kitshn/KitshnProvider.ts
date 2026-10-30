@@ -11,7 +11,6 @@ import type { MachineCommandInput, MachineStatus } from "@t3tools/contracts";
 import { THREAD_CREDENTIAL_AUTHORIZATION_ENV } from "@t3tools/provider-core/server/forkThreadCredential";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -294,28 +293,16 @@ const UPDATE_CHANNEL_SETTING = "updateChannel";
 const OBTAINIUM_FORK_APP =
   "https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.yardenzamir.t3code%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FYarden-zamir%2Ft3code%22%2C%22author%22%3A%22Yarden-zamir%22%2C%22name%22%3A%22T3%20Code%20fork%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22android%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D";
 
-/** The apps that open a kitshn device invite; they fill Settings > Connections > New with it. */
+/**
+ * The apps that open a kitshn device invite; they fill Settings > Connections > New with it.
+ * The store app has no `inviteUrl` deep link, so only the fork app is listed.
+ */
 const CLIENT_APPS: ReadonlyArray<ProviderClientApp> = [
   {
     id: "t3code-fork",
     name: "T3 Code (fork)",
     open: "t3code-preview://connections/new?inviteUrl={inviteUrl}",
     install: [{ label: "Install with Obtainium", url: OBTAINIUM_FORK_APP }],
-  },
-  {
-    id: "t3code",
-    name: "T3 Code",
-    open: "t3code://connections/new?inviteUrl={inviteUrl}",
-    install: [
-      {
-        label: "Google Play",
-        url: "https://play.google.com/store/apps/details?id=com.t3tools.t3code",
-      },
-      {
-        label: "App Store",
-        url: "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824",
-      },
-    ],
   },
 ];
 
@@ -342,8 +329,15 @@ const REGISTERED_KINDS = [
 export type KitshnConnection =
   | { readonly status: "off"; readonly detail: string }
   | { readonly status: "connecting"; readonly detail: string | null }
-  /** `detail`: set only when T3 ended the connection before this one because it was stuck. */
-  | { readonly status: "registered"; readonly detail: string | null };
+  /**
+   * `detail` and `restartedAt` (epoch ms): set only when T3 ended the connection before this one
+   * because it was stuck.
+   */
+  | {
+      readonly status: "registered";
+      readonly detail: string | null;
+      readonly restartedAt: number | null;
+    };
 
 /** What kitshn keeps for this provider besides grants: the settings state and card settings. */
 export interface KitshnProviderState {
@@ -437,7 +431,9 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     detail: null,
   });
   // Why T3 ended the last child itself, so the next registered connection can show it.
-  const restartNote = yield* Ref.make<string | null>(null);
+  const restartNote = yield* Ref.make<{ readonly reason: string; readonly at: number } | null>(
+    null,
+  );
   // The live registered connection, so `request` can use it.
   const live = yield* Ref.make<
     Option.Option<(request: LocalRequestInput) => Effect.Effect<Answer, KitshnRequestError>>
@@ -715,9 +711,11 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
             yield* grants.setAccess(answer.access ?? null);
             yield* setHostNotice(answer.access ?? null);
             yield* Ref.set(live, Option.some(localRequest));
+            const note = yield* Ref.get(restartNote);
             const registeredState: KitshnConnection = {
               status: "registered",
-              detail: yield* Ref.get(restartNote),
+              detail: note?.reason ?? null,
+              restartedAt: note?.at ?? null,
             };
             yield* SubscriptionRef.set(connection, registeredState);
             yield* Deferred.succeed(registeredOnce, undefined);
@@ -871,8 +869,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     while (true) {
       const { ended, endedByT3, registered: didRegister } = yield* connectOnce;
       failures = didRegister ? 0 : failures + 1;
-      const endedAt = DateTime.formatIso(yield* DateTime.now);
-      yield* Ref.set(restartNote, endedByT3 ? `Reconnected after: ${ended} (${endedAt})` : null);
+      const endedAt = yield* Clock.currentTimeMillis;
+      yield* Ref.set(restartNote, endedByT3 ? { reason: ended, at: endedAt } : null);
       const delay = retryDelay(failures);
       const message = `kitshn provider: ${ended}. It tries again in ${Duration.format(delay)}.`;
       // A machine without kitshn says the same thing on each try; log it once.

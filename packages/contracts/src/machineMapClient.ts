@@ -29,6 +29,8 @@ export const MachineMapClientState = Schema.Struct({
     status: Schema.Literals(["off", "connecting", "registered"]),
     /** Why it is off, or why the last connection ended. */
     detail: Schema.NullOr(Schema.String),
+    /** Epoch ms when T3 ended a stuck connection before this registered one; `detail` says why. */
+    restartedAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
     grants: NonNegativeInt,
     reachedMachines: NonNegativeInt,
     linkProxy: Schema.Literals(["none", "unchecked", "checked"]),

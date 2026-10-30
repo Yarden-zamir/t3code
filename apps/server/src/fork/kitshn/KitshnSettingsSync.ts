@@ -280,6 +280,7 @@ const make = Effect.gen(function* () {
           connection: {
             status: connection.status,
             detail: connection.detail,
+            restartedAt: connection.status === "registered" ? connection.restartedAt : null,
             grants: grantCount(grantState.tables),
             reachedMachines: new Set(state.reach.map((card) => card.machineId)).size,
             linkProxy,

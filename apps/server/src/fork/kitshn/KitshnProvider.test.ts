@@ -293,10 +293,6 @@ const EXPECTED_REGISTER = {
       id: "t3code-fork",
       open: "t3code-preview://connections/new?inviteUrl={inviteUrl}",
     }),
-    expect.objectContaining({
-      id: "t3code",
-      open: "t3code://connections/new?inviteUrl={inviteUrl}",
-    }),
   ],
   kinds: [
     {
@@ -450,7 +446,11 @@ it.layer(
       yield* second.say({ id: again.id, type: "register", machineId: "m-1", grants: {} });
       yield* takeProbe(second);
       const connection = yield* harness.provider.connection.pipe(Stream.runHead);
-      expect(Option.getOrThrow(connection)).toEqual({ status: "registered", detail: null });
+      expect(Option.getOrThrow(connection)).toEqual({
+        status: "registered",
+        detail: null,
+        restartedAt: null,
+      });
     }).pipe(Effect.scoped),
   );
 
@@ -715,9 +715,8 @@ it.layer(
       const connection = yield* harness.provider.connection.pipe(Stream.runHead);
       expect(Option.getOrThrow(connection)).toEqual({
         status: "registered",
-        detail: expect.stringMatching(
-          /^Reconnected after: the kitshn provider did not answer in 35s, so T3 ended it \(\d{4}-\d\d-\d\dT[\d:.]+Z\)$/,
-        ),
+        detail: "the kitshn provider did not answer in 35s, so T3 ended it",
+        restartedAt: expect.any(Number),
       });
     }).pipe(Effect.scoped),
   );
