@@ -50,6 +50,7 @@ import {
   PROVIDER_NAME,
   type ProviderCommand,
   type ProviderList,
+  type ProviderClientApp,
   type ProviderResource,
   ProviderResource as ProviderResourceSchema,
   type AccessApp,
@@ -289,6 +290,34 @@ class RegisterRefused extends Schema.TaggedError<RegisterRefused>()("RegisterRef
 export const SETTINGS_KIND = "t3.settings";
 /** K-717: the update channel of the app card. */
 const UPDATE_CHANNEL_SETTING = "updateChannel";
+
+const OBTAINIUM_FORK_APP =
+  "https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.yardenzamir.t3code%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FYarden-zamir%2Ft3code%22%2C%22author%22%3A%22Yarden-zamir%22%2C%22name%22%3A%22T3%20Code%20fork%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22android%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D";
+
+/** The apps that open a kitshn device invite; they fill Settings > Connections > New with it. */
+const CLIENT_APPS: ReadonlyArray<ProviderClientApp> = [
+  {
+    id: "t3code-fork",
+    name: "T3 Code (fork)",
+    open: "t3code-preview://connections/new?inviteUrl={inviteUrl}",
+    install: [{ label: "Install with Obtainium", url: OBTAINIUM_FORK_APP }],
+  },
+  {
+    id: "t3code",
+    name: "T3 Code",
+    open: "t3code://connections/new?inviteUrl={inviteUrl}",
+    install: [
+      {
+        label: "Google Play",
+        url: "https://play.google.com/store/apps/details?id=com.t3tools.t3code",
+      },
+      {
+        label: "App Store",
+        url: "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824",
+      },
+    ],
+  },
+];
 
 const REGISTERED_KINDS = [
   ...KINDS.map((kind) =>
@@ -589,6 +618,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         kinds: REGISTERED_KINDS,
         commands: providerCommands,
         resources: [app, yield* agentsResource, ...sentThreads.values()],
+        clients: CLIENT_APPS,
       });
       yield* Deferred.await(registeredOnce).pipe(
         Effect.timeoutOption(REGISTER_TIMEOUT),

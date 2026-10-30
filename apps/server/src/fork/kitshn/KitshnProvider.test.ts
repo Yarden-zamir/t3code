@@ -287,6 +287,17 @@ const STATUS = {
 const EXPECTED_REGISTER = {
   type: "register",
   provider: "t3",
+  // kitshn's invite page fills {inviteUrl} for each client app.
+  clients: [
+    expect.objectContaining({
+      id: "t3code-fork",
+      open: "t3code-preview://connections/new?inviteUrl={inviteUrl}",
+    }),
+    expect.objectContaining({
+      id: "t3code",
+      open: "t3code://connections/new?inviteUrl={inviteUrl}",
+    }),
+  ],
   kinds: [
     {
       id: "t3.app",
