@@ -589,8 +589,13 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
           );
         }
         const answer = decoded.value;
-        // An ask answer and a grants push come from kitshn itself, not from the local daemon.
-        if (answer.type === "ask" || answer.type === "ask-result" || answer.type === "grants") {
+        // Only kitshn's own answers prove contact. The daemon answers an ask `refused` by itself after
+        // 60 seconds, and a `github-token` ask locally; T3 never sends `github-token`.
+        if (
+          answer.type === "grants" ||
+          answer.type === "ask-result" ||
+          (answer.type === "ask" && (answer.outcome === "done" || answer.outcome === "waiting"))
+        ) {
           yield* grants.contact;
         }
         const asked = "id" in answer && answer.id !== null ? waiting.get(answer.id) : undefined;

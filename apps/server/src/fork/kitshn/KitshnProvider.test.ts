@@ -608,6 +608,28 @@ it.layer(
         ]);
       }).pipe(Effect.scoped),
   );
+  it.effect("counts no contact while every hourly probe is answered refused (K-706)", () =>
+    Effect.gen(function* () {
+      const harness = yield* setup();
+      const child = yield* Queue.take(harness.children);
+      const register = yield* Queue.take(child.written);
+      yield* child.say({ id: register.id, type: "register", machineId: "m-1", grants: {} });
+      // The daemon answers an ask `refused` itself when kitshn does not answer in 60 seconds.
+      for (let hour = 0; hour < 25; hour++) {
+        const probe = yield* takeProbe(child);
+        yield* child.say({ id: probe.id, type: "ask", outcome: "refused", reason: "timeout" });
+        yield* TestClock.adjust("1 hour");
+      }
+      // The saved table then expires 24 hours after kitshn's last answer (KitshnGrants.test).
+      expect(yield* Ref.get(harness.contacts)).toBe(0);
+      const probe = yield* takeProbe(child);
+      yield* child.say({ id: probe.id, type: "ask", outcome: "done", result: {} });
+      yield* child.say(command(1, "collect-diagnostics"));
+      yield* Queue.take(child.written);
+      expect(yield* Ref.get(harness.contacts)).toBe(1);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect(
     "uses the link socket only after link-check, and drops it when the connection closes",
     () =>
