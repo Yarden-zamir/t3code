@@ -31,6 +31,8 @@ export function AssistantSelectionToolbar({
   const [selection, setSelection] = useState<{
     citation: AssistantCitation;
     position: SelectionActionPoint;
+    /** The top of the first selected line, where the button goes when it cannot go below. */
+    selectionTop: number;
     sourceAnchor: AssistantCitationSourceAnchor;
   } | null>(null);
   const toolbarRef = useRef<HTMLButtonElement>(null);
@@ -41,8 +43,23 @@ export function AssistantSelectionToolbar({
     const toolbar = toolbarRef.current;
     if (!toolbar || !selection) return;
     const rect = toolbar.getBoundingClientRect();
-    toolbar.style.left = `${Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8))}px`;
-    toolbar.style.top = `${Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8))}px`;
+    const left = Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8));
+    let top = Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8));
+    // The composer and the "Scroll to end" pill float over the bottom of the timeline.
+    const covered = [
+      ...document.querySelectorAll('[data-chat-composer-stack="true"], [data-scroll-to-end]'),
+    ].some((element) => {
+      const blocker = element.getBoundingClientRect();
+      return (
+        left < blocker.right &&
+        left + rect.width > blocker.left &&
+        top < blocker.bottom &&
+        top + rect.height > blocker.top
+      );
+    });
+    if (covered) top = Math.max(8, selection.selectionTop - rect.height - 4);
+    toolbar.style.left = `${left}px`;
+    toolbar.style.top = `${top}px`;
   }, [selection]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to document selectionchange and keydown to track text selections in the viewport
@@ -120,6 +137,7 @@ export function AssistantSelectionToolbar({
             pointer.y <= line.bottom + 8,
         );
       setSelection({
+        selectionTop: (rects.item(0) ?? rect).top,
         sourceAnchor: { source: captured.source, range: captured.range, viewport },
         citation: {
           version: 1,

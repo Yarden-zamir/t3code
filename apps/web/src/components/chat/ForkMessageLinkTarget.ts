@@ -13,6 +13,7 @@ import {
   linkedMessageLoadId,
   messageLinkFromLocation,
   messageLinkStep,
+  withoutMessageLink,
 } from "@t3tools/shared/threadMessageLinks";
 import { type HistoryState, useLocation, useRouter } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
@@ -249,6 +250,12 @@ export function useForkMessageLinkTarget({
     });
     if (step === "missing") {
       finish(request.key);
+      // The router keeps its location, and `finish` already stops this request.
+      window.history.replaceState(
+        window.history.state,
+        "",
+        withoutMessageLink(window.location.href),
+      );
       toastManager.add({
         type: "info",
         title: "Message not found",

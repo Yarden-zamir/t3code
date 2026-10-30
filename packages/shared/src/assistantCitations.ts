@@ -96,8 +96,10 @@ export function parseAssistantCitationHref(href: string): AssistantCitation | nu
   }
 }
 
+/** The quote, then the comment when there is one, on one line and cut to 64 characters. */
 export function assistantCitationLabel(citation: AssistantCitation): string {
-  const preview = (citation.comment?.trim() || citation.text).replace(/\s+/g, " ");
+  const comment = citation.comment?.trim();
+  const preview = (comment ? `${citation.text} · ${comment}` : citation.text).replace(/\s+/g, " ");
   return preview.length > 64 ? `${preview.slice(0, 64)}…` : preview;
 }
 
