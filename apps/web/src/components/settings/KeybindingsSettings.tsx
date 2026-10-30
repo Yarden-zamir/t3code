@@ -1367,12 +1367,14 @@ export function KeybindingsSettingsPanel() {
   // A command filter opens the new row for that command until the user closes it.
   const [closedAddFor, setClosedAddFor] = useState<KeybindingCommand | null>(null);
   const isAddingBinding =
-    addRequested || (commandFilter !== undefined && closedAddFor !== commandFilter);
+    canWriteSettings &&
+    (addRequested || (commandFilter !== undefined && closedAddFor !== commandFilter));
   const closeAdd = () => {
     setAddRequested(false);
     setClosedAddFor(commandFilter ?? null);
   };
   const showCommand = (command: KeybindingCommand | undefined) => {
+    setClosedAddFor(null);
     void navigate({
       to: "/settings/keybindings",
       search: (previous) => {
