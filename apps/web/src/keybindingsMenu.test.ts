@@ -1,42 +1,46 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem, KeybindingShortcut } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { withKeybindsEntry } from "./keybindingsMenu";
+import { pickItemMenuCommand, withShortcuts } from "./keybindingsMenu";
 
-describe("withKeybindsEntry", () => {
-  it("leaves a menu without bindable items unchanged", () => {
-    const items: ContextMenuItem[] = [{ id: "copy", label: "Copy" }];
-    expect(withKeybindsEntry(items).items).toBe(items);
+const modK: KeybindingShortcut = {
+  key: "k",
+  modKey: true,
+  metaKey: false,
+  ctrlKey: false,
+  altKey: false,
+  shiftKey: false,
+};
+
+describe("withShortcuts", () => {
+  it("adds the key of each bound command, also in submenus, and nothing for the rest", () => {
+    const items = withShortcuts(
+      [
+        { id: "rename", label: "Rename", keybindingCommand: "thread.rename" },
+        { id: "pin", label: "Pin", keybindingCommand: "thread.pin" },
+        { id: "copy", label: "Copy" },
+        {
+          id: "more",
+          label: "More",
+          children: [{ id: "archive", label: "Archive", keybindingCommand: "thread.archive" }],
+        },
+      ],
+      (command) => (command === "thread.pin" ? null : modK),
+    );
+    expect(items.map((item) => item.shortcut)).toEqual([modK, undefined, undefined, undefined]);
+    expect(items[3]?.children?.[0]?.shortcut).toEqual(modK);
   });
+});
 
-  it("adds one Keybinds item that maps back to the command of a single bindable item", () => {
-    const menu = withKeybindsEntry([
-      { id: "close", label: "Close", keybindingCommand: "rightPanel.close" },
-      { id: "close-all", label: "Close all" },
-    ]);
-    const entry = menu.items.at(-1);
-    expect(entry).toMatchObject({ label: "Keybinds: Close", separatorBefore: true });
-    expect(menu.commandById.get(entry?.id ?? "")).toBe("rightPanel.close");
-    expect(menu.commandById.has("close")).toBe(false);
-  });
+describe("pickItemMenuCommand", () => {
+  const show = (picked: string | null) => (_items: readonly ContextMenuItem[]) =>
+    Promise.resolve(picked);
 
-  it("lists each command once, also from submenus, in a Keybinds submenu", () => {
-    const menu = withKeybindsEntry([
-      { id: "pin", label: "Pin thread", keybindingCommand: "thread.pin" },
-      {
-        id: "more",
-        label: "More",
-        children: [
-          { id: "rename", label: "Rename thread", keybindingCommand: "thread.rename" },
-          { id: "pin-again", label: "Pin again", keybindingCommand: "thread.pin" },
-        ],
-      },
-    ]);
-    const children = menu.items.at(-1)?.children ?? [];
-    expect(children.map((child) => child.label)).toEqual(["Pin thread", "Rename thread"]);
-    expect(children.map((child) => menu.commandById.get(child.id))).toEqual([
-      "thread.pin",
+  it("returns the item's command when Keybinds is picked, and null when dismissed", async () => {
+    const position = { x: 0, y: 0 };
+    expect(await pickItemMenuCommand("thread.rename", position, show("keybinds"))).toBe(
       "thread.rename",
-    ]);
+    );
+    expect(await pickItemMenuCommand("thread.rename", position, show(null))).toBeNull();
   });
 });

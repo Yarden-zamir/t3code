@@ -15,7 +15,11 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
-import type { KeybindingCommand, PreviewForwardedShortcut } from "./keybindings.ts";
+import {
+  type KeybindingCommand,
+  KeybindingShortcut,
+  type PreviewForwardedShortcut,
+} from "./keybindings.ts";
 import type { ProjectScript } from "./project.ts";
 
 import type {
@@ -34,6 +38,8 @@ export interface ContextMenuItem<T extends string = string> {
   checked?: boolean;
   /** The command that runs the same action. The web client adds a link to its bindings. */
   keybindingCommand?: KeybindingCommand;
+  /** The key of `keybindingCommand` that the menu shows next to the label. */
+  shortcut?: KeybindingShortcut;
   children?: readonly ContextMenuItem<T>[];
 }
 
@@ -50,6 +56,7 @@ export interface ContextMenuItemSchemaType {
   readonly icon?: string;
   readonly separatorBefore?: boolean;
   readonly checked?: boolean;
+  readonly shortcut?: KeybindingShortcut;
   readonly children?: readonly ContextMenuItemSchemaType[];
 }
 
@@ -62,6 +69,7 @@ export const ContextMenuItemSchema: Schema.Codec<ContextMenuItemSchemaType> = Sc
   icon: Schema.optionalKey(Schema.String),
   separatorBefore: Schema.optionalKey(Schema.Boolean),
   checked: Schema.optionalKey(Schema.Boolean),
+  shortcut: Schema.optionalKey(KeybindingShortcut),
   children: Schema.optionalKey(
     Schema.Array(
       Schema.suspend((): Schema.Codec<ContextMenuItemSchemaType> => ContextMenuItemSchema),

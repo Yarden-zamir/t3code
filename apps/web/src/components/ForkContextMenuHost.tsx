@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import type { ClientSettings, ContextMenuItem, KeybindingCommand } from "@t3tools/contracts";
 import {
   ArchiveIcon,
@@ -24,18 +23,19 @@ import {
   Trash2Icon,
   UserPlusIcon,
 } from "lucide-react";
-import { useEffect, useSyncExternalStore } from "react";
+import { type KeyboardEvent, type MouseEvent, useEffect, useSyncExternalStore } from "react";
 
 import {
   FORK_CONTEXT_MENU_ATTRIBUTE,
   readForkContextMenu,
   registerForkContextMenuHost,
+  requestForkContextMenu,
   settleForkContextMenu,
   subscribeForkContextMenu,
 } from "../forkContextMenu";
 import { useClientSettings } from "../hooks/useSettings";
-import { shortcutLabelForCommand } from "../keybindings";
-import { primaryServerKeybindingsAtom } from "../state/server";
+import { isItemMenuKey, openItemMenu } from "../keybindingsMenu";
+import { ShortcutHint } from "./focusLevels/ShortcutHint";
 import {
   Menu,
   MenuCheckboxItem,
@@ -44,7 +44,6 @@ import {
   MenuItem,
   MenuPopup,
   MenuSeparator,
-  MenuShortcut,
   MenuSub,
   MenuSubPopup,
   MenuSubTrigger,
@@ -95,10 +94,31 @@ function ItemIcon({ name }: { name: string | undefined }) {
   return Icon ? <Icon /> : null;
 }
 
-function ItemShortcut({ command }: { command: KeybindingCommand }) {
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const label = shortcutLabelForCommand(keybindings, command);
-  return label ? <MenuShortcut>{label}</MenuShortcut> : null;
+/** The item's own menu replaces this menu, as a second open menu would close the first. */
+function openItemMenuAt(command: KeybindingCommand, position: { x: number; y: number }): void {
+  void openItemMenu(
+    command,
+    position,
+    (items, at) => requestForkContextMenu(items, at) ?? Promise.resolve(null),
+  );
+}
+
+function itemMenuHandlers(command: KeybindingCommand | undefined) {
+  if (command === undefined) return {};
+  return {
+    onContextMenu: (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openItemMenuAt(command, { x: event.clientX, y: event.clientY });
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      if (!isItemMenuKey(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = event.currentTarget.getBoundingClientRect();
+      openItemMenuAt(command, { x: rect.left, y: rect.bottom });
+    },
+  };
 }
 
 function MenuEntries({
@@ -136,9 +156,19 @@ function MenuEntry({
     if (item.children !== undefined) {
       return (
         <MenuSub>
-          <MenuSubTrigger disabled={item.disabled}>
+          <MenuSubTrigger disabled={item.disabled} {...itemMenuHandlers(item.keybindingCommand)}>
             <ItemIcon name={item.icon} />
-            {item.label}
+            {item.keybindingCommand ? (
+              <>
+                {/* The label takes the free space, so the hint and the chevron stay at the end. */}
+                <span className="flex-1">{item.label}</span>
+                <span className="ps-3">
+                  <ShortcutHint command={item.keybindingCommand} />
+                </span>
+              </>
+            ) : (
+              item.label
+            )}
           </MenuSubTrigger>
           <MenuSubPopup {...menuAttributes} layer="context">
             <MenuEntries items={item.children} onPick={onPick} />
@@ -163,10 +193,15 @@ function MenuEntry({
         disabled={item.disabled}
         variant={item.destructive === true ? "destructive" : "default"}
         onClick={() => onPick(item.id)}
+        {...itemMenuHandlers(item.keybindingCommand)}
       >
         <ItemIcon name={item.icon} />
         {item.label}
-        {item.keybindingCommand ? <ItemShortcut command={item.keybindingCommand} /> : null}
+        {item.keybindingCommand ? (
+          <span className="ms-auto ps-3">
+            <ShortcutHint command={item.keybindingCommand} />
+          </span>
+        ) : null}
       </MenuItem>
     );
   })();

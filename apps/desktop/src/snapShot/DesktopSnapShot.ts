@@ -86,10 +86,10 @@ import {
   boundedSnapShotString,
   isWaylandSession,
   sameSnapShotShortcut,
-  toElectronAccelerator,
   snapShotShortcutRegistrationFailureMessage,
   snapShotShortcutSystemConflict,
 } from "./snapShot.ts";
+import { toElectronAccelerator } from "../electron/electronAccelerator.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { readImageDimensions } from "@t3tools/shared/imageDimensions";
 

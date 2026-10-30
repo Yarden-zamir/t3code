@@ -1,63 +1,65 @@
-import type { ContextMenuItem, KeybindingCommand } from "@t3tools/contracts";
-import type { AppRouter } from "./router";
+import type { ContextMenuItem, KeybindingCommand, KeybindingShortcut } from "@t3tools/contracts";
 
-const KEYBINDS_ITEM_ID_PREFIX = "t3.keybinds:";
-
-export interface KeybindsMenu {
-  readonly items: readonly ContextMenuItem[];
-  /** The command of each added "Keybinds" item, by item id. */
-  readonly commandById: ReadonlyMap<string, KeybindingCommand>;
-}
-
-function collectBindableItems(
+type ShowMenu = (
   items: readonly ContextMenuItem[],
-  found: Map<KeybindingCommand, string>,
-): void {
-  for (const item of items) {
-    if (item.keybindingCommand !== undefined && !found.has(item.keybindingCommand)) {
-      found.set(item.keybindingCommand, item.label);
-    }
-    if (item.children) collectBindableItems(item.children, found);
-  }
+  position: { x: number; y: number },
+) => Promise<string | null>;
+
+export interface ContextMenuKeybindings {
+  readonly open: (command: KeybindingCommand) => void;
+  /** The key that a hint shows for `command`, or null while hints are off or it has none. */
+  readonly shortcutFor: (command: KeybindingCommand) => KeybindingShortcut | null;
 }
 
-/**
- * Appends a "Keybinds" entry for the items that have a `keybindingCommand`. It is a menu item and
- * not a button in each row, because native menus cannot show a button inside an item.
- */
-export function withKeybindsEntry(items: readonly ContextMenuItem[]): KeybindsMenu {
-  const found = new Map<KeybindingCommand, string>();
-  collectBindableItems(items, found);
-  const entries = [...found].map(([command, label]) => ({
-    id: `${KEYBINDS_ITEM_ID_PREFIX}${command}`,
-    command,
-    label,
-  }));
-  const commandById = new Map(entries.map((entry) => [entry.id, entry.command]));
-  const [first] = entries;
-  if (first === undefined) return { items, commandById };
-  const entry: ContextMenuItem =
-    entries.length === 1
-      ? { id: first.id, label: `Keybinds: ${first.label}`, icon: "keyboard" }
-      : {
-          id: `${KEYBINDS_ITEM_ID_PREFIX}menu`,
-          label: "Keybinds",
-          icon: "keyboard",
-          children: entries.map(({ id, label }) => ({ id, label })),
-        };
-  return { items: [...items, { ...entry, separatorBefore: true }], commandById };
+// `appInit` installs these, so the menu modules do not import the router and app state.
+let installed: ContextMenuKeybindings | null = null;
+
+export function installContextMenuKeybindings(keybindings: ContextMenuKeybindings): void {
+  installed = keybindings;
 }
 
-let openKeybindings: ((command: KeybindingCommand) => void) | null = null;
-
-/** Lets menus outside React open the Keybindings page. `appInit` calls it once. */
-export function installKeybindsMenuNavigation(router: AppRouter): void {
-  openKeybindings = (command) => {
-    void router.navigate({ to: "/settings/keybindings", search: { command } });
-  };
+/** Adds the `shortcut` of each item with a `keybindingCommand`, for menus that cannot read it. */
+export function withShortcuts<T extends string>(
+  items: readonly ContextMenuItem<T>[],
+  shortcutFor: ContextMenuKeybindings["shortcutFor"] = (command) =>
+    installed?.shortcutFor(command) ?? null,
+): ContextMenuItem<T>[] {
+  return items.map((item) => {
+    const shortcut = item.keybindingCommand ? shortcutFor(item.keybindingCommand) : null;
+    const children = item.children ? withShortcuts(item.children, shortcutFor) : undefined;
+    return {
+      ...item,
+      ...(shortcut ? { shortcut } : {}),
+      ...(children ? { children } : {}),
+    };
+  });
 }
 
-export function openKeybindingsForCommand(command: KeybindingCommand): void {
-  if (openKeybindings === null) throw new Error("Keybinds menu navigation is not installed.");
-  openKeybindings(command);
+const ITEM_MENU: readonly ContextMenuItem[] = [
+  { id: "keybinds", label: "Keybinds…", icon: "keyboard" },
+];
+
+/** The menu of one menu item: the command to open in Keybindings, or null when dismissed. */
+export async function pickItemMenuCommand(
+  command: KeybindingCommand,
+  position: { x: number; y: number },
+  show: ShowMenu,
+): Promise<KeybindingCommand | null> {
+  return (await show(ITEM_MENU, position)) === "keybinds" ? command : null;
+}
+
+export async function openItemMenu(
+  command: KeybindingCommand,
+  position: { x: number; y: number },
+  show: ShowMenu,
+): Promise<void> {
+  const picked = await pickItemMenuCommand(command, position, show);
+  if (picked === null) return;
+  if (installed === null) throw new Error("Context menu keybindings are not installed.");
+  installed.open(picked);
+}
+
+/** Shift+F10 and the context menu key open the menu of the focused menu item. */
+export function isItemMenuKey(event: Pick<KeyboardEvent, "key" | "shiftKey">): boolean {
+  return event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
 }

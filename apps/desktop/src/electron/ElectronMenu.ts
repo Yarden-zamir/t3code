@@ -1,4 +1,5 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
+import { toElectronAccelerator } from "./electronAccelerator.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -80,6 +81,7 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
       disabled: sourceItem.disabled === true,
       ...(sourceItem.separatorBefore === true ? { separatorBefore: true } : {}),
       ...(typeof sourceItem.checked === "boolean" ? { checked: sourceItem.checked } : {}),
+      ...(sourceItem.shortcut ? { shortcut: sourceItem.shortcut } : {}),
     };
 
     if (sourceItem.children) {
@@ -172,6 +174,11 @@ export const make = Effect.gen(function* () {
         itemOption.submenu = buildTemplate(item.children, complete);
       } else {
         itemOption.click = () => complete(Option.some(item.id));
+        if (item.shortcut) {
+          // The web app runs the key; the menu only shows it.
+          itemOption.accelerator = toElectronAccelerator(item.shortcut);
+          itemOption.registerAccelerator = false;
+        }
       }
       if (item.destructive && (!item.children || item.children.length === 0)) {
         const destructiveIcon = getDestructiveMenuIcon();

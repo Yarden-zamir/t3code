@@ -153,6 +153,30 @@ export function effectiveShortcutsForCommand(
   return effective;
 }
 
+// The level flags are always false while focus levels are off, so a key that needs one does nothing.
+const FOCUS_LEVELS_OFF = {
+  composerFocus: false,
+  timelineFocus: false,
+  rightPanelFocus: false,
+  sidebarFocus: false,
+} satisfies Partial<ShortcutMatchContext>;
+
+/**
+ * The keys that a shortcut hint shows for `command`. The last matching rule wins, so the user's
+ * own rules, which come after the defaults, are listed first.
+ */
+export function hintShortcutsForCommand(
+  keybindings: ResolvedKeybindingsConfig,
+  command: KeybindingCommand,
+  options: { readonly focusLevels: boolean; readonly context?: Partial<ShortcutMatchContext> },
+): KeybindingShortcut[] {
+  return effectiveShortcutsForCommand(keybindings, command, {
+    context: options.focusLevels
+      ? (options.context ?? {})
+      : { ...options.context, ...FOCUS_LEVELS_OFF },
+  });
+}
+
 function findEffectiveShortcutForCommand(
   keybindings: ResolvedKeybindingsConfig,
   command: KeybindingCommand,

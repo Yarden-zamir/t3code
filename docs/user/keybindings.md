@@ -5,9 +5,13 @@ also lists the command IDs and defaults available in your version.
 
 Search on that page matches action names, command IDs, conditions and shortcuts, such as
 `mod+k` or `⌘K`. To see all bindings of one action, choose **Show bindings for this action**
-in the menu of its row. A right-click menu item that a shortcut can also run has a
-**Keybinds** entry at the end of the menu. It opens the page with that action filtered and a
-new binding for it ready to record.
+in the menu of its row.
+
+A right-click menu item that a shortcut can also run shows its shortcut. Right-click that item,
+or press Shift+F10 on it, and choose **Keybinds…**. The page opens with that action filtered and
+a new binding for it ready to record. The desktop app's native menus show the shortcut but
+cannot open a menu on an item. To get **Keybinds…** there, turn on
+**Settings → Appearance → App context menu**.
 
 ## Composer controls
 
