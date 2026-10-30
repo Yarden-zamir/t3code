@@ -3,6 +3,8 @@
  * while the reach has B's `t3.app` and `t3.agents` cards. Calls go through the daemon's link proxy,
  * which adds this machine's token. Upstream `PeerLinks` and `PeerMcpClient` run over the links.
  */
+import * as NodeModule from "node:module";
+
 import {
   ARROW_LINK_NO_EXPIRY,
   AuthAccessTokenResult,
@@ -40,7 +42,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
-import * as Undici from "undici";
+import type * as UndiciModule from "undici";
 
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import type * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
@@ -59,6 +61,9 @@ import {
 } from "./machineAccess.ts";
 import { historyCaller, requireMachineExecCaller } from "./machineCallerAccess.ts";
 import { type ExecSocket, openExecSocket, streamUrl } from "./machineExecStream.ts";
+
+// undici is external to the CLI bundle; a Node single-executable loads it from disk only with require.
+const Undici = NodeModule.createRequire(import.meta.url)("undici") as typeof UndiciModule;
 
 const REQUEST_TIMEOUT = Duration.seconds(15);
 // Short, as the probe of upstream `PeerLinks.resolve`: a linked machine answers its descriptor fast.
@@ -240,7 +245,7 @@ const make = Effect.gen(function* () {
   );
 
   // One dispatcher per proxy path: a Unix socket, or a named pipe on Windows.
-  const dispatchers = new Map<string, Undici.Agent>();
+  const dispatchers = new Map<string, UndiciModule.Agent>();
   const dispatcherFor = (socketPath: string) => {
     let agent = dispatchers.get(socketPath);
     if (agent === undefined) {
