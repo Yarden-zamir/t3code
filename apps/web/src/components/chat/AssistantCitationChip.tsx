@@ -93,13 +93,10 @@ export function AssistantCitationChip({
   }, [citation, commentOpen, sourceAnchor, unavailableSourceAnchor]);
   // The card sits above its chip, inside the main pane. Anchored at the cited text, it could
   // cover the sidebar or the chip.
-  const popupAnchor = {
-    getBoundingClientRect: () =>
-      (
-        commentTriggerRef.current?.closest('[data-assistant-citation-chip="true"]') ??
-        commentTriggerRef.current
-      )?.getBoundingClientRect() ?? new DOMRect(),
-  };
+  // An element anchor, so the card follows the chip when the composer scrolls.
+  const popupAnchor = () =>
+    commentTriggerRef.current?.closest<HTMLElement>('[data-assistant-citation-chip="true"]') ??
+    commentTriggerRef.current;
   const label = assistantCitationLabel(citation);
   const sourceLinkProps = {
     to: "/$environmentId/$threadId" as const,

@@ -4,6 +4,7 @@ import { EnvironmentId, type MachineCommandInput } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -702,9 +703,11 @@ it.layer(
 
       // The daemon went away but the child did not exit: the next probe gets no answer.
       yield* Ref.set(harness.answersSamples, false);
+      const silentFrom = yield* Clock.currentTimeMillis;
       yield* TestClock.adjust("120 seconds");
       expect(yield* Queue.take(first.written)).toMatchObject({ type: "samples" });
       yield* TestClock.adjust("35 seconds");
+      const endedBy = yield* Clock.currentTimeMillis;
       yield* Deferred.await(first.stopped);
       yield* TestClock.adjust("1 second");
       const second = yield* Queue.take(harness.children);
@@ -718,6 +721,11 @@ it.layer(
         detail: "the kitshn provider did not answer in 35s, so T3 ended it",
         restartedAt: expect.any(Number),
       });
+      // The time when the unanswered probe ended the child.
+      const state = Option.getOrThrow(connection);
+      const restartedAt = state.status === "registered" ? state.restartedAt : null;
+      expect(restartedAt).toBeGreaterThan(silentFrom);
+      expect(restartedAt).toBeLessThanOrEqual(endedBy);
     }).pipe(Effect.scoped),
   );
 

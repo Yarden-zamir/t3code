@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { ForkSettingsSlot } from "./ForkSettingsSlot";
 import type { MachineMapClientState } from "@t3tools/contracts";
 
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -53,16 +54,18 @@ const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const relativeTime = (epochMs: number) => formatRelativeTimeLabel(new Date(epochMs).toISOString());
 
 /** The line about the status: why it is off, or why it reconnected. */
-function statusNote(connection: MachineMapClientState["connection"]): string | null {
+function statusNote(connection: MachineMapClientState["connection"], nowMs: number): string | null {
   if (connection.detail === null) return null;
   if (connection.status !== "registered") return sentence(connection.detail);
   const { restartedAt } = connection;
-  if (restartedAt === null || Date.now() - restartedAt > RESTART_NOTE_MS) return null;
+  if (restartedAt === null || nowMs - restartedAt > RESTART_NOTE_MS) return null;
   return `Reconnected ${relativeTime(restartedAt)}: ${connection.detail}`;
 }
 
 /** K-1611: the provider connection of this server and what kitshn gave it. */
 function ConnectionRow({ connection }: { connection: MachineMapClientState["connection"] }) {
+  // A minute tick keeps the relative times current and ends the reconnect note on time.
+  const nowMs = Date.parse(`${useNowMinute()}Z`);
   // While off, this server does not talk to kitshn, so the contact facts say nothing.
   const facts =
     connection.status === "off"
@@ -79,7 +82,7 @@ function ConnectionRow({ connection }: { connection: MachineMapClientState["conn
   return (
     <SettingsRow
       title={connection.paused ? "kitshn's emergency pause is on" : STATUS_TITLE[connection.status]}
-      description={[statusNote(connection), factsLine].filter(Boolean).join(". ")}
+      description={[statusNote(connection, nowMs), factsLine].filter(Boolean).join(". ")}
     />
   );
 }
