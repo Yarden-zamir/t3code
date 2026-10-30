@@ -1,4 +1,4 @@
-import type { ContextMenuItem, KeybindingCommand } from "@t3tools/contracts";
+import type { ContextMenuItem } from "@t3tools/contracts";
 import {
   ArchiveIcon,
   CheckIcon,
@@ -23,14 +23,7 @@ import {
   Trash2Icon,
   UserPlusIcon,
 } from "lucide-react";
-import {
-  type KeyboardEvent,
-  type MouseEvent,
-  type ReactNode,
-  useEffect,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { type MouseEvent, type ReactNode, useEffect, useSyncExternalStore } from "react";
 
 import {
   FORK_CONTEXT_MENU_ATTRIBUTE,
@@ -40,12 +33,6 @@ import {
   settleForkContextMenu,
   subscribeForkContextMenu,
 } from "../forkContextMenu";
-import {
-  ignoreContextMenuAfterKey,
-  isItemMenuKey,
-  KEYBINDINGS_ITEM_LABEL,
-  openKeybindingsFor,
-} from "../keybindingsMenu";
 import { useMenuItemShortcut } from "./focusLevels/ShortcutHint";
 import {
   Menu,
@@ -104,150 +91,18 @@ function ItemIcon({ name }: { name: string | undefined }) {
   return Icon ? <Icon /> : null;
 }
 
-type ItemMenuRequest = {
-  readonly command: KeybindingCommand;
-  readonly item: HTMLElement;
-  /** A pointer opens the menu at the pointer, a key at the item with its first entry highlighted. */
-  readonly point: { x: number; y: number } | null;
-};
-
-type OpenItemMenu = (request: ItemMenuRequest) => void;
-
-const ITEM_ATTRIBUTE = "data-keybinding-item";
-
 /**
- * The item's own menu, nested in the menu of the item, so the menu of the item stays open.
- * Escape closes only this menu and gives focus back to the item.
+ * Disabled items ignore the pointer, so `MenuPopup` finds the bindable item under it. A disabled
+ * item keeps its item menu, because a key for the action is useful before the action is.
  */
-function ItemMenu({
-  request,
-  onClose,
-  onDone,
-}: {
-  request: ItemMenuRequest;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const { point, item } = request;
-  const anchor =
-    point === null
-      ? item
-      : { getBoundingClientRect: () => DOMRect.fromRect({ ...point, width: 0, height: 0 }) };
-  return (
-    <MenuSub
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <MenuPopup
-        {...menuAttributes}
-        anchor={anchor}
-        align="start"
-        side={point === null ? "inline-end" : "bottom"}
-        sideOffset={0}
-        layer="context"
-        finalFocus={() => (item.isConnected ? item : false)}
-        // Base UI leaves focus in the parent menu, whose Escape would close both menus.
-        ref={(element) => {
-          if (point !== null) element?.focus({ preventScroll: true });
-        }}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-      >
-        <MenuItem
-          ref={(element) => {
-            // Base UI highlights the item that has focus, so Enter runs it.
-            if (point === null) element?.focus({ preventScroll: true });
-          }}
-          onClick={() => {
-            onDone();
-            openKeybindingsFor(request.command);
-          }}
-        >
-          <KeyboardIcon />
-          {KEYBINDINGS_ITEM_LABEL}
-        </MenuItem>
-      </MenuPopup>
-    </MenuSub>
-  );
-}
-
-/** The item menu state of one popup: its top-level menu or one submenu. */
-function useItemMenu(onDone: () => void) {
-  const [request, setRequest] = useState<ItemMenuRequest | null>(null);
-  const menu =
-    request === null ? null : (
-      <ItemMenu
-        key={`${request.command}:${request.point?.x}:${request.point?.y}`}
-        request={request}
-        onClose={() => setRequest(null)}
-        onDone={onDone}
-      />
-    );
-  return { open: setRequest, menu };
-}
-
-/** Opens the item menu of the focused item from Shift+F10 or the context menu key. */
-function itemMenuKeyHandler(command: KeybindingCommand, openItemMenu: OpenItemMenu) {
-  return {
-    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
-      if (!isItemMenuKey(event)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      ignoreContextMenuAfterKey();
-      openItemMenu({ command, item: event.currentTarget, point: null });
-    },
-  };
-}
-
-/**
- * Disabled items ignore the pointer, so the popup finds the item under it. A disabled item keeps
- * its menu, because a key for the action is useful before the action is.
- */
-function onPopupContextMenu(items: readonly ContextMenuItem[], openItemMenu: OpenItemMenu) {
-  return (event: MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    // React passes the event through the submenu portal to the parent popup, which would match
-    // its own item under the pointer.
-    event.stopPropagation();
-    const target = [
-      ...event.currentTarget.querySelectorAll<HTMLElement>(`[${ITEM_ATTRIBUTE}]`),
-    ].find((element) => {
-      const rect = element.getBoundingClientRect();
-      return (
-        event.clientX >= rect.left &&
-        event.clientX < rect.right &&
-        event.clientY >= rect.top &&
-        event.clientY < rect.bottom
-      );
-    });
-    const command = items.find(
-      (item) => item.id === target?.getAttribute(ITEM_ATTRIBUTE),
-    )?.keybindingCommand;
-    if (command === undefined || target === undefined) return;
-    openItemMenu({ command, item: target, point: { x: event.clientX, y: event.clientY } });
-  };
-}
-
-function itemMenuProps(item: ContextMenuItem, openItemMenu: OpenItemMenu) {
-  if (item.keybindingCommand === undefined) return {};
-  return {
-    [ITEM_ATTRIBUTE]: item.id,
-    ...itemMenuKeyHandler(item.keybindingCommand, openItemMenu),
-  };
-}
+const preventNativeMenu = (event: MouseEvent<HTMLElement>) => event.preventDefault();
 
 function MenuEntries({
   items,
   onPick,
-  openItemMenu,
 }: {
   items: readonly ContextMenuItem[];
   onPick: (id: string | null) => void;
-  openItemMenu: OpenItemMenu;
 }) {
   return groupByHeader(items).map((group, groupIndex) => (
     <MenuGroup key={group[0]?.id ?? groupIndex}>
@@ -257,7 +112,6 @@ function MenuEntries({
           item={item}
           separator={item.separatorBefore === true && (groupIndex > 0 || index > 0)}
           onPick={onPick}
-          openItemMenu={openItemMenu}
         />
       ))}
     </MenuGroup>
@@ -273,17 +127,11 @@ function Submenu({
   children: ReactNode;
   onPick: (id: string | null) => void;
 }) {
-  const itemMenu = useItemMenu(() => onPick(null));
   return (
     <MenuSub>
       {children}
-      <MenuSubPopup
-        {...menuAttributes}
-        layer="context"
-        onContextMenu={onPopupContextMenu(item.children, itemMenu.open)}
-      >
-        <MenuEntries items={item.children} onPick={onPick} openItemMenu={itemMenu.open} />
-        {itemMenu.menu}
+      <MenuSubPopup {...menuAttributes} layer="context" onContextMenu={preventNativeMenu}>
+        <MenuEntries items={item.children} onPick={onPick} />
       </MenuSubPopup>
     </MenuSub>
   );
@@ -293,18 +141,13 @@ function MenuEntry({
   item,
   separator,
   onPick,
-  openItemMenu,
 }: {
   item: ContextMenuItem;
   separator: boolean;
   onPick: (id: string | null) => void;
-  openItemMenu: OpenItemMenu;
 }) {
   const shortcut = useMenuItemShortcut(item.keybindingCommand);
-  const keyProps = {
-    ...itemMenuProps(item, openItemMenu),
-    "aria-keyshortcuts": shortcut.ariaKeyShortcuts,
-  };
+  const keyProps = shortcut.props;
   const entry = (() => {
     if (item.header === true) return <MenuGroupLabel>{item.label}</MenuGroupLabel>;
     if (item.children !== undefined) {
@@ -379,15 +222,15 @@ export function ForkContextMenuHost() {
 function OpenMenu({ request }: { request: ForkContextMenuRequest }) {
   const { key, position } = request;
   const onPick = (id: string | null) => settleForkContextMenu(key, id);
-  const itemMenu = useItemMenu(() => onPick(null));
   return (
     <Menu
       open
       // A modal menu makes the page inert, so focus could not go back before the caller resumes.
       modal={false}
-      onOpenChange={(open, details) => {
-        // An item press settles with its id in its own click handler.
-        if (!open && details.reason !== "item-press") onPick(null);
+      onOpenChange={(open) => {
+        // An item press settles with its id in its own click handler first; this settles every
+        // other close, such as an item of a nested item menu.
+        if (!open) queueMicrotask(() => onPick(null));
       }}
     >
       {/* Submenus read their keys from the menu tree, which a menu without a trigger lacks. */}
@@ -407,10 +250,9 @@ function OpenMenu({ request }: { request: ForkContextMenuRequest }) {
         sideOffset={0}
         finalFocus={false}
         layer="context"
-        onContextMenu={onPopupContextMenu(request.items, itemMenu.open)}
+        onContextMenu={preventNativeMenu}
       >
-        <MenuEntries items={request.items} onPick={onPick} openItemMenu={itemMenu.open} />
-        {itemMenu.menu}
+        <MenuEntries items={request.items} onPick={onPick} />
       </MenuPopup>
     </Menu>
   );

@@ -41,7 +41,7 @@ import { environmentPresentations } from "../../state/presentation";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "../../state/server";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { isModelPickerOpen } from "../../modelPickerVisibility";
-import { shortcutLabelForCommand } from "../../keybindings";
+import { keybindingItemProps, shortcutLabelForCommand } from "../../keybindings";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -185,6 +185,9 @@ export function UsagePage() {
     });
     return shortcut ? `${option.label} (${shortcut})` : option.label;
   };
+  const usageKeybindingProps = (
+    option: (typeof METRIC_OPTIONS)[number] | (typeof WINDOW_OPTIONS)[number],
+  ) => keybindingItemProps(keybindings, option.command, { context: { usagePageOpen: true } });
   const [windowSelection, setWindowSelection] = useState(() => ({
     days: preferences.windowDays,
     window: makeWindow(
@@ -407,7 +410,12 @@ export function UsagePage() {
             }}
           >
             {WINDOW_OPTIONS.map((option) => (
-              <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
+              <Toggle
+                key={option.days}
+                value={String(option.days)}
+                title={shortcutTitle(option)}
+                {...usageKeybindingProps(option)}
+              >
                 {option.label}
               </Toggle>
             ))}
@@ -423,7 +431,12 @@ export function UsagePage() {
           }}
         >
           {METRIC_OPTIONS.map((option) => (
-            <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
+            <Toggle
+              key={option.value}
+              value={option.value}
+              title={shortcutTitle(option)}
+              {...usageKeybindingProps(option)}
+            >
               {option.label}
             </Toggle>
           ))}
@@ -458,6 +471,7 @@ export function UsagePage() {
                   key={option.days}
                   value={String(option.days)}
                   title={shortcutTitle(option)}
+                  {...usageKeybindingProps(option)}
                 >
                   {option.label}
                 </SelectItem>
@@ -483,7 +497,12 @@ export function UsagePage() {
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
             {METRIC_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value} title={shortcutTitle(option)}>
+              <SelectItem
+                key={option.value}
+                value={option.value}
+                title={shortcutTitle(option)}
+                {...usageKeybindingProps(option)}
+              >
                 {option.label}
               </SelectItem>
             ))}

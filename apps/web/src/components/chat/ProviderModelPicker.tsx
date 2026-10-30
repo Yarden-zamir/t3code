@@ -8,7 +8,7 @@ import {
 import { memo, useRef, useState } from "react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Tooltip, TooltipPopup } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
@@ -17,7 +17,7 @@ import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./p
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import { ComposerControl, type ComposerControlSize } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
-import { ShortcutHint } from "../focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
 
 /** Holds the page still behind the open picker; its lifetime is the popup element's. */
 function lockBackgroundScroll(popup: HTMLElement | null) {
@@ -248,7 +248,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             </span>
           ) : null}
           <Tooltip>
-            <TooltipTrigger
+            <ShortcutTrigger
+              command={props.keybindings ? "modelPicker.toggle" : null}
               render={
                 <span
                   className="min-w-0 flex-1 overflow-hidden truncate"
@@ -257,7 +258,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               }
             >
               {props.triggerLabel ?? multipleLabel ?? triggerTitle}
-            </TooltipTrigger>
+            </ShortcutTrigger>
             <TooltipPopup side="top">
               {triggerTooltipContent}
               <ShortcutHint command={props.keybindings ? "modelPicker.toggle" : null} />

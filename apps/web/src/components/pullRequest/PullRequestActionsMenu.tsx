@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { useId, useState } from "react";
 
-import { shortcutLabelForCommand } from "~/keybindings";
+import { keybindingItemProps, shortcutLabelForCommand } from "~/keybindings";
 import { readLocalApi } from "~/localApi";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { primaryServerKeybindingsAtom } from "~/state/server";
@@ -399,7 +399,10 @@ export function PullRequestActionsMenu({
           <ArrowUpRightIcon className="size-3.5" />
           {openOnHostText}
         </MenuItem>
-        <MenuItem onClick={() => copyReference(detail.url, `${terminology.shortLabel} link`)}>
+        <MenuItem
+          {...keybindingItemProps(keybindings, "thread.copyReference")}
+          onClick={() => copyReference(detail.url, `${terminology.shortLabel} link`)}
+        >
           <LinkIcon className="size-3.5" />
           Copy link
           <MenuShortcut>
@@ -407,6 +410,7 @@ export function PullRequestActionsMenu({
           </MenuShortcut>
         </MenuItem>
         <MenuItem
+          {...keybindingItemProps(keybindings, "pullRequest.copyNumber")}
           onClick={() => copyReference(`#${reference.number}`, `${terminology.shortLabel} number`)}
         >
           <CopyIcon className="size-3.5" />

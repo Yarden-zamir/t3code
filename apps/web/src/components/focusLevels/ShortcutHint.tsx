@@ -10,6 +10,7 @@ import {
   type ShortcutMatchContext,
 } from "../../keybindings";
 import { primaryServerKeybindingsAtom } from "../../state/server";
+import { KEYBINDING_COMMAND_ATTRIBUTE } from "../../keybindingsMenu";
 import { FOCUS_LEVELS_OFF } from "./focusLevels";
 import { Kbd } from "../ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -79,10 +80,11 @@ export function ShortcutHint(props: {
  */
 export function useMenuItemShortcut(command: KeybindingCommand | undefined) {
   const enabled = useClientSettings(selectTooltipShortcuts);
-  const shortcuts = useShortcuts(command ?? null);
+  const props = useKeybindingProps(command ?? null);
   const labels = useShortcutLabels(command ?? null);
-  if (command === undefined) return { hint: null, ariaKeyShortcuts: undefined };
+  if (command === undefined) return { hint: null, props };
   return {
+    props,
     hint: !enabled ? null : labels.length > 0 ? (
       <ShortcutChips labels={labels} />
     ) : (
@@ -90,11 +92,38 @@ export function useMenuItemShortcut(command: KeybindingCommand | undefined) {
         –
       </span>
     ),
-    ariaKeyShortcuts:
+  };
+}
+
+/**
+ * Fork: the props of an element that runs `command`: its `aria-keyshortcuts`, and the mark that
+ * gives it the item menu ("Keybindings…") on right-click and Shift+F10.
+ */
+export function useKeybindingProps(command: KeybindingCommand | null, context?: ShortcutContext) {
+  const shortcuts = useShortcuts(command, context);
+  if (command === null) return {};
+  return {
+    [KEYBINDING_COMMAND_ATTRIBUTE]: command,
+    "aria-keyshortcuts":
       shortcuts.length > 0
         ? shortcuts.map((shortcut) => ariaShortcut(shortcut)).join(" ")
         : undefined,
   };
+}
+
+/**
+ * Fork: the trigger of a tooltip that names the key of `command` (`ShortcutHint` in its popup).
+ * It gives the control `aria-keyshortcuts` and the item menu ("Keybindings…").
+ */
+export function ShortcutTrigger({
+  command,
+  context,
+  ...props
+}: ComponentProps<typeof TooltipTrigger> & {
+  command: KeybindingCommand | null;
+  context?: ShortcutContext;
+}) {
+  return <TooltipTrigger {...useKeybindingProps(command, context)} {...props} />;
 }
 
 /**
@@ -114,9 +143,10 @@ export function ShortcutTooltip({
   side?: ComponentProps<typeof TooltipPopup>["side"];
 }) {
   const labels = useShortcutLabels(command, context);
+  const keybindingProps = useKeybindingProps(command, context);
   return (
     <Tooltip disabled={labels.length === 0}>
-      <TooltipTrigger {...triggerProps} />
+      <TooltipTrigger {...keybindingProps} {...triggerProps} />
       {labels.length > 0 ? (
         <TooltipPopup side={side}>
           {label}

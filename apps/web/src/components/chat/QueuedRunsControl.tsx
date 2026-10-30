@@ -32,7 +32,7 @@ import { isImageAttachment, type ChatMessage } from "../../types";
 import { cn } from "~/lib/utils";
 import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ShortcutHint } from "../focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { GuestMessageName } from "./guestMessageStyle";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
@@ -317,7 +317,11 @@ export function QueuedRunsControl({
                 {canSend && !isEditing ? (
                   <>
                     <Tooltip>
-                      <TooltipTrigger render={<span className="flex shrink-0" />}>
+                      <ShortcutTrigger
+                        command="thread.steerQueuedMessage"
+                        context={{ terminalFocus: false }}
+                        render={<span className="flex shrink-0" />}
+                      >
                         <Button
                           size="xs"
                           variant="ghost-muted"
@@ -331,7 +335,7 @@ export function QueuedRunsControl({
                           <ArrowUpIcon />
                           Send now
                         </Button>
-                      </TooltipTrigger>
+                      </ShortcutTrigger>
                       <TooltipPopup>
                         {workflow?.canSendNow
                           ? "Start a turn with this message"
@@ -370,7 +374,11 @@ export function QueuedRunsControl({
                   <>
                     <Tooltip>
                       {/* The span keeps the tooltip, and its reason, on a disabled button. */}
-                      <TooltipTrigger render={<span className="flex shrink-0" />}>
+                      <ShortcutTrigger
+                        command="thread.editQueuedMessage"
+                        context={{ composerFocus: true }}
+                        render={<span className="flex shrink-0" />}
+                      >
                         <Button
                           size="icon-xs"
                           variant="ghost-muted"
@@ -394,7 +402,7 @@ export function QueuedRunsControl({
                         >
                           <PencilIcon />
                         </Button>
-                      </TooltipTrigger>
+                      </ShortcutTrigger>
                       <TooltipPopup>
                         {props.editBlockedReason ?? (
                           <>

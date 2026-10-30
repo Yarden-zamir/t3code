@@ -1,5 +1,6 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
+  type KeybindingCommand,
   type ProviderInstanceId,
   type EnvironmentId,
   type ProviderDriverKind,
@@ -161,7 +162,8 @@ function adjacentModelPickerProvider(input: {
   ]!;
 }
 
-const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
+type ModelJumpHint = { readonly label: string; readonly command: KeybindingCommand };
+const EMPTY_MODEL_JUMP_LABELS = new Map<string, ModelJumpHint>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 52;
 // Rendered heights in `--spacing` units. Chrome is the search box and list padding, plus a 1px border.
 const ONE_LINE_ROW_UNITS = 8;
@@ -177,17 +179,17 @@ function modelJumpLabelsByKey(
   modelKeys: ReadonlyArray<string>,
   keybindings: ResolvedKeybindingsConfig,
   terminalOpen: boolean,
-): ReadonlyMap<string, string> {
+): ReadonlyMap<string, ModelJumpHint> {
   const shortcutLabelOptions = {
     platform: navigator.platform,
     context: { terminalFocus: false, terminalOpen, modelPickerOpen: true },
   };
-  const mapping = new Map<string, string>();
+  const mapping = new Map<string, ModelJumpHint>();
   for (const [index, modelKey] of modelKeys.entries()) {
     const command = modelPickerJumpCommandForIndex(index);
     const label = command && shortcutLabelForCommand(keybindings, command, shortcutLabelOptions);
-    if (label) {
-      mapping.set(modelKey, label);
+    if (command && label) {
+      mapping.set(modelKey, { label, command });
     }
   }
   return mapping.size > 0 ? mapping : EMPTY_MODEL_JUMP_LABELS;
@@ -1020,7 +1022,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     showProvider={rowsMixProviders || Boolean(model.subProvider)}
                     showNewBadge={model.badge === "new"}
                     unavailable={model.isUnavailable === true}
-                    jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
+                    jumpHint={modelJumpLabelByKey.get(modelKey) ?? null}
                     disabledReason={disabledReason}
                     onToggleFavorite={toggleFavorite}
                   />

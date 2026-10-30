@@ -1,4 +1,8 @@
-import { type ProviderDriverKind, type ProviderInstanceId } from "@t3tools/contracts";
+import {
+  type KeybindingCommand,
+  type ProviderDriverKind,
+  type ProviderInstanceId,
+} from "@t3tools/contracts";
 import { memo } from "react";
 import { CheckIcon, StarIcon } from "lucide-react";
 import { getDisplayModelName, getProviderRowLabel } from "./providerIconUtils";
@@ -8,6 +12,7 @@ import { Badge } from "../ui/badge";
 import { Kbd } from "../ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
+import { KEYBINDING_COMMAND_ATTRIBUTE } from "~/keybindingsMenu";
 import { modelPickerModelKey } from "./modelPickerKeys";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 
@@ -27,7 +32,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   showProvider: boolean;
   showNewBadge?: boolean;
   unavailable?: boolean;
-  jumpLabel?: string | null;
+  /** The key of `modelPicker.jump.N` for this row; the row runs that command. */
+  jumpHint?: { readonly label: string; readonly command: KeybindingCommand } | null;
   disabledReason?: string | null;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
@@ -43,6 +49,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
       hideIndicator
       index={props.index}
       value={modelPickerModelKey(props.instanceId, props.slug)}
+      {...(props.jumpHint ? { [KEYBINDING_COMMAND_ATTRIBUTE]: props.jumpHint.command } : {})}
       disabled={Boolean(props.disabledReason)}
       className={cn(
         "group relative w-full !min-w-0 max-w-full cursor-pointer",
@@ -87,7 +94,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        {props.jumpLabel ? <Kbd>{props.jumpLabel}</Kbd> : null}
+        {props.jumpHint ? <Kbd>{props.jumpHint.label}</Kbd> : null}
         <Tooltip>
           <TooltipTrigger
             render={

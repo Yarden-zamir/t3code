@@ -9,6 +9,7 @@ import { readLocalApi } from "../localApi";
 import { __setClientSettingsForTests } from "../hooks/useSettings";
 import { render } from "../../test/render";
 import { ForkContextMenuHost } from "./ForkContextMenuHost";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
 
 const ITEMS = [
   { id: "group", label: "Thread", header: true },
@@ -128,6 +129,37 @@ describe("ForkContextMenuHost", () => {
     await userEvent.keyboard("{Shift>}{F10}{/Shift}{Enter}");
     await expect(selection).resolves.toBeNull();
     expect(openKeybindings).toHaveBeenCalledWith("thread.rename");
+  });
+
+  it("gives a marked control and a marked item of any menu the item menu", async () => {
+    const { openKeybindings } = setup();
+    await using _screen = await render(
+      <>
+        <ForkContextMenuHost />
+        <button type="button" data-keybinding-command="sidebar.toggle">
+          Toggle
+        </button>
+        <Menu>
+          <MenuTrigger>More</MenuTrigger>
+          <MenuPopup>
+            <MenuItem data-keybinding-command="thread.pin">Pin</MenuItem>
+          </MenuPopup>
+        </Menu>
+      </>,
+    );
+
+    await userEvent.click(page.getByRole("button", { name: "Toggle" }), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: "Keybindings…" }));
+    expect(openKeybindings).toHaveBeenLastCalledWith("sidebar.toggle");
+
+    await userEvent.click(page.getByRole("button", { name: "More" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Pin" }), { button: "right" });
+    await userEvent.keyboard("{Escape}");
+    // Escape closes only the item menu, so the dropdown stays open.
+    await expect.element(page.getByRole("menuitem", { name: "Pin" })).toBeVisible();
+    await userEvent.click(page.getByRole("menuitem", { name: "Pin" }), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: "Keybindings…" }));
+    expect(openKeybindings).toHaveBeenLastCalledWith("thread.pin");
   });
 
   it("picks an item with the arrow keys and Enter, then gives focus back", async () => {

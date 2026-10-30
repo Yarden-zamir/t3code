@@ -1,6 +1,17 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { CheckIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
+import type { KeybindingCommand } from "@t3tools/contracts";
+import { CheckIcon, ChevronRightIcon, KeyboardIcon, SearchIcon } from "lucide-react";
+import { useState } from "react";
 import type * as React from "react";
+
+import {
+  bindableElement,
+  ignoreContextMenuAfterKey,
+  isItemMenuKey,
+  KEYBINDING_COMMAND_ATTRIBUTE,
+  KEYBINDINGS_ITEM_LABEL,
+  openKeybindingsFor,
+} from "~/keybindingsMenu";
 
 import { cn } from "~/lib/utils";
 import { buttonVariants } from "./button";
@@ -17,6 +28,67 @@ function MenuTrigger({ className, children, ...props }: MenuPrimitive.Trigger.Pr
   );
 }
 
+type ItemMenuRequest = {
+  readonly command: KeybindingCommand;
+  readonly item: HTMLElement;
+  /** A pointer opens the menu at the pointer, a key at the item with its entry highlighted. */
+  readonly point: { x: number; y: number } | null;
+};
+
+/**
+ * The menu of a bindable item (`data-keybinding-command`), nested in the menu of the item, so
+ * that menu stays open. Escape closes only this menu and gives focus back to the item.
+ */
+function ItemMenu({ request, onClose }: { request: ItemMenuRequest; onClose: () => void }) {
+  const { point, item } = request;
+  const anchor =
+    point === null
+      ? item
+      : { getBoundingClientRect: () => DOMRect.fromRect({ ...point, width: 0, height: 0 }) };
+  return (
+    <MenuSub
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <MenuPopup
+        anchor={anchor}
+        align="start"
+        side={point === null ? "inline-end" : "bottom"}
+        sideOffset={0}
+        layer="context"
+        finalFocus={() => (item.isConnected ? item : false)}
+        // Base UI leaves focus in the parent menu, whose Escape would close both menus.
+        ref={(element) => {
+          if (point !== null) element?.focus({ preventScroll: true });
+        }}
+      >
+        <MenuItem
+          ref={(element) => {
+            // Base UI highlights the item that has focus, so Enter runs it.
+            if (point === null) element?.focus({ preventScroll: true });
+          }}
+          onClick={() => openKeybindingsFor(request.command)}
+        >
+          <KeyboardIcon />
+          {KEYBINDINGS_ITEM_LABEL}
+        </MenuItem>
+      </MenuPopup>
+    </MenuSub>
+  );
+}
+
+/** Disabled items ignore the pointer, so the popup finds the bindable item under it. */
+function bindableItemAt(popup: HTMLElement, x: number, y: number): HTMLElement | undefined {
+  return [...popup.querySelectorAll<HTMLElement>(`[${KEYBINDING_COMMAND_ATTRIBUTE}]`)].find(
+    (element) => {
+      const rect = element.getBoundingClientRect();
+      return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+    },
+  );
+}
+
 function MenuPopup({
   children,
   className,
@@ -28,6 +100,8 @@ function MenuPopup({
   keepMounted = false,
   width = "default",
   layer = "default",
+  onContextMenu,
+  onKeyDown,
   ...props
 }: MenuPrimitive.Popup.Props & {
   align?: MenuPrimitive.Positioner.Props["align"];
@@ -40,6 +114,7 @@ function MenuPopup({
   /** `context` draws above tooltips and preview cards, like a system context menu. */
   layer?: "default" | "context";
 }) {
+  const [itemMenu, setItemMenu] = useState<ItemMenuRequest | null>(null);
   return (
     <MenuPrimitive.Portal keepMounted={keepMounted}>
       <MenuPrimitive.Positioner
@@ -63,8 +138,41 @@ function MenuPopup({
           )}
           data-slot="menu-popup"
           {...props}
+          onContextMenu={(event) => {
+            onContextMenu?.(event);
+            // React passes the event through a submenu portal to the parent popup, which would
+            // match its own item under the pointer.
+            event.stopPropagation();
+            const item = bindableItemAt(event.currentTarget, event.clientX, event.clientY);
+            const bindable = bindableElement(item ?? null);
+            if (bindable === null) return;
+            event.preventDefault();
+            setItemMenu({
+              command: bindable.command,
+              item: bindable.element,
+              point: { x: event.clientX, y: event.clientY },
+            });
+          }}
+          onKeyDown={(event) => {
+            onKeyDown?.(event);
+            if (!isItemMenuKey(event) || !event.currentTarget.contains(event.target as Node))
+              return;
+            const bindable = bindableElement(event.target);
+            if (bindable === null) return;
+            event.preventDefault();
+            event.stopPropagation();
+            ignoreContextMenuAfterKey();
+            setItemMenu({ command: bindable.command, item: bindable.element, point: null });
+          }}
         >
           <div className="max-h-(--available-height) w-full overflow-y-auto p-1">{children}</div>
+          {itemMenu === null ? null : (
+            <ItemMenu
+              key={`${itemMenu.command}:${itemMenu.point?.x}:${itemMenu.point?.y}`}
+              request={itemMenu}
+              onClose={() => setItemMenu(null)}
+            />
+          )}
         </MenuPrimitive.Popup>
       </MenuPrimitive.Positioner>
     </MenuPrimitive.Portal>

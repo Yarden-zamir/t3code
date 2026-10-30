@@ -23,6 +23,7 @@ import { projectScriptIdFromCommand } from "./projectScripts";
 
 export type { ShortcutEventLike, ShortcutModifierStateLike } from "@t3tools/shared/keybindings";
 export { shortcutKeyFromEvent } from "@t3tools/shared/keybindings";
+import { KEYBINDING_COMMAND_ATTRIBUTE } from "./keybindingsMenu";
 
 export interface ShortcutMatchContext {
   terminalFocus: boolean;
@@ -260,6 +261,26 @@ export function ariaShortcut(shortcut: KeybindingShortcut, platform = navigator.
   if (shortcut.metaKey || (shortcut.modKey && useMetaForMod)) parts.push("Meta");
   parts.push(ARIA_KEY_NAMES[shortcut.key] ?? formatShortcutKeyLabel(shortcut.key));
   return parts.join("+");
+}
+
+/**
+ * Fork: the props of an element that runs `command` and shows its key itself, such as a menu item
+ * with a `MenuShortcut`: its `aria-keyshortcuts` and the item menu mark (`keybindingsMenu.ts`).
+ */
+export function keybindingItemProps(
+  keybindings: ResolvedKeybindingsConfig,
+  command: KeybindingCommand | null,
+  options?: ShortcutMatchOptions,
+) {
+  if (command === null) return {};
+  const shortcuts = effectiveShortcutsForCommand(keybindings, command, options);
+  return {
+    [KEYBINDING_COMMAND_ATTRIBUTE]: command,
+    "aria-keyshortcuts":
+      shortcuts.length > 0
+        ? shortcuts.map((shortcut) => ariaShortcut(shortcut, resolvePlatform(options))).join(" ")
+        : undefined,
+  };
 }
 
 export function shortcutLabelForCommand(

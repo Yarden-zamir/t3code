@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { isElectron } from "../../env";
 import { useClientSettings, updateClientSettings } from "../../hooks/useSettings";
-import { openItemMenu } from "../../keybindingsMenu";
+import { KEYBINDING_COMMAND_ATTRIBUTE } from "../../keybindingsMenu";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -122,14 +122,9 @@ export function KeyboardCheatSheet() {
                       <li
                         key={row.command ?? row.label}
                         className="flex items-center justify-between gap-3 py-1.5 text-sm"
-                        onContextMenu={(event) => {
-                          const command = row.command;
-                          if (command === null) return;
-                          event.preventDefault();
-                          void openItemMenu(command, {
-                            position: { x: event.clientX, y: event.clientY },
-                          });
-                        }}
+                        {...(row.command === null
+                          ? {}
+                          : { [KEYBINDING_COMMAND_ATTRIBUTE]: row.command })}
                       >
                         <span className="min-w-0 truncate">{row.label}</span>
                         <span className="flex shrink-0 items-center gap-1">

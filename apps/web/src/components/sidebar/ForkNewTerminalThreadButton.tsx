@@ -26,6 +26,7 @@ export function ForkNewTerminalThreadButton(props: {
   return (
     <SidebarHeaderIconButton
       label="New terminal thread"
+      command={props.shortcutCommand}
       tooltip={
         props.showNewThreadInProjectHint ? (
           <span className="flex flex-col gap-0.5">

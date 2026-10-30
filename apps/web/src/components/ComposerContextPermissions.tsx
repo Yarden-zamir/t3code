@@ -1,12 +1,13 @@
 import type { RuntimeMode } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 
+import { ShortcutTrigger } from "./focusLevels/ShortcutHint";
 import { shortcutLabelForCommand } from "../keybindings";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { ComposerControl } from "./chat/ComposerControl";
 import { runtimeModeConfig } from "./chat/runtimeModeConfig";
 import { ComposerContextLabel } from "./ComposerContextLabel";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { Tooltip, TooltipPopup } from "./ui/tooltip";
 
 /** The new-thread strip names the permissions the first send will use; clicking opens them. */
 export function ComposerContextPermissions(props: {
@@ -20,7 +21,8 @@ export function ComposerContextPermissions(props: {
   const { icon: Icon, label } = runtimeModeConfig[props.runtimeMode];
   return (
     <Tooltip>
-      <TooltipTrigger
+      <ShortcutTrigger
+        command="composer.mode"
         render={
           <ComposerControl
             size="xs"
@@ -33,7 +35,7 @@ export function ComposerContextPermissions(props: {
       >
         <Icon aria-hidden="true" className="size-3" />
         <ComposerContextLabel>{label}</ComposerContextLabel>
-      </TooltipTrigger>
+      </ShortcutTrigger>
       <TooltipPopup>Permissions{shortcutLabel ? ` · ${shortcutLabel}` : null}</TooltipPopup>
     </Tooltip>
   );

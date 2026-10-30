@@ -18,7 +18,7 @@ import {
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
-import { ShortcutHint } from "~/components/focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutTrigger } from "~/components/focusLevels/ShortcutHint";
 import { cn } from "~/lib/utils";
 
 interface Props {
@@ -131,7 +131,9 @@ export function PreviewChromeRow({
             <TooltipPopup>Forward</TooltipPopup>
           </Tooltip>
           <Tooltip>
-            <TooltipTrigger
+            <ShortcutTrigger
+              command="preview.refresh"
+              context={{ previewFocus: true }}
               render={
                 <Button
                   variant="ghost"
@@ -144,7 +146,7 @@ export function PreviewChromeRow({
               }
             >
               <RefreshIcon refreshing={loading} />
-            </TooltipTrigger>
+            </ShortcutTrigger>
             <TooltipPopup>
               {loading ? "Loading…" : "Refresh"}
               <ShortcutHint command="preview.refresh" context={{ previewFocus: true }} />

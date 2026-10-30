@@ -44,7 +44,7 @@ import {
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { Button } from "~/components/ui/button";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
-import { ShortcutHint } from "./focusLevels/ShortcutHint";
+import { ShortcutHint, useKeybindingProps } from "./focusLevels/ShortcutHint";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
@@ -1294,6 +1294,8 @@ interface TerminalActionButtonProps {
   disabled?: boolean;
 }
 
+const TERMINAL_CONTEXT = { terminalFocus: true, terminalOpen: true };
+
 function TerminalActionButton({
   label,
   tooltipLabel = label,
@@ -1303,9 +1305,11 @@ function TerminalActionButton({
   children,
   disabled,
 }: TerminalActionButtonProps) {
+  const keybindingProps = useKeybindingProps(shortcutCommand ?? null, TERMINAL_CONTEXT);
   return (
     <Popover>
       <PopoverTrigger
+        {...keybindingProps}
         openOnHover
         render={
           <button
@@ -1328,10 +1332,7 @@ function TerminalActionButton({
       >
         {tooltipLabel}
         {shortcutCommand ? (
-          <ShortcutHint
-            command={shortcutCommand}
-            context={{ terminalFocus: true, terminalOpen: true }}
-          />
+          <ShortcutHint command={shortcutCommand} context={TERMINAL_CONTEXT} />
         ) : null}
       </PopoverPopup>
     </Popover>
@@ -1459,6 +1460,8 @@ function TerminalSidebarGroup({
       ? SquareSplitVertical
       : SquareSplitHorizontal;
 
+  const closeTerminalKeybindingProps = useKeybindingProps("terminal.close", TERMINAL_CONTEXT);
+
   return (
     <div className="pb-0.5">
       {showHeader && (
@@ -1496,16 +1499,14 @@ function TerminalSidebarGroup({
             >
               {canOperateTerminal ? (
                 <PanelTabCloseButton
+                  {...(isActive ? closeTerminalKeybindingProps : {})}
                   label={closeTerminalLabel}
                   onClick={() => onCloseTerminal(terminalId)}
                   tooltip={
                     <>
                       Close {terminalLabel}
                       {isActive ? (
-                        <ShortcutHint
-                          command="terminal.close"
-                          context={{ terminalFocus: true, terminalOpen: true }}
-                        />
+                        <ShortcutHint command="terminal.close" context={TERMINAL_CONTEXT} />
                       ) : null}
                     </>
                   }
