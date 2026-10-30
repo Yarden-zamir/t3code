@@ -338,8 +338,8 @@ export const OpenInPicker = memo(function OpenInPicker({
         {primaryOption && (
           <MenuItem
             density={presentation === "menu" ? "touch" : "default"}
-
             disabled={!openInCwd || !canOpenEditor}
+            {...keybindingItemProps(keybindings, "editor.openFavorite")}
             onClick={() => openInEditor(preferredEditor)}
           >
             <primaryOption.Icon className={cn("size-4", getOpenInIconClass(primaryOption.kind))} />
