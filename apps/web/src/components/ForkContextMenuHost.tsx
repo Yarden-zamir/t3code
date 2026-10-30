@@ -33,8 +33,17 @@ import {
   settleForkContextMenu,
   subscribeForkContextMenu,
 } from "../forkContextMenu";
+import {
+  bindableElement,
+  ignoreContextMenuAfterKey,
+  isItemMenuKey,
+  KEYBINDING_COMMAND_ATTRIBUTE,
+  KEYBINDINGS_ITEM_LABEL,
+  openKeybindingsFor,
+} from "../keybindingsMenu";
 import { useMenuItemShortcut } from "./focusLevels/ShortcutHint";
 import {
+  configureMenuItemMenus,
   Menu,
   MenuCheckboxItem,
   MenuGroup,
@@ -90,6 +99,26 @@ function ItemIcon({ name }: { name: string | undefined }) {
   const Icon = name === undefined ? undefined : ICONS[name];
   return Icon ? <Icon /> : null;
 }
+
+// Every app menu item that runs a keybinding command gets "Keybindings…" as its own menu.
+configureMenuItemMenus({
+  selector: `[${KEYBINDING_COMMAND_ATTRIBUTE}]`,
+  find: (target) => {
+    const bindable = bindableElement(target);
+    return bindable === null
+      ? null
+      : {
+          element: bindable.element,
+          entry: {
+            label: KEYBINDINGS_ITEM_LABEL,
+            icon: <KeyboardIcon />,
+            run: () => openKeybindingsFor(bindable.command),
+          },
+        };
+  },
+  isOpenKey: isItemMenuKey,
+  onOpenByKey: ignoreContextMenuAfterKey,
+});
 
 /**
  * Disabled items ignore the pointer, so `MenuPopup` finds the bindable item under it. A disabled

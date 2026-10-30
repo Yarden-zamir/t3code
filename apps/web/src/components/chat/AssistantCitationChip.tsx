@@ -127,7 +127,7 @@ export function AssistantCitationChip({
   const copyQuote = {
     label: "Copy quote",
     icon: "copy",
-    run: () => copyFromObjectMenu(citation.text, "quote"),
+    run: () => copyFromObjectMenu(citation.text, "Copy quote"),
   };
   if (!composer) {
     return (

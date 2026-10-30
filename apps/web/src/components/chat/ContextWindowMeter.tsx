@@ -74,7 +74,7 @@ export function ContextWindowMeter(props: {
                       ]
                         .filter(Boolean)
                         .join(" "),
-                      "context window usage",
+                      "Copy usage",
                     ),
                 },
               ]);

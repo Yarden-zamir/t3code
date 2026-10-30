@@ -63,13 +63,14 @@ describe("object menus", () => {
     expect(nested).toHaveBeenCalledTimes(1);
   });
 
-  it("leaves selected text to the browser menu", async () => {
+  it("leaves selected text and content links to their own menus", async () => {
     setup();
     await using _screen = await render(
       <>
         <ForkContextMenuHost />
         <div {...objectMenuProps()}>
           <p>Selected words</p>
+          <a href="https://example.com/">A link in the text</a>
           <div {...objectMenuActionsProps}>
             <button type="button">Pin message</button>
           </div>
@@ -82,5 +83,10 @@ describe("object menus", () => {
     text.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(false);
     await expect.element(page.getByRole("menu")).not.toBeInTheDocument();
+
+    window.getSelection()?.removeAllRanges();
+    const onLink = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    page.getByText("A link in the text").element().dispatchEvent(onLink);
+    expect(onLink.defaultPrevented).toBe(false);
   });
 });

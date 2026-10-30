@@ -1,8 +1,9 @@
 import type { ContextMenuItem, KeybindingCommand } from "@t3tools/contracts";
 
 import { requestForkContextMenu } from "./forkContextMenu";
+import { toastManager } from "./components/ui/toast";
 import { writeTextToClipboard } from "./hooks/useCopyToClipboard";
-import { bindableElement } from "./keybindingsMenu";
+import { bindableElement, selectionInside } from "./keybindingsMenu";
 
 /**
  * Fork: an object that a user acts on, such as a message or a pin row, gets a context menu of its
@@ -68,11 +69,14 @@ function objectControls(object: HTMLElement): HTMLElement[] {
 function onContextMenu(event: MouseEvent): void {
   if (event.defaultPrevented || !(event.target instanceof Element)) return;
   if (event.target.closest(OWN_MENU_SELECTOR)) return;
+  // A link in content keeps its own menu: the app's link menu or the browser's. A link that is
+  // one of the object's own actions, such as "Jump to message", belongs to the object menu.
+  const link = event.target.closest("a[href]");
+  if (link !== null && link.closest(`[${OBJECT_MENU_ACTIONS_ATTRIBUTE}]`) === null) return;
   const object = event.target.closest<HTMLElement>(`[${OBJECT_MENU_ATTRIBUTE}]`);
   if (object === null) return;
   // Selected text keeps the browser menu, with Copy.
-  const selection = window.getSelection();
-  if (selection && !selection.isCollapsed && object.contains(selection.anchorNode)) return;
+  if (selectionInside(object)) return;
   const controls = objectControls(object);
   const copies = readCopyEntries(object);
   const items: ContextMenuItem[] = [
@@ -104,7 +108,7 @@ function onContextMenu(event: MouseEvent): void {
     if (kind === "control") controls[Number(index)]?.click();
     else {
       const entry = copies[Number(index)];
-      if (entry) void writeTextToClipboard(entry.value, entry.label.toLowerCase());
+      if (entry) copyFromObjectMenu(entry.value, entry.label);
     }
   });
 }
@@ -134,11 +138,14 @@ export function showObjectMenu(
   event: {
     preventDefault: () => void;
     stopPropagation: () => void;
+    currentTarget: EventTarget;
     clientX: number;
     clientY: number;
   },
   entries: ReadonlyArray<ObjectMenuEntry | null>,
 ): void {
+  // Selected text keeps the browser menu, with Copy.
+  if (selectionInside(event.currentTarget)) return;
   const kept = entries.filter((entry): entry is ObjectMenuEntry => entry !== null);
   const selected = requestForkContextMenu(
     kept.map((entry, index) => ({
@@ -161,7 +168,13 @@ export function showObjectMenu(
   });
 }
 
-/** Copies `value` as an object menu action. */
-export function copyFromObjectMenu(value: string, target: string): void {
-  void writeTextToClipboard(value, target);
+/** Copies `value` for an object menu entry named `label`, and reports a failure. */
+export function copyFromObjectMenu(value: string, label: string): void {
+  writeTextToClipboard(value, label.toLowerCase()).catch((error: unknown) => {
+    toastManager.add({
+      type: "error",
+      title: `Failed to ${label.toLowerCase()}`,
+      description: error instanceof Error ? error.message : "An error occurred.",
+    });
+  });
 }

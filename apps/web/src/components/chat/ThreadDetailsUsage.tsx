@@ -80,11 +80,13 @@ export function ThreadDetailsUsage({
             keybindingCommand: "usage.open",
             run: () => void navigate({ to: "/usage" }),
           },
-          {
-            label: "Copy usage",
-            icon: "copy",
-            run: () => copyFromObjectMenu(usageText, "usage"),
-          },
+          usageText === ""
+            ? null
+            : {
+                label: "Copy usage",
+                icon: "copy",
+                run: () => copyFromObjectMenu(usageText, "Copy usage"),
+              },
         ])
       }
     >

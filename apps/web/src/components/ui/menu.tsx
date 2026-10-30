@@ -1,17 +1,7 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import type { KeybindingCommand } from "@t3tools/contracts";
-import { CheckIcon, ChevronRightIcon, KeyboardIcon, SearchIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import type * as React from "react";
-
-import {
-  bindableElement,
-  ignoreContextMenuAfterKey,
-  isItemMenuKey,
-  KEYBINDING_COMMAND_ATTRIBUTE,
-  KEYBINDINGS_ITEM_LABEL,
-  openKeybindingsFor,
-} from "~/keybindingsMenu";
 
 import { cn } from "~/lib/utils";
 import { buttonVariants } from "./button";
@@ -28,19 +18,48 @@ function MenuTrigger({ className, children, ...props }: MenuPrimitive.Trigger.Pr
   );
 }
 
+/** The one entry of an item's own menu, such as "Keybindings…". */
+export type MenuItemMenuEntry = {
+  readonly label: string;
+  readonly icon: React.ReactNode;
+  readonly run: () => void;
+};
+
+/**
+ * How the app gives menu items their own menu. The app sets it once (`configureMenuItemMenus`),
+ * so this primitive stays free of app code. Without it, items have no item menu.
+ */
+export type MenuItemMenus = {
+  /** Matches every item that has an item menu, for the pointer hit test. */
+  readonly selector: string;
+  /** The item at or around `target` and its entry, or null. */
+  readonly find: (
+    target: EventTarget | null,
+  ) => { readonly element: HTMLElement; readonly entry: MenuItemMenuEntry } | null;
+  readonly isOpenKey: (event: Pick<KeyboardEvent, "key" | "shiftKey">) => boolean;
+  /** Runs after a key opened an item menu. */
+  readonly onOpenByKey: () => void;
+};
+
+let itemMenus: MenuItemMenus | null = null;
+
+function configureMenuItemMenus(next: MenuItemMenus): void {
+  itemMenus = next;
+}
+
 type ItemMenuRequest = {
-  readonly command: KeybindingCommand;
+  readonly entry: MenuItemMenuEntry;
   readonly item: HTMLElement;
   /** A pointer opens the menu at the pointer, a key at the item with its entry highlighted. */
   readonly point: { x: number; y: number } | null;
 };
 
 /**
- * The menu of a bindable item (`data-keybinding-command`), nested in the menu of the item, so
- * that menu stays open. Escape closes only this menu and gives focus back to the item.
+ * The menu of one menu item, nested in the menu of the item, so that menu stays open. Escape
+ * closes only this menu and gives focus back to the item.
  */
 function ItemMenu({ request, onClose }: { request: ItemMenuRequest; onClose: () => void }) {
-  const { point, item } = request;
+  const { point, item, entry } = request;
   const anchor =
     point === null
       ? item
@@ -69,24 +88,27 @@ function ItemMenu({ request, onClose }: { request: ItemMenuRequest; onClose: () 
             // Base UI highlights the item that has focus, so Enter runs it.
             if (point === null) element?.focus({ preventScroll: true });
           }}
-          onClick={() => openKeybindingsFor(request.command)}
+          onClick={entry.run}
         >
-          <KeyboardIcon />
-          {KEYBINDINGS_ITEM_LABEL}
+          {entry.icon}
+          {entry.label}
         </MenuItem>
       </MenuPopup>
     </MenuSub>
   );
 }
 
-/** Disabled items ignore the pointer, so the popup finds the bindable item under it. */
-function bindableItemAt(popup: HTMLElement, x: number, y: number): HTMLElement | undefined {
-  return [...popup.querySelectorAll<HTMLElement>(`[${KEYBINDING_COMMAND_ATTRIBUTE}]`)].find(
-    (element) => {
-      const rect = element.getBoundingClientRect();
-      return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
-    },
-  );
+/** Disabled items ignore the pointer, so the popup finds the item under it. */
+function itemWithMenuAt(
+  popup: HTMLElement,
+  selector: string,
+  x: number,
+  y: number,
+): HTMLElement | undefined {
+  return [...popup.querySelectorAll<HTMLElement>(selector)].find((element) => {
+    const rect = element.getBoundingClientRect();
+    return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+  });
 }
 
 function MenuPopup({
@@ -143,32 +165,39 @@ function MenuPopup({
             // React passes the event through a submenu portal to the parent popup, which would
             // match its own item under the pointer.
             event.stopPropagation();
-            const item = bindableItemAt(event.currentTarget, event.clientX, event.clientY);
-            const bindable = bindableElement(item ?? null);
-            if (bindable === null) return;
+            if (itemMenus === null) return;
+            const { selector, find } = itemMenus;
+            const found = find(
+              itemWithMenuAt(event.currentTarget, selector, event.clientX, event.clientY) ?? null,
+            );
+            if (found === null) return;
             event.preventDefault();
             setItemMenu({
-              command: bindable.command,
-              item: bindable.element,
+              entry: found.entry,
+              item: found.element,
               point: { x: event.clientX, y: event.clientY },
             });
           }}
           onKeyDown={(event) => {
             onKeyDown?.(event);
-            if (!isItemMenuKey(event) || !event.currentTarget.contains(event.target as Node))
+            if (
+              itemMenus === null ||
+              !itemMenus.isOpenKey(event) ||
+              !event.currentTarget.contains(event.target as Node)
+            )
               return;
-            const bindable = bindableElement(event.target);
-            if (bindable === null) return;
+            const found = itemMenus.find(event.target);
+            if (found === null) return;
             event.preventDefault();
             event.stopPropagation();
-            ignoreContextMenuAfterKey();
-            setItemMenu({ command: bindable.command, item: bindable.element, point: null });
+            itemMenus.onOpenByKey();
+            setItemMenu({ entry: found.entry, item: found.element, point: null });
           }}
         >
           <div className="max-h-(--available-height) w-full overflow-y-auto p-1">{children}</div>
           {itemMenu === null ? null : (
             <ItemMenu
-              key={`${itemMenu.command}:${itemMenu.point?.x}:${itemMenu.point?.y}`}
+              key={`${itemMenu.entry.label}:${itemMenu.point?.x}:${itemMenu.point?.y}`}
               request={itemMenu}
               onClose={() => setItemMenu(null)}
             />
@@ -476,6 +505,7 @@ function MenuSubPopup({
 }
 
 export {
+  configureMenuItemMenus,
   Menu,
   Menu as DropdownMenu,
   MenuTrigger,

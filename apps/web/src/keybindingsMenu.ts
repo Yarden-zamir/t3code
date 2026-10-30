@@ -46,6 +46,17 @@ function bindableOutsideMenus(target: EventTarget | null) {
   return bindableElement(target);
 }
 
+/** Text selected inside `target`: its right-click keeps the browser menu, with Copy. */
+export function selectionInside(target: EventTarget | null): boolean {
+  const selection = window.getSelection();
+  return (
+    target instanceof Node &&
+    selection !== null &&
+    !selection.isCollapsed &&
+    (target.contains(selection.anchorNode) || target.contains(selection.focusNode))
+  );
+}
+
 function onContextMenu(event: MouseEvent): void {
   if (ignoreNextContextMenu) {
     ignoreNextContextMenu = false;
@@ -54,7 +65,7 @@ function onContextMenu(event: MouseEvent): void {
     return;
   }
   const bindable = bindableOutsideMenus(event.target);
-  if (bindable === null) return;
+  if (bindable === null || selectionInside(bindable.element)) return;
   event.preventDefault();
   event.stopPropagation();
   void openItemMenu(bindable.command, { position: { x: event.clientX, y: event.clientY } });

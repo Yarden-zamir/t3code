@@ -304,7 +304,8 @@ export const OpenInPicker = memo(function OpenInPicker({
               density={presentation === "menu" ? "touch" : "default"}
               disabled={!openInCwd || !canOpenEditor}
               key={value}
-              {...(value === preferredEditor
+              // Only the menu presentation opens the editor; the picker sets the favorite.
+              {...(presentation === "menu" && value === preferredEditor
                 ? keybindingItemProps(keybindings, "editor.openFavorite")
                 : {})}
               onClick={() => {
