@@ -27,6 +27,7 @@ import { appAtomRegistry } from "../state/atom-registry";
 import { clearThreadOutboxEnvironment } from "../state/thread-outbox-removal";
 import { clearComposerDraftsEnvironment } from "../state/use-composer-drafts";
 import { clearThreadComposerErrorsForEnvironment } from "../state/thread-composer-error";
+import { syncTimings } from "@t3tools/client-runtime/fork/syncTimings";
 import { mobileApplicationActiveWakeup } from "./app-state-wakeups";
 import * as ConnectionStorage from "./storage";
 
@@ -128,10 +129,10 @@ const layerWakeups = Wakeups.layer({
                 return;
               }
               if (state === "active") {
-                Queue.offerUnsafe(
-                  queue,
-                  mobileApplicationActiveWakeup(backgroundedAtMs, Date.now()),
-                );
+                const wakeup = mobileApplicationActiveWakeup(backgroundedAtMs, Date.now());
+                // Fork: each wakeup starts a run of the sync timings in Diagnostics.
+                syncTimings.startRun(wakeup);
+                Queue.offerUnsafe(queue, wakeup);
                 backgroundedAtMs = null;
               }
             });
