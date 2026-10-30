@@ -35,11 +35,11 @@ export const kitshnOwnerRefusal = Effect.fn("KitshnAttester.kitshnOwnerRefusal")
   // ServerConfig does not record whether --base-dir, T3CODE_HOME or a worktree `.t3` chose the
   // folder, so compare paths.
   const defaultHome = path.join(yield* HostProcess.HomeDirectory, ".t3");
-  return path.resolve(config.baseDir) === defaultHome
-    ? Option.none()
-    : Option.some(
-        `the T3 home ${config.baseDir} is not the default ${defaultHome}, so it does not register`,
-      );
+  if (path.resolve(config.baseDir) === defaultHome) return Option.none();
+  const reason = `the T3 home ${config.baseDir} is not the default ${defaultHome}, so it does not register`;
+  // An installed server run as another user hits this too, and then kitshn shows it offline.
+  yield* Effect.logWarning(`kitshn: ${reason}`);
+  return Option.some(reason);
 });
 
 const make = Effect.gen(function* () {
