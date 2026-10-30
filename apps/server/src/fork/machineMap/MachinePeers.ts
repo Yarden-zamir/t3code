@@ -37,7 +37,6 @@ import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Socket from "effect/socket/Socket";
-import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
@@ -64,6 +63,46 @@ import { type ExecSocket, openExecSocket, streamUrl } from "./machineExecStream.
 
 // undici is external to the CLI bundle; a Node single-executable loads it from disk only with require.
 const Undici = NodeModule.createRequire(import.meta.url)("undici") as typeof UndiciModule;
+
+// One dispatcher per proxy path: a Unix socket, or a named pipe on Windows.
+const dispatchers = new Map<string, UndiciModule.Agent>();
+const dispatcherFor = (socketPath: string) => {
+  let agent = dispatchers.get(socketPath);
+  if (agent === undefined) {
+    agent = new Undici.Agent({ connect: { socketPath } });
+    dispatchers.set(socketPath, agent);
+  }
+  return agent;
+};
+
+/**
+ * A client that sends each request through a Unix socket or named pipe (the kitshn link proxy). It
+ * calls undici with the dispatcher itself, so no `Fetch` or `RequestInit` from the fiber context can
+ * replace it: in the desktop server, the context-based setup sent `http://link/...` to DNS.
+ */
+export const socketClient = (socketPath: string) =>
+  HttpClient.make((request, url, signal) =>
+    Effect.tryPromise({
+      try: () =>
+        Undici.fetch(url, {
+          method: request.method,
+          headers: request.headers,
+          ...(request.body._tag === "Uint8Array" || request.body._tag === "Raw"
+            ? { body: request.body.body as NonNullable<UndiciModule.RequestInit["body"]> }
+            : {}),
+          signal,
+          dispatcher: dispatcherFor(socketPath),
+        }),
+      catch: (cause) =>
+        new HttpClientError.HttpClientError({
+          reason: new HttpClientError.TransportError({ request, cause }),
+        }),
+    }).pipe(
+      Effect.map((response) =>
+        HttpClientResponse.fromWeb(request, response as unknown as globalThis.Response),
+      ),
+    ),
+  );
 
 const REQUEST_TIMEOUT = Duration.seconds(15);
 // Short, as the probe of upstream `PeerLinks.resolve`: a linked machine answers its descriptor fast.
@@ -244,26 +283,6 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  // One dispatcher per proxy path: a Unix socket, or a named pipe on Windows.
-  const dispatchers = new Map<string, UndiciModule.Agent>();
-  const dispatcherFor = (socketPath: string) => {
-    let agent = dispatchers.get(socketPath);
-    if (agent === undefined) {
-      agent = new Undici.Agent({ connect: { socketPath } });
-      dispatchers.set(socketPath, agent);
-    }
-    return agent;
-  };
-  const proxyClient = (socketPath: string) =>
-    HttpClient.HttpClient.pipe(
-      Effect.provide(FetchHttpClient.layer),
-      Effect.provideService(
-        FetchHttpClient.RequestInit,
-        // undici's fetch reads `dispatcher`; the DOM type does not name it.
-        { dispatcher: dispatcherFor(socketPath) } as unknown as globalThis.RequestInit,
-      ),
-      Effect.provideService(FetchHttpClient.Fetch, Undici.fetch as unknown as typeof fetch),
-    );
   /** Sends a request through the link proxy of the current socket. */
   const viaProxy = (request: HttpClientRequest.HttpClientRequest) =>
     current.pipe(
@@ -277,15 +296,16 @@ const make = Effect.gen(function* () {
                 }),
               }),
             )
-          : proxyClient(socket).pipe(
-              Effect.flatMap((client) => client.execute(request)),
-              // A connection error: the next use checks the socket with `kitshn link-check` again.
-              Effect.tapError((error) =>
-                error.reason._tag === "TransportError"
-                  ? provider.linkSocketFailed(socket)
-                  : Effect.void,
+          : socketClient(socket)
+              .execute(request)
+              .pipe(
+                // A connection error: the next use checks the socket with `kitshn link-check` again.
+                Effect.tapError((error) =>
+                  error.reason._tag === "TransportError"
+                    ? provider.linkSocketFailed(socket)
+                    : Effect.void,
+                ),
               ),
-            ),
       ),
     );
 
