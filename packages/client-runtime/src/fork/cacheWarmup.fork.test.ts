@@ -1,4 +1,4 @@
-import { TERMINAL_THREAD_INSTANCE_ID, ThreadId } from "@t3tools/contracts";
+import { RuntimeRequestId, TERMINAL_THREAD_INSTANCE_ID, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 
@@ -26,11 +26,18 @@ const thread = (n: number, fields: Partial<typeof v2ThreadShell> = {}) => ({
 const ids = (...numbers: ReadonlyArray<number>) => numbers.map((n) => `thread-${n}`);
 
 describe("selectCacheWarmupThreads", () => {
-  it("takes unread threads first, then the newest, and only threads the cache can save", () => {
+  it("takes unread and waiting threads first, then the newest, and only threads the cache can save", () => {
     const threads = [
       thread(1),
       thread(2, { latestRunCompletedAt: at(2_000), lastVisitedAt: at(1_000) }),
       thread(3, { activityRunStatus: "waiting" }),
+      thread(4, {
+        pendingRuntimeRequest: {
+          id: RuntimeRequestId.make("approval"),
+          kind: "user_input",
+          createdAt: at(4_000),
+        },
+      }),
       thread(40, { activityRunStatus: "running" }),
       thread(41, { activityRunStatus: "starting" }),
       ...Array.from({ length: CACHE_WARMUP_NEWEST_THREADS }, (_, index) => thread(10 + index)),
@@ -40,7 +47,7 @@ describe("selectCacheWarmupThreads", () => {
     ];
 
     expect(selectCacheWarmupThreads(threads, new Map())).toEqual(
-      ids(2, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10),
+      ids(4, 3, 2, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10),
     );
   });
 

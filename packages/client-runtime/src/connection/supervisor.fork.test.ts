@@ -1,6 +1,7 @@
 import { EnvironmentId, type ServerConfig } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -53,6 +54,7 @@ const PROBE_CAPABLE_CONFIG = {
 /** Session 1 is the socket that was open while the app was in the background. */
 const makeHarness = Effect.fn("TestReplacementHarness.make")(function* (
   probe: (session: number) => Effect.Effect<void, ConnectionAttemptError>,
+  replacementConnectsAfter: Duration.Input = 0,
 ) {
   const sessionCount = yield* Ref.make(0);
   const released = yield* Ref.make<ReadonlyArray<number>>([]);
@@ -68,6 +70,7 @@ const makeHarness = Effect.fn("TestReplacementHarness.make")(function* (
       yield* Effect.acquireRelease(Effect.void, () =>
         Ref.update(released, (all) => [...all, session]),
       );
+      if (session > 1) yield* Effect.sleep(replacementConnectsAfter);
       return {
         prepared: PREPARED,
         session: {
@@ -155,6 +158,28 @@ describe("EnvironmentSupervisor long resume replacement", () => {
       expect(yield* Ref.get(h.sessionCount)).toBe(2);
       expect(yield* Ref.get(h.released)).toEqual([1]);
     }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect(
+    "leaves connected at once and honors a disconnect while it waits for the new socket",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness(
+          (session) => (session === 1 ? Effect.never : Effect.void),
+          "10 seconds",
+        );
+
+        yield* h.wake("application-active-long");
+        yield* TestClock.adjust("1 millis");
+        yield* h.closeFirstSession;
+        yield* h.stateWhere((state) => state.phase === "connecting");
+        expect(Option.isNone(yield* SubscriptionRef.get(h.supervisor.session))).toBe(true);
+
+        yield* h.supervisor.disconnect;
+        yield* TestClock.adjust("1 second");
+        yield* h.stateWhere((state) => state.phase === "available" && !state.desired);
+        expect([...(yield* Ref.get(h.released))].sort()).toEqual([1, 2]);
+      }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("closes the new socket when the old one answers the probe", () =>

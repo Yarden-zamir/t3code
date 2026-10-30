@@ -100,6 +100,11 @@ interface ReplacementSlot {
   fiber: Fiber.Fiber<ConnectionHandoff, unknown> | undefined;
 }
 
+type ReplacementResult =
+  | { readonly _tag: "Ready"; readonly handoff: ConnectionHandoff }
+  | { readonly _tag: "Ended"; readonly reset: boolean }
+  | { readonly _tag: "Failed" };
+
 type AttemptOutcome =
   | {
       readonly _tag: "Interrupted";
@@ -721,13 +726,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       );
   });
 
-  // Returns the new connection, or true to reconnect from the start when it failed.
-  // The slot keeps the replacement until it is adopted or closed, also when this is interrupted.
+  // Waits for the replacement, or for a signal that ends the lease. A ready replacement
+  // stays in the slot until the attempt adopts it, so the attempt finalizer closes it on
+  // every other exit.
   const awaitReplacement = Effect.fnUntraced(function* (
     slot: ReplacementSlot,
     replacement: Fiber.Fiber<ConnectionHandoff, unknown>,
     lease: ConnectionDriver.EnvironmentConnectionLease,
-  ) {
+  ): Effect.fn.Return<ReplacementResult> {
     const outcome = yield* Effect.raceFirst(
       Fiber.await(replacement).pipe(Effect.map((exit) => ({ _tag: "Done" as const, exit }))),
       Effect.gen(function* () {
@@ -737,12 +743,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         }
       }),
     );
-    slot.fiber = undefined;
     if (outcome._tag === "End") {
       yield* discardHandoff(replacement);
-      return outcome.end === "reset";
+      slot.fiber = undefined;
+      return { _tag: "Ended", reset: outcome.end === "reset" };
     }
-    return Exit.isSuccess(outcome.exit) ? outcome.exit.value : true;
+    if (Exit.isSuccess(outcome.exit)) return { _tag: "Ready", handoff: outcome.exit.value };
+    slot.fiber = undefined;
+    return { _tag: "Failed" };
   });
 
   // Returning to the app, an explicit retry, and the network reporting offline
@@ -802,10 +810,19 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         replacementSlot.fiber = undefined;
         return fiber === undefined ? Effect.void : discardHandoff(fiber);
       });
+      // The new connection, or true to reconnect from the start.
       const replaceSocket = Effect.suspend(() =>
         replacementSlot.fiber === undefined
           ? Effect.succeed(true)
-          : awaitReplacement(replacementSlot, replacementSlot.fiber, lease),
+          : awaitReplacement(replacementSlot, replacementSlot.fiber, lease).pipe(
+              Effect.map((result) =>
+                result._tag === "Ready"
+                  ? result.handoff
+                  : result._tag === "Ended"
+                    ? result.reset
+                    : true,
+              ),
+            ),
       );
       if (longResume) yield* startReplacement;
       const startSilentSocketCheck = Effect.gen(function* () {
@@ -1063,20 +1080,27 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     const connectedForMs = (yield* Clock.currentTimeMillis) - connectedAt;
     // The old socket ended while a replacement connects, so the replacement takes over.
     if (Exit.isFailure(connectedExit) && replacementSlot.fiber !== undefined) {
-      const replaced = yield* Fiber.await(replacementSlot.fiber);
-      if (Exit.isSuccess(replaced)) {
-        replacementSlot.fiber = undefined;
+      yield* clearLease;
+      yield* setState(connectingState(yield* Ref.get(intent), generation, attempt, null));
+      const replaced = yield* awaitReplacement(
+        replacementSlot,
+        replacementSlot.fiber,
+        active.lease,
+      );
+      if (replaced._tag !== "Failed") {
+        if (replaced._tag === "Ready") replacementSlot.fiber = undefined;
         return {
           _tag: "Interrupted",
           established: true,
           stable: connectedForMs >= BACKOFF_RESET_AFTER_MS,
-          resetRetry: true,
-          handoff: replaced.value,
+          resetRetry: replaced._tag === "Ready" || replaced.reset,
+          ...(replaced._tag === "Ready" ? { handoff: replaced.handoff } : {}),
         } satisfies AttemptOutcome;
       }
     }
     if (Exit.isSuccess(connectedExit)) {
       const ended = connectedExit.value;
+      if (typeof ended === "object") replacementSlot.fiber = undefined;
       return {
         _tag: "Interrupted",
         established: true,
