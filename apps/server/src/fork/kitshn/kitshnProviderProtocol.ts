@@ -171,6 +171,17 @@ export const AccessApp = Schema.Struct({
 });
 export type AccessApp = typeof AccessApp.Type;
 
+/** A client app that opens a kitshn device invite; kitshn fills `{inviteUrl}` in `open`. */
+export const ProviderClientApp = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  open: Schema.String.check(Schema.isPattern(/\{inviteUrl\}/u)),
+  install: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ label: Schema.String, url: Schema.String })),
+  ),
+});
+export type ProviderClientApp = typeof ProviderClientApp.Type;
+
 export const Request = Schema.Union([
   Schema.Struct({
     id: Schema.String,
@@ -180,6 +191,7 @@ export const Request = Schema.Union([
     commands: Schema.Array(ProviderCommand),
     // K-704: a card that a register leaves out goes offline, so a register is never empty.
     resources: Schema.NonEmptyArray(ProviderResource),
+    clients: Schema.optionalKey(Schema.Array(ProviderClientApp)),
   }),
   Schema.Struct({
     id: Schema.String,
