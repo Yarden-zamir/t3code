@@ -342,6 +342,7 @@ export const make = Effect.gen(function* () {
         operation: "GitWorkflowService.currentBranch",
         cwd,
         args: ["symbolic-ref", "--quiet", "HEAD"],
+        env: { LC_ALL: "C" },
         allowNonZeroExit: true,
         timeoutMs: 5_000,
       });
