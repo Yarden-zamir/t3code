@@ -57,6 +57,7 @@ import {
   ProviderRequestKind,
   type RuntimeMode,
   isScheduledTaskProjectDefaultModel,
+  type ProviderInstanceId,
   type ScheduledTask,
   type ScheduledTaskUpsertInput,
   type ServerProvider,
@@ -129,6 +130,7 @@ import {
   refuseTerminalThreadWithoutExec,
   scheduledTaskRunsWith,
 } from "../fork/machineMap/terminalThreadExec.ts";
+import { refuseTerminalThreadWhileOff } from "../fork/terminalProvider/terminalThreadsOff.ts";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
@@ -1007,6 +1009,10 @@ const make = Effect.gen(function* () {
   const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const refuseTerminalWhileOff = (instanceId: ProviderInstanceId) =>
+    refuseTerminalThreadWhileOff(instanceId).pipe(
+      Effect.provideService(ServerSettings.ServerSettingsService, serverSettings),
+    );
   const remoteDelegation = yield* RemoteDelegation.RemoteDelegation;
 
   const requireProject = (projectId: ProjectId) =>
@@ -1941,6 +1947,7 @@ const make = Effect.gen(function* () {
         modelFields.modelSelection,
         bindToCurrentThread ? parent : undefined,
       );
+      yield* refuseTerminalWhileOff(modelFields.modelSelection.instanceId);
       yield* refuseTerminalThreadWithoutExec(scope.requestNamespace, modelFields.modelSelection);
       const derivedTitle = input.prompt.split("\n")[0]?.trim() ?? "";
       const title =
@@ -2021,6 +2028,9 @@ const make = Effect.gen(function* () {
             : input.modelSelection;
         if (input.bindToCurrentThread === true) {
           yield* assertTerminalTaskBinding(nextModelSelection, parent);
+        }
+        if (input.modelSelection !== undefined) {
+          yield* refuseTerminalWhileOff(nextModelSelection.instanceId);
         }
         const threadId =
           input.bindToCurrentThread === undefined
@@ -2755,6 +2765,10 @@ const make = Effect.gen(function* () {
                 index,
               });
               const isRetryOfAcceptedCreation = yield* threadManagement.hasReceipt(commandId);
+              const requestedInstanceId = request.target?.providerInstanceId;
+              if (!isRetryOfAcceptedCreation && requestedInstanceId !== undefined) {
+                yield* refuseTerminalWhileOff(requestedInstanceId);
+              }
               const committedThread = isRetryOfAcceptedCreation
                 ? yield* threadManagement
                     .getThreadShell(threadId)

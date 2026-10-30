@@ -39,7 +39,7 @@ const shared = {
 
 /** Appended to every tool that asks kitshn. */
 const KITSHN_NOTE =
-  "The call goes to the kitshn daemon of this machine. It fails when this machine has no kitshn 2, is not joined to kitshn, or its daemon does not run. Access between machines, history, undo and presets are on the kitshn map, not in these tools.";
+  "The call goes to the kitshn daemon of this machine. It fails when this machine has no joined, running kitshn 2 daemon. Access between machines, history, undo and presets are on the kitshn map, not in these tools.";
 
 const MachinesReadTool = Tool.make("machines_read", {
   ...shared,
@@ -148,7 +148,7 @@ const MachinesJoinTool = Tool.make("machines_join", {
 
 const MachineExecTool = Tool.make("machine_exec", {
   ...shared,
-  description: `Run a shell command on another machine, through the T3 server of that machine, as its user. Use it for work that needs that machine: logs, builds, git, services. The other machine runs it only while its kitshn grants give this machine t3.agents at exec and t3.app at standard or higher, and a live full-access/default caller with orchestration, worktree and pull-requests tool capabilities sends it. Restricted callers are refused. Losing the grant stops a running command at once. This machine reaches another machine only through kitshn links; until kitshn offers them, the call fails. The call waits for the command, at most the timeout. Background jobs of the command end with it, also with nohup: start long work as a service and poll it. With a shell, \`t3 machine exec <machine> -- <command>\` runs the same command with stdin, streamed and binary output, its exit code and no time limit. The result is {machine, cwd, shell, outcome ("exited" or "timedOut"), exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, durationMs}. stdout and stderr keep at most ${MACHINE_EXEC_MAX_OUTPUT_BYTES} bytes each and then end with a truncation marker. A timeout loses the output.`,
+  description: `Run a shell command on another machine, through the T3 server of that machine, as its user. Use it for work that needs that machine: logs, builds, git, services. The other machine runs it only while its kitshn grants give this machine t3.agents at exec and t3.app at standard or higher, and a live full-access/default caller with orchestration, worktree and pull-requests tool capabilities sends it. Losing the grant stops a running command at once. This machine reaches another machine only through kitshn links. The call waits for the command, at most the timeout. Background jobs of the command end with it, also with nohup: start long work as a service and poll it. With a shell, \`t3 machine exec <machine> -- <command>\` runs the same command with stdin, streamed and binary output, its exit code and no time limit. The result is {machine, cwd, shell, outcome ("exited" or "timedOut"), exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, durationMs}. stdout and stderr keep at most ${MACHINE_EXEC_MAX_OUTPUT_BYTES} bytes each and then end with a truncation marker. A timeout loses the output.`,
   parameters: MachineExecInput,
   success: MachineExecResult,
 }).annotate(Tool.Destructive, true);
