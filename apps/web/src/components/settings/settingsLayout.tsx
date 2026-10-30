@@ -306,10 +306,13 @@ export function SettingsRow({
   serverScoped = false,
   settingKeys = EMPTY_SETTING_KEYS,
   mixed: mixedOverride,
+  copyActions = [],
   children,
   className,
   ...rowProps
 }: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
+  /** Read actions of the row's context menu, such as "Copy status". */
+  copyActions?: Parameters<typeof objectMenuProps>[0];
   title: ReactNode;
   description?: ReactNode;
   status?: ReactNode;
@@ -460,7 +463,7 @@ export function SettingsRow({
       ref={targetRef}
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       data-slot="settings-row"
-      {...objectMenuProps()}
+      {...objectMenuProps(copyActions)}
       className={cn(
         "group/settings-row @container/settings-row rounded-xl px-3 sm:px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground",
         children ? "pt-3 pb-1" : "py-3",

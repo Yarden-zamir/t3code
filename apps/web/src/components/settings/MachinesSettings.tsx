@@ -79,10 +79,17 @@ function ConnectionRow({ connection }: { connection: MachineMapClientState["conn
             : `last answer from kitshn ${relativeTime(connection.lastContactAt)}`,
         ];
   const factsLine = facts.length > 0 ? sentence(facts.join(" · ")) : null;
+  const title = connection.paused
+    ? "kitshn's emergency pause is on"
+    : STATUS_TITLE[connection.status];
+  const description = [statusNote(connection, nowMs), factsLine].filter(Boolean).join(". ");
   return (
     <SettingsRow
-      title={connection.paused ? "kitshn's emergency pause is on" : STATUS_TITLE[connection.status]}
-      description={[statusNote(connection, nowMs), factsLine].filter(Boolean).join(". ")}
+      title={title}
+      description={description}
+      copyActions={[
+        { label: "Copy status", value: [title, description].filter(Boolean).join(". ") },
+      ]}
     />
   );
 }

@@ -1,4 +1,5 @@
 import type { ContextMenuItem, KeybindingCommand } from "@t3tools/contracts";
+import type { ReactNode } from "react";
 
 import { requestForkContextMenu } from "./forkContextMenu";
 import { toastManager } from "./components/ui/toast";
@@ -15,6 +16,53 @@ const OBJECT_MENU_ACTIONS_ATTRIBUTE = "data-object-menu-actions";
 const COPY_ATTRIBUTE = "data-object-menu-copy";
 
 type CopyEntry = { readonly label: string; readonly value: string };
+
+export type ObjectMenuEntry = {
+  readonly label: string;
+  readonly run: () => void;
+  readonly disabled?: boolean;
+  readonly destructive?: boolean;
+  /** An icon name of `ContextMenuItem.icon`, for the context menu. */
+  readonly icon?: string;
+  /** The icon of the item in a "…" menu (`ObjectMenuEntryItems`). */
+  readonly menuIcon?: ReactNode;
+  readonly separatorBefore?: boolean;
+  readonly keybindingCommand?: KeybindingCommand;
+};
+
+const keepEntries = (entries: ReadonlyArray<ObjectMenuEntry | null>) =>
+  entries.filter((entry): entry is ObjectMenuEntry => entry !== null);
+
+function menuItemOf(entry: ObjectMenuEntry, id: string): ContextMenuItem {
+  return {
+    id,
+    label: entry.label,
+    ...(entry.disabled ? { disabled: true } : {}),
+    ...(entry.destructive ? { destructive: true } : {}),
+    ...(entry.separatorBefore ? { separatorBefore: true } : {}),
+    ...(entry.icon === undefined ? {} : { icon: entry.icon }),
+    ...(entry.keybindingCommand === undefined
+      ? {}
+      : { keybindingCommand: entry.keybindingCommand }),
+  };
+}
+
+const MENU_ENTRIES_ATTRIBUTE = "data-object-menu-entries";
+const menuEntries = new WeakMap<Element, readonly ObjectMenuEntry[]>();
+
+/**
+ * Props of the trigger of an object's "…" menu. The object menu shows the same entries, read
+ * from here and not from the closed "…" menu.
+ */
+export function objectMenuEntriesProps(entries: ReadonlyArray<ObjectMenuEntry | null>) {
+  const kept = keepEntries(entries);
+  return {
+    [MENU_ENTRIES_ATTRIBUTE]: "",
+    ref: (element: Element | null) => {
+      if (element !== null) menuEntries.set(element, kept);
+    },
+  };
+}
 
 /** Props of an object: its mark, and read actions that have no button, such as "Copy link". */
 export function objectMenuProps(copy: ReadonlyArray<CopyEntry | null> = []) {
@@ -78,6 +126,12 @@ function onContextMenu(event: MouseEvent): void {
   // Selected text keeps the browser menu, with Copy.
   if (selectionInside(object)) return;
   const controls = objectControls(object);
+  const extraEntries = [...object.querySelectorAll(`[${MENU_ENTRIES_ATTRIBUTE}]`)].flatMap(
+    (trigger) =>
+      trigger.closest(`[${OBJECT_MENU_ATTRIBUTE}]`) === object
+        ? (menuEntries.get(trigger) ?? [])
+        : [],
+  );
   const copies = readCopyEntries(object);
   const items: ContextMenuItem[] = [
     ...controls.map((control, index) => {
@@ -91,11 +145,17 @@ function onContextMenu(event: MouseEvent): void {
         ...(command === undefined ? {} : { keybindingCommand: command }),
       };
     }),
+    ...extraEntries.map((entry, index) => ({
+      ...menuItemOf(entry, `entry:${index}`),
+      ...(index === 0 && controls.length > 0 ? { separatorBefore: true } : {}),
+    })),
     ...copies.map((entry, index) => ({
       id: `copy:${index}`,
       label: entry.label,
       icon: "copy",
-      ...(index === 0 && controls.length > 0 ? { separatorBefore: true } : {}),
+      ...(index === 0 && controls.length + extraEntries.length > 0
+        ? { separatorBefore: true }
+        : {}),
     })),
   ];
   if (items.length === 0) return;
@@ -106,6 +166,7 @@ function onContextMenu(event: MouseEvent): void {
     if (id === null) return;
     const [kind, index] = id.split(":");
     if (kind === "control") controls[Number(index)]?.click();
+    else if (kind === "entry") extraEntries[Number(index)]?.run();
     else {
       const entry = copies[Number(index)];
       if (entry) copyFromObjectMenu(entry.value, entry.label);
@@ -121,14 +182,6 @@ export function installObjectMenus(): void {
   installed = true;
   window.addEventListener("contextmenu", onContextMenu);
 }
-
-export type ObjectMenuEntry = {
-  readonly label: string;
-  readonly run: () => void;
-  readonly disabled?: boolean;
-  readonly icon?: string;
-  readonly keybindingCommand?: KeybindingCommand;
-};
 
 /**
  * Fork: the context menu of an indicator whose actions sit in a popover or a page, so no button
@@ -146,17 +199,9 @@ export function showObjectMenu(
 ): void {
   // Selected text keeps the browser menu, with Copy.
   if (selectionInside(event.currentTarget)) return;
-  const kept = entries.filter((entry): entry is ObjectMenuEntry => entry !== null);
+  const kept = keepEntries(entries);
   const selected = requestForkContextMenu(
-    kept.map((entry, index) => ({
-      id: String(index),
-      label: entry.label,
-      ...(entry.disabled ? { disabled: true } : {}),
-      ...(entry.icon === undefined ? {} : { icon: entry.icon }),
-      ...(entry.keybindingCommand === undefined
-        ? {}
-        : { keybindingCommand: entry.keybindingCommand }),
-    })),
+    kept.map((entry, index) => menuItemOf(entry, String(index))),
     { x: event.clientX, y: event.clientY },
   );
   if (selected === undefined) return;

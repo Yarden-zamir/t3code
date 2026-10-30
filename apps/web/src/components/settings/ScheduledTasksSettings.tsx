@@ -1,4 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
+import { objectMenuEntriesProps } from "../../objectMenu";
+import { ObjectMenuEntryItems } from "../ObjectMenuEntryItems";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { AsyncResult } from "effect/reactivity";
 import {
@@ -86,7 +88,7 @@ import {
   type WorkspaceMode,
 } from "./scheduledTasksSettings.logic";
 import { Label } from "../ui/label";
-import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/menu";
+import { Menu, MenuTrigger, MenuPopup } from "../ui/menu";
 import { ToggleGroup, Toggle } from "../ui/toggle-group";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "../ui/empty";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
@@ -716,6 +718,39 @@ function ScheduledTaskRow({
       );
     }
   };
+  // canOperate and busy disable the "…" trigger, so the context menu disables the entries too.
+  const taskDisabled = busy || !canOperate;
+  const taskEntries = [
+    {
+      label: "Edit",
+      icon: "pencil",
+      menuIcon: <PencilIcon />,
+      disabled: taskDisabled,
+      run: onEdit,
+    },
+    isWebhook
+      ? {
+          label: "Deliveries",
+          menuIcon: <InboxIcon />,
+          disabled: taskDisabled,
+          run: () => setDeliveriesOpen(true),
+        }
+      : {
+          label: "Run now",
+          menuIcon: <PlayIcon />,
+          disabled: taskDisabled,
+          run: () => void act("run"),
+        },
+    {
+      label: "Delete",
+      icon: "trash",
+      menuIcon: <Trash2Icon />,
+      separatorBefore: true,
+      disabled: taskDisabled,
+      run: () => void act("delete"),
+    },
+  ];
+
   return (
     <SettingsRow
       title={task.title}
@@ -752,6 +787,7 @@ function ScheduledTaskRow({
           />
           <Menu>
             <MenuTrigger
+              {...objectMenuEntriesProps(taskEntries)}
               render={
                 <Button
                   size="icon-sm"
@@ -764,26 +800,7 @@ function ScheduledTaskRow({
               <MoreHorizontalIcon className="size-4" />
             </MenuTrigger>
             <MenuPopup align="end">
-              <MenuItem onClick={onEdit}>
-                <PencilIcon />
-                Edit
-              </MenuItem>
-              {isWebhook ? (
-                <MenuItem onClick={() => setDeliveriesOpen(true)}>
-                  <InboxIcon />
-                  Deliveries
-                </MenuItem>
-              ) : (
-                <MenuItem onClick={() => void act("run")}>
-                  <PlayIcon />
-                  Run now
-                </MenuItem>
-              )}
-              <MenuSeparator />
-              <MenuItem onClick={() => void act("delete")}>
-                <Trash2Icon />
-                Delete
-              </MenuItem>
+              <ObjectMenuEntryItems entries={taskEntries} />
             </MenuPopup>
           </Menu>
           {deliveriesOpen ? (

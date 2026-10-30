@@ -1,4 +1,6 @@
 import { useEnvironmentScope } from "../../state/session";
+import { objectMenuEntriesProps } from "../../objectMenu";
+import { ObjectMenuEntryItems } from "../ObjectMenuEntryItems";
 import { useEnvironmentsWithScope, readEnvironmentScope } from "../../state/session";
 import {
   ChevronDownIcon,
@@ -48,7 +50,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Kbd, KbdGroup } from "../ui/kbd";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Toggle } from "../ui/toggle";
@@ -933,11 +935,21 @@ function KeybindingRowMenu({
 }) {
   const canReset = row.source === "Custom" && row.defaultKey !== null;
   const canRemove = row.source !== "Default";
-  if (!canReset && !canRemove && onShowCommand === null) return null;
+  const entries = [
+    onShowCommand
+      ? { label: "Show bindings for this action", run: () => onShowCommand(row.command) }
+      : null,
+    canReset ? { label: "Reset to default", disabled: isSaving, run: () => onReset(row) } : null,
+    canRemove
+      ? { label: "Remove", destructive: true, disabled: isSaving, run: () => onRemove(row) }
+      : null,
+  ];
+  if (entries.every((entry) => entry === null)) return null;
 
   return (
     <Menu>
       <MenuTrigger
+        {...objectMenuEntriesProps(entries)}
         render={
           <Button
             type="button"
@@ -951,21 +963,7 @@ function KeybindingRowMenu({
         <EllipsisIcon className="size-3.5" />
       </MenuTrigger>
       <MenuPopup align="end">
-        {onShowCommand ? (
-          <MenuItem onClick={() => onShowCommand(row.command)}>
-            Show bindings for this action
-          </MenuItem>
-        ) : null}
-        {canReset ? (
-          <MenuItem disabled={isSaving} onClick={() => onReset(row)}>
-            Reset to default
-          </MenuItem>
-        ) : null}
-        {canRemove ? (
-          <MenuItem variant="destructive" disabled={isSaving} onClick={() => onRemove(row)}>
-            Remove
-          </MenuItem>
-        ) : null}
+        <ObjectMenuEntryItems entries={entries} />
       </MenuPopup>
     </Menu>
   );

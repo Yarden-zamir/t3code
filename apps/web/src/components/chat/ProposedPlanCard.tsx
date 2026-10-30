@@ -1,4 +1,6 @@
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
+import { objectMenuEntriesProps, objectMenuProps } from "../../objectMenu";
+import { ObjectMenuEntryItems } from "../ObjectMenuEntryItems";
 import { memo, useState, useId } from "react";
 import { findRevealRef } from "./markdownFindContext";
 import {
@@ -20,7 +22,7 @@ import ChatMarkdown from "../ChatMarkdown";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import {
@@ -157,8 +159,21 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
     })();
   };
 
+  const planEntries = [
+    { label: isCopied ? "Copied!" : "Copy to clipboard", icon: "copy", run: handleCopyPlan },
+    { label: "Download as markdown", run: handleDownload },
+    {
+      label: "Save to workspace",
+      disabled: !canWriteFiles || !workspaceRoot || isSavingToWorkspace,
+      run: openSaveDialog,
+    },
+  ];
+
   return (
-    <div className="rounded-2xl border border-border/80 bg-card/70 p-4 sm:p-5">
+    <div
+      {...objectMenuProps()}
+      className="rounded-2xl border border-border/80 bg-card/70 p-4 sm:p-5"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Badge variant="secondary">Plan</Badge>
@@ -169,21 +184,13 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
         </div>
         <Menu>
           <MenuTrigger
+            {...objectMenuEntriesProps(planEntries)}
             render={<Button aria-label="Plan actions" size="icon-xs" variant="outline" />}
           >
             <EllipsisIcon aria-hidden="true" className="size-4" />
           </MenuTrigger>
           <MenuPopup align="end">
-            <MenuItem onClick={handleCopyPlan}>
-              {isCopied ? "Copied!" : "Copy to clipboard"}
-            </MenuItem>
-            <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
-            <MenuItem
-              onClick={openSaveDialog}
-              disabled={!canWriteFiles || !workspaceRoot || isSavingToWorkspace}
-            >
-              Save to workspace
-            </MenuItem>
+            <ObjectMenuEntryItems entries={planEntries} />
           </MenuPopup>
         </Menu>
       </div>

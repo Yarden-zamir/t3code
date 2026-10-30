@@ -1,4 +1,6 @@
 import { SessionPermissions } from "./SessionPermissions";
+import { objectMenuEntriesProps } from "../../objectMenu";
+import { ObjectMenuEntryItems } from "../ObjectMenuEntryItems";
 import {
   ChevronRightIcon,
   ChevronsLeftRightEllipsisIcon,
@@ -36,7 +38,7 @@ import {
 } from "./ConnectionDiagnosisDetails";
 import { usePreparedConnection } from "~/state/session";
 import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
+import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -243,6 +245,27 @@ export function SavedBackendListRow({
       : ""
   }`;
 
+  const environmentEntries = [
+    {
+      label: routesOpen ? "Hide routes" : "Routes",
+      menuIcon: <RouteIcon />,
+      run: () => setRoutesOpen((open) => !open),
+    },
+    mcpUrl
+      ? { label: "Copy MCP URL", icon: "copy", run: () => copyMcpUrl(mcpUrl, { url: mcpUrl }) }
+      : null,
+    errorTraceId
+      ? { label: "Copy trace ID", icon: "copy", run: () => copyTraceId(errorTraceId) }
+      : null,
+    {
+      label: isRemoving ? "Removing…" : "Remove from this device…",
+      icon: "trash",
+      destructive: true,
+      separatorBefore: true,
+      run: () => onRemove(environment),
+    },
+  ];
+
   return (
     <EnvironmentRow
       kind={machineKind}
@@ -414,6 +437,7 @@ export function SavedBackendListRow({
       </Tooltip>
       <Menu>
         <MenuTrigger
+          {...objectMenuEntriesProps(environmentEntries)}
           render={
             <Button
               type="button"
@@ -431,20 +455,8 @@ export function SavedBackendListRow({
             environmentId={environmentId}
             serverConfig={environment.serverConfig}
           />
-          <MenuItem onClick={() => setRoutesOpen((open) => !open)}>
-            <RouteIcon />
-            {routesOpen ? "Hide routes" : "Routes"}
-          </MenuItem>
-          {mcpUrl ? (
-            <MenuItem onClick={() => copyMcpUrl(mcpUrl, { url: mcpUrl })}>Copy MCP URL</MenuItem>
-          ) : null}
-          {errorTraceId ? (
-            <MenuItem onClick={() => copyTraceId(errorTraceId)}>Copy trace ID</MenuItem>
-          ) : null}
-          <MenuSeparator />
-          <MenuItem variant="destructive" onClick={() => onRemove(environment)}>
-            {isRemoving ? "Removing…" : "Remove from this device…"}
-          </MenuItem>
+          {/* The icon submenu has no context menu entry: it is a choice list, not one action. */}
+          <ObjectMenuEntryItems entries={environmentEntries} />
         </MenuPopup>
       </Menu>
     </EnvironmentRow>

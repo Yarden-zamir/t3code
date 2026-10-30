@@ -1,4 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
+import { objectMenuEntriesProps, objectMenuProps } from "../../objectMenu";
+import { ObjectMenuEntryItems } from "../ObjectMenuEntryItems";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
@@ -73,7 +75,7 @@ import { AgentElapsed } from "./AgentElapsed";
 import { ThreadRelationshipIcon, threadRelationshipStatusLabel } from "./ThreadRelationshipIcon";
 import { ThreadLineageWorkflowRow } from "./ThreadLineageWorkflowRow";
 
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { cn } from "~/lib/utils";
@@ -549,6 +551,17 @@ export function ThreadRelationshipsPanel(props: {
       ? null
       : (graph.nodes.get(mergeTargetThreadId)?.thread?.title ?? null);
 
+  const relationshipEntries = canDetach
+    ? [
+        {
+          label: "Disconnect agent session",
+          menuIcon: <UnplugIcon className="size-3.5" />,
+          disabled: busyAction !== null,
+          run: () => void detach(),
+        },
+      ]
+    : [];
+
   return (
     <ThreadDetailsSection
       headingId="thread-details-lineage-heading"
@@ -563,10 +576,12 @@ export function ThreadRelationshipsPanel(props: {
         delegatedFrom !== undefined
       }
       data-thread-relationships-panel
+      {...objectMenuProps()}
       actions={
         canDetach ? (
           <Menu>
             <MenuTrigger
+              {...objectMenuEntriesProps(relationshipEntries)}
               render={
                 <ThreadDetailsControl
                   size="icon-xs"
@@ -580,10 +595,7 @@ export function ThreadRelationshipsPanel(props: {
               <MoreHorizontalIcon className="size-3.5" />
             </MenuTrigger>
             <MenuPopup align="end" className="min-w-60 max-w-(--available-width)">
-              <MenuItem onClick={() => void detach()}>
-                <UnplugIcon className="size-3.5" />
-                Disconnect agent session
-              </MenuItem>
+              <ObjectMenuEntryItems entries={relationshipEntries} />
             </MenuPopup>
           </Menu>
         ) : null

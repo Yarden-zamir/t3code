@@ -1,4 +1,5 @@
 import type { EnvironmentId, UsageLimitsReport } from "@t3tools/contracts";
+import { objectMenuActionsProps } from "../../objectMenu";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { limitsNotice } from "@t3tools/shared/usageLimits";
 import { GaugeIcon } from "lucide-react";
@@ -112,7 +113,10 @@ function UsageLimitsBannerBody({
   const now = Date.parse(report.createdAt);
   return (
     <ComposerBanner.Scroll>
-      <ComposerBanner.Body className="flex flex-col gap-2 pt-1 pb-1.5 pe-2">
+      <ComposerBanner.Body
+        {...objectMenuActionsProps}
+        className="flex flex-col gap-2 pt-1 pb-1.5 pe-2"
+      >
         {report.accounts.map((account) => {
           const resetCreditInput =
             account.resetCreditInput ??

@@ -4,6 +4,7 @@ import {
   connectionRouteLabel,
   connectionRoutes,
 } from "@t3tools/client-runtime/connection";
+import { objectMenuActionsProps, objectMenuProps } from "../../objectMenu";
 import type { DesktopSshEnvironmentTarget, EnvironmentMachineKind } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import type { ReactNode } from "react";
@@ -69,6 +70,7 @@ export function EnvironmentRow({
 }) {
   return (
     <div
+      {...objectMenuProps([{ label: "Copy name", value: label }])}
       className={cn(
         "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 sm:px-4",
         className,
@@ -85,7 +87,9 @@ export function EnvironmentRow({
         <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
         {below}
       </div>
-      <div className="flex shrink-0 items-center gap-1">{children}</div>
+      <div {...objectMenuActionsProps} className="flex shrink-0 items-center gap-1">
+        {children}
+      </div>
       {detail ? <div className="col-span-2 col-start-2 min-w-0">{detail}</div> : null}
     </div>
   );
