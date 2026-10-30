@@ -234,7 +234,6 @@ const FORK_SETTING_GROUPS = [
       { ids: ["preview-local-server-groups"], place: "browser-browsing" },
       { ids: ["mobile-published-themes"], place: "appearance-mobile-app" },
       { ids: ["back-forward-buttons"], place: "appearance-interface" },
-      { ids: ["rich-context-menu"], place: "appearance-interface" },
       { ids: ["remember-back-forward-history"], place: "general-display" },
     ],
   },

@@ -27,7 +27,6 @@ import {
   TerminalCloseConfirmationSettingsRow,
 } from "./ForkSettingsRows";
 import { RestoreWorktreesSettingsRow, WorktreeArtifactSettingsRows } from "./ForkWorktreeSettings";
-import { RichContextMenuSettingsRow } from "./RichContextMenuSettingsRow";
 import { GlobalScriptsSettingsRows } from "./GlobalScriptsSettings";
 import { InAppNotificationSettingsRows } from "./InAppNotificationSettingsRows";
 import { InstalledAppSettingsRow } from "./InstalledAppSettingsRow";
@@ -131,7 +130,6 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "mobile-message-pins": MobileMessagePinsSettingsRow,
   "mobile-sidebar-tabs": MobileSidebarTabsSettingsRow,
   "back-forward-buttons": BackForwardButtonsSettingsRow,
-  "rich-context-menu": RichContextMenuSettingsRow,
   "remember-back-forward-history": RememberBackForwardHistorySettingsRow,
 };
 

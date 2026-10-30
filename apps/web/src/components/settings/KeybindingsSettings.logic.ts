@@ -1,4 +1,6 @@
+import { Schema } from "effect";
 import {
+  KeybindingCommand as KeybindingCommandSchema,
   STATIC_KEYBINDING_COMMANDS,
   type KeybindingCommand,
   type KeybindingShortcut,
@@ -12,7 +14,7 @@ import {
   US_SHIFTED_TO_UNSHIFTED_KEYS,
 } from "@t3tools/shared/keybindings";
 
-import { shortcutKeyFromEvent } from "../../keybindings";
+import { formatShortcutLabel, shortcutKeyFromEvent } from "../../keybindings";
 import { isMacPlatform } from "../../lib/utils";
 import { METRIC_OPTIONS, WINDOW_OPTIONS } from "../usage/usageShortcuts";
 
@@ -283,17 +285,38 @@ export function buildKeybindingRows(
   return rowsWithConflicts;
 }
 
+const isKeybindingCommand = Schema.is(KeybindingCommandSchema);
+
+export interface KeybindingsSearch {
+  /** Shows only the bindings of this command. */
+  readonly command?: KeybindingCommand;
+}
+
+export function validateKeybindingsSearch(raw: Record<string, unknown>): KeybindingsSearch {
+  return isKeybindingCommand(raw.command) ? { command: raw.command } : {};
+}
+
+export interface KeybindingRowFilter {
+  readonly query: string;
+  readonly command?: KeybindingCommand | undefined;
+  readonly platform?: string;
+}
+
 export function filterKeybindingRows(
   rows: ReadonlyArray<KeybindingRow>,
-  query: string,
+  filter: KeybindingRowFilter,
 ): ReadonlyArray<KeybindingRow> {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (normalizedQuery.length === 0) return rows;
+  const normalizedQuery = filter.query.trim().toLowerCase();
   return rows.filter((row) => {
+    if (filter.command !== undefined && row.command !== filter.command) return false;
+    if (normalizedQuery.length === 0) return true;
     return (
       row.command.toLowerCase().includes(normalizedQuery) ||
       commandLabel(row.command).toLowerCase().includes(normalizedQuery) ||
       row.key.toLowerCase().includes(normalizedQuery) ||
+      formatShortcutLabel(row.binding.shortcut, filter.platform)
+        .toLowerCase()
+        .includes(normalizedQuery) ||
       row.when.toLowerCase().includes(normalizedQuery) ||
       row.source.toLowerCase().includes(normalizedQuery)
     );

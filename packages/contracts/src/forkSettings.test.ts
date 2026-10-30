@@ -30,6 +30,14 @@ describe("ClientSettings sidebar owner filter", () => {
   });
 });
 
+describe("ClientSettings removed fork settings", () => {
+  it("decodes saved settings that still hold a removed key, and drops the key", () => {
+    const settings = decodeClientSettings({ richContextMenu: false });
+    expect(settings).not.toHaveProperty("richContextMenu");
+    expect(encodeClientSettings(settings)).not.toHaveProperty("richContextMenu");
+  });
+});
+
 describe("ServerSettings agent session import limits", () => {
   it("defaults to a 30 day window and 200 messages", () => {
     expect(decodeServerSettings({})).toMatchObject({

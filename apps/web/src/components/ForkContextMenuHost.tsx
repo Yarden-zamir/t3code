@@ -1,4 +1,4 @@
-import type { ClientSettings, ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem, KeybindingCommand } from "@t3tools/contracts";
 import {
   ArchiveIcon,
   CheckIcon,
@@ -10,6 +10,7 @@ import {
   FolderTreeIcon,
   GitBranchIcon,
   HashIcon,
+  KeyboardIcon,
   type LucideIcon,
   MailOpenIcon,
   MessageSquarePlusIcon,
@@ -22,16 +23,18 @@ import {
   Trash2Icon,
   UserPlusIcon,
 } from "lucide-react";
-import { useEffect, useSyncExternalStore } from "react";
+import { type KeyboardEvent, type MouseEvent, useEffect, useSyncExternalStore } from "react";
 
 import {
   FORK_CONTEXT_MENU_ATTRIBUTE,
   readForkContextMenu,
   registerForkContextMenuHost,
+  requestForkContextMenu,
   settleForkContextMenu,
   subscribeForkContextMenu,
 } from "../forkContextMenu";
-import { useClientSettings } from "../hooks/useSettings";
+import { isItemMenuKey, openItemMenu } from "../keybindingsMenu";
+import { ShortcutHint } from "./focusLevels/ShortcutHint";
 import {
   Menu,
   MenuCheckboxItem,
@@ -59,6 +62,7 @@ const ICONS: Record<string, LucideIcon> = {
   folder: FolderIcon,
   "git-branch": GitBranchIcon,
   hash: HashIcon,
+  keyboard: KeyboardIcon,
   "mail-open": MailOpenIcon,
   "message-square-plus": MessageSquarePlusIcon,
   pin: PinIcon,
@@ -71,7 +75,6 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 const menuAttributes = { [FORK_CONTEXT_MENU_ATTRIBUTE]: "" };
-const selectEnabled = (settings: ClientSettings) => settings.richContextMenu;
 
 /** A header starts a group that runs to the next header; group labels need a group. */
 function groupByHeader(items: readonly ContextMenuItem[]): ContextMenuItem[][] {
@@ -87,6 +90,60 @@ function groupByHeader(items: readonly ContextMenuItem[]): ContextMenuItem[][] {
 function ItemIcon({ name }: { name: string | undefined }) {
   const Icon = name === undefined ? undefined : ICONS[name];
   return Icon ? <Icon /> : null;
+}
+
+// The item's own menu replaces this menu, as a second open menu would close the first.
+const showInPlace = (items: readonly ContextMenuItem[], position: { x: number; y: number }) =>
+  requestForkContextMenu(items, position) ?? Promise.resolve(null);
+
+/** Opens the item menu of the focused item from Shift+F10 or the context menu key. */
+function itemMenuKeyHandler(command: KeybindingCommand | undefined) {
+  if (command === undefined) return {};
+  return {
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      if (!isItemMenuKey(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void openItemMenu(command, { element: event.currentTarget }, showInPlace);
+    },
+  };
+}
+
+const ITEM_ATTRIBUTE = "data-keybinding-item";
+
+/**
+ * Disabled items ignore the pointer, so the popup finds the item under it. A disabled item keeps
+ * its menu, because a key for the action is useful before the action is.
+ */
+function onPopupContextMenu(items: readonly ContextMenuItem[]) {
+  return (event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    // React passes the event through the submenu portal to the parent popup, which would match
+    // its own item under the pointer.
+    event.stopPropagation();
+    const target = [
+      ...event.currentTarget.querySelectorAll<HTMLElement>(`[${ITEM_ATTRIBUTE}]`),
+    ].find((element) => {
+      const rect = element.getBoundingClientRect();
+      return (
+        event.clientX >= rect.left &&
+        event.clientX < rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY < rect.bottom
+      );
+    });
+    const command = items.find(
+      (item) => item.id === target?.getAttribute(ITEM_ATTRIBUTE),
+    )?.keybindingCommand;
+    if (command === undefined) return;
+    event.stopPropagation();
+    void openItemMenu(command, { position: { x: event.clientX, y: event.clientY } }, showInPlace);
+  };
+}
+
+function itemMenuProps(item: ContextMenuItem) {
+  if (item.keybindingCommand === undefined) return {};
+  return { [ITEM_ATTRIBUTE]: item.id, ...itemMenuKeyHandler(item.keybindingCommand) };
 }
 
 function MenuEntries({
@@ -124,11 +181,25 @@ function MenuEntry({
     if (item.children !== undefined) {
       return (
         <MenuSub>
-          <MenuSubTrigger disabled={item.disabled}>
+          <MenuSubTrigger disabled={item.disabled} {...itemMenuProps(item)}>
             <ItemIcon name={item.icon} />
-            {item.label}
+            {item.keybindingCommand ? (
+              <>
+                {/* The label takes the free space, so the hint and the chevron stay at the end. */}
+                <span className="flex-1">{item.label}</span>
+                <span className="ps-3">
+                  <ShortcutHint command={item.keybindingCommand} />
+                </span>
+              </>
+            ) : (
+              item.label
+            )}
           </MenuSubTrigger>
-          <MenuSubPopup {...menuAttributes} layer="context">
+          <MenuSubPopup
+            {...menuAttributes}
+            layer="context"
+            onContextMenu={onPopupContextMenu(item.children)}
+          >
             <MenuEntries items={item.children} onPick={onPick} />
           </MenuSubPopup>
         </MenuSub>
@@ -151,9 +222,15 @@ function MenuEntry({
         disabled={item.disabled}
         variant={item.destructive === true ? "destructive" : "default"}
         onClick={() => onPick(item.id)}
+        {...itemMenuProps(item)}
       >
         <ItemIcon name={item.icon} />
         {item.label}
+        {item.keybindingCommand ? (
+          <span className="ms-auto ps-3">
+            <ShortcutHint command={item.keybindingCommand} />
+          </span>
+        ) : null}
       </MenuItem>
     );
   })();
@@ -166,8 +243,8 @@ function MenuEntry({
 }
 
 /**
- * Fork: draws `api.contextMenu.show` menus with the app's Base UI menu while `richContextMenu` is
- * on. Base UI gives keyboard navigation, typeahead, menu roles and edge collision.
+ * Fork: draws every `api.contextMenu.show` menu with the app's Base UI menu. Base UI gives
+ * keyboard navigation, typeahead, menu roles and edge collision.
  */
 export function ForkContextMenuHost() {
   const request = useSyncExternalStore(
@@ -176,9 +253,8 @@ export function ForkContextMenuHost() {
     readForkContextMenu,
   );
 
-  const enabled = useClientSettings(selectEnabled);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers this host with the module store while the setting is on
-  useEffect(() => (enabled ? registerForkContextMenuHost() : undefined), [enabled]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers this host with the module store while it is mounted
+  useEffect(registerForkContextMenuHost, []);
 
   if (request === null) return null;
   const { key, position } = request;
@@ -210,6 +286,7 @@ export function ForkContextMenuHost() {
         sideOffset={0}
         finalFocus={false}
         layer="context"
+        onContextMenu={onPopupContextMenu(request.items)}
       >
         <MenuEntries items={request.items} onPick={(id) => settleForkContextMenu(key, id)} />
       </MenuPopup>

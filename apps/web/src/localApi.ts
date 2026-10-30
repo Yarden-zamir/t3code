@@ -45,19 +45,13 @@ export function createLocalApi(): LocalApi {
         items: readonly ContextMenuItem<T>[],
         position?: { x: number; y: number },
       ): Promise<T | null> => {
-        const forkMenu = requestForkContextMenu(items, position); // Fork: `richContextMenu`.
-        if (forkMenu) return forkMenu;
-        if (window.desktopBridge) {
-          return window.desktopBridge.showContextMenu(items, position) as Promise<T | null>;
-        }
-        return showContextMenuFallback(items, position);
+        // Fork: the app menu, or a plain web menu before its host mounts or on an error screen.
+        return requestForkContextMenu(items, position) ?? showContextMenuFallback(items, position);
       },
-      // Unlike native menus, the DOM fallback needs dismissal when underlying state disappears.
+      // Unlike native menus, web menus need dismissal when underlying state disappears.
       close: async () => {
         dismissForkContextMenu();
-        if (!window.desktopBridge) {
-          dismissContextMenu();
-        }
+        dismissContextMenu();
       },
     },
     persistence: {

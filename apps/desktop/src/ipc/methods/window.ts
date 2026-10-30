@@ -1,5 +1,4 @@
 import {
-  ContextMenuItemSchema,
   DesktopAppBrandingSchema,
   DesktopEnvironmentBootstrapSchema,
   DesktopThemeSchema,
@@ -32,7 +31,6 @@ import * as DesktopWslBackend from "../../wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
 import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
-import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
@@ -46,16 +44,6 @@ import {
   resolveWslPickFolderDefaultPath,
   wslUncPathToLinuxPath,
 } from "../../wsl/wslPathParsing.ts";
-
-const ContextMenuPosition = Schema.Struct({
-  x: Schema.Number,
-  y: Schema.Number,
-});
-
-const ContextMenuInput = Schema.Struct({
-  items: Schema.Array(ContextMenuItemSchema),
-  position: Schema.optionalKey(ContextMenuPosition),
-});
 
 function toWebSocketBaseUrl(httpBaseUrl: URL): string {
   const url = new URL(httpBaseUrl.href);
@@ -262,27 +250,6 @@ export const setTheme = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.window.setTheme")(function* (theme) {
     const electronTheme = yield* ElectronTheme.ElectronTheme;
     yield* electronTheme.setSource(theme);
-  }),
-});
-
-export const showContextMenu = DesktopIpc.makeIpcMethod({
-  channel: IpcChannels.CONTEXT_MENU_CHANNEL,
-  payload: ContextMenuInput,
-  result: Schema.NullOr(Schema.String),
-  handler: Effect.fn("desktop.ipc.window.showContextMenu")(function* (input) {
-    const electronMenu = yield* ElectronMenu.ElectronMenu;
-    const electronWindow = yield* ElectronWindow.ElectronWindow;
-    const window = yield* electronWindow.focusedMainOrFirst;
-    if (Option.isNone(window)) {
-      return null;
-    }
-
-    const selectedItemId = yield* electronMenu.showContextMenu({
-      window: window.value,
-      items: input.items,
-      position: Option.fromNullishOr(input.position),
-    });
-    return Option.getOrNull(selectedItemId);
   }),
 });
 

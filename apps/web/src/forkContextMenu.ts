@@ -3,7 +3,7 @@ import type { ContextMenuItem } from "@t3tools/contracts";
 /**
  * Fork: the open request of the app's own context menu, drawn by `ForkContextMenuHost`.
  * Upstream https://github.com/pingdotgg/t3code/pull/18103 adds a desktop toggle to the web
- * menu. When it merges, move to its setting and keep this host for the later phases.
+ * menu. The fork has no toggle: every menu uses this host.
  */
 export type ForkContextMenuRequest = {
   readonly key: number;
@@ -40,7 +40,7 @@ export function subscribeForkContextMenu(listener: () => void): () => void {
   };
 }
 
-/** The host registers while `richContextMenu` is on. */
+/** The host registers while it is mounted. Before that, menus use `contextMenuFallback`. */
 export function registerForkContextMenuHost(): () => void {
   hostRegistered = true;
   return () => {

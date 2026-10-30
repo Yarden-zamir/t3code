@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem, KeybindingCommand } from "@t3tools/contracts";
 import { TERMINAL_PROGRAM_ARCHIVE_BLOCK_MESSAGE } from "@t3tools/client-runtime/state/fork-terminal-threads";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
@@ -28,6 +28,29 @@ export type ThreadActionMenuId =
   | "copy-thread-id"
   | "archive"
   | "delete";
+
+/** The thread menu items that each thread keybinding command runs, in order of preference. */
+export const THREAD_ACTION_KEYBINDINGS = {
+  "thread.pin": ["pin", "unpin"],
+  "thread.settle": ["settle", "unsettle"],
+  "thread.snooze": ["snooze", "unsnooze"],
+  "thread.rename": ["rename"],
+  "thread.markUnread": ["mark-unread"],
+  "thread.archive": ["archive"],
+} as const satisfies Partial<Record<KeybindingCommand, ReadonlyArray<ThreadActionMenuId>>>;
+
+const THREAD_ACTION_COMMAND_BY_ID = new Map<ThreadActionMenuId, KeybindingCommand>(
+  Object.entries(THREAD_ACTION_KEYBINDINGS).flatMap(([command, ids]) =>
+    ids.map((id) => [id, command as keyof typeof THREAD_ACTION_KEYBINDINGS] as const),
+  ),
+);
+
+function withThreadActionKeybinding(
+  item: ContextMenuItem<ThreadActionMenuId>,
+): ContextMenuItem<ThreadActionMenuId> {
+  const keybindingCommand = THREAD_ACTION_COMMAND_BY_ID.get(item.id);
+  return keybindingCommand ? { ...item, keybindingCommand } : item;
+}
 
 export type DraftActionMenuId =
   | "copy"
@@ -145,7 +168,7 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
-  const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
+  const menuItems: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
     ...(state.branch
       ? [
           {
@@ -287,6 +310,7 @@ export function buildThreadActionMenuItems(
       icon: "trash",
     },
   ];
+  const items = menuItems.map(withThreadActionKeybinding);
   return state.canOperate
     ? items
     : items.map((item) =>
