@@ -1,4 +1,6 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import type { KeybindingCommand } from "@t3tools/contracts";
+import { KEYBINDING_COMMAND_ATTRIBUTE } from "../keybindingsMenu";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
 import {
@@ -281,11 +283,14 @@ function SurfaceMenuItem(props: {
   available: boolean;
   disabledReason?: string;
   shortcut: string;
+  /** The keybinding command that opens the same surface, such as `diff.toggle`. */
+  command?: KeybindingCommand | undefined;
   onClick: () => void;
   children: ReactNode;
 }) {
   const item = (
     <MenuItem
+      {...(props.command ? { [KEYBINDING_COMMAND_ATTRIBUTE]: props.command } : {})}
       className={!props.available ? "data-disabled:pointer-events-auto" : undefined}
       onClick={props.onClick}
       disabled={!props.available}
@@ -350,6 +355,7 @@ function RightPanelEmptyState(props: {
       label: "Diff",
       icon: FileDiff,
       shortcut: "D",
+      command: "diff.toggle" as const,
       available: props.diffAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
       onClick: props.onAddDiff,
@@ -480,6 +486,9 @@ function RightPanelEmptyState(props: {
               >
                 <button
                   type="button"
+                  {...("command" in action
+                    ? { [KEYBINDING_COMMAND_ATTRIBUTE]: action.command }
+                    : {})}
                   onClick={action.onClick}
                   className={cn(
                     "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm transition-colors group-hover:bg-accent/60",
@@ -1059,6 +1068,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       label: "Diff",
       icon: FileDiff,
       shortcut: "D",
+      command: "diff.toggle" as const,
       available: props.diffAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.diff,
       onClick: props.onAddDiff,
@@ -1399,6 +1409,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                         available={action.available}
                         disabledReason={action.disabledReason}
                         shortcut={action.shortcut}
+                        command={"command" in action ? action.command : undefined}
                         onClick={action.onClick}
                       >
                         <Icon />

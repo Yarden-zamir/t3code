@@ -81,7 +81,7 @@ function onContextMenu(event: MouseEvent): void {
   const copies = readCopyEntries(object);
   const items: ContextMenuItem[] = [
     ...controls.map((control, index) => {
-      const command = bindableElement(control)?.command;
+      const command = bindableElement(control)?.commands[0];
       return {
         id: `control:${index}`,
         label: actionLabel(control),

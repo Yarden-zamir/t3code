@@ -32,10 +32,11 @@ export type MenuItemMenuEntry = {
 export type MenuItemMenus = {
   /** Matches every item that has an item menu, for the pointer hit test. */
   readonly selector: string;
-  /** The item at or around `target` and its entry, or null. */
-  readonly find: (
-    target: EventTarget | null,
-  ) => { readonly element: HTMLElement; readonly entry: MenuItemMenuEntry } | null;
+  /** The item at or around `target` and its entries, or null. */
+  readonly find: (target: EventTarget | null) => {
+    readonly element: HTMLElement;
+    readonly entries: readonly MenuItemMenuEntry[];
+  } | null;
   readonly isOpenKey: (event: Pick<KeyboardEvent, "key" | "shiftKey">) => boolean;
   /** Runs after a key opened an item menu. */
   readonly onOpenByKey: () => void;
@@ -48,7 +49,7 @@ function configureMenuItemMenus(next: MenuItemMenus): void {
 }
 
 type ItemMenuRequest = {
-  readonly entry: MenuItemMenuEntry;
+  readonly entries: readonly MenuItemMenuEntry[];
   readonly item: HTMLElement;
   /** A pointer opens the menu at the pointer, a key at the item with its entry highlighted. */
   readonly point: { x: number; y: number } | null;
@@ -59,7 +60,7 @@ type ItemMenuRequest = {
  * closes only this menu and gives focus back to the item.
  */
 function ItemMenu({ request, onClose }: { request: ItemMenuRequest; onClose: () => void }) {
-  const { point, item, entry } = request;
+  const { point, item, entries } = request;
   const anchor =
     point === null
       ? item
@@ -83,16 +84,19 @@ function ItemMenu({ request, onClose }: { request: ItemMenuRequest; onClose: () 
           if (point !== null) element?.focus({ preventScroll: true });
         }}
       >
-        <MenuItem
-          ref={(element) => {
-            // Base UI highlights the item that has focus, so Enter runs it.
-            if (point === null) element?.focus({ preventScroll: true });
-          }}
-          onClick={entry.run}
-        >
-          {entry.icon}
-          {entry.label}
-        </MenuItem>
+        {entries.map((entry, index) => (
+          <MenuItem
+            key={entry.label}
+            ref={(element) => {
+              // Base UI highlights the item that has focus, so Enter runs it.
+              if (point === null && index === 0) element?.focus({ preventScroll: true });
+            }}
+            onClick={entry.run}
+          >
+            {entry.icon}
+            {entry.label}
+          </MenuItem>
+        ))}
       </MenuPopup>
     </MenuSub>
   );
@@ -173,7 +177,7 @@ function MenuPopup({
             if (found === null) return;
             event.preventDefault();
             setItemMenu({
-              entry: found.entry,
+              entries: found.entries,
               item: found.element,
               point: { x: event.clientX, y: event.clientY },
             });
@@ -191,13 +195,13 @@ function MenuPopup({
             event.preventDefault();
             event.stopPropagation();
             itemMenus.onOpenByKey();
-            setItemMenu({ entry: found.entry, item: found.element, point: null });
+            setItemMenu({ entries: found.entries, item: found.element, point: null });
           }}
         >
           <div className="max-h-(--available-height) w-full overflow-y-auto p-1">{children}</div>
           {itemMenu === null ? null : (
             <ItemMenu
-              key={`${itemMenu.entry.label}:${itemMenu.point?.x}:${itemMenu.point?.y}`}
+              key={`${itemMenu.entries[0]?.label}:${itemMenu.point?.x}:${itemMenu.point?.y}`}
               request={itemMenu}
               onClose={() => setItemMenu(null)}
             />

@@ -38,7 +38,7 @@ import {
   ignoreContextMenuAfterKey,
   isItemMenuKey,
   KEYBINDING_COMMAND_ATTRIBUTE,
-  KEYBINDINGS_ITEM_LABEL,
+  keybindingsEntries,
   openKeybindingsFor,
 } from "../keybindingsMenu";
 import { useMenuItemShortcut } from "./focusLevels/ShortcutHint";
@@ -109,11 +109,11 @@ configureMenuItemMenus({
       ? null
       : {
           element: bindable.element,
-          entry: {
-            label: KEYBINDINGS_ITEM_LABEL,
+          entries: keybindingsEntries(bindable.commands).map((entry) => ({
+            label: entry.label,
             icon: <KeyboardIcon />,
-            run: () => openKeybindingsFor(bindable.command),
-          },
+            run: () => openKeybindingsFor(entry.command),
+          })),
         };
   },
   isOpenKey: isItemMenuKey,

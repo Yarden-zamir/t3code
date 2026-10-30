@@ -15,6 +15,8 @@ type OpenKeybindings = (command: KeybindingCommand) => void;
  */
 export const KEYBINDING_COMMAND_ATTRIBUTE = "data-keybinding-command";
 
+const KEYBINDINGS_ITEM_LABEL = "Keybindings…";
+
 // `appInit` installs this, so the menu modules do not import the router.
 let openKeybindings: OpenKeybindings | null = null;
 // Windows sends `contextmenu` after the key goes up. It must not reach the element that has
@@ -23,18 +25,39 @@ let ignoreNextContextMenu = false;
 
 const isKeybindingCommand = Schema.is(KeybindingCommandSchema);
 
-/** The command of the bindable element at or around `target`, or null. */
-export function bindableElement(
-  target: EventTarget | null,
-): { readonly element: HTMLElement; readonly command: KeybindingCommand } | null {
+/**
+ * The commands of the bindable element at or around `target`, or null. A control that runs two
+ * commands, such as the compact effort and mode picker, lists both, separated by a space.
+ */
+export function bindableElement(target: EventTarget | null): {
+  readonly element: HTMLElement;
+  readonly commands: readonly [KeybindingCommand, ...KeybindingCommand[]];
+} | null {
   if (!(target instanceof Element)) return null;
   const element = target.closest<HTMLElement>(`[${KEYBINDING_COMMAND_ATTRIBUTE}]`);
   if (element === null) return null;
-  const command = element.getAttribute(KEYBINDING_COMMAND_ATTRIBUTE);
-  if (!isKeybindingCommand(command)) {
-    throw new Error(`${KEYBINDING_COMMAND_ATTRIBUTE} names no keybinding command: ${command}`);
+  const names = (element.getAttribute(KEYBINDING_COMMAND_ATTRIBUTE) ?? "").split(" ");
+  const commands = names.filter(isKeybindingCommand);
+  const [first, ...rest] = commands;
+  if (first === undefined || commands.length !== names.length) {
+    throw new Error(`${KEYBINDING_COMMAND_ATTRIBUTE} names no keybinding command: ${names}`);
   }
-  return { element, command };
+  return { element, commands: [first, ...rest] };
+}
+
+/** One "Keybindings…" entry per command; with two, each names its command, such as "Mode". */
+export function keybindingsEntries(
+  commands: readonly KeybindingCommand[],
+): ReadonlyArray<{ readonly label: string; readonly command: KeybindingCommand }> {
+  if (commands.length === 1)
+    return commands.map((command) => ({ label: KEYBINDINGS_ITEM_LABEL, command }));
+  return commands.map((command) => {
+    const name = command.split(".").at(-1) ?? command;
+    return {
+      label: `Keybindings for ${name.charAt(0).toUpperCase()}${name.slice(1)}…`,
+      command,
+    };
+  });
 }
 
 // Text fields keep the browser menu, and menus open the item menu nested in themselves.
@@ -68,7 +91,7 @@ function onContextMenu(event: MouseEvent): void {
   if (bindable === null || selectionInside(bindable.element)) return;
   event.preventDefault();
   event.stopPropagation();
-  void openItemMenu(bindable.command, { position: { x: event.clientX, y: event.clientY } });
+  void openItemMenu(bindable.commands, { position: { x: event.clientX, y: event.clientY } });
 }
 
 function onKeyDown(event: KeyboardEvent): void {
@@ -80,7 +103,7 @@ function onKeyDown(event: KeyboardEvent): void {
   if (bindable === null) return;
   event.preventDefault();
   event.stopPropagation();
-  void openItemMenu(bindable.command, { element: bindable.element });
+  void openItemMenu(bindable.commands, { element: bindable.element });
 }
 
 // macOS sends no `contextmenu` for the key, so the next pointer clears the flag.
@@ -107,20 +130,14 @@ export function ignoreContextMenuAfterKey(): void {
   ignoreNextContextMenu = true;
 }
 
-export const KEYBINDINGS_ITEM_LABEL = "Keybindings…";
-
 export function openKeybindingsFor(command: KeybindingCommand): void {
   if (openKeybindings === null) throw new Error("Context menu keybindings are not installed.");
   openKeybindings(command);
 }
 
-const ITEM_MENU: readonly ContextMenuItem[] = [
-  { id: "keybindings", label: KEYBINDINGS_ITEM_LABEL, icon: "keyboard" },
-];
-
 /** The item menu of a bindable element outside a Base UI menu, as an app menu. */
 async function openItemMenu(
-  command: KeybindingCommand,
+  commands: readonly KeybindingCommand[],
   opener: { readonly element: Element } | { readonly position: { x: number; y: number } },
 ): Promise<void> {
   let position: { x: number; y: number };
@@ -131,7 +148,14 @@ async function openItemMenu(
   } else {
     position = opener.position;
   }
-  const selection = requestForkContextMenu(ITEM_MENU, position);
-  if (selection === undefined || (await selection) !== "keybindings") return;
-  openKeybindingsFor(command);
+  const entries = keybindingsEntries(commands);
+  const items: ContextMenuItem[] = entries.map((entry, index) => ({
+    id: String(index),
+    label: entry.label,
+    icon: "keyboard",
+  }));
+  const selection = requestForkContextMenu(items, position);
+  const picked = selection === undefined ? null : await selection;
+  const entry = picked === null ? undefined : entries[Number(picked)];
+  if (entry !== undefined) openKeybindingsFor(entry.command);
 }

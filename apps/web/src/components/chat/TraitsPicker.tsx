@@ -7,6 +7,8 @@ import {
   REASONING_SELECT_DESCRIPTOR_IDS,
   ULTRATHINK_PROMPT_PREFIX,
 } from "@t3tools/client-runtime/model-traits";
+import { KEYBINDING_COMMAND_ATTRIBUTE } from "../../keybindingsMenu";
+import { ShortcutHint, useKeybindingProps } from "../focusLevels/ShortcutHint";
 import {
   type ModelSelection,
   type ProviderDriverKind,
@@ -559,6 +561,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   const composerFloatingLayerProps = useComposerMenuProps();
   const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden || disabled);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const effortKeybindingProps = useKeybindingProps(isComposerOwned ? "composer.effort" : null);
   const { descriptors, primarySelectDescriptor, ultrathinkPromptControlled } =
     getTraitsSectionVisibility({
       provider,
@@ -633,6 +636,15 @@ export const TraitsPicker = memo(function TraitsPicker({
     >
       <Tooltip>
         <TooltipTrigger
+          {...(isComposerOwned
+            ? {
+                ...effortKeybindingProps,
+                // The compact menu also holds the access mode, so its key opens this control too.
+                ...(extraMenuOwnsModeShortcut
+                  ? { [KEYBINDING_COMMAND_ATTRIBUTE]: "composer.effort composer.mode" }
+                  : {}),
+              }
+            : {})}
           render={
             <MenuTrigger
               render={
@@ -728,7 +740,10 @@ export const TraitsPicker = memo(function TraitsPicker({
             </>
           )}
         </TooltipTrigger>
-        <TooltipPopup side="top">{triggerDescription}</TooltipPopup>
+        <TooltipPopup side="top">
+          {triggerDescription}
+          {isComposerOwned ? <ShortcutHint command="composer.effort" /> : null}
+        </TooltipPopup>
       </Tooltip>
       <MenuPopup align="start" {...(isComposerOwned ? composerFloatingLayerProps : {})}>
         <TraitsMenuContent
