@@ -103,10 +103,15 @@ export function AssistantCitationChip({
           // text can end in their hidden overflow. Base UI only shifts the popup while
           // it still touches the anchor, so clamp the anchor to the message's width.
           const bounds = activeSourceAnchor.source.getBoundingClientRect();
-          // Text scrolled out of the timeline would carry the card off screen; the chip holds it.
+          // Text out of the timeline, or under the composer that floats over its bottom, would
+          // carry the card off screen or onto the composer; the chip holds it then.
           const visible = activeSourceAnchor.viewport.getBoundingClientRect();
           const trigger = commentTriggerRef.current;
-          if ((rect.bottom <= visible.top || rect.top >= visible.bottom) && trigger) {
+          const composerTop =
+            trigger?.closest('[data-chat-composer-stack="true"]')?.getBoundingClientRect().top ??
+            visible.bottom;
+          const visibleBottom = Math.min(visible.bottom, composerTop);
+          if ((rect.bottom <= visible.top || rect.top >= visibleBottom) && trigger) {
             return trigger.getBoundingClientRect();
           }
           const left = Math.min(Math.max(rect.left, bounds.left), bounds.right);
