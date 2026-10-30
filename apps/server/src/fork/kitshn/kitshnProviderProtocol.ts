@@ -10,6 +10,8 @@ import * as SchemaGetter from "effect/SchemaGetter";
 export const PROVIDER_NAME = "t3";
 /** K-707: the longest `output` of a command result. */
 export const MAX_COMMAND_OUTPUT_LENGTH = 64 * 1024;
+/** K-1625: kitshn refuses the registration when a list row id is longer. */
+export const ROW_ID_LIMIT = 64;
 
 export const ProviderLevels = Schema.Struct({
   view: Schema.optionalKey(Schema.String),
@@ -66,7 +68,7 @@ export const ProviderList = Schema.Struct({
   columns: Schema.Array(Schema.Struct({ id: Schema.String, title: Schema.String })),
   rows: Schema.Array(
     Schema.Struct({
-      id: Schema.String,
+      id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(ROW_ID_LIMIT)),
       cells: Schema.Record(Schema.String, Schema.String.check(Schema.isMaxLength(200))),
       commands: Schema.optionalKey(Schema.Array(Schema.String)),
     }),

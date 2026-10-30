@@ -4,6 +4,9 @@
  * cards and commands. A missing kitshn, a refusal or an exit only logs, and the server tries again
  * later; without kitshn 2 the server behaves as upstream (K-712). Its grant tables go to `KitshnGrants`, which enforces them.
  */
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- A row id needs a synchronous hash inside a pure list builder.
+import * as NodeCrypto from "node:crypto";
+
 import type { MachineCommandInput, MachineStatus } from "@t3tools/contracts";
 import { THREAD_CREDENTIAL_AUTHORIZATION_ENV } from "@t3tools/provider-core/server/forkThreadCredential";
 import * as Clock from "effect/Clock";
@@ -56,6 +59,7 @@ import {
   type ReachedCard,
   type LocalRequestInput,
   type Request,
+  ROW_ID_LIMIT,
   decodeAnswer,
   requestLine,
 } from "./kitshnProviderProtocol.ts";
@@ -146,6 +150,14 @@ const CELL_LIMIT = 200;
 const TASK_ROW = "task:";
 const SESSION_ROW = "session:";
 
+/** kitshn refuses the whole registration when a row id is longer than ROW_ID_LIMIT. */
+const rowIdOf = (prefix: string, id: string) => {
+  const plain = `${prefix}${id}`;
+  if (plain.length <= ROW_ID_LIMIT) return plain;
+  const hash = NodeCrypto.createHash("sha256").update(id).digest("hex");
+  return `${prefix}${hash.slice(0, ROW_ID_LIMIT - prefix.length)}`;
+};
+
 /** K-1625: the row commands of the T3 card. Each one turns its row into a machine map command. */
 const ROW_COMMANDS = [
   {
@@ -187,11 +199,19 @@ const ROW_COMMANDS = [
 ] as const;
 
 /** The machine map command of a row command, or undefined when the row is not of its list. */
-const rowCommandInput = (command: string, row: string) => {
+const rowCommandInput = (
+  command: string,
+  row: string,
+  status: Pick<MachineStatus, "tasks" | "clients">,
+) => {
   const entry = ROW_COMMANDS.find((candidate) => candidate.id === command);
-  if (entry === undefined || !row.startsWith(entry.row)) return undefined;
-  const id = row.slice(entry.row.length);
-  return id === "" ? undefined : entry.input(id);
+  if (entry === undefined) return undefined;
+  const ids =
+    entry.row === TASK_ROW
+      ? (status.tasks ?? []).map((task) => task.id)
+      : status.clients.map((session) => session.sessionId);
+  const id = ids.find((candidate) => rowIdOf(entry.row, candidate) === row);
+  return id === undefined ? undefined : entry.input(id);
 };
 
 const cell = (value: string) => value.slice(0, CELL_LIMIT);
@@ -210,7 +230,7 @@ const appLists = (
       { id: "next", title: "Next run" },
     ],
     rows: (status.tasks ?? []).slice(0, LIST_ROWS_LIMIT).map((task) => ({
-      id: `${TASK_ROW}${task.id}`,
+      id: rowIdOf(TASK_ROW, task.id),
       cells: {
         title: cell(task.title),
         schedule: cell(task.schedule),
@@ -230,7 +250,7 @@ const appLists = (
       { id: "lastSeen", title: "Last seen" },
     ],
     rows: status.clients.slice(0, LIST_ROWS_LIMIT).map((session) => ({
-      id: `${SESSION_ROW}${session.sessionId}`,
+      id: rowIdOf(SESSION_ROW, session.sessionId),
       cells: {
         client: cell(session.label ?? session.browser ?? session.subject),
         device: cell([session.deviceType, session.os].filter((part) => part !== null).join(", ")),
@@ -410,13 +430,14 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       );
     }
   });
+  const appStatus = host.status({
+    desktopConnected: false,
+    updateWaiting: null,
+    desktopBuild: null,
+  });
   const appResource = Effect.gen(function* () {
     const descriptor = yield* environment.getDescriptor;
-    const status = yield* host.status({
-      desktopConnected: false,
-      updateWaiting: null,
-      desktopBuild: null,
-    });
+    const status = yield* appStatus;
     const busy = yield* threads.getShellSnapshot().pipe(
       Effect.map(
         (snapshot) => snapshot.threads.filter((thread) => thread.activeRunId !== null).length,
@@ -543,7 +564,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         const input =
           event.row === undefined
             ? registered.find((entry) => entry.id === event.command)?.input
-            : rowCommandInput(event.command, event.row);
+            : rowCommandInput(event.command, event.row, yield* appStatus);
         const outcome: MachineHost.CommandOutcome =
           input === undefined || event.resource !== APP_RESOURCE_ID
             ? {
