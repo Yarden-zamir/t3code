@@ -10,10 +10,11 @@ import type {
 } from "@t3tools/contracts";
 import {
   isLinkedMessage,
+  linkedMessageLoadId,
   messageLinkFromLocation,
   messageLinkStep,
 } from "@t3tools/shared/threadMessageLinks";
-import { type HistoryState, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
+import { type HistoryState, useLocation, useRouter } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
@@ -23,11 +24,13 @@ import type { TimelineEntry } from "../../session-logic";
 import { useThreadStatus } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { toastManager } from "../ui/toast";
+import { forkHistoryVisit, forkThreadKeyOfPath } from "./forkMessageHistory";
 import type { MessagesTimelineHistoryControls } from "./MessagesTimeline";
 import {
   timelineTurnFoldRunIdsByEntryId,
   type MessagesTimelineRow,
 } from "./MessagesTimeline.logic";
+import type { RememberedTimelinePosition } from "./timelineScrollAnchoring";
 
 /*
  * Fork: opens a thread at one message. A `t3-thread://` link with `#<messageId>`, a thread
@@ -38,21 +41,25 @@ import {
 
 declare module "@tanstack/react-router" {
   interface HistoryState {
-    /** Fork: a new value on each message link click, so the same link scrolls again. */
+    /** Fork: a new value on each message link click, so the same link pushes a new entry. */
     forkMessageLinkActivation?: string;
   }
 }
 
+/** Where a jump puts the timeline: a linked message, or where the user left a history entry. */
+export type ForkTimelineTarget =
+  | { readonly _tag: "message"; readonly messageId: MessageId }
+  | { readonly _tag: "position"; readonly position: RememberedTimelinePosition };
+
 export interface ForkMessageLinkRequest {
-  /** As written in the link. Match rows with `isLinkedMessage`. */
-  readonly messageId: MessageId;
+  /** A message id is as written in the link. Match rows with `isLinkedMessage`. */
+  readonly target: ForkTimelineTarget;
+  /** New on each visit of a history entry. */
   readonly key: string;
   /** `scopedThreadKey` of the thread. The timeline still shows the last thread for a moment. */
   readonly threadKey: string;
   /** The thread caught up with the server, so a message that it lacks is older history. */
   readonly synced: boolean;
-  /** Drops the message from the address, so a remount does not scroll there again. */
-  readonly clear: () => void;
 }
 
 /** Room above the linked message, so it does not sit flush against the top edge. */
@@ -90,31 +97,16 @@ export function forkMessageLinkNavigation(messageId: MessageId | null | undefine
   };
 }
 
-/** `isThreadRoutePathname`, for the percent-encoded path of an id with `:` too. */
-function isRoutePathOf(pathname: string, threadRef: ScopedThreadRef): boolean {
-  const [, environmentId, threadId] = pathname.split("/");
-  try {
-    return (
-      environmentId !== undefined &&
-      threadId !== undefined &&
-      decodeURIComponent(environmentId) === threadRef.environmentId &&
-      decodeURIComponent(threadId) === threadRef.threadId
-    );
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Fork: the message that the location names in the route thread `threadRef`, while the
- * `messageLinks` setting of its environment is on. ChatView reads it and hands it to the timeline,
- * which also renders outside a router.
+ * Fork: the timeline target of the location in the route thread `threadRef`. A first visit of an
+ * entry opens the message in the address. A revisit returns to where the user left the entry, and
+ * `revisit` tells ChatView to skip a citation in the address too. ChatView hands the request to
+ * the timeline, which also renders outside a router.
  */
-export function useForkMessageLinkRequest(
-  threadRef: ScopedThreadRef | null,
-): ForkMessageLinkRequest | null {
-  const enabled = useForkMessageLinks(threadRef?.environmentId ?? null);
-  const navigate = useNavigate();
+export function useForkMessageLinkRequest(threadRef: ScopedThreadRef | null): {
+  readonly link: ForkMessageLinkRequest | null;
+  readonly revisit: boolean;
+} {
   const router = useRouter();
   // Primitives only: an object here is new on every router store update.
   const hash = useLocation({ select: (location) => location.hash });
@@ -122,30 +114,28 @@ export function useForkMessageLinkRequest(
   // names the next one.
   const pathname = useLocation({ select: (location) => location.pathname });
   const searchStr = useLocation({ select: (location) => location.searchStr });
-  const key = useLocation({
-    select: (location) => location.state.forkMessageLinkActivation ?? location.state.__TSR_key,
-  });
-  const routed = threadRef !== null && isRoutePathOf(pathname, threadRef);
-  const messageId = enabled && routed ? messageLinkFromLocation(hash, searchStr) : null;
-  const status = useThreadStatus(messageId === null ? null : threadRef);
-  if (messageId === null || threadRef === null) return null;
-  const clear = () => {
-    const location = router.state.location;
-    const search = new URLSearchParams(location.searchStr);
-    search.delete("message");
-    const query = search.toString();
-    void navigate({
-      href: `${location.pathname}${query ? `?${query}` : ""}`,
-      replace: true,
-      resetScroll: false,
-    });
-  };
+  const entryKey = useLocation({ select: (location) => location.state.__TSR_key ?? location.href });
+  const routed =
+    threadRef !== null && forkThreadKeyOfPath(router, pathname) === scopedThreadKey(threadRef);
+  const visit = routed ? forkHistoryVisit(entryKey) : null;
+  const messageId = visit && !visit.revisit ? messageLinkFromLocation(hash, searchStr) : null;
+  const target: ForkTimelineTarget | null = visit?.position
+    ? { _tag: "position", position: visit.position }
+    : messageId
+      ? { _tag: "message", messageId }
+      : null;
+  const status = useThreadStatus(target === null ? null : threadRef);
+  if (visit === null || target === null || threadRef === null) {
+    return { link: null, revisit: visit?.revisit ?? false };
+  }
   return {
-    messageId,
-    key: key ?? `${hash}${searchStr}`,
-    threadKey: scopedThreadKey(threadRef),
-    synced: status === "live",
-    clear,
+    link: {
+      target,
+      key: `${entryKey}:${visit.id}`,
+      threadKey: scopedThreadKey(threadRef),
+      synced: status === "live",
+    },
+    revisit: visit.revisit,
   };
 }
 
@@ -153,8 +143,26 @@ function rowMessageId(row: MessagesTimelineRow): string | null {
   return row.kind === "message" ? row.message.id : null;
 }
 
+/** The row that `target` scrolls to, or null while the timeline does not show it. */
+function targetRowId(
+  target: ForkTimelineTarget | null,
+  rows: ReadonlyArray<MessagesTimelineRow>,
+): string | null {
+  if (target === null) return null;
+  if (target._tag === "message") {
+    return (
+      rows.find((row) => {
+        const id = rowMessageId(row);
+        return id !== null && isLinkedMessage(target.messageId, id);
+      })?.id ?? null
+    );
+  }
+  if (target.position.atEnd) return rows.at(-1)?.id ?? null;
+  return rows.some((row) => row.id === target.position.rowId) ? target.position.rowId : null;
+}
+
 /**
- * Fork: scrolls the timeline to the message of `request`. A scroll, key or click from the user ends
+ * Fork: scrolls the timeline to the target of `request`. A scroll, key or click from the user ends
  * it at any step. A message that the thread does not have shows the note "Message not found".
  */
 export function useForkMessageLinkTarget({
@@ -194,22 +202,22 @@ export function useForkMessageLinkTarget({
   } | null>(null);
   const positioning = request !== null && finishedKey !== request.key;
   const key = positioning ? request.key : null;
-  const rowId = positioning
-    ? (rows.find((row) => {
-        const id = rowMessageId(row);
-        return id !== null && isLinkedMessage(request.messageId, id);
-      })?.id ?? null)
-    : null;
+  const target = positioning ? request.target : null;
+  const rowId = targetRowId(target, rows);
 
   const finish = useStableCallback((finished: string) => {
-    if (finishedKey === finished) return;
-    setFinishedKey(finished);
-    if (request?.key === finished) request.clear();
+    if (finishedKey !== finished) setFinishedKey(finished);
   });
 
   // Without a row yet, load history through the message or open the fold that hides it.
   useEffect(() => {
     if (!request || !positioning || rowId !== null || !listReady) return;
+    if (request.target._tag === "position") {
+      // The row of a left position is gone, so the timeline stays where it is.
+      finish(request.key);
+      return;
+    }
+    const { messageId } = request.target;
     if (progressRef.current?.key !== request.key) {
       progressRef.current = { key: request.key, requestedPages: new Set(), revealed: false };
       onManualNavigation();
@@ -217,7 +225,7 @@ export function useForkMessageLinkTarget({
     const progress = progressRef.current;
     const entry = foldInput.timelineEntries.find(
       (candidate: TimelineEntry) =>
-        candidate.kind === "message" && isLinkedMessage(request.messageId, candidate.message.id),
+        candidate.kind === "message" && isLinkedMessage(messageId, candidate.message.id),
     );
     const runId = entry ? timelineTurnFoldRunIdsByEntryId(foldInput).get(entry.id) : undefined;
     const attemptId = entry?.attempt?.status === "superseded" ? entry.attempt.id : undefined;
@@ -241,14 +249,18 @@ export function useForkMessageLinkTarget({
     });
     if (step === "missing") {
       finish(request.key);
-      toastManager.add({ type: "info", title: "Message not found" });
+      toastManager.add({
+        type: "info",
+        title: "Message not found",
+        description: "It was deleted, or the thread history no longer has it.",
+      });
     } else if (step === "expand") {
       progress.revealed = true;
       if (runId !== undefined) expandRun(runId);
       if (attemptId !== undefined) expandAttempt(attemptId);
     } else if (step === "load") {
       progress.requestedPages.add(cursor);
-      historyControls?.onLoadEarlier(request.messageId);
+      historyControls?.onLoadEarlier(linkedMessageLoadId(messageId));
     }
   }, [
     expandAttempt,
@@ -284,8 +296,10 @@ export function useForkMessageLinkTarget({
     };
   }, [finish, key, viewport]);
 
-  // Scroll the row near the top, then correct for measured row sizes until it holds still.
+  // Scroll the row into place, then correct for measured row sizes until it holds still.
   const historySettled = !historyLoading && historyControls?.loading !== true;
+  // The position object comes from the history store, so it is stable across renders.
+  const position = target?._tag === "position" ? target.position : null;
   useEffect(() => {
     const list = listRef.current;
     const scrollNode = list?.getScrollableNode();
@@ -311,16 +325,17 @@ export function useForkMessageLinkTarget({
         frame = requestAnimationFrame(settle);
         return;
       }
-      const offset = Math.max(
-        0,
-        Math.min(
-          scrollNode.scrollTop +
-            element.getBoundingClientRect().top -
-            scrollNode.getBoundingClientRect().top -
-            TOP_MARGIN_PX,
-          scrollNode.scrollHeight - scrollNode.clientHeight,
-        ),
-      );
+      const end = scrollNode.scrollHeight - scrollNode.clientHeight;
+      const rowTop =
+        scrollNode.scrollTop +
+        element.getBoundingClientRect().top -
+        scrollNode.getBoundingClientRect().top;
+      const offset = position?.atEnd
+        ? end
+        : Math.max(
+            0,
+            Math.min(rowTop + (position ? position.offsetWithinRow : -TOP_MARGIN_PX), end),
+          );
       if (Math.abs(scrollNode.scrollTop - offset) > 1) {
         stableFrames = 0;
         void list.scrollToOffset({ offset, animated: false }).then(() => {
@@ -334,21 +349,24 @@ export function useForkMessageLinkTarget({
         return;
       }
       stopped = true;
-      highlightRow(scrollNode.ownerDocument, rowId);
+      if (!position) highlightRow(scrollNode.ownerDocument, rowId);
       finish(key);
-      // ChatView's thread-open effect can run after the opt-out at the start.
-      onManualNavigation();
+      // ChatView's thread-open effect can run after the opt-out at the start. A position at the
+      // end keeps the follow, so new output stays in view.
+      if (!position?.atEnd) onManualNavigation();
     };
     const index = list.getState().indexByKey(rowId);
     void Promise.resolve(
-      index === undefined
-        ? undefined
-        : list.scrollToIndex({
-            index,
-            animated: false,
-            viewPosition: 0,
-            viewOffset: TOP_MARGIN_PX,
-          }),
+      position?.atEnd
+        ? list.scrollToEnd({ animated: false })
+        : index === undefined
+          ? undefined
+          : list.scrollToIndex({
+              index,
+              animated: false,
+              viewPosition: 0,
+              viewOffset: position ? -position.offsetWithinRow : TOP_MARGIN_PX,
+            }),
     ).then(() => {
       if (!stopped) frame = requestAnimationFrame(settle);
     });
@@ -356,7 +374,7 @@ export function useForkMessageLinkTarget({
       stopped = true;
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [finish, historySettled, key, listReady, listRef, onManualNavigation, rowId]);
+  }, [finish, historySettled, key, listReady, listRef, onManualNavigation, position, rowId]);
 
   return {
     positioning,

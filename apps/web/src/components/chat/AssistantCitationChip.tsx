@@ -53,6 +53,7 @@ export function AssistantCitationChip({
   const navigate = useNavigate();
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const commentPopupRef = useRef<HTMLDivElement>(null);
+  const commentTriggerRef = useRef<HTMLButtonElement>(null);
   const draftCommentRef = useRef<string | null>(null);
   const [unavailableSourceAnchor, setUnavailableSourceAnchor] =
     useState<AssistantCitationSourceAnchor | null>(null);
@@ -102,6 +103,17 @@ export function AssistantCitationChip({
           // text can end in their hidden overflow. Base UI only shifts the popup while
           // it still touches the anchor, so clamp the anchor to the message's width.
           const bounds = activeSourceAnchor.source.getBoundingClientRect();
+          // Text out of the timeline, or under the composer that floats over its bottom, would
+          // carry the card off screen or onto the composer; the chip holds it then.
+          const visible = activeSourceAnchor.viewport.getBoundingClientRect();
+          const trigger = commentTriggerRef.current;
+          const composerTop =
+            trigger?.closest('[data-chat-composer-stack="true"]')?.getBoundingClientRect().top ??
+            visible.bottom;
+          const visibleBottom = Math.min(visible.bottom, composerTop);
+          if ((rect.bottom <= visible.top || rect.top >= visibleBottom) && trigger) {
+            return trigger.getBoundingClientRect();
+          }
           const left = Math.min(Math.max(rect.left, bounds.left), bounds.right);
           const right = Math.max(Math.min(rect.right, bounds.right), left);
           return new DOMRect(left, rect.top, right - left, rect.height);
@@ -174,6 +186,7 @@ export function AssistantCitationChip({
           }}
         >
           <PopoverTrigger
+            ref={commentTriggerRef}
             aria-label={citation.comment ? "Edit citation comment" : "Add comment to citation"}
             data-citation-comment-trigger="true"
             render={<ContextChipAction />}
