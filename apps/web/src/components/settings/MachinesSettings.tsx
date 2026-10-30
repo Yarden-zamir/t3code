@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { ForkSettingsSlot } from "./ForkSettingsSlot";
 import type { MachineMapClientState } from "@t3tools/contracts";
 
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -46,20 +47,49 @@ const LINK_PROXY_TEXT = {
   checked: "link proxy checked",
 } as const;
 
+/** A reconnect note shows for this long after T3 ended a stuck connection. */
+const RESTART_NOTE_MS = 60 * 60 * 1000;
+
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+const relativeTime = (epochMs: number) => formatRelativeTimeLabel(new Date(epochMs).toISOString());
+
+/** The line about the status: why it is off, or why it reconnected. */
+function statusNote(connection: MachineMapClientState["connection"], nowMs: number): string | null {
+  if (connection.detail === null) return null;
+  if (connection.status !== "registered") return sentence(connection.detail);
+  const { restartedAt } = connection;
+  if (restartedAt === null || nowMs - restartedAt > RESTART_NOTE_MS) return null;
+  return `Reconnected ${relativeTime(restartedAt)}: ${connection.detail}`;
+}
+
 /** K-1611: the provider connection of this server and what kitshn gave it. */
 function ConnectionRow({ connection }: { connection: MachineMapClientState["connection"] }) {
-  const facts = [
-    `${connection.grants} grants`,
-    `${connection.reachedMachines} reached machines`,
-    LINK_PROXY_TEXT[connection.linkProxy],
-    connection.lastContactAt === null
-      ? "no answer from kitshn yet"
-      : `last answer from kitshn ${formatRelativeTimeLabel(new Date(connection.lastContactAt).toISOString())}`,
-  ];
+  // A minute tick keeps the relative times current and ends the reconnect note on time.
+  const nowMs = Date.parse(`${useNowMinute()}Z`);
+  // While off, this server does not talk to kitshn, so the contact facts say nothing.
+  const facts =
+    connection.status === "off"
+      ? []
+      : [
+          `${connection.grants} grants`,
+          `${connection.reachedMachines} reached machines`,
+          LINK_PROXY_TEXT[connection.linkProxy],
+          connection.lastContactAt === null
+            ? "no answer from kitshn yet"
+            : `last answer from kitshn ${relativeTime(connection.lastContactAt)}`,
+        ];
+  const factsLine = facts.length > 0 ? sentence(facts.join(" · ")) : null;
+  const title = connection.paused
+    ? "kitshn's emergency pause is on"
+    : STATUS_TITLE[connection.status];
+  const description = [statusNote(connection, nowMs), factsLine].filter(Boolean).join(". ");
   return (
     <SettingsRow
-      title={connection.paused ? "kitshn's emergency pause is on" : STATUS_TITLE[connection.status]}
-      description={[connection.detail, facts.join(" · ")].filter(Boolean).join(". ")}
+      title={title}
+      description={description}
+      copyActions={[
+        { label: "Copy status", value: [title, description].filter(Boolean).join(". ") },
+      ]}
     />
   );
 }

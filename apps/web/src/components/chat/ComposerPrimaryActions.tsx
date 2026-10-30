@@ -11,7 +11,7 @@ import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ShortcutHint } from "../focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import {
   alternateComposerDispatchAction,
@@ -127,7 +127,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   const renderStopGenerationButton = (insidePendingAction: boolean) => (
     <Tooltip key="interrupt">
-      <TooltipTrigger
+      <ShortcutTrigger
+        command="thread.stop"
         render={
           <button
             type="button"
@@ -147,7 +148,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
           <rect x="2" y="2" width="8" height="8" rx="1.5" />
         </svg>
-      </TooltipTrigger>
+      </ShortcutTrigger>
       <TooltipPopup>
         Interrupt
         <ShortcutHint command="thread.stop" />
@@ -358,7 +359,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   const submit = (
     <Tooltip key="submit">
-      <TooltipTrigger render={<span className="inline-flex" />}>{sendButton}</TooltipTrigger>
+      <ShortcutTrigger
+        command={isRunning && !isEditingQueuedMessage && canSteer ? "composer.sendAlternate" : null}
+        context={alternateShortcutContext ?? {}}
+        render={<span className="inline-flex" />}
+      >
+        {sendButton}
+      </ShortcutTrigger>
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );

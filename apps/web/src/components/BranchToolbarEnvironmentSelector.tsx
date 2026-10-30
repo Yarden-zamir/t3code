@@ -2,6 +2,7 @@ import { ComposerSelectControl } from "./chat/ComposerControl";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "./ui/tooltip";
 import { useAtomValue } from "@effect/atom-react";
+import { ShortcutTrigger } from "./focusLevels/ShortcutHint";
 import { shortcutLabelForCommand } from "../keybindings";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -102,7 +103,8 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       items={environmentItems}
     >
       <Tooltip>
-        <TooltipTrigger
+        <ShortcutTrigger
+          command="composer.host"
           render={
             <ComposerSelectControl
               size="xs"
@@ -124,7 +126,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
           <ComposerContextLabel>
             <SelectValue />
           </ComposerContextLabel>
-        </TooltipTrigger>
+        </ShortcutTrigger>
         <TooltipPopup>
           {autoEnvironmentLabel ?? activeEnvironment?.label ?? "Run on"}
           {shortcutLabel ? ` · ${shortcutLabel}` : null}

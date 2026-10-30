@@ -51,6 +51,7 @@ import { getActiveThemeFonts, subscribeToActiveThemeFonts } from "./forkThemeSty
 import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
 import { installContextMenuKeybindings } from "./keybindingsMenu";
+import { installObjectMenus } from "./objectMenu";
 import { startWorkspaceFocus } from "./lib/workspaceFocus";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
@@ -188,8 +189,9 @@ export function startAppServices(): AppRouter {
   startPreviewTitleRecording();
   startBrowserProfileReporting();
   installChatRouteCommands(router);
+  installObjectMenus();
   installContextMenuKeybindings((command) => {
-    void router.navigate({ to: "/settings/keybindings", search: { command } });
+    void router.navigate({ to: "/settings/keybindings", search: { command, add: true } });
   });
   installCommandPaletteCommands(router);
   registerOpenFavoriteEditorCommand();

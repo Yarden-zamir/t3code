@@ -1306,7 +1306,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             [
-              { id: "new-thread", label: "New thread", keybindingCommand: "chat.newLocal" },
+              // No key hint: `chat.newLocal` uses the project of the open thread, not this one.
+              { id: "new-thread", label: "New thread" },
               { id: "copy-path", label: "Copy path" },
               { id: "project-settings", label: "Project settings", icon: "settings" },
             ],

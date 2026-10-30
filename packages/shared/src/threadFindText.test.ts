@@ -103,6 +103,6 @@ it("indexes the citation chip label instead of its link text", () => {
   ]);
   const commented = serializeAssistantCitation({ ...citation, comment: "my note" });
   expect(searchableMessageSegments({ role: "user", text: commented, streaming: false })).toEqual([
-    "my note",
+    "cited needle · my note",
   ]);
 });

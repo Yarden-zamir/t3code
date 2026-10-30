@@ -1,5 +1,6 @@
 import { ChevronDownIcon, PaperclipIcon } from "lucide-react";
 
+import { ShortcutTooltip } from "../focusLevels/ShortcutHint";
 import { Button } from "../ui/button";
 
 export function WorkspaceFileDropOverlay() {
@@ -33,13 +34,20 @@ export function ScrollToEndButton(props: {
       className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
       style={{ bottom: props.bottom }}
     >
-      <Button
-        data-scroll-to-end="true"
-        onPointerDown={(event) => event.preventDefault()}
-        onClick={props.onScrollToEnd}
-        className="pointer-events-auto"
-        size="xs"
-        variant="glass"
+      <ShortcutTooltip
+        command="timeline.jumpToLatest"
+        label="Scroll to end"
+        side="top"
+        render={
+          <Button
+            data-scroll-to-end="true"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={props.onScrollToEnd}
+            className="pointer-events-auto"
+            size="xs"
+            variant="glass"
+          />
+        }
       >
         <ChevronDownIcon className="size-3.5" />
         Scroll to end
@@ -49,7 +57,7 @@ export function ScrollToEndButton(props: {
             {props.summary}
           </span>
         )}
-      </Button>
+      </ShortcutTooltip>
     </div>
   );
 }

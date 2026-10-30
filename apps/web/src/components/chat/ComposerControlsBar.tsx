@@ -22,7 +22,8 @@ import {
 } from "@t3tools/contracts";
 import type { EffortDisplay } from "@t3tools/contracts/settings";
 import { cn } from "~/lib/utils";
-import { shortcutLabelForCommand } from "../../keybindings";
+import { keybindingItemProps, shortcutLabelForCommand } from "../../keybindings";
+import { KEYBINDING_COMMAND_ATTRIBUTE } from "../../keybindingsMenu";
 import {
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
@@ -212,6 +213,16 @@ export function ComposerControlsBar(props: {
     size: composerControlsCollapsed ? "xs" : "sm",
     hidden: composerControlsHidden || traitsBlockHidden,
     extraMenuOwnsModeShortcut: effortOwnsModeShortcut,
+    effortKeybinding: {
+      label: shortcutLabelForCommand(keybindings, "composer.effort"),
+      props: {
+        ...keybindingItemProps(keybindings, "composer.effort"),
+        // The compact menu also holds the access mode, so its key opens this control too.
+        ...(effortOwnsModeShortcut
+          ? { [KEYBINDING_COMMAND_ATTRIBUTE]: "composer.effort composer.mode" }
+          : {}),
+      },
+    },
   });
   const restingBlockDefs = [
     ...(providerTraitsPicker

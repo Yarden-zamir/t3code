@@ -8,7 +8,7 @@ import { FolderPlusIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
-import { ShortcutHint } from "../focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { isTriagePrompt } from "~/hooks/useStartTriage";
@@ -349,7 +349,8 @@ export function DraftHeroHeadline({
   const orStartWithoutProject =
     scratchWorkspaceRoot !== null && !isScratchDraft && (hasResolvedProject || canChooseProject) ? (
       <Tooltip>
-        <TooltipTrigger
+        <ShortcutTrigger
+          command="chat.newWithoutProject"
           render={
             <InlineButton
               tone="muted"
@@ -365,7 +366,7 @@ export function DraftHeroHeadline({
           }
         >
           or start without a project
-        </TooltipTrigger>
+        </ShortcutTrigger>
         <TooltipPopup side="bottom">
           Start without a project
           <ShortcutHint command="chat.newWithoutProject" />

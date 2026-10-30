@@ -15,6 +15,7 @@ import {
 } from "@t3tools/shared/keybindings";
 
 import { formatShortcutLabel, shortcutKeyFromEvent } from "../../keybindings";
+import { FOCUS_LEVELS_OFF } from "../focusLevels/focusLevels";
 import { isMacPlatform } from "../../lib/utils";
 import { METRIC_OPTIONS, WINDOW_OPTIONS } from "../usage/usageShortcuts";
 
@@ -290,10 +291,60 @@ const isKeybindingCommand = Schema.is(KeybindingCommandSchema);
 export interface KeybindingsSearch {
   /** Shows only the bindings of this command. */
   readonly command?: KeybindingCommand;
+  /** Opens a new binding row for `command`, as the item menu "Keybindings…" does. */
+  readonly add?: true;
 }
 
 export function validateKeybindingsSearch(raw: Record<string, unknown>): KeybindingsSearch {
-  return isKeybindingCommand(raw.command) ? { command: raw.command } : {};
+  if (!isKeybindingCommand(raw.command)) return {};
+  return raw.add === true ? { command: raw.command, add: true } : { command: raw.command };
+}
+
+/** The condition of the default binding of `command`, the start of a new binding for it. */
+export function defaultWhenForCommand(command: KeybindingCommand): KeybindingWhenNode | undefined {
+  return DEFAULT_RESOLVED_KEYBINDINGS.find((binding) => binding.command === command)?.whenAst;
+}
+
+const FOCUS_LEVEL_VARIABLES: ReadonlySet<string> = new Set(Object.keys(FOCUS_LEVELS_OFF));
+
+/**
+ * True when no state can make `when` true while the focus level flags are false, so the binding
+ * fires only with keyboard focus levels on.
+ */
+export function needsFocusLevels(when: KeybindingWhenNode | undefined): boolean {
+  const identifiers = new Set<string>();
+  collectWhenIdentifiersFromNode(when, identifiers);
+  if (![...identifiers].some((identifier) => FOCUS_LEVEL_VARIABLES.has(identifier))) return false;
+  const free = [...identifiers].filter(
+    (identifier) =>
+      !FOCUS_LEVEL_VARIABLES.has(identifier) && identifier !== "true" && identifier !== "false",
+  );
+  // Conditions name a few variables, so trying every state stays cheap.
+  for (let state = 0; state < 2 ** free.length; state += 1) {
+    const context: Record<string, boolean> = { ...FOCUS_LEVELS_OFF, true: true, false: false };
+    free.forEach((identifier, index) => {
+      context[identifier] = (state & (2 ** index)) !== 0;
+    });
+    if (evaluateWhen(when, context)) return false;
+  }
+  return true;
+}
+
+function evaluateWhen(
+  node: KeybindingWhenNode | undefined,
+  context: Record<string, boolean>,
+): boolean {
+  if (!node) return true;
+  switch (node.type) {
+    case "identifier":
+      return context[node.name] === true;
+    case "not":
+      return !evaluateWhen(node.node, context);
+    case "and":
+      return evaluateWhen(node.left, context) && evaluateWhen(node.right, context);
+    case "or":
+      return evaluateWhen(node.left, context) || evaluateWhen(node.right, context);
+  }
 }
 
 export interface KeybindingRowFilter {

@@ -56,6 +56,14 @@ export function messageLinkFromLocation(hash: string, search: string): MessageId
   return message === null ? null : Option.getOrNull(decodeMessageId(message));
 }
 
+/** Fork: `href` without its message link, so a reload does not open the message again. */
+export function withoutMessageLink(href: string): string {
+  const url = new URL(href);
+  if (messageLinkFragmentId(url.hash.slice(1)) !== null) url.hash = "";
+  url.searchParams.delete("message");
+  return url.href;
+}
+
 export type MessageLinkStep = "wait" | "scroll" | "expand" | "load" | "missing";
 
 /** Fork: the next step of a client that opens a thread at a linked message. */

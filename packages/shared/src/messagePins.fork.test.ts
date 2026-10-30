@@ -1,6 +1,7 @@
 import {
   MESSAGE_PIN_EXCERPT_MAX,
   MESSAGE_PINS_MAX,
+  EnvironmentId,
   MessageId,
   ThreadId,
   type MessagePin,
@@ -8,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
+import { serializeAssistantCitation } from "./assistantCitations.ts";
 import {
   applyMessagePinsPatch,
   messagePinExcerpt,
@@ -89,6 +91,20 @@ describe("message pins", () => {
 
   it("keeps a short one-line excerpt", () => {
     expect(messagePinExcerpt("  Fix the\n\nbug  ")).toBe("Fix the bug");
+    const citation = serializeAssistantCitation({
+      version: 1,
+      environmentId: EnvironmentId.make("env"),
+      threadId: ThreadId.make("thread"),
+      messageId: MessageId.make("message"),
+      text: "the quote",
+      comment: "why",
+      start: 0,
+      end: 9,
+      prefix: "",
+      suffix: "",
+    });
+    const cited = `See ${citation} now`;
+    expect(messagePinExcerpt(cited)).toBe("See the quote Comment: why now");
     const excerpt = messagePinExcerpt("word ".repeat(100));
     expect(excerpt.length).toBeLessThanOrEqual(MESSAGE_PIN_EXCERPT_MAX);
     expect(excerpt.endsWith("…")).toBe(true);

@@ -23,8 +23,8 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ShortcutHint } from "../focusLevels/ShortcutHint";
+import { Tooltip, TooltipPopup } from "../ui/tooltip";
+import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
@@ -148,7 +148,8 @@ function SidebarUtilityItem({
   return (
     <SidebarMenuItem className="shrink-0">
       <Tooltip>
-        <TooltipTrigger
+        <ShortcutTrigger
+          command={command}
           render={
             <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
               {icon}

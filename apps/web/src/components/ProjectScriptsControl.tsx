@@ -16,7 +16,7 @@ import { ChevronDownIcon, DownloadIcon, PlusIcon, SettingsIcon, WrenchIcon } fro
 import React, { useState } from "react";
 
 import { commandForProjectScript, primaryProjectScript } from "~/projectScripts";
-import { shortcutLabelForCommand } from "~/keybindings";
+import { keybindingItemProps, shortcutLabelForCommand } from "~/keybindings";
 import { serverEnvironment } from "~/state/server";
 import { readEnvironmentScope } from "~/state/session";
 import {
@@ -194,6 +194,7 @@ export default function ProjectScriptsControl({
             density={presentation === "menu" ? "touch" : "default"}
             key={script.id}
             className="group"
+            {...keybindingItemProps(keybindings, commandForProjectScript(script.id))}
             disabled={!onRunScript}
             onClick={() => onRunScript?.(script)}
           >
@@ -270,6 +271,7 @@ export default function ProjectScriptsControl({
             <MenuItem
               density={presentation === "menu" ? "touch" : "default"}
               disabled={!onRunScript}
+              {...keybindingItemProps(keybindings, commandForProjectScript(primaryScript.id))}
               onClick={() => onRunScript?.(primaryScript)}
             >
               <ScriptIcon icon={primaryScript.icon} className="size-4" />

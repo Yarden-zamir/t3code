@@ -95,7 +95,7 @@ import {
   ThreadSearchPullRequestNumber,
 } from "../ThreadStatusIndicators";
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
-import { ShortcutHint } from "../focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import { resolveThreadCardInfo } from "@t3tools/client-runtime/thread-card-info";
 import { slotLayoutHeightPx } from "../SlotLayoutView";
 import {
@@ -1098,7 +1098,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const pinIndicator = showPin ? (
     props.pinningSupported && canOperateThread && !sortable?.isDragging ? (
       <Tooltip>
-        <TooltipTrigger
+        <ShortcutTrigger
+          command={props.isActive ? "thread.pin" : null}
           render={
             <button
               type="button"
@@ -1116,7 +1117,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             aria-hidden
             className="hidden size-3 shrink-0 group-hover/unpin:block group-focus-visible/unpin:block"
           />
-        </TooltipTrigger>
+        </ShortcutTrigger>
         <TooltipPopup>
           Unpin thread
           <ShortcutHint command={props.isActive ? "thread.pin" : null} />
@@ -1234,7 +1235,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           ) : null}
           {props.settlementSupported ? (
             <Tooltip>
-              <TooltipTrigger
+              <ShortcutTrigger
+                command={props.isActive ? "thread.settle" : null}
                 render={
                   <button
                     type="button"
@@ -1247,7 +1249,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               >
                 <CheckIcon className="size-3.5" />
                 Settle
-              </TooltipTrigger>
+              </ShortcutTrigger>
               <TooltipPopup>
                 Settle thread
                 <ShortcutHint command={props.isActive ? "thread.settle" : null} />
@@ -1464,7 +1466,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     )
                   ) : !props.settlementSupported ? null : variantAction === "unsettle" ? (
                     <Tooltip>
-                      <TooltipTrigger
+                      <ShortcutTrigger
+                        command={props.isActive ? "thread.settle" : null}
                         render={
                           <button
                             type="button"
@@ -1479,7 +1482,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         }
                       >
                         <Undo2Icon className="mb-px size-3.5" />
-                      </TooltipTrigger>
+                      </ShortcutTrigger>
                       <TooltipPopup side="top">
                         Un-settle thread
                         <ShortcutHint command={props.isActive ? "thread.settle" : null} />

@@ -1,5 +1,6 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { CheckIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
+import { useState } from "react";
 import type * as React from "react";
 
 import { cn } from "~/lib/utils";
@@ -17,6 +18,103 @@ function MenuTrigger({ className, children, ...props }: MenuPrimitive.Trigger.Pr
   );
 }
 
+/** The one entry of an item's own menu, such as "Keybindings…". */
+export type MenuItemMenuEntry = {
+  readonly label: string;
+  readonly icon: React.ReactNode;
+  readonly run: () => void;
+};
+
+/**
+ * How the app gives menu items their own menu. The app sets it once (`configureMenuItemMenus`),
+ * so this primitive stays free of app code. Without it, items have no item menu.
+ */
+export type MenuItemMenus = {
+  /** Matches every item that has an item menu, for the pointer hit test. */
+  readonly selector: string;
+  /** The item at or around `target` and its entries, or null. */
+  readonly find: (target: EventTarget | null) => {
+    readonly element: HTMLElement;
+    readonly entries: readonly MenuItemMenuEntry[];
+  } | null;
+  readonly isOpenKey: (event: Pick<KeyboardEvent, "key" | "shiftKey">) => boolean;
+  /** Runs after a key opened an item menu. */
+  readonly onOpenByKey: () => void;
+};
+
+let itemMenus: MenuItemMenus | null = null;
+
+function configureMenuItemMenus(next: MenuItemMenus): void {
+  itemMenus = next;
+}
+
+type ItemMenuRequest = {
+  readonly entries: readonly MenuItemMenuEntry[];
+  readonly item: HTMLElement;
+  /** A pointer opens the menu at the pointer, a key at the item with its entry highlighted. */
+  readonly point: { x: number; y: number } | null;
+};
+
+/**
+ * The menu of one menu item, nested in the menu of the item, so that menu stays open. Escape
+ * closes only this menu and gives focus back to the item.
+ */
+function ItemMenu({ request, onClose }: { request: ItemMenuRequest; onClose: () => void }) {
+  const { point, item, entries } = request;
+  const anchor =
+    point === null
+      ? item
+      : { getBoundingClientRect: () => DOMRect.fromRect({ ...point, width: 0, height: 0 }) };
+  return (
+    <MenuSub
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <MenuPopup
+        anchor={anchor}
+        align="start"
+        side={point === null ? "inline-end" : "bottom"}
+        sideOffset={0}
+        layer="context"
+        finalFocus={() => (item.isConnected ? item : false)}
+        // Base UI leaves focus in the parent menu, whose Escape would close both menus.
+        ref={(element) => {
+          if (point !== null) element?.focus({ preventScroll: true });
+        }}
+      >
+        {entries.map((entry, index) => (
+          <MenuItem
+            key={entry.label}
+            ref={(element) => {
+              // Base UI highlights the item that has focus, so Enter runs it.
+              if (point === null && index === 0) element?.focus({ preventScroll: true });
+            }}
+            onClick={entry.run}
+          >
+            {entry.icon}
+            {entry.label}
+          </MenuItem>
+        ))}
+      </MenuPopup>
+    </MenuSub>
+  );
+}
+
+/** Disabled items ignore the pointer, so the popup finds the item under it. */
+function itemWithMenuAt(
+  popup: HTMLElement,
+  selector: string,
+  x: number,
+  y: number,
+): HTMLElement | undefined {
+  return [...popup.querySelectorAll<HTMLElement>(selector)].find((element) => {
+    const rect = element.getBoundingClientRect();
+    return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+  });
+}
+
 function MenuPopup({
   children,
   className,
@@ -28,6 +126,8 @@ function MenuPopup({
   keepMounted = false,
   width = "default",
   layer = "default",
+  onContextMenu,
+  onKeyDown,
   ...props
 }: MenuPrimitive.Popup.Props & {
   align?: MenuPrimitive.Positioner.Props["align"];
@@ -40,6 +140,7 @@ function MenuPopup({
   /** `context` draws above tooltips and preview cards, like a system context menu. */
   layer?: "default" | "context";
 }) {
+  const [itemMenu, setItemMenu] = useState<ItemMenuRequest | null>(null);
   return (
     <MenuPrimitive.Portal keepMounted={keepMounted}>
       <MenuPrimitive.Positioner
@@ -63,8 +164,48 @@ function MenuPopup({
           )}
           data-slot="menu-popup"
           {...props}
+          onContextMenu={(event) => {
+            onContextMenu?.(event);
+            // React passes the event through a submenu portal to the parent popup, which would
+            // match its own item under the pointer.
+            event.stopPropagation();
+            if (itemMenus === null) return;
+            const { selector, find } = itemMenus;
+            const found = find(
+              itemWithMenuAt(event.currentTarget, selector, event.clientX, event.clientY) ?? null,
+            );
+            if (found === null) return;
+            event.preventDefault();
+            setItemMenu({
+              entries: found.entries,
+              item: found.element,
+              point: { x: event.clientX, y: event.clientY },
+            });
+          }}
+          onKeyDown={(event) => {
+            onKeyDown?.(event);
+            if (
+              itemMenus === null ||
+              !itemMenus.isOpenKey(event) ||
+              !event.currentTarget.contains(event.target as Node)
+            )
+              return;
+            const found = itemMenus.find(event.target);
+            if (found === null) return;
+            event.preventDefault();
+            event.stopPropagation();
+            itemMenus.onOpenByKey();
+            setItemMenu({ entries: found.entries, item: found.element, point: null });
+          }}
         >
           <div className="max-h-(--available-height) w-full overflow-y-auto p-1">{children}</div>
+          {itemMenu === null ? null : (
+            <ItemMenu
+              key={`${itemMenu.entries[0]?.label}:${itemMenu.point?.x}:${itemMenu.point?.y}`}
+              request={itemMenu}
+              onClose={() => setItemMenu(null)}
+            />
+          )}
         </MenuPrimitive.Popup>
       </MenuPrimitive.Positioner>
     </MenuPrimitive.Portal>
@@ -368,6 +509,7 @@ function MenuSubPopup({
 }
 
 export {
+  configureMenuItemMenus,
   Menu,
   Menu as DropdownMenu,
   MenuTrigger,

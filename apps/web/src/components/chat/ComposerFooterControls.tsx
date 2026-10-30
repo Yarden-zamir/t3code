@@ -12,7 +12,7 @@ import type { ContextWindowSnapshot } from "../../lib/contextWindow";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ShortcutHint } from "../focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { focusRequestedPermission, useComposerMenuProps } from "./composerEventScope";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
@@ -105,7 +105,8 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
       }
     >
       <Tooltip>
-        <TooltipTrigger
+        <ShortcutTrigger
+          command="composer.mode"
           render={
             <MenuTrigger
               render={
@@ -133,7 +134,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
           >
             {runtimeModeOption.label}
           </span>
-        </TooltipTrigger>
+        </ShortcutTrigger>
         <TooltipPopup side="top">
           {permissionsTooltip}
           <ShortcutHint command="composer.mode" />

@@ -1,8 +1,11 @@
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 
-interface PanelTabCloseButtonProps {
+interface PanelTabCloseButtonProps extends Omit<
+  ComponentProps<"button">,
+  "children" | "onClick" | "type" | "className"
+> {
   children: ReactNode;
   label: string;
   onClick: () => void;
@@ -14,9 +17,11 @@ export function PanelTabCloseButton({
   label,
   onClick,
   tooltip,
+  ...props
 }: PanelTabCloseButtonProps) {
   const button = (
     <button
+      {...props}
       type="button"
       className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
       aria-label={label}

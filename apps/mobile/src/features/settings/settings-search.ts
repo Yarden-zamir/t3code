@@ -88,6 +88,9 @@ const SETTINGS_SEARCH_TERMS = {
   SettingsAbout: [
     "version",
     "diagnostics",
+    "sync timings",
+    "slow sync",
+    "crash reports",
     "client storage",
     "cache",
     "legal",

@@ -21,6 +21,7 @@ import {
 } from "./ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { useAtomValue } from "@effect/atom-react";
+import { ShortcutTrigger } from "./focusLevels/ShortcutHint";
 import { shortcutLabelForCommand } from "../keybindings";
 import { primaryServerKeybindingsAtom } from "../state/server";
 
@@ -117,7 +118,8 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       items={envModeItems}
     >
       <Tooltip>
-        <TooltipTrigger
+        <ShortcutTrigger
+          command="composer.workspace"
           render={
             <ComposerSelectControl
               size="xs"
@@ -139,7 +141,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
           <ComposerContextLabel>
             <SelectValue />
           </ComposerContextLabel>
-        </TooltipTrigger>
+        </ShortcutTrigger>
         <TooltipPopup>
           {effectiveEnvMode === "worktree"
             ? resolveEnvModeLabel("worktree")

@@ -1,4 +1,5 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
+import { showObjectMenu } from "../../objectMenu";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode, useLayoutEffect } from "react";
@@ -136,6 +137,14 @@ export function SidebarSectionHeader(props: {
         tabIndex={-1}
         data-sidebar-row={`shelf:${shelf}`}
         onClick={props.toggle.onToggle}
+        onContextMenu={(event) =>
+          showObjectMenu(event, [
+            {
+              label: props.toggle.expanded ? `Hide ${props.label}` : `Show ${props.label}`,
+              run: props.toggle.onToggle,
+            },
+          ])
+        }
         expanded={props.toggle.expanded}
         tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
         data-testid={`sidebar-${shelf}-shelf-toggle`}

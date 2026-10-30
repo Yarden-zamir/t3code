@@ -31,6 +31,8 @@ export function AssistantSelectionToolbar({
   const [selection, setSelection] = useState<{
     citation: AssistantCitation;
     position: SelectionActionPoint;
+    /** The top of the first selected line, where the button goes when it cannot go below. */
+    selectionTop: number;
     sourceAnchor: AssistantCitationSourceAnchor;
   } | null>(null);
   const toolbarRef = useRef<HTMLButtonElement>(null);
@@ -41,8 +43,32 @@ export function AssistantSelectionToolbar({
     const toolbar = toolbarRef.current;
     if (!toolbar || !selection) return;
     const rect = toolbar.getBoundingClientRect();
-    toolbar.style.left = `${Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8))}px`;
-    toolbar.style.top = `${Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8))}px`;
+    const left = Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8));
+    let top = Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8));
+    // The composer and the "Scroll to end" pill float over the bottom of the timeline. Above the
+    // selection the button can still meet the pill, so it moves up past each blocker it meets.
+    const blockers = [
+      ...document.querySelectorAll('[data-chat-composer-stack="true"], [data-scroll-to-end]'),
+    ].map((element) => element.getBoundingClientRect());
+    const blockerAt = (candidateTop: number) =>
+      blockers.find(
+        (blocker) =>
+          left < blocker.right &&
+          left + rect.width > blocker.left &&
+          candidateTop < blocker.bottom &&
+          candidateTop + rect.height > blocker.top,
+      );
+    if (blockerAt(top)) {
+      top = selection.selectionTop - rect.height - 4;
+      for (let tries = 0; tries < blockers.length; tries += 1) {
+        const blocker = blockerAt(top);
+        if (!blocker) break;
+        top = blocker.top - rect.height - 4;
+      }
+      top = Math.max(8, top);
+    }
+    toolbar.style.left = `${left}px`;
+    toolbar.style.top = `${top}px`;
   }, [selection]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to document selectionchange and keydown to track text selections in the viewport
@@ -120,6 +146,10 @@ export function AssistantSelectionToolbar({
             pointer.y <= line.bottom + 8,
         );
       setSelection({
+        // The first line can be scrolled out of view; the top of the visible text is the anchor.
+        selectionTop:
+          Array.from(rects).find((line) => isSelectionRectVisible(line, [viewportRect]))?.top ??
+          rect.top,
         sourceAnchor: { source: captured.source, range: captured.range, viewport },
         citation: {
           version: 1,

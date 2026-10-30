@@ -21,7 +21,9 @@ import { type ReactNode, useContext, useRef, useState } from "react";
 import { Atom } from "effect/reactivity";
 import { Linking, Pressable, View } from "react-native";
 
+import { LongPressMenu } from "../../components/LongPressMenu";
 import { AppText as Text } from "../../components/ui/AppText";
+import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
@@ -82,53 +84,65 @@ function WindowRow(props: {
       <View style={{ flex: 100 - remaining }} />
     </View>
   );
+  const usageLine = [`${window.label}: ${remaining}% left`, resetsIn].filter(Boolean).join(" · ");
   return (
-    <View className="gap-1">
-      <View className="flex-row items-baseline justify-between gap-3">
-        <Text className="text-sm text-foreground">{window.label}</Text>
-        <Text className="text-sm font-t3-medium tabular-nums text-foreground">
-          {remaining}% left
-        </Text>
-      </View>
-      <View
-        className="h-3 justify-center"
-        onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}
-      >
-        {tickX === null ? (
-          bar
-        ) : (
-          <View className="h-1.5">
-            {/* Clip the same full-width bar so neither fill proportions nor corner radii change. */}
-            {(
-              [
-                [0, tickX - 3],
-                [tickX + 3, barWidth],
-              ] as const
-            ).map(([start, end]) => (
-              <View
-                key={start}
-                className="absolute top-0 bottom-0 overflow-hidden"
-                style={{ left: start, width: end - start }}
-              >
-                <View style={{ marginLeft: -start }}>{bar}</View>
-              </View>
-            ))}
+    <LongPressMenu
+      entries={[
+        {
+          id: "copy-usage",
+          title: "Copy usage",
+          image: "doc.on.doc",
+          run: () => void tryCopyTextWithHaptic(usageLine, { target: "usage" }),
+        },
+      ]}
+    >
+      <View className="gap-1">
+        <View className="flex-row items-baseline justify-between gap-3">
+          <Text className="text-sm text-foreground">{window.label}</Text>
+          <Text className="text-sm font-t3-medium tabular-nums text-foreground">
+            {remaining}% left
+          </Text>
+        </View>
+        <View
+          className="h-3 justify-center"
+          onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}
+        >
+          {tickX === null ? (
+            bar
+          ) : (
+            <View className="h-1.5">
+              {/* Clip the same full-width bar so neither fill proportions nor corner radii change. */}
+              {(
+                [
+                  [0, tickX - 3],
+                  [tickX + 3, barWidth],
+                ] as const
+              ).map(([start, end]) => (
+                <View
+                  key={start}
+                  className="absolute top-0 bottom-0 overflow-hidden"
+                  style={{ left: start, width: end - start }}
+                >
+                  <View style={{ marginLeft: -start }}>{bar}</View>
+                </View>
+              ))}
+            </View>
+          )}
+          {tickX !== null ? (
+            <View
+              className="absolute top-px bottom-px w-0.5 rounded-full bg-foreground"
+              style={{ left: tickX - 1 }}
+            />
+          ) : null}
+        </View>
+        {pace || resetsIn ? (
+          <View className="flex-row justify-between gap-3">
+            <Text className="text-xs text-foreground-tertiary">{pace ? PACE_LABEL[pace] : ""}</Text>
+            <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn ?? ""}</Text>
           </View>
-        )}
-        {tickX !== null ? (
-          <View
-            className="absolute top-px bottom-px w-0.5 rounded-full bg-foreground"
-            style={{ left: tickX - 1 }}
-          />
         ) : null}
       </View>
-      {pace || resetsIn ? (
-        <View className="flex-row justify-between gap-3">
-          <Text className="text-xs text-foreground-tertiary">{pace ? PACE_LABEL[pace] : ""}</Text>
-          <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn ?? ""}</Text>
-        </View>
-      ) : null}
-    </View>
+    </LongPressMenu>
   );
 }
 

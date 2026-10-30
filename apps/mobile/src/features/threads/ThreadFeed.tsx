@@ -1815,18 +1815,20 @@ function renderFeedEntry(
         {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
       >
         {renderedText.trim().length > 0 ? (
-          <MarkdownImageAvailableWidthContext value={props.markdownContentWidth}>
-            <AssistantMarkdownContent
-              markdown={renderedText}
-              environmentId={props.environmentId}
-              threadId={props.threadId}
-              markdownStyles={styles}
-              linkHandlers={props.markdownLinkHandlers}
-              onUseArtifactTemplate={props.onUseArtifactTemplate}
-              renderImage={props.renderMarkdownImage}
-              skills={props.skills}
-            />
-          </MarkdownImageAvailableWidthContext>
+          <View>
+            <MarkdownImageAvailableWidthContext value={props.markdownContentWidth}>
+              <AssistantMarkdownContent
+                markdown={renderedText}
+                environmentId={props.environmentId}
+                threadId={props.threadId}
+                markdownStyles={styles}
+                linkHandlers={props.markdownLinkHandlers}
+                onUseArtifactTemplate={props.onUseArtifactTemplate}
+                renderImage={props.renderMarkdownImage}
+                skills={props.skills}
+              />
+            </MarkdownImageAvailableWidthContext>
+          </View>
         ) : null}
         <MessageAttachmentList
           attachments={attachments}

@@ -7,6 +7,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 
+import { OBJECT_MENU_ATTRIBUTE } from "../../objectMenu";
 import type { DraftId } from "../../composerDraftStore";
 import { useT3ProjectFileScripts } from "../../hooks/useT3ProjectFileScripts";
 import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
@@ -128,14 +129,16 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
         .map((item) => item.id)
         .join(",")}
       onContextMenu={(event) => {
-        // Popups the card opens bubble here through React; they, fields, links, and selected text
-        // keep their own menus.
+        // Popups the card opens bubble here through React; they, fields, links, objects with their
+        // own menu (`objectMenu.ts`) and selected text keep their own menus.
         const target = event.target;
         const selection = window.getSelection();
         if (
           !(target instanceof Element) ||
           !event.currentTarget.contains(target) ||
-          target.closest("input, textarea, [contenteditable], a[href]") ||
+          target.closest(
+            `input, textarea, [contenteditable], a[href], [${OBJECT_MENU_ATTRIBUTE}]`,
+          ) ||
           (selection &&
             !selection.isCollapsed &&
             (event.currentTarget.contains(selection.anchorNode) ||

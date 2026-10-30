@@ -1,4 +1,5 @@
 import { InfoIcon } from "lucide-react";
+import { objectMenuActionsProps, objectMenuProps } from "../../objectMenu";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "../ui/button";
@@ -149,6 +150,16 @@ function NoticeCard({
       detached={detached}
       density="comfortable"
       data-chat-composer-collapsed-controls="true"
+      {...objectMenuProps([
+        typeof item.title === "string"
+          ? {
+              label: "Copy text",
+              value: [item.title, typeof item.description === "string" ? item.description : ""]
+                .filter(Boolean)
+                .join(" · "),
+            }
+          : null,
+      ])}
     >
       <ComposerBanner.Row layout="wrap-actions">
         <ComposerBanner.Icon className="h-(--composer-banner-icon-column) self-start">
@@ -179,7 +190,7 @@ function NoticeCard({
           ) : null}
         </ComposerBanner.Content>
         {item.actions || item.onDismiss ? (
-          <ComposerBanner.Actions>
+          <ComposerBanner.Actions {...objectMenuActionsProps}>
             {item.actions}
             {item.onDismiss ? (
               <ComposerBanner.Dismiss

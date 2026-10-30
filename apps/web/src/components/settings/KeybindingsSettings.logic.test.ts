@@ -9,9 +9,11 @@ import { resolveShortcutCommand } from "../../keybindings";
 
 import {
   buildKeybindingRows,
+  defaultWhenForCommand,
   filterKeybindingRows,
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
+  needsFocusLevels,
   parseWhenExpressionDraft,
   shortcutToKeybindingInput,
   validateKeybindingsSearch,
@@ -299,5 +301,29 @@ describe("KeybindingsSettings.logic", () => {
     });
     expect(validateKeybindingsSearch({ command: "thread.unknown" })).toEqual({});
     expect(validateKeybindingsSearch({ command: 3 })).toEqual({});
+    expect(validateKeybindingsSearch({ command: "thread.rename", add: true })).toEqual({
+      command: "thread.rename",
+      add: true,
+    });
+    expect(validateKeybindingsSearch({ add: true })).toEqual({});
+  });
+
+  it("starts a new binding with the condition of the default binding", () => {
+    expect(whenAstToExpression(defaultWhenForCommand("thread.pin"))).toBe("!terminalFocus");
+    expect(defaultWhenForCommand("composer.cycleHost")).toBeUndefined();
+  });
+
+  it("marks a condition that only a focus level can make true", () => {
+    const when = (expression: string) => {
+      const parsed = parseWhenExpressionDraft(expression);
+      if (!parsed.ok) throw new Error(parsed.message);
+      return parsed.value;
+    };
+    expect(needsFocusLevels(when("sidebarFocus || timelineFocus"))).toBe(true);
+    expect(needsFocusLevels(when("sidebarFocus && !terminalFocus"))).toBe(true);
+    expect(needsFocusLevels(when("sidebarFocus || terminalFocus"))).toBe(false);
+    expect(needsFocusLevels(when("!sidebarFocus"))).toBe(false);
+    expect(needsFocusLevels(when("terminalFocus"))).toBe(false);
+    expect(needsFocusLevels(undefined)).toBe(false);
   });
 });

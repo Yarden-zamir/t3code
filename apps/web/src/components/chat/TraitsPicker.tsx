@@ -7,6 +7,7 @@ import {
   REASONING_SELECT_DESCRIPTOR_IDS,
   ULTRATHINK_PROMPT_PREFIX,
 } from "@t3tools/client-runtime/model-traits";
+import type { EffortKeybinding } from "./composerProviderState";
 import {
   type ModelSelection,
   type ProviderDriverKind,
@@ -327,6 +328,7 @@ interface TraitsMenuContentProps {
   extraMenuOwnsModeShortcut?: boolean;
   /** Extra tooltip text naming what else the menu holds. */
   extraMenuHint?: string;
+  effortKeybinding?: EffortKeybinding;
 }
 
 export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
@@ -546,6 +548,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   extraMenuContent,
   extraMenuOwnsModeShortcut,
   extraMenuHint,
+  effortKeybinding,
   size = "sm",
   hidden = false,
   disabled = false,
@@ -633,6 +636,7 @@ export const TraitsPicker = memo(function TraitsPicker({
     >
       <Tooltip>
         <TooltipTrigger
+          {...(isComposerOwned ? effortKeybinding?.props : {})}
           render={
             <MenuTrigger
               render={
@@ -728,7 +732,10 @@ export const TraitsPicker = memo(function TraitsPicker({
             </>
           )}
         </TooltipTrigger>
-        <TooltipPopup side="top">{triggerDescription}</TooltipPopup>
+        <TooltipPopup side="top">
+          {triggerDescription}
+          {isComposerOwned && effortKeybinding?.label ? ` · ${effortKeybinding.label}` : null}
+        </TooltipPopup>
       </Tooltip>
       <MenuPopup align="start" {...(isComposerOwned ? composerFloatingLayerProps : {})}>
         <TraitsMenuContent
