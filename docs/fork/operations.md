@@ -398,7 +398,7 @@ To undo the part of the portal, run the script with `--undo`. It puts the host b
 CLOUDFLARE_HANDOVER_TOKEN_FILE=<token file> node scripts/fork-host-handover.ts mac --undo
 ```
 
-T3 no longer runs a portal tunnel. A server that took its tunnel host from `machine-map-tunnel.json` needs `T3CODE_TUNNEL_PAIRING_URL` in its environment instead (step 4 of the Oracle VPS setup).
+T3 no longer runs a portal tunnel or reads `machine-map-tunnel.json`; kitshn names and serves the host. `T3CODE_TUNNEL_PAIRING_URL` is optional: guest links use its host when T3 Connect does not serve the machine, and `t3 pair` prints links on it. Without it, a server has no guest links and `t3 pair` prints its local address.
 
 Do not remove a handed-over machine in the portal. The portal then deletes the DNS record that it made, and kitshn uses that record now.
 
