@@ -161,6 +161,37 @@ export function MobileNewThreadProjectSettingsRow() {
   );
 }
 
+export function MobileWarmRecentChatsSettingsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["mobileWarmRecentChats"]);
+  const fallback = DEFAULT_SERVER_SETTINGS.mobileWarmRecentChats;
+  return (
+    <SettingsRow
+      {...searchableSetting("mobile-warm-recent-chats")}
+      serverScoped
+      settingKeys={["mobileWarmRecentChats"]}
+      description="After the thread list syncs, the mobile app loads the newest threads into its message cache, so they open without a wait."
+      resetAction={
+        mixed || settings.mobileWarmRecentChats !== fallback ? (
+          <SettingResetButton
+            label="warm recent chats on mobile"
+            onClick={() => updateSettings({ mobileWarmRecentChats: fallback })}
+          />
+        ) : null
+      }
+      control={
+        <ScopedSwitch
+          settingKeys={["mobileWarmRecentChats"]}
+          checked={settings.mobileWarmRecentChats}
+          onCheckedChange={(checked) => updateSettings({ mobileWarmRecentChats: Boolean(checked) })}
+          aria-label="Warm recent chats on mobile"
+        />
+      }
+    />
+  );
+}
+
 export function MobileSidebarTabsSettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();

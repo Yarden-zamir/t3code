@@ -175,6 +175,7 @@ const FORK_SETTING_GROUPS = [
       { ids: ["mobile-composer-camera"], place: "appearance-mobile-app" },
       { ids: ["mobile-message-pins"], place: "appearance-mobile-app" },
       { ids: ["mobile-sidebar-tabs"], place: "appearance-mobile-app" },
+      { ids: ["mobile-warm-recent-chats"], place: "appearance-mobile-app" },
       { ids: ["storage-worktree-path-template"], place: "worktrees-creation" },
       {
         ids: ["storage-worktrees-location"],

@@ -168,6 +168,13 @@ export const APPEARANCE_ITEMS = [
     environmentOnly: true,
   },
   {
+    id: "mobile-warm-recent-chats",
+    title: "Warm recent chats on mobile",
+    to: "/settings/appearance",
+    searchTerms: ["mobile phone android app cache prefetch preload offline recent chats messages"],
+    environmentOnly: true,
+  },
+  {
     id: "back-forward-buttons",
     title: "Back and forward buttons",
     to: "/settings/appearance",

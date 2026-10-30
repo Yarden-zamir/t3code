@@ -12,6 +12,7 @@ import { environmentCatalog } from "../connection/catalog";
 import { runtime } from "../lib/runtime";
 import { MobileDatabase } from "../persistence/mobile-database";
 import { appAtomRegistry } from "./atom-registry";
+import { environmentServerConfigsAtom } from "./server";
 import { environmentShell } from "./shell";
 import { environmentThreads } from "./threads";
 
@@ -23,7 +24,8 @@ type WarmupOutcome = "success" | "failure" | "interrupted";
 /**
  * Loads the newest threads of each environment into the message cache after its thread list
  * is live. It mounts the same thread state atom that an opened thread mounts, one thread and
- * one environment at a time, after no thread synchronizes, and stops in the background.
+ * one environment at a time, after no thread synchronizes, and stops in the background. The
+ * server setting `mobileWarmRecentChats` of each environment turns it off.
  */
 export function installCacheWarmup(): () => void {
   let foreground = AppState.currentState === "active";
@@ -60,6 +62,8 @@ export function installCacheWarmup(): () => void {
     });
 
   const warmEnvironment = async (environmentId: EnvironmentId, started: number) => {
+    const config = appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId);
+    if (config?.settings.mobileWarmRecentChats !== true) return;
     const shell = appAtomRegistry.get(environmentShell.stateValueAtom(environmentId));
     const threads = Option.match(shell.snapshot, {
       onNone: () => [],

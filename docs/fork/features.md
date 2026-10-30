@@ -118,7 +118,7 @@ Before, only a chat that was opened on the phone had cached messages. Now, when 
 - The app loads the 10 newest chats and every chat with unread or running work, at most 15 per environment. Each chat loads the same latest window that an opened chat loads.
 - It loads one chat and one environment at a time, and only when no chat synchronizes. The open chat always comes first.
 - It skips a chat whose cache was saved after the chat last changed. It stops when the app goes to the background, and starts again when the chat list is live again.
-- **Setting:** none.
+- **Setting:** server setting `mobileWarmRecentChats` (on by default). Mobile Settings > Fork > "Warm recent chats", or T3 Settings > Appearance > Mobile app. When it is off for an environment, no warm-up runs there.
 - **Works on:** mobile.
 - **Limits:** each chat costs the server one thread snapshot and one subscription, the same as an opened chat. The cache check compares the phone clock with the server clock, so a phone clock that runs ahead can skip a chat that changed. That chat then loads when it opens, as before.
 
