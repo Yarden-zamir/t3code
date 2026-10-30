@@ -118,6 +118,9 @@ const ITEM_ATTRIBUTE = "data-keybinding-item";
 function onPopupContextMenu(items: readonly ContextMenuItem[]) {
   return (event: MouseEvent<HTMLElement>) => {
     event.preventDefault();
+    // React passes the event through the submenu portal to the parent popup, which would match
+    // its own item under the pointer.
+    event.stopPropagation();
     const target = [
       ...event.currentTarget.querySelectorAll<HTMLElement>(`[${ITEM_ATTRIBUTE}]`),
     ].find((element) => {
