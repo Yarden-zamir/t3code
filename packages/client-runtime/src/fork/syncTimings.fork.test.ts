@@ -78,6 +78,7 @@ describe("syncTimings", () => {
           yield* advance(1_000);
           // A deep sleep moves the clock time, not the monotonic clock.
           clock.epoch += 3_600_000;
+          recorder.leftForeground();
           recorder.startRun("application-active-long");
           yield* advance(200);
           recorder.mark(MAC, "synchronizing");
@@ -108,11 +109,10 @@ describe("syncTimings", () => {
     Effect.gen(function* () {
       const { recorder, traced } = makeRecorder({ maxWakeups: 2, maxSpans: 1 });
       recorder.mark(MAC, "cached");
-      recorder.startRun("application-active-probe");
-      recorder.startRun("application-active-long");
-      recorder.startRun("application-active-probe");
-      // A second listener of the same return to the foreground starts no run.
-      recorder.startRun("application-active-probe");
+      for (const trigger of ["probe", "long", "probe"] as const) {
+        recorder.leftForeground();
+        recorder.startRun(`application-active-${trigger}`);
+      }
       const loadShell = Effect.void.pipe(
         Effect.withSpan("MobileEnvironmentCache.loadShell"),
         Effect.withSpan("parent", { attributes: { "environment.id": VPS } }),
@@ -129,6 +129,26 @@ describe("syncTimings", () => {
         spans: [{ name: "MobileEnvironmentCache.loadShell" }],
         droppedSpans: 2,
       });
+    }),
+  );
+
+  it.effect("starts one run per return to the foreground, also for two fast returns", () =>
+    Effect.sync(() => {
+      const { recorder } = makeRecorder();
+      recorder.startRun("application-active-long");
+      for (const trigger of ["probe", "long", "long"] as const) {
+        recorder.leftForeground();
+        // Every listener of one return calls startRun, near the 10 seconds even with another kind.
+        recorder.startRun(`application-active-${trigger}`);
+        recorder.startRun("application-active-probe");
+        recorder.startRun("application-active-long");
+      }
+
+      expect(recorder.snapshot().wakeups.map((run) => run.trigger)).toEqual([
+        "application-active-long",
+        "application-active-long",
+        "application-active-probe",
+      ]);
     }),
   );
 
