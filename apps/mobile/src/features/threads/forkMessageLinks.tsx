@@ -1,7 +1,11 @@
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { useNavigation } from "@react-navigation/native";
-import type { EnvironmentId, RunId } from "@t3tools/contracts";
-import { isLinkedMessage, messageLinkStep } from "@t3tools/shared/threadMessageLinks";
+import { type EnvironmentId, MessageId, type RunId } from "@t3tools/contracts";
+import {
+  isLinkedMessage,
+  linkedMessageLoadId,
+  messageLinkStep,
+} from "@t3tools/shared/threadMessageLinks";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { View } from "react-native";
 
@@ -36,18 +40,15 @@ export function useForkMessageLinksEnabled(environmentId: EnvironmentId | null):
 }
 
 /**
- * Fork: the message that the `message` param of the Thread route names, while the `messageLinks`
- * setting of its environment is on. Handling it clears the param, so the screen does not scroll
- * there again.
+ * Fork: the message that the `message` param of the Thread route names. Handling it clears the
+ * param, so the screen does not scroll there again.
  */
 export function useForkMessageLinkParam(
   message: string | string[] | undefined,
-  environmentId: EnvironmentId | null,
 ): ForkMessageLinkRequest | undefined {
   const navigation = useNavigation();
-  const enabled = useForkMessageLinksEnabled(environmentId);
   const messageId = (Array.isArray(message) ? message[0] : message)?.trim();
-  if (!enabled || !messageId) return undefined;
+  if (!messageId) return undefined;
   return { messageId, onHandled: () => navigation.setParams({ message: undefined }) };
 }
 
@@ -152,7 +153,9 @@ export function useForkMessageLinkTarget(input: {
     if (step === "load") {
       progress.pages.add(cursor);
       setLoadInFlight(true);
-      void Promise.resolve(history?.onLoadEarlier(messageId)).finally(() => setLoadInFlight(false));
+      void Promise.resolve(
+        history?.onLoadEarlier(MessageId.make(linkedMessageLoadId(messageId))),
+      ).finally(() => setLoadInFlight(false));
       return;
     }
     if (step === "missing") {
