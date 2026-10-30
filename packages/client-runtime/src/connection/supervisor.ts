@@ -613,6 +613,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   const isLongResume = (signal: SupervisorSignal) =>
     signal._tag === "Wakeup" && signal.reason === "application-active-long";
 
+  // The sync timings record only the probe after a return to the foreground.
+  const isForegroundProbe = (signal: SupervisorSignal) =>
+    signal._tag === "Wakeup" &&
+    (signal.reason === "application-active-probe" || signal.reason === "application-active-long");
+
   const answersQuickly = (routeKind: ConnectionRouteKind | undefined) =>
     routeKind === "loopback" || routeKind === "lan";
 
@@ -799,6 +804,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       // the socket, needs a fresh check only if the running one sees a frame.
       let recheck = false;
       let longResume = isLongResume(next);
+      let foregroundProbe = isForegroundProbe(next);
       // After a long suspension a new connection opens at once. It replaces the
       // socket only when the checks find that socket dead, because a new session
       // reloads the full snapshot.
@@ -871,14 +877,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           continue;
         }
         if (probeEvent._tag === "SocketSilent") {
-          syncTimings.probe(target.environmentId, "silent");
+          if (foregroundProbe) syncTimings.probe(target.environmentId, "silent");
           // The host is reachable, so replace the socket at once, even while
           // the network reports offline.
           yield* stopProbe;
           return yield* replaceSocket;
         }
         if (probeEvent._tag === "TimedOut") {
-          syncTimings.probe(target.environmentId, "timed-out");
+          if (foregroundProbe) syncTimings.probe(target.environmentId, "timed-out");
           yield* stopProbe;
           // A long suspension leaves the socket suspect even when the network
           // reports offline, so it is replaced like a silent one.
@@ -890,10 +896,12 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         }
         if (probeEvent._tag === "ProbeCompleted") {
           if (silentSocket) yield* Fiber.interrupt(silentSocket);
-          syncTimings.probe(
-            target.environmentId,
-            Exit.isSuccess(probeEvent.exit) ? "alive" : "failed",
-          );
+          if (foregroundProbe) {
+            syncTimings.probe(
+              target.environmentId,
+              Exit.isSuccess(probeEvent.exit) ? "alive" : "failed",
+            );
+          }
           if (Exit.isSuccess(probeEvent.exit)) {
             yield* Ref.set(probeUnanswered, false);
             yield* stopReplacement;
@@ -913,6 +921,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         if (signalTimeout !== undefined) {
           yield* armSilentSocketCheck(probeEvent.signal);
           longResume ||= isLongResume(probeEvent.signal);
+          foregroundProbe ||= isForegroundProbe(probeEvent.signal);
           if (longResume) yield* startReplacement;
           const signalDeadline =
             (yield* Clock.monotonicTimeNanos) + Duration.toNanosUnsafe(signalTimeout);

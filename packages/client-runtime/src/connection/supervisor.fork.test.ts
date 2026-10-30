@@ -24,6 +24,7 @@ import {
   type PreparedConnection,
   type SupervisorConnectionState,
 } from "./model.ts";
+import { syncTimings } from "../fork/syncTimings.ts";
 import * as EnvironmentSupervisor from "./supervisor.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 
@@ -199,6 +200,28 @@ describe("EnvironmentSupervisor long resume replacement", () => {
         phase: "connected",
         generation: 1,
       });
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("records only the probes of a return to the foreground in the sync timings", () =>
+    Effect.gen(function* () {
+      syncTimings.enable();
+      const h = yield* makeHarness(() => Effect.void);
+      const probes = () =>
+        Effect.sync(() => {
+          const { coldStart, wakeups } = syncTimings.snapshot();
+          return (wakeups[0] ?? coldStart).environments.get(RELAY_TARGET.environmentId)?.probes;
+        });
+
+      yield* h.wake("network-changed");
+      yield* TestClock.adjust("1 second");
+      expect(yield* probes()).toBeUndefined();
+
+      syncTimings.leftForeground();
+      syncTimings.startRun("application-active-probe");
+      yield* h.wake("application-active-probe");
+      yield* TestClock.adjust("1 second");
+      expect((yield* probes())?.map((probe) => probe.result)).toEqual(["alive"]);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 

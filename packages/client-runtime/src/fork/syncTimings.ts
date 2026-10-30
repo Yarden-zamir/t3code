@@ -293,10 +293,9 @@ export function makeSyncTimingsRecorder(options: {
 
 export type SyncTimingsRecorder = ReturnType<typeof makeSyncTimingsRecorder>;
 
-// The cold start run starts when this module loads, so the start-up time before
-// the app code loads is not in the timings. Durations use the monotonic clock;
-// the clock time of a run uses Date, because Android stops performance.now()
-// in deep sleep.
+// One app-wide recorder keeps each upstream hook one line; revisit for a recorder per runtime.
+// The cold start counts from when this module loads. Durations use performance.now(); run
+// times use Date, because Android stops performance.now() in deep sleep.
 export const syncTimings: SyncTimingsRecorder = makeSyncTimingsRecorder({
   now: () => performance.now(),
   // @effect-diagnostics-next-line globalDate:off
