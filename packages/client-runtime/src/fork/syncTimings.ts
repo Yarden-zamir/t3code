@@ -74,6 +74,7 @@ interface MutableRun {
   readonly environments: Map<EnvironmentId, MutableEnvironmentTimings>;
 }
 
+const SAME_WAKEUP_WITHIN_MS = 1_000;
 const ENVIRONMENT_ATTRIBUTES = ["connection.environment.id", "environment.id"] as const;
 const RECORDED_SPANS: ReadonlySet<string> = new Set(SYNC_TIMING_SPANS);
 
@@ -140,6 +141,11 @@ export function makeSyncTimingsRecorder(options: {
 
   const startRun = (trigger: Exclude<SyncRunTrigger, "cold-start">) => {
     if (!enabled) return;
+    // Each subscriber of the wakeup stream has its own app-state listener, so one return to
+    // the foreground calls this once per listener. Two returns within this time count as one.
+    if (current.trigger === trigger && options.now() - current.origin < SAME_WAKEUP_WITHIN_MS) {
+      return;
+    }
     current = newRun(trigger);
     wakeups.unshift(current);
     if (wakeups.length > maxWakeups) wakeups.length = maxWakeups;

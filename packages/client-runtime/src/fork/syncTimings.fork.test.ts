@@ -111,6 +111,8 @@ describe("syncTimings", () => {
       recorder.startRun("application-active-probe");
       recorder.startRun("application-active-long");
       recorder.startRun("application-active-probe");
+      // A second listener of the same return to the foreground starts no run.
+      recorder.startRun("application-active-probe");
       const loadShell = Effect.void.pipe(
         Effect.withSpan("MobileEnvironmentCache.loadShell"),
         Effect.withSpan("parent", { attributes: { "environment.id": VPS } }),
