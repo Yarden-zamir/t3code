@@ -121,6 +121,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - Queue: a message held after a provider failure runs before a later agent message or wake, which waits behind it. Before, the later run started first and the held message stayed queued until the user came back.
 - Delegated tasks: a later run that a child starts itself, after a background command or a nested delegated task, reports its result to the parent as a new task. A parent that cancelled the child gets no report.
 - Terminal: powerline outlines and half circles (U+E0B1 to U+E0B7) fill their whole cell, so they meet the segments next to them.
+- Sync: a bearer connection over HTTPS asks for its socket ticket and its descriptor at the same time, and the chat list loads over HTTP while the socket opens. After a long background, the mobile app opens a new connection at once and keeps the old socket until the checks find it dead.
 - Device panel: a Homebrew Android SDK (`android-commandlinetools`) works without `ANDROID_HOME`, also when the `adb` on `PATH` has no emulator.
 
 ---
