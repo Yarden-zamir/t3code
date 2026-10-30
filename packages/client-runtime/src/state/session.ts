@@ -3,10 +3,9 @@ import type { AuthSessionState, EnvironmentId, ServerConfig } from "@t3tools/con
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { HttpClient, HttpClientError } from "effect/http";
+import { HttpClient } from "effect/http";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
@@ -44,26 +43,6 @@ const MAX_SESSION_STATE_TIMEOUT_MS = 60_000;
 const SESSION_STATE_RETRY_BASE_MS = 2_000;
 const SESSION_STATE_RETRY_MAX_MS = 60_000;
 
-/**
- * A host that just restarted can drop or time out this request while it starts. The session atom
- * fetches again only when the prepared connection changes, so a failure that is not retried here
- * stays while the connection is up and reads as "no permission". A timeout waits longer instead,
- * in `fetchEnvironmentSessionState`.
- */
-function isTemporarySessionFailure(error: RemoteEnvironmentRequestError): boolean {
-  switch (error._tag) {
-    case "RemoteEnvironmentAuthFetchError":
-      // The same error also reports a refused authorization; only a transport failure is temporary.
-      return HttpClientError.isHttpClientError(error.cause);
-    case "EnvironmentInternalError":
-      return true;
-    case "RemoteEnvironmentAuthUndeclaredStatusError":
-      return error.status >= 500;
-    default:
-      return false;
-  }
-}
-
 export const fetchEnvironmentSessionState = Effect.fn(
   "clientRuntime.state.fetchEnvironmentSessionState",
 )(function* (input: {
@@ -95,14 +74,7 @@ export const fetchEnvironmentSessionState = Effect.fn(
         },
       }),
     );
-  return yield* request(input.timeoutMs ?? DEFAULT_SESSION_STATE_TIMEOUT_MS).pipe(
-    // Fork: 5 retries wait 1 + 2 + 4 + 8 + 16 seconds, longer than a host restart takes.
-    Effect.retry({
-      while: isTemporarySessionFailure,
-      times: 5,
-      schedule: Schedule.exponential("1 second"),
-    }),
-  );
+  return yield* request(input.timeoutMs ?? DEFAULT_SESSION_STATE_TIMEOUT_MS);
 });
 
 function makeEnvironmentSessionAtoms<R, E>(

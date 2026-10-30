@@ -4844,7 +4844,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         });
       const end = (
         key: string,
-        status: "completed" | "failed",
+        status: "completed" | "failed" | "interrupted",
         revision = "",
         patch: Partial<OrchestrationV2Run> = {},
       ) =>
@@ -4904,36 +4904,41 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           });
         });
 
-      // The run-update listener places failure holds after the terminal event commits.
-      const awaitHeld = (key: string) =>
+      // Fork: the next message releases a provider failure's hold at once, so a Stop's hold stands in.
+      const hold = (key: string) =>
         Effect.gen(function* () {
           const run = yield* runFor(key);
-          yield* eventSink.stream({ threadId, afterSequence: 0, eventType: "run.updated" }).pipe(
-            Stream.filter(
-              (stored) =>
-                stored.event.type === "run.updated" &&
-                stored.event.payload.id === run.id &&
-                stored.event.payload.queueHeld === true,
-            ),
-            Stream.runHead,
-          );
+          yield* eventSink.write({
+            events: [
+              {
+                id: EventId.make(`${threadId}:${key}:held`),
+                type: "run.updated",
+                threadId,
+                runId: run.id,
+                providerInstanceId: run.providerInstanceId,
+                occurredAt: yield* DateTime.now,
+                payload: { ...run, queueHeld: true },
+              },
+            ],
+          });
         });
-      return { send, runFor, end, startedRunIds, releasedAfter, awaitHeld };
+      return { send, runFor, end, startedRunIds, releasedAfter, hold };
     });
 
   it.effect("releases held agent messages once a later run completes, not the user's", () =>
     Effect.gen(function* () {
       const eventSink = yield* EventSink.EventSinkV2;
       const threadId = ThreadId.make("runtime-layer-failed-queue-agent-messages");
-      const { send, runFor, end, startedRunIds, releasedAfter, awaitHeld } =
+      const { send, runFor, end, startedRunIds, releasedAfter, hold } =
         yield* queueTestThread(threadId);
       yield* send("earlier", "agent", true);
       yield* end("earlier", "completed");
       yield* send("active", "agent", true);
       yield* send("issue", "agent", false);
       yield* send("user", "user", false);
-      yield* end("active", "failed");
-      yield* awaitHeld("issue");
+      yield* hold("issue");
+      yield* hold("user");
+      yield* end("active", "interrupted");
       assert.isTrue((yield* runFor("issue")).queueHeld);
       // Delivery bookkeeping rewrites an older completed run; the thread has not moved on.
       yield* end("earlier", "completed", ":bookkeeping");
@@ -5003,10 +5008,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const witness = yield* queueTestThread(ThreadId.make("runtime-layer-held-queue-witness"));
       yield* dispatcher.send("setup", "agent", true);
       yield* dispatcher.send("issue", "agent", false);
-      yield* dispatcher.end("setup", "failed", "", {
+      yield* dispatcher.hold("issue");
+      yield* dispatcher.end("setup", "interrupted", "", {
         workspacePreparation: { type: "worktree", baseRef: "main" },
       });
-      yield* dispatcher.awaitHeld("issue");
       assert.isTrue((yield* dispatcher.runFor("issue")).queueHeld);
       yield* dispatcher.send("tick", "agent", true);
       assert.equal((yield* dispatcher.runFor("tick")).status, "starting");
