@@ -84,17 +84,10 @@ export function forkThreadKeyOfPath(
 ): string | null {
   const { foundRoute, routeParams } = router.getMatchedRoutes(pathname);
   if (foundRoute?.id !== THREAD_ROUTE_ID) return null;
-  // A path can keep percent escapes of an id with `:`.
-  const decode = (value: string | undefined) => {
-    try {
-      return value === undefined ? undefined : decodeURIComponent(value);
-    } catch {
-      return value;
-    }
-  };
+  // getMatchedRoutes returns decoded params; a second decode would change ids that hold `%`.
   const ref = resolveThreadRouteRef({
-    environmentId: decode(routeParams.environmentId),
-    threadId: decode(routeParams.threadId),
+    environmentId: routeParams.environmentId,
+    threadId: routeParams.threadId,
   });
   return ref === null ? null : scopedThreadKey(ref);
 }
