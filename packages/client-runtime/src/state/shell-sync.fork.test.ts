@@ -55,6 +55,8 @@ const familiesConfig = (enabled: boolean) =>
 const makeHarness = Effect.fn("test.makeEarlyShellSnapshotHarness")(function* (input: {
   readonly cachedConfig: Option.Option<ServerConfig>;
   readonly socketConfig: ServerConfig;
+  /** The first load answers only when interrupted, like a slow server. */
+  readonly holdFirstLoad?: boolean;
 }) {
   const events = yield* Queue.unbounded<OrchestrationV2ShellStreamItem>();
   const subscribeInput = yield* Deferred.make<unknown>();
@@ -99,11 +101,16 @@ const makeHarness = Effect.fn("test.makeEarlyShellSnapshotHarness")(function* (i
   });
   const loads = yield* Ref.make<ReadonlyArray<unknown>>([]);
   const firstLoad = yield* Deferred.make<void>();
+  const firstLoadInterrupted = yield* Ref.make(false);
   const snapshotLoader = ShellSnapshotLoader.ShellSnapshotLoader.of({
     load: (_prepared, options) =>
-      Ref.update(loads, (all) => [...all, options]).pipe(
-        Effect.andThen(Deferred.succeed(firstLoad, undefined)),
-        Effect.as(Option.some(SNAPSHOT)),
+      Ref.getAndUpdate(loads, (all) => [...all, options]).pipe(
+        Effect.tap(() => Deferred.succeed(firstLoad, undefined)),
+        Effect.flatMap((before) =>
+          before.length === 0 && input.holdFirstLoad === true
+            ? Effect.never.pipe(Effect.onInterrupt(() => Ref.set(firstLoadInterrupted, true)))
+            : Effect.succeedSome(SNAPSHOT),
+        ),
       ),
   });
   yield* makeEnvironmentShellState().pipe(
@@ -112,7 +119,7 @@ const makeHarness = Effect.fn("test.makeEarlyShellSnapshotHarness")(function* (i
     Effect.provideService(ShellSnapshotLoader.ShellSnapshotLoader, snapshotLoader),
   );
   const openSocket = SubscriptionRef.set(session, Option.some(socketSession));
-  return { loads, firstLoad, subscribeInput, openSocket };
+  return { loads, firstLoad, firstLoadInterrupted, subscribeInput, openSocket };
 });
 
 describe("early environment shell snapshot", () => {
@@ -138,6 +145,7 @@ describe("early environment shell snapshot", () => {
       const h = yield* makeHarness({
         cachedConfig: Option.some(familiesConfig(false)),
         socketConfig: familiesConfig(true),
+        holdFirstLoad: true,
       });
 
       yield* Deferred.await(h.firstLoad);
@@ -151,6 +159,7 @@ describe("early environment shell snapshot", () => {
         { omitIdleSubagents: false, omitOlderSettled: false },
         { omitIdleSubagents: true, omitOlderSettled: true },
       ]);
+      expect(yield* Ref.get(h.firstLoadInterrupted)).toBe(true);
     }).pipe(Effect.scoped),
   );
 

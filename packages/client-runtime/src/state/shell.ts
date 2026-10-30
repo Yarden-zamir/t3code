@@ -406,12 +406,12 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     const early = earlySnapshot;
     earlySnapshot = undefined;
     snapshotOmission = Option.some(omission);
-    return early !== undefined &&
-      early.prepared === prepared &&
+    if (early === undefined) return snapshotLoader.load(prepared, omission);
+    return early.prepared === prepared &&
       early.omission.omitIdleSubagents === omission.omitIdleSubagents &&
       early.omission.omitOlderSettled === omission.omitOlderSettled
       ? Fiber.join(early.fiber)
-      : snapshotLoader.load(prepared, omission);
+      : Fiber.interrupt(early.fiber).pipe(Effect.andThen(snapshotLoader.load(prepared, omission)));
   };
 
   const foregroundResubscriptions = Option.match(wakeups, {

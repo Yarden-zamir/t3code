@@ -254,47 +254,6 @@ export function makeSyncTimingsRecorder(options: {
     );
   });
 
-  let threadsSynchronizing = 0;
-  let idleWaiters: Array<() => void> = [];
-  const setThreadSynchronizing = (synchronizing: boolean) => {
-    threadsSynchronizing += synchronizing ? 1 : -1;
-    if (threadsSynchronizing > 0) return;
-    const waiters = idleWaiters;
-    idleWaiters = [];
-    for (const resolve of waiters) resolve();
-  };
-
-  /** Follows a thread state for its marks and for `whenNoThreadSynchronizes`. */
-  const followThread = Effect.fnUntraced(function* <
-    S extends { readonly status: "empty" | "cached" | "synchronizing" | "live" | "deleted" },
-  >(environmentId: EnvironmentId, state: SubscriptionRef.SubscriptionRef<S>) {
-    if (!enabled) return;
-    let synchronizing = false;
-    const track = (status: S["status"]) => {
-      if ((status === "synchronizing") === synchronizing) return;
-      synchronizing = !synchronizing;
-      setThreadSynchronizing(synchronizing);
-    };
-    yield* Effect.addFinalizer(() =>
-      Effect.sync(() => synchronizing && setThreadSynchronizing(false)),
-    );
-    track((yield* SubscriptionRef.get(state)).status);
-    yield* followStatus(environmentId, state, {
-      synchronizing: "threadSynchronizing",
-      live: "threadLive",
-    } as Partial<Record<S["status"], SyncTimingMark>>);
-    yield* SubscriptionRef.changes(state).pipe(
-      Stream.runForEach((value) => Effect.sync(() => track(value.status))),
-      Effect.forkScoped({ startImmediately: true }),
-    );
-  });
-
-  /** Resolves once no followed thread state is synchronizing. */
-  const whenNoThreadSynchronizes = () =>
-    threadsSynchronizing === 0
-      ? Promise.resolve()
-      : new Promise<void>((resolve) => idleWaiters.push(resolve));
-
   const freeze = (run: MutableRun): SyncRun => ({
     trigger: run.trigger,
     startedAtEpochMs: run.startedAtEpochMs,
@@ -324,8 +283,6 @@ export function makeSyncTimingsRecorder(options: {
     probe,
     tracer,
     followStatus,
-    followThread,
-    whenNoThreadSynchronizes,
     startStep,
     snapshot: (): SyncTimingsSnapshot => ({
       coldStart: freeze(coldStart),

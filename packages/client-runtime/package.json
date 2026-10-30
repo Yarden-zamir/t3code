@@ -251,6 +251,10 @@
       "types": "./src/fork/syncTimings.ts",
       "default": "./src/fork/syncTimings.ts"
     },
+    "./fork/threadSyncActivity": {
+      "types": "./src/fork/threadSyncActivity.ts",
+      "default": "./src/fork/threadSyncActivity.ts"
+    },
     "./fork/worktreeRecreate": {
       "types": "./src/fork/worktreeRecreate.ts",
       "default": "./src/fork/worktreeRecreate.ts"

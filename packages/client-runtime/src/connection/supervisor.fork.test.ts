@@ -1,5 +1,6 @@
 import { EnvironmentId, type ServerConfig } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -15,6 +16,7 @@ import type { ConnectionCatalogEntry } from "./catalog.ts";
 import * as Connectivity from "./connectivity.ts";
 import * as ConnectionDriver from "./driver.ts";
 import {
+  ConnectionTransientError,
   RelayConnectionTarget,
   type ConnectionAttemptError,
   type NetworkStatus,
@@ -54,6 +56,7 @@ const makeHarness = Effect.fn("TestReplacementHarness.make")(function* (
 ) {
   const sessionCount = yield* Ref.make(0);
   const released = yield* Ref.make<ReadonlyArray<number>>([]);
+  const firstSessionClosed = yield* Deferred.make<never, ConnectionTransientError>();
   const wakeups = yield* SubscriptionRef.make({
     sequence: 0,
     reason: "application-active" as ConnectionWakeups.ConnectionWakeup,
@@ -74,7 +77,7 @@ const makeHarness = Effect.fn("TestReplacementHarness.make")(function* (
           ready: Effect.void,
           probe: probe(session),
           inboundFrames: Effect.succeed(0),
-          closed: Effect.never,
+          closed: session === 1 ? Deferred.await(firstSessionClosed) : Effect.never,
         } satisfies RpcSession.RpcSession,
       };
     });
@@ -111,7 +114,11 @@ const makeHarness = Effect.fn("TestReplacementHarness.make")(function* (
   yield* stateWhere((state) => state.phase === "connected");
   const wake = (reason: ConnectionWakeups.ConnectionWakeup) =>
     SubscriptionRef.update(wakeups, (event) => ({ sequence: event.sequence + 1, reason }));
-  return { supervisor, sessionCount, released, stateWhere, wake };
+  const closeFirstSession = Deferred.fail(
+    firstSessionClosed,
+    new ConnectionTransientError({ reason: "network", detail: "Session closed." }),
+  );
+  return { supervisor, sessionCount, released, stateWhere, wake, closeFirstSession };
 });
 
 describe("EnvironmentSupervisor long resume replacement", () => {
@@ -131,6 +138,22 @@ describe("EnvironmentSupervisor long resume replacement", () => {
       yield* h.stateWhere((state) => state.phase === "connected" && state.generation === 2);
       expect(yield* Ref.get(h.released)).toEqual([1]);
       expect(yield* Ref.get(h.sessionCount)).toBe(2);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("adopts the new socket when the old one closes after the new one connects", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness((session) => (session === 1 ? Effect.never : Effect.void));
+
+      yield* h.wake("application-active-long");
+      yield* TestClock.adjust("1 millis");
+      expect(yield* Ref.get(h.sessionCount)).toBe(2);
+      yield* h.closeFirstSession;
+      yield* TestClock.adjust("20 seconds");
+
+      yield* h.stateWhere((state) => state.phase === "connected" && state.generation === 2);
+      expect(yield* Ref.get(h.sessionCount)).toBe(2);
+      expect(yield* Ref.get(h.released)).toEqual([1]);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 

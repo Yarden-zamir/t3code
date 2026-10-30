@@ -82,10 +82,11 @@ export class MobileDatabase extends Context.Service<
     readonly listCache: (
       kind: ClientCacheKind,
     ) => Effect.Effect<ReadonlyArray<string>, MobileDatabaseError>;
-    /** The save time of each record of one kind, without its payload. */
+    /** The save time of each record of one kind and schema version, without its payload. */
     readonly listCacheSavedAt: (
       environmentId: EnvironmentId,
       kind: ClientCacheKind,
+      schemaVersion: number,
     ) => Effect.Effect<ReadonlyMap<string, number>, MobileDatabaseError>;
     readonly saveCache: (
       environmentId: EnvironmentId,
@@ -196,16 +197,19 @@ const makeAvailable = Effect.gen(function* () {
         catch: databaseError("list-cache"),
       }).pipe(Effect.map((rows) => rows.map((row) => row.payload))),
     ),
-    listCacheSavedAt: Effect.fn("MobileDatabase.listCacheSavedAt")((environmentId, kind) =>
-      Effect.tryPromise({
-        try: () =>
-          database.getAllAsync<{ readonly cache_key: string; readonly updated_at: number }>(
-            "SELECT cache_key, updated_at FROM client_cache WHERE environment_id = ? AND kind = ?",
-            environmentId,
-            kind,
-          ),
-        catch: databaseError("list-cache"),
-      }).pipe(Effect.map((rows) => new Map(rows.map((row) => [row.cache_key, row.updated_at])))),
+    listCacheSavedAt: Effect.fn("MobileDatabase.listCacheSavedAt")(
+      (environmentId, kind, schemaVersion) =>
+        Effect.tryPromise({
+          try: () =>
+            database.getAllAsync<{ readonly cache_key: string; readonly updated_at: number }>(
+              `SELECT cache_key, updated_at FROM client_cache
+               WHERE environment_id = ? AND kind = ? AND schema_version = ?`,
+              environmentId,
+              kind,
+              schemaVersion,
+            ),
+          catch: databaseError("list-cache"),
+        }).pipe(Effect.map((rows) => new Map(rows.map((row) => [row.cache_key, row.updated_at])))),
     ),
     saveCache: Effect.fn("MobileDatabase.saveCache")(
       (environmentId, kind, cacheKey, schemaVersion, payload) =>

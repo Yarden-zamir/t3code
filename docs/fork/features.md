@@ -115,7 +115,7 @@ Settings > Diagnostics > Sync timings shows how long the app needs to sync chats
 
 Before, only a chat that was opened on the phone had cached messages. Now, when the chat list of an environment is live, the app loads recent chats into the same message cache. A chat that was never opened on the phone then shows its messages at once.
 
-- The app loads the 10 newest chats and every chat with unread or running work, at most 15 per environment. Each chat loads the same latest window that an opened chat loads.
+- The app loads every unread chat, then the 10 newest chats, at most 15 per environment. A chat with a running turn is left out, because the cache saves it only after the turn ends. Each chat loads the same latest window that an opened chat loads.
 - It loads one chat and one environment at a time, and only when no chat synchronizes. The open chat always comes first.
 - It skips a chat whose cache was saved after the chat last changed. It stops when the app goes to the background, and starts again when the chat list is live again.
 - **Setting:** server setting `mobileWarmRecentChats` (on by default). Mobile Settings > Fork > "Warm recent chats", or T3 Settings > Appearance > Mobile app. When it is off for an environment, no warm-up runs there.

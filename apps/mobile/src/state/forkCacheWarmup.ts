@@ -1,5 +1,7 @@
 import { selectCacheWarmupThreads } from "@t3tools/client-runtime/fork/cacheWarmup";
 import { syncTimings } from "@t3tools/client-runtime/fork/syncTimings";
+import { threadSyncActivity } from "@t3tools/client-runtime/fork/threadSyncActivity";
+import { COMPACT_THREAD_CACHE_SCHEMA_VERSION } from "@t3tools/client-runtime/platform";
 import { enabledEnvironmentIds } from "@t3tools/client-runtime/state/connections";
 import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/threads";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -72,14 +74,16 @@ export function installCacheWarmup(): () => void {
     const savedAt = await runtime
       .runPromise(
         MobileDatabase.pipe(
-          Effect.flatMap((database) => database.listCacheSavedAt(environmentId, "thread")),
+          Effect.flatMap((database) =>
+            database.listCacheSavedAt(environmentId, "thread", COMPACT_THREAD_CACHE_SCHEMA_VERSION),
+          ),
         ),
       )
       .catch(() => new Map<string, number>());
     const threadIds = selectCacheWarmupThreads(threads, savedAt);
     syncTimings.mark(environmentId, "cacheWarmupStarted");
     for (const threadId of threadIds) {
-      await syncTimings.whenNoThreadSynchronizes();
+      await threadSyncActivity.whenNoThreadSynchronizes();
       if (generation !== started) return;
       const end = syncTimings.startStep(environmentId, "CacheWarmup.thread");
       end(await warmThread(environmentId, threadId));

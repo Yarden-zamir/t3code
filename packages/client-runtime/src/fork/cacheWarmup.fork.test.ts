@@ -26,11 +26,13 @@ const thread = (n: number, fields: Partial<typeof v2ThreadShell> = {}) => ({
 const ids = (...numbers: ReadonlyArray<number>) => numbers.map((n) => `thread-${n}`);
 
 describe("selectCacheWarmupThreads", () => {
-  it("takes urgent threads first, then the newest, without archived, deleted or terminal threads", () => {
+  it("takes unread threads first, then the newest, and only threads the cache can save", () => {
     const threads = [
       thread(1),
       thread(2, { latestRunCompletedAt: at(2_000), lastVisitedAt: at(1_000) }),
-      thread(3, { activityRunStatus: "running" }),
+      thread(3, { activityRunStatus: "waiting" }),
+      thread(40, { activityRunStatus: "running" }),
+      thread(41, { activityRunStatus: "starting" }),
       ...Array.from({ length: CACHE_WARMUP_NEWEST_THREADS }, (_, index) => thread(10 + index)),
       thread(30, { archivedAt: at(30_000) }),
       thread(31, { deletedAt: at(31_000) }),
@@ -38,7 +40,7 @@ describe("selectCacheWarmupThreads", () => {
     ];
 
     expect(selectCacheWarmupThreads(threads, new Map())).toEqual(
-      ids(3, 2, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10),
+      ids(2, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10),
     );
   });
 
@@ -52,9 +54,9 @@ describe("selectCacheWarmupThreads", () => {
     expect(selectCacheWarmupThreads(threads, savedAt)).toEqual(ids(2, 1));
   });
 
-  it("keeps at most the cap, even with more urgent threads", () => {
+  it("keeps at most the cap, even with more unread threads", () => {
     const threads = Array.from({ length: CACHE_WARMUP_MAX_THREADS + 5 }, (_, index) =>
-      thread(index + 1, { activityRunStatus: "running" }),
+      thread(index + 1, { latestRunCompletedAt: at(100_000), lastVisitedAt: at(0) }),
     );
 
     const selected = selectCacheWarmupThreads(threads, new Map());

@@ -48,7 +48,7 @@ import {
   type ThreadHistoryMeta,
 } from "./threadHistoryMerge.ts";
 import * as ThreadSnapshotLoader from "./threadSnapshotHttp.ts";
-import { syncTimings } from "../fork/syncTimings.ts";
+import { followThreadSync } from "../fork/threadSyncActivity.ts";
 import { makeThreadRequestsResolvedAnnouncer, pendingRuntimeRequestIds } from "./threadRequests.ts";
 import {
   EMPTY_ENVIRONMENT_THREAD_STATE,
@@ -243,7 +243,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         sequence: initialSequence,
       };
   const state = yield* SubscriptionRef.make(initialState);
-  yield* syncTimings.followThread(environmentId, state);
+  yield* followThreadSync(environmentId, state);
   const canLoadHistory = Option.isSome(httpClient) && Option.isSome(historyController);
   const acceptsBoundedSocketSnapshots = yield* Ref.make(canLoadHistory);
   const lastSequence = yield* SubscriptionRef.make(initialSequence);
