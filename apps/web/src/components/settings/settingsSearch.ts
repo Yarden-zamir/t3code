@@ -1,5 +1,5 @@
 import { HOSTED_APP_CHANNEL } from "~/branding";
-import { isElectron } from "~/env";
+import { isElectron, isSecretsFeatureEnabled } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
 import { STATIC_KEYBINDING_COMMANDS, type KeybindingCommand } from "@t3tools/contracts";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -35,6 +35,7 @@ export type SettingsPath =
   | "/settings/connections"
   | "/settings/access"
   | ForkSearch.ForkSettingsPath
+  | "/settings/secrets"
   | "/settings/maintenance"
   | "/settings/labs"
   | "/settings/about"
@@ -61,6 +62,7 @@ export interface SettingsSearchItem {
   readonly macOnly?: boolean;
   readonly windowsOnly?: boolean;
   readonly releaseChannelOnly?: boolean;
+  readonly secretsFeatureOnly?: boolean;
   readonly cloudOnly?: boolean;
   readonly environmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
@@ -106,6 +108,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/connections": "Environments",
   "/settings/access": "Sharing & access",
   ...ForkSearch.SECTION_LABELS,
+  "/settings/secrets": "Secrets",
   "/settings/maintenance": "Maintenance",
   "/settings/labs": "Labs",
   "/settings/about": "About",
@@ -145,7 +148,12 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
   },
   {
     heading: "Connections",
-    paths: ["/settings/connections", "/settings/access", "/settings/machines"],
+    paths: [
+      "/settings/connections",
+      "/settings/access",
+      ...(isSecretsFeatureEnabled ? (["/settings/secrets"] as const) : []),
+      "/settings/machines",
+    ],
   },
   {
     heading: null,
@@ -937,7 +945,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Open pull requests in T3 Code",
     to: "/settings/diffs",
     searchTerms: [
-      `pr links ${SOURCE_CONTROL_HOST_LABELS} browser external click default pull request view panel`,
+      `pr commit links ${SOURCE_CONTROL_HOST_LABELS} browser external click default pull request view panel`,
     ],
   },
   {
@@ -1172,6 +1180,21 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   ...ForkSearch.MACHINE_MAP_ITEMS,
   {
+    id: "secret-providers",
+    title: "Secret providers",
+    to: "/settings/secrets",
+    searchTerms: ["1password vault credentials api key"],
+    secretsFeatureOnly: true,
+  },
+  {
+    id: "secret-providers-add",
+    title: "Add secret provider",
+    to: "/settings/secrets",
+    targetId: "secret-providers",
+    searchTerms: ["new 1password vault op cli account"],
+    secretsFeatureOnly: true,
+  },
+  {
     id: "archive",
     title: "Archived threads",
     to: "/settings/archived",
@@ -1201,6 +1224,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/connections": "connections",
   "/settings/access": "connections",
   ...ForkSearch.CATEGORY_SCOPES,
+  "/settings/secrets": null,
   "/settings/scheduled-tasks": null,
   "/settings/maintenance": null,
   "/settings/labs": null,
@@ -1339,6 +1363,7 @@ export function isSettingsSearchItemOnPlatform(item: SettingsSearchItem, platfor
   if (!isElectron && item.desktopOnly === true) return false;
   if (isElectron && item.webOnly === true) return false;
   if (item.releaseChannelOnly && !isElectron && HOSTED_APP_CHANNEL === null) return false;
+  if (item.secretsFeatureOnly && !isSecretsFeatureEnabled) return false;
   if (item.id === "update-track" && !ForkSearch.SHOWS_DESKTOP_UPDATE_TRACK) return false;
   if (item.macOnly && !isMacPlatform(platform)) return false;
   if (item.windowsOnly && !isWindowsPlatform(platform)) return false;

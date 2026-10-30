@@ -156,7 +156,11 @@ function SettingsRouteLayout() {
     <SettingsScopeProvider
       search={rawSearch}
       // Fork: each environment joins the machine map on its own.
-      singleEnvironment={pathname === "/settings/providers" || pathname === "/settings/machines"}
+      singleEnvironment={
+        pathname === "/settings/providers" ||
+        pathname === "/settings/secrets" ||
+        pathname === "/settings/machines"
+      }
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.
         void navigate({
