@@ -289,6 +289,25 @@ jobs:
           playwright-package: apps/server/node_modules/playwright-core
       - run: vp run --filter t3 test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
+  # kitshn's provider contract scenarios (K-723) against the built server, with the daemon and
+  # the tests of the kitshn release that pnpm-workspace.yaml pins for @kitshn/local.
+  kitshn_contract:
+    name: kitshn contract
+    needs: changes
+    if: needs.changes.outputs.test_server == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/setup-ci-deps
+      - run: vp run --filter t3 build:bundle
+      - run: node scripts/fork-kitshn-contract.ts
+
   rust:
     name: Rust
     needs: changes
@@ -316,7 +335,7 @@ jobs:
   # so the docs-only path passes too. A cancelled job counts as failed.
   result:
     name: Fork CI result
-    needs: [changes, lint, typecheck, build, test, test_web, test_server, rust]
+    needs: [changes, lint, typecheck, build, test, test_web, test_server, kitshn_contract, rust]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -334,7 +353,7 @@ jobs:
   # A pull request never calls it: its author sees the failed check.
   notify_agent:
     name: Notify repair agent
-    needs: [changes, lint, typecheck, build, test, test_web, test_server, rust]
+    needs: [changes, lint, typecheck, build, test, test_web, test_server, kitshn_contract, rust]
     if: failure() && github.event_name != 'pull_request' && github.event.inputs.notify_agent != 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 20

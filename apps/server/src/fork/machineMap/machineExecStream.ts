@@ -1,6 +1,6 @@
 /**
  * Fork: machine map, the stream of `t3 machine exec` (MM-1919). The CLI opens it on its own
- * server, which opens it on the target over the arrow link. The frames are in the contract
+ * server, which runs the command through kitshn (K-722). The frames are in the contract
  * (`MachineExecStreamMessage`). This module holds what both ends share: the frames, a socket
  * that waits for the network before it takes more data, and the keepalive.
  */
@@ -19,7 +19,7 @@ import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Socket from "effect/socket/Socket";
 
-/** Cloudflare closes a WebSocket that is idle for 100 seconds, so each end pings well before. */
+/** Each end pings this often, so a silent stream shows that the other end is still there. */
 export const PING_INTERVAL = Duration.seconds(25);
 const SILENCE_LIMIT = Duration.seconds(90);
 /** Bytes that may wait in a socket before the sender waits for the network. */
@@ -214,6 +214,14 @@ export const runExecClient = Effect.fn("MachineExecStream.runExecClient")(functi
         }
         const { message } = frame;
         if (message.type === "error") return failed(message.message);
+        if (message.type === "waiting") {
+          yield* input.stderr(
+            new TextEncoder().encode(
+              `t3 machine exec: waiting for the owner's approval on kitshn (proposal ${message.proposalId}).\n`,
+            ),
+          );
+          continue;
+        }
         if (message.type !== "exit") continue;
         if (message.outcome === "timedOut") {
           return { exitCode: EXIT_TIMED_OUT, message: "The command reached its timeout." };

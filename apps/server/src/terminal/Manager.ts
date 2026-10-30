@@ -72,6 +72,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { increment, terminalSessionsTotal } from "../observability/Metrics.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import {
+  KITSHN_ATTEST_ENV,
   THREAD_CREDENTIAL_AUTHORIZATION_ENV,
   THREAD_CREDENTIAL_ENDPOINT_ENV,
 } from "@t3tools/provider-core/server/forkThreadCredential";
@@ -148,6 +149,7 @@ const TERMINAL_ENV_BLOCKLIST = new Set([
   // Fork (MM-1920): a server started from an agent shell must not lend that thread's credential.
   THREAD_CREDENTIAL_ENDPOINT_ENV,
   THREAD_CREDENTIAL_AUTHORIZATION_ENV,
+  KITSHN_ATTEST_ENV,
 ]);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const MAX_TERMINAL_LABEL_LENGTH = 128;

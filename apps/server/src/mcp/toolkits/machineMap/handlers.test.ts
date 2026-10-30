@@ -1,4 +1,5 @@
 /** Fork: machine map agent tools (MM-801): what an agent hears when a call cannot go through. */
+import type { Answer } from "@kitshn/local";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -8,6 +9,8 @@ import { McpSchema, McpServer } from "effect/ai";
 
 import * as MachineExec from "../../../fork/machineMap/MachineExec.ts";
 import * as KitshnCli from "../../../fork/kitshn/KitshnCli.ts";
+import * as KitshnConnection from "../../../fork/kitshn/KitshnConnection.ts";
+import { registerAnswer } from "../../../fork/kitshn/KitshnConnection.testkit.ts";
 import * as KitshnGrants from "../../../fork/kitshn/KitshnGrants.ts";
 import * as KitshnSettingsSync from "../../../fork/kitshn/KitshnSettingsSync.ts";
 import * as KitshnProvider from "../../../fork/kitshn/KitshnProvider.ts";
@@ -77,50 +80,79 @@ const callTool = (
 const resultText = (result: { readonly content: ReadonlyArray<unknown> }) =>
   JSON.stringify(result.content);
 
-const notConnected = new KitshnProvider.KitshnRequestError({
-  message: "This server has no connection to kitshn.",
-});
+type Answering = (input: KitshnConnection.LocalRequestInput) => Effect.Effect<Answer>;
 
+/** The daemon's answers; without one, this server has no connection to kitshn. */
 const toolsWith = (
   threads: Layer.Layer<ThreadManagement.ThreadManagementService>,
   requests: Array<unknown> = [],
-  answer: KitshnProvider.KitshnProvider["Service"]["request"] = () => Effect.fail(notConnected),
+  answer?: Answering,
 ) => {
   const provider = {
-    request: (input) =>
-      Effect.sync(() => void requests.push(input)).pipe(Effect.andThen(answer(input))),
     state: Stream.make({
       settings: { shared: { server: { a: 1 }, client: {} }, machine: null },
       cardSettings: {},
       reach: [],
+      syncedAt: null,
+      paused: false,
+      problems: [],
     }),
     connection: Stream.make({ status: "connecting" as const, detail: "kitshn provider stopped" }),
-    linkProxyState: Effect.succeed("none" as const),
+    linkSocket: Effect.succeed(null),
     askResults: Effect.succeed([]),
+    jobResults: Effect.succeed([]),
   } satisfies Partial<KitshnProvider.KitshnProvider["Service"]>;
+  const layerKitshn = Layer.effect(
+    KitshnConnection.KitshnConnection,
+    Effect.gen(function* () {
+      const connection = yield* KitshnConnection.make;
+      if (answer === undefined) return connection;
+      yield* connection.attach({
+        answer: registerAnswer(),
+        request: (input) =>
+          Effect.gen(function* () {
+            requests.push(input);
+            // K-709: kitshn stored the part, so the next `desired` event echoes its rev.
+            if (input.type === "desired-set") {
+              yield* connection.publish({
+                type: "desired",
+                kind: input.kind,
+                state: { shared: null, machine: null },
+                rev: input.rev ?? null,
+              });
+            }
+            return yield* answer(input);
+          }),
+        notify: () => Effect.void,
+      });
+      return connection;
+    }),
+  );
   return McpHttpServer.toolkitRegistration(MachineMapToolkit, MachineMapHandlers.layer).pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provide(threads),
     Layer.provide(Layer.mock(KitshnProvider.KitshnProvider)(provider)),
-    // The real rule of the settings service, on the mocked provider connection.
+    // The real rule of the settings service, on the fake daemon connection.
     Layer.provide(
-      Layer.mock(KitshnSettingsSync.KitshnSettingsSync)({
-        setOne: KitshnSettingsSync.makeSetOne(
-          provider as unknown as KitshnProvider.KitshnProvider["Service"],
+      Layer.effect(
+        KitshnSettingsSync.KitshnSettingsSync,
+        Effect.map(KitshnConnection.KitshnConnection, (kitshn) =>
+          KitshnSettingsSync.KitshnSettingsSync.of({
+            setOne: KitshnSettingsSync.makeSetOne(provider, kitshn, Effect.succeed("rev-1")),
+          } as unknown as KitshnSettingsSync.KitshnSettingsSync["Service"]),
         ),
-      }),
+      ),
     ),
+    Layer.provideMerge(layerKitshn),
     Layer.provide(
       Layer.mock(KitshnGrants.KitshnGrants)({
         machine: Effect.succeed(null),
-        state: Effect.succeed({ tables: {}, lastContactAt: null }),
-        paused: Effect.succeed(false),
         trustsPeerOrigin: () => false,
         peerOrigins: () => [],
       }),
     ),
     Layer.provide(Layer.mock(KitshnCli.KitshnCli)({})),
-    Layer.provide(Layer.mock(MachineExec.MachineExec)({})),
+    Layer.provide(Layer.mock(MachineExec.MachineExec)({ lateResults: Stream.make([]) })),
   );
 };
 
@@ -151,7 +183,7 @@ it.effect("another machine cannot use the machine tools of this machine", () =>
 it.effect("a plan thread cannot change anything, and a full-access one sends a kitshn job", () =>
   Effect.gen(function* () {
     const requests: Array<unknown> = [];
-    const done: KitshnProvider.KitshnProvider["Service"]["request"] = () =>
+    const done: Answering = () =>
       Effect.succeed({ id: "1", type: "ask", outcome: "done", result: { jobId: 7 } });
     const restrictedTools = toolsWith(
       Layer.mock(ThreadManagement.ThreadManagementService)({
@@ -196,8 +228,7 @@ it.effect("a plan thread cannot change anything, and a full-access one sends a k
 it.effect("a setting goes into one part of the settings state, keeping its other keys", () =>
   Effect.gen(function* () {
     const requests: Array<unknown> = [];
-    const done: KitshnProvider.KitshnProvider["Service"]["request"] = () =>
-      Effect.succeed({ id: "1", type: "desired-set" });
+    const done: Answering = () => Effect.succeed({ id: "1", type: "desired-set" });
     const tools = toolsWith(liveThreadsLayer, requests, done);
     // The shared part reaches every machine, so an agent thread never sets it; the owner does.
     const agent = yield* callTool(threadCaller, "machines_set_setting", {
@@ -222,6 +253,7 @@ it.effect("a setting goes into one part of the settings state, keeping its other
         kind: "t3.settings",
         part: "shared",
         value: { server: { a: 1, forkAutoUpdate: true }, client: {} },
+        rev: "rev-1",
       },
     ]);
     const local = yield* callTool(threadCaller, "machines_set_setting", {
@@ -236,7 +268,7 @@ it.effect("a setting goes into one part of the settings state, keeping its other
 
 it.effect("a job that waits for its approver circle names kitshn's proposal id (K-1722)", () =>
   Effect.gen(function* () {
-    const waiting: KitshnProvider.KitshnProvider["Service"]["request"] = () =>
+    const waiting: Answering = () =>
       Effect.succeed({ id: "1", type: "ask", outcome: "waiting", proposalId: "p-9" });
     const result = yield* callTool(threadCaller, "machines_command", {
       machineId: "vps",

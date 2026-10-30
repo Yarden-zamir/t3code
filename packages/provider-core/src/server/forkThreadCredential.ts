@@ -7,6 +7,9 @@ import type { McpProviderSessionConfig } from "./mcpSession.ts";
  */
 export const THREAD_CREDENTIAL_ENDPOINT_ENV = "T3_ACP_MCP_ENDPOINT";
 export const THREAD_CREDENTIAL_AUTHORIZATION_ENV = "T3_ACP_MCP_AUTHORIZATION";
+/** kitshn K-1752: `t3:<thread token>`, which kitshn commands send for the daemon to attest. */
+export const KITSHN_ATTEST_ENV = "KITSHN_ATTEST";
+const BEARER = "Bearer ";
 
 type ThreadCredential = Pick<McpProviderSessionConfig, "endpoint" | "authorizationHeader">;
 
@@ -18,6 +21,9 @@ export function threadCredentialEnvironment(
     : {
         [THREAD_CREDENTIAL_ENDPOINT_ENV]: session.endpoint,
         [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: session.authorizationHeader,
+        ...(session.authorizationHeader.startsWith(BEARER)
+          ? { [KITSHN_ATTEST_ENV]: `t3:${session.authorizationHeader.slice(BEARER.length)}` }
+          : {}),
       };
 }
 
@@ -32,6 +38,7 @@ export function withThreadCredential(
   const {
     [THREAD_CREDENTIAL_ENDPOINT_ENV]: _endpoint,
     [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: _authorization,
+    [KITSHN_ATTEST_ENV]: _attest,
     ...rest
   } = environment;
   return { ...rest, ...threadCredentialEnvironment(session) };

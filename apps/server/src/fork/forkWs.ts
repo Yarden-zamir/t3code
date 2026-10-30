@@ -23,6 +23,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as ForkChangelog from "./ForkChangelog.ts";
+import { sessionAllowed } from "./kitshn/kitshnGrantRules.ts";
 import * as KitshnGrants from "./kitshn/KitshnGrants.ts";
 import * as ForkUpdates from "./ForkUpdates.ts";
 import { isMachineSubject } from "./machineMap/machineAccess.ts";
@@ -178,8 +179,8 @@ export const checkLaunchWorktreeBranch = (
     : Effect.void;
 
 /**
- * K-706: a socket that a kitshn grant opened closes when the grant no longer covers its session:
- * a new table, an `endsAt` or the 24-hour limit. The upgrade then refuses it.
+ * K-721: a socket that a kitshn visitor opened closes when its level no longer covers the session:
+ * after a re-check on `grants-changed`, or at its `until`. The upgrade then checks it again.
  */
 export const awaitKitshnLoss = (
   request: HttpServerRequest.HttpServerRequest,
@@ -190,10 +191,12 @@ export const awaitKitshnLoss = (
       Option.isNone(grants)
         ? Effect.never
         : grants.value.visitor(request).pipe(
-            Effect.flatMap((visitor) =>
-              visitor === null
-                ? Effect.never
-                : grants.value.awaitLoss(grants.value.allowsSession(visitor, session)),
+            Effect.flatMap((result) =>
+              result._tag === "visitor"
+                ? grants.value.awaitLoss(result.visitor, (latest) =>
+                    sessionAllowed(session, latest.levels),
+                  )
+                : Effect.never,
             ),
             Effect.as(HttpServerResponse.empty()),
           ),

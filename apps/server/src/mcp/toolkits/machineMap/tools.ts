@@ -1,7 +1,7 @@
 /**
  * Fork: the machine tools. kitshn is the only path: the `machines_*` tools ask the kitshn daemon of
  * this machine (K-1710 to K-1712), and kitshn checks the circles of this machine on each ask. The
- * tool names stay from the machine map. `machine_exec` goes to the other machine directly.
+ * tool names stay from the machine map. `machine_exec` is a kitshn exec (K-722).
  */
 import {
   MACHINE_EXEC_MAX_OUTPUT_BYTES,
@@ -16,6 +16,7 @@ import * as Tool from "effect/ai/Tool";
 import * as Toolkit from "effect/ai/Toolkit";
 
 import * as KitshnCli from "../../../fork/kitshn/KitshnCli.ts";
+import * as KitshnConnection from "../../../fork/kitshn/KitshnConnection.ts";
 import * as KitshnGrants from "../../../fork/kitshn/KitshnGrants.ts";
 import * as KitshnProvider from "../../../fork/kitshn/KitshnProvider.ts";
 import * as KitshnSettingsSync from "../../../fork/kitshn/KitshnSettingsSync.ts";
@@ -32,6 +33,7 @@ const shared = {
     KitshnProvider.KitshnProvider,
     KitshnSettingsSync.KitshnSettingsSync,
     KitshnGrants.KitshnGrants,
+    KitshnConnection.KitshnConnection,
     KitshnCli.KitshnCli,
     MachineExec.MachineExec,
   ],
@@ -43,7 +45,7 @@ const KITSHN_NOTE =
 
 const MachinesReadTool = Tool.make("machines_read", {
   ...shared,
-  description: `Read what kitshn shows this machine. Changes nothing. The result is {"_tag":"read", machine, connection, state, stateError, askResults}: machine is {id, name} of this machine on the kitshn map, or null before it registered. connection is {status ("off", "connecting" or "registered"), detail (why it is off or why the last connection ended), linkProxy ("none", "unchecked" or "checked"), lastContactAt (epoch ms of kitshn's last answer), paused (kitshn's emergency pause)}. state is null with stateError when kitshn cannot answer; otherwise it is the answer of the kitshn state ask: rights (what kitshn lets this machine do), circles ({id, name, level} that this machine can see), cards (the cards that this machine manages, with kind, name, addresses, status, circles, deploy, backup and uptime), proposals (open asks that this machine may answer) and repos. askResults lists the answers to this machine's waiting jobs, newest first: {proposalId, outcome ("approved", "denied" or "expired"), result, reason}. It does not list other machines or their status. ${KITSHN_NOTE}`,
+  description: `Read what kitshn shows this machine. Changes nothing. The result is {"_tag":"read", machine, connection, state, stateError, askResults, jobResults, execResults}: machine is {id, name} of this machine on the kitshn map, or null before it registered. connection is {status ("off", "connecting" or "registered"), detail (why it is off or why the last connection ended), linkProxy (boolean), syncedAt (epoch ms of kitshn's last answer), paused (kitshn's emergency pause), problems ([{path, reason}] that kitshn dropped)}. state is null with stateError when kitshn cannot answer; otherwise it is the answer of the kitshn state ask: rights (what kitshn lets this machine do), circles ({id, name, level} that this machine can see), cards (the cards that this machine manages, with kind, name, addresses, status, circles, deploy, backup and uptime), proposals (open asks that this machine may answer) and repos. Newest first: askResults are answers to this machine's waiting asks {proposalId, outcome ("approved", "denied" or "expired"), result, reason}; jobResults are ends of its jobs {jobId, state, exitCode, output}; execResults are machine_exec runs that waited for the owner {proposalId, result}, result being the machine_exec result or {machine, refused}. It does not list other machines or their status. ${KITSHN_NOTE}`,
   success: Schema.Unknown,
 })
   .annotate(Tool.Readonly, true)
@@ -148,7 +150,7 @@ const MachinesJoinTool = Tool.make("machines_join", {
 
 const MachineExecTool = Tool.make("machine_exec", {
   ...shared,
-  description: `Run a shell command on another machine, through the T3 server of that machine, as its user. Use it for work that needs that machine: logs, builds, git, services. The other machine runs it only while its kitshn grants give this machine t3.agents at exec and t3.app at standard or higher, and a live full-access/default caller with orchestration, worktree and pull-requests tool capabilities sends it. Restricted callers are refused. Losing the grant stops a running command at once. This machine reaches another machine only through kitshn links; until kitshn offers them, the call fails. The call waits for the command, at most the timeout. Background jobs of the command end with it, also with nohup: start long work as a service and poll it. With a shell, \`t3 machine exec <machine> -- <command>\` runs the same command with stdin, streamed and binary output, its exit code and no time limit. The result is {machine, cwd, shell, outcome ("exited" or "timedOut"), exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, durationMs}. stdout and stderr keep at most ${MACHINE_EXEC_MAX_OUTPUT_BYTES} bytes each and then end with a truncation marker. A timeout loses the output.`,
+  description: `Run a shell command on another machine through kitshn, as the user of its T3 provider; T3 there is not needed, so it can repair T3. Use it for work that needs that machine: logs, builds, git, services. It needs a link to that machine's T3 app card, kitshn's "runs commands" right there, and a live full-access/default caller with orchestration, worktree and pull-requests tool capabilities. If the owner must approve, the call waits 60 seconds, then returns outcome "waiting": tell the user that it waits for the owner's approval on kitshn and do not send it again; its result shows later in execResults of machines_read. A denial fails with its reason. The call waits for the command, at most the timeout. Background jobs end with it, also with nohup. In a shell, \`t3 machine exec <machine> -- <command>\` adds stdin, streamed output and the exit code, for up to an hour. The result is {machine, outcome ("exited" or "timedOut"), exitCode, signal, stdout, stderr, stdoutTruncated, stderrTruncated, durationMs} or {machine, outcome "waiting", proposalId, message}. stdout and stderr keep ${MACHINE_EXEC_MAX_OUTPUT_BYTES} bytes each, then a truncation marker.`,
   parameters: MachineExecInput,
   success: MachineExecResult,
 }).annotate(Tool.Destructive, true);

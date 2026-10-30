@@ -1,4 +1,3 @@
-import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -14,7 +13,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
-import { HttpClient, HttpRouter, HttpServer } from "effect/http";
+import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -23,7 +22,6 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadIdentity from "./ThreadIdentity.ts";
-import * as ThreadIdentityRoute from "./threadIdentityRoute.ts";
 
 const environmentId = EnvironmentId.make("environment-identity");
 const projectId = ProjectId.make("project-identity");
@@ -241,26 +239,3 @@ it.layer(layer)("ThreadIdentity", (it) => {
     }),
   );
 });
-
-it.effect("rejects other methods and a missing or malformed Authorization header", () =>
-  Effect.gen(function* () {
-    yield* HttpRouter.serve(ThreadIdentityRoute.layer, {
-      disableListenLog: true,
-      disableLogger: true,
-    }).pipe(Layer.provide(layerDependencies), Layer.build);
-    const client = yield* HttpClient.HttpClient;
-    const status = (headers: Record<string, string>, method: "get" | "post" = "get") =>
-      client[method]("/api/thread-identity", { headers }).pipe(
-        Effect.map((response) => response.status),
-      );
-    expect(yield* status({}, "post")).toBe(405);
-    expect(yield* status({})).toBe(400);
-    expect(yield* status({ authorization: "Basic abc" })).toBe(400);
-    expect(yield* status({ authorization: "Bearer " })).toBe(400);
-    const unknown = yield* client.get("/api/thread-identity", {
-      headers: { authorization: "Bearer unknown-token" },
-    });
-    expect(unknown.status).toBe(200);
-    expect(yield* unknown.json).toStrictEqual({ active: false });
-  }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
-);

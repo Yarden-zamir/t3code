@@ -519,13 +519,6 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         onNone: () => ({}),
         onSome: (trustedBrowserOrigins) => ({ trustedBrowserOrigins }),
       }),
-      ...Option.match(backendExposure.cloudflareAccess, {
-        onNone: () => ({}),
-        onSome: (access) => ({
-          cloudflareAccessTeamDomain: access.teamDomain,
-          cloudflareAccessAud: access.aud,
-        }),
-      }),
       desktopTelemetryFd: 4,
       desktopTelemetryControlFd: 5,
       desktopBrowserFd: 6,

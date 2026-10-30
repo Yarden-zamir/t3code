@@ -4,19 +4,16 @@ import * as Effect from "effect/Effect";
 
 import { machineRequestNamespace } from "./machineAccess.ts";
 import * as KitshnGrants from "../kitshn/KitshnGrants.ts";
-import { fixedKitshnGrants, peerGrants } from "../kitshn/KitshnGrants.testkit.ts";
+import { fixedKitshnGrants } from "../kitshn/KitshnGrants.testkit.ts";
 import { PEER } from "./MachineMap.testkit.ts";
 import { refuseTerminalThreadWithoutExec } from "./terminalThreadExec.ts";
 
 const terminal = { instanceId: TERMINAL_THREAD_INSTANCE_ID };
 const fromPeer = machineRequestNamespace({ machineId: PEER, sessionId: "session-1" });
 const withGrants = (exec: boolean) =>
-  Effect.provideService(
-    KitshnGrants.KitshnGrants,
-    fixedKitshnGrants(peerGrants("admin", exec ? "exec" : "use")),
-  );
+  Effect.provideService(KitshnGrants.KitshnGrants, fixedKitshnGrants(exec));
 
-it.effect("refuses a terminal thread to another machine whose grants have no exec", () =>
+it.effect("refuses a terminal thread to another machine without runs commands", () =>
   Effect.gen(function* () {
     const refused = yield* refuseTerminalThreadWithoutExec(fromPeer, terminal).pipe(
       withGrants(false),
@@ -30,7 +27,7 @@ it.effect("refuses a terminal thread to another machine whose grants have no exe
   }),
 );
 
-it.effect("allows it with an exec grant, and agent threads and local callers always", () =>
+it.effect("allows it with runs commands, and agent threads and local callers always", () =>
   Effect.gen(function* () {
     yield* refuseTerminalThreadWithoutExec(fromPeer, terminal).pipe(withGrants(true));
     yield* refuseTerminalThreadWithoutExec(fromPeer, {
