@@ -23,6 +23,7 @@ import {
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
+  type ClientSettings,
   type KeybindingCommand,
   type KeybindingWhenNode,
   type ServerRemoveKeybindingInput,
@@ -59,9 +60,11 @@ import {
   buildWhenVariableOptions,
   commandLabel,
   DEFAULT_WHEN_VARIABLE,
+  defaultWhenForCommand,
   isKnownWhenVariable,
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
+  needsFocusLevels,
   parseWhenExpressionDraft,
   groupKeybindingRows,
   type KeybindingCommandOption,
@@ -72,6 +75,7 @@ import {
   whenAstToExpression,
   whenNodeRemoveLabel,
 } from "./KeybindingsSettings.logic";
+import { useClientSettings } from "../../hooks/useSettings";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { keybindingSearchAnchorId, searchableSetting } from "./settingsSearch";
@@ -804,6 +808,8 @@ interface KeybindingRowActions {
   onRemove: (row: KeybindingRow) => void;
   /** Null while the page already shows one command only. */
   onShowCommand: ((command: KeybindingCommand) => void) | null;
+  /** The client setting `keyboardFocusLevels`. */
+  focusLevels: boolean;
 }
 
 type KeybindingRowProps = KeybindingRowActions & {
@@ -990,10 +996,13 @@ function KeybindingRowWhen({
   row,
   editor,
   variables,
+  inactive,
 }: {
   row: KeybindingRow;
   editor: KeybindingRowEditor;
   variables: ReadonlyArray<WhenVariableOption>;
+  /** The condition needs a focus level, and keyboard focus levels are off. */
+  inactive: boolean;
 }) {
   return (
     <span className="flex h-6 items-center gap-1.5">
@@ -1006,6 +1015,14 @@ function KeybindingRowWhen({
         onChange={(whenDraft) => editor.setDraft({ whenDraft })}
         onValidityChange={(isWhenDraftValid) => editor.setDraft({ isWhenDraftValid })}
       />
+      {inactive ? (
+        <Tooltip>
+          <TooltipTrigger render={<Badge variant="outline" size="sm" />}>Inactive</TooltipTrigger>
+          <TooltipPopup side="top">
+            This condition needs keyboard focus levels, which are off.
+          </TooltipPopup>
+        </Tooltip>
+      ) : null}
     </span>
   );
 }
@@ -1025,8 +1042,18 @@ function KeybindingHoverRowMenu(props: {
 }
 
 function KeybindingSettingsRow(props: KeybindingRowProps) {
-  const { row, isSaving, anchorId, allRows, variables, onSave, onReset, onRemove, onShowCommand } =
-    props;
+  const {
+    row,
+    isSaving,
+    anchorId,
+    allRows,
+    variables,
+    onSave,
+    onReset,
+    onRemove,
+    onShowCommand,
+    focusLevels,
+  } = props;
   const editor = useKeybindingRowEditor({ row, allRows, onSave });
 
   return (
@@ -1034,7 +1061,14 @@ function KeybindingSettingsRow(props: KeybindingRowProps) {
       id={anchorId}
       className="group/row rounded-none"
       title={<KeybindingRowTitle row={row} />}
-      description={<KeybindingRowWhen row={row} editor={editor} variables={variables} />}
+      description={
+        <KeybindingRowWhen
+          row={row}
+          editor={editor}
+          variables={variables}
+          inactive={!focusLevels && needsFocusLevels(row.binding.whenAst)}
+        />
+      }
       control={
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           <KeybindingConflictWarning labels={editor.conflictLabels} />
@@ -1069,7 +1103,7 @@ function useNewKeybindingDraft({
   const [commandDraft, setCommandDraft] = useState<KeybindingCommand | "">(initialCommand ?? "");
   const [draft, setDraft] = useReducer(keybindingRowDraftReducer, {
     keyDraft: "",
-    whenDraft: undefined,
+    whenDraft: initialCommand === undefined ? undefined : defaultWhenForCommand(initialCommand),
     isRecording: false,
     isWhenDraftValid: true,
   });
@@ -1258,7 +1292,11 @@ function NewKeybindingSettingsRow(props: NewKeybindingProps) {
             className="w-56"
           />
           <KeybindingConflictWarning labels={draft.conflictLabels} />
-          <NewKeybindingKeyInput draft={draft} className="w-44" />
+          <NewKeybindingKeyInput
+            draft={draft}
+            autoFocus={initialCommand !== undefined}
+            className="w-44"
+          />
           <Button size="sm" disabled={isSaving || !draft.canSave} onClick={draft.save}>
             {isSaving ? "Saving" : "Save"}
           </Button>
@@ -1332,6 +1370,8 @@ function useKeybindingCatalog() {
   };
 }
 
+const selectFocusLevels = (settings: ClientSettings) => settings.keyboardFocusLevels;
+
 export function KeybindingsSettingsPanel() {
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
   const shareKeybindings = useShareKeybindingsToMachineMap();
@@ -1358,30 +1398,25 @@ export function KeybindingsSettingsPanel() {
   const [query, setQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [savingCommand, setSavingCommand] = useState<KeybindingCommand | null>(null);
-  const commandFilter = useSearch({
+  const { command: commandFilter, add: addFromMenu } = useSearch({
     from: "/_chat/settings/keybindings",
-    select: (search) => search.command,
   });
+  const focusLevels = useClientSettings(selectFocusLevels);
   const navigate = useNavigate();
   const [addRequested, setAddRequested] = useState(false);
-  // A command filter opens the new row for that command until the user closes it.
-  const [closedAddFor, setClosedAddFor] = useState<KeybindingCommand | null>(null);
-  const isAddingBinding =
-    canWriteSettings &&
-    (addRequested || (commandFilter !== undefined && closedAddFor !== commandFilter));
-  const closeAdd = () => {
-    setAddRequested(false);
-    setClosedAddFor(commandFilter ?? null);
-  };
+  const isAddingBinding = canWriteSettings && (addRequested || addFromMenu === true);
   const showCommand = (command: KeybindingCommand | undefined) => {
-    setClosedAddFor(null);
     void navigate({
       to: "/settings/keybindings",
       search: (previous) => {
-        const { command: _previousCommand, ...rest } = previous;
+        const { command: _previousCommand, add: _add, ...rest } = previous;
         return command === undefined ? rest : { ...rest, command };
       },
     });
+  };
+  const closeAdd = () => {
+    setAddRequested(false);
+    if (addFromMenu === true) showCommand(commandFilter);
   };
   const searchTargetId = useLocation({ select: (location) => location.hash.replace(/^#/, "") });
   const [handledSearchTargetId, setHandledSearchTargetId] = useState(searchTargetId);
@@ -1515,6 +1550,7 @@ export function KeybindingsSettingsPanel() {
     onReset: resetKeybinding,
     onRemove: removeKeybinding,
     onShowCommand: commandFilter === undefined ? showCommand : null,
+    focusLevels,
   };
 
   return (
@@ -1528,7 +1564,10 @@ export function KeybindingsSettingsPanel() {
           {commandFilter !== undefined ? (
             <KeybindingCommandFilterChip
               command={commandFilter}
-              onClear={() => showCommand(undefined)}
+              onClear={() => {
+                showCommand(undefined);
+                searchInputRef.current?.focus();
+              }}
             />
           ) : null}
           <Button
@@ -1568,12 +1607,19 @@ export function KeybindingsSettingsPanel() {
         </p>
       ) : null}
       <div inert={!canWriteSettings} className="flex flex-col gap-8">
+        {addFromMenu === true && !canWriteSettings ? (
+          <SettingsGroup>
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+              You cannot change keybindings here.
+            </div>
+          </SettingsGroup>
+        ) : null}
         {isAddingBinding ? (
           <SettingsGroup>
             <NewKeybindingSettingsRow
               key={commandFilter ?? ""}
               commandOptions={commandOptions}
-              initialCommand={commandFilter}
+              initialCommand={addFromMenu === true ? commandFilter : undefined}
               allRows={allRows}
               variables={whenVariables}
               isSaving={savingCommand !== null}

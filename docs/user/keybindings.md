@@ -7,10 +7,11 @@ Search on that page matches action names, command IDs, conditions and shortcuts,
 `mod+k` or `⌘K`. To see all bindings of one action, choose **Show bindings for this action**
 in the menu of its row.
 
-A right-click menu item that a shortcut can also run shows its shortcut. Right-click that item,
-or press Shift+F10 or the context menu key on it, and choose **Keybinds…**. This also works on
-an item that is disabled now. The page opens with that action filtered and a new binding for it
-ready to record.
+A right-click menu item that a shortcut can also run shows its shortcut, or a faint dash when it
+has none. Right-click that item, or press Shift+F10 or the context menu key on it, and choose
+**Keybindings…**. The menu stays open behind it. This also works on an item that is disabled now,
+and on rows of the command palette and the keyboard cheat sheet. The page opens with that action
+filtered and a new binding for it ready to record.
 
 ## Composer controls
 

@@ -5,6 +5,7 @@ import { type ReactNode, type RefObject, useState } from "react";
 import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { shortcutLabelForCommand } from "../keybindings";
+import { openItemMenu } from "../keybindingsMenu";
 import {
   type CommandPaletteActionItem,
   type CommandPaletteGroup,
@@ -241,6 +242,12 @@ function CommandPaletteResultRow(props: {
       }}
       onClick={() => {
         props.onExecuteItem(props.item);
+      }}
+      onContextMenu={(event) => {
+        const command = props.item.shortcutCommand;
+        if (command === undefined) return;
+        event.preventDefault();
+        void openItemMenu(command, { position: { x: event.clientX, y: event.clientY } });
       }}
     >
       <CommandPaletteTitleIcon>{props.item.icon}</CommandPaletteTitleIcon>

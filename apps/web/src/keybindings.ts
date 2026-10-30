@@ -240,6 +240,28 @@ export function formatShortcutLabel(
   return parts.join("+");
 }
 
+const ARIA_KEY_NAMES: Partial<Record<string, string>> = {
+  escape: "Escape",
+  arrowup: "ArrowUp",
+  arrowdown: "ArrowDown",
+  arrowleft: "ArrowLeft",
+  arrowright: "ArrowRight",
+  pageup: "PageUp",
+  pagedown: "PageDown",
+};
+
+/** The `aria-keyshortcuts` form of a shortcut, such as `Meta+Shift+N`. */
+export function ariaShortcut(shortcut: KeybindingShortcut, platform = navigator.platform): string {
+  const useMetaForMod = isMacPlatform(platform);
+  const parts: string[] = [];
+  if (shortcut.ctrlKey || (shortcut.modKey && !useMetaForMod)) parts.push("Control");
+  if (shortcut.altKey) parts.push("Alt");
+  if (shortcut.shiftKey) parts.push("Shift");
+  if (shortcut.metaKey || (shortcut.modKey && useMetaForMod)) parts.push("Meta");
+  parts.push(ARIA_KEY_NAMES[shortcut.key] ?? formatShortcutKeyLabel(shortcut.key));
+  return parts.join("+");
+}
+
 export function shortcutLabelForCommand(
   keybindings: ResolvedKeybindingsConfig,
   command: KeybindingCommand | null,

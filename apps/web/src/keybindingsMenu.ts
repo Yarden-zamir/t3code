@@ -1,10 +1,8 @@
 import type { ContextMenuItem, KeybindingCommand } from "@t3tools/contracts";
 
+import { requestForkContextMenu } from "./forkContextMenu";
+
 type OpenKeybindings = (command: KeybindingCommand) => void;
-type ShowMenu = (
-  items: readonly ContextMenuItem[],
-  position: { x: number; y: number },
-) => Promise<string | null>;
 
 // `appInit` installs this, so the menu modules do not import the router.
 let openKeybindings: OpenKeybindings | null = null;
@@ -39,25 +37,39 @@ export function isItemMenuKey(event: Pick<KeyboardEvent, "key" | "shiftKey">): b
   return event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
 }
 
+/** Call when the item menu key opens a menu, so the `contextmenu` event that follows is dropped. */
+export function ignoreContextMenuAfterKey(): void {
+  ignoreNextContextMenu = true;
+}
+
+export const KEYBINDINGS_ITEM_LABEL = "Keybindings…";
+
+export function openKeybindingsFor(command: KeybindingCommand): void {
+  if (openKeybindings === null) throw new Error("Context menu keybindings are not installed.");
+  openKeybindings(command);
+}
+
 const ITEM_MENU: readonly ContextMenuItem[] = [
-  { id: "keybinds", label: "Keybinds…", icon: "keyboard" },
+  { id: "keybindings", label: KEYBINDINGS_ITEM_LABEL, icon: "keyboard" },
 ];
 
-/** The menu of one menu item. A key opens it below the item, a right-click at the pointer. */
+/**
+ * The item menu of a row outside an app menu, such as a command palette row. Items inside an app
+ * menu open it nested in that menu instead (`ForkContextMenuHost`).
+ */
 export async function openItemMenu(
   command: KeybindingCommand,
   opener: { readonly element: Element } | { readonly position: { x: number; y: number } },
-  show: ShowMenu,
 ): Promise<void> {
   let position: { x: number; y: number };
   if ("element" in opener) {
-    ignoreNextContextMenu = true;
+    ignoreContextMenuAfterKey();
     const rect = opener.element.getBoundingClientRect();
     position = { x: rect.left, y: rect.bottom };
   } else {
     position = opener.position;
   }
-  if ((await show(ITEM_MENU, position)) !== "keybinds") return;
-  if (openKeybindings === null) throw new Error("Context menu keybindings are not installed.");
-  openKeybindings(command);
+  const selection = requestForkContextMenu(ITEM_MENU, position);
+  if (selection === undefined || (await selection) !== "keybindings") return;
+  openKeybindingsFor(command);
 }

@@ -57,7 +57,7 @@ describe("ForkContextMenuHost", () => {
     expect(requestForkContextMenu(ITEMS)).toBeUndefined();
   });
 
-  it("opens Keybinds for the command of a right-clicked item, also a disabled one", async () => {
+  it("opens Keybindings for the command of a right-clicked item, also a disabled one", async () => {
     const { openKeybindings } = setup();
     await using _screen = await render(<ForkContextMenuHost />);
     const selection = requestForkContextMenu(BINDABLE_ITEMS, { x: 300, y: 300 });
@@ -67,7 +67,19 @@ describe("ForkContextMenuHost", () => {
       // A disabled item ignores the pointer; the click lands on the popup under it.
       force: true,
     });
-    await userEvent.click(page.getByRole("menuitem", { name: "Keybinds…" }));
+    // The item menu opens nested, so the menu of the item stays open, also after Escape.
+    await expect.element(page.getByRole("menuitem", { name: "Keybindings…" })).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect
+      .element(page.getByRole("menuitem", { name: "Keybindings…" }))
+      .not.toBeInTheDocument();
+    await expect.element(page.getByRole("menuitem", { name: /^Rename/ })).toBeVisible();
+
+    await userEvent.click(page.getByRole("menuitem", { name: /^Pin/ }), {
+      button: "right",
+      force: true,
+    });
+    await userEvent.click(page.getByRole("menuitem", { name: "Keybindings…" }));
 
     await expect(selection).resolves.toBeNull();
     expect(openKeybindings).toHaveBeenCalledWith("thread.pin");
@@ -80,7 +92,7 @@ describe("ForkContextMenuHost", () => {
     await expect.element(page.getByRole("menu")).toBeVisible();
 
     await userEvent.keyboard("{ArrowDown}{ContextMenu}");
-    await expect.element(page.getByRole("menuitem", { name: "Keybinds…" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "Keybindings…" })).toBeVisible();
 
     // Windows sends `contextmenu` after the key up, to the element that has focus by then.
     const row = document.createElement("button");
@@ -91,11 +103,31 @@ describe("ForkContextMenuHost", () => {
     row.dispatchEvent(afterKey);
     expect(afterKey.defaultPrevented).toBe(true);
     expect(rowMenu).not.toHaveBeenCalled();
-    await expect.element(page.getByRole("menuitem", { name: "Keybinds…" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "Keybindings…" })).toBeVisible();
 
     row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     expect(rowMenu).toHaveBeenCalledTimes(1);
     row.remove();
+  });
+
+  it("closes the item menu alone on Escape and runs its entry on Enter", async () => {
+    const { openKeybindings } = setup();
+    await using _screen = await render(<ForkContextMenuHost />);
+    const selection = requestForkContextMenu(BINDABLE_ITEMS, { x: 300, y: 300 });
+    await expect.element(page.getByRole("menu")).toBeVisible();
+    const rename = page.getByRole("menuitem", { name: /^Rename/ });
+
+    await userEvent.keyboard("{ArrowDown}{Shift>}{F10}{/Shift}");
+    await expect.element(page.getByRole("menuitem", { name: "Keybindings…" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    await expect
+      .element(page.getByRole("menuitem", { name: "Keybindings…" }))
+      .not.toBeInTheDocument();
+    await expect.element(rename).toHaveFocus();
+
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}{Enter}");
+    await expect(selection).resolves.toBeNull();
+    expect(openKeybindings).toHaveBeenCalledWith("thread.rename");
   });
 
   it("picks an item with the arrow keys and Enter, then gives focus back", async () => {

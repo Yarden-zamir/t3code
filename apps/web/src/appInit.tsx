@@ -189,7 +189,7 @@ export function startAppServices(): AppRouter {
   startBrowserProfileReporting();
   installChatRouteCommands(router);
   installContextMenuKeybindings((command) => {
-    void router.navigate({ to: "/settings/keybindings", search: { command } });
+    void router.navigate({ to: "/settings/keybindings", search: { command, add: true } });
   });
   installCommandPaletteCommands(router);
   registerOpenFavoriteEditorCommand();
