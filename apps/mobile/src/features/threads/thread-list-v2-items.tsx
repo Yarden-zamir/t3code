@@ -1,4 +1,5 @@
 import * as Dialog from "../../components/ui/Dialog";
+import { LongPressMenu } from "../../components/LongPressMenu";
 import type { ThreadRowProviderInstance } from "./thread-provider-instance";
 import {
   THREAD_LIST_V2_MONO_FONT as MONO_FONT,
@@ -233,21 +234,34 @@ function ThreadListV2Section(props: {
   );
 
   return props.disclosure ? (
-    <Pressable
-      accessibilityHint={props.disclosure.accessibilityHint}
-      accessibilityLabel={props.disclosure.accessibilityLabel}
-      accessibilityRole="button"
-      accessibilityState={{
-        disabled: props.disclosure.disabled,
-        expanded: props.disclosure.expanded,
-      }}
-      className={className}
-      disabled={props.disclosure.disabled}
-      onPress={props.disclosure.onToggle}
-      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+    <LongPressMenu
+      entries={[
+        props.disclosure.disabled
+          ? null
+          : {
+              id: "toggle",
+              title: props.disclosure.expanded ? "Hide threads" : "Show threads",
+              image: props.disclosure.expanded ? "chevron.up" : "chevron.down",
+              run: props.disclosure.onToggle,
+            },
+      ]}
     >
-      {content}
-    </Pressable>
+      <Pressable
+        accessibilityHint={props.disclosure.accessibilityHint}
+        accessibilityLabel={props.disclosure.accessibilityLabel}
+        accessibilityRole="button"
+        accessibilityState={{
+          disabled: props.disclosure.disabled,
+          expanded: props.disclosure.expanded,
+        }}
+        className={className}
+        disabled={props.disclosure.disabled}
+        onPress={props.disclosure.onToggle}
+        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      >
+        {content}
+      </Pressable>
+    </LongPressMenu>
   ) : (
     <View className={className}>{content}</View>
   );

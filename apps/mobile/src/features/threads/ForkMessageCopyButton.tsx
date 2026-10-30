@@ -3,10 +3,10 @@ import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@t3tools/shared/promptLinks";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactElement } from "react";
 
 import * as Dialog from "../../components/ui/Dialog";
-import { Menu } from "../../components/ui/Menu";
+import { LongPressMenu, type LongPressMenuEntry } from "../../components/LongPressMenu";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentThreadShells } from "../../state/threads";
@@ -14,6 +14,67 @@ import { copyPromptLink } from "../prompt-links/prompt-link-actions";
 import { CopyTextButton } from "./CopyTextButton";
 import { useForkMessageLinksEnabled } from "./forkMessageLinks";
 import { useForkMessagePin } from "./forkMessagePins";
+
+/**
+ * The message actions of a message's long-press menus: its copy button and its whole bubble
+ * (`MessageBubbleMenu`) show the same entries.
+ */
+function useForkMessageMenuEntries(input: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly messageId: string | null;
+  readonly text: string;
+  readonly promptLink: boolean;
+}): { readonly entries: LongPressMenuEntry[]; readonly link: string | null } {
+  const { environmentId, threadId, messageId, text } = input;
+  const enabled = useForkMessageLinksEnabled(environmentId) && messageId !== null;
+  const pin = useForkMessagePin({ environmentId, threadId, messageId, text });
+  // A Markdown link labelled by the thread title, so a paste in chat is a chip. Known limit: the
+  // title is read without a subscription and stays old until the row renders again.
+  const shell = appAtomRegistry.get(
+    environmentThreadShells.threadShellAtom(scopeThreadRef(environmentId, threadId)),
+  );
+  const link = formatThreadLink(
+    { environmentId, threadId },
+    shell?.title ?? "",
+    messageId ?? undefined,
+  );
+  const linkText = replaceComposerContextReferences(text, (reference) => reference.label);
+  const entries = [
+    ...(enabled
+      ? [
+          {
+            id: "copy-message-link",
+            title: "Copy message link",
+            image: "link",
+            run: () => {
+              void tryCopyTextWithHaptic(link, { target: "message link" }).then((copied) => {
+                if (!copied) Dialog.alert("Could not copy message link", "Try again.");
+              });
+            },
+          },
+        ]
+      : []),
+    ...(input.promptLink && linkText.length <= PROMPT_LINK_MAX_PROMPT_LENGTH
+      ? [
+          {
+            id: "copy-prompt-link",
+            title: "Copy prompt link",
+            image: "link",
+            run: () => void copyPromptLink(linkText),
+          },
+        ]
+      : []),
+    ...(pin
+      ? [
+          pin.pinned
+            ? { id: "unpin-message", title: "Unpin message", image: "pin.slash", run: pin.toggle }
+            : { id: "pin-message", title: "Pin message", image: "pin", run: pin.toggle },
+        ]
+      : []),
+  ];
+  return { entries, link: enabled ? link : null };
+}
 
 export function ForkMessageCopyButton({
   environmentId,
@@ -29,59 +90,54 @@ export function ForkMessageCopyButton({
   readonly promptLink?: boolean;
   readonly menuOnly?: boolean;
 }) {
-  const enabled = useForkMessageLinksEnabled(environmentId) && messageId !== null;
-  const pin = useForkMessagePin({ environmentId, threadId, messageId, text: props.text });
-  if (!enabled && pin === null && (menuOnly || !props.text)) return null;
-  // A Markdown link labelled by the thread title, so a paste in chat is a chip. Known limit: the
-  // title is read without a subscription and stays old until the row renders again.
-  const shell = appAtomRegistry.get(
-    environmentThreadShells.threadShellAtom(scopeThreadRef(environmentId, threadId)),
-  );
-  const link = formatThreadLink(
-    { environmentId, threadId },
-    shell?.title ?? "",
-    messageId ?? undefined,
-  );
-  const linkText = replaceComposerContextReferences(props.text, (reference) => reference.label);
-  const actions = [
-    ...(enabled ? [{ id: "copy-message-link", title: "Copy message link", image: "link" }] : []),
-    ...(promptLink && linkText.length <= PROMPT_LINK_MAX_PROMPT_LENGTH
-      ? [{ id: "copy-prompt-link", title: "Copy prompt link", image: "link" }]
-      : []),
-    ...(pin
-      ? [
-          pin.pinned
-            ? { id: "unpin-message", title: "Unpin message", image: "pin.slash" }
-            : { id: "pin-message", title: "Pin message", image: "pin" },
-        ]
-      : []),
-  ];
+  const { entries, link } = useForkMessageMenuEntries({
+    environmentId,
+    threadId,
+    messageId,
+    text: props.text,
+    promptLink,
+  });
+  const hasPin = entries.some((entry) => entry.id.endsWith("pin-message"));
+  if (link === null && !hasPin && (menuOnly || !props.text)) return null;
   const button = (
     <CopyTextButton
       {...props}
-      {...(!props.text && enabled
+      {...(!props.text && link !== null
         ? { text: link, accessibilityLabel: "Copy message link", onCopy: undefined }
         : {})}
     />
   );
-  if (actions.length === 0) return button;
+  return <LongPressMenu entries={entries}>{button}</LongPressMenu>;
+}
+
+/** Fork: the long-press menu of a whole message bubble: Copy message, then the message actions. */
+export function MessageBubbleMenu(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly messageId: string | null;
+  readonly text: string;
+  readonly promptLink?: boolean;
+  readonly children: ReactElement;
+}) {
+  const { entries } = useForkMessageMenuEntries({
+    ...props,
+    promptLink: props.promptLink ?? false,
+  });
   return (
-    <Menu
-      actions={actions}
-      shouldOpenOnLongPress
-      onPressAction={({ nativeEvent }) => {
-        if (nativeEvent.event === "copy-prompt-link") void copyPromptLink(linkText);
-        if (nativeEvent.event === "pin-message" || nativeEvent.event === "unpin-message") {
-          pin?.toggle();
-        }
-        if (nativeEvent.event === "copy-message-link") {
-          void tryCopyTextWithHaptic(link, { target: "message link" }).then((copied) => {
-            if (!copied) Dialog.alert("Could not copy message link", "Try again.");
-          });
-        }
-      }}
+    <LongPressMenu
+      entries={[
+        props.text.trim().length > 0
+          ? {
+              id: "copy-message",
+              title: "Copy message",
+              image: "doc.on.doc",
+              run: () => void tryCopyTextWithHaptic(props.text, { target: "message" }),
+            }
+          : null,
+        ...entries,
+      ]}
     >
-      {button}
-    </Menu>
+      {props.children}
+    </LongPressMenu>
   );
 }
