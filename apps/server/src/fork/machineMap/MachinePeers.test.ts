@@ -1,8 +1,17 @@
+// A real Unix socket stands in for the kitshn link proxy.
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
+import * as NodeHttp from "node:http";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+
 import { MachineId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
 
 import { machineOfRequestNamespace, machineRequestNamespace } from "./machineAccess.ts";
-import { linkTargets } from "./MachinePeers.ts";
+import { linkTargets, socketClient } from "./MachinePeers.ts";
 
 /**
  * A copy of `linkTarget` in kitshn `packages/daemon/src/link.ts` (origin/main 9e6a638), the daemon side
@@ -79,4 +88,43 @@ it("names the source machine of a machine session namespace", () => {
   });
   expect(machineOfRequestNamespace(namespace)).toBe("vps:1");
   expect(machineOfRequestNamespace("provider:thread")).toBeUndefined();
+});
+
+describe("socketClient (K-1609)", () => {
+  it.live("sends the request through the socket, not to the host name of the URL", () =>
+    Effect.gen(function* () {
+      const folder = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-link-"));
+      const socketPath = NodePath.join(folder, "link.sock");
+      const server = NodeHttp.createServer((request, response) => {
+        let body = "";
+        request.on("data", (chunk: Buffer) => (body += chunk.toString()));
+        request.on("end", () => response.end(JSON.stringify({ path: request.url, body })));
+      });
+      yield* Effect.acquireRelease(
+        Effect.callback<void>((resume) => {
+          server.listen(socketPath, () => resume(Effect.void));
+        }),
+        () =>
+          Effect.sync(() => {
+            server.close();
+            NodeFS.rmSync(folder, { recursive: true, force: true });
+          }),
+      );
+      // `link` is not a DNS name: only the socket can answer.
+      const response = yield* socketClient(socketPath).execute(
+        HttpClientRequest.get("http://link/t3/vps/.well-known/t3/environment"),
+      );
+      expect(yield* response.json).toEqual({
+        path: "/t3/vps/.well-known/t3/environment",
+        body: "",
+      });
+      // A pairing request sends a form body.
+      const posted = yield* socketClient(socketPath).execute(
+        HttpClientRequest.post("http://link/t3/vps/oauth/token").pipe(
+          HttpClientRequest.bodyUrlParams({ grant_type: "x" }),
+        ),
+      );
+      expect(yield* posted.json).toEqual({ path: "/t3/vps/oauth/token", body: "grant_type=x" });
+    }).pipe(Effect.scoped),
+  );
 });
