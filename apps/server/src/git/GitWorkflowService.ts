@@ -31,6 +31,7 @@ import {
 
 import * as GitManager from "./GitManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { isNonRepositoryGitStderr } from "../vcs/GitVcsDriverCore.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 
@@ -347,7 +348,7 @@ export const make = Effect.gen(function* () {
       if (result.exitCode === 0) {
         return result.stdout.trim().replace(/^refs\/heads\//, "") || null;
       }
-      if (result.exitCode === 1) return null;
+      if (result.exitCode === 1 || isNonRepositoryGitStderr(result.stderr)) return null;
       return yield* new GitCommandError({
         operation: "GitWorkflowService.currentBranch",
         command: "git symbolic-ref",
