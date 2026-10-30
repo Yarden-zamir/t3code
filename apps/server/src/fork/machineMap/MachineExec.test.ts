@@ -73,8 +73,8 @@ type Script = {
   readonly frames: ReadonlyArray<KitshnConnection.DaemonEvent>;
   /** The frames that it sends once the stdin of the run ended. */
   readonly afterStdin?: ReadonlyArray<KitshnConnection.DaemonEvent>;
-  /** It refuses stdin and ends the run with these frames instead. */
-  readonly refusesStdin?: ReadonlyArray<KitshnConnection.DaemonEvent>;
+  /** It refuses each chunk of stdin. */
+  readonly refusesStdin?: boolean;
 };
 
 /** A daemon that runs the script of each `exec`, and records the requests and the notices. */
@@ -90,8 +90,7 @@ const harness = Effect.fn("MachineExecTest.harness")(function* (script: Script) 
         if (input.type === "exec-close") {
           for (const frame of script.afterStdin ?? []) yield* connection.publish(frame);
         }
-        if (input.type === "exec-input" && script.refusesStdin !== undefined) {
-          for (const frame of script.refusesStdin) yield* connection.publish(frame);
+        if (input.type === "exec-input" && script.refusesStdin === true) {
           return { id: "x", type: "error", error: "stdin refused" } satisfies Answer;
         }
         if (input.type !== "exec") return { id: "x", type: input.type } as Answer;
@@ -175,7 +174,6 @@ it.effect("runs a command through kitshn as the calling thread (K-722)", () =>
     expect(yield* Queue.take(test.requests)).toEqual({
       type: "exec",
       target: PEER,
-      targetProvider: "t3",
       command: "git status",
       cwd: "~/x",
       timeoutSeconds: 30,
@@ -363,7 +361,9 @@ it.effect("keeps waiting for the exit after kitshn refuses the stdin of a stream
     const test = yield* harness({
       state: "running",
       frames: [],
-      refusesStdin: [exit({ exitCode: 1 })],
+      refusesStdin: true,
+      // The command sees the end of stdin and exits, so the run needs the close below.
+      afterStdin: [exit({ exitCode: 1 })],
     });
     const cli = yield* cliSocket;
     yield* Queue.offer(cli.fromCli, [
@@ -376,10 +376,11 @@ it.effect("keeps waiting for the exit after kitshn refuses the stdin of a stream
     expect(received).toEqual([
       { _tag: "message", message: { type: "exit", outcome: "exited", exitCode: 1 } },
     ]);
-    // After the refused chunk, no more stdin and no stdin end go to kitshn.
+    // After the refused chunk, stdin ends once, and the later `eof` of the CLI sends nothing.
     expect((yield* Queue.takeAll(test.requests)).map((request) => request.type)).toEqual([
       "exec",
       "exec-input",
+      "exec-close",
     ]);
   }),
 );

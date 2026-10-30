@@ -448,7 +448,7 @@ Change the guest applications and the rate limit rule in the Cloudflare Zero Tru
    ```
 
 - If the page says that the link is not valid after the Access login, open the guest link again. The Access login can drop the part of the link after `#`.
-- A guest Access login does not open the owner paths. Access checks each application on its own, and the server accepts only the audience tag of the owner login (`T3CODE_CLOUDFLARE_ACCESS_*`) and the kitshn grants.
+- A guest Access login does not open the owner paths. Access checks each application on its own, and on the server only the kitshn grants open them.
 
 ## Central build caches
 

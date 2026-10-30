@@ -245,6 +245,57 @@ describe("KitshnGrants (K-721)", () => {
     }).pipe(isolated),
   );
 
+  it.effect("skips a re-check answer that is older than the next grants change", () =>
+    Effect.gen(function* () {
+      const test = yield* harness;
+      yield* Ref.set(test.answers, new Map([["sam", person({ app: "standard" })]]));
+      yield* test.connect;
+      const grants = yield* test.start;
+      const sam = visitorOf(yield* grants.visitor(tunnelRequest("sam")));
+      yield* grants.allowsSession(sam, kitshnSession("sam"));
+      // The first re-check answers no-access, but the grants came back while it ran.
+      yield* Ref.set(
+        test.answers,
+        new Map<string, CheckAnswer>([["sam", { refused: { code: "no-access", reason: "gone" } }]]),
+      );
+      yield* Ref.set(
+        test.duringNextCheck,
+        Ref.set(test.answers, new Map([["sam", person({ app: "admin" })]])).pipe(
+          Effect.andThen(test.grantsChanged),
+        ),
+      );
+      yield* test.grantsChanged;
+      // Ends once the second re-check gave admin. The old answer ended no session.
+      yield* grants.awaitLoss(sam, (latest) => latest.levels.app === "standard");
+      expect(yield* Queue.poll(test.revoked)).toEqual(Option.none());
+    }).pipe(isolated),
+  );
+
+  it.effect("asks again a minute after a refusal, which can end without grants-changed", () =>
+    Effect.gen(function* () {
+      const test = yield* harness;
+      yield* Ref.set(
+        test.answers,
+        new Map<string, CheckAnswer>([
+          ["sam", { refused: { code: "stale", reason: "no kitshn" } }],
+        ]),
+      );
+      yield* test.connect;
+      const grants = yield* test.start;
+      const refused = { _tag: "refused", code: "stale" };
+      expect(yield* grants.visitor(tunnelRequest("sam"))).toEqual(refused);
+      const asked = yield* Ref.get(test.checks);
+      expect(yield* grants.visitor(tunnelRequest("sam"))).toEqual(refused);
+      expect(yield* Ref.get(test.checks)).toBe(asked);
+      // kitshn answers again; nothing changed in the tables, so no event comes.
+      yield* Ref.set(test.answers, new Map([["sam", person({ app: "standard" }, 2 * HOUR)]]));
+      yield* TestClock.adjust("1 minute");
+      expect(visitorOf(yield* grants.visitor(tunnelRequest("sam"))).levels).toEqual({
+        app: "standard",
+      });
+    }).pipe(isolated),
+  );
+
   it.effect("keeps a failed revocation on disk and runs it after a restart", () =>
     Effect.gen(function* () {
       const test = yield* harness;

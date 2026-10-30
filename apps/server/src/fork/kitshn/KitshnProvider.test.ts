@@ -330,7 +330,8 @@ it.layer(
         detail: "kitshn sent nothing for 2s, so T3 ended the connection",
       });
       // K-1611: the next registered connection says why T3 ended the last one, and when.
-      yield* TestClock.adjust("1 second");
+      // A child that T3 ended itself backs off, so a refusing daemon gets no tight loop.
+      yield* TestClock.adjust("5 seconds");
       const second = yield* Queue.take(harness.children);
       const again = yield* Queue.take(second.written);
       yield* second.say(registerAnswer({ id: String(again.id) }));
@@ -346,7 +347,7 @@ it.layer(
       // Between the drop and the next try.
       const restartedAt = state.status === "registered" ? state.restartedAt : null;
       expect(restartedAt).toBeGreaterThanOrEqual(2000);
-      expect(restartedAt).toBeLessThanOrEqual(3000);
+      expect(restartedAt).toBeLessThanOrEqual(7000);
     }).pipe(Effect.scoped),
   );
 
@@ -402,7 +403,7 @@ it.layer(
         error: "register t3 on this connection first (K-704).",
       });
       yield* Deferred.await(child.stopped);
-      yield* TestClock.adjust("1 second");
+      yield* TestClock.adjust("5 seconds");
       const second = yield* Queue.take(harness.children);
       expect(yield* Queue.take(second.written)).toMatchObject({ type: "register", protocol: 2 });
     }).pipe(Effect.scoped),

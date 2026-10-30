@@ -193,8 +193,7 @@ const make = Effect.gen(function* () {
       .request({
         type: "exec",
         target: target.id,
-        // T3's own exec user on B, also when this machine reaches cards of other providers there.
-        targetProvider: KitshnProvider.PROVIDER_NAME,
+        // Known limit: no `targetProvider`; send it once B has several providers and the daemon asks.
         command: input.command,
         ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
         timeoutSeconds: input.timeoutSeconds,
@@ -374,6 +373,12 @@ const make = Effect.gen(function* () {
         if (!stdinOpen) continue;
         if (frame._tag === "data" && frame.channel === MachineExecStreamChannel.stdin) {
           yield* closeStdinOnError(sendStdin(frame.bytes));
+          // A refused chunk ends stdin, so a command that reads it does not wait for its timeout.
+          if (!stdinOpen) {
+            yield* kitshn
+              .request({ type: "exec-close", execId: run.execId, what: "stdin" })
+              .pipe(Effect.ignore);
+          }
         } else if (frame._tag === "message" && frame.message.type === "eof") {
           stdinOpen = false;
           yield* closeStdinOnError(

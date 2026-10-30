@@ -11,6 +11,13 @@ export const THREAD_CREDENTIAL_AUTHORIZATION_ENV = "T3_ACP_MCP_AUTHORIZATION";
 export const KITSHN_ATTEST_ENV = "KITSHN_ATTEST";
 const BEARER = "Bearer ";
 
+/** Blanks the names in a child whose environment extends the server's; every reader skips "". */
+export const NO_THREAD_CREDENTIAL = {
+  [THREAD_CREDENTIAL_ENDPOINT_ENV]: "",
+  [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "",
+  [KITSHN_ATTEST_ENV]: "",
+} as const;
+
 type ThreadCredential = Pick<McpProviderSessionConfig, "endpoint" | "authorizationHeader">;
 
 export function threadCredentialEnvironment(

@@ -841,7 +841,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     let lastEnded = "";
     while (true) {
       const { ended, endedByT3, registered: didRegister } = yield* connectOnce;
-      failures = didRegister ? 0 : failures + 1;
+      // A child that T3 ended itself backs off too, so a daemon that keeps refusing is no tight loop.
+      failures = didRegister && !endedByT3 ? 0 : failures + 1;
       const endedAt = yield* Clock.currentTimeMillis;
       yield* Ref.set(restartNote, endedByT3 ? { reason: ended, at: endedAt } : null);
       const delay = retryDelay(failures);

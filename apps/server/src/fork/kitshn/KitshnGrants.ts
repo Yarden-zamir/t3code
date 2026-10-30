@@ -42,6 +42,8 @@ const isGrantSubject = (subject: string) =>
 const CHECK_BATCH = 50;
 // The headers of a request without an Access token name no one; the daemon answer holds a while.
 const ANONYMOUS_LIFETIME = Duration.minutes(5);
+// A refusal can end without `grants-changed`: kitshn came back (`stale`), or the keys rotated (`invalid`).
+const REFUSAL_LIFETIME = Duration.minutes(1);
 const REVOKE_RETRY = Duration.seconds(30);
 // Only sessions and visitors of kitshn are kept, so the caps are a safety net.
 const TRACKED_SESSIONS_LIMIT = 1000;
@@ -88,8 +90,8 @@ export type VisitorResult =
 
 type Cached =
   | { readonly _tag: "anonymous"; readonly until: number }
-  /** A refusal holds until the next `grants-changed`, so refused requests do not each ask. */
-  | { readonly _tag: "refused"; readonly code: CheckRefusal }
+  /** A refusal holds a short time, so refused requests do not each ask the daemon. */
+  | { readonly _tag: "refused"; readonly code: CheckRefusal; readonly until: number }
   | { readonly _tag: "visitor"; readonly visitor: AccessVisitor };
 
 interface Tracked {
@@ -186,7 +188,9 @@ const toCached = (
   result: CheckResult,
   headers: Readonly<Record<string, string>>,
   nowMs: number,
-): Cached | { readonly _tag: "refused"; readonly code: CheckRefusal } => {
+):
+  | Exclude<Cached, { readonly _tag: "refused" }>
+  | { readonly _tag: "refused"; readonly code: CheckRefusal } => {
   if ("anonymous" in result) {
     return { _tag: "anonymous", until: nowMs + Duration.toMillis(ANONYMOUS_LIFETIME) };
   }
@@ -278,9 +282,9 @@ const make = Effect.gen(function* () {
       const nowMs = yield* Clock.currentTimeMillis;
       const cached = cache.get(key);
       if (cached !== undefined) {
-        if (cached._tag === "refused") return cached;
         const until = cached._tag === "visitor" ? cached.visitor.until : cached.until;
         if (until > nowMs) {
+          if (cached._tag === "refused") return { _tag: "refused", code: cached.code } as const;
           return cached._tag === "visitor" ? cached : ({ _tag: "anonymous" } as const);
         }
         cache.delete(key);
@@ -297,7 +301,9 @@ const make = Effect.gen(function* () {
       if ((yield* kitshn.grantsEpoch) !== sentAt) return yield* visitor(request);
       const next = toCached(result, headers, nowMs);
       if (next._tag === "refused") {
-        if (!isTemporary(next.code)) remember(key, next);
+        if (!isTemporary(next.code)) {
+          remember(key, { ...next, until: nowMs + Duration.toMillis(REFUSAL_LIFETIME) });
+        }
         return next;
       }
       remember(key, next);
