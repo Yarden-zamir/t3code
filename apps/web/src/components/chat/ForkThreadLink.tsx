@@ -17,7 +17,6 @@ import { environmentSummaries } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { environmentThreadDetails } from "../../state/threads";
 import { ThreadContextChip } from "../ThreadContextChip";
-import { useForkMessageLinks } from "./ForkMessageLinkTarget";
 import { MarkdownThreadLink } from "./MarkdownThreadLink";
 
 /**
@@ -44,13 +43,12 @@ export function ForkThreadLink(props: {
   readonly label: string | null;
   readonly href: string;
 }) {
-  const messageLinks = useForkMessageLinks(props.environmentId);
   return (
     <MarkdownThreadLink
       environmentId={props.environmentId}
       link={props.link}
       label={props.label}
-      messageId={messageLinks ? threadLinkMessageId(props.href) : null}
+      messageId={threadLinkMessageId(props.href)}
     />
   );
 }
@@ -90,14 +88,13 @@ export function ForkThreadAddressChip(props: {
   readonly label: string;
 }) {
   const shell = useThreadShell(scopeThreadRef(props.address.environmentId, props.address.threadId));
-  const messageLinks = useForkMessageLinks(props.address.environmentId);
   // A bare address is its own label; the chip then needs a word, not the address.
   const label = URL.canParse(props.label) ? "Thread" : props.label;
   const title = shell?.title.trim() || label;
   return (
     <ThreadContextChip
       record={{ ...props.address, title }}
-      messageId={messageLinks ? (props.address.messageId ?? null) : null}
+      messageId={props.address.messageId ?? null}
       // Copied text keeps the web address, so it still works outside T3.
       copyMarkdown={`[${title.replace(/[[\]\\\r\n]/g, " ")}](${props.href})`}
     />

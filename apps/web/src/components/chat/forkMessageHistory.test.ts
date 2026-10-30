@@ -1,6 +1,16 @@
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router";
 import { describe, expect, it } from "vite-plus/test";
 
-import { forkHistoryVisit, recordForkHistoryNavigation } from "./forkMessageHistory";
+import {
+  forkHistoryVisit,
+  recordForkHistoryNavigation,
+  recordForkMessageHistory,
+} from "./forkMessageHistory";
 import { readTimelinePosition, rememberTimelinePosition } from "./timelineScrollAnchoring";
 
 const at = (rowId: string) => ({ rowId, offsetWithinRow: 0, scrollOffset: 0, atEnd: false });
@@ -62,6 +72,39 @@ describe("fork message history", () => {
     expect(visit.revisit).toBe(true);
     expect(visit.position).toBeUndefined();
     expect(readTimelinePosition(a)?.rowId).toBe("reading");
+  });
+
+  it("returns to the saved position after a page without the chat view, not to the message", async () => {
+    const root = createRootRoute();
+    const chat = createRoute({ getParentRoute: () => root, id: "_chat" });
+    const thread = createRoute({ getParentRoute: () => chat, path: "$environmentId/$threadId" });
+    const pullRequests = createRoute({ getParentRoute: () => root, path: "pull-requests" });
+    const router = createRouter({
+      routeTree: root.addChildren([chat.addChildren([thread]), pullRequests]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    recordForkMessageHistory(router);
+    await router.load();
+    const environment = `env-${Math.random().toString(36).slice(2)}`;
+    const a = `${environment}:thread-a`;
+    const go = async (to: string, hash?: string) => {
+      await router.navigate({ to, ...(hash ? { hash } : {}) });
+      return router.state.location.state.__TSR_key!;
+    };
+    await go(`/${environment}/thread-a`);
+    rememberTimelinePosition(a, at("reading"), false);
+    const jump = await go(`/${environment}/thread-a`, "message-old");
+    expect(forkHistoryVisit(jump).revisit).toBe(false);
+
+    rememberTimelinePosition(a, at("scrolled-on"), false);
+    await go("/pull-requests");
+    rememberTimelinePosition(a, at("elsewhere"), false);
+    router.history.back();
+    await router.load();
+    expect(router.state.location.state.__TSR_key).toBe(jump);
+    // A revisit skips the message in the address; the mounting timeline restores the thread.
+    expect(forkHistoryVisit(jump).revisit).toBe(true);
+    expect(readTimelinePosition(a)?.rowId).toBe("scrolled-on");
   });
 
   it("treats an entry that nothing recorded as a first visit", () => {

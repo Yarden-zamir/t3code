@@ -1,3 +1,7 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { AnyRouter } from "@tanstack/react-router";
+
+import { resolveThreadRouteRef } from "../../threadRoutes";
 import {
   readTimelinePosition,
   rememberTimelinePosition,
@@ -69,6 +73,48 @@ export function recordForkHistoryNavigation(
     revisit,
     position: revisit && sameThread ? saved.position : undefined,
   };
+}
+
+const THREAD_ROUTE_ID = "/_chat/$environmentId/$threadId";
+
+/** Fork: `scopedThreadKey` of the thread route at `pathname`, or null for another route. */
+export function forkThreadKeyOfPath(
+  router: Pick<AnyRouter, "getMatchedRoutes">,
+  pathname: string,
+): string | null {
+  const { foundRoute, routeParams } = router.getMatchedRoutes(pathname);
+  if (foundRoute?.id !== THREAD_ROUTE_ID) return null;
+  // A path can keep percent escapes of an id with `:`.
+  const decode = (value: string | undefined) => {
+    try {
+      return value === undefined ? undefined : decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+  const ref = resolveThreadRouteRef({
+    environmentId: decode(routeParams.environmentId),
+    threadId: decode(routeParams.threadId),
+  });
+  return ref === null ? null : scopedThreadKey(ref);
+}
+
+/** Fork: records every navigation of `router` for `forkHistoryVisit`. Call once at router setup. */
+export function recordForkMessageHistory(
+  router: Pick<AnyRouter, "getMatchedRoutes" | "subscribe">,
+) {
+  const location = (at: { pathname: string; state: { __TSR_key?: string } }) => ({
+    entryKey: at.state.__TSR_key,
+    threadKey: forkThreadKeyOfPath(router, at.pathname),
+  });
+  // The router's `fromLocation` waits for React to resolve the last navigation, so it is empty
+  // or old in a quick run of navigations. The last recorded location is the one being left.
+  let current: ForkHistoryLocation | undefined;
+  router.subscribe("onBeforeNavigate", ({ toLocation }) => {
+    const next = location(toLocation);
+    recordForkHistoryNavigation(current, next);
+    current = next;
+  });
 }
 
 /** Fork: the visit of the entry `entryKey`, or a first visit when no navigation recorded it. */

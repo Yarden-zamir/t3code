@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { LegendListRef } from "@legendapp/list/react";
 import type {
   EnvironmentId,
@@ -13,23 +13,17 @@ import {
   messageLinkFromLocation,
   messageLinkStep,
 } from "@t3tools/shared/threadMessageLinks";
-import {
-  type HistoryState,
-  type ParsedLocation,
-  useLocation,
-  useRouter,
-} from "@tanstack/react-router";
+import { type HistoryState, useLocation, useRouter } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
-import { useClientSettings } from "../../hooks/useSettings";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { randomUUID } from "../../lib/utils";
 import type { TimelineEntry } from "../../session-logic";
 import { useThreadStatus } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { toastManager } from "../ui/toast";
-import { forkHistoryVisit, recordForkHistoryNavigation } from "./forkMessageHistory";
+import { forkHistoryVisit, forkThreadKeyOfPath } from "./forkMessageHistory";
 import type { MessagesTimelineHistoryControls } from "./MessagesTimeline";
 import {
   timelineTurnFoldRunIdsByEntryId,
@@ -89,32 +83,6 @@ export function useForkMessageLinks(environmentId: EnvironmentId | null): boolea
   return useAtomValue(environmentId ? messageLinksAtom(environmentId) : OFF_ATOM);
 }
 
-/** Fork: whether a message in the address opens: message links or pins are on. */
-function useForkMessageJumps(environmentId: EnvironmentId | null): boolean {
-  const pins = useClientSettings((settings) => settings.messagePins);
-  return useForkMessageLinks(environmentId) || pins;
-}
-
-/** `scopedThreadKey` of a thread route path, or null for another route. */
-function threadKeyOfPath(pathname: string): string | null {
-  const [, environmentId, threadId, ...rest] = pathname.split("/");
-  if (!environmentId || !threadId || rest.length > 0) return null;
-  try {
-    return scopedThreadKey(
-      scopeThreadRef(
-        decodeURIComponent(environmentId) as EnvironmentId,
-        decodeURIComponent(threadId) as ScopedThreadRef["threadId"],
-      ),
-    );
-  } catch {
-    return null;
-  }
-}
-
-function historyLocation(location: ParsedLocation) {
-  return { entryKey: location.state.__TSR_key, threadKey: threadKeyOfPath(location.pathname) };
-}
-
 /** Fork: the props of a thread `Link` that opens the thread at `messageId`, or none. */
 export function forkMessageLinkNavigation(messageId: MessageId | null | undefined) {
   if (!messageId) return {};
@@ -128,21 +96,6 @@ export function forkMessageLinkNavigation(messageId: MessageId | null | undefine
   };
 }
 
-/** `isThreadRoutePathname`, for the percent-encoded path of an id with `:` too. */
-function isRoutePathOf(pathname: string, threadRef: ScopedThreadRef): boolean {
-  const [, environmentId, threadId] = pathname.split("/");
-  try {
-    return (
-      environmentId !== undefined &&
-      threadId !== undefined &&
-      decodeURIComponent(environmentId) === threadRef.environmentId &&
-      decodeURIComponent(threadId) === threadRef.threadId
-    );
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Fork: the timeline target of the location in the route thread `threadRef`. A first visit of an
  * entry opens the message in the address. A revisit returns to where the user left the entry, and
@@ -153,18 +106,7 @@ export function useForkMessageLinkRequest(threadRef: ScopedThreadRef | null): {
   readonly link: ForkMessageLinkRequest | null;
   readonly revisit: boolean;
 } {
-  const enabled = useForkMessageJumps(threadRef?.environmentId ?? null);
   const router = useRouter();
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to router navigations to keep the timeline position of each history entry
-  useEffect(() => {
-    if (!enabled) return;
-    return router.subscribe("onBeforeNavigate", ({ fromLocation, toLocation }) =>
-      recordForkHistoryNavigation(
-        fromLocation ? historyLocation(fromLocation) : undefined,
-        historyLocation(toLocation),
-      ),
-    );
-  }, [enabled, router]);
   // Primitives only: an object here is new on every router store update.
   const hash = useLocation({ select: (location) => location.hash });
   // ChatView, and the route params, still name the last thread for a moment after the location
@@ -172,8 +114,9 @@ export function useForkMessageLinkRequest(threadRef: ScopedThreadRef | null): {
   const pathname = useLocation({ select: (location) => location.pathname });
   const searchStr = useLocation({ select: (location) => location.searchStr });
   const entryKey = useLocation({ select: (location) => location.state.__TSR_key ?? location.href });
-  const routed = threadRef !== null && isRoutePathOf(pathname, threadRef);
-  const visit = enabled && routed ? forkHistoryVisit(entryKey) : null;
+  const routed =
+    threadRef !== null && forkThreadKeyOfPath(router, pathname) === scopedThreadKey(threadRef);
+  const visit = routed ? forkHistoryVisit(entryKey) : null;
   const messageId = visit && !visit.revisit ? messageLinkFromLocation(hash, searchStr) : null;
   const target: ForkTimelineTarget | null = visit?.position
     ? { _tag: "position", position: visit.position }

@@ -1,14 +1,18 @@
 import { createRouter, RouterHistory } from "@tanstack/react-router";
 
+import { recordForkMessageHistory } from "./components/chat/forkMessageHistory";
 import { routeTree } from "./routeTree.gen";
 
 export function getRouter(history: RouterHistory) {
-  return createRouter({
+  const router = createRouter({
     routeTree,
     history,
     context: {},
     defaultPreload: "intent",
   });
+  // Fork: Back and Forward return to where the user left each thread entry.
+  recordForkMessageHistory(router);
+  return router;
 }
 
 export type AppRouter = ReturnType<typeof getRouter>;

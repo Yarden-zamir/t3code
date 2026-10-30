@@ -36,18 +36,15 @@ export function useForkMessageLinksEnabled(environmentId: EnvironmentId | null):
 }
 
 /**
- * Fork: the message that the `message` param of the Thread route names, while the `messageLinks`
- * setting of its environment is on. Handling it clears the param, so the screen does not scroll
- * there again.
+ * Fork: the message that the `message` param of the Thread route names. Handling it clears the
+ * param, so the screen does not scroll there again.
  */
 export function useForkMessageLinkParam(
   message: string | string[] | undefined,
-  environmentId: EnvironmentId | null,
 ): ForkMessageLinkRequest | undefined {
   const navigation = useNavigation();
-  const enabled = useForkMessageLinksEnabled(environmentId);
   const messageId = (Array.isArray(message) ? message[0] : message)?.trim();
-  if (!enabled || !messageId) return undefined;
+  if (!messageId) return undefined;
   return { messageId, onHandled: () => navigation.setParams({ message: undefined }) };
 }
 

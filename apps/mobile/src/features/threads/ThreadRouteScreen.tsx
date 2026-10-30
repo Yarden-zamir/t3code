@@ -462,7 +462,7 @@ function ThreadRouteContent(
   const environmentIdRaw = firstRouteParam(params.environmentId);
   const environmentId = environmentIdRaw ? EnvironmentId.make(environmentIdRaw) : null;
   const threadId = firstRouteParam(params.threadId);
-  const forkMessageLink = useForkMessageLinkParam(params.message, environmentId);
+  const forkMessageLink = useForkMessageLinkParam(params.message);
   const routeThreadIdentity =
     environmentIdRaw !== null && threadId !== null ? `${environmentIdRaw}:${threadId}` : null;
   // The chosen mode survives thread switches; "route" only applies while the route
