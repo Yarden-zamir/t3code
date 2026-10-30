@@ -695,7 +695,7 @@ describe("EnvironmentSupervisor", () => {
         yield* awaitState(supervisor.state, (state) => state.phase === "connected");
         yield* harness.wake(wakeup);
         yield* TestClock.adjust("499 millis");
-        expect(yield* Ref.get(harness.sessionCount)).toBe(1);
+        expect(yield* Ref.get(harness.releaseCount)).toBe(0);
 
         yield* TestClock.adjust("1 millis");
         yield* awaitState(
@@ -961,7 +961,7 @@ describe("EnvironmentSupervisor", () => {
       yield* harness.wake("application-active-long");
       yield* harness.setNetworkStatus("offline");
       yield* TestClock.adjust("2999 millis");
-      expect(yield* Ref.get(harness.sessionCount)).toBe(1);
+      expect(yield* Ref.get(harness.releaseCount)).toBe(0);
 
       yield* TestClock.adjust("1 millis");
       const reconnected = yield* awaitState(

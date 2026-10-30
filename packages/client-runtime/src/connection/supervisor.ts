@@ -89,12 +89,19 @@ interface TracedAttemptFailure {
   readonly attemptSpan: Option.Option<Tracer.Span>;
 }
 
+/** A connection opened while the previous socket stayed in use. */
+interface ConnectionHandoff {
+  readonly lease: ConnectionDriver.EnvironmentConnectionLease;
+  readonly scope: Scope.Closeable;
+}
+
 type AttemptOutcome =
   | {
       readonly _tag: "Interrupted";
       readonly established: boolean;
       readonly stable: boolean;
       readonly resetRetry: boolean;
+      readonly handoff?: ConnectionHandoff;
     }
   | {
       readonly _tag: "Failure";
@@ -116,6 +123,15 @@ type EstablishmentEvent =
     }
   | { readonly _tag: "Interrupted"; readonly resetRetry: boolean }
   | { readonly _tag: "TimedOut" };
+
+/** Closes a replacement connection that is no longer needed, ready or not. */
+const discardHandoff = Effect.fnUntraced(function* (
+  replacement: Fiber.Fiber<ConnectionHandoff, unknown>,
+) {
+  yield* Fiber.interrupt(replacement);
+  const exit = yield* Fiber.await(replacement);
+  if (Exit.isSuccess(exit)) yield* Scope.close(exit.value.scope, Exit.void);
+});
 
 function exitUnlessInterrupted<A, E, R>(
   effect: Effect.Effect<A, E, R>,
@@ -271,6 +287,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     network: yield* connectivity.status,
   };
   const intent = yield* Ref.make(initialIntent);
+  const supervisorScope = yield* Effect.scope;
   const signals = yield* Queue.unbounded<SupervisorSignal>();
   const resetRetryState = yield* Ref.make(false);
   const probeUnanswered = yield* Ref.make(false);
@@ -653,6 +670,42 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     return (yield* socketSilent) ? ("silent" as const) : ("alive" as const);
   });
 
+  // The current socket stays in use while this connects. Its scope outlives the
+  // attempt, so the next attempt adopts the connection.
+  const openReplacement = Effect.gen(function* () {
+    const scope = yield* Scope.fork(supervisorScope);
+    const entry = yield* Ref.get(currentEntry);
+    return yield* driver
+      .connect(entry, () => Effect.void)
+      .pipe(
+        Scope.provide(scope),
+        Effect.timeout(Duration.times(establishmentTimeout, connectionRoutes(entry).length)),
+        Effect.map((lease): ConnectionHandoff => ({ lease, scope })),
+        Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : Scope.close(scope, exit))),
+      );
+  });
+
+  // Returns the new connection, or true to reconnect from the start when it failed.
+  const awaitReplacement = Effect.fnUntraced(function* (
+    replacement: Fiber.Fiber<ConnectionHandoff, unknown>,
+    lease: ConnectionDriver.EnvironmentConnectionLease,
+  ) {
+    const outcome = yield* Effect.raceFirst(
+      Fiber.await(replacement).pipe(Effect.map((exit) => ({ _tag: "Done" as const, exit }))),
+      Effect.gen(function* () {
+        for (;;) {
+          const end = yield* connectedLeaseEnd(yield* Queue.take(signals), lease);
+          if (end !== undefined) return { _tag: "End" as const, end };
+        }
+      }),
+    );
+    if (outcome._tag === "End") {
+      yield* discardHandoff(replacement);
+      return outcome.end === "reset";
+    }
+    return Exit.isSuccess(outcome.exit) ? outcome.exit.value : true;
+  });
+
   // Returning to the app, an explicit retry, and the network reporting offline
   // all probe the live session instead of replacing it, so a healthy socket is
   // not torn down (the offline report is often wrong, for example for a
@@ -698,6 +751,22 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       // the socket, needs a fresh check only if the running one sees a frame.
       let recheck = false;
       let longResume = isLongResume(next);
+      // After a long suspension a new connection opens at once. It replaces the
+      // socket only when the checks find that socket dead, because a new session
+      // reloads the full snapshot.
+      let replacement: Fiber.Fiber<ConnectionHandoff, unknown> | undefined;
+      const startReplacement = Effect.gen(function* () {
+        replacement ??= yield* Effect.forkChild(openReplacement);
+      });
+      const stopReplacement = Effect.suspend(() => {
+        const fiber = replacement;
+        replacement = undefined;
+        return fiber === undefined ? Effect.void : discardHandoff(fiber);
+      });
+      const replaceSocket = Effect.suspend(() =>
+        replacement === undefined ? Effect.succeed(true) : awaitReplacement(replacement, lease),
+      );
+      if (longResume) yield* startReplacement;
       const startSilentSocketCheck = Effect.gen(function* () {
         silentSocket = yield* Effect.forkChild(awaitSilentSocket(lease, routeKind));
         recheck = false;
@@ -748,14 +817,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           // The host is reachable, so replace the socket at once, even while
           // the network reports offline.
           yield* stopProbe;
-          return true;
+          return yield* replaceSocket;
         }
         if (probeEvent._tag === "TimedOut") {
           syncTimings.probe(target.environmentId, "timed-out");
           yield* stopProbe;
           // A long suspension leaves the socket suspect even when the network
           // reports offline, so it is replaced like a silent one.
-          if (longResume) return true;
+          if (longResume) return yield* replaceSocket;
           return yield* new ConnectionTransientError({
             reason: "timeout",
             detail: `${target.label} did not respond to a connection health check.`,
@@ -769,6 +838,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           );
           if (Exit.isSuccess(probeEvent.exit)) {
             yield* Ref.set(probeUnanswered, false);
+            yield* stopReplacement;
+          } else if (replacement !== undefined) {
+            return yield* replaceSocket;
           }
           yield* probeEvent.exit;
           break;
@@ -776,12 +848,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         const endDuringProbe = yield* connectedLeaseEnd(probeEvent.signal, lease);
         if (endDuringProbe !== undefined) {
           yield* stopProbe;
+          yield* stopReplacement;
           return endDuringProbe === "reset";
         }
         const signalTimeout = probeTimeoutFor(probeEvent.signal, routeKind);
         if (signalTimeout !== undefined) {
           yield* armSilentSocketCheck(probeEvent.signal);
           longResume ||= isLongResume(probeEvent.signal);
+          if (longResume) yield* startReplacement;
           const signalDeadline =
             (yield* Clock.monotonicTimeNanos) + Duration.toNanosUnsafe(signalTimeout);
           if (signalDeadline < deadline) deadline = signalDeadline;
@@ -796,50 +870,59 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     lastFailure: ConnectionAttemptError | null,
     pendingRetry: Option.Option<PendingRetryTrace>,
     ignoreOffline: boolean,
+    handoff: Option.Option<ConnectionHandoff>,
   ) {
     const switchingTo = yield* Ref.get(preferredRouteId);
     yield* SubscriptionRef.set(prepared, Option.none());
     const synchronizedRoutes = yield* Ref.make(0);
-    const establishment = yield* Effect.raceAllFirst([
-      exitUnlessInterrupted(
-        establishTracedConnection(
-          attempt,
-          generation,
-          lastFailure,
-          pendingRetry,
-          synchronizedRoutes,
-        ),
-      ).pipe(
-        Effect.map((exit): EstablishmentEvent => ({
+    if (Option.isSome(handoff)) {
+      yield* Effect.addFinalizer(() => Scope.close(handoff.value.scope, Exit.void));
+    }
+    const establishment: EstablishmentEvent = Option.isSome(handoff)
+      ? {
           _tag: "Completed",
-          exit,
-        })),
-      ),
-      waitForEstablishmentInterrupt().pipe(
-        Effect.map((resetRetry): EstablishmentEvent => ({
-          _tag: "Interrupted",
-          resetRetry,
-        })),
-      ),
-      // Each route may use the full setup time before the next is tried, and
-      // each route that reaches synchronizing adds its own snapshot budget, so
-      // a route that fails late does not eat the next route's time.
-      Effect.gen(function* () {
-        const routeCount = connectionRoutes(yield* Ref.get(currentEntry)).length;
-        const startedAt = yield* Clock.monotonicTimeNanos;
-        const setup = Duration.toNanosUnsafe(Duration.times(establishmentTimeout, routeCount));
-        while (true) {
-          const synchronized = BigInt(yield* Ref.get(synchronizedRoutes));
-          const deadline =
-            startedAt + setup + synchronized * Duration.toNanosUnsafe(synchronizationTimeout);
-          const remaining = deadline - (yield* Clock.monotonicTimeNanos);
-          if (remaining <= 0n) {
-            return { _tag: "TimedOut" } as const satisfies EstablishmentEvent;
-          }
-          yield* Effect.sleep(Duration.nanos(remaining));
+          exit: Exit.succeed({ attemptSpan: Option.none(), lease: handoff.value.lease }),
         }
-      }),
-    ]);
+      : yield* Effect.raceAllFirst([
+          exitUnlessInterrupted(
+            establishTracedConnection(
+              attempt,
+              generation,
+              lastFailure,
+              pendingRetry,
+              synchronizedRoutes,
+            ),
+          ).pipe(
+            Effect.map((exit): EstablishmentEvent => ({
+              _tag: "Completed",
+              exit,
+            })),
+          ),
+          waitForEstablishmentInterrupt().pipe(
+            Effect.map((resetRetry): EstablishmentEvent => ({
+              _tag: "Interrupted",
+              resetRetry,
+            })),
+          ),
+          // Each route may use the full setup time before the next is tried, and
+          // each route that reaches synchronizing adds its own snapshot budget, so
+          // a route that fails late does not eat the next route's time.
+          Effect.gen(function* () {
+            const routeCount = connectionRoutes(yield* Ref.get(currentEntry)).length;
+            const startedAt = yield* Clock.monotonicTimeNanos;
+            const setup = Duration.toNanosUnsafe(Duration.times(establishmentTimeout, routeCount));
+            while (true) {
+              const synchronized = BigInt(yield* Ref.get(synchronizedRoutes));
+              const deadline =
+                startedAt + setup + synchronized * Duration.toNanosUnsafe(synchronizationTimeout);
+              const remaining = deadline - (yield* Clock.monotonicTimeNanos);
+              if (remaining <= 0n) {
+                return { _tag: "TimedOut" } as const satisfies EstablishmentEvent;
+              }
+              yield* Effect.sleep(Duration.nanos(remaining));
+            }
+          }),
+        ]);
 
     if (establishment._tag === "Interrupted") {
       return {
@@ -936,11 +1019,13 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     ).pipe(exitUnlessInterrupted);
     const connectedForMs = (yield* Clock.currentTimeMillis) - connectedAt;
     if (Exit.isSuccess(connectedExit)) {
+      const ended = connectedExit.value;
       return {
         _tag: "Interrupted",
         established: true,
         stable: connectedForMs >= BACKOFF_RESET_AFTER_MS,
-        resetRetry: connectedExit.value,
+        resetRetry: ended !== false,
+        ...(typeof ended === "object" ? { handoff: ended } : {}),
       } satisfies AttemptOutcome;
     }
     const outcome = failureFromExit(
@@ -1007,6 +1092,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       pendingRetry = Option.none();
     };
     let replacing = false;
+    let handoff = Option.none<ConnectionHandoff>();
 
     for (;;) {
       if (yield* Ref.getAndSet(resetRetryState, false)) {
@@ -1018,6 +1104,8 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       if (!currentIntent.desired) {
         resetRetryLadder();
         latestFailure = null;
+        if (Option.isSome(handoff)) yield* Scope.close(handoff.value.scope, Exit.void);
+        handoff = Option.none();
         yield* clearLease;
         yield* setState(availableState(currentIntent, generation));
         yield* waitForSignal;
@@ -1036,9 +1124,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       const attempt = failureCount + 1;
       const nextGeneration = generation + 1;
       const outcome: AttemptOutcome = yield* Effect.scoped(
-        runAttempt(attempt, nextGeneration, latestFailure, pendingRetry, replacing),
+        runAttempt(attempt, nextGeneration, latestFailure, pendingRetry, replacing, handoff),
       );
       replacing = false;
+      handoff = Option.none();
       const failedProbe = yield* Ref.getAndSet(probeUnanswered, false);
       if (outcome.established) {
         generation = nextGeneration;
@@ -1056,6 +1145,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           resetRetryLadder();
           replacing = true;
         }
+        if (outcome.handoff !== undefined) handoff = Option.some(outcome.handoff);
         continue;
       }
 
