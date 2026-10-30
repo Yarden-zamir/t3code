@@ -215,7 +215,8 @@ export function showObjectMenu(
 /** Copies `value` for an object menu entry named `label`, and reports a failure. */
 export function copyFromObjectMenu(value: string, label: string): void {
   writeTextToClipboard(value, label.toLowerCase()).catch(async (error: unknown) => {
-    // A static import of the toast module would load app state before `appInit` installs this.
+    // The toast module imports app stores; low in the import graph, a static import risks a
+    // cycle at start, as `connectionAtomRuntime` showed.
     const { toastManager } = await import("./components/ui/toast");
     toastManager.add({
       type: "error",

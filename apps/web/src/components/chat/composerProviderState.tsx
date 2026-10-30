@@ -68,6 +68,13 @@ type TraitsRenderInput = {
   extraMenuContent?: ReactNode;
   extraMenuOwnsModeShortcut?: boolean;
   extraMenuHint?: string;
+  /** The key and item-menu props of the effort trigger, read by the caller from the keybindings. */
+  effortKeybinding?: EffortKeybinding;
+};
+
+export type EffortKeybinding = {
+  readonly label: string | null;
+  readonly props: Readonly<Record<string, string | undefined>>;
 };
 
 export function getComposerPromptInjectionState(prompt: string): ComposerPromptInjectionState {
@@ -241,6 +248,7 @@ function renderTraitsControl(
     extraMenuContent,
     extraMenuOwnsModeShortcut,
     extraMenuHint,
+    effortKeybinding,
   } = input;
   const hasTarget = threadRef !== undefined || draftId !== undefined;
   const { selections: resolvedModelOptions } = resolveComposerOptionSelections(
@@ -284,6 +292,7 @@ function renderTraitsControl(
       {...(extraMenuContent ? { extraMenuContent } : {})}
       {...(extraMenuOwnsModeShortcut ? { extraMenuOwnsModeShortcut } : {})}
       {...(extraMenuHint ? { extraMenuHint } : {})}
+      {...(effortKeybinding ? { effortKeybinding } : {})}
     />
   );
 }
