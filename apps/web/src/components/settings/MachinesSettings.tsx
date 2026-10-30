@@ -56,7 +56,7 @@ const relativeTime = (epochMs: number) => formatRelativeTimeLabel(new Date(epoch
 function statusNote(connection: MachineMapClientState["connection"]): string | null {
   if (connection.detail === null) return null;
   if (connection.status !== "registered") return sentence(connection.detail);
-  const restartedAt = connection.restartedAt ?? null;
+  const { restartedAt } = connection;
   if (restartedAt === null || Date.now() - restartedAt > RESTART_NOTE_MS) return null;
   return `Reconnected ${relativeTime(restartedAt)}: ${connection.detail}`;
 }
