@@ -85,6 +85,10 @@ const RESTART_FLUSH = Duration.millis(500);
 const STDERR_KEEP = 4096;
 // Above the daemon's own 30-second limit of a local request.
 const LOCAL_REQUEST_TIMEOUT = Duration.seconds(35);
+// A child that stopped answering (its daemon went away) is ended at the next `samples` probe that
+// gets no answer. Known limit: that takes up to this interval plus LOCAL_REQUEST_TIMEOUT. Revisit
+// if local requests need a faster recovery.
+const LIVENESS_PROBE = Duration.minutes(3);
 
 const resourceKey = Schema.encodeSync(Schema.fromJsonString(ProviderResourceSchema));
 
@@ -305,7 +309,8 @@ const REGISTERED_KINDS = [
 export type KitshnConnection =
   | { readonly status: "off"; readonly detail: string }
   | { readonly status: "connecting"; readonly detail: string | null }
-  | { readonly status: "registered"; readonly detail: null };
+  /** `detail`: why the connection before this one ended, if there was one. */
+  | { readonly status: "registered"; readonly detail: string | null };
 
 /** What kitshn keeps for this provider besides grants: the settings state and card settings. */
 export interface KitshnProviderState {
@@ -519,21 +524,43 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         Effect.forkScoped,
       );
       let lastId = 0;
+      // Ids are digits only, so none equals kitshn's reserved id `kitshn-provider-heartbeat`.
       const nextId = () => String(++lastId);
       const send = (request: Request) => Queue.offer(outbox, requestLine(request));
       const waiting = new Map<string, Deferred.Deferred<Answer>>();
-      const localRequest = Effect.fn("KitshnProvider.localRequest")(function* (
+      const connectionScope = yield* Effect.scope;
+      const unanswered = yield* Deferred.make<string>();
+      const awaitAnswer = Effect.fn("KitshnProvider.awaitAnswer")(function* (
         request: LocalRequestInput,
       ) {
         const id = nextId();
         const answer = yield* Deferred.make<Answer>();
         waiting.set(id, answer);
         yield* send({ ...request, id } as LocalRequest);
-        const received = yield* Deferred.await(answer).pipe(
+        return yield* Deferred.await(answer).pipe(
           Effect.timeoutOption(LOCAL_REQUEST_TIMEOUT),
           Effect.ensuring(Effect.sync(() => waiting.delete(id))),
         );
+      });
+      // The daemon answers `samples` itself, so no answer means that the child stopped answering.
+      const checkAlive = awaitAnswer({ type: "samples" }).pipe(
+        Effect.flatMap((received) =>
+          Option.isSome(received)
+            ? Effect.void
+            : Deferred.succeed(
+                unanswered,
+                `the kitshn provider did not answer in ${Duration.format(LOCAL_REQUEST_TIMEOUT)}, so T3 ended it`,
+              ),
+        ),
+        Effect.asVoid,
+      );
+      const localRequest = Effect.fn("KitshnProvider.localRequest")(function* (
+        request: LocalRequestInput,
+      ) {
+        const received = yield* awaitAnswer(request);
         if (Option.isNone(received)) {
+          // The daemon can hold an ask 60 seconds for kitshn, so only `samples` proves the child dead.
+          yield* checkAlive.pipe(Effect.forkIn(connectionScope));
           return yield* new KitshnRequestError({ message: "kitshn did not answer in time." });
         }
         return received.value;
@@ -640,7 +667,10 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
             yield* grants.setAccess(answer.access ?? null);
             yield* setHostNotice(answer.access ?? null);
             yield* Ref.set(live, Option.some(localRequest));
-            yield* SubscriptionRef.set(connection, { status: "registered", detail: null });
+            yield* SubscriptionRef.update(connection, (current): KitshnConnection => ({
+              status: "registered",
+              detail: current.detail,
+            }));
             yield* Deferred.succeed(registeredOnce, undefined);
             return yield* Effect.logInfo(
               `kitshn provider: registered, with ${grantCount(answer.grants)} grants`,
@@ -702,6 +732,13 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         Effect.forkScoped,
       );
 
+      yield* Deferred.await(registeredOnce).pipe(
+        Effect.andThen(
+          Effect.sleep(LIVENESS_PROBE).pipe(Effect.andThen(checkAlive), Effect.forever),
+        ),
+        Effect.forkScoped,
+      );
+
       const refreshCards = Effect.gen(function* () {
         const current = yield* appResource;
         const changed: Array<ProviderResource> = [];
@@ -737,7 +774,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         Effect.forkScoped,
       );
 
-      const ended = yield* child.stdout.pipe(
+      const exited = child.stdout.pipe(
         Stream.decodeText,
         Stream.splitLines,
         Stream.runForEach(handleLine),
@@ -756,6 +793,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         }),
         Effect.orElseSucceed(() => "kitshn provider stopped"),
       );
+      // Leaving this scope ends the child, so a child that stopped answering is replaced.
+      const ended = yield* Effect.raceFirst(exited, Deferred.await(unanswered));
       return { ended, registered: yield* Deferred.isDone(registeredOnce) };
     }),
   ).pipe(
@@ -782,7 +821,9 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       const delay = retryDelay(failures);
       const message = `kitshn provider: ${ended}. It tries again in ${Duration.format(delay)}.`;
       // A machine without kitshn says the same thing on each try; log it once.
-      yield* ended === lastEnded ? Effect.logDebug(message) : Effect.logInfo(message);
+      yield* ended === lastEnded && !didRegister
+        ? Effect.logDebug(message)
+        : Effect.logInfo(message);
       lastEnded = ended;
       yield* SubscriptionRef.set(connection, { status: "connecting", detail: ended });
       yield* Effect.sleep(delay);

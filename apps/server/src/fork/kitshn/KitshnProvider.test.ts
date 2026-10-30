@@ -37,7 +37,8 @@ interface FakeChild {
   readonly stopped: Deferred.Deferred<void>;
 }
 
-const makeChild = (args: ReadonlyArray<string>) =>
+/** The daemon answers `samples` itself; while `answersSamples` is false, the child is stuck. */
+const makeChild = (args: ReadonlyArray<string>, answersSamples: Ref.Ref<boolean>) =>
   Effect.gen(function* () {
     const stdout = yield* Queue.unbounded<string, Cause.Done>();
     const written = yield* Queue.unbounded<Record<string, unknown>>();
@@ -55,7 +56,16 @@ const makeChild = (args: ReadonlyArray<string>) =>
             .decode(chunk)
             .split("\n")
             .filter((line) => line !== ""),
-          (line) => Queue.offer(written, JSON.parse(line) as Record<string, unknown>),
+          (line) =>
+            Effect.gen(function* () {
+              const request = JSON.parse(line) as Record<string, unknown>;
+              if (request.type === "samples" && (yield* Ref.get(answersSamples))) {
+                const newest = { at: 0, cpu: 0, memory: 0, disk: 0 };
+                const answer = { id: request.id, type: "samples", newest, history: [] };
+                return yield* Queue.offer(stdout, `${JSON.stringify(answer)}\n`);
+              }
+              return yield* Queue.offer(written, request);
+            }),
           { discard: true },
         ),
       ),
@@ -114,6 +124,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
     const linkCheckExit = yield* Ref.make(0);
     const channels = yield* Queue.unbounded<string>();
     const contacts = yield* Ref.make(0);
+    const answersSamples = yield* Ref.make(true);
 
     const layer = Layer.effect(
       KitshnProvider.KitshnProvider,
@@ -162,6 +173,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
               Effect.gen(function* () {
                 const { handle, child } = yield* makeChild(
                   command._tag === "StandardCommand" ? command.args : [],
+                  answersSamples,
                 );
                 yield* Effect.addFinalizer(() => Deferred.succeed(child.stopped, undefined));
                 yield* Queue.offer(children, child);
@@ -230,6 +242,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
       channels,
       contacts,
       linkCheckExit,
+      answersSamples,
     };
   });
 
@@ -657,6 +670,39 @@ it.layer(
       yield* child.say(command(1, "collect-diagnostics"));
       yield* Queue.take(child.written);
       expect(yield* Ref.get(harness.contacts)).toBe(1);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps a child that answers, and replaces one that stops answering", () =>
+    Effect.gen(function* () {
+      const harness = yield* setup();
+      const first = yield* Queue.take(harness.children);
+      const register = yield* Queue.take(first.written);
+      yield* first.say({ id: register.id, type: "register", machineId: "m-1", grants: {} });
+      // An ask that kitshn does not answer in time leaves the child, because it answers `samples`.
+      yield* takeProbe(first);
+      yield* TestClock.adjust("35 seconds");
+      yield* TestClock.adjust("3 minutes");
+      expect(yield* Deferred.isDone(first.stopped)).toBe(false);
+      expect(yield* Queue.size(harness.children)).toBe(0);
+
+      // The daemon went away but the child did not exit: the next probe gets no answer.
+      yield* Ref.set(harness.answersSamples, false);
+      yield* TestClock.adjust("3 minutes");
+      expect(yield* Queue.take(first.written)).toMatchObject({ type: "samples" });
+      yield* TestClock.adjust("35 seconds");
+      yield* Deferred.await(first.stopped);
+      yield* TestClock.adjust("1 second");
+      const second = yield* Queue.take(harness.children);
+      const again = yield* Queue.take(second.written);
+      yield* second.say({ id: again.id, type: "register", machineId: "m-1", grants: {} });
+      yield* takeProbe(second);
+      // K-1611: the connection shows why T3 replaced the child.
+      const connection = yield* harness.provider.connection.pipe(Stream.runHead);
+      expect(Option.getOrThrow(connection)).toEqual({
+        status: "registered",
+        detail: "the kitshn provider did not answer in 35s, so T3 ended it",
+      });
     }).pipe(Effect.scoped),
   );
 
