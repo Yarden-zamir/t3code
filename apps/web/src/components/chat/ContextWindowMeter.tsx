@@ -7,6 +7,7 @@ import {
 } from "./ContextWindowMeter.logic";
 import { Minimize2Icon } from "lucide-react";
 import { composerFloatingLayerProps } from "./composerEventScope";
+import { copyFromObjectMenu, showObjectMenu } from "../../objectMenu";
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -49,6 +50,35 @@ export function ContextWindowMeter(props: {
             size="icon-sm"
             variant="ghost-muted"
             className="size-7"
+            onContextMenu={(event) => {
+              const trigger = event.currentTarget;
+              showObjectMenu(event, [
+                { label: "Show details", run: () => trigger.click() },
+                onCompact
+                  ? {
+                      label: "Compact context",
+                      run: onCompact,
+                      ...(compactDisabled ? { disabled: true } : {}),
+                    }
+                  : null,
+                {
+                  label: "Copy usage",
+                  icon: "copy",
+                  run: () =>
+                    copyFromObjectMenu(
+                      [
+                        `Context window: ${formatContextWindowTokens(usage.usedTokens)}`,
+                        usage.maxTokens !== null
+                          ? `of ${formatContextWindowTokens(usage.maxTokens ?? null)}${usedPercentage ? ` (${usedPercentage})` : ""}`
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" "),
+                      "context window usage",
+                    ),
+                },
+              ]);
+            }}
             aria-label={
               usage.maxTokens !== null && usedPercentage
                 ? `Context window ${usedPercentage} used`

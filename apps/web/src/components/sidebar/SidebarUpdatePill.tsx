@@ -1,4 +1,5 @@
 import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
+import { objectMenuActionsProps, objectMenuProps } from "../../objectMenu";
 import { TriangleAlertIcon } from "lucide-react";
 import { type ComponentProps, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -440,7 +441,11 @@ function SidebarUpdateControl() {
           ? { status: "downloading", percent: state.downloadPercent }
           : { status: "waiting" };
     return (
-      <SidebarMenuItem className="ml-auto flex min-w-0 flex-1">
+      <SidebarMenuItem
+        {...objectMenuProps()}
+        {...objectMenuActionsProps}
+        className="ml-auto flex min-w-0 flex-1"
+      >
         <SidebarUpdateCapsule
           run={run}
           local={local}
@@ -517,7 +522,11 @@ function SidebarUpdateControl() {
   );
 
   return (
-    <SidebarMenuItem className="ml-auto shrink-0">
+    <SidebarMenuItem
+      {...objectMenuProps()}
+      {...objectMenuActionsProps}
+      className="ml-auto shrink-0"
+    >
       <Popover
         handle={releaseNotesPopoverHandle}
         open={releaseNotesOpen && showReleaseNotesPopover}

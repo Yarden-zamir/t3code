@@ -80,6 +80,7 @@ import {
   TimelineRowTimestamp,
 } from "./TimelineRowParts";
 import { UserMessageContextReferenceChip } from "./UserMessageContextChips";
+import { objectMenuActionsProps, objectMenuProps } from "../../objectMenu";
 import { resolvePreviewAnnotationImage } from "./TimelineUserMessageRow.logic";
 
 const BUBBLE_CHIP_CLASS_NAME =
@@ -211,7 +212,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               timestampFormat={ctx.timestampFormat}
               alwaysVisible
             />
-            <div className="flex items-center gap-0.5">
+            <div {...objectMenuActionsProps} className="flex items-center gap-0.5">
               {typeof revertTurnCount === "number" && (
                 <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
               )}
@@ -507,6 +508,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 {regularImages.map((image) => (
                   <div
                     key={image.id}
+                    {...objectMenuProps([{ label: "Copy name", value: image.name }])}
+                    {...objectMenuActionsProps}
                     className={cn(
                       "bg-background/70",
                       image.source?.kind === "snap-shot" && image.previewUrl
@@ -585,7 +588,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   );
                   if (file.downloadable !== false) {
                     return (
-                      <div key={file.id} className="flex min-w-0 items-center gap-1">
+                      <div
+                        key={file.id}
+                        {...objectMenuProps([{ label: "Copy name", value: file.name }])}
+                        {...objectMenuActionsProps}
+                        className="flex min-w-0 items-center gap-1"
+                      >
                         <button
                           type="button"
                           aria-label={`Preview ${file.name}`}
@@ -661,7 +669,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
               </TooltipPopup>
             </Tooltip>
-            <div className="flex items-center gap-0.5">
+            <div {...objectMenuActionsProps} className="flex items-center gap-0.5">
               <ForkCopyMessageLink
                 threadRef={ctx.threadRef}
                 messageId={row.message.id}

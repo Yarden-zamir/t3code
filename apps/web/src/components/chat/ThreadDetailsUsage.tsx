@@ -21,6 +21,8 @@ import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
+import { useNavigate } from "@tanstack/react-router";
+import { copyFromObjectMenu, showObjectMenu } from "../../objectMenu";
 
 const PACE_LABEL: Record<LimitPace, string> = {
   ahead: "Ahead of pace",
@@ -57,13 +59,34 @@ export function ThreadDetailsUsage({
     report?.accounts.find((entry) => entry.instanceId === providerInstanceId)?.limits ??
     providers.find((provider) => provider.instanceId === providerInstanceId)?.usageLimits;
   const notice = limits ? limitsNotice(limits) : null;
+  const navigate = useNavigate();
   if (!limits && !contextWindow) return null;
+  const usageText = [
+    ...(limits && !notice
+      ? limits.windows.map((window) => `${window.label}: ${remainingPercent(window)}% left`)
+      : []),
+    ...(contextWindow ? [`Context: ${formatContextWindowTokens(contextWindow.usedTokens)}`] : []),
+  ].join("\n");
 
   return (
     <ThreadDetailsSection
       headingId="thread-details-usage-heading"
       title="Usage"
       showHeading={false}
+      onContextMenu={(event) =>
+        showObjectMenu(event, [
+          {
+            label: "Open usage",
+            keybindingCommand: "usage.open",
+            run: () => void navigate({ to: "/usage" }),
+          },
+          {
+            label: "Copy usage",
+            icon: "copy",
+            run: () => copyFromObjectMenu(usageText, "usage"),
+          },
+        ])
+      }
     >
       <div className="grid grid-cols-[auto_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
         {notice ? (

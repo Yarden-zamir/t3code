@@ -1,4 +1,5 @@
 import { SettingsGroup } from "./SettingsGroup";
+import { objectMenuActionsProps, objectMenuProps } from "../../objectMenu";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { usePrimaryEnvironmentId, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
@@ -459,6 +460,7 @@ export function SettingsRow({
       ref={targetRef}
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       data-slot="settings-row"
+      {...objectMenuProps()}
       className={cn(
         "group/settings-row @container/settings-row rounded-xl px-3 sm:px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground",
         children ? "pt-3 pb-1" : "py-3",
@@ -484,7 +486,10 @@ export function SettingsRow({
                 {renderedInheritance}
               </span>
             ) : null}
-            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+            <span
+              {...objectMenuActionsProps}
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center"
+            >
               {renderedReset}
             </span>
           </div>
@@ -498,7 +503,10 @@ export function SettingsRow({
           ) : null}
         </div>
         {renderedControl ? (
-          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end">
+          <div
+            {...objectMenuActionsProps}
+            className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end"
+          >
             {renderedControl}
           </div>
         ) : null}

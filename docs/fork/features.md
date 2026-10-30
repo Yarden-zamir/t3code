@@ -800,7 +800,8 @@ Back and forward buttons sit right of the sidebar toggle, like in VS Code. A but
 Right-click menus use the app's own menu, also in the desktop app, in place of the system menu. The menu follows the app theme and shows icons, group names, check marks and submenus. Arrow keys move over the items, letters jump to an item, and Escape closes the menu.
 
 - **Setting:** none. Menus always use the app menu. A menu that opens before the app is ready, or on an error screen, uses a plain web menu.
-- Menu items that a keybinding can run show the key. Right-click such an item, or press Shift+F10 or the context menu key on it, for **Keybindings…**. It opens nested, so the menu stays open, and Escape closes only the nested menu. An item without a key shows a faint dash. Command palette and cheat sheet rows have the same menu on right-click.
+- Controls and menu items that a keybinding can run show the key. Right-click one, or press Shift+F10 or the context menu key on it, for **Keybindings…**. In a menu it opens nested, so the menu stays open, and Escape closes only the nested menu. A menu item without a key shows a faint dash. Command palette and cheat sheet rows have the same menu.
+- Messages, code blocks, citation chips, pins and the pins button, queued messages, attachments, check rows, the update pill, settings rows, the context window meter, the thread usage section and the Snoozed and Settled headers have a menu of their own buttons and copy actions. Selected text, text fields and links keep their own menus.
 - **Works on:** web, desktop. The mobile app keeps its native menus.
 - Text fields and pages in the browser panel keep the system menu, with spelling suggestions and Cut, Copy and Paste.
 - **Limits:**

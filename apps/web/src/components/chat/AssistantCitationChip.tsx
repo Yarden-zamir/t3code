@@ -23,6 +23,7 @@ import {
 import { cn } from "~/lib/utils";
 import { ContextChip, ContextChipAction, ContextChipLabel } from "../ContextChip";
 import { ContextChipPopover } from "../contextChipParts";
+import { copyFromObjectMenu, showObjectMenu } from "../../objectMenu";
 import { Button } from "../ui/button";
 import { Popover, PopoverClose, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
@@ -122,6 +123,12 @@ export function AssistantCitationChip({
       <ContextChipLabel className="max-w-[16em]">{label}</ContextChipLabel>
     </Link>
   );
+  const goToSource = () => void navigate(assistantCitationNavigation(citation));
+  const copyQuote = {
+    label: "Copy quote",
+    icon: "copy",
+    run: () => copyFromObjectMenu(citation.text, "quote"),
+  };
   if (!composer) {
     return (
       <ContextChipPopover
@@ -130,6 +137,14 @@ export function AssistantCitationChip({
         label={label}
         accessibleLabel={`Quoted assistant text: ${label}`}
         copyMarkdown={serializeAssistantCitation(citation)}
+        onContextMenu={(event) => {
+          const chip = event.currentTarget;
+          showObjectMenu(event, [
+            { label: "Show quote", run: () => chip.click() },
+            { label: "Go to source", run: goToSource },
+            copyQuote,
+          ]);
+        }}
       >
         <div className="flex max-h-[calc(var(--available-height)_-_1rem_-_2px)] flex-col items-start gap-3 p-1 text-sm">
           <AssistantCitationQuote citation={citation} />
@@ -147,6 +162,18 @@ export function AssistantCitationChip({
     <ContextChip
       kind="citation"
       contentEditable={false}
+      onContextMenu={(event) =>
+        showObjectMenu(event, [
+          { label: "Go to source", run: goToSource },
+          commentEditor
+            ? {
+                label: citation.comment ? "Edit note" : "Add note",
+                run: () => commentTriggerRef.current?.click(),
+              }
+            : null,
+          copyQuote,
+        ])
+      }
       data-assistant-citation-chip="true"
       data-markdown-copy={serializeAssistantCitation(citation)}
     >
