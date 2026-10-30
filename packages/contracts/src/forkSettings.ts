@@ -292,11 +292,6 @@ export const ForkClientSettingsFields = {
   inAppNotificationClosesOnOpen: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
-  /**
-   * Fork: right-click menus use the app's own menu, also on desktop, in place of the system menu
-   * and the plain web menu. On by default: only this menu can open Keybinds… on a menu item.
-   */
-  richContextMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 };
 
 export const ForkClientSettingsPatchFields = {
@@ -332,7 +327,6 @@ export const ForkClientSettingsPatchFields = {
   inAppNotificationCompletions: Schema.optionalKey(Schema.Boolean),
   inAppNotificationAttentionStays: Schema.optionalKey(Schema.Boolean),
   inAppNotificationClosesOnOpen: Schema.optionalKey(Schema.Boolean),
-  richContextMenu: Schema.optionalKey(Schema.Boolean),
 };
 
 /**

@@ -8,9 +8,9 @@ Search on that page matches action names, command IDs, conditions and shortcuts,
 in the menu of its row.
 
 A right-click menu item that a shortcut can also run shows its shortcut. Right-click that item,
-or press Shift+F10 on it, and choose **Keybinds…**. The page opens with that action filtered and
-a new binding for it ready to record. If you turn off **Settings → Appearance → App context
-menu**, the desktop app uses system menus. They show the shortcut but have no **Keybinds…**.
+or press Shift+F10 or the context menu key on it, and choose **Keybinds…**. This also works on
+an item that is disabled now. The page opens with that action filtered and a new binding for it
+ready to record.
 
 ## Composer controls
 

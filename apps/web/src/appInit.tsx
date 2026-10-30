@@ -50,9 +50,7 @@ import { primaryServerConfigAtom } from "./state/server";
 import { getActiveThemeFonts, subscribeToActiveThemeFonts } from "./forkThemeStyle";
 import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
-import { hintShortcutsForCommand } from "./keybindings";
 import { installContextMenuKeybindings } from "./keybindingsMenu";
-import { primaryServerKeybindingsAtom } from "./state/server";
 import { startWorkspaceFocus } from "./lib/workspaceFocus";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
@@ -190,20 +188,8 @@ export function startAppServices(): AppRouter {
   startPreviewTitleRecording();
   startBrowserProfileReporting();
   installChatRouteCommands(router);
-  installContextMenuKeybindings({
-    open: (command) => {
-      void router.navigate({ to: "/settings/keybindings", search: { command } });
-    },
-    shortcutFor: (command) => {
-      const settings = getClientSettings();
-      if (!settings.tooltipShortcuts) return null;
-      const keybindings = appAtomRegistry.get(primaryServerKeybindingsAtom);
-      return (
-        hintShortcutsForCommand(keybindings, command, {
-          focusLevels: settings.keyboardFocusLevels,
-        })[0] ?? null
-      );
-    },
+  installContextMenuKeybindings((command) => {
+    void router.navigate({ to: "/settings/keybindings", search: { command } });
   });
   installCommandPaletteCommands(router);
   registerOpenFavoriteEditorCommand();

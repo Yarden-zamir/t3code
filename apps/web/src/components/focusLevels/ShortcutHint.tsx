@@ -4,8 +4,8 @@ import type { ComponentProps, ReactNode } from "react";
 
 import { useClientSettings } from "../../hooks/useSettings";
 import {
+  effectiveShortcutsForCommand,
   formatShortcutLabel,
-  hintShortcutsForCommand,
   type ShortcutMatchContext,
 } from "../../keybindings";
 import { primaryServerKeybindingsAtom } from "../../state/server";
@@ -17,9 +17,20 @@ type ShortcutContext = Partial<ShortcutMatchContext>;
 const selectTooltipShortcuts = (settings: ClientSettings) => settings.tooltipShortcuts;
 const selectFocusLevels = (settings: ClientSettings) => settings.keyboardFocusLevels;
 
+// The level flags are always false while focus levels are off, so a key that needs one does nothing.
+const LEVELS_OFF = {
+  composerFocus: false,
+  timelineFocus: false,
+  rightPanelFocus: false,
+  sidebarFocus: false,
+} satisfies ShortcutContext;
+
 const selectShortcutLimit = (settings: ClientSettings) => settings.tooltipShortcutLimit;
 
-/** Every key that runs `command` where the tooltip shows. */
+/**
+ * Every key that runs `command` where the tooltip shows. The last matching rule wins, so the
+ * user's own rules, which come after the defaults, are listed first.
+ */
 function useShortcutLabels(
   command: KeybindingCommand | null,
   context?: ShortcutContext,
@@ -28,9 +39,8 @@ function useShortcutLabels(
   const levels = useClientSettings(selectFocusLevels);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   if (!enabled || command === null) return [];
-  const shortcuts = hintShortcutsForCommand(keybindings, command, {
-    focusLevels: levels,
-    ...(context ? { context } : {}),
+  const shortcuts = effectiveShortcutsForCommand(keybindings, command, {
+    context: levels ? (context ?? {}) : { ...context, ...LEVELS_OFF },
   });
   return [...new Set(shortcuts.map((shortcut) => formatShortcutLabel(shortcut)))];
 }

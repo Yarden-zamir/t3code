@@ -173,12 +173,6 @@ export const APPEARANCE_ITEMS = [
     to: "/settings/appearance",
     searchTerms: ["back forward arrows navigation history title bar vs code"],
   },
-  {
-    id: "rich-context-menu",
-    title: "App context menu",
-    to: "/settings/appearance",
-    searchTerms: ["right click context menu native system menu style theme keyboard"],
-  },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
 export const GLOBAL_SCRIPTS_ITEMS = [

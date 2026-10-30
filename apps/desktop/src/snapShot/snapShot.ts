@@ -16,8 +16,6 @@ import {
   type SnapShotShortcut,
 } from "@t3tools/contracts";
 
-import { toElectronAccelerator } from "../electron/electronAccelerator.ts";
-
 interface AccessibilityTreeNode {
   readonly name?: string;
   readonly value?: string;
@@ -541,6 +539,16 @@ function findBrowserTitleMatch<T extends { readonly name?: string | null }>(
   return browserMatches.length === 1 ? browserMatches[0] : undefined;
 }
 
+const ELECTRON_KEY_NAMES: Readonly<Record<string, string>> = {
+  " ": "Space",
+  "+": "Plus",
+  ArrowDown: "Down",
+  ArrowLeft: "Left",
+  ArrowRight: "Right",
+  ArrowUp: "Up",
+  Escape: "Esc",
+};
+
 export function sameSnapShotShortcut(left: SnapShotShortcut, right: SnapShotShortcut): boolean {
   if (isModifierPairShortcut(left) || isModifierPairShortcut(right)) {
     return (
@@ -550,6 +558,17 @@ export function sameSnapShotShortcut(left: SnapShotShortcut, right: SnapShotShor
     );
   }
   return toElectronAccelerator(left) === toElectronAccelerator(right);
+}
+
+export function toElectronAccelerator(shortcut: SnapShotKeyChord): string {
+  const parts: string[] = [];
+  if (shortcut.modKey) parts.push("CommandOrControl");
+  if (shortcut.metaKey) parts.push("Super");
+  if (shortcut.ctrlKey) parts.push("Control");
+  if (shortcut.altKey) parts.push("Alt");
+  if (shortcut.shiftKey) parts.push("Shift");
+  parts.push(ELECTRON_KEY_NAMES[shortcut.key] ?? shortcut.key.toUpperCase());
+  return parts.join("+");
 }
 
 export function isWaylandSession(

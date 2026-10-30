@@ -3,7 +3,6 @@ import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@t3tools/c
 import { requestConfirmDialog } from "./confirmDialog";
 import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
 import { dismissForkContextMenu, requestForkContextMenu } from "./forkContextMenu";
-import { withShortcuts } from "./keybindingsMenu";
 import { readBrowserClientSettings, writeBrowserClientSettings } from "./clientPersistenceStorage";
 
 let cachedApi: LocalApi | undefined;
@@ -46,20 +45,13 @@ export function createLocalApi(): LocalApi {
         items: readonly ContextMenuItem<T>[],
         position?: { x: number; y: number },
       ): Promise<T | null> => {
-        const forkMenu = requestForkContextMenu(items, position); // Fork: `richContextMenu`.
-        if (forkMenu) return forkMenu;
-        const withKeys = withShortcuts(items);
-        if (window.desktopBridge) {
-          return window.desktopBridge.showContextMenu(withKeys, position) as Promise<T | null>;
-        }
-        return showContextMenuFallback(withKeys, position);
+        // Fork: the app menu, or a plain web menu before its host mounts or on an error screen.
+        return requestForkContextMenu(items, position) ?? showContextMenuFallback(items, position);
       },
-      // Unlike native menus, the DOM fallback needs dismissal when underlying state disappears.
+      // Unlike native menus, web menus need dismissal when underlying state disappears.
       close: async () => {
         dismissForkContextMenu();
-        if (!window.desktopBridge) {
-          dismissContextMenu();
-        }
+        dismissContextMenu();
       },
     },
     persistence: {

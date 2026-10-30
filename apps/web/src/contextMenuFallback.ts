@@ -1,8 +1,6 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
 
 import { isForkContextMenuOpen } from "./forkContextMenu";
-import { formatShortcutLabel } from "./keybindings";
-import { isItemMenuKey, openItemMenu } from "./keybindingsMenu";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -59,17 +57,6 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "line", attrs: { x1: "4", x2: "20", y1: "15", y2: "15" } },
     { tag: "line", attrs: { x1: "10", x2: "8", y1: "3", y2: "21" } },
     { tag: "line", attrs: { x1: "16", x2: "14", y1: "3", y2: "21" } },
-  ],
-  keyboard: [
-    { tag: "path", attrs: { d: "M10 8h.01" } },
-    { tag: "path", attrs: { d: "M12 12h.01" } },
-    { tag: "path", attrs: { d: "M14 8h.01" } },
-    { tag: "path", attrs: { d: "M16 12h.01" } },
-    { tag: "path", attrs: { d: "M18 8h.01" } },
-    { tag: "path", attrs: { d: "M6 8h.01" } },
-    { tag: "path", attrs: { d: "M7 16h10" } },
-    { tag: "path", attrs: { d: "M8 12h.01" } },
-    { tag: "rect", attrs: { width: "20", height: "16", x: "2", y: "4", rx: "2" } },
   ],
   "mail-open": [
     {
@@ -257,7 +244,6 @@ export function showContextMenuFallback<T extends string>(
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const menuStack: HTMLDivElement[] = [];
     const submenuTriggerStack: Array<HTMLButtonElement | undefined> = [];
-    const itemMenuByButton = new Map<HTMLButtonElement, () => void>();
     let isDisposed = false;
     let canDismissFromPointer = false;
 
@@ -305,14 +291,6 @@ export function showContextMenuFallback<T extends string>(
         (button) => !button.disabled,
       );
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-      if (isItemMenuKey(event)) {
-        const openFocusedItemMenu = buttons[index] && itemMenuByButton.get(buttons[index]);
-        if (!openFocusedItemMenu) return;
-        event.preventDefault();
-        event.stopPropagation();
-        openFocusedItemMenu();
-        return;
-      }
       let target: HTMLButtonElement | undefined;
       switch (event.key) {
         case "ArrowDown":
@@ -491,34 +469,6 @@ export function showContextMenuFallback<T extends string>(
         label.className = "min-w-0 flex-1 truncate";
         label.textContent = item.label;
         button.appendChild(label);
-
-        if (item.shortcut) {
-          // Same look as the `Kbd` chip of the app's shortcut hints.
-          const shortcut = document.createElement("kbd");
-          shortcut.className =
-            "pointer-events-none ms-4 inline-flex h-5 min-w-5 select-none items-center justify-center rounded bg-foreground/[0.07] px-1 font-medium font-sans text-muted-foreground text-xs";
-          shortcut.style.cssText =
-            "margin-inline-start:1rem;display:inline-flex;height:1.25rem;min-width:1.25rem;align-items:center;justify-content:center;border-radius:0.25rem;padding:0 0.25rem;font-size:0.75rem;font-weight:500;color:var(--contrast-muted-foreground);pointer-events:none;";
-          shortcut.textContent = formatShortcutLabel(item.shortcut);
-          button.appendChild(shortcut);
-        }
-
-        const command = item.keybindingCommand;
-        if (command && !isDisabled) {
-          const openThisItemMenu = (position: { x: number; y: number }) => {
-            cleanup(null);
-            void openItemMenu(command, position, showContextMenuFallback);
-          };
-          itemMenuByButton.set(button, () => {
-            const rect = button.getBoundingClientRect();
-            openThisItemMenu({ x: rect.left, y: rect.bottom });
-          });
-          button.addEventListener("contextmenu", (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            openThisItemMenu({ x: event.clientX, y: event.clientY });
-          });
-        }
 
         if (hasChildren) {
           button.setAttribute("aria-haspopup", "menu");

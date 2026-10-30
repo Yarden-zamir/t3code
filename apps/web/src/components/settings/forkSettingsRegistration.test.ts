@@ -57,7 +57,6 @@ const FORK_PAGE_ROWS: Record<
   tooltipShortcuts: "tooltip-shortcuts",
   tooltipShortcutLimit: "tooltip-shortcut-limit",
   backForwardButtons: "back-forward-buttons",
-  richContextMenu: "rich-context-menu",
   rememberBackForwardHistory: "remember-back-forward-history",
   restartReconnectWarningGrace: "restart-reconnect-warning-grace",
   settingsFind: "settings-find",

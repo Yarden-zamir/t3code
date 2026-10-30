@@ -1,24 +1,10 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
-import { toElectronAccelerator } from "./electronAccelerator.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as Electron from "electron";
-
-export interface ElectronMenuPosition {
-  readonly x: number;
-  readonly y: number;
-}
-
-export interface ElectronMenuContextInput {
-  readonly window: Electron.BrowserWindow;
-  readonly items: readonly ContextMenuItem[];
-  readonly position: Option.Option<ElectronMenuPosition>;
-}
 
 export interface ElectronMenuTemplateInput {
   readonly window: Electron.BrowserWindow;
@@ -26,11 +12,7 @@ export interface ElectronMenuTemplateInput {
   readonly frame?: Electron.WebFrameMain;
 }
 
-const ElectronMenuOperation = Schema.Literals([
-  "set-application-menu",
-  "popup-template",
-  "show-context-menu",
-]);
+const ElectronMenuOperation = Schema.Literals(["set-application-menu", "popup-template"]);
 
 export class ElectronMenuOperationError extends Schema.TaggedError<ElectronMenuOperationError>()(
   "ElectronMenuOperationError",
@@ -54,145 +36,13 @@ export class ElectronMenu extends Context.Service<
     readonly setApplicationMenu: (
       template: readonly Electron.MenuItemConstructorOptions[],
     ) => Effect.Effect<void>;
-    readonly showContextMenu: (
-      input: ElectronMenuContextInput,
-    ) => Effect.Effect<Option.Option<string>>;
     readonly popupTemplate: (input: ElectronMenuTemplateInput) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/electron/ElectronMenu") {}
 
-function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextMenuItem[] {
-  const normalizedItems: ContextMenuItem[] = [];
-
-  for (const sourceItem of source) {
-    if (typeof sourceItem.id !== "string" || typeof sourceItem.label !== "string") {
-      continue;
-    }
-
-    // Native menus cannot display the web fallback's decorative headers.
-    if (sourceItem.header === true) {
-      continue;
-    }
-
-    const normalizedItem: ContextMenuItem = {
-      id: sourceItem.id,
-      label: sourceItem.label,
-      destructive: sourceItem.destructive === true,
-      disabled: sourceItem.disabled === true,
-      ...(sourceItem.separatorBefore === true ? { separatorBefore: true } : {}),
-      ...(typeof sourceItem.checked === "boolean" ? { checked: sourceItem.checked } : {}),
-      ...(sourceItem.shortcut ? { shortcut: sourceItem.shortcut } : {}),
-    };
-
-    if (sourceItem.children) {
-      const normalizedChildren = normalizeContextMenuItems(sourceItem.children);
-      if (normalizedChildren.length === 0) {
-        continue;
-      }
-      normalizedItem.children = normalizedChildren;
-    }
-
-    normalizedItems.push(normalizedItem);
-  }
-
-  return normalizedItems;
-}
-
-// popup() takes window points; renderer CSS coordinates must account for page zoom.
-const normalizePosition = (
-  position: Option.Option<ElectronMenuPosition>,
-  zoomFactor: number,
-): Option.Option<ElectronMenuPosition> =>
-  Option.filter(
-    position,
-    ({ x, y }) =>
-      Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && Number.isFinite(zoomFactor),
-  ).pipe(
-    Option.map(({ x, y }) => ({ x: Math.floor(x * zoomFactor), y: Math.floor(y * zoomFactor) })),
-  );
-
 /** @public */
 export const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
-  let destructiveMenuIconCache: Option.Option<Electron.NativeImage> | undefined;
-
-  const getDestructiveMenuIcon = (): Option.Option<Electron.NativeImage> => {
-    if (platform !== "darwin") {
-      return Option.none();
-    }
-    if (destructiveMenuIconCache !== undefined) {
-      return destructiveMenuIconCache;
-    }
-
-    try {
-      const icon = Electron.nativeImage.createFromNamedImage("trash").resize({
-        width: 12,
-        height: 12,
-      });
-      icon.setTemplateImage(true);
-      destructiveMenuIconCache = icon.isEmpty() ? Option.none() : Option.some(icon);
-    } catch {
-      destructiveMenuIconCache = Option.none();
-    }
-
-    return destructiveMenuIconCache;
-  };
-
-  const buildTemplate = (
-    entries: readonly ContextMenuItem[],
-    complete: (selectedItemId: Option.Option<string>) => void,
-  ): Electron.MenuItemConstructorOptions[] => {
-    const template: Electron.MenuItemConstructorOptions[] = [];
-    let hasInsertedDestructiveSeparator = false;
-    let sectionStartedByExplicitSeparator = false;
-    const appendSeparator = () => {
-      if (template.length === 0 || template.at(-1)?.type === "separator") return;
-      template.push({ type: "separator" });
-    };
-
-    for (const item of entries) {
-      if (item.separatorBefore) {
-        appendSeparator();
-        sectionStartedByExplicitSeparator = true;
-      }
-      if (
-        item.destructive &&
-        !hasInsertedDestructiveSeparator &&
-        !sectionStartedByExplicitSeparator &&
-        template.length > 0
-      ) {
-        appendSeparator();
-        hasInsertedDestructiveSeparator = true;
-      }
-
-      const itemOption: Electron.MenuItemConstructorOptions = {
-        label: item.label,
-        enabled: !item.disabled,
-        ...(typeof item.checked === "boolean" ? { type: "checkbox", checked: item.checked } : {}),
-      };
-      if (item.children && item.children.length > 0) {
-        itemOption.submenu = buildTemplate(item.children, complete);
-      } else {
-        itemOption.click = () => complete(Option.some(item.id));
-        if (item.shortcut) {
-          // The web app runs the key; the menu only shows it.
-          itemOption.accelerator = toElectronAccelerator(item.shortcut);
-          itemOption.registerAccelerator = false;
-        }
-      }
-      if (item.destructive && (!item.children || item.children.length === 0)) {
-        const destructiveIcon = getDestructiveMenuIcon();
-        if (Option.isSome(destructiveIcon)) {
-          itemOption.icon = destructiveIcon.value;
-        }
-      }
-
-      template.push(itemOption);
-    }
-
-    return template;
-  };
-
   return ElectronMenu.of({
     setApplicationMenu: Effect.fn("ElectronMenu.setApplicationMenu")(function (template) {
       return Effect.try({
@@ -227,61 +77,6 @@ export const make = Effect.gen(function* () {
                 cause,
               }),
           }).pipe(Effect.orDie);
-    }),
-    showContextMenu: Effect.fn("ElectronMenu.showContextMenu")(function (input) {
-      return Effect.callback<Option.Option<string>>((resume) => {
-        const normalizedItems = normalizeContextMenuItems(input.items);
-        if (normalizedItems.length === 0) {
-          resume(Effect.succeedNone);
-          return;
-        }
-
-        let completed = false;
-        const complete = (selectedItemId: Option.Option<string>) => {
-          if (completed) {
-            return;
-          }
-          completed = true;
-          resume(Effect.succeed(selectedItemId));
-        };
-
-        try {
-          const menu = Electron.Menu.buildFromTemplate(buildTemplate(normalizedItems, complete));
-          const popupPosition = normalizePosition(
-            input.position,
-            input.window.webContents.getZoomFactor(),
-          );
-          const popupOptions = Option.match(popupPosition, {
-            onNone: (): Electron.PopupOptions => ({
-              window: input.window,
-              callback: () => complete(Option.none()),
-            }),
-            onSome: (position): Electron.PopupOptions => ({
-              window: input.window,
-              x: position.x,
-              y: position.y,
-              callback: () => complete(Option.none()),
-            }),
-          });
-          menu.popup(popupOptions);
-        } catch (cause) {
-          if (completed) {
-            return;
-          }
-          completed = true;
-          resume(
-            Effect.die(
-              new ElectronMenuOperationError({
-                operation: "show-context-menu",
-                platform,
-                windowId: input.window.id,
-                itemCount: normalizedItems.length,
-                cause,
-              }),
-            ),
-          );
-        }
-      });
     }),
   });
 });

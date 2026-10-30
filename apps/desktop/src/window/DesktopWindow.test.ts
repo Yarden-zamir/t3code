@@ -188,7 +188,6 @@ const layerDesktopServerExposure = Layer.succeed(DesktopServerExposure.DesktopSe
 const layerElectronMenu = Layer.succeed(ElectronMenu.ElectronMenu, {
   setApplicationMenu: () => Effect.void,
   popupTemplate: () => Effect.void,
-  showContextMenu: () => Effect.succeedNone,
 } satisfies ElectronMenu.ElectronMenu["Service"]);
 
 const layerElectronTheme = Layer.succeed(ElectronTheme.ElectronTheme, {
@@ -311,7 +310,6 @@ function layerTest(input: {
         layerElectronApp,
         Layer.succeed(ElectronMenu.ElectronMenu, {
           setApplicationMenu: () => Effect.void,
-          showContextMenu: () => Effect.succeedNone,
           popupTemplate: input.onPopupTemplate ?? (() => Effect.void),
         }),
         Layer.succeed(ElectronShell.ElectronShell, {
