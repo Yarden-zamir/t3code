@@ -85,8 +85,9 @@ try {
     daemon,
     "--provider",
     // `exec`: the scenario stops the provider by the PID of its shell, so T3 must be that process.
-    // Its own data folder: the scenario removes the daemon's home while T3 still shuts down.
-    `exec node ${server} serve --port ${SERVER_PORT} --host 127.0.0.1 --base-dir "$(mktemp -d)"`,
+    // Its own data folder and a PATH without agent CLIs: the scenario removes the daemon's home
+    // right after the stop, while T3's data or an agent CLI probe could still write there.
+    `PATH="$HOME/bin:${NodePath.dirname(process.execPath)}:/usr/bin:/bin" exec "${process.execPath}" ${server} serve --port ${SERVER_PORT} --host 127.0.0.1 --base-dir "$(mktemp -d)"`,
   ]);
 } finally {
   NodeFS.rmSync(folder, { recursive: true, force: true });
