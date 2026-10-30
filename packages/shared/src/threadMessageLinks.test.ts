@@ -4,6 +4,7 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { formatThreadLink, parseThreadLinkHref, relabelThreadLinks } from "./threadLinks.ts";
 import {
   isLinkedMessage,
+  linkedMessageLoadId,
   messageLinkFromLocation,
   messageLinkStep,
   threadLinkMessageId,
@@ -27,6 +28,10 @@ describe("message links", () => {
     expect(isLinkedMessage("msg%3A2", "msg:3")).toBe(false);
     expect(isLinkedMessage("bad%", "bad%")).toBe(true);
     expect(isLinkedMessage("bad%", "bad")).toBe(false);
+    // History loads through the stored id, so an encoded link still finds an old message.
+    expect(linkedMessageLoadId("msg%3A2")).toBe("msg:2");
+    expect(linkedMessageLoadId("msg:2")).toBe("msg:2");
+    expect(linkedMessageLoadId("bad%")).toBe("bad%");
   });
 
   it("reads no message from app state in the fragment", () => {

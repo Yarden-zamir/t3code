@@ -493,6 +493,40 @@ describe("MessagesTimeline citations", () => {
   });
 });
 
+describe("MessagesTimeline message links", () => {
+  const linkTo = (props: Omit<TimelineProps, "timelineEntries">, messageId: string) =>
+    ({
+      target: { _tag: "message", messageId: MessageId.make(messageId) },
+      key: "entry-1:1",
+      threadKey: props.routeThreadKey,
+      synced: true,
+    }) satisfies NonNullable<TimelineProps["forkMessageLink"]>;
+
+  it("loads history through a linked message that the timeline has not loaded", async () => {
+    const props = baseProps();
+    const onLoadEarlier = vi.fn();
+    await using _screen = await renderTimeline([message("A recent question", {}, "recent")], {
+      ...props,
+      forkMessageLink: linkTo(props, "old"),
+      historyControls: { hasMoreHistory: true, loading: false, error: null, onLoadEarlier },
+    });
+    await vi.waitFor(() => expect(onLoadEarlier).toHaveBeenCalledWith("old"));
+  });
+
+  it("highlights a linked message that the timeline shows", async () => {
+    const props = baseProps();
+    await using _screen = await renderTimeline(
+      [message("The linked question", {}, "linked"), message("A later question", {}, "later")],
+      { ...props, forkMessageLink: linkTo(props, "linked") },
+    );
+    await vi.waitFor(() =>
+      expect(
+        document.head.querySelector("style[data-fork-message-link-highlight]")?.textContent,
+      ).toContain("entry-linked"),
+    );
+  });
+});
+
 describe("MessagesTimeline automation prompts", () => {
   it("folds an automation prompt into a bubble titled by its task", async () => {
     setup({ scheduledTasks: [{ id: TASK_ID, title: "Nightly triage" }] });

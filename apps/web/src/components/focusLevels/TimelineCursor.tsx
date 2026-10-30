@@ -305,11 +305,19 @@ export function TimelineCursor(props: {
         node.scrollTop += target.bottom - area.bottom + SCROLL_MARGIN_PX;
       }
     };
-    const show = (next: Cursor | null) => {
+    const show = (next: Cursor | null, scroll = true) => {
       cursor = next;
       const range = next ? selectedRange(next) : null;
       paint(range);
-      if (range) reveal(range);
+      if (range && scroll) reveal(range);
+    };
+    const onScreen = (at: Cursor) => {
+      const node = scroller();
+      const range = selectedRange(at);
+      if (!node || !range) return false;
+      const area = node.getBoundingClientRect();
+      const rect = range.getBoundingClientRect();
+      return rect.bottom > area.top && rect.top < area.bottom;
     };
     /** Scrolls a row that the virtualized list did not mount into the list, then shows it. */
     const showRow = (next: Cursor, framesLeft = MOUNT_WAIT_FRAMES) => {
@@ -495,7 +503,9 @@ export function TimelineCursor(props: {
         const selected = freshSelection();
         const fromMouse = selected && !selected.collapsed ? selected : null;
         const at = adoptSelection() ?? current();
-        if (at) show(at);
+        // The unit of a mouse selection can be a whole message: revealing it moves the cited text,
+        // and the note card that points at it, out of view.
+        if (at) show(at, !fromMouse && !onScreen(at));
         // On a control, Enter clicks it: a link opens, a section opens or closes, a button runs.
         const target = !fromMouse && at ? controlTarget(at) : null;
         if (target) {

@@ -787,7 +787,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     listRef,
     listReady: findListReady,
     viewport: timelineViewportElement,
-    historyLoading: citationHistory._tag === "loading",
+    // The citation history reads "loading" while no citation is active.
+    historyLoading: citationRequest !== null && citationHistory._tag === "loading",
     historyControls,
     foldInput: { timelineEntries, latestRun, runningRunId, isWorking, runlessWorkActive },
     expandRun: (runId) =>

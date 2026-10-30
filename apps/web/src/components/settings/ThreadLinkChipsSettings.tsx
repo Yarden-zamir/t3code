@@ -37,7 +37,7 @@ export function MessageLinksSettingsRow() {
       settingKey="messageLinks"
       searchId="message-links"
       label="Message links"
-      description="A thread link that names a message, such as one an agent writes, opens the thread at that message and highlights it. Off: the link opens the thread only, and Copy message link is hidden. Applies on desktop, web and the mobile app."
+      description="Shows Copy message link beside each message. A thread link that names a message, such as one an agent writes, always opens the thread at that message. Applies on desktop, web and the mobile app."
     />
   );
 }
