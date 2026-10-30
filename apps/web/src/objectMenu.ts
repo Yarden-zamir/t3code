@@ -2,7 +2,6 @@ import type { ContextMenuItem, KeybindingCommand } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 
 import { requestForkContextMenu } from "./forkContextMenu";
-import { toastManager } from "./components/ui/toast";
 import { writeTextToClipboard } from "./hooks/useCopyToClipboard";
 import { bindableElement, selectionInside } from "./keybindingsMenu";
 
@@ -215,7 +214,9 @@ export function showObjectMenu(
 
 /** Copies `value` for an object menu entry named `label`, and reports a failure. */
 export function copyFromObjectMenu(value: string, label: string): void {
-  writeTextToClipboard(value, label.toLowerCase()).catch((error: unknown) => {
+  writeTextToClipboard(value, label.toLowerCase()).catch(async (error: unknown) => {
+    // A static import of the toast module would load app state before `appInit` installs this.
+    const { toastManager } = await import("./components/ui/toast");
     toastManager.add({
       type: "error",
       title: `Failed to ${label.toLowerCase()}`,
