@@ -185,7 +185,10 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
               "collectDiagnostics",
             ],
             runInput: (commandId, input) =>
-              Queue.offer(ran, `${commandId} ${input._tag}`).pipe(
+              Queue.offer(
+                ran,
+                `${commandId} ${input._tag}${"sessionId" in input ? ` ${input.sessionId}` : ""}`,
+              ).pipe(
                 Effect.as(RESULTS[input._tag] ?? { ok: true, result: { done: true }, error: null }),
               ),
             restartProcess: Deferred.succeed(restarted, undefined).pipe(Effect.asVoid),
@@ -252,6 +255,17 @@ const STATUS = {
       os: "Android",
       browser: null,
       connected: true,
+      lastSeenAt: null,
+    },
+    {
+      // Real session ids can be longer than kitshn's 64-character row id.
+      sessionId: `session-${"x".repeat(70)}`,
+      label: null,
+      subject: "phone",
+      deviceType: "mobile",
+      os: "Android",
+      browser: null,
+      connected: false,
       lastSeenAt: null,
     },
   ],
@@ -351,6 +365,11 @@ const EXPECTED_REGISTER = {
               cells: { client: "owner", device: "mobile, Android", connected: "yes", lastSeen: "" },
               commands: ["revoke-session"],
             },
+            {
+              id: expect.stringMatching(/^session:[0-9a-f]{56}$/),
+              cells: { client: "phone", device: "mobile, Android", connected: "no", lastSeen: "" },
+              commands: ["revoke-session"],
+            },
           ],
         },
       ],
@@ -443,6 +462,17 @@ it.layer(
       expect(yield* Queue.take(harness.ran)).toBe("kitshn:9 setScheduledTaskEnabled");
       yield* child.say(command(10, "revoke-session", "task:daily"));
       expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 10, ok: false });
+      // A long session id goes out as a hashed row id, and the row command finds it again.
+      const longRow = (
+        register.resources as ReadonlyArray<{
+          lists?: ReadonlyArray<{ rows: ReadonlyArray<{ id: string }> }>;
+        }>
+      )[0]?.lists?.[1]?.rows[1]?.id;
+      yield* child.say(command(11, "revoke-session", longRow));
+      expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 11, ok: true });
+      expect(yield* Queue.take(harness.ran)).toBe(
+        `kitshn:11 revokeClient session-${"x".repeat(70)}`,
+      );
       // An unknown rule type keeps the rest of the table readable.
       expect(yield* Ref.get(harness.tables)).toEqual({ app: [GRANT_DECODED] });
     }).pipe(Effect.scoped),
