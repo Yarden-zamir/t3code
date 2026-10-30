@@ -135,6 +135,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
           Layer.mock(KitshnGrants.KitshnGrants)({
             replaceTables: (next) => Ref.set(tables, next),
             contact: Ref.update(contacts, (count) => count + 1),
+            machine: Ref.get(machine),
             setMachine: (next) => Ref.set(machine, next),
             setPeerOrigins: () => Effect.void,
             setAccess: () => Effect.void,
@@ -778,4 +779,18 @@ it.layer(
         expect(yield* Queue.size(harness.linkChecks)).toBe(0);
       }).pipe(Effect.scoped),
   );
+});
+
+it("names the site from the portal host, else from the kitshn machine name", () => {
+  const port = 3773;
+  expect(
+    KitshnProvider.appSite({ tunnelPairingUrl: "https://t3-studio.example.com", port }, "x"),
+  ).toEqual({ name: "t3-studio", port });
+  // A machine that joined kitshn without a portal tunnel still needs a site, or links refuse it.
+  expect(KitshnProvider.appSite({ port }, "Windows 2")).toEqual({ name: "t3-windows-2", port });
+  expect(
+    KitshnProvider.appSite({ tunnelPairingUrl: "https://other.example.com", port }, "vps"),
+  ).toEqual({ name: "t3-vps", port });
+  expect(KitshnProvider.appSite({ port }, null)).toBeUndefined();
+  expect(KitshnProvider.appSite({ port }, " -- ")).toBeUndefined();
 });
