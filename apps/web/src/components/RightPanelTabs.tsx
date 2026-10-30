@@ -1135,7 +1135,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       });
     }
     items.push(
-      { id: "close", label: "Close" },
+      { id: "close", label: "Close", keybindingCommand: "rightPanel.close" },
       {
         id: "close-others",
         label: "Close others",

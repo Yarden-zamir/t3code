@@ -50,6 +50,7 @@ import { primaryServerConfigAtom } from "./state/server";
 import { getActiveThemeFonts, subscribeToActiveThemeFonts } from "./forkThemeStyle";
 import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
+import { installKeybindsMenuNavigation } from "./keybindingsMenu";
 import { startWorkspaceFocus } from "./lib/workspaceFocus";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
@@ -187,6 +188,7 @@ export function startAppServices(): AppRouter {
   startPreviewTitleRecording();
   startBrowserProfileReporting();
   installChatRouteCommands(router);
+  installKeybindsMenuNavigation(router);
   installCommandPaletteCommands(router);
   registerOpenFavoriteEditorCommand();
   startThreadOverlayRetention(router);

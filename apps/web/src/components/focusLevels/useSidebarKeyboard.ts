@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type RefObject, useEffect, useLayoutEffect, useRef } from "react";
-import type { ThreadActionMenuId } from "../threadActionMenu.logic";
+import { THREAD_ACTION_KEYBINDINGS, type ThreadActionMenuId } from "../threadActionMenu.logic";
 import { focusLevel, focusLevelElement, focusLevelOf, SIDEBAR_ROW_SELECTOR } from "./focusLevels";
 import {
   type FocusLevelCommandHandler,
@@ -17,14 +17,8 @@ import {
 const SIDEBAR_TAB_SELECTOR = '[data-sidebar-tabs] [role="tab"]';
 
 /** The thread menu items that a thread action key picks, in order of preference. */
-const THREAD_ACTION_PRESETS = {
-  "thread.archive": ["archive"],
-  "thread.snooze": ["snooze", "unsnooze"],
-  "thread.rename": ["rename"],
-  "thread.markUnread": ["mark-unread"],
-} as const satisfies Partial<Record<ForkKeybindingCommand, ReadonlyArray<ThreadActionMenuId>>>;
-
-export type ThreadActionPreset = (typeof THREAD_ACTION_PRESETS)[keyof typeof THREAD_ACTION_PRESETS];
+export type ThreadActionPreset =
+  (typeof THREAD_ACTION_KEYBINDINGS)[keyof typeof THREAD_ACTION_KEYBINDINGS];
 
 function findEnabledItem(
   items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>>,
@@ -161,7 +155,9 @@ export function useSidebarKeyboard(input: {
         return focusRow(rows[index + direction]) || true;
       };
     const threadAction =
-      (command: keyof typeof THREAD_ACTION_PRESETS): FocusLevelCommandHandler =>
+      (
+        command: Extract<keyof typeof THREAD_ACTION_KEYBINDINGS, ForkKeybindingCommand>,
+      ): FocusLevelCommandHandler =>
       (event) => {
         if (event.repeat) return true;
         const inSidebar = focusLevelOf(event.target) === "sidebar";
@@ -177,7 +173,7 @@ export function useSidebarKeyboard(input: {
         latest.current.runThreadAction(
           threadRef,
           threadMenuPosition(scopedThreadKey(threadRef)),
-          THREAD_ACTION_PRESETS[command],
+          THREAD_ACTION_KEYBINDINGS[command],
         );
         return true;
       };

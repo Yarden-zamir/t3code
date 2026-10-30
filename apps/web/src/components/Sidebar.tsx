@@ -1306,7 +1306,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             [
-              { id: "new-thread", label: "New thread" },
+              { id: "new-thread", label: "New thread", keybindingCommand: "chat.newLocal" },
               { id: "copy-path", label: "Copy path" },
               { id: "project-settings", label: "Project settings", icon: "settings" },
             ],

@@ -58,6 +58,19 @@ describe("buildThreadActionMenuItems", () => {
             "delete",
           ];
       expect(items.filter((item) => item.disabled).map((item) => item.id)).toEqual(expected);
+      // Both directions of a toggle link to the same keybinding command.
+      expect(
+        items.flatMap((item) =>
+          item.keybindingCommand ? [[item.id, item.keybindingCommand]] : [],
+        ),
+      ).toEqual([
+        [reversed ? "unpin" : "pin", "thread.pin"],
+        [reversed ? "unsettle" : "settle", "thread.settle"],
+        [reversed ? "unsnooze" : "snooze", "thread.snooze"],
+        ["rename", "thread.rename"],
+        ["mark-unread", "thread.markUnread"],
+        ["archive", "thread.archive"],
+      ]);
       expect(
         items.find((item) => item.id === "snooze")?.children?.every((child) => child.disabled) ??
           true,

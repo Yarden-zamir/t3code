@@ -1,4 +1,5 @@
-import type { ClientSettings, ContextMenuItem } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import type { ClientSettings, ContextMenuItem, KeybindingCommand } from "@t3tools/contracts";
 import {
   ArchiveIcon,
   CheckIcon,
@@ -10,6 +11,7 @@ import {
   FolderTreeIcon,
   GitBranchIcon,
   HashIcon,
+  KeyboardIcon,
   type LucideIcon,
   MailOpenIcon,
   MessageSquarePlusIcon,
@@ -32,6 +34,8 @@ import {
   subscribeForkContextMenu,
 } from "../forkContextMenu";
 import { useClientSettings } from "../hooks/useSettings";
+import { shortcutLabelForCommand } from "../keybindings";
+import { primaryServerKeybindingsAtom } from "../state/server";
 import {
   Menu,
   MenuCheckboxItem,
@@ -40,6 +44,7 @@ import {
   MenuItem,
   MenuPopup,
   MenuSeparator,
+  MenuShortcut,
   MenuSub,
   MenuSubPopup,
   MenuSubTrigger,
@@ -59,6 +64,7 @@ const ICONS: Record<string, LucideIcon> = {
   folder: FolderIcon,
   "git-branch": GitBranchIcon,
   hash: HashIcon,
+  keyboard: KeyboardIcon,
   "mail-open": MailOpenIcon,
   "message-square-plus": MessageSquarePlusIcon,
   pin: PinIcon,
@@ -87,6 +93,12 @@ function groupByHeader(items: readonly ContextMenuItem[]): ContextMenuItem[][] {
 function ItemIcon({ name }: { name: string | undefined }) {
   const Icon = name === undefined ? undefined : ICONS[name];
   return Icon ? <Icon /> : null;
+}
+
+function ItemShortcut({ command }: { command: KeybindingCommand }) {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const label = shortcutLabelForCommand(keybindings, command);
+  return label ? <MenuShortcut>{label}</MenuShortcut> : null;
 }
 
 function MenuEntries({
@@ -154,6 +166,7 @@ function MenuEntry({
       >
         <ItemIcon name={item.icon} />
         {item.label}
+        {item.keybindingCommand ? <ItemShortcut command={item.keybindingCommand} /> : null}
       </MenuItem>
     );
   })();

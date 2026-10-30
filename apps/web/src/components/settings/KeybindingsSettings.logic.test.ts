@@ -9,10 +9,12 @@ import { resolveShortcutCommand } from "../../keybindings";
 
 import {
   buildKeybindingRows,
+  filterKeybindingRows,
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
   shortcutToKeybindingInput,
+  validateKeybindingsSearch,
   whenAstToExpression,
 } from "./KeybindingsSettings.logic";
 
@@ -265,5 +267,37 @@ describe("KeybindingsSettings.logic", () => {
         when: "",
       }),
     ).toEqual(["Chat: New Local"]);
+  });
+
+  it("filters rows by command, by text and by the shortcut as the page shows it", () => {
+    const rows = buildKeybindingRows(
+      compileResolvedKeybindingsConfig([
+        { command: "chat.new", key: "mod+n" },
+        { command: "chat.new", key: "mod+shift+o" },
+        { command: "terminal.toggle", key: "mod+j" },
+      ]),
+    );
+    const commands = (filter: Parameters<typeof filterKeybindingRows>[1]) =>
+      filterKeybindingRows(rows, filter).map((row) => `${row.command} ${row.key}`);
+
+    expect(commands({ query: "", command: "chat.new" })).toEqual([
+      "chat.new mod+n",
+      "chat.new mod+shift+o",
+    ]);
+    expect(commands({ query: "shift", command: "chat.new" })).toEqual(["chat.new mod+shift+o"]);
+    expect(commands({ query: "terminal", command: "chat.new" })).toEqual([]);
+    expect(commands({ query: "\u2318J", platform: "MacIntel" })).toEqual(["terminal.toggle mod+j"]);
+    expect(commands({ query: "ctrl+j", platform: "Win32" })).toEqual(["terminal.toggle mod+j"]);
+  });
+
+  it("keeps only a known command from the page address", () => {
+    expect(validateKeybindingsSearch({ command: "thread.rename" })).toEqual({
+      command: "thread.rename",
+    });
+    expect(validateKeybindingsSearch({ command: "script.build.run" })).toEqual({
+      command: "script.build.run",
+    });
+    expect(validateKeybindingsSearch({ command: "thread.unknown" })).toEqual({});
+    expect(validateKeybindingsSearch({ command: 3 })).toEqual({});
   });
 });

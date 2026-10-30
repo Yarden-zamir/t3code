@@ -3,6 +3,7 @@ import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@t3tools/c
 import { requestConfirmDialog } from "./confirmDialog";
 import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
 import { dismissForkContextMenu, requestForkContextMenu } from "./forkContextMenu";
+import { openKeybindingsForCommand, withKeybindsEntry } from "./keybindingsMenu";
 import { readBrowserClientSettings, writeBrowserClientSettings } from "./clientPersistenceStorage";
 
 let cachedApi: LocalApi | undefined;
@@ -45,12 +46,15 @@ export function createLocalApi(): LocalApi {
         items: readonly ContextMenuItem<T>[],
         position?: { x: number; y: number },
       ): Promise<T | null> => {
-        const forkMenu = requestForkContextMenu(items, position); // Fork: `richContextMenu`.
-        if (forkMenu) return forkMenu;
-        if (window.desktopBridge) {
-          return window.desktopBridge.showContextMenu(items, position) as Promise<T | null>;
-        }
-        return showContextMenuFallback(items, position);
+        const menu = withKeybindsEntry(items);
+        const picked = await (requestForkContextMenu(menu.items, position) ?? // Fork: `richContextMenu`.
+          (window.desktopBridge
+            ? window.desktopBridge.showContextMenu(menu.items, position)
+            : showContextMenuFallback(menu.items, position)));
+        const command = picked === null ? undefined : menu.commandById.get(picked);
+        if (command === undefined) return picked as T | null;
+        openKeybindingsForCommand(command);
+        return null;
       },
       // Unlike native menus, the DOM fallback needs dismissal when underlying state disappears.
       close: async () => {

@@ -3,6 +3,12 @@
 Customize shortcuts in **Settings → Keybindings** on web and desktop. That page
 also lists the command IDs and defaults available in your version.
 
+Search on that page matches action names, command IDs, conditions and shortcuts, such as
+`mod+k` or `⌘K`. To see all bindings of one action, choose **Show bindings for this action**
+in the menu of its row. A right-click menu item that a shortcut can also run has a
+**Keybinds** entry at the end of the menu. It opens the page with that action filtered and a
+new binding for it ready to record.
+
 ## Composer controls
 
 In **Settings → Chat → Send shortcut**, choose whether Enter sends, requires

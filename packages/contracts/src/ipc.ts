@@ -15,7 +15,7 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
-import type { PreviewForwardedShortcut } from "./keybindings.ts";
+import type { KeybindingCommand, PreviewForwardedShortcut } from "./keybindings.ts";
 import type { ProjectScript } from "./project.ts";
 
 import type {
@@ -32,6 +32,8 @@ export interface ContextMenuItem<T extends string = string> {
   icon?: string;
   separatorBefore?: boolean;
   checked?: boolean;
+  /** The command that runs the same action. The web client adds a link to its bindings. */
+  keybindingCommand?: KeybindingCommand;
   children?: readonly ContextMenuItem<T>[];
 }
 
