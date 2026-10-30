@@ -260,11 +260,14 @@ export function makeSyncTimingsRecorder(options: {
 
 export type SyncTimingsRecorder = ReturnType<typeof makeSyncTimingsRecorder>;
 
-// The cold start run starts when this module loads, so native start-up time
-// before the JavaScript bundle runs is not in the timings.
+// The cold start run starts when this module loads, so the start-up time before
+// the app code loads is not in the timings. Durations use the monotonic clock;
+// the clock time of a run uses Date, because Android stops performance.now()
+// in deep sleep.
 export const syncTimings: SyncTimingsRecorder = makeSyncTimingsRecorder({
   now: () => performance.now(),
-  epochNow: () => performance.timeOrigin + performance.now(),
+  // @effect-diagnostics-next-line globalDate:off
+  epochNow: () => Date.now(),
 });
 
 const MARK_LABELS: Record<SyncTimingMark, string> = {
@@ -292,7 +295,7 @@ function runTitle(run: SyncRun): string {
     onSome: DateTime.formatIso,
   });
   return run.trigger === "cold-start"
-    ? `Cold start ${at} (ms since JavaScript start)`
+    ? `Cold start ${at} (ms since the app code loaded)`
     : `Wakeup ${run.trigger} ${at} (ms since foreground)`;
 }
 

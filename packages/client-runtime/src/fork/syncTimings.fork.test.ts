@@ -10,10 +10,10 @@ const MAC = EnvironmentId.make("mac");
 const VPS = EnvironmentId.make("vps");
 
 function makeRecorder(options?: { readonly maxWakeups?: number; readonly maxSpans?: number }) {
-  const clock = { now: 1_000 };
+  const clock = { now: 1_000, epoch: 1_700_000_000_000 };
   const recorder = makeSyncTimingsRecorder({
     now: () => clock.now,
-    epochNow: () => 0,
+    epochNow: () => clock.epoch,
     ...(options?.maxWakeups === undefined ? {} : { maxWakeups: options.maxWakeups }),
     ...(options?.maxSpans === undefined ? {} : { maxSpansPerEnvironment: options.maxSpans }),
   });
@@ -66,7 +66,7 @@ describe("syncTimings", () => {
 
   it.effect("measures marks from the start of their run and keeps the first of each", () =>
     Effect.gen(function* () {
-      const { recorder, traced, advance } = makeRecorder();
+      const { clock, recorder, traced, advance } = makeRecorder();
       yield* advance(100);
       recorder.mark(MAC, "cached");
       yield* advance(50);
@@ -76,6 +76,8 @@ describe("syncTimings", () => {
         Effect.gen(function* () {
           yield* Effect.annotateCurrentSpan("connection.environment.id", MAC);
           yield* advance(1_000);
+          // A deep sleep moves the clock time, not the monotonic clock.
+          clock.epoch += 3_600_000;
           recorder.startRun("application-active-long");
           yield* advance(200);
           recorder.mark(MAC, "synchronizing");
@@ -91,6 +93,8 @@ describe("syncTimings", () => {
       });
       expect(wakeups).toHaveLength(1);
       expect(wakeups[0]?.trigger).toBe("application-active-long");
+      expect(coldStart.startedAtEpochMs).toBe(1_700_000_000_000);
+      expect(wakeups[0]?.startedAtEpochMs).toBe(1_700_003_600_000);
       expect(wakeups[0]?.environments.get(MAC)).toEqual({
         marks: { synchronizing: 200 },
         spans: [],

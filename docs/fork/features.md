@@ -108,7 +108,7 @@ Settings > Diagnostics > Sync timings shows how long the app needs to sync chats
 
 - **Setting:** none. The timings stay in memory and cost no network traffic.
 - **Works on:** mobile. The recorder is in `packages/client-runtime`, so web can show it later.
-- **Limits:** the app keeps the cold start and the last 10 returns to the foreground. A restart clears them. The cold start time counts from the start of the JavaScript bundle, not from the start of the process.
+- **Limits:** the app keeps the cold start and the last 10 returns to the foreground. A restart clears them. The cold start time counts from when the app code loaded, not from the start of the process.
 
 ## kitshn
 
