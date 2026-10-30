@@ -97,7 +97,7 @@ After an update, the app and the remote servers restart at about the same time. 
 
 ### Sync timings on mobile
 
-Settings > Diagnostics > Sync timings shows how long the app needs to sync chats, so that a slow sync can be measured on the phone. Each run is one cold start or one return to the foreground. For each environment, a run shows the time of each sync step and the duration of the connection steps:
+Settings > About > Diagnostics > Sync timings, below the crash reports, shows how long the app needs to sync chats, so that a slow sync can be measured on the phone. Each run is one cold start or one return to the foreground. For each environment, a run shows the time of each sync step and the duration of the connection steps:
 
 - the cached list shown, "synchronizing", the socket ready, the HTTP snapshot applied and "live";
 - the open thread from "synchronizing" to "live";
@@ -610,7 +610,7 @@ Escape moves focus from the composer to the timeline, then to the sidebar. Arrow
 
 ### Shortcuts in tooltips
 
-Control tooltips show the keys of the control as chips, such as "Stash ⌘S", for example on the stash, the runtime mode and the approval buttons.
+Tooltips, menus and the command palette show the keys of an action as chips, such as "Stash ⌘S".
 
 - **Setting:** client settings `tooltipShortcuts` (on by default) and `tooltipShortcutLimit` (default 4, 1 to 9). Settings > Keybindings > Keyboard > "Shortcuts in tooltips" and "Keys per tooltip".
 - **Works on:** web, desktop.
@@ -800,7 +800,7 @@ Back and forward buttons sit right of the sidebar toggle, like in VS Code. A but
 Right-click menus use the app's own menu, also in the desktop app, in place of the system menu. The menu follows the app theme and shows icons, group names, check marks and submenus. Arrow keys move over the items, letters jump to an item, and Escape closes the menu.
 
 - **Setting:** none. Menus always use the app menu. A menu that opens before the app is ready, or on an error screen, uses a plain web menu.
-- Menu items that a keybinding can run show the key. Right-click such an item, or press Shift+F10 or the context menu key on it, for **Keybinds…**.
+- Menu items that a keybinding can run show the key. Right-click such an item, or press Shift+F10 or the context menu key on it, for **Keybindings…**. It opens nested, so the menu stays open, and Escape closes only the nested menu. An item without a key shows a faint dash. Command palette and cheat sheet rows have the same menu on right-click.
 - **Works on:** web, desktop. The mobile app keeps its native menus.
 - Text fields and pages in the browser panel keep the system menu, with spelling suggestions and Cut, Copy and Paste.
 - **Limits:**

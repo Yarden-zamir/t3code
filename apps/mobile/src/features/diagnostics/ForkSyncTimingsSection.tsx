@@ -10,6 +10,8 @@ import { environmentCatalog } from "../../connection/catalog";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { SettingsSection } from "../settings/components/SettingsSection";
 
+const COPIED_RESET_MS = 3000;
+
 /** The timings are read when the screen opens or on Refresh, never while they change. */
 export function ForkSyncTimingsSection() {
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
@@ -29,7 +31,9 @@ export function ForkSyncTimingsSection() {
         target: "sync timings",
       },
     );
-    if (ok) setCopied(true);
+    if (!ok) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), COPIED_RESET_MS);
   };
 
   return (
