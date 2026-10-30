@@ -433,10 +433,13 @@ it.layer(
       yield* first.exit(1);
       yield* TestClock.adjust("1 second");
       const second = yield* Queue.take(harness.children);
-      expect(yield* Queue.take(second.written)).toEqual({
-        id: expect.any(String),
-        ...EXPECTED_REGISTER,
-      });
+      const again = yield* Queue.take(second.written);
+      expect(again).toEqual({ id: expect.any(String), ...EXPECTED_REGISTER });
+      // An exit that T3 did not cause shows no detail once the child registers again.
+      yield* second.say({ id: again.id, type: "register", machineId: "m-1", grants: {} });
+      yield* takeProbe(second);
+      const connection = yield* harness.provider.connection.pipe(Stream.runHead);
+      expect(Option.getOrThrow(connection)).toEqual({ status: "registered", detail: null });
     }).pipe(Effect.scoped),
   );
 
@@ -681,14 +684,14 @@ it.layer(
       yield* first.say({ id: register.id, type: "register", machineId: "m-1", grants: {} });
       // An ask that kitshn does not answer in time leaves the child, because it answers `samples`.
       yield* takeProbe(first);
-      yield* TestClock.adjust("35 seconds");
+      yield* TestClock.adjust("65 seconds");
       yield* TestClock.adjust("3 minutes");
       expect(yield* Deferred.isDone(first.stopped)).toBe(false);
       expect(yield* Queue.size(harness.children)).toBe(0);
 
       // The daemon went away but the child did not exit: the next probe gets no answer.
       yield* Ref.set(harness.answersSamples, false);
-      yield* TestClock.adjust("150 seconds");
+      yield* TestClock.adjust("120 seconds");
       expect(yield* Queue.take(first.written)).toMatchObject({ type: "samples" });
       yield* TestClock.adjust("35 seconds");
       yield* Deferred.await(first.stopped);
@@ -697,11 +700,13 @@ it.layer(
       const again = yield* Queue.take(second.written);
       yield* second.say({ id: again.id, type: "register", machineId: "m-1", grants: {} });
       yield* takeProbe(second);
-      // K-1611: the connection shows why T3 replaced the child.
+      // K-1611: the connection shows why T3 replaced the child, and when.
       const connection = yield* harness.provider.connection.pipe(Stream.runHead);
       expect(Option.getOrThrow(connection)).toEqual({
         status: "registered",
-        detail: "the kitshn provider did not answer in 35s, so T3 ended it",
+        detail: expect.stringMatching(
+          /^Reconnected after: the kitshn provider did not answer in 35s, so T3 ended it \(\d{4}-\d\d-\d\dT[\d:.]+Z\)$/,
+        ),
       });
     }).pipe(Effect.scoped),
   );
