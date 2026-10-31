@@ -8,6 +8,16 @@ Each section names:
 - **Works on:** web, desktop and mobile. "Server" means that the server does it for every client.
 - **Limits:** known limits, each with the condition to revisit it.
 
+## Local usage hubs
+
+An agent with full access can add a local CLIProxyAPI hub to the server's usage sources. It can
+request the management key privately, or read an existing owner-only key file on macOS or Linux.
+The source belongs to that server; remove it in Settings > Providers > Usage providers.
+
+- **Works on:** server, for web, desktop, mobile and agent tools.
+- **Limits:** the hub URL must use a loopback IP address. Windows supports a private key request;
+  importing a key from a file requires a server on macOS or Linux.
+
 ## Central build caches
 
 Local builds can keep their disposable Vite caches and Android app outputs outside checkouts.
