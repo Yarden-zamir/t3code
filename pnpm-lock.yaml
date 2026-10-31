@@ -189,8 +189,8 @@ catalogs:
       specifier: 4.0.5
       version: 4.0.5
     '@kitshn/local':
-      specifier: https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-7ad71a241713/kitshn-local.tgz
-      version: https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-7ad71a241713/kitshn-local.tgz
+      specifier: https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-35d2ad140c4a/kitshn-local.tgz
+      version: https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-35d2ad140c4a/kitshn-local.tgz
     '@noble/curves':
       specifier: 1.9.1
       version: 1.9.1
@@ -854,7 +854,7 @@ importers:
         version: 0.11.0(patch_hash=cc71fcec015f4d39bc96ae2e2bf6b0ca678124c722c66a7841efce9d34b5983c)
       '@kitshn/local':
         specifier: 'catalog:'
-        version: https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-7ad71a241713/kitshn-local.tgz(effect@4.0.5)
+        version: https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-35d2ad140c4a/kitshn-local.tgz(effect@4.0.5)
       '@muse-code/sdk':
         specifier: 1.4.6
         version: 1.4.6(patch_hash=7b495b607fc5d76b444c7c4d58821e839726a30e6f3c53564f0d59f2d5b42101)(@types/node@24.12.4)
@@ -4803,9 +4803,9 @@ packages:
     resolution: {integrity: sha512-hloP58zRVCRSpgDxmqCWJNlizAlUgJFqG2ypq79DCvyv9tHjRYMDOcPFjzfl/A1/YxDvRCZz8wvZvmapQnKwFQ==}
     engines: {node: '>=12'}
 
-  '@kitshn/local@https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-7ad71a241713/kitshn-local.tgz':
-    resolution: {integrity: sha512-dXh1E9z3jF0LTO6kNWD7dQyeYb528rNSCziMWndJmsK9aBPKfx7E7dZVKwlj7OVQfktoEqfIh5z50AMHozM8uw==, tarball: https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-7ad71a241713/kitshn-local.tgz}
-    version: 0.0.0-pr.224.edge.7ad71a241713
+  '@kitshn/local@https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-35d2ad140c4a/kitshn-local.tgz':
+    resolution: {integrity: sha512-IiEZW0cYuhjzYDNESZ7GkD0J0WA+qX24Quw4pxqYsigym1RjBZuOlbU1udl1byVe227GoQPiK4Z004h/sJluww==, tarball: https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-35d2ad140c4a/kitshn-local.tgz}
+    version: 0.0.0-pr.224.edge.35d2ad140c4a
     peerDependencies:
       effect: 4.0.5
 
@@ -14869,7 +14869,7 @@ snapshots:
     dependencies:
       jsbi: 4.3.2
 
-  '@kitshn/local@https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-7ad71a241713/kitshn-local.tgz(effect@4.0.5)':
+  '@kitshn/local@https://github.com/Yarden-zamir/kitshn/releases/download/pr-224-35d2ad140c4a/kitshn-local.tgz(effect@4.0.5)':
     dependencies:
       effect: 4.0.5
 
