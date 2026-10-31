@@ -113,6 +113,15 @@ export const make = Effect.gen(function* () {
     readonly label?: string;
     readonly managementKey: string;
   }) {
+    const managementKey = input.managementKey.trim();
+    if (
+      !managementKey ||
+      new TextEncoder().encode(managementKey).byteLength > 4096 ||
+      /[\r\n\0]/.test(managementKey)
+    )
+      return yield* new UsageLimitSourceError({
+        detail: "The management key is empty or invalid.",
+      });
     const current = yield* settingsService.getSettings.pipe(
       Effect.mapError(() => new UsageLimitSourceError({ detail: "Could not read hub settings." })),
     );
@@ -121,11 +130,7 @@ export const make = Effect.gen(function* () {
     );
     if (existing) {
       const [id, source] = existing;
-      if (
-        source.enabled &&
-        source.managementKey === input.managementKey &&
-        source.label === input.label
-      )
+      if (source.enabled && source.managementKey === managementKey && source.label === input.label)
         return { id: UsageLimitSourceId.make(id) };
       return yield* new UsageLimitSourceError({
         detail: "That hub URL is already configured. Change it in Settings.",
@@ -141,7 +146,7 @@ export const make = Effect.gen(function* () {
             kind: "cliproxy",
             url: input.url,
             ...(input.label ? { label: input.label } : {}),
-            managementKey: input.managementKey,
+            managementKey,
             enabled: true,
           },
         },

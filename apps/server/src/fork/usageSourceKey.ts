@@ -35,9 +35,7 @@ export async function readUsageSourceKey(
       length += bytesRead;
     }
     if (length === 0 || length > MAX_KEY_BYTES) throw new Error("Invalid key length.");
-    const key = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, length)).trim();
-    if (!key || /[\r\n\0]/.test(key)) throw new Error("Invalid key format.");
-    return key;
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, length));
   } finally {
     await file.close();
   }

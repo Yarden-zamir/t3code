@@ -171,7 +171,7 @@ it.effect("adds a local hub from a secretRef without returning the key", () =>
           (dir) => Effect.promise(() => NodeFSP.rm(dir, { recursive: true, force: true })),
         );
         const path = NodePath.join(directory, "key");
-        yield* Effect.promise(() => NodeFSP.writeFile(path, "file-test-key\n", { mode: 0o600 }));
+        yield* Effect.promise(() => NodeFSP.writeFile(path, "file-test-key", { mode: 0o600 }));
         const fromFile = yield* toolkit
           .handle("t3_usage_source_add", { url: "http://127.0.0.1:8318", keyFile: path })
           .pipe(Stream.unwrap, Stream.runCollect);

@@ -141,13 +141,7 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
                 }),
             });
           }
-          key = key.trim();
-          if (!key || Buffer.byteLength(key, "utf8") > 4096 || /[\r\n\0]/.test(key)) {
-            return yield* new OrchestratorMcpFailure({
-              code: "invalid_request",
-              message: "The management key is empty or invalid.",
-            });
-          }
+          // A ref is one-use even if the caller loses permission while the secret is being read.
           yield* check;
           const sources = yield* UsageLimitSources.UsageLimitSources;
           return yield* sources

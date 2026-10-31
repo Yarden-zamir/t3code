@@ -106,7 +106,7 @@ it.effect("adds a hub through the settings service without exposing its key in t
       enabled: true,
     });
     expect(JSON.stringify(result)).not.toContain("private-test-key");
-    const retry = yield* sources.add(source);
+    const retry = yield* sources.add({ ...source, managementKey: "private-test-key\n" });
     expect(retry.id).toBe(result.id);
     const conflict = yield* Effect.flip(
       sources.add({ url: "http://127.0.0.1:8317", managementKey: "different-key" }),
@@ -115,6 +115,11 @@ it.effect("adds a hub through the settings service without exposing its key in t
     expect((yield* settings.getSettings).usageLimitSources[result.id]?.managementKey).toBe(
       "private-test-key",
     );
+    const invalid = yield* Effect.flip(
+      sources.add({ url: "http://127.0.0.1:8318", managementKey: "two\nlines" }),
+    );
+    expect(invalid.detail).toContain("invalid");
+    expect(Object.keys((yield* settings.getSettings).usageLimitSources)).toHaveLength(1);
   }).pipe(
     Effect.provide([
       ServerSettings.layerTest(),

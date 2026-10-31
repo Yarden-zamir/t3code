@@ -20,7 +20,7 @@ it("reads an owner-only regular key file and refuses unsafe alternatives", async
       await expect(readUsageSourceKey(key, host)).rejects.toThrow();
       return;
     }
-    expect(await readUsageSourceKey(key, host)).toBe("example-key");
+    expect(await readUsageSourceKey(key, host)).toBe("example-key\n");
     await NodeFSP.chmod(key, 0o644);
     await expect(readUsageSourceKey(key, host)).rejects.toThrow();
     await NodeFSP.chmod(key, 0o600);
@@ -29,8 +29,6 @@ it("reads an owner-only regular key file and refuses unsafe alternatives", async
     await expect(readUsageSourceKey(link, host)).rejects.toThrow();
     await expect(readUsageSourceKey("relative-key", host)).rejects.toThrow();
     await NodeFSP.writeFile(key, "x".repeat(4097));
-    await expect(readUsageSourceKey(key, host)).rejects.toThrow();
-    await NodeFSP.writeFile(key, "two\nlines");
     await expect(readUsageSourceKey(key, host)).rejects.toThrow();
   } finally {
     await NodeFSP.rm(dir, { recursive: true, force: true });
