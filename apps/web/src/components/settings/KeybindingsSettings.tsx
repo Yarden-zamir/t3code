@@ -1401,9 +1401,8 @@ export function KeybindingsSettingsPanel() {
   const [query, setQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [savingCommand, setSavingCommand] = useState<KeybindingCommand | null>(null);
-  const { command: commandFilter, add: addFromMenu } = useSearch({
-    from: "/_chat/settings/keybindings",
-  });
+  // Not strict: the panel also renders without the settings route, as in its tests.
+  const { command: commandFilter, add: addFromMenu } = useSearch({ strict: false });
   const focusLevels = useClientSettings(selectFocusLevels);
   const navigate = useNavigate();
   const [addRequested, setAddRequested] = useState(false);

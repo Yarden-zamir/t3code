@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { objectMenuEntriesProps, objectMenuProps } from "../../objectMenu";
-import { ObjectMenuEntryItems } from "../ObjectMenuEntryItems";
+import { objectMenuProps } from "../../objectMenu";
+import { ObjectMenuEntryItems, ObjectMenuTrigger } from "../ObjectMenuEntryItems";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
@@ -76,7 +76,7 @@ import { ThreadRelationshipIcon, threadRelationshipStatusLabel } from "./ThreadR
 import { ThreadLineageWorkflowRow } from "./ThreadLineageWorkflowRow";
 import { openSideChatTab } from "../../lib/sideChatPane";
 
-import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Menu, MenuPopup } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { Spinner } from "../ui/spinner";
@@ -846,8 +846,6 @@ export function ThreadRelationshipsPanel(props: {
         },
       ]
     : [];
-  // oxlint-disable-next-line react/refs -- The entries run from the menu click, not during render; detach reads its toast ref there.
-  const relationshipMenuTriggerProps = objectMenuEntriesProps(relationshipEntries);
 
   return (
     <>
@@ -869,8 +867,8 @@ export function ThreadRelationshipsPanel(props: {
           actions={
             canDetach ? (
               <Menu>
-                <MenuTrigger
-                  {...relationshipMenuTriggerProps}
+                <ObjectMenuTrigger
+                  entries={relationshipEntries}
                   render={
                     <ThreadDetailsControl
                       size="icon-xs"
@@ -882,7 +880,7 @@ export function ThreadRelationshipsPanel(props: {
                   }
                 >
                   <MoreHorizontalIcon className="size-3.5" />
-                </MenuTrigger>
+                </ObjectMenuTrigger>
                 <MenuPopup align="end" className="min-w-60 max-w-(--available-width)">
                   <ObjectMenuEntryItems entries={relationshipEntries} />
                 </MenuPopup>

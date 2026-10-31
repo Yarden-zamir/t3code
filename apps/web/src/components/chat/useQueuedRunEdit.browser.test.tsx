@@ -39,9 +39,15 @@ vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => mocks.editQueuedRun,
 }));
 
-vi.mock("../../hooks/useSettings", () => ({
-  useEnvironmentIdentificationMode: () => "none",
-}));
+vi.mock("../../hooks/useSettings", async () => {
+  const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts/settings");
+  return {
+    useEnvironmentIdentificationMode: () => "none",
+    // Fork: fork components in this graph read client settings.
+    useClientSettings: <T,>(select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => T) =>
+      select(DEFAULT_CLIENT_SETTINGS),
+  };
+});
 
 const runsKey = (ref: ScopedThreadRef) => `${ref.environmentId}:${ref.threadId}`;
 
