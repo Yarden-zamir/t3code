@@ -220,8 +220,9 @@ export const makeAcpClientTerminals = Effect.fn("makeAcpClientTerminals")(functi
           );
           const sessionEnvironment = options.environmentForSession?.(request.sessionId);
           // Fork: a server started from an agent shell never lends that thread's credential.
+          // An explicit `env` replaces the child environment, so start from the server's.
           const environment = {
-            ...options.environment,
+            ...(options.environment ?? process.env),
             ...NO_THREAD_CREDENTIAL,
             ...sessionEnvironment,
             ...requestEnvironment,

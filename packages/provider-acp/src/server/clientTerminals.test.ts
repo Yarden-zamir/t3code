@@ -68,11 +68,15 @@ describe("AcpClientTerminals", () => {
         const created = yield* terminals.create({
           sessionId,
           command: process.execPath,
-          args: ["-e", "process.stdout.write(process.env.T3_TEST_ACP_SESSION_TOKEN ?? '')"],
+          args: [
+            "-e",
+            "process.stdout.write(`${process.env.T3_TEST_ACP_SESSION_TOKEN ?? ''} ${process.env.PATH === undefined ? 'no PATH' : 'PATH'}`)",
+          ],
         });
         yield* terminals.waitForExit({ sessionId, terminalId: created.terminalId });
         const output = yield* terminals.output({ sessionId, terminalId: created.terminalId });
-        expect(output.output).toBe(expected);
+        // The session variables add to the server environment; they do not replace it.
+        expect(output.output).toBe(`${expected} PATH`);
       }
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );

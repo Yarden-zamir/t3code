@@ -28,9 +28,10 @@ export function threadCredentialEnvironment(
     : {
         [THREAD_CREDENTIAL_ENDPOINT_ENV]: session.endpoint,
         [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: session.authorizationHeader,
-        ...(session.authorizationHeader.startsWith(BEARER)
-          ? { [KITSHN_ATTEST_ENV]: `t3:${session.authorizationHeader.slice(BEARER.length)}` }
-          : {}),
+        // "" when there is no bearer token, so an inherited attestation never applies.
+        [KITSHN_ATTEST_ENV]: session.authorizationHeader.startsWith(BEARER)
+          ? `t3:${session.authorizationHeader.slice(BEARER.length)}`
+          : "",
       };
 }
 

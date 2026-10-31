@@ -65,7 +65,10 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { makeAcpMcpOverAcpBridge, type AcpMcpOverAcpBridge } from "./mcpOverAcpBridge.ts";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import { threadCredentialEnvironment } from "@t3tools/provider-core/server/forkThreadCredential";
+import {
+  NO_THREAD_CREDENTIAL,
+  threadCredentialEnvironment,
+} from "@t3tools/provider-core/server/forkThreadCredential";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import {
   applyAcpAgentTerminalUpdate,
@@ -603,7 +606,8 @@ function acpMcpContext(
   self: SelfInvocation,
 ): AcpMcpContext {
   if (session === undefined) {
-    return { servers: [], acpServers: [] };
+    // A server started from an agent shell must not lend that thread's credential.
+    return { servers: [], acpServers: [], processEnvironment: { ...NO_THREAD_CREDENTIAL } };
   }
   // codex-acp 1.2.0 and pi-acp drop injected HTTP servers; bridge through stdio instead.
   return {
