@@ -38,6 +38,7 @@ const FORK_RESTORED_SETTINGS = [
   ["mobileComposerCamera", "Camera on mobile"],
   ["mobileMessagePins", "Message pins on mobile"],
   ["mobileSidebarTabs", "Sidebar tabs on mobile"],
+  ["mobileWarmRecentChats", "Warm recent chats on mobile"],
   ["terminalThreads", "Terminal threads"],
   ["terminalHistoryLines", "Terminal history lines"],
   ["terminalHistoryMegabytes", "Terminal history megabytes"],

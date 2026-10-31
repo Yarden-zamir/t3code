@@ -102,6 +102,7 @@ Settings > About > Diagnostics > Sync timings, below the crash reports, shows ho
 - the cached list shown, "synchronizing", the socket ready, the HTTP snapshot applied and "live";
 - the open thread from "synchronizing" to "live";
 - the foreground probe result: alive, silent, timed out or failed;
+- the message cache warm-up: its start, its end and the time for each thread;
 - the route checks, the bearer authorization, the connection, the HTTP snapshot, the cached shell load and the silent socket check.
 
 "Copy sync timings" copies all runs as text. The text names environments by their label, never by address.
@@ -109,6 +110,17 @@ Settings > About > Diagnostics > Sync timings, below the crash reports, shows ho
 - **Setting:** none. The timings stay in memory and cost no network traffic.
 - **Works on:** mobile. The recorder is in `packages/client-runtime`, so web can show it later.
 - **Limits:** the app keeps the cold start and the last 10 returns to the foreground. A restart clears them. The cold start time counts from when the app code loaded, not from the start of the process.
+
+### Message cache warm-up on mobile
+
+Before, only a chat that was opened on the phone had cached messages. Now, when the chat list of an environment is live, the app loads recent chats into the same message cache. A chat that was never opened on the phone then shows its messages at once.
+
+- The app loads every unread chat and every chat that waits for your answer, then the 10 newest chats, at most 15 per environment. A chat with a running turn is left out, because the cache saves it only after the turn ends. Each chat loads the same latest window that an opened chat loads.
+- It loads one chat and one environment at a time, and only when no chat synchronizes. The open chat always comes first.
+- It skips a chat whose cache was saved after the chat last changed. It stops when the app goes to the background, and starts again when the chat list is live again.
+- **Setting:** server setting `mobileWarmRecentChats` (on by default). Mobile Settings > Fork > "Warm recent chats", or T3 Settings > Appearance > Mobile app. When it is off for an environment, no warm-up runs there.
+- **Works on:** mobile.
+- **Limits:** each chat costs the server one thread snapshot and one subscription, the same as an opened chat. The cache check compares the phone clock with the server clock, so a phone clock that runs ahead can skip a chat that changed. That chat then loads when it opens, as before.
 
 ## kitshn
 

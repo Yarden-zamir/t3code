@@ -16,6 +16,7 @@ const SYNC_TIMING_SPANS = [
   "ConnectionDriver.connect",
   "ShellSnapshotLoader.load",
   "EnvironmentSupervisor.awaitSilentSocket",
+  "CacheWarmup.thread",
 ] as const;
 export type SyncTimingSpan = (typeof SYNC_TIMING_SPANS)[number];
 
@@ -27,18 +28,21 @@ const SYNC_TIMING_MARKS = [
   "live",
   "threadSynchronizing",
   "threadLive",
+  "cacheWarmupStarted",
+  "cacheWarmupDone",
 ] as const;
 export type SyncTimingMark = (typeof SYNC_TIMING_MARKS)[number];
 
 export type SyncRunTrigger = "cold-start" | "application-active-probe" | "application-active-long";
 export type SyncProbeResult = "alive" | "silent" | "timed-out" | "failed";
+type SyncOutcome = "success" | "failure" | "interrupted";
 
 export interface SyncSpanTiming {
   readonly name: SyncTimingSpan;
   /** Milliseconds from the start of the run. */
   readonly startMs: number;
   readonly durationMs: number;
-  readonly outcome: "success" | "failure" | "interrupted";
+  readonly outcome: SyncOutcome;
 }
 
 export interface SyncEnvironmentTimings {
@@ -93,7 +97,7 @@ function spanEnvironment(span: Tracer.AnySpan): EnvironmentId | undefined {
   return undefined;
 }
 
-function exitOutcome(exit: Exit.Exit<unknown, unknown>): SyncSpanTiming["outcome"] {
+function exitOutcome(exit: Exit.Exit<unknown, unknown>): SyncOutcome {
   if (Exit.isSuccess(exit)) return "success";
   return Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failure";
 }
@@ -176,17 +180,36 @@ export function makeSyncTimingsRecorder(options: {
     if (span.name === "ConnectionDriver.connect" && outcome === "success") {
       markIn(run, environmentId, "socketReady");
     }
+    pushTiming(run, environmentId, span.name as SyncTimingSpan, startedAt, outcome);
+  };
+
+  const pushTiming = (
+    run: MutableRun,
+    environmentId: EnvironmentId,
+    name: SyncTimingSpan,
+    startedAt: number,
+    outcome: SyncOutcome,
+  ) => {
     const timings = environment(run, environmentId);
     if (timings.spans.length >= maxSpans) {
       timings.droppedSpans += 1;
       return;
     }
     timings.spans.push({
-      name: span.name as SyncTimingSpan,
+      name,
       startMs: Math.round(startedAt - run.origin),
       durationMs: Math.round(options.now() - startedAt),
       outcome,
     });
+  };
+
+  /** Starts a timed step outside a tracer span. Call the result when the step ends. */
+  const startStep = (environmentId: EnvironmentId, name: SyncTimingSpan) => {
+    const run = current;
+    const startedAt = options.now();
+    return (outcome: SyncOutcome) => {
+      if (enabled) pushTiming(run, environmentId, name, startedAt, outcome);
+    };
   };
 
   /** Wraps a tracer so that the spans in `SYNC_TIMING_SPANS` also land in the recorder. */
@@ -260,6 +283,7 @@ export function makeSyncTimingsRecorder(options: {
     probe,
     tracer,
     followStatus,
+    startStep,
     snapshot: (): SyncTimingsSnapshot => ({
       coldStart: freeze(coldStart),
       wakeups: wakeups.map(freeze),
@@ -269,10 +293,9 @@ export function makeSyncTimingsRecorder(options: {
 
 export type SyncTimingsRecorder = ReturnType<typeof makeSyncTimingsRecorder>;
 
-// The cold start run starts when this module loads, so the start-up time before
-// the app code loads is not in the timings. Durations use the monotonic clock;
-// the clock time of a run uses Date, because Android stops performance.now()
-// in deep sleep.
+// One app-wide recorder keeps each upstream hook one line; revisit for a recorder per runtime.
+// The cold start counts from when this module loads. Durations use performance.now(); run
+// times use Date, because Android stops performance.now() in deep sleep.
 export const syncTimings: SyncTimingsRecorder = makeSyncTimingsRecorder({
   now: () => performance.now(),
   // @effect-diagnostics-next-line globalDate:off
@@ -287,6 +310,8 @@ const MARK_LABELS: Record<SyncTimingMark, string> = {
   live: "live",
   threadSynchronizing: "open thread synchronizing",
   threadLive: "open thread live",
+  cacheWarmupStarted: "cache warm-up started",
+  cacheWarmupDone: "cache warm-up done",
 };
 
 const SPAN_LABELS: Record<SyncTimingSpan, string> = {
@@ -296,6 +321,7 @@ const SPAN_LABELS: Record<SyncTimingSpan, string> = {
   "ConnectionDriver.connect": "connect",
   "ShellSnapshotLoader.load": "HTTP snapshot",
   "EnvironmentSupervisor.awaitSilentSocket": "silent socket check",
+  "CacheWarmup.thread": "cache warm-up thread",
 };
 
 function runTitle(run: SyncRun): string {

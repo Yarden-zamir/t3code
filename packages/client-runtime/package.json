@@ -243,6 +243,10 @@
       "types": "./src/fork/arrowLinks.ts",
       "default": "./src/fork/arrowLinks.ts"
     },
+    "./fork/cacheWarmup": {
+      "types": "./src/fork/cacheWarmup.ts",
+      "default": "./src/fork/cacheWarmup.ts"
+    },
     "./fork/deviceInvite": {
       "types": "./src/fork/deviceInvite.ts",
       "default": "./src/fork/deviceInvite.ts"
@@ -254,6 +258,10 @@
     "./fork/syncTimings": {
       "types": "./src/fork/syncTimings.ts",
       "default": "./src/fork/syncTimings.ts"
+    },
+    "./fork/threadSyncActivity": {
+      "types": "./src/fork/threadSyncActivity.ts",
+      "default": "./src/fork/threadSyncActivity.ts"
     },
     "./fork/worktreeRecreate": {
       "types": "./src/fork/worktreeRecreate.ts",

@@ -167,8 +167,7 @@ export const make = Effect.gen(function* () {
       readonly bearerToken: string;
       readonly connectionMethod: ClientConnectionMethod;
     }) {
-      const descriptor = yield* verifyDirectEndpoint(input);
-      const socketUrl = yield* resolveRemoteWebSocketConnectionUrl({
+      const issueSocketUrl = resolveRemoteWebSocketConnectionUrl({
         wsBaseUrl: input.wsBaseUrl,
         httpBaseUrl: input.httpBaseUrl,
         bearerToken: input.bearerToken,
@@ -178,6 +177,18 @@ export const make = Effect.gen(function* () {
         Effect.mapError(mapRemoteEnvironmentError),
         Effect.provideService(HttpClient.HttpClient, httpClient),
       );
+      // The ticket request carries the token. Over plain HTTP it waits until the
+      // descriptor shows that the address belongs to this environment; over HTTPS
+      // the certificate already identifies the host.
+      const verified = verifyDirectEndpoint(input);
+      const [descriptor, socketUrl] = input.httpBaseUrl.startsWith("https:")
+        ? yield* Effect.gen(function* () {
+            const descriptorFiber = yield* Effect.forkChild(verified, { startImmediately: true });
+            const ticketFiber = yield* Effect.forkChild(issueSocketUrl, { startImmediately: true });
+            // A host that answers as another environment reports that, not a ticket error.
+            return [yield* Fiber.join(descriptorFiber), yield* Fiber.join(ticketFiber)] as const;
+          })
+        : [yield* verified, yield* issueSocketUrl];
       return {
         environmentId: descriptor.environmentId,
         label: descriptor.label,

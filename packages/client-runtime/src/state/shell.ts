@@ -20,7 +20,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
-import { connectionProjectionPhase } from "../connection/model.ts";
+import { connectionProjectionPhase, type PreparedConnection } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as ConnectionWakeups from "../connection/wakeups.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
@@ -72,6 +72,18 @@ function shellStatusForSnapshot(
   snapshot: Option.Option<OrchestrationV2ShellSnapshot>,
 ): EnvironmentShellStatus {
   return Option.isSome(snapshot) ? "cached" : "empty";
+}
+
+interface ShellSnapshotOmission {
+  readonly omitIdleSubagents: boolean;
+  readonly omitOlderSettled: boolean;
+}
+
+function shellSnapshotOmission(config: ServerConfig): ShellSnapshotOmission {
+  return {
+    omitIdleSubagents: config.shellThreadFamilies === true,
+    omitOlderSettled: config.shellOlderSettled === true && config.shellThreadFamilies === true,
+  };
 }
 
 function withoutDeferredPullRequests(value: DeferredShellSnapshot): OrchestrationV2ShellSnapshot {
@@ -359,6 +371,49 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     yield* fillDeferredPullRequests(cached.value, cachedSnapshot.value);
   }
 
+  // The HTTP snapshot needs no socket, so it starts when a connection is prepared and
+  // runs while the socket opens. The omission flags come from the last known server
+  // config; a socket config with other flags loads the snapshot again.
+  let snapshotOmission = yield* cache.loadServerConfig(environmentId).pipe(
+    Effect.map(Option.map(shellSnapshotOmission)),
+    Effect.orElseSucceed(() => Option.none<ShellSnapshotOmission>()),
+  );
+  let earlySnapshot:
+    | {
+        readonly prepared: PreparedConnection;
+        readonly omission: ShellSnapshotOmission;
+        readonly fiber: Fiber.Fiber<Option.Option<DeferredShellSnapshot>>;
+      }
+    | undefined;
+  yield* SubscriptionRef.changes(supervisor.prepared).pipe(
+    Stream.runForEach((next) =>
+      Effect.gen(function* () {
+        if (Option.isNone(next) || earlySnapshot?.prepared === next.value) return;
+        if (Option.isNone(snapshotOmission)) return;
+        if (earlySnapshot !== undefined) yield* Fiber.interrupt(earlySnapshot.fiber);
+        earlySnapshot = {
+          prepared: next.value,
+          omission: snapshotOmission.value,
+          fiber: yield* snapshotLoader
+            .load(next.value, snapshotOmission.value)
+            .pipe(Effect.forkIn(stateScope)),
+        };
+      }),
+    ),
+    Effect.forkScoped,
+  );
+  const loadSnapshot = (prepared: PreparedConnection, omission: ShellSnapshotOmission) => {
+    const early = earlySnapshot;
+    earlySnapshot = undefined;
+    snapshotOmission = Option.some(omission);
+    if (early === undefined) return snapshotLoader.load(prepared, omission);
+    return early.prepared === prepared &&
+      early.omission.omitIdleSubagents === omission.omitIdleSubagents &&
+      early.omission.omitOlderSettled === omission.omitOlderSettled
+      ? Fiber.join(early.fiber)
+      : Fiber.interrupt(early.fiber).pipe(Effect.andThen(snapshotLoader.load(prepared, omission)));
+  };
+
   const foregroundResubscriptions = Option.match(wakeups, {
     onNone: () => Stream.never,
     onSome: (service) =>
@@ -372,11 +427,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       Effect.fn("EnvironmentShellState.makeSubscribeInput")(function* (session) {
         yield* Ref.set(activeSubscriptionSession, session);
         const { omitIdleSubagents, omitOlderSettled } = yield* session.initialConfig.pipe(
-          Effect.map((config) => ({
-            omitIdleSubagents: config.shellThreadFamilies === true,
-            omitOlderSettled:
-              config.shellOlderSettled === true && config.shellThreadFamilies === true,
-          })),
+          Effect.map(shellSnapshotOmission),
           Effect.orElseSucceed(() => ({ omitIdleSubagents: false, omitOlderSettled: false })),
         );
         yield* Ref.set(awaitingCompletion, true);
@@ -404,7 +455,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
             ),
           );
           // HTTP and the socket must agree, or omitted children would return through the socket.
-          const httpSnapshot = yield* snapshotLoader.load(prepared, {
+          const httpSnapshot = yield* loadSnapshot(prepared, {
             omitIdleSubagents,
             omitOlderSettled,
           });

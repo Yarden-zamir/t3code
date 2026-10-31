@@ -86,6 +86,7 @@ const FORK_PAGE_ROWS: Record<
   mobileComposerCamera: "mobile-composer-camera",
   mobileMessagePins: "mobile-message-pins",
   mobileSidebarTabs: "mobile-sidebar-tabs",
+  mobileWarmRecentChats: "mobile-warm-recent-chats",
   terminalThreads: "terminal-threads",
   terminalHistoryLines: "terminal-history",
   terminalHistoryMegabytes: "terminal-history",

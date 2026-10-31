@@ -38,6 +38,7 @@ import {
   MobileNewThreadProjectSettingsRow,
   MobilePublishedThemesSettingsRow,
   MobileSidebarTabsSettingsRow,
+  MobileWarmRecentChatsSettingsRow,
 } from "./MobileAppSettings";
 import { PreferOriginRemoteSettingsRow } from "./PreferOriginRemoteSettings";
 import { PreviewLocalServerGroupsSettingsRow } from "./PreviewLocalServerGroupsSettingsRow";
@@ -129,6 +130,7 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "mobile-composer-camera": MobileComposerCameraSettingsRow,
   "mobile-message-pins": MobileMessagePinsSettingsRow,
   "mobile-sidebar-tabs": MobileSidebarTabsSettingsRow,
+  "mobile-warm-recent-chats": MobileWarmRecentChatsSettingsRow,
   "back-forward-buttons": BackForwardButtonsSettingsRow,
   "remember-back-forward-history": RememberBackForwardHistorySettingsRow,
 };

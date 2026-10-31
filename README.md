@@ -13,6 +13,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Trusted sibling environments](docs/fork/features.md#trusted-sibling-environments):** one browser page pairs with and reaches the other hosts.
 - **[Quiet reconnect after restart](docs/fork/features.md#quiet-reconnect-after-restart):** right after the app starts, the composer waits before it warns that a server is reconnecting (off by default).
 - **[Sync timings on mobile](docs/fork/features.md#sync-timings-on-mobile):** Settings > Diagnostics shows how long each step of a chat sync takes, per environment.
+- **[Message cache warm-up on mobile](docs/fork/features.md#message-cache-warm-up-on-mobile):** after the chat list syncs, the mobile app loads the newest chats into its message cache, so they open without a wait.
 
 **kitshn** (each line needs kitshn 2 on the machine, joined to kitshn)
 
@@ -121,6 +122,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - Queue: a message held after a provider failure runs before a later agent message or wake, which waits behind it. Before, the later run started first and the held message stayed queued until the user came back.
 - Delegated tasks: a later run that a child starts itself, after a background command or a nested delegated task, reports its result to the parent as a new task. A parent that cancelled the child gets no report.
 - Terminal: powerline outlines and half circles (U+E0B1 to U+E0B7) fill their whole cell, so they meet the segments next to them.
+- Sync: a bearer connection over HTTPS asks for its socket ticket and its descriptor at the same time, and the chat list loads over HTTP while the socket opens. After a long background, the mobile app opens a new connection at once and keeps the old socket until the checks find it dead.
 - Device panel: a Homebrew Android SDK (`android-commandlinetools`) works without `ANDROID_HOME`, also when the `adb` on `PATH` has no emulator.
 
 ---

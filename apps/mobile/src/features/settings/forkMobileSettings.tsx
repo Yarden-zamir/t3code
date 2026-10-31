@@ -93,6 +93,13 @@ const FORK_MOBILE_SWITCHES = [
     subtitle: "The thread list shows the tabs of the web sidebar. Tap a tab to show its threads.",
   },
   {
+    key: "mobileWarmRecentChats",
+    icon: "arrow.down.circle",
+    label: "Warm recent chats",
+    subtitle:
+      "After the thread list syncs, load the newest threads into the message cache, so they open without a wait.",
+  },
+  {
     key: "threadLinkChips",
     icon: "link",
     label: "Thread link chips",

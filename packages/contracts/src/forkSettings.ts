@@ -474,6 +474,11 @@ export const ForkServerSettingsFields = {
   /** Fork: the home thread list of the mobile app shows the `sidebarTabs` tabs. */
   mobileSidebarTabs: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
+   * Fork: after the thread list syncs, the mobile app loads recent threads into its message
+   * cache (`forkCacheWarmup.ts`). On by default: it only adds speed, at the cost of an open.
+   */
+  mobileWarmRecentChats: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
    * Fork: terminal threads (`forkTerminalThreads.ts`). A thread whose screen is a terminal. A
    * server setting, because the server starts the shell and writes the shell integration.
    */
@@ -524,6 +529,7 @@ export const ForkServerSettingsPatchFields = {
   mobileComposerCamera: Schema.optionalKey(Schema.Boolean),
   mobileMessagePins: Schema.optionalKey(Schema.Boolean),
   mobileSidebarTabs: Schema.optionalKey(Schema.Boolean),
+  mobileWarmRecentChats: Schema.optionalKey(Schema.Boolean),
   terminalThreads: Schema.optionalKey(Schema.Boolean),
   terminalHistoryLines: Schema.optionalKey(TerminalHistoryLines),
   terminalHistoryMegabytes: Schema.optionalKey(TerminalHistoryMegabytes),
