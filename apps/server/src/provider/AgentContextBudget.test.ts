@@ -48,6 +48,7 @@ import { KitshnSettingsSync } from "../fork/kitshn/KitshnSettingsSync.ts";
 import { MachinePeers } from "../fork/machineMap/MachinePeers.ts";
 import { ProcessRunner } from "../processRunner.ts";
 import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
+import { UsageLimitSources } from "../usage/UsageLimitSources.ts";
 import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import { DocumentText } from "./DocumentText.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
@@ -86,6 +87,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(ServerEnvironment)({}),
   Layer.mock(ServerSecretStore)({}),
   Layer.mock(ServerSettingsService)({}),
+  Layer.mock(UsageLimitSources)({}),
   Layer.mock(SourceControlRepositoryService)({}),
   Layer.mock(ThreadLaunchService)({}),
   Layer.mock(ThreadManagementService)({}),
