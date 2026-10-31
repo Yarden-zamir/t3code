@@ -258,6 +258,7 @@ export function useThreadRightPanel(input: {
     pullRequestPanelTarget,
     threadPanelPresentation,
     isServerThread,
+    embedded: false,
     isGitRepo,
     browserAvailable,
     canOperatePreview,
@@ -464,6 +465,9 @@ export function ThreadRightPanelView(props: {
       getShortcutContext={getShortcutContext}
       onSendAnnotation={props.onSendAnnotation}
       onCloseSurface={panel.closeRightPanelSurface}
+      // A terminal thread screen has no composer or terminal drawer, so a side chat tab here runs
+      // no shell commands. Revisit if terminal threads can open side chats.
+      sideChatParentPanel={{ openToolDiff: panel.onOpenToolDiffStable, runShellCommand: () => {} }}
       terminal={{
         ...props.terminal,
         onSplitTerminal: panel.splitPanelTerminalStable,
