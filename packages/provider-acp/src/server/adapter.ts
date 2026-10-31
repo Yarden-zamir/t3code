@@ -675,6 +675,8 @@ function acpMcpContext(
     acpServers: [{ type: "acp", name: "t3-code", serverId: "t3-code" }],
     endpoint: session.endpoint,
     authorization: session.authorizationHeader,
+    // Known limit: a forked session reuses its source's agent process, so commands that the agent
+    // itself runs keep the source thread's attestation. Revisit if forks get their own process.
     processEnvironment: {
       ...threadCredentialEnvironment(session),
       T3_ACP_MCP_NODE: self.command,
