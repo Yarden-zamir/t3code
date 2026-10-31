@@ -32,7 +32,7 @@ const threadLinkChipsAtom = Atom.family((environmentId: EnvironmentId) =>
 const OFF_ATOM = Atom.make(false);
 
 /** Fork: whether the message environment has `threadLinkChips` on. */
-export function useForkThreadLinkChips(environmentId: EnvironmentId | null): boolean {
+export function useForkThreadLinkChips(environmentId: EnvironmentId | null | undefined): boolean {
   return useAtomValue(environmentId ? threadLinkChipsAtom(environmentId) : OFF_ATOM);
 }
 

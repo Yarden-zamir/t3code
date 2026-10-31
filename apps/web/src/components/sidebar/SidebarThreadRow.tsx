@@ -1128,14 +1128,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     )
   ) : null;
 
+  const remoteMachineIcon =
+    isRemote && !showsScratchMachine ? (
+      <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
+        <EnvironmentMachineIcon aria-hidden kind={props.environmentMachine} className="size-3.5" />
+      </span>
+    ) : null;
   const diff = latestRunDiff(thread);
-  // Only the provider icon would remain; the New design drops the line instead of leaving it blank.
+  // Only the trailing icons would remain, so the row moves them to the title line instead.
   const metaLineEmpty =
     !thread.branch &&
     !showsScratchMachine &&
     prBadge === null &&
     diff === null &&
-    !isRemote &&
     runningTerminalIds.length === 0;
 
   const statusSlot = sortable?.isDragging ? (
@@ -1292,12 +1297,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const diffLabel = diff ? (
     <ThreadCardDiff insertions={diff.insertions} deletions={diff.deletions} />
   ) : null;
-  const remoteMachineIcon =
-    isRemote && !showsScratchMachine ? (
-      <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
-        <EnvironmentMachineIcon aria-hidden kind={props.environmentMachine} className="size-3.5" />
-      </span>
-    ) : null;
   const providerStack = (
     <SidebarProviderStack
       thread={thread}
@@ -1320,8 +1319,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       </span>
     </>
   );
-  const titleLineProviderStack = metaLineEmpty ? (
-    <span aria-hidden className="inline-flex shrink-0">
+  const titleLineIcons = metaLineEmpty ? (
+    <span aria-hidden className="inline-flex shrink-0 items-center gap-1">
+      {remoteMachineIcon}
       {providerStack}
     </span>
   ) : null;
@@ -1386,7 +1386,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {draftIndicator}
               {title}
-              {multiline ? titleLineProviderStack : null}
+              {multiline ? titleLineIcons : null}
               {pinIndicator}
               {multiline ? null : terminalStatusIcon}
               {isRegeneratingTitle ? (
@@ -1489,18 +1489,25 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       </TooltipPopup>
                     </Tooltip>
                   ) : (
-                    <button
-                      type="button"
-                      aria-label="Settle thread"
-                      onClick={handleSettleClick}
-                      onPointerDown={handleActionPointerDown}
-                      className={cn(
-                        "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100",
-                        isWoke && "group-any-hover/sidebar-row:static",
-                      )}
-                    >
-                      <CheckIcon className="size-3" />
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            aria-label="Settle thread"
+                            onClick={handleSettleClick}
+                            onPointerDown={handleActionPointerDown}
+                            className={cn(
+                              "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100",
+                              isWoke && "group-any-hover/sidebar-row:static",
+                            )}
+                          />
+                        }
+                      >
+                        <CheckIcon className="size-3" />
+                      </TooltipTrigger>
+                      <TooltipPopup side="top">Settle thread</TooltipPopup>
+                    </Tooltip>
                   )}
                 </span>
               )}
@@ -1580,7 +1587,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               </div>
               <div className="mt-1 flex min-w-0 items-center gap-1.5">
                 {titleLine}
-                {titleLineProviderStack}
+                {titleLineIcons}
               </div>
               <div
                 className={cn(

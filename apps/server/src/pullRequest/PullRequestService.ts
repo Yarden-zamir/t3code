@@ -215,6 +215,10 @@ export class PullRequestService extends Context.Service<
     ) => Effect.Effect<void, PullRequestError>;
     readonly subscribeRefreshes: Stream.Stream<number>;
     readonly refreshAfterTurn: (projectId: ProjectId) => Effect.Effect<void>;
+    /** Project and remote lookups inside `effect` read once per filter, e.g. across one sync sweep. */
+    readonly withSharedProjectReads: <A, E, R>(
+      effect: Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E, R>;
     readonly detail: (input: PullRequestRef) => Effect.Effect<PullRequestDetail, PullRequestError>;
     readonly preview: (
       input: PullRequestRef,
@@ -333,6 +337,12 @@ interface WorkspaceProjects {
   >;
   readonly viewerRoots: ReadonlyMap<string, ReadonlyArray<string>>;
 }
+
+// Inherited by fibers forked inside the scope, so it is closed, not just dropped, when the scope ends.
+const sharedProjectReads = Context.Reference<{
+  open: boolean;
+  readonly reads: Map<string, Effect.Effect<WorkspaceProjects, PullRequestError>>;
+} | null>("t3/PullRequestService/sharedProjectReads", { defaultValue: () => null });
 
 interface RepositoryBatch {
   readonly key: string;
@@ -505,6 +515,7 @@ function withRateLimitBackoff(
       ? {}
       : { unavailableRequirement: api.unavailableRequirement }),
     ...(api.repositoryKey === undefined ? {} : { repositoryKey: api.repositoryKey }),
+    ...(api.servesHost === undefined ? {} : { servesHost: api.servesHost }),
     ...(api.readsPublicHostWithoutCheckout === undefined
       ? {}
       : { readsPublicHostWithoutCheckout: api.readsPublicHostWithoutCheckout }),
@@ -829,6 +840,34 @@ export const make = Effect.gen(function* () {
   const listWorkspaceProjects = (
     filter: Pick<PullRequestListInput, "projectId" | "projectIds" | "host">,
   ): Effect.Effect<WorkspaceProjects, PullRequestError> =>
+    Effect.flatMap(sharedProjectReads, (shared) => {
+      if (shared === null || !shared.open) return readWorkspaceProjects(filter);
+      const key = JSON.stringify([filter.projectId, filter.projectIds, filter.host]);
+      const existing = shared.reads.get(key);
+      if (existing !== undefined) return existing;
+      return Effect.cached(readWorkspaceProjects(filter)).pipe(
+        Effect.tap((read) => Effect.sync(() => shared.reads.set(key, read))),
+        Effect.flatten,
+      );
+    });
+
+  const withSharedProjectReads = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.suspend(() => {
+      const shared = { open: true, reads: new Map() };
+      return effect.pipe(
+        Effect.provideService(sharedProjectReads, shared),
+        Effect.ensuring(
+          Effect.sync(() => {
+            shared.open = false;
+            shared.reads.clear();
+          }),
+        ),
+      );
+    });
+
+  const readWorkspaceProjects = (
+    filter: Pick<PullRequestListInput, "projectId" | "projectIds" | "host">,
+  ): Effect.Effect<WorkspaceProjects, PullRequestError> =>
     (filter.projectId === undefined
       ? projects.listShells(
           filter.projectIds === undefined ? undefined : { projectIds: filter.projectIds },
@@ -887,7 +926,8 @@ export const make = Effect.gen(function* () {
           if (filter.host !== undefined && host !== filter.host.toLowerCase()) {
             continue;
           }
-          const api = registry.get(kind);
+          const registered = registry.get(kind);
+          const api = registered?.servesHost?.(host) === false ? null : registered;
           if (api !== null) {
             const roots = viewerRoots.get(host);
             if (roots === undefined) viewerRoots.set(host, [project.workspaceRoot]);
@@ -923,17 +963,6 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  // Fork: each read of another repository's change request lists and enriches every project, and
-  // the pull request sweeps run these reads in parallel. One listing serves a sweep. A project
-  // added or re-pointed routes on the next sweep or Refresh; shorten the TTL if routes need to change sooner.
-  const routeProjects = yield* Cache.makeWith(
-    (host: string | null) => listWorkspaceProjects(host === null ? {} : { host }),
-    {
-      capacity: 16,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.seconds(30) : Duration.zero),
-    },
-  );
-
   // Azure derives organization from the checkout; require the matching repository.
   const requireProject = (ref: PullRequestRef): Effect.Effect<SupportedProject, PullRequestError> =>
     listWorkspaceProjects({ projectId: ref.projectId }).pipe(
@@ -960,9 +989,8 @@ export const make = Effect.gen(function* () {
         // A host that spells one repository several ways (Azure's SSH and legacy clone hosts)
         // can differ from the browser URL's host. Compare the complete repository identity
         // before narrowing those checkouts by host.
-        return Cache.get(
-          routeProjects,
-          sourceControlDefinitions.findByRepositoryKey(referenceKey) ? null : host,
+        return listWorkspaceProjects(
+          sourceControlDefinitions.findByRepositoryKey(referenceKey) ? {} : { host },
         ).pipe(
           Effect.flatMap(({ supported }) => {
             const onHost = supported.filter((candidate) => candidate.host === host);
@@ -1371,19 +1399,24 @@ export const make = Effect.gen(function* () {
                     : null,
               };
             }),
-            Effect.orElseSucceed((): RepositoryBatch => ({
-              key,
-              entries: [],
-              errors: [
-                {
-                  projectId: project.project.id,
-                  projectTitle: project.project.title,
-                  message: `${project.repository} could not be read.`,
-                },
-              ],
-              truncated: false,
-              nextCursor: null,
-            })),
+            Effect.catch((error): Effect.Effect<RepositoryBatch> =>
+              Effect.succeed({
+                key,
+                entries: [],
+                errors: [
+                  {
+                    projectId: project.project.id,
+                    projectTitle: project.project.title,
+                    message:
+                      error.accessHint === undefined
+                        ? `${project.repository} could not be read.`
+                        : `${project.repository} could not be read. ${error.accessHint}`,
+                  },
+                ],
+                truncated: false,
+                nextCursor: null,
+              }),
+            ),
           );
       }
     };
@@ -3473,7 +3506,6 @@ export const make = Effect.gen(function* () {
       everyFileRevisionEpoch = ++epochCounter;
       viewersByHost.clear();
       yield* Cache.invalidateAll(viewerFlights);
-      yield* Cache.invalidateAll(routeProjects);
     }
     if (options?.notifyReaders) {
       yield* SubscriptionRef.set(pullRequestRefreshes, ++epochCounter);
@@ -3668,6 +3700,7 @@ export const make = Effect.gen(function* () {
     );
 
   return PullRequestService.of({
+    withSharedProjectReads,
     routing,
     routingIdentity,
     withRoutingCredential,

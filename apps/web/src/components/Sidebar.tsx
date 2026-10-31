@@ -198,6 +198,7 @@ import {
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
   resolveSidebarThreadSection,
+  resolveSidebarReorderableThreadKeys,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
   shouldNavigateAfterThreadPark,
@@ -351,6 +352,7 @@ interface SidebarThreadPartitionInput {
   /** Fork: the threads of the open sidebar tab, narrowed by the project scope and the owner filter. */
   readonly visibleThreads: readonly EnvironmentThreadShell[];
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
+  readonly connectedEnvironmentIds: readonly EnvironmentId[];
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly workingShelfEnabled: boolean;
   /** Boring mode: folders list active threads by the user's latest message. */
@@ -411,6 +413,7 @@ function useSidebarThreads(input: {
   readonly projectScopeKey: string | null;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
+  readonly connectedEnvironmentIds: readonly EnvironmentId[];
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly threads: readonly EnvironmentThreadShell[];
   readonly delegatedUnderParent: ReadonlySet<string>;
@@ -432,6 +435,7 @@ function useSidebarThreads(input: {
     projectScopeKey,
     scopedProjectKeys,
     serverConfigs,
+    connectedEnvironmentIds,
     optimisticDrop,
     threads,
     routeRowThreadKey,
@@ -502,6 +506,7 @@ function useSidebarThreads(input: {
     threads,
     visibleThreads: sidebarTabs.visibleThreads,
     serverConfigs,
+    connectedEnvironmentIds,
     optimisticDrop,
     workingShelfEnabled,
     sortActiveBySend: folderGroups !== null,
@@ -680,15 +685,14 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   };
   const snoozed: EnvironmentThreadShell[] = [];
   const settled: EnvironmentThreadShell[] = [];
-  const draggable = new Set<string>();
-  const activeReorderable = new Set<string>();
+  const { draggableThreadKeys, activeReorderableThreadKeys } = resolveSidebarReorderableThreadKeys({
+    threads: visible,
+    serverConfigs,
+    connectedEnvironmentIds: input.connectedEnvironmentIds,
+  });
   for (const thread of visible) {
     const configLoaded = serverConfigs.has(thread.environmentId);
     const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
-    if (configLoaded) {
-      activeReorderable.add(threadKey);
-      draggable.add(threadKey);
-    }
     if (optimisticDrop?.key === threadKey) {
       const projected = applySidebarThreadDrop(
         thread,
@@ -722,7 +726,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
       ).push(thread);
     }
   }
-  // A loaded config gates dragging only; the sort must not depend on it, so web and mobile agree.
+  // Availability gates dragging only; sorting must stay consistent across clients.
   const sortedPinned = sortPinnedThreadsForSidebar(pinned);
   const sortedActive = sortActiveBySend
     ? sortWorkingThreadsBySend(active, forkInboxReturnAt(undefined))
@@ -738,8 +742,8 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
             preferredIds: optimisticDrop.order,
             getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
           }),
-    draggableThreadKeys: draggable,
-    activeReorderableThreadKeys: activeReorderable,
+    draggableThreadKeys,
+    activeReorderableThreadKeys,
     activeThreads:
       optimisticDrop?.section !== "active" || optimisticDrop.order === null
         ? sortedActive
@@ -1089,7 +1093,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [searchHighlightKey, setSearchHighlightKey] = useState<string | null>(null);
-  const searchEnvironmentIds = useConnectedEnvironmentIds();
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const queuePendingFileDrop = useSidebarPendingFileDropStore((s) => s.queuePendingFileDrop);
   const clearPendingFileDrop = useSidebarPendingFileDropStore((s) => s.clearPendingFileDrop);
   const [renamingThreadRef, setRenamingThreadRef] = useState<ScopedThreadRef | null>(null);
@@ -1237,7 +1241,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // The scope lies inside the owner filter, so the scope wins when both are set.
   const draftProjectKeys = scopedProjectKeys ?? ownerVisibleProjectKeys;
   const threadSearch = useThreadSearch(
-    searchEnvironmentIds,
+    connectedEnvironmentIds,
     threadSearchQuery,
     scopedProjectGroups.length === 0
       ? {}
@@ -1375,6 +1379,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     projectScopeKey,
     scopedProjectKeys,
     serverConfigs,
+    connectedEnvironmentIds,
     optimisticDrop,
     fork: {
       delegatedUnderParent,

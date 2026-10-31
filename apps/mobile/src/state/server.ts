@@ -10,7 +10,6 @@ import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { environmentSession } from "./session";
 import { firstMobileThreadCardLayout } from "./thread-card-layout";
-import { createThreadListEnvironmentsAtom } from "./thread-list-environments";
 
 export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
   initialConfigValueAtom: environmentSession.initialConfigValueAtom,
@@ -25,10 +24,6 @@ export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,
 });
-
-export const threadListEnvironmentsAtom = createThreadListEnvironmentsAtom(
-  environmentServerConfigsAtom,
-);
 
 // Config updates other than settings keep the same layout object, so list rows
 // keep their memo. Any settings update gives a new object and re-renders them once.
