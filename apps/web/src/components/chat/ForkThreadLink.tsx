@@ -29,13 +29,6 @@ const threadLinkChipsAtom = Atom.family((environmentId: EnvironmentId) =>
   ),
 );
 
-const OFF_ATOM = Atom.make(false);
-
-/** Fork: whether the message environment has `threadLinkChips` on. */
-export function useForkThreadLinkChips(environmentId: EnvironmentId | null): boolean {
-  return useAtomValue(environmentId ? threadLinkChipsAtom(environmentId) : OFF_ATOM);
-}
-
 /** Fork: a `t3-thread://` link in chat, which opens the thread at the message of its fragment. */
 export function ForkThreadLink(props: {
   readonly environmentId: EnvironmentId;
