@@ -625,6 +625,8 @@ export const make = Effect.gen(function* () {
       { concurrency: 4, discard: true },
     );
   }).pipe(
+    // Fork: the fingerprint reads run in parallel, so they share one project listing per sweep.
+    pullRequests.withSharedProjectReads,
     Effect.catchCause(logFailure("pull request watch sweep failed", {})),
     Effect.withSpan("PullRequestWatchReactor.sweep"),
   );

@@ -99,6 +99,7 @@ import {
   ForkThreadAddressChip,
   ForkThreadLink,
   useForkKnownThreadAddress,
+  useForkThreadLinkChips,
   useForkThreadMarkers,
 } from "./chat/ForkThreadLink";
 import { mathKind } from "@t3tools/shared/markdownMath";
@@ -412,8 +413,8 @@ function markdownUrlTransform(href: string) {
   if (parseAssistantCitationHref(href)) return href;
   if (parseComposerContextHref(href)) return href;
   if (parseThreadLinkHref(href)) return href;
-  // Fork: keep app thread links for ForkThreadAddressChip. Renderers share this transform, so it
-  // cannot read the threadLinkChips setting; with the setting off they render as plain links.
+  // Fork: keep app thread links for ForkThreadAddressChip. Renderers share this transform, so the
+  // link renderer applies the threadLinkChips setting.
   if (parseThreadAddress(href)) return href;
   if (isWindowsDrivePathHref(href)) return href;
   return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
@@ -1090,6 +1091,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       renderContextReference,
     } = use(ChatMarkdownRendererContext);
     const forkThreadAddress = useForkKnownThreadAddress(href, environmentId);
+    const keepThreadAppLinks = useForkThreadLinkChips(environmentId);
     const text = use(ChatMarkdownTextContext);
     const citation = href ? parseAssistantCitationHref(href) : null;
     if (citation) return <AssistantCitationChip citation={citation} />;
@@ -1117,6 +1119,15 @@ const CHAT_MARKDOWN_COMPONENTS = {
           label={hastPlainTextDeep(node)}
         />
       );
+    }
+    // Fork: with `threadLinkChips` off, an app thread link is text, as `defaultUrlTransform` makes it.
+    if (
+      !keepThreadAppLinks &&
+      href &&
+      defaultUrlTransform(href) === "" &&
+      parseThreadAddress(href)
+    ) {
+      return <span>{children}</span>;
     }
     const contextReference = href ? parseComposerContextHref(href) : null;
     if (contextReference) {
