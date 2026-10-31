@@ -12,7 +12,6 @@ import * as NodeHttp from "node:http";
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { EnvironmentHttpApi, type RepositoryIdentity } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -191,15 +190,13 @@ import * as AbandonedTerminalDrafts from "./fork/AbandonedTerminalDrafts.ts";
 import * as TerminalThreadMove from "./fork/TerminalThreadMove.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkPreviewServerGroups from "./fork/PreviewServerGroups.ts";
-import { layerPortalTunnel } from "./fork/portalTunnelFile.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
 import * as MachineExec from "./fork/machineMap/MachineExec.ts";
 import * as MachineExecRoute from "./fork/machineMap/machineExecRoute.ts";
-import * as ThreadIdentityRoute from "./fork/threadIdentityRoute.ts";
-import * as KitshnAttester from "./fork/kitshn/KitshnAttester.ts";
+import * as ThreadIdentity from "./fork/ThreadIdentity.ts";
 import * as KitshnCli from "./fork/kitshn/KitshnCli.ts";
 import * as KitshnGrants from "./fork/kitshn/KitshnGrants.ts";
-import * as KitshnAudit from "./fork/kitshn/KitshnAudit.ts";
+import * as KitshnConnection from "./fork/kitshn/KitshnConnection.ts";
 import * as KitshnProvider from "./fork/kitshn/KitshnProvider.ts";
 import * as KitshnSettingsSync from "./fork/kitshn/KitshnSettingsSync.ts";
 import * as MachineHost from "./fork/machineMap/MachineHost.ts";
@@ -529,10 +526,11 @@ const layerProjectFaviconResolver = ProjectFaviconResolver.layer.pipe(
   Layer.provide(T3ProjectFileLoader.layer),
 );
 
-// Fork: kitshn provider (K-706). One instance: the auth hooks, the guest routes and the provider
-// read the same tables. It shares the session store of the auth layer, so a revocation closes
-// the WebSockets of that session.
+// Fork: kitshn provider (K-721). One instance of the connection and of the grants: the auth hooks,
+// the guest routes, exec and the provider share them. It shares the session store of the auth
+// layer, so a revocation closes the WebSockets of that session.
 const layerKitshnGrants = KitshnGrants.layer.pipe(
+  Layer.provideMerge(KitshnConnection.layer),
   Layer.provide(SessionStore.layer),
   Layer.provide(layerPersistence),
   Layer.provide(ServerEnvironment.layerIdentity),
@@ -550,21 +548,17 @@ const layerServerSelfUpdate = ServerSelfUpdate.layer.pipe(Layer.provide(layerDes
 
 // Fork: kitshn is the only way this server joins other machines (K-704 to K-1610).
 const layerMachineMap = MachineExec.layer.pipe(
-  // Fork: the portal tunnel of an older join serves the host until its handover to kitshn.
-  Layer.provideMerge(
-    layerPortalTunnel.pipe(Layer.provide(ServerSecretStore.layer), Layer.provide(layerRelayClient)),
-  ),
   Layer.provideMerge(KitshnSettingsSync.layer),
   Layer.provideMerge(MachinePeers.layer),
-  Layer.provideMerge(KitshnAudit.layer),
   // The kitshn provider connection; the machine tools send their kitshn requests over it.
   Layer.provideMerge(KitshnProvider.layer),
+  // K-1752: the provider attests the thread tokens that agents send with kitshn commands.
+  Layer.provideMerge(ThreadIdentity.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
   Layer.provideMerge(KitshnCli.layer),
   Layer.provideMerge(MachineHost.layer),
   // Fork: updates from the fork releases.
   Layer.provideMerge(ForkUpdates.layer.pipe(Layer.provide(layerServerSelfUpdate))),
   Layer.provide(ProcessRunner.layer),
-  Layer.provide(NodeSocket.layerWebSocketConstructor),
 );
 
 const layerAuth = EnvironmentAuth.layer.pipe(
@@ -844,12 +838,7 @@ const layerMakeRoutes = Layer.mergeAll(
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
   ),
   // Fork: machine map, the stream of `t3 machine exec` (MM-1919).
-  MachineExecRoute.layer.pipe(
-    Layer.provide(McpOAuth.layerMcpClientAuthenticator),
-    Layer.provide(NodeSocket.layerWebSocketConstructor),
-  ),
-  // Fork: thread attestation for kitshn, with the MCP credential of a thread.
-  ThreadIdentityRoute.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
+  MachineExecRoute.layer.pipe(Layer.provide(McpOAuth.layerMcpClientAuthenticator)),
   // Follows delegated tasks running in linked environments, including after a restart.
   Layer.effectDiscard(
     RemoteDelegation.RemoteDelegation.pipe(Effect.flatMap((remote) => remote.start())),
@@ -985,16 +974,6 @@ const layerMakeServer = Layer.unwrap(
           ),
         )
       : Layer.empty;
-    // Fork: registers the T3 attester of the kitshn daemon once this server is active.
-    const layerKitshnAttester = Layer.effectDiscard(
-      ServerActivation.forkParked(
-        Effect.gen(function* () {
-          const address = (yield* HttpServer.HttpServer).address;
-          if (typeof address === "string" || !("port" in address)) return;
-          yield* (yield* KitshnAttester.KitshnAttester).register(address);
-        }),
-      ),
-    ).pipe(Layer.provide(KitshnAttester.layer.pipe(Layer.provide(KitshnCli.layer))));
     // Fork: runs `kitshn provider` for the life of the server (K-712: without kitshn 2, it only logs).
     const layerKitshnProvider = Layer.effectDiscard(
       ServerActivation.forkParked(
@@ -1217,7 +1196,6 @@ const layerMakeServer = Layer.unwrap(
       layerRuntimeState.pipe(Layer.provide(layerLauncher)),
       layerTailscaleServe,
       layerCloudDesiredLinkReconcile,
-      layerKitshnAttester,
       layerKitshnProvider,
       HeapSnapshot.layer,
     );

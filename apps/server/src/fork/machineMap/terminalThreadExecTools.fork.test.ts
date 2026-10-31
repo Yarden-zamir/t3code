@@ -33,7 +33,7 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import { machineRequestNamespace } from "./machineAccess.ts";
 import * as KitshnGrants from "../kitshn/KitshnGrants.ts";
-import { fixedKitshnGrants, peerGrants } from "../kitshn/KitshnGrants.testkit.ts";
+import { fixedKitshnGrants } from "../kitshn/KitshnGrants.testkit.ts";
 import { PEER } from "./MachineMap.testkit.ts";
 
 // MM-1923 through the real tools: another machine needs exec only to run or stop code in a
@@ -87,10 +87,7 @@ const mcpClient = McpSchema.McpServerClient.of({
 });
 
 const standardGrants = (exec: boolean) =>
-  Effect.provideService(
-    KitshnGrants.KitshnGrants,
-    fixedKitshnGrants(peerGrants("standard", exec ? "exec" : "use")),
-  );
+  Effect.provideService(KitshnGrants.KitshnGrants, fixedKitshnGrants(exec));
 
 /** "refused" when the exec gate refused the call, else "passed". */
 const call = (name: string, args: Record<string, unknown>, exec: boolean) =>
@@ -107,7 +104,7 @@ const call = (name: string, args: Record<string, unknown>, exec: boolean) =>
         exit.value.isError === true &&
         text?.type === "text" &&
         text.text.includes('"capability_denied"') &&
-        text.text.includes("t3.agents at exec");
+        text.text.includes("runs commands");
       return refused ? "refused" : "passed";
     }),
   );

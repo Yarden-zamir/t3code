@@ -16,27 +16,8 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
-type CloudflareAccessField = "cloudflareAccessTeamDomain" | "cloudflareAccessAud";
-const CLOUDFLARE_ACCESS_FIELDS: ReadonlyArray<{
-  readonly field: CloudflareAccessField;
-  readonly label: string;
-  readonly placeholder: string;
-}> = [
-  {
-    field: "cloudflareAccessTeamDomain",
-    label: "Cloudflare Access team domain",
-    placeholder: "Access team domain, for example team.cloudflareaccess.com",
-  },
-  {
-    field: "cloudflareAccessAud",
-    label: "Cloudflare Access audience tag",
-    placeholder: "Access application audience (AUD) tag",
-  },
-];
-
 /**
- * Fork: tunnel pairing, trusted browser origins and the Cloudflare Access login of the desktop
- * server. Desktop settings, so the row shows only in the desktop app that manages its backend.
+ * Fork: tunnel pairing and the trusted browser origins of the desktop server. Desktop settings, so the row shows only in the desktop app that manages its backend.
  */
 export function TunnelPairingSettingsRow() {
   const desktopBridge = window.desktopBridge;
@@ -51,16 +32,11 @@ export function TunnelPairingSettingsRow() {
   // Fork: null until the user edits the field; the saved URL shows until then.
   const [tunnelPairingUrlInput, setTunnelPairingUrlInput] = useState<string | null>(null);
   const [trustedOriginsInput, setTrustedOriginsInput] = useState<string | null>(null);
-  const [cloudflareAccessInputs, setCloudflareAccessInputs] = useState<
-    Partial<Record<CloudflareAccessField, string>>
-  >({});
 
   const handleTunnelPairingChange = async (input: {
     readonly enabled: boolean;
     readonly url: string | null;
     readonly trustedBrowserOrigins: string | null;
-    readonly cloudflareAccessTeamDomain: string | null;
-    readonly cloudflareAccessAud: string | null;
   }) => {
     if (
       !desktopBridge ||
@@ -79,7 +55,6 @@ export function TunnelPairingSettingsRow() {
       refreshDesktopNetworkAccessState();
       setTunnelPairingUrlInput(null);
       setTrustedOriginsInput(null);
-      setCloudflareAccessInputs({});
       return;
     }
     const message = error instanceof Error ? error.message : "Failed to update tunnel pairing.";
@@ -98,22 +73,12 @@ export function TunnelPairingSettingsRow() {
   const tunnelPairingUrlValue = tunnelPairingUrlInput ?? savedTunnelPairingUrl ?? "";
   const savedTrustedOrigins = desktopServerExposureState?.trustedBrowserOrigins ?? null;
   const trustedOriginsValue = trustedOriginsInput ?? savedTrustedOrigins ?? "";
-  const savedCloudflareAccess = (field: CloudflareAccessField) =>
-    desktopServerExposureState?.[field] ?? "";
-  const cloudflareAccessValue = (field: CloudflareAccessField) =>
-    cloudflareAccessInputs[field] ?? savedCloudflareAccess(field);
   const tunnelPairingTextInput = () => {
     const url = tunnelPairingUrlValue.trim();
     const origins = trustedOriginsValue.trim();
-    const accessValue = (field: CloudflareAccessField) => {
-      const value = cloudflareAccessValue(field).trim();
-      return value.length > 0 ? value : null;
-    };
     return {
       url: url.length > 0 ? url : null,
       trustedBrowserOrigins: origins.length > 0 ? origins : null,
-      cloudflareAccessTeamDomain: accessValue("cloudflareAccessTeamDomain"),
-      cloudflareAccessAud: accessValue("cloudflareAccessAud"),
     };
   };
   return (
@@ -163,32 +128,6 @@ export function TunnelPairingSettingsRow() {
           <span className="mt-1 block">
             Trusted web origins: T3 Code pages on these https origins (comma or newline separated)
             may call this server with their cookies, for example behind Cloudflare Access.
-          </span>
-          {CLOUDFLARE_ACCESS_FIELDS.map(({ field, label, placeholder }) => (
-            <Input
-              key={field}
-              className="mt-2 max-w-sm"
-              value={cloudflareAccessValue(field)}
-              onChange={(event) =>
-                setCloudflareAccessInputs((inputs) => ({ ...inputs, [field]: event.target.value }))
-              }
-              onBlur={() => {
-                if (cloudflareAccessValue(field).trim() === savedCloudflareAccess(field)) return;
-                void handleTunnelPairingChange({
-                  enabled: desktopServerExposureState?.tunnelPairingEnabled ?? false,
-                  ...tunnelPairingTextInput(),
-                });
-              }}
-              placeholder={placeholder}
-              aria-label={label}
-              disabled={isUpdatingTunnelPairing}
-              spellCheck={false}
-            />
-          ))}
-          <span className="mt-1 block">
-            Cloudflare Access login: with all three set, a request that passed Cloudflare Access as
-            a listed email or service token is logged in without a pairing link. Use it only when
-            the tunnel is the one way to reach this server.
           </span>
         </>
       }

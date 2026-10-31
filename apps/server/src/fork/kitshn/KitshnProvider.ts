@@ -1,14 +1,30 @@
 /**
- * Fork: the T3 server as a kitshn provider (kitshn K-704 to K-707), the only way this server joins
- * other machines. The server runs `kitshn provider` of the machine's kitshn 2 and registers its
- * cards and commands. A missing kitshn, a refusal or an exit only logs, and the server tries again
- * later; without kitshn 2 the server behaves as upstream (K-712). Its grant tables go to `KitshnGrants`, which enforces them.
+ * Fork: the T3 server as a kitshn provider (protocol 2, K-704 to K-707, K-721, K-722), the only way
+ * this server joins other machines. The server runs `kitshn provider` of the machine's kitshn 2 and
+ * registers its cards and commands. A missing kitshn, a refusal or an exit only logs, and the server
+ * tries again later; without kitshn 2 the server behaves as upstream (K-712).
  */
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- A row id needs a synchronous hash inside a pure list builder.
-import * as NodeCrypto from "node:crypto";
-
+import {
+  type Answer,
+  type CardSettingValues,
+  type DesiredParts,
+  line as requestLine,
+  PROVIDER_PROTOCOL,
+  type ProviderClient,
+  type ProviderCommand,
+  type ProviderList,
+  type ProviderProblem,
+  type ProviderResource,
+  type ReachedCard,
+  readAnswer,
+  type Request,
+} from "@kitshn/local";
 import type { MachineCommandInput, MachineStatus } from "@t3tools/contracts";
-import { THREAD_CREDENTIAL_AUTHORIZATION_ENV } from "@t3tools/provider-core/server/forkThreadCredential";
+import {
+  KITSHN_ATTEST_ENV,
+  THREAD_CREDENTIAL_AUTHORIZATION_ENV,
+} from "@t3tools/provider-core/server/forkThreadCredential";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -20,7 +36,6 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
-import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -31,70 +46,49 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as ForkUpdates from "../ForkUpdates.ts";
 import * as MachineHost from "../machineMap/MachineHost.ts";
 import { redactSecretsInText } from "../redactUrlSecrets.ts";
-import { makeListSharedThreads, type SharedThread } from "./sharedThreads.ts";
-import { kitshnOwnerRefusal } from "./KitshnAttester.ts";
+import * as ThreadIdentity from "../ThreadIdentity.ts";
+import { attestedLabels } from "./kitshnAttest.ts";
 import * as KitshnCli from "./KitshnCli.ts";
-import {
-  AGENTS_RESOURCE_ID,
-  APP_RESOURCE_ID,
-  KINDS,
-  peerOriginsOf,
-  threadResourceId,
-} from "./kitshnGrantRules.ts";
-import * as KitshnGrants from "./KitshnGrants.ts";
-import {
-  type Answer,
-  grantCount,
-  MAX_COMMAND_OUTPUT_LENGTH,
-  PROVIDER_NAME,
-  type ProviderCommand,
-  type ProviderList,
-  type ProviderClientApp,
-  type ProviderResource,
-  ProviderResource as ProviderResourceSchema,
-  type AccessApp,
-  type AskResult,
-  type CardSettingValues,
-  type DesiredParts,
-  type LocalRequest,
-  type ReachedCard,
-  type LocalRequestInput,
-  type Request,
-  ROW_ID_LIMIT,
-  decodeAnswer,
-  requestLine,
-} from "./kitshnProviderProtocol.ts";
+import * as KitshnConnection from "./KitshnConnection.ts";
+import { APP_RESOURCE_ID, KINDS, threadResourceId } from "./kitshnGrantRules.ts";
+import { makeListSharedThreads, type SharedThread } from "./sharedThreads.ts";
+
+export const PROVIDER_NAME = "t3";
+/** K-707: the longest `output` of a command result. */
+const MAX_COMMAND_OUTPUT_LENGTH = 64 * 1024;
 
 // After a connection that registered: a daemon restart ends the child, and T3 comes back fast.
 const RETRY_AFTER_REGISTER = Duration.seconds(1);
 const RETRY_FIRST = Duration.seconds(5);
 // After a daemon restart, a queued command waits 60 seconds for `register` (K-707).
 const RETRY_CAP = Duration.seconds(30);
-// Known limit: the busy count and the thread cards are polled, so a card can lag by this much.
-// Revisit if kitshn starts "when idle" jobs (K-1608) that need a faster busy fact. A thread card
-// that lags grants nothing: the guest routes check the share itself on each request.
+// Known limit: the busy count, the lists and the thread cards are read this often, and kitshn gets
+// an upsert only when a card changed. Revisit when tasks, client sessions and guest shares have
+// change streams: then upsert on each change instead of reading.
 const FACTS_POLL = Duration.seconds(15);
-// K-706: only kitshn's own answers keep the saved table fresh. The daemon forwards a `grants`
-// event only on a change, so this ask proves contact with kitshn while nothing changes.
-const CONTACT_PROBE = Duration.hours(1);
 // kitshn holds 500 cards per machine for all providers (K-704).
 const THREAD_CARDS_LIMIT = 200;
-// Below the daemon's 5-minute limit, so T3 answers before the daemon gives up.
-const COMMAND_TIMEOUT = Duration.minutes(4.5);
+// The result must reach the daemon before the job's deadline.
+const DEADLINE_MARGIN = Duration.seconds(2);
 // Time for the result line to reach the daemon before the process ends.
 const RESTART_FLUSH = Duration.millis(500);
 const STDERR_KEEP = 4096;
 // The daemon answers local requests itself, except an ask, which waits up to 60 seconds for kitshn.
 const LOCAL_REQUEST_TIMEOUT = Duration.seconds(35);
 const ASK_TIMEOUT = Duration.seconds(65);
-// A child that stopped answering (its daemon went away) is ended at the next `samples` probe that
-// gets no answer. Known limit: that takes up to this interval plus LOCAL_REQUEST_TIMEOUT. Revisit
-// if local requests need a faster recovery.
-const LIVENESS_PROBE = Duration.minutes(3);
-// The daemon answers `register` itself; a child without that answer is stuck like one above.
-const REGISTER_TIMEOUT = Duration.seconds(35);
+// The daemon answers `register` itself, so a silent child is stuck.
+const REGISTER_TIMEOUT = Duration.seconds(10);
+// K-1752: the daemon refuses an attestation after 2 seconds, so T3 answers inactive a bit before.
+const ATTEST_LIMIT = Duration.millis(1800);
+const RESULTS_KEPT = 50;
 
-const resourceKey = Schema.encodeSync(Schema.fromJsonString(ProviderResourceSchema));
+/**
+ * K-704: the daemon has no error code for this, only the text. The connection is new to the daemon,
+ * so nothing on this child can work again; T3 ends it and registers on a new one.
+ */
+const isNotRegistered = (error: string) => error.includes("on this connection first");
+
+const resourceKey = (resource: ProviderResource) => JSON.stringify(resource);
 
 /** A thread card: only threads with an open guest share (K-704), stacked under the app card. */
 const threadCard = (thread: SharedThread): ProviderResource => ({
@@ -158,14 +152,6 @@ const CELL_LIMIT = 200;
 const TASK_ROW = "task:";
 const SESSION_ROW = "session:";
 
-/** kitshn refuses the whole registration when a row id is longer than ROW_ID_LIMIT. */
-const rowIdOf = (prefix: string, id: string) => {
-  const plain = `${prefix}${id}`;
-  if (plain.length <= ROW_ID_LIMIT) return plain;
-  const hash = NodeCrypto.createHash("sha256").update(id).digest("hex");
-  return `${prefix}${hash.slice(0, ROW_ID_LIMIT - prefix.length)}`;
-};
-
 /** K-1625: the row commands of the T3 card. Each one turns its row into a machine map command. */
 const ROW_COMMANDS = [
   {
@@ -206,20 +192,16 @@ const ROW_COMMANDS = [
   },
 ] as const;
 
-/** The machine map command of a row command, or undefined when the row is not of its list. */
-const rowCommandInput = (
-  command: string,
-  row: string,
-  status: Pick<MachineStatus, "tasks" | "clients">,
-) => {
+/**
+ * The machine map command of a row command, or undefined when the row is not of its list. A row id
+ * is the prefix and the id itself; the daemon drops a row whose id is longer than its limit.
+ */
+const rowCommandInput = (command: string, row: string) => {
   const entry = ROW_COMMANDS.find((candidate) => candidate.id === command);
-  if (entry === undefined) return undefined;
-  const ids =
-    entry.row === TASK_ROW
-      ? (status.tasks ?? []).map((task) => task.id)
-      : status.clients.map((session) => session.sessionId);
-  const id = ids.find((candidate) => rowIdOf(entry.row, candidate) === row);
-  return id === undefined ? undefined : entry.input(id);
+  if (entry === undefined || !row.startsWith(entry.row) || row.length === entry.row.length) {
+    return undefined;
+  }
+  return entry.input(row.slice(entry.row.length));
 };
 
 const cell = (value: string) => value.slice(0, CELL_LIMIT);
@@ -238,7 +220,7 @@ const appLists = (
       { id: "next", title: "Next run" },
     ],
     rows: (status.tasks ?? []).slice(0, LIST_ROWS_LIMIT).map((task) => ({
-      id: rowIdOf(TASK_ROW, task.id),
+      id: `${TASK_ROW}${task.id}`,
       cells: {
         title: cell(task.title),
         schedule: cell(task.schedule),
@@ -258,7 +240,7 @@ const appLists = (
       { id: "lastSeen", title: "Last seen" },
     ],
     rows: status.clients.slice(0, LIST_ROWS_LIMIT).map((session) => ({
-      id: rowIdOf(SESSION_ROW, session.sessionId),
+      id: `${SESSION_ROW}${session.sessionId}`,
       cells: {
         client: cell(session.label ?? session.browser ?? session.subject),
         device: cell([session.deviceType, session.os].filter((part) => part !== null).join(", ")),
@@ -289,6 +271,8 @@ class RegisterRefused extends Schema.TaggedError<RegisterRefused>()("RegisterRef
 export const SETTINGS_KIND = "t3.settings";
 /** K-717: the update channel of the app card. */
 const UPDATE_CHANNEL_SETTING = "updateChannel";
+/** The switch that keeps this server off kitshn. */
+const KITSHN_SWITCH_ENV = "T3CODE_KITSHN";
 
 const OBTAINIUM_FORK_APP =
   "https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.yardenzamir.t3code%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FYarden-zamir%2Ft3code%22%2C%22author%22%3A%22Yarden-zamir%22%2C%22name%22%3A%22T3%20Code%20fork%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22android%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D";
@@ -297,7 +281,7 @@ const OBTAINIUM_FORK_APP =
  * The apps that open a kitshn device invite; they fill Settings > Connections > New with it.
  * The store app has no `inviteUrl` deep link, so only the fork app is listed.
  */
-const CLIENT_APPS: ReadonlyArray<ProviderClientApp> = [
+const CLIENT_APPS: ReadonlyArray<ProviderClient> = [
   {
     id: "t3code-fork",
     name: "T3 Code (fork)",
@@ -326,7 +310,7 @@ const REGISTERED_KINDS = [
 ];
 
 /** K-1611: the connection of this provider to the kitshn daemon, for Settings and agents. */
-export type KitshnConnection =
+export type KitshnConnectionStatus =
   | { readonly status: "off"; readonly detail: string }
   | { readonly status: "connecting"; readonly detail: string | null }
   /**
@@ -339,110 +323,80 @@ export type KitshnConnection =
       readonly restartedAt: number | null;
     };
 
-/** What kitshn keeps for this provider besides grants: the settings state and card settings. */
+/** What kitshn keeps for this provider and says about it. */
 export interface KitshnProviderState {
   readonly settings: DesiredParts | null;
   readonly cardSettings: CardSettingValues;
   /** K-1609: the cards of other machines that this machine reaches. */
   readonly reach: ReadonlyArray<ReachedCard>;
+  /** K-721: when kitshn last answered the daemon; null before the first contact. */
+  readonly syncedAt: number | null;
+  /** K-721: kitshn's emergency pause. */
+  readonly paused: boolean;
+  /** The items that the daemon dropped from the last register or upsert. */
+  readonly problems: ReadonlyArray<ProviderProblem>;
 }
 
-/** K-1623: the label of the machine's portal tunnel host, which kitshn takes over by handover. */
-const portalSiteName = (tunnelPairingUrl: string | undefined) => {
-  if (tunnelPairingUrl === undefined) return undefined;
-  const label = new URL(tunnelPairingUrl).hostname.split(".", 1)[0] ?? "";
-  return label.startsWith("t3-") ? label : undefined;
-};
-
-/**
- * K-705: the card's site and the real port. Without a portal host it is `t3-<kitshn machine name>`,
- * so kitshn gives a new machine its address; without a site the link proxy refuses every link.
- */
-export const appSite = (
-  config: { readonly tunnelPairingUrl?: string | undefined; readonly port: number },
-  machineName: string | null,
-) => {
-  const slug = (machineName ?? "")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/u)
-    .filter((part) => part.length > 0)
-    .join("-")
-    .slice(0, 60)
-    .replace(/-+$/u, "");
-  const name = portalSiteName(config.tunnelPairingUrl) ?? (slug === "" ? undefined : `t3-${slug}`);
-  return name === undefined ? undefined : { name, port: config.port };
-};
-
-/** Why a local request to kitshn did not get an answer. */
-export class KitshnRequestError extends Schema.TaggedError<KitshnRequestError>()(
-  "KitshnRequestError",
-  { message: Schema.String },
-) {}
+type AskResult = Extract<Answer, { readonly type: "ask-result" }>;
+type JobResult = Extract<Answer, { readonly type: "job-result" }>;
 
 export class KitshnProvider extends Context.Service<
   KitshnProvider,
   {
     /** Connects to kitshn for the life of the server, and again after each exit. Never fails. */
     readonly run: Effect.Effect<void>;
-    /**
-     * One ask or local request over the live connection, and its answer. An `error` answer
-     * fails with its text, as does a server without a registered connection.
-     */
-    /** The last settings state and card settings from kitshn, then each change. */
+    /** The last state from kitshn, then each change. */
     readonly state: Stream.Stream<KitshnProviderState>;
-    /**
-     * K-1609: the link proxy of the live connection, after `kitshn link-check` passed, or null.
-     * It is gone the moment that connection closes, so no call goes to an old path.
-     */
+    /** K-1609: the link proxy of the live connection, or null. It goes when the connection closes. */
     readonly linkSocket: Effect.Effect<string | null>;
-    /**
-     * K-1623: true while this machine's T3 host is not with kitshn: the card names its site, and
-     * kitshn has not named the Access app of the host.
-     */
-    readonly hostNotice: Stream.Stream<boolean>;
-    /** K-1623: the hosts whose DNS record points at kitshn's tunnel (`access.served`). */
-    readonly servedHosts: Stream.Stream<ReadonlyArray<string>>;
     /** K-1611: the connection now, then each change. */
-    readonly connection: Stream.Stream<KitshnConnection>;
-    /** K-1609: whether the daemon named a link proxy, and whether `kitshn link-check` passed. */
-    readonly linkProxyState: Effect.Effect<"none" | "unchecked" | "checked">;
-    /** K-1722: the answers to this machine's waiting asks, newest first, at most 50. */
+    readonly connection: Stream.Stream<KitshnConnectionStatus>;
+    /** K-1722: the answers to this machine's waiting asks, newest first. */
     readonly askResults: Effect.Effect<ReadonlyArray<AskResult>>;
-    /** A call on the link socket failed: the next use runs `kitshn link-check` again first. */
-    readonly linkSocketFailed: (socket: string) => Effect.Effect<void>;
-    readonly request: (
-      request: LocalRequestInput,
-    ) => Effect.Effect<Exclude<Answer, { readonly type: "error" }>, KitshnRequestError>;
+    /** K-1612: the ends of the jobs that this machine queued, newest first. */
+    readonly jobResults: Effect.Effect<ReadonlyArray<JobResult>>;
   }
 >()("t3/fork/kitshn/KitshnProvider") {}
+
+/** Why this server does not speak for the machine, or none. */
+const kitshnOff = (input: {
+  readonly devUrl: URL | undefined;
+  readonly env: Readonly<Record<string, string | undefined>>;
+}): string | undefined => {
+  // A dev server would replace the machine's installed T3 as the provider instance.
+  if (input.devUrl !== undefined) return "a dev server does not register with kitshn";
+  return input.env[KITSHN_SWITCH_ENV]?.trim().toLowerCase() === "off"
+    ? `turned off by ${KITSHN_SWITCH_ENV}=off`
+    : undefined;
+};
 
 export const make = Effect.fn("KitshnProvider.make")(function* (
   /** The threads with an open guest share, or none when the read failed. */
   listSharedThreads: Effect.Effect<Option.Option<ReadonlyArray<SharedThread>>>,
 ) {
   const cli = yield* KitshnCli.KitshnCli;
+  const kitshn = yield* KitshnConnection.KitshnConnection;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const host = yield* MachineHost.MachineHost;
   const forkUpdates = yield* ForkUpdates.ForkUpdates;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const environment = yield* ServerEnvironment.ServerEnvironment;
+  const identity = yield* ThreadIdentity.ThreadIdentity;
+  const config = yield* ServerConfig.ServerConfig;
   const serviceScope = yield* Effect.scope;
-  const ownerRefusal = yield* kitshnOwnerRefusal();
-  const grants = yield* KitshnGrants.KitshnGrants;
+  const off = kitshnOff({ devUrl: config.devUrl, env: yield* HostProcess.Environment });
   const providerState = yield* SubscriptionRef.make<KitshnProviderState>({
     settings: null,
     cardSettings: {},
     reach: [],
+    syncedAt: null,
+    paused: false,
+    problems: [],
   });
-  // K-1609: the one place that holds the link proxy, owned by the connection that registered it.
-  const linkProxy = yield* Ref.make<{ readonly path: string; readonly checked: boolean } | null>(
-    null,
-  );
-  const linkChecks = yield* Semaphore.make(1);
-  const hostNotice = yield* SubscriptionRef.make(false);
-  const servedHosts = yield* SubscriptionRef.make<ReadonlyArray<string>>([]);
+  const linkSocket = yield* Ref.make<string | null>(null);
   const askResults = yield* Ref.make<ReadonlyArray<AskResult>>([]);
-  const connection = yield* SubscriptionRef.make<KitshnConnection>({
+  const jobResults = yield* Ref.make<ReadonlyArray<JobResult>>([]);
+  const connection = yield* SubscriptionRef.make<KitshnConnectionStatus>({
     status: "connecting",
     detail: null,
   });
@@ -450,10 +404,6 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const restartNote = yield* Ref.make<{ readonly reason: string; readonly at: number } | null>(
     null,
   );
-  // The live registered connection, so `request` can use it.
-  const live = yield* Ref.make<
-    Option.Option<(request: LocalRequestInput) => Effect.Effect<Answer, KitshnRequestError>>
-  >(Option.none());
 
   const registered: ReadonlyArray<KitshnCommand> = COMMANDS.filter((command) =>
     host.supportedCommands({ desktopConnected: false }).includes(command.input._tag),
@@ -467,23 +417,6 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     }),
   );
 
-  const serverConfig = yield* ServerConfig.ServerConfig;
-  const portalSite = portalSiteName(serverConfig.tunnelPairingUrl);
-  /** K-1623: one log line when the host is not with kitshn; Settings > Machines shows it too. */
-  const setHostNotice = Effect.fn("KitshnProvider.setHostNotice")(function* (
-    access: AccessApp | null,
-  ) {
-    // Before the handover kitshn sends no access, or access with no audience (contract §10).
-    const notWithKitshn =
-      portalSite !== undefined && (access === null || access.audiences.length === 0);
-    yield* SubscriptionRef.set(servedHosts, access?.served ?? []);
-    const before = yield* SubscriptionRef.getAndSet(hostNotice, notWithKitshn);
-    if (notWithKitshn && !before) {
-      yield* Effect.logWarning(
-        `This machine's host ${portalSite} is not with kitshn. Select Take the address on its T3 card in kitshn, then run scripts/fork-host-handover.ts <machine>.`,
-      );
-    }
-  });
   const appStatus = host.status({
     desktopConnected: false,
     updateWaiting: null,
@@ -492,7 +425,6 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const appResource = Effect.gen(function* () {
     const descriptor = yield* environment.getDescriptor;
     const status = yield* appStatus;
-    const site = appSite(serverConfig, (yield* grants.machine)?.name ?? null);
     const busy = yield* threads.getShellSnapshot().pipe(
       Effect.map(
         (snapshot) => snapshot.threads.filter((thread) => thread.activeRunId !== null).length,
@@ -504,7 +436,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       kind: "t3.app",
       name: `T3 on ${descriptor.label}`.slice(0, 80),
       status: "running",
-      ...(site === undefined ? {} : { site }),
+      // K-705: kitshn names the site and keeps the name of a site that it served before.
+      site: { port: config.port },
       facts: [
         { label: "Version", value: descriptor.serverVersion, role: "version" },
         {
@@ -525,16 +458,6 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     } satisfies ProviderResource;
   });
 
-  const agentsResource = environment.getDescriptor.pipe(
-    Effect.map((descriptor): ProviderResource => ({
-      id: AGENTS_RESOURCE_ID,
-      kind: "t3.agents",
-      name: `Agents on ${descriptor.label}`.slice(0, 80),
-      status: "running",
-      parent: APP_RESOURCE_ID,
-    })),
-  );
-
   const threadCards = Effect.all([listSharedThreads, Clock.currentTimeMillis]).pipe(
     Effect.map(([threads, nowMs]) =>
       Option.map(threads, (all) =>
@@ -546,6 +469,21 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     ),
   );
 
+  /** K-1752: who holds an agent's token; `active: false` when T3 cannot say in time. */
+  const attest = Effect.fn("KitshnProvider.attest")(function* (token: string) {
+    const checked = yield* identity.check(token).pipe(
+      Effect.timeoutOption(ATTEST_LIMIT),
+      Effect.catch((cause) =>
+        Effect.logWarning("kitshn attest: the thread check failed.", { cause: String(cause) }).pipe(
+          Effect.as(Option.none()),
+        ),
+      ),
+    );
+    return Option.isSome(checked) && checked.value.active
+      ? { active: true, labels: attestedLabels(checked.value) }
+      : { active: false };
+  });
+
   /** One `kitshn provider` child, until it exits. Returns why it ended and whether it registered. */
   const connectOnce = Effect.scoped(
     Effect.gen(function* () {
@@ -553,7 +491,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       const child = yield* spawner.spawn(
         ChildProcess.make(binary, ["provider"], {
           // The server env can hold the credential of an agent shell that started it.
-          env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+          env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "", [KITSHN_ATTEST_ENV]: "" },
           extendEnv: true,
         }),
       );
@@ -574,52 +512,36 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         Effect.forkScoped,
       );
       let lastId = 0;
-      // Ids are digits only, so none equals kitshn's reserved id `kitshn-provider-heartbeat`.
       const nextId = () => String(++lastId);
       const send = (request: Request) => Queue.offer(outbox, requestLine(request));
       const waiting = new Map<string, Deferred.Deferred<Answer>>();
-      const connectionScope = yield* Effect.scope;
       const unanswered = yield* Deferred.make<string>();
-      const awaitAnswer = Effect.fn("KitshnProvider.awaitAnswer")(function* (
-        request: LocalRequestInput,
+      // K-704: the daemon pings every `pingMs`; silence for `graceMs` means a lost connection.
+      let lastLineAt = yield* Clock.currentTimeMillis;
+      const localRequest = Effect.fn("KitshnProvider.localRequest")(function* (
+        request: KitshnConnection.LocalRequestInput,
       ) {
         const id = nextId();
         const answer = yield* Deferred.make<Answer>();
         waiting.set(id, answer);
-        yield* send({ ...request, id } as LocalRequest);
-        return yield* Deferred.await(answer).pipe(
+        yield* send({ ...request, id } as Request);
+        const received = yield* Deferred.await(answer).pipe(
           Effect.timeoutOption(request.type === "ask" ? ASK_TIMEOUT : LOCAL_REQUEST_TIMEOUT),
           Effect.ensuring(Effect.sync(() => waiting.delete(id))),
         );
-      });
-      // The daemon answers `samples` itself, so no answer means that the child stopped answering.
-      const checkAlive = awaitAnswer({ type: "samples" }).pipe(
-        Effect.flatMap((received) =>
-          Option.isSome(received)
-            ? Effect.void
-            : Deferred.succeed(
-                unanswered,
-                `the kitshn provider did not answer in ${Duration.format(LOCAL_REQUEST_TIMEOUT)}, so T3 ended it`,
-              ),
-        ),
-        Effect.asVoid,
-      );
-      const localRequest = Effect.fn("KitshnProvider.localRequest")(function* (
-        request: LocalRequestInput,
-      ) {
-        const received = yield* awaitAnswer(request);
         if (Option.isNone(received)) {
-          // The daemon can hold an ask 60 seconds for kitshn, so only `samples` proves the child dead.
-          yield* checkAlive.pipe(Effect.forkIn(connectionScope));
-          return yield* new KitshnRequestError({ message: "kitshn did not answer in time." });
+          return yield* new KitshnConnection.KitshnRequestError({
+            message: "kitshn did not answer in time.",
+          });
         }
         return received.value;
       });
-      yield* Effect.addFinalizer(() => Ref.set(live, Option.none()));
-      yield* Effect.addFinalizer(() => Ref.set(linkProxy, null));
+      yield* Effect.addFinalizer(() =>
+        Effect.all([kitshn.attach(null), Ref.set(linkSocket, null)], { discard: true }),
+      );
 
       const registerId = nextId();
-      const registeredOnce = yield* Deferred.make<void>();
+      const registeredOnce = yield* Deferred.make<KitshnConnection.RegisterAnswer>();
       const app = yield* appResource;
       let sentApp = resourceKey(app);
       // K-704: register only with the full list; a card that it leaves out goes offline.
@@ -629,10 +551,12 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       yield* send({
         id: registerId,
         type: "register",
+        protocol: PROVIDER_PROTOCOL,
         provider: PROVIDER_NAME,
+        instance: yield* environment.getEnvironmentId,
         kinds: REGISTERED_KINDS,
         commands: providerCommands,
-        resources: [app, yield* agentsResource, ...sentThreads.values()],
+        resources: [app, ...sentThreads.values()],
         clients: CLIENT_APPS,
       });
       yield* Deferred.await(registeredOnce).pipe(
@@ -647,14 +571,36 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         ),
         Effect.forkScoped,
       );
+      // After the answer: a daemon that sends nothing for `graceMs` is gone (SIGSTOP, a lost socket).
+      yield* Deferred.await(registeredOnce).pipe(
+        Effect.flatMap(({ graceMs }) =>
+          Effect.gen(function* () {
+            while (true) {
+              const silentFor = (yield* Clock.currentTimeMillis) - lastLineAt;
+              if (silentFor >= graceMs) {
+                return yield* Deferred.succeed(
+                  unanswered,
+                  `kitshn sent nothing for ${Duration.format(Duration.millis(graceMs))}, so T3 ended the connection`,
+                );
+              }
+              yield* Effect.sleep(Duration.millis(graceMs - silentFor));
+            }
+          }),
+        ),
+        Effect.forkScoped,
+      );
 
       const handleCommand = Effect.fn("KitshnProvider.handleCommand")(function* (
         event: Extract<Answer, { readonly type: "command" }>,
       ) {
         const input =
-          event.row === undefined
+          event.row === null
             ? registered.find((entry) => entry.id === event.command)?.input
-            : rowCommandInput(event.command, event.row, yield* appStatus);
+            : rowCommandInput(event.command, event.row);
+        const left = Duration.subtract(
+          Duration.millis(Math.max(0, event.deadline - (yield* Clock.currentTimeMillis))),
+          DEADLINE_MARGIN,
+        );
         const outcome: MachineHost.CommandOutcome =
           input === undefined || event.resource !== APP_RESOURCE_ID
             ? {
@@ -663,12 +609,12 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
                 error: `T3 has no command ${event.command} for ${event.row ?? event.resource ?? "the machine"}.`,
               }
             : yield* host.runInput(`kitshn:${event.commandId}`, input).pipe(
-                Effect.timeoutOption(COMMAND_TIMEOUT),
+                Effect.timeoutOption(left),
                 Effect.map(
                   Option.getOrElse((): MachineHost.CommandOutcome => ({
                     ok: false,
                     result: null,
-                    error: `The command did not finish in ${Duration.format(COMMAND_TIMEOUT)}.`,
+                    error: "The command did not finish before kitshn's deadline.",
                   })),
                 ),
               );
@@ -689,59 +635,94 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         }
       });
 
+      const onRegistered = Effect.fn("KitshnProvider.onRegistered")(function* (
+        answer: KitshnConnection.RegisterAnswer,
+      ) {
+        yield* SubscriptionRef.set(providerState, {
+          settings: answer.saved.desired[SETTINGS_KIND] ?? null,
+          cardSettings: answer.saved.settings,
+          reach: answer.saved.reach,
+          syncedAt: answer.syncedAt,
+          paused: false,
+          problems: answer.problems,
+        });
+        yield* Ref.set(linkSocket, answer.linkSocket);
+        yield* kitshn.attach({
+          answer,
+          request: localRequest,
+          notify: (notice) => send(notice).pipe(Effect.asVoid),
+        });
+        const note = yield* Ref.get(restartNote);
+        const registeredStatus: KitshnConnectionStatus = {
+          status: "registered",
+          detail: note?.reason ?? null,
+          restartedAt: note?.at ?? null,
+        };
+        yield* SubscriptionRef.set(connection, registeredStatus);
+        yield* Deferred.succeed(registeredOnce, answer);
+        if (answer.problems.length > 0) {
+          yield* Effect.logWarning(
+            `kitshn provider: registered; kitshn dropped ${answer.problems.length} items.`,
+            { problems: answer.problems },
+          );
+        }
+        return yield* Effect.logInfo("kitshn provider: registered");
+      });
+
       // Untraced: one span per stdout line would be noise.
-      const handleLine = Effect.fnUntraced(function* (line: string) {
-        if (line.trim() === "") return;
-        const decoded = decodeAnswer(line);
-        if (Option.isNone(decoded)) {
-          // The line can hold e-mail addresses of grants, so only its length is logged.
+      const handleLine = Effect.fnUntraced(function* (text: string) {
+        if (text.trim() === "") return;
+        lastLineAt = yield* Clock.currentTimeMillis;
+        const decoded = yield* Effect.try(() => readAnswer(text)).pipe(Effect.option);
+        if (Option.isNone(decoded) || decoded.value === null) {
+          // Protocol 2 is additive: an unknown event is skipped. The line can hold secrets.
           return yield* Effect.logWarning(
-            `kitshn provider: skipped a line that is not a known answer or event (${line.length} characters)`,
+            `kitshn provider: skipped a line that is not a known answer or event (${text.length} characters)`,
           );
         }
         const answer = decoded.value;
-        // Only kitshn's own answers prove contact. The daemon answers an ask `refused` by itself after
-        // 60 seconds, and a `github-token` ask locally; T3 never sends `github-token`.
-        if (
-          answer.type === "grants" ||
-          answer.type === "ask-result" ||
-          (answer.type === "ask" && (answer.outcome === "done" || answer.outcome === "waiting"))
-        ) {
-          yield* grants.contact;
+        if (answer.type === "error" && isNotRegistered(answer.error)) {
+          yield* Deferred.succeed(unanswered, `kitshn answered: ${answer.error}`);
         }
-        const asked = "id" in answer && answer.id !== null ? waiting.get(answer.id) : undefined;
-        if (asked !== undefined) return yield* Deferred.succeed(asked, answer);
+        if (!KitshnConnection.isDaemonEvent(answer)) {
+          if (answer.id === null) {
+            return answer.type === "error"
+              ? yield* Effect.logWarning(`kitshn provider: kitshn refused: ${answer.error}`)
+              : undefined;
+          }
+          const asked = waiting.get(answer.id);
+          if (asked !== undefined) return yield* Deferred.succeed(asked, answer);
+          if (answer.id === registerId) {
+            if (answer.type === "register") return yield* onRegistered(answer);
+            if (answer.type === "error") return yield* new RegisterRefused({ error: answer.error });
+          }
+          if (answer.type === "upsert" && answer.problems !== undefined) {
+            const problems = answer.problems;
+            return yield* SubscriptionRef.update(providerState, (current) => ({
+              ...current,
+              problems,
+            }));
+          }
+          if (answer.type === "error") {
+            return yield* Effect.logWarning(`kitshn provider: kitshn refused: ${answer.error}`);
+          }
+          return;
+        }
         switch (answer.type) {
-          case "register":
-            if (answer.id !== registerId) return;
-            yield* grants.replaceTables(answer.grants);
-            yield* grants.setMachine({ id: answer.machineId, name: answer.machineName ?? null });
-            yield* SubscriptionRef.set(providerState, {
-              settings: answer.desired?.[SETTINGS_KIND] ?? null,
-              cardSettings: answer.settings ?? {},
-              reach: answer.reach ?? [],
-            });
-            yield* grants.setPeerOrigins(peerOriginsOf(answer.reach ?? []));
-            yield* Ref.update(linkProxy, (current) => {
-              const path = answer.linkSocket ?? null;
-              if (path === null) return null;
-              return current?.path === path ? current : { path, checked: false };
-            });
-            yield* grants.setAccess(answer.access ?? null);
-            yield* setHostNotice(answer.access ?? null);
-            yield* Ref.set(live, Option.some(localRequest));
-            const note = yield* Ref.get(restartNote);
-            const registeredState: KitshnConnection = {
-              status: "registered",
-              detail: note?.reason ?? null,
-              restartedAt: note?.at ?? null,
-            };
-            yield* SubscriptionRef.set(connection, registeredState);
-            yield* Deferred.succeed(registeredOnce, undefined);
-            return yield* Effect.logInfo(
-              `kitshn provider: registered, with ${grantCount(answer.grants)} grants`,
+          case "ping":
+            return yield* send({ type: "pong" });
+          case "attest":
+            return yield* attest(answer.token).pipe(
+              Effect.flatMap((result) =>
+                send({ id: nextId(), type: "attest-result", attestId: answer.attestId, ...result }),
+              ),
+              Effect.forkScoped,
+              Effect.asVoid,
             );
+          case "command":
+            return yield* handleCommand(answer).pipe(Effect.forkScoped, Effect.asVoid);
           case "desired":
+            yield* kitshn.publish(answer);
             if (answer.kind !== SETTINGS_KIND) return;
             return yield* SubscriptionRef.update(providerState, (current) => ({
               ...current,
@@ -752,58 +733,31 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
               ...current,
               cardSettings: answer.values,
             }));
-          case "access":
-            yield* setHostNotice(answer.access);
-            return yield* grants.setAccess(answer.access);
           case "reach":
-            yield* grants.setPeerOrigins(peerOriginsOf(answer.cards));
+            yield* kitshn.publish(answer);
             return yield* SubscriptionRef.update(providerState, (current) => ({
               ...current,
               reach: answer.cards,
             }));
-          case "grants":
-            yield* grants.replaceTables(answer.tables);
-            return yield* Effect.logInfo(
-              `kitshn provider: ${grantCount(answer.tables)} grants from kitshn`,
-            );
-          case "command":
-            return yield* handleCommand(answer).pipe(Effect.forkScoped, Effect.asVoid);
-          case "error":
-            if (answer.id === registerId) {
-              return yield* new RegisterRefused({ error: answer.error });
-            }
-            return yield* Effect.logWarning(`kitshn provider: kitshn refused: ${answer.error}`);
+          case "sync":
+            return yield* SubscriptionRef.update(providerState, (current) => ({
+              ...current,
+              syncedAt: answer.syncedAt,
+              paused: answer.paused,
+            }));
           case "ask-result":
-            return yield* Ref.update(askResults, (results) => [answer, ...results].slice(0, 50));
-          case "upsert":
-          case "remove":
-          case "command-result":
-          case "ask":
-          case "job-cancel":
-          case "samples":
-          case "desired-set":
-          case "audit":
-            return;
+            return yield* Ref.update(askResults, (results) =>
+              [answer, ...results].slice(0, RESULTS_KEPT),
+            );
+          case "job-result":
+            return yield* Ref.update(jobResults, (results) =>
+              [answer, ...results].slice(0, RESULTS_KEPT),
+            );
+          default:
+            // `grants-changed`, exec frames and `served` go to their readers.
+            return yield* kitshn.publish(answer);
         }
       });
-
-      yield* Deferred.await(registeredOnce).pipe(
-        Effect.andThen(
-          localRequest({ type: "ask", action: "state", target: "" }).pipe(
-            Effect.ignore,
-            Effect.andThen(Effect.sleep(CONTACT_PROBE)),
-            Effect.forever,
-          ),
-        ),
-        Effect.forkScoped,
-      );
-
-      yield* Deferred.await(registeredOnce).pipe(
-        Effect.andThen(
-          Effect.sleep(LIVENESS_PROBE).pipe(Effect.andThen(checkAlive), Effect.forever),
-        ),
-        Effect.forkScoped,
-      );
 
       const refreshCards = Effect.gen(function* () {
         const current = yield* appResource;
@@ -887,7 +841,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     let lastEnded = "";
     while (true) {
       const { ended, endedByT3, registered: didRegister } = yield* connectOnce;
-      failures = didRegister ? 0 : failures + 1;
+      // A child that T3 ended itself backs off too, so a daemon that keeps refusing is no tight loop.
+      failures = didRegister && !endedByT3 ? 0 : failures + 1;
       const endedAt = yield* Clock.currentTimeMillis;
       yield* Ref.set(restartNote, endedByT3 ? { reason: ended, at: endedAt } : null);
       const delay = retryDelay(failures);
@@ -903,30 +858,15 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   });
 
   const run: KitshnProvider["Service"]["run"] = Effect.gen(function* () {
-    if (Option.isSome(ownerRefusal)) {
-      yield* SubscriptionRef.set(connection, { status: "off", detail: ownerRefusal.value });
-      return yield* Effect.logDebug(`kitshn provider: ${ownerRefusal.value}`);
+    if (off !== undefined) {
+      yield* SubscriptionRef.set(connection, { status: "off", detail: off });
+      return yield* Effect.logDebug(`kitshn provider: ${off}`);
     }
     return yield* connectForever;
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.logWarning("kitshn provider stopped.", { cause: String(cause) }),
     ),
-  );
-
-  const request: KitshnProvider["Service"]["request"] = Effect.fn("KitshnProvider.request")(
-    function* (input) {
-      const current = yield* Ref.get(live);
-      if (Option.isNone(current)) {
-        return yield* new KitshnRequestError({
-          message:
-            "This server has no connection to kitshn. It needs kitshn 2 on this machine, joined to kitshn, with its daemon running.",
-        });
-      }
-      const answer = yield* current.value(input);
-      if (answer.type === "error") return yield* new KitshnRequestError({ message: answer.error });
-      return answer;
-    },
   );
 
   yield* SubscriptionRef.changes(providerState).pipe(
@@ -940,45 +880,11 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
 
   return KitshnProvider.of({
     run,
-    request,
     state: SubscriptionRef.changes(providerState),
-    hostNotice: SubscriptionRef.changes(hostNotice),
-    servedHosts: SubscriptionRef.changes(servedHosts),
     askResults: Ref.get(askResults),
+    jobResults: Ref.get(jobResults),
     connection: SubscriptionRef.changes(connection),
-    linkProxyState: Ref.get(linkProxy).pipe(
-      Effect.map((proxy) => (proxy === null ? "none" : proxy.checked ? "checked" : "unchecked")),
-    ),
-    linkSocket: linkChecks.withPermits(1)(
-      Effect.gen(function* () {
-        const current = yield* Ref.get(linkProxy);
-        if (current === null) return null;
-        if (current.checked) return current.path;
-        const checked = yield* cli.linkCheck(current.path).pipe(
-          Effect.map((output) => ({
-            ok: output.exitCode === 0,
-            text: output.stderr || output.stdout,
-          })),
-          Effect.catch((error) => Effect.succeed({ ok: false, text: error.message })),
-        );
-        if (!checked.ok) {
-          yield* Effect.logWarning(
-            `kitshn provider: link-check refused the link socket: ${checked.text.trim()}`,
-          );
-          return null;
-        }
-        // The connection may have closed or registered another path while the check ran.
-        const latest = yield* Ref.updateAndGet(linkProxy, (now) =>
-          now?.path === current.path ? { path: now.path, checked: true } : now,
-        );
-        return latest?.path === current.path && latest.checked ? current.path : null;
-      }),
-    ),
-    linkSocketFailed: Effect.fn("KitshnProvider.linkSocketFailed")((socket: string) =>
-      Ref.update(linkProxy, (current) =>
-        current?.path === socket ? { path: socket, checked: false } : current,
-      ),
-    ),
+    linkSocket: Ref.get(linkSocket),
   });
 });
 

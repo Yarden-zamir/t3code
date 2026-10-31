@@ -1494,6 +1494,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       const shellCredential = {
         "shell_environment_policy.set.T3_ACP_MCP_ENDPOINT": "http://127.0.0.1:43123/mcp",
         "shell_environment_policy.set.T3_ACP_MCP_AUTHORIZATION": "Bearer secret-codex-token",
+        "shell_environment_policy.set.KITSHN_ATTEST": "t3:secret-codex-token",
       };
       const entries = codexReplayPreamble({
         nativeThreadId: "launch-mcp-thread",

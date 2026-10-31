@@ -107,6 +107,16 @@ Each day at 09:00 Israel time, the VPS task "Fork daily release" promotes a nigh
 - The Lint job also fetches upstream main and runs `scripts/fork-check-migrations.ts`. See [Migrations](#migrations).
 - The Lint job also fetches the commits of HEAD without their files and runs `node scripts/fork-adopted-prs.ts check`. See [Adopted upstream pull requests](#adopted-upstream-pull-requests).
 - Fork runs skip the upstream tests in `apps/server/src/fork/excludedUpstreamTests.ts` and `apps/web/src/forkExcludedUpstreamTests.ts`, each with its reason. The web list holds browser tests that the smaller runner of Fork CI cannot run in time.
+- The job "kitshn contract" builds the server bundle and runs `scripts/fork-kitshn-contract.ts`: kitshn's provider scenarios against this T3 server. It takes the daemon and the tests of the kitshn release that `pnpm-workspace.yaml` pins for `@kitshn/local`, and checks them against that release's `SHA256SUMS`.
+
+### Move the kitshn pin
+
+T3 depends on one kitshn release. Its `@kitshn/local` line in the `catalog` of `pnpm-workspace.yaml` names it, and the "kitshn contract" job uses the same release.
+
+1. Replace the release tag in that line, for example `edge-<sha12>` of a kitshn commit on main.
+2. Run `vp i`, so `pnpm-lock.yaml` gets the new tarball and its checksum.
+3. Run `vp run --filter t3 build:bundle && node scripts/fork-kitshn-contract.ts`.
+4. Commit `pnpm-workspace.yaml` and `pnpm-lock.yaml` together. Update kitshn on the machines with the T3 release that holds the pin.
 
 ### Repair agent
 
@@ -338,15 +348,13 @@ T3 does not make the tunnel of a machine. Until kitshn makes it from the `site` 
    sudo cloudflared service install <tunnel-token>
    ```
 
-4. Give the server its tunnel hostname and the Cloudflare Access login. Copy the Access values from the server environment of the VPS. The kitshn grants decide who gets in. `t3 service install` and `t3 update` replace only the unit file, so this drop-in file stays after an update.
+4. Give the server its tunnel hostname. kitshn decides who gets in. `t3 service install` and `t3 update` replace only the unit file, so this drop-in file stays after an update.
 
    ```sh
    mkdir -p ~/.config/systemd/user/t3code.service.d
    cat > ~/.config/systemd/user/t3code.service.d/tunnel.conf <<'EOF'
    [Service]
    Environment=T3CODE_TUNNEL_PAIRING_URL=https://t3-oracle.yarden-zamir.com
-   Environment=T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN=<team>.cloudflareaccess.com
-   Environment=T3CODE_CLOUDFLARE_ACCESS_AUD=<audience tag of the Access app>
    EOF
    systemctl --user daemon-reload && systemctl --user restart t3code.service
    ```
@@ -363,7 +371,7 @@ The script stops if kitshn did not take the address: the CNAME record must point
 
 Do these steps for one machine at a time. The example uses `mac`.
 
-1. Install a T3 release with the kitshn provider on the machine, and check that it registers with kitshn: Settings > Machines shows "Connected to kitshn". kitshn refuses "Take the address…" until the daemon reports `access`. Until the handover, the host keeps its portal path: the portal Access application, the portal tunnel, and on `oracle-vps` the tunnel that T3 runs from `machine-map-tunnel.json`.
+1. Install a T3 release with the kitshn provider on the machine, and check that it registers with kitshn: Settings > Machines shows "Connected to kitshn". Until the handover, the host keeps its portal path: the portal Access application and a portal tunnel that its own cloudflared service runs. T3 runs no portal tunnel.
 2. Give each phone that used a portal app token a kitshn device invite, see [Device invites](features.md#device-invites). Its saved sessions keep working, but a new pairing needs the device token.
 3. Before the `oracle-vps` handover, check what `t3-oracle-vps.yarden-zamir.com` serves. Its DNS record comment says "T3 machine map".
 4. In kitshn, open the T3 card of the machine and select "Take the address…". Wait until the card shows the address.
@@ -390,7 +398,7 @@ To undo the part of the portal, run the script with `--undo`. It puts the host b
 CLOUDFLARE_HANDOVER_TOKEN_FILE=<token file> node scripts/fork-host-handover.ts mac --undo
 ```
 
-On `oracle-vps`, T3 runs the portal tunnel only while kitshn does not serve the host. It stops the tunnel when kitshn lists the host in `served`, after the DNS record moved to kitshn's tunnel, and starts it again when a give-back drops the host from that list. `machine-map-tunnel.json` stays.
+T3 no longer runs a portal tunnel or reads `machine-map-tunnel.json`; kitshn names and serves the host. `T3CODE_TUNNEL_PAIRING_URL` is optional: guest links use its host when T3 Connect does not serve the machine, and `t3 pair` prints links on it. Without it, a server has no guest links and `t3 pair` prints its local address.
 
 Do not remove a handed-over machine in the portal. The portal then deletes the DNS record that it made, and kitshn uses that record now.
 
@@ -440,7 +448,7 @@ Change the guest applications and the rate limit rule in the Cloudflare Zero Tru
    ```
 
 - If the page says that the link is not valid after the Access login, open the guest link again. The Access login can drop the part of the link after `#`.
-- A guest Access login does not open the owner paths. Access checks each application on its own, and the server accepts only the audience tag of the owner login (`T3CODE_CLOUDFLARE_ACCESS_*`) and the kitshn grants.
+- A guest Access login does not open the owner paths. Access checks each application on its own, and on the server only the kitshn grants open them.
 
 ## Central build caches
 

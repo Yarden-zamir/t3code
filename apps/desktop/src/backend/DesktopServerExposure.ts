@@ -296,9 +296,6 @@ export const TunnelPairingInput = Schema.Struct({
   url: Schema.NullOr(Schema.String),
   // Fork: comma or newline separated https origins; null or blank clears them.
   trustedBrowserOrigins: Schema.NullOr(Schema.String),
-  // Fork: Cloudflare Access login; null or blank clears a value.
-  cloudflareAccessTeamDomain: Schema.NullOr(Schema.String),
-  cloudflareAccessAud: Schema.NullOr(Schema.String),
 });
 
 export const DesktopServerExposureSetModeError = Schema.Union([
@@ -325,10 +322,6 @@ export interface DesktopServerExposureBackendConfig {
   // Fork: set only while tunnel pairing is on.
   readonly tunnelPairingUrl: Option.Option<string>;
   readonly trustedBrowserOrigins: Option.Option<string>;
-  readonly cloudflareAccess: Option.Option<{
-    readonly teamDomain: string;
-    readonly aud: string;
-  }>;
 }
 
 export interface DesktopServerExposureChange {
@@ -373,7 +366,6 @@ interface RuntimeState {
   readonly tunnelPairingEnabled: boolean;
   readonly tunnelPairingUrl: Option.Option<string>;
   readonly trustedBrowserOrigins: Option.Option<string>;
-  readonly cloudflareAccess: DesktopAppSettings.CloudflareAccessSettings;
 }
 
 interface ResolvedRuntimeState {
@@ -402,7 +394,6 @@ const toContractState = (state: RuntimeState): DesktopServerExposureState => ({
   tunnelPairingEnabled: state.tunnelPairingEnabled,
   tunnelPairingUrl: Option.getOrNull(state.tunnelPairingUrl),
   trustedBrowserOrigins: Option.getOrNull(state.trustedBrowserOrigins),
-  ...state.cloudflareAccess,
 });
 
 // Fork: the tunnel URL reaches the backend and the endpoint list only while
@@ -411,22 +402,6 @@ const activeTunnelPairingUrl = (state: RuntimeState): Option.Option<string> =>
   state.tunnelPairingEnabled ? state.tunnelPairingUrl : Option.none();
 const activeTrustedBrowserOrigins = (state: RuntimeState): Option.Option<string> =>
   state.tunnelPairingEnabled ? state.trustedBrowserOrigins : Option.none();
-// The server fails startup on a partial set, so only a full set reaches it.
-const activeCloudflareAccess = (
-  state: RuntimeState,
-): DesktopServerExposureBackendConfig["cloudflareAccess"] => {
-  const { cloudflareAccessTeamDomain, cloudflareAccessAud } = state.cloudflareAccess;
-  return state.tunnelPairingEnabled &&
-    cloudflareAccessTeamDomain !== null &&
-    cloudflareAccessAud !== null
-    ? Option.some({ teamDomain: cloudflareAccessTeamDomain, aud: cloudflareAccessAud })
-    : Option.none();
-};
-const sameCloudflareAccess = (previous: RuntimeState, next: RuntimeState) => {
-  const left = Option.getOrNull(activeCloudflareAccess(previous));
-  const right = Option.getOrNull(activeCloudflareAccess(next));
-  return left?.teamDomain === right?.teamDomain && left?.aud === right?.aud;
-};
 
 const toBackendConfig = (state: RuntimeState): DesktopServerExposureBackendConfig => ({
   port: state.port,
@@ -436,7 +411,6 @@ const toBackendConfig = (state: RuntimeState): DesktopServerExposureBackendConfi
   tailscaleServePort: state.tailscaleServePort,
   tunnelPairingUrl: activeTunnelPairingUrl(state),
   trustedBrowserOrigins: activeTrustedBrowserOrigins(state),
-  cloudflareAccess: activeCloudflareAccess(state),
 });
 
 const toResolvedExposure = (state: RuntimeState): ResolvedDesktopServerExposure => ({
@@ -469,10 +443,6 @@ function runtimeStateFromResolvedExposure(input: {
     tunnelPairingEnabled: input.settings.tunnelPairingEnabled,
     tunnelPairingUrl: Option.fromNullishOr(input.settings.tunnelPairingUrl),
     trustedBrowserOrigins: Option.fromNullishOr(input.settings.trustedBrowserOrigins),
-    cloudflareAccess: {
-      cloudflareAccessTeamDomain: input.settings.cloudflareAccessTeamDomain,
-      cloudflareAccessAud: input.settings.cloudflareAccessAud,
-    },
   };
 }
 
@@ -717,23 +687,8 @@ export const make = Effect.gen(function* () {
     if (trustedBrowserOrigins === undefined) {
       return yield* new DesktopTunnelPairingInvalidUrlError({ url: input.trustedBrowserOrigins });
     }
-    const cloudflareAccessTeamDomain = DesktopAppSettings.normalizeCloudflareAccessTeamDomain(
-      input.cloudflareAccessTeamDomain,
-    );
-    if (
-      cloudflareAccessTeamDomain === null &&
-      DesktopAppSettings.normalizeSettingText(input.cloudflareAccessTeamDomain) !== null
-    ) {
-      return yield* new DesktopTunnelPairingInvalidUrlError({
-        url: input.cloudflareAccessTeamDomain,
-      });
-    }
-    const cloudflareAccess = {
-      cloudflareAccessTeamDomain,
-      cloudflareAccessAud: DesktopAppSettings.normalizeSettingText(input.cloudflareAccessAud),
-    };
     const result = yield* desktopSettings
-      .setTunnelPairing({ enabled: input.enabled, url, trustedBrowserOrigins, cloudflareAccess })
+      .setTunnelPairing({ enabled: input.enabled, url, trustedBrowserOrigins })
       .pipe(
         Effect.mapError(
           (cause) => new DesktopTunnelPairingPersistenceError({ enabled: input.enabled, cause }),
@@ -745,10 +700,6 @@ export const make = Effect.gen(function* () {
       tunnelPairingEnabled: result.settings.tunnelPairingEnabled,
       tunnelPairingUrl: Option.fromNullishOr(result.settings.tunnelPairingUrl),
       trustedBrowserOrigins: Option.fromNullishOr(result.settings.trustedBrowserOrigins),
-      cloudflareAccess: {
-        cloudflareAccessTeamDomain: result.settings.cloudflareAccessTeamDomain,
-        cloudflareAccessAud: result.settings.cloudflareAccessAud,
-      },
     }));
     return {
       state: toContractState(nextState),
@@ -757,8 +708,7 @@ export const make = Effect.gen(function* () {
         Option.getOrNull(activeTunnelPairingUrl(previous)) !==
           Option.getOrNull(activeTunnelPairingUrl(nextState)) ||
         Option.getOrNull(activeTrustedBrowserOrigins(previous)) !==
-          Option.getOrNull(activeTrustedBrowserOrigins(nextState)) ||
-        !sameCloudflareAccess(previous, nextState),
+          Option.getOrNull(activeTrustedBrowserOrigins(nextState)),
     };
   }, changePermit.withPermit);
 

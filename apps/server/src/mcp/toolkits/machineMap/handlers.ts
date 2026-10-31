@@ -4,6 +4,7 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
 import * as KitshnCli from "../../../fork/kitshn/KitshnCli.ts";
+import * as KitshnConnection from "../../../fork/kitshn/KitshnConnection.ts";
 import * as KitshnGrants from "../../../fork/kitshn/KitshnGrants.ts";
 import * as KitshnProvider from "../../../fork/kitshn/KitshnProvider.ts";
 import * as KitshnSettingsSync from "../../../fork/kitshn/KitshnSettingsSync.ts";
@@ -31,16 +32,10 @@ const refuseMachineCaller = McpInvocationContext.McpInvocationContext.pipe(
 const toFailure = (error: { readonly message: string }) =>
   new OrchestratorMcpFailure({ code: "capability_denied", message: error.message });
 
-const ask = (
-  request: KitshnProvider.KitshnProvider["Service"] extends {
-    readonly request: (input: infer I) => unknown;
-  }
-    ? I
-    : never,
-) =>
+const ask = <I extends KitshnConnection.LocalRequestInput>(request: I) =>
   refuseMachineCaller.pipe(
-    Effect.andThen(KitshnProvider.KitshnProvider),
-    Effect.flatMap((provider) => provider.request(request)),
+    Effect.andThen(KitshnConnection.KitshnConnection),
+    Effect.flatMap((kitshn) => kitshn.request(request)),
     Effect.mapError(toFailure),
   );
 
@@ -70,33 +65,40 @@ export const layer = McpToolAccess.toLayer(MachineMapToolkit, {
       yield* refuseMachineCaller;
       const grants = yield* KitshnGrants.KitshnGrants;
       const provider = yield* KitshnProvider.KitshnProvider;
+      const machineExec = yield* MachineExec.MachineExec;
       // K-1611: the connection shows also when kitshn cannot answer the state ask.
       const answer = yield* ask({ type: "ask", action: "state", target: "" }).pipe(Effect.result);
       const connection = yield* provider.connection.pipe(Stream.runHead);
-      const grantState = yield* grants.state;
+      const state = yield* provider.state.pipe(Stream.runHead);
       return {
         _tag: "read",
         machine: yield* grants.machine,
         connection: {
           ...Option.getOrNull(connection),
-          linkProxy: yield* provider.linkProxyState,
-          lastContactAt: grantState.lastContactAt,
-          paused: yield* grants.paused,
+          linkProxy: (yield* provider.linkSocket) !== null,
+          syncedAt: Option.isSome(state) ? state.value.syncedAt : null,
+          paused: Option.isSome(state) && state.value.paused,
+          problems: Option.isSome(state) ? state.value.problems : [],
         },
         state:
           answer._tag === "Success" && "result" in answer.success ? answer.success.result : null,
         stateError: answer._tag === "Failure" ? answer.failure.message : null,
         askResults: yield* provider.askResults,
+        jobResults: yield* provider.jobResults,
+        execResults: Option.getOrElse(
+          yield* machineExec.lateResults.pipe(Stream.runHead),
+          () => [],
+        ),
       };
     }),
   ),
   machines_resources: McpToolAccess.reads(() =>
     ask({ type: "samples" }).pipe(
-      Effect.map((answer) =>
-        answer.type === "samples"
-          ? { _tag: "resources", newest: answer.newest, history: answer.history }
-          : { _tag: "resources", newest: null, history: [] },
-      ),
+      Effect.map((answer) => ({
+        _tag: "resources",
+        newest: answer.newest,
+        history: answer.history,
+      })),
     ),
   ),
   machines_set_setting: McpToolAccess.writesEnvironment(setSetting),
@@ -115,8 +117,7 @@ export const layer = McpToolAccess.toLayer(MachineMapToolkit, {
         },
       },
     }).pipe(
-      Effect.flatMap((answer) => {
-        if (answer.type !== "ask") return Effect.succeed({ _tag: "command", outcome: "done" });
+      Effect.flatMap((answer): Effect.Effect<unknown, OrchestratorMcpFailure> => {
         switch (answer.outcome) {
           case "done":
             return Effect.succeed({ _tag: "command", outcome: "done", result: answer.result });
@@ -124,10 +125,11 @@ export const layer = McpToolAccess.toLayer(MachineMapToolkit, {
             return Effect.succeed({
               _tag: "command",
               outcome: "waiting",
-              proposalId: answer.proposalId ?? null,
+              proposalId: answer.proposalId,
             });
-          default:
-            return Effect.fail(toFailure({ message: answer.reason ?? "kitshn refused the job." }));
+          case "refused":
+          case "not-kitshn":
+            return Effect.fail(toFailure({ message: answer.reason }));
         }
       }),
     ),
@@ -159,15 +161,9 @@ export const layer = McpToolAccess.toLayer(MachineMapToolkit, {
       return { _tag: "joined", output: output.stdout.trim() };
     }),
   ),
-  // MM-1908: the one machine tool that a machine session may call. The service checks the grants:
-  // here it needs a live full-access/default caller, and a machine session needs the exec grant.
-  // The link access of the level does not limit it, so linked callers pass this declaration.
-  machine_exec: McpToolAccess.writes(
-    (input) =>
-      MachineExec.MachineExec.pipe(
-        Effect.flatMap((machineExec) => machineExec.exec(input)),
-        Effect.catchTags({ MachinePeerError: (error) => Effect.fail(toFailure(error)) }),
-      ),
-    { linkedCallers: "allowed" },
+  // MM-1908: the service needs a live full-access/default caller of this machine; kitshn checks
+  // "runs commands" (K-722).
+  machine_exec: McpToolAccess.writes((input) =>
+    MachineExec.MachineExec.pipe(Effect.flatMap((machineExec) => machineExec.exec(input))),
   ),
 });

@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 
 import { machineOfRequestNamespace, machineRequestNamespace } from "./machineAccess.ts";
-import { linkTargets, socketClient } from "./MachinePeers.ts";
+import { KitshnAuditName, linkTargets, socketClient, withAuditName } from "./MachinePeers.ts";
 
 /**
  * A copy of `linkTarget` in kitshn `packages/daemon/src/link.ts` (origin/main 9e6a638), the daemon side
@@ -36,40 +36,32 @@ const card = (machineId: string, kind: string, level: string) => ({
   machineId,
   machineName: machineId.toUpperCase(),
   kind,
-  id: kind === "t3.app" ? "app" : "agents",
+  id: kind === "t3.app" ? "app" : "th-1",
   address: kind === "t3.app" ? `t3-${machineId}.example.com` : null,
   level,
 });
 
 describe("linkTargets (K-1609)", () => {
-  it("links a machine only with both cards, with the access of its app card", () => {
+  it("links each machine whose app card this machine reaches, with the access of its level", () => {
     const targets = linkTargets([
       card("vps", "t3.app", "use"),
-      card("vps", "t3.agents", "exec"),
       card("oracle", "t3.app", "view"),
-      card("oracle", "t3.agents", "exec"),
       card("mac", "t3.app", "control"),
-      card("pi", "t3.agents", "use"),
+      card("pi", "t3.thread", "view"),
     ]);
     expect(targets).toEqual([
-      {
-        machine: { id: "vps", name: "VPS" },
-        origin: "http://link/t3/vps",
-        access: "auto",
-        exec: true,
-      },
-      // Exec also needs t3.app at use or control.
+      { machine: { id: "vps", name: "VPS" }, origin: "http://link/t3/vps", access: "auto" },
       {
         machine: { id: "oracle", name: "ORACLE" },
         origin: "http://link/t3/oracle",
         access: "read-only",
-        exec: false,
       },
+      { machine: { id: "mac", name: "MAC" }, origin: "http://link/t3/mac", access: "full-access" },
     ]);
   });
 
   it("builds an origin that the kitshn link proxy routes to the T3 card of that machine", () => {
-    const reach = [card("vps", "t3.app", "use"), card("vps", "t3.agents", "exec")];
+    const reach = [card("vps", "t3.app", "use")];
     const [target] = linkTargets(reach);
     const routed = kitshnLinkTarget(
       (provider) => reach.filter(() => provider === "t3"),
@@ -80,6 +72,17 @@ describe("linkTargets (K-1609)", () => {
     });
   });
 });
+
+it.effect("names the tool of a forwarded call for the link proxy audit (K-1610)", () =>
+  Effect.gen(function* () {
+    const request = HttpClientRequest.post("http://link/t3/vps/mcp");
+    const named = yield* withAuditName(request).pipe(
+      Effect.provideService(KitshnAuditName, "t3_thread_read"),
+    );
+    expect(named.headers["kitshn-audit-name"]).toBe("t3_thread_read");
+    expect((yield* withAuditName(request)).headers["kitshn-audit-name"]).toBeUndefined();
+  }),
+);
 
 it("names the source machine of a machine session namespace", () => {
   const namespace = machineRequestNamespace({

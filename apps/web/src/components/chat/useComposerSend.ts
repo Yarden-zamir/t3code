@@ -623,7 +623,7 @@ export function useComposerSend(input: ComposerSendInput) {
         stackedThreadToast({
           type: "warning",
           title: "Attached thread is on another machine",
-          description: `This machine's agent can't read "${strandedThread.title}": it needs a kitshn link to ${owner}, with its T3 app and T3 agents cards shared with this machine. Remove the thread, or switch back to ${owner} to send.`,
+          description: `This machine's agent can't read "${strandedThread.title}": it needs a kitshn link to ${owner}, with its T3 app card shared with this machine. Remove the thread, or switch back to ${owner} to send.`,
         }),
       );
       return;

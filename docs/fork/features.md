@@ -49,14 +49,6 @@ The measured Mac examples were 6.91 GiB logical `node_modules` removed for 0.13 
 
 ## Remote access
 
-### Cloudflare Access login
-
-The server accepts the Cloudflare Access JWT as the owner login, so a browser behind Cloudflare Access needs no pairing link.
-
-- **Setting:** `cloudflareAccessTeamDomain`, `cloudflareAccessAud` and `cloudflareAccessSubjects` (empty by default). On the desktop app, set them in Settings > Sharing & access, under "Allow pairing through a tunnel". On a headless server, set `T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `T3CODE_CLOUDFLARE_ACCESS_AUD` and `T3CODE_CLOUDFLARE_ACCESS_SUBJECTS`.
-- **Works on:** server. The mobile app signs in with a Cloudflare Access service token, see [Request headers per environment](#request-headers-per-environment).
-- **Limits:** the subjects list must hold the client id of the service token that the desktop app uses for remote machines. Without it, the desktop app cannot open the machine. Revisit when that service token is retired.
-
 ### Request headers per environment
 
 A saved environment sends its own request headers, for example a Cloudflare Access service token.
@@ -124,22 +116,21 @@ kitshn connects the T3 machines of the owner. Each T3 server is the provider `t3
 The server puts these cards on the kitshn map:
 
 - `t3.app`, "T3 on <machine>": the version, the running turns and a busy fact. Its commands are Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. Its lists hold the scheduled tasks (Run now, Pause, Resume) and the client sessions (Revoke session), at most 100 rows each. Its setting `updateChannel` picks the release feed, see [Fork releases](#fork-releases).
-- `t3.agents`, "Agents on <machine>": what agents of other machines can do on this machine.
 - `t3.thread`: one card for each thread with an open guest link.
 - `t3.settings`: the T3 settings state, see [Settings and theme sync](#settings-and-theme-sync).
 
 kitshn runs a command at once when a grant allows it. Otherwise the command waits for the owner as a kitshn job.
 
-- **Limits:** the busy fact and the lists refresh every 15 seconds.
+- **Limits:** the busy fact and the lists refresh every 15 seconds. kitshn gets a card again only when it changed.
+- kitshn drops a card part that breaks its rules, such as a list row, and keeps the rest. Settings > Machines names what it dropped.
 
 ### Access from kitshn
 
-The kitshn grants decide who gets in: browsers through Cloudflare Access, other machines and guests. On `t3.app`, view gives `read`, use gives `standard` and control gives `admin`.
+The kitshn grants decide who gets in: browsers through Cloudflare Access, other machines and guests. The kitshn daemon checks each new visitor and tells the server its levels. On `t3.app`, view gives `read`, use gives `standard` and control gives `admin`.
 
-- A grant that drops ends the sessions that it no longer allows.
-- The server accepts an Access token for the audiences of kitshn's applications on its host. Until the portal Worker goes, it also accepts the portal's audience, from the environment or from `machine-map-tunnel.json` of an older portal join.
-- **Pause:** kitshn's emergency pause closes every grant, so links and `machine_exec` stop at once (K-1618).
-- **Limits:** while kitshn is out of reach, the server uses the grants that it saved, for at most 24 hours after kitshn's last answer. The server asks kitshn once an hour to prove contact.
+- A grant that drops ends the sessions that it no longer allows. A session whose Access token only expired stays; its next request brings a new token.
+- **Pause:** kitshn's emergency pause closes every grant and every link at once (K-1618).
+- **Limits:** while the kitshn daemon is down, new visitors are refused. Open sessions keep working until their answer ends: at the latest when the Access token expires, a grant ends, or 24 hours after kitshn's last answer.
 
 ### Environment name from kitshn
 
@@ -152,20 +143,21 @@ Use the kitshn map name of the machine as the server environment name. A name ch
 
 A kitshn link makes another machine a linked environment. Agents pass its `environmentId` to the T3 tools, for example `t3_thread_list`, `t3_thread_launch` or `delegate_task` with `target.environmentId`. `t3_environment_links` lists the linked machines. A delegated task runs on the other machine and wakes the parent thread when it ends.
 
-- **Setting:** on the kitshn map, the owner shares the `t3.app` and `t3.agents` cards of the other machine with this machine. A link needs both.
+- **Setting:** on the kitshn map, the owner shares the `t3.app` card of the other machine with this machine.
 - **Access:** the level of the `t3.app` grant applies. `read` is read-only. `standard` gives `auto` and changes only the threads that its own link started. `admin` gives full access.
 - **Thread limits:** each call carries the limits of the calling thread. The other machine applies the narrower of those and the level.
 - **Manual links:** `t3 environment link` and `t3 environment unlink` refuse. Settings > Environments shows the kitshn links read-only.
-- **Audit:** each forwarded tool call and each exec run goes to the kitshn audit, without arguments or output.
-- **Limits:** a call goes through the link socket of the kitshn daemon, a named pipe on Windows. While kitshn is out of reach, at most 100 audit reports wait, and older ones drop.
+- **Audit:** the kitshn link proxy records each forwarded tool call, without arguments or output.
+- **Limits:** a call goes through the link socket of the kitshn daemon, a named pipe on Windows.
 
 ### Commands on other machines
 
-An agent runs a shell command on another machine with `machine_exec`. The command runs through the T3 server of that machine, as its T3 user, in the home directory or a given directory. The result holds the exit code, stdout and stderr. In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's.
+An agent runs a shell command on another machine with `machine_exec`. kitshn runs the command on that machine, as the user of its T3 provider, in the home directory or a given directory. T3 on that machine is not needed, so this also works to repair it. The result holds the exit code, stdout and stderr. In a shell, `t3 machine exec` runs a command like ssh: stdin goes in, stdout and stderr come back as the command writes them, and the exit code is the command's.
 
-- **Setting:** the `t3.agents` grant at `exec`, and the `t3.app` grant at `standard` or higher, from the other machine to this machine.
+- **Setting:** this machine reaches the `t3.app` card of the other machine, and the kitshn right "Runs commands" of this machine on that machine. "Ask" holds each run for the owner's approval; "Automatic" runs it at once. A terminal thread that another machine starts here needs "Runs commands" at "Automatic" too.
+- **Approval:** `machine_exec` waits up to 60 seconds for the owner, then answers "waiting". The run starts when the owner approves it, and its result shows in `machines_read` (`execResults`). `t3 machine exec` prints a waiting line and waits.
 - **Who can:** a live full-access/default thread with the orchestration, worktree and pull-request tool capabilities. Restricted threads are refused. In an agent's shell, `t3 machine exec` acts as the agent's thread. Without a thread credential it is refused. No command list grants or refuses a command.
-- **Stop:** a lost grant stops a running command at once.
+- **Stop:** a lost connection to kitshn ends the run on both machines.
 - **In a shell:** in a checkout, use `node apps/server/src/bin.ts` instead of `t3`.
   - `t3 machine exec vps -- uname -a`
   - `t3 machine exec vps --cwd ~/app -- git status`
@@ -175,9 +167,9 @@ An agent runs a shell command on another machine with `machine_exec`. The comman
   - Folder to the other machine: `tar c -C dist . | t3 machine exec vps -- tar x -C /srv/app`
   - Folder from the other machine: `t3 machine exec vps -- tar c -C /srv/app . | tar x -C ./backup`
   - One file to the other machine: `t3 machine exec vps -- 'cat > /tmp/file' < file`
-- **Exit codes:** the exit code of the command. 124 when `--timeout` stops it. 255 when the stream fails: a refusal, a lost connection, or a grant that stops allowing exec. The reason goes to stderr.
-- **Long jobs:** `t3 machine exec` has no time limit. A ping every 25 seconds keeps the connection open. The end of the agent's turn does not stop it, so an agent can run it in the background. A lost connection stops the command, as with ssh. For a job that must outlive the connection, start it with `nohup <command> > job.log 2>&1 &` in a command that exits 0, and read the log later.
-- **Limits:** a `machine_exec` run lasts at most 90 seconds. Use `t3 machine exec` for longer work. `machine_exec` keeps 50,000 bytes of stdout and of stderr. A timeout loses the output. A command that reads stdin waits for the timeout. On a Windows machine, Windows PowerShell runs the command, so quote the command for PowerShell.
+- **Exit codes:** the exit code of the command. 124 when `--timeout` stops it. 255 when the stream fails: a refusal, a denial or a lost connection. The reason goes to stderr.
+- **Long jobs:** `t3 machine exec` runs for up to an hour. The end of the agent's turn does not stop it, so an agent can run it in the background. A lost connection stops the command, as with ssh. For a job that must outlive the connection, start it with `nohup <command> > job.log 2>&1 &` in a command that exits 0, and read the log later.
+- **Limits:** a `machine_exec` run lasts at most 90 seconds. Use `t3 machine exec` for longer work. `machine_exec` keeps 50,000 bytes of stdout and of stderr. On a Windows machine, PowerShell runs the command, so quote the command for PowerShell.
 
 ### Thread mentions across machines
 
@@ -200,9 +192,10 @@ The `t3.settings` state on kitshn holds a shared part and a part for each machin
 
 ### Settings > Machines
 
-Settings > Machines shows how to join this machine to kitshn, and the kitshn settings of the selected environment. It also shows the kitshn connection: connected, connecting with the last error, or off with the reason, and the grants, reached machines, link proxy and kitshn's last answer. `machines_read` gives agents the same state.
+Settings > Machines shows how to join this machine to kitshn, and the kitshn settings of the selected environment. It also shows the kitshn connection: connected, connecting with the last error, or off with the reason, and the reached machines, link proxy and kitshn's last sync. `machines_read` gives agents the same state.
 
-- A notice shows while the portal still serves the T3 host of this machine. Hand it over with [Hand a T3 host over to kitshn](operations.md#hand-a-t3-host-over-to-kitshn).
+- A notice names the card parts that kitshn dropped.
+- `T3CODE_KITSHN=off` in the server environment keeps a server off kitshn. A dev server never registers. Only one T3 server of a machine registers; a second one shows kitshn's refusal.
 - The desktop app has "Join with a device invite": paste a kitshn device invite link there, see [Device invites](#device-invites).
 
 ### Device invites
@@ -348,32 +341,22 @@ Sets how far back recent Claude Code and Codex sessions are offered for import, 
 - **Works on:** server.
 - An imported session keeps its first user message and the newest messages up to the limit.
 
-### Thread identity check
-
-A local service, for example kitshn, learns which thread an agent works in. The agent sends its MCP credential, the value of `T3_ACP_MCP_AUTHORIZATION`, to `GET /api/thread-identity` on the server port.
-
-- **Works on:** server.
-- The answer is the current state of the credential's thread: title, project, provider instance, modes, and the parent of a delegated child. A child delegated from a linked environment names the parent thread and its environment.
-- An unknown, revoked or idle credential, or the credential of an archived or deleted thread, gets `{"active":false}`, without a reason.
-- The check does not keep the credential alive.
-- **Limits:** the MCP credential is the only auth, as on `/mcp`. The route is also reachable through a tunnel or a public origin.
-
 ### Publish to kitshn
 
 Agents publish a file or a folder of their workspace to kitshn, and give the card a new address name. The tools are `kitshn_publish` and `kitshn_address`. They run the machine's kitshn 2 CLI, which sends each call through the local kitshn daemon (kitshn K-1116, K-1120, K-1123, K-1714). No agent and no T3 setting holds a kitshn token.
 
 - **Setting:** none in T3. Join the machine to kitshn, so its daemon runs. Without a daemon, the tool returns the kitshn error.
-- On each start, the server registers itself with the daemon as the `t3.` attester: `kitshn attester set --prefix t3. --url http://127.0.0.1:<port>/api/thread-identity --token-env T3_ACP_MCP_AUTHORIZATION`. This needs the daemon user, root, or a provider user (`kitshn local-users add <user> --provider`). When the machine has no kitshn 2, the server logs one info line. Any other failure logs one warning. In both cases the server starts normally. Only the server whose T3 home is `~/.t3` of its user registers. The server compares the paths without following links, so `~/.t3` can be a link to the real folder. A server with another `--base-dir` or `T3CODE_HOME`, a worktree dev server, a dev server with a dev URL, a server that does not listen on loopback, and Windows skip it.
-- A call with a thread credential fails closed. When the daemon cannot check the thread, or the thread is archived or deleted, the tool returns the kitshn error.
+- The call carries the thread's token in `KITSHN_ATTEST` (`t3:<token>`). The daemon asks this server over the provider connection who holds it, and kitshn labels the call with the thread (K-1752). Agent shells get `KITSHN_ATTEST` too, so `kitshn` commands of an agent name its thread.
+- A call with a thread credential fails closed. When the server cannot vouch for the thread in 2 seconds, or the thread is archived or deleted, the tool returns the kitshn error.
 - **Works on:** server, so every client.
 - Only a live full-access/default thread on this machine can publish. An agent on another machine cannot.
-- The call runs with the thread's MCP credential in `T3_ACP_MCP_AUTHORIZATION`. The daemon checks it at [Thread identity check](#thread-identity-check) (`/api/thread-identity`), so kitshn knows the thread that asks. A caller without a thread credential, such as an OAuth client, gets a refusal.
+- A caller without a thread credential, such as an OAuth client, gets a refusal.
 - `path` is relative to the thread's worktree, or its project folder. The tool refuses a path outside that folder after links resolve, and a path in a dot folder or to a dotfile.
 - The server uses `~/.local/bin/kitshn`, else the first `kitshn` in an absolute PATH folder that is kitshn 2. The PATH is the one that the server reads from the login shell at start. The check runs without a credential. A binary is kitshn 2 when `kitshn version --json` prints `{"product":"kitshn","generation":2,…}`. KitSHn 1 never runs. When no binary is kitshn 2, the error names the paths that it found.
 - A call stops after 150 seconds, a little above the daemon's own 120-second call limit. kitshn refuses at once when a right is unset or set to "ask".
 - **Limits:**
   - The server checks a binary once per path and change time. A new install at the same path with the same change time is not checked again. Revisit if kitshn installs keep the change time.
-  - A server that stopped leaves its `t3.` entry in the daemon. kitshn calls then fail with "could not check the T3 thread; try again." until the installed server starts again.
+  - While the server is not connected to kitshn, kitshn calls of its threads fail, because no server vouches for the thread.
   - A process of the same user, such as an agent in another full-access thread, can replace `~/.local/bin/kitshn` with a file that answers the version check. That file then gets the credential of the next thread that calls a kitshn tool. The change-time cache does not stop this, because the file can keep the old change time. Revisit when agents run as a user other than the server, or when kitshn signs its binary.
 
 ### kitshn provider
@@ -381,24 +364,19 @@ Agents publish a file or a folder of their workspace to kitshn, and give the car
 The server shows itself as cards on the kitshn map, with its commands (kitshn K-704 to K-709). kitshn is the only way this server joins other machines. The server runs `kitshn provider` of the machine's kitshn 2 and keeps it running. The child sends JSON lines to the local kitshn daemon. Without kitshn 2, the server works as upstream T3 Code, with no machine features.
 
 - **Start:** join the machine with `kitshn join <code> --server <address>`, or with the agent tool `machines_join` from a shell (agents cannot join). There is no setting: the server connects whenever kitshn 2 is on the machine.
-- **Cards:** one `t3.app` card "T3 on <environment name>", with the version, the running turns and a busy fact, and a `t3.agents` card "Agents on <environment name>" under it. The busy fact is "true" while an agent turn runs, so kitshn holds jobs sent "when idle". Each thread with an open guest link also gets a `t3.thread` card under the app card, named by the thread title, with an "Open thread" sticker to its guest page. The card goes when the link ends. The server checks the facts and the shared threads every 15 seconds, and sends only the cards that changed. The `t3.app` and `t3.agents` kinds have owner control, so the owner always holds them.
+- **Cards:** one `t3.app` card "T3 on <environment name>", with the version, the running turns and a busy fact, and the server port as its site; kitshn names the host. The busy fact is "true" while an agent turn runs, so kitshn holds jobs sent "when idle". Each thread with an open guest link also gets a `t3.thread` card under the app card, named by the thread title, with an "Open thread" sticker to its guest page. The card goes when the link ends. The server checks the facts and the shared threads every 15 seconds, and sends only the cards that changed. The `t3.app` kind has owner control, so the owner always holds it.
 - **Name:** with "Environment name from kitshn" on, the environment name is the machine name on the kitshn map.
-- **Grants:** once kitshn answered, kitshn grants decide access for each request with a verified Cloudflare Access JWT (a tunnel request). The desktop window, loopback and tailnet pairing keep T3's own auth. Without a grant, a tunnel request is refused; there is no other Access login.
-  - `t3.app`: `read`, `standard` and `admin` give the scopes of the levels of the same name, without pairing-link and relay rights. A machine's service token, named by a `machine` rule, gets the session of that machine.
+- **Access:** for each request with identity headers (a tunnel request), the server asks the daemon (`check`, K-721). The daemon checks the Access token and the grants, and answers the levels of the subject: a person, a device or another machine. The server keeps the answer until it ends. The desktop window, loopback and tailnet pairing keep T3's own auth. A refused tunnel request gets no session; there is no other Access login.
+  - `t3.app`: `read`, `standard` and `admin` give the scopes of the levels of the same name, without pairing-link and relay rights. Another machine gets the session of that machine, with the link access of its level.
   - `t3.thread`: opens only the guest page of that thread, without a guest link. `view` reads the thread. `send` also sends as the guest does, after the guest joined. The guest link itself works as before.
-  - `t3.agents`: another machine needs `use` for the forwarded agent tools, and `exec` with `t3.app` at `standard` or higher for `machine_exec` and terminal threads. Losing the grant stops a running command.
-  - Matching: `email` and `domain` in lowercase, `ip` against `Cf-Connecting-IP`, `device` and `machine` against the service token. An unknown rule type never matches. The highest matching level applies. Access checks the passkey.
-  - The last table stays on disk (`kitshn-grants.json` in the server state dir) and applies after a restart or while kitshn is out of reach. `endsAt` still ends a grant on time. After 24 hours without contact with kitshn, every tunnel request is refused until a fresh table arrives.
-  - At `endsAt`, a level drop or a removed grant, the server ends the sessions and WebSockets that lost access. Failed ends wait on disk and run again, also after a restart.
+  - When the grants change, the server checks its sessions again and ends the ones that lost access, with their WebSockets. Failed ends wait on disk (`kitshn-grants.json` in the server state dir) and run again, also after a restart.
 - **Settings:** the `t3.settings` state on kitshn sets the server settings, themes and keybindings: the shared part first, then this machine's own part over it. `machines_set_setting` sets one key of this machine's part or of the shared part; the shared part needs a full-access caller, and machine-local keys are refused.
 - **Commands:** Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. The card shows only the commands that this server can run now: Restart server needs a supervisor, and Install update needs the background service. A restart answers kitshn first and then restarts. An agent sends a command to a machine with `machines_command`, as a kitshn job; it can wait for the owner.
 - **Agent tools:** `machines_read` (what kitshn shows this machine), `machines_command`, `machines_queue_cancel` (only jobs that this machine queued), `machines_resources` (CPU, memory and disk of this machine for the last hour), `machines_set_setting` and `machines_join`. Access between machines, history, undo and presets are on the kitshn map.
 - **Diagnostics:** kitshn gets redacted diagnostics. Each process shows only its program name, never its arguments. Secrets in error texts become `REDACTED`: URL tokens such as a pairing link, `key=value` and `"key":"value"` for secret key names such as `token` and `password`, `NAME=value` env values, the word after `Bearer`, `token:` or `--token`, and known token formats.
-- **Failures:** without kitshn 2, after a refusal, or when the child exits, T3 runs normally and tries again. After a connection that registered, T3 tries again after 1 second, because a daemon restart ends the child. A child that does not answer `register` or a `samples` request in 35 seconds counts as ended: T3 ends it and says why in Settings > Machines. T3 sends that request every 3 minutes and after each local request that got no answer. Each further try waits 5, 10, 20 and then 30 seconds. After a daemon restart, kitshn holds a queued command for 60 seconds until T3 registers again, and these waits stay inside that time. The same start rules as the attester apply: only the server of the default T3 home `~/.t3`, no dev server and no Windows.
-- **Limits:**
-  - `machine_exec` checks a `machine` rule only: an `ip` rule does not count for it.
-  - The card has no site yet, so kitshn does not serve T3 through it.
-  - Links to other machines (`machine_exec` from this machine, linked environments) wait for the kitshn link proxy support in T3.
+- **Failures:** without kitshn 2, after a refusal, or when the child exits, T3 runs normally and tries again. After a connection that registered, T3 tries again after 1 second, because a daemon restart ends the child. A child that does not answer `register` in 10 seconds, or that sends nothing for the daemon's grace time (45 seconds), counts as ended: T3 ends it and says why in Settings > Machines. Each further try waits 5, 10, 20 and then 30 seconds. After a daemon restart, kitshn holds a queued command for 60 seconds until T3 registers again, and these waits stay inside that time.
+- **Instance:** the server registers with its environment id. kitshn refuses a second T3 server of the same machine while the first one is connected. A dev server never registers, and `T3CODE_KITSHN=off` keeps a server off kitshn.
+- **Protocol:** kitshn provider protocol 2 only. The server and the kitshn daemon of a machine update together.
 - **Remove T3:** stop the T3 server first. Then run `kitshn provider forget t3` as the kitshn daemon user. The owner then selects "Forget provider" on the kitshn map.
 
 ### Scheduled task model

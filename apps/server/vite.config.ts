@@ -142,6 +142,8 @@ export default mergeConfig(
         "./src/testUtils/gitConfig.setup.ts",
         "./src/testUtils/managedServiceEnv.setup.ts",
       ],
+      // Fork: a test run from an agent shell must neither use nor print that thread's credential.
+      env: { T3_ACP_MCP_AUTHORIZATION: "", T3_ACP_MCP_ENDPOINT: "", KITSHN_ATTEST: "" },
       // Fork: appended to the root excludes, like the setup files.
       exclude: FORK_EXCLUDED_UPSTREAM_TESTS,
       hookTimeout: 120_000,

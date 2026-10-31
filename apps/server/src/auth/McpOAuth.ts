@@ -34,7 +34,7 @@ import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import type * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
-import { kitshnMachineMcpClient } from "../fork/kitshn/kitshnAgents.ts";
+import { kitshnMachineMcpClient } from "../fork/forkEnvironmentAuth.ts";
 import * as KitshnGrants from "../fork/kitshn/KitshnGrants.ts";
 import {
   machineRequestNamespace,
@@ -571,7 +571,7 @@ export const layerMcpClientAuthenticator = Layer.effect(
     const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
     const environment = yield* ServerEnvironment.ServerEnvironment;
     const environmentId = yield* environment.getEnvironmentId;
-    // Fork: kitshn provider (K-706). A session of another machine whose token holds `t3.agents`.
+    // Fork: kitshn provider (K-721). A session of another machine that reaches this `t3.app` card.
     const kitshnGrants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
     const machineClient = (
       request: HttpServerRequest.HttpServerRequest,

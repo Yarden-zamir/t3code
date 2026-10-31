@@ -1,6 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { AuthSessionId, MACHINE_LEVEL_SCOPES } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -9,63 +8,65 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
-import * as Schema from "effect/Schema";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as SessionStore from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
-import { PEER, PEER_TOKEN } from "../machineMap/MachineMap.testkit.ts";
-import { kitshnMachineAllows, kitshnMachineMcpClient } from "./kitshnAgents.ts";
+import { kitshnMachineMcpClient } from "../forkEnvironmentAuth.ts";
+import * as KitshnConnection from "./KitshnConnection.ts";
+import { answerCheck, type CheckAnswer, registerAnswer } from "./KitshnConnection.testkit.ts";
 import { appLevelScopes } from "./kitshnGrantRules.ts";
 import * as KitshnGrants from "./KitshnGrants.ts";
-import { GrantTables } from "./kitshnProviderProtocol.ts";
 
-const decodeTables = Schema.decodeUnknownSync(GrantTables);
 const HOUR = 60 * 60 * 1000;
 
-const grant = (rules: ReadonlyArray<unknown>, level: string, endsAt: number | null = null) => ({
-  circle: { id: "c", name: "Circle", match: "any", needsPasskey: false, rules },
-  level,
-  endsAt,
-});
-
-/** A request through the tunnel; the test verifier reads the identity from the JWT header. */
-const tunnelRequest = (identity: { readonly email?: string; readonly commonName?: string }) =>
+const tunnelRequest = (token: string) =>
   HttpServerRequest.fromWeb(
     new Request("http://127.0.0.1/api", {
-      headers: {
-        "cf-access-jwt-assertion": JSON.stringify(identity),
-        "cf-connecting-ip": "203.0.113.7",
-      },
+      headers: { "cf-access-jwt-assertion": token, "cf-connecting-ip": "203.0.113.7" },
     }),
   );
 const localRequest = HttpServerRequest.fromWeb(new Request("http://127.0.0.1/api"));
 
-const verifyClaims = (request: HttpServerRequest.HttpServerRequest) => {
-  const header = request.headers["cf-access-jwt-assertion"];
-  if (header === undefined) {
-    // @effect-diagnostics-next-line effectSucceedWithVoid:off - The verifier returns undefined for no JWT.
-    return Effect.succeed(undefined);
-  }
-  const identity = JSON.parse(header) as { email?: string; commonName?: string };
-  return Effect.succeed({ email: identity.email, commonName: identity.commonName });
-};
+const person = (levels: Record<string, string>, until = HOUR): CheckAnswer => ({
+  subject: { type: "person", id: "sam@example.com", name: "Sam" },
+  levels,
+  rights: [],
+  until,
+});
 
 const kitshnSession = (id: string, scopes = appLevelScopes("standard")) => ({
   sessionId: AuthSessionId.make(id),
-  subject: "kitshn:sam@example.com",
+  subject: "kitshn:person:sam@example.com",
   scopes,
 });
-
-/** A `grants` push that arrives live from kitshn: the provider records contact, then the tables. */
-const livePush = (grants: KitshnGrants.KitshnGrants["Service"], tables: GrantTables) =>
-  grants.contact.pipe(Effect.andThen(grants.replaceTables(tables)));
 
 const harness = Effect.gen(function* () {
   const revoked = yield* Queue.unbounded<AuthSessionId>();
   const revokeFails = yield* Ref.make(false);
+  /** The daemon's answer for each token; a missing token is anonymous. */
+  const answers = yield* Ref.make(new Map<string, CheckAnswer>());
+  const checks = yield* Ref.make(0);
+  /** Runs inside the next `check`, before the daemon answers it. */
+  const duringNextCheck = yield* Ref.make<Effect.Effect<void> | null>(null);
+  const connection = yield* KitshnConnection.make;
+  const daemon = {
+    answer: registerAnswer(),
+    request: (input: KitshnConnection.LocalRequestInput) =>
+      Effect.gen(function* () {
+        yield* Ref.update(checks, (count) => count + 1);
+        const current = yield* Ref.get(answers);
+        const during = yield* Ref.getAndSet(duringNextCheck, null);
+        if (during !== null) yield* during;
+        return yield* answerCheck(
+          (headers) => current.get(headers["cf-access-jwt-assertion"] ?? "") ?? { anonymous: true },
+        )(input);
+      }),
+    notify: () => Effect.void,
+  };
   const dependencies = Layer.mergeAll(
+    Layer.succeed(KitshnConnection.KitshnConnection, connection),
     Layer.mock(SessionStore.SessionStore)({
       cookieName: "t3_session",
       legacyCookieName: undefined,
@@ -78,21 +79,21 @@ const harness = Effect.gen(function* () {
     }),
   );
   /** One server lifetime: closing its scope is a restart. */
-  const start = Layer.build(
-    Layer.effect(KitshnGrants.KitshnGrants, KitshnGrants.make({ verifyClaims })).pipe(
-      Layer.provide(dependencies),
-    ),
-  ).pipe(Effect.map((context) => Context.get(context, KitshnGrants.KitshnGrants)));
+  const start = Layer.build(KitshnGrants.layer.pipe(Layer.provide(dependencies))).pipe(
+    Effect.map((context) => Context.get(context, KitshnGrants.KitshnGrants)),
+  );
   return {
     start,
-    /** A server that kitshn answered once, so its grants apply. */
-    registered: start.pipe(Effect.tap((grants) => livePush(grants, {}))),
+    connect: connection.attach(daemon),
+    disconnect: connection.attach(null),
+    grantsChanged: connection.publish({ type: "grants-changed", at: 0 }),
+    answers,
+    checks,
+    duringNextCheck,
     revoked,
     revokeFails,
   };
 });
-
-const sam = { email: "Sam@Example.com" };
 
 // Each test gets its own state dir, so one test never reads the saved file of another.
 const isolated = <A, E>(
@@ -107,8 +108,13 @@ const isolated = <A, E>(
     ),
   );
 
-describe("KitshnGrants", () => {
-  it.effect("leaves requests without a JWT, and every request before kitshn answered, to T3", () =>
+const visitorOf = (result: KitshnGrants.VisitorResult) => {
+  if (result._tag !== "visitor") throw new Error(`expected a visitor, got ${result._tag}`);
+  return result.visitor;
+};
+
+describe("KitshnGrants (K-721)", () => {
+  it.effect("leaves requests without an identity to T3, and fails closed without a daemon", () =>
     Effect.gen(function* () {
       const test = yield* harness;
       const grants = yield* test.start;
@@ -117,220 +123,254 @@ describe("KitshnGrants", () => {
         subject: "desktop-paired",
         scopes: MACHINE_LEVEL_SCOPES.admin,
       };
-      // Not a kitshn provider yet (K-712): T3's own auth, also for a JWT request.
-      expect(yield* grants.active).toBe(false);
-      expect(yield* grants.visitor(tunnelRequest(sam))).toBeNull();
-      expect(
-        yield* KitshnGrants.kitshnAllowsSession(Option.some(grants), tunnelRequest(sam), owner),
-      ).toBe(true);
-
-      yield* livePush(grants, {});
-      expect(yield* grants.active).toBe(true);
-      expect(yield* grants.visitor(localRequest)).toBeNull();
+      // Before any register the identity headers are unknown, so every request is T3's own.
+      expect(yield* grants.visitor(tunnelRequest("sam"))).toEqual({ _tag: "anonymous" });
+      yield* test.connect;
+      expect(yield* grants.visitor(localRequest)).toEqual({ _tag: "anonymous" });
       expect(
         yield* KitshnGrants.kitshnAllowsSession(Option.some(grants), localRequest, owner),
       ).toBe(true);
-      // No grant: a JWT request is refused, also for a session paired another way.
-      expect(yield* grants.visitor(tunnelRequest(sam))).toEqual({
-        email: "sam@example.com",
-        clientId: null,
-        ip: "203.0.113.7",
-      });
-      expect(
-        yield* KitshnGrants.kitshnAllowsSession(Option.some(grants), tunnelRequest(sam), owner),
-      ).toBe(false);
-      // Another machine needs a grant too, and its session works only with the JWT.
-      const machine = { ...owner, subject: "machine:vps" };
-      expect(
-        yield* KitshnGrants.kitshnAllowsSession(
-          Option.some(grants),
-          tunnelRequest({ commonName: "x" }),
-          machine,
-        ),
-      ).toBe(false);
-      expect(
-        yield* KitshnGrants.kitshnAllowsSession(Option.some(grants), localRequest, machine),
-      ).toBe(false);
-      // A kitshn session works only through a request that the grants checked.
       expect(
         yield* KitshnGrants.kitshnAllowsSession(
           Option.some(grants),
           localRequest,
-          kitshnSession("k"),
+          kitshnSession("s"),
         ),
       ).toBe(false);
+      expect(yield* Ref.get(test.checks)).toBe(0);
+      // The daemon says that the headers name no one: still T3's own auth.
+      expect(yield* grants.visitor(tunnelRequest("nobody"))).toEqual({ _tag: "anonymous" });
+      yield* test.disconnect;
+      // D5: an identity with no daemon to check it opens nothing.
+      expect(yield* grants.visitor(tunnelRequest("sam"))).toEqual({
+        _tag: "refused",
+        code: "unavailable",
+      });
     }).pipe(isolated),
   );
 
-  it.effect("replaces the whole table on each event", () =>
-    Effect.gen(function* () {
-      const grants = yield* (yield* harness).registered;
-      const visitor = (yield* grants.visitor(tunnelRequest(sam)))!;
-      yield* livePush(grants, decodeTables({ app: [grant([{ everyone: true }], "admin")] }));
-      expect(yield* grants.level("t3.app", "app", visitor)).toBe("admin");
-      yield* livePush(grants, decodeTables({ agents: [grant([{ everyone: true }], "use")] }));
-      expect(yield* grants.level("t3.app", "app", visitor)).toBeNull();
-      expect(yield* grants.level("t3.agents", "agents", visitor)).toBe("use");
-    }).pipe(isolated),
-  );
-
-  it.effect("ends a kitshn session when its level drops, at endsAt and after 24 hours", () =>
+  it.effect("checks each token once and again after its until", () =>
     Effect.gen(function* () {
       const test = yield* harness;
-      const grants = yield* test.registered;
-      const visitor = (yield* grants.visitor(tunnelRequest(sam)))!;
-      const everyone = (level: string, endsAt: number | null = null) =>
-        decodeTables({ app: [grant([{ email: "sam@example.com" }], level, endsAt)] });
-
-      yield* livePush(grants, everyone("standard"));
-      expect(yield* grants.allowsSession(visitor, kitshnSession("drop"))).toBe(true);
-      yield* livePush(grants, everyone("read"));
-      expect(yield* Queue.take(test.revoked)).toBe("drop");
-
-      yield* livePush(grants, everyone("standard", 2 * HOUR));
-      expect(yield* grants.allowsSession(visitor, kitshnSession("ends"))).toBe(true);
-      yield* TestClock.adjust("1 hour");
-      expect(yield* Queue.size(test.revoked)).toBe(0);
-      yield* TestClock.adjust("1 hour");
-      expect(yield* Queue.take(test.revoked)).toBe("ends");
-
-      // Contact keeps the table good; 24 hours without it refuses every JWT request.
-      yield* livePush(grants, everyone("standard"));
-      expect(yield* grants.allowsSession(visitor, kitshnSession("stale"))).toBe(true);
-      yield* TestClock.adjust("23 hours");
-      yield* grants.contact;
-      yield* TestClock.adjust("23 hours");
-      expect(yield* grants.level("t3.app", "app", visitor)).toBe("standard");
-      // K-706: a register answer replays the daemon's saved tables, so it never moves the clock.
-      yield* grants.replaceTables(everyone("standard"));
-      yield* TestClock.adjust("1 hour");
-      expect(yield* grants.level("t3.app", "app", visitor)).toBeNull();
-      expect(yield* Queue.take(test.revoked)).toBe("stale");
+      yield* Ref.set(test.answers, new Map([["sam", person({ app: "standard" })]]));
+      yield* test.connect;
+      const grants = yield* test.start;
+      const first = visitorOf(yield* grants.visitor(tunnelRequest("sam")));
+      expect(first.levels).toEqual({ app: "standard" });
+      const cached = yield* Ref.get(test.checks);
+      yield* grants.visitor(tunnelRequest("sam"));
+      expect(yield* Ref.get(test.checks)).toBe(cached);
+      yield* TestClock.adjust(HOUR);
+      yield* grants.visitor(tunnelRequest("sam"));
+      expect(yield* Ref.get(test.checks)).toBe(cached + 1);
     }).pipe(isolated),
   );
 
-  it.effect("keeps the table and a failed revocation on disk across a restart", () =>
+  it.effect("re-checks on grants-changed: revokes a lowered session, drops an expired one", () =>
     Effect.gen(function* () {
       const test = yield* harness;
+      yield* Ref.set(
+        test.answers,
+        new Map([
+          ["sam", person({ app: "admin" })],
+          ["kim", person({ app: "standard" })],
+        ]),
+      );
+      yield* test.connect;
+      const grants = yield* test.start;
+      const sam = visitorOf(yield* grants.visitor(tunnelRequest("sam")));
+      const kim = visitorOf(yield* grants.visitor(tunnelRequest("kim")));
+      expect(yield* grants.allowsSession(sam, kitshnSession("sam", appLevelScopes("admin")))).toBe(
+        true,
+      );
+      expect(yield* grants.allowsSession(kim, kitshnSession("kim"))).toBe(true);
+
+      yield* Ref.set(
+        test.answers,
+        new Map<string, CheckAnswer>([
+          ["sam", person({ app: "standard" })],
+          ["kim", { refused: { code: "expired", reason: "token expired" } }],
+        ]),
+      );
+      yield* test.grantsChanged;
+      // An admin session above the new standard level ends; an expired token ends nothing.
+      expect(yield* Queue.take(test.revoked)).toBe("sam");
+      yield* grants.awaitLoss(kim, () => true);
+      expect(yield* Queue.poll(test.revoked)).toEqual(Option.none());
+
+      // The daemon cannot verify now: no session ends, and a new token is refused.
+      const kept = visitorOf(yield* grants.visitor(tunnelRequest("sam")));
+      yield* grants.allowsSession(kept, kitshnSession("sam-2"));
+      const unavailable: CheckAnswer = {
+        refused: { code: "unavailable", reason: "no signing keys" },
+      };
+      yield* Ref.set(
+        test.answers,
+        new Map([
+          ["sam", unavailable],
+          ["new", unavailable],
+        ]),
+      );
+      yield* test.grantsChanged;
+      expect(yield* grants.visitor(tunnelRequest("new"))).toEqual({
+        _tag: "refused",
+        code: "unavailable",
+      });
+      // The next re-check raises Sam's level; it runs after the one above, so both ran.
+      yield* Ref.set(test.answers, new Map([["sam", person({ app: "admin" })]]));
+      yield* test.grantsChanged;
+      yield* grants.awaitLoss(kept, (latest) => latest.levels.app === "standard");
+      expect(yield* Queue.poll(test.revoked)).toEqual(Option.none());
+    }).pipe(isolated),
+  );
+
+  it.effect("never caches an answer that is older than a grants change", () =>
+    Effect.gen(function* () {
+      const test = yield* harness;
+      yield* Ref.set(test.answers, new Map([["sam", person({ app: "admin" })]]));
+      yield* test.connect;
+      const grants = yield* test.start;
+      // The grants drop to standard while the check that answers admin is on its way.
+      yield* Ref.set(
+        test.duringNextCheck,
+        Ref.set(test.answers, new Map([["sam", person({ app: "standard" })]])).pipe(
+          Effect.andThen(test.grantsChanged),
+        ),
+      );
+      const sam = visitorOf(yield* grants.visitor(tunnelRequest("sam")));
+      expect(sam.levels).toEqual({ app: "standard" });
+      expect(visitorOf(yield* grants.visitor(tunnelRequest("sam"))).levels).toEqual({
+        app: "standard",
+      });
+    }).pipe(isolated),
+  );
+
+  it.effect("skips a re-check answer that is older than the next grants change", () =>
+    Effect.gen(function* () {
+      const test = yield* harness;
+      yield* Ref.set(test.answers, new Map([["sam", person({ app: "standard" })]]));
+      yield* test.connect;
+      const grants = yield* test.start;
+      const sam = visitorOf(yield* grants.visitor(tunnelRequest("sam")));
+      yield* grants.allowsSession(sam, kitshnSession("sam"));
+      // The first re-check answers no-access, but the grants came back while it ran.
+      yield* Ref.set(
+        test.answers,
+        new Map<string, CheckAnswer>([["sam", { refused: { code: "no-access", reason: "gone" } }]]),
+      );
+      yield* Ref.set(
+        test.duringNextCheck,
+        Ref.set(test.answers, new Map([["sam", person({ app: "admin" })]])).pipe(
+          Effect.andThen(test.grantsChanged),
+        ),
+      );
+      yield* test.grantsChanged;
+      // Ends once the second re-check gave admin. The old answer ended no session.
+      yield* grants.awaitLoss(sam, (latest) => latest.levels.app === "standard");
+      expect(yield* Queue.poll(test.revoked)).toEqual(Option.none());
+    }).pipe(isolated),
+  );
+
+  it.effect("asks again a minute after a refusal, which can end without grants-changed", () =>
+    Effect.gen(function* () {
+      const test = yield* harness;
+      yield* Ref.set(
+        test.answers,
+        new Map<string, CheckAnswer>([
+          ["sam", { refused: { code: "stale", reason: "no kitshn" } }],
+        ]),
+      );
+      yield* test.connect;
+      const grants = yield* test.start;
+      const refused = { _tag: "refused", code: "stale" };
+      expect(yield* grants.visitor(tunnelRequest("sam"))).toEqual(refused);
+      const asked = yield* Ref.get(test.checks);
+      expect(yield* grants.visitor(tunnelRequest("sam"))).toEqual(refused);
+      expect(yield* Ref.get(test.checks)).toBe(asked);
+      // kitshn answers again; nothing changed in the tables, so no event comes.
+      yield* Ref.set(test.answers, new Map([["sam", person({ app: "standard" }, 2 * HOUR)]]));
+      yield* TestClock.adjust("1 minute");
+      expect(visitorOf(yield* grants.visitor(tunnelRequest("sam"))).levels).toEqual({
+        app: "standard",
+      });
+    }).pipe(isolated),
+  );
+
+  it.effect("keeps a failed revocation on disk and runs it after a restart", () =>
+    Effect.gen(function* () {
+      const test = yield* harness;
+      yield* Ref.set(test.answers, new Map([["sam", person({ app: "standard" })]]));
+      yield* test.connect;
+      yield* Ref.set(test.revokeFails, true);
       yield* Effect.scoped(
         Effect.gen(function* () {
-          const grants = yield* test.registered;
-          const visitor = (yield* grants.visitor(tunnelRequest(sam)))!;
-          yield* livePush(
-            grants,
-            decodeTables({ app: [grant([{ domain: "example.com" }], "standard")] }),
+          const grants = yield* test.start;
+          const sam = visitorOf(yield* grants.visitor(tunnelRequest("sam")));
+          yield* grants.allowsSession(sam, kitshnSession("sam"));
+          yield* Ref.set(
+            test.answers,
+            new Map<string, CheckAnswer>([
+              ["sam", { refused: { code: "no-access", reason: "no grant" } }],
+            ]),
           );
-          yield* grants.allowsSession(visitor, kitshnSession("saved"));
-          yield* Ref.set(test.revokeFails, true);
-          yield* livePush(grants, {});
+          yield* test.grantsChanged;
+          yield* grants.awaitLoss(sam, () => true);
         }),
       );
       yield* Ref.set(test.revokeFails, false);
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          const restarted = yield* test.start;
-          expect(yield* Queue.take(test.revoked)).toBe("saved");
-          yield* livePush(restarted, decodeTables({ app: [grant([{ everyone: true }], "read")] }));
-        }),
-      );
-      // The table saved before the restart applies until a fresh one arrives.
-      const third = yield* test.start;
-      const visitor = (yield* third.visitor(tunnelRequest(sam)))!;
-      expect(yield* third.level("t3.app", "app", visitor)).toBe("read");
+      yield* test.start;
+      expect(yield* Queue.take(test.revoked)).toBe("sam");
     }).pipe(isolated),
   );
 
-  it.effect("gives another machine its session, agent tools and exec through grants only", () =>
+  it.effect("gives another machine its MCP session and exec by kitshn's answer only", () =>
     Effect.gen(function* () {
       const test = yield* harness;
-      const grants = yield* test.registered;
-      const gate = Effect.provideService(KitshnGrants.KitshnGrants, grants);
-      const vps = { machine: { machineId: PEER, clientId: PEER_TOKEN } };
-      const tables = (app: string, agents: string) =>
-        decodeTables({ app: [grant([vps], app)], agents: [grant([vps], agents)] });
-      const session = {
-        subject: `machine:${PEER}`,
+      yield* Ref.set(
+        test.answers,
+        new Map<string, CheckAnswer>([
+          [
+            "vps-token",
+            {
+              subject: { type: "machine", id: "vps", name: "vps" },
+              levels: { app: "standard" },
+              rights: ["exec"],
+              until: HOUR,
+            },
+          ],
+          [
+            "pi-token",
+            {
+              subject: { type: "machine", id: "pi", name: "pi" },
+              levels: { app: "read" },
+              rights: [],
+              until: HOUR,
+            },
+          ],
+        ]),
+      );
+      yield* test.connect;
+      const grants = yield* test.start;
+      const session = (machine: string) => ({
+        subject: `machine:${machine}`,
         method: "bearer-access-token",
-        scopes: appLevelScopes("standard"),
-      };
-
-      expect(yield* gate(kitshnMachineAllows(PEER, "use"))).toBe(false);
-      yield* livePush(grants, tables("standard", "use"));
-      expect(yield* gate(kitshnMachineAllows(PEER, "use"))).toBe(true);
-      expect(yield* gate(kitshnMachineAllows(PEER, "exec"))).toBe(false);
+        scopes: MACHINE_LEVEL_SCOPES.standard,
+      });
+      const client = yield* kitshnMachineMcpClient(tunnelRequest("vps-token"), session("vps")).pipe(
+        Effect.provideService(KitshnGrants.KitshnGrants, grants),
+      );
+      expect(client).toMatchObject({ machineId: "vps", access: "auto", peerLink: true });
+      // The token of one machine never opens the session of another.
       expect(
-        yield* gate(kitshnMachineMcpClient(tunnelRequest({ commonName: PEER_TOKEN }), session)),
-      ).toMatchObject({ machineId: PEER, access: "auto", peerLink: true });
-      // The session of a machine works only with the JWT of that machine's token.
-      expect(
-        yield* gate(kitshnMachineMcpClient(tunnelRequest({ commonName: "other" }), session)),
+        yield* kitshnMachineMcpClient(tunnelRequest("vps-token"), session("pi")).pipe(
+          Effect.provideService(KitshnGrants.KitshnGrants, grants),
+        ),
       ).toBeUndefined();
-      expect(yield* gate(kitshnMachineMcpClient(localRequest, session))).toBeUndefined();
-
-      yield* livePush(grants, tables("standard", "exec"));
-      expect(yield* gate(kitshnMachineAllows(PEER, "exec"))).toBe(true);
-      // exec also needs t3.app at standard or higher.
-      yield* livePush(grants, tables("read", "exec"));
-      expect(yield* gate(kitshnMachineAllows(PEER, "exec"))).toBe(false);
+      yield* kitshnMachineMcpClient(tunnelRequest("pi-token"), session("pi")).pipe(
+        Effect.provideService(KitshnGrants.KitshnGrants, grants),
+      );
+      expect(yield* grants.machineMayExec("vps")).toBe(true);
+      expect(yield* grants.machineMayExec("pi")).toBe(false);
     }).pipe(isolated),
-  );
-});
-
-describe("kitshnAccessVerifier (K-1623)", () => {
-  const TEAM = "team.cloudflareaccess.com";
-  const PORTAL = { teamDomain: TEAM, aud: "portal-aud" };
-
-  it.effect("accepts kitshn's audiences and the portal's, with kitshn's issuer only", () =>
-    Effect.gen(function* () {
-      const { privateKey, publicKey } = yield* Effect.promise(() => generateKeyPair("RS256"));
-      const jwk = {
-        ...(yield* Effect.promise(() => exportJWK(publicKey))),
-        kid: "k",
-        alg: "RS256",
-      };
-      const getKey = createLocalJWKSet({ keys: [jwk] });
-      const request = (audience: string, issuer = `https://${TEAM}`) =>
-        Effect.promise(() =>
-          new SignJWT({ email: "owner@example.com" })
-            .setProtectedHeader({ alg: "RS256", kid: "k" })
-            .setIssuer(issuer)
-            .setAudience(audience)
-            .setIssuedAt()
-            .setExpirationTime("5m")
-            .sign(privateKey),
-        ).pipe(
-          Effect.map((token) =>
-            HttpServerRequest.fromWeb(
-              new Request("http://127.0.0.1/", { headers: { "cf-access-jwt-assertion": token } }),
-            ),
-          ),
-        );
-      const passes = (
-        verify: ReturnType<typeof KitshnGrants.kitshnAccessVerifier>,
-        audience: string,
-        issuer?: string,
-      ) =>
-        verify === undefined
-          ? Effect.succeed(false)
-          : request(audience, issuer).pipe(
-              Effect.flatMap(verify),
-              Effect.map((claims) => claims !== undefined),
-            );
-      const kitshn = { teamDomain: TEAM, audiences: ["kitshn-aud"] };
-
-      // null: kitshn sent nothing yet; [] : kitshn has no application yet. The portal's holds.
-      for (const access of [null, { ...kitshn, audiences: [] }]) {
-        const verify = KitshnGrants.kitshnAccessVerifier(PORTAL, access, getKey);
-        expect(yield* passes(verify, "portal-aud")).toBe(true);
-        expect(yield* passes(verify, "kitshn-aud")).toBe(false);
-      }
-      expect(KitshnGrants.kitshnAccessVerifier(undefined, null, getKey)).toBeUndefined();
-
-      const verify = KitshnGrants.kitshnAccessVerifier(PORTAL, kitshn, getKey);
-      expect(yield* passes(verify, "kitshn-aud")).toBe(true);
-      expect(yield* passes(verify, "portal-aud")).toBe(true);
-      expect(yield* passes(verify, "other-aud")).toBe(false);
-      expect(yield* passes(verify, "kitshn-aud", "https://evil.cloudflareaccess.com")).toBe(false);
-    }),
   );
 });

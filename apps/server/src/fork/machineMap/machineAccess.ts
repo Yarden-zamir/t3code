@@ -73,4 +73,8 @@ export const manualLinkToolsEnabled = (): boolean => false;
 
 /** MM-1921: the answer to a manual link or unlink, from the CLI, Connections or an agent. */
 export const MANUAL_LINK_REFUSAL =
-  "Links to other machines come from kitshn. The owner shares a machine's T3 app and T3 agents cards with this machine on the kitshn map.";
+  "Links to other machines come from kitshn. The owner shares a machine's T3 app card with this machine on the kitshn map.";
+
+/** K-1609: why no link reaches a machine. */
+export const NO_LINK =
+  "No kitshn link from this machine reaches it. The owner shares the machine's T3 app card with this machine on the kitshn map.";

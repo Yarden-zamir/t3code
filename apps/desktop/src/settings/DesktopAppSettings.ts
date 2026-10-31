@@ -40,10 +40,6 @@ export interface DesktopSettings {
   // Fork: comma-separated https origins that may call the server with cookies
   // while tunnel pairing is on (T3CODE_TRUSTED_BROWSER_ORIGINS).
   readonly trustedBrowserOrigins: string | null;
-  // Fork: Cloudflare Access login (T3CODE_CLOUDFLARE_ACCESS_*). The backend
-  // gets these only while tunnel pairing is on and all three are set.
-  readonly cloudflareAccessTeamDomain: string | null;
-  readonly cloudflareAccessAud: string | null;
   readonly updateChannel: DesktopUpdateChannel;
   readonly updateChannelConfiguredByUser: boolean;
   readonly wslBackendEnabled: boolean;
@@ -85,8 +81,6 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   tunnelPairingEnabled: false,
   tunnelPairingUrl: null,
   trustedBrowserOrigins: null,
-  cloudflareAccessTeamDomain: null,
-  cloudflareAccessAud: null,
   updateChannel: "latest",
   updateChannelConfiguredByUser: false,
   wslBackendEnabled: false,
@@ -112,8 +106,6 @@ const DesktopSettingsDocument = Schema.Struct({
   tunnelPairingEnabled: Schema.optionalKey(Schema.Boolean),
   tunnelPairingUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
   trustedBrowserOrigins: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  cloudflareAccessTeamDomain: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  cloudflareAccessAud: Schema.optionalKey(Schema.NullOr(Schema.String)),
   updateChannel: Schema.optionalKey(DesktopUpdateChannelSchema),
   updateChannelConfiguredByUser: Schema.optionalKey(Schema.Boolean),
   wslBackendEnabled: Schema.optionalKey(Schema.Boolean),
@@ -184,7 +176,6 @@ export class DesktopAppSettings extends Context.Service<
       readonly enabled: boolean;
       readonly url: string | null;
       readonly trustedBrowserOrigins: string | null;
-      readonly cloudflareAccess: CloudflareAccessSettings;
     }) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setUpdateChannel: (
       channel: DesktopUpdateChannel,
@@ -243,26 +234,6 @@ export function normalizeTrustedBrowserOrigins(value: unknown): string | null | 
   return origins.length === 0 ? null : origins.join(",");
 }
 
-export type CloudflareAccessSettings = Pick<
-  DesktopSettings,
-  "cloudflareAccessTeamDomain" | "cloudflareAccessAud"
->;
-
-/** Fork: trimmed text, or null when blank or not a string. */
-export function normalizeSettingText(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
-}
-
-/** Fork: a bare host such as team.cloudflareaccess.com, else null. */
-export function normalizeCloudflareAccessTeamDomain(value: unknown): string | null {
-  const text = normalizeSettingText(value);
-  if (text === null) return null;
-  const url = URL.parse(`https://${text}`);
-  return url !== null && url.host === text && url.username === "" ? text : null;
-}
-
 function normalizeWslDistro(value: unknown): string | null {
   return typeof value === "string" && isValidDistroName(value) ? value : null;
 }
@@ -302,10 +273,6 @@ function normalizeDesktopSettingsDocument(
       parsed.tunnelPairingEnabled === true &&
       normalizeTunnelPairingUrl(parsed.tunnelPairingUrl) !== null,
     trustedBrowserOrigins: normalizeTrustedBrowserOrigins(parsed.trustedBrowserOrigins) ?? null,
-    cloudflareAccessTeamDomain: normalizeCloudflareAccessTeamDomain(
-      parsed.cloudflareAccessTeamDomain,
-    ),
-    cloudflareAccessAud: normalizeSettingText(parsed.cloudflareAccessAud),
     // Fork: the fork publishes only nightly builds, so a saved Stable channel reads as nightly.
     updateChannel: updateChannelConfiguredByUser ? "nightly" : defaultSettings.updateChannel,
     updateChannelConfiguredByUser,
@@ -351,12 +318,6 @@ function toDesktopSettingsDocument(
   }
   if (settings.trustedBrowserOrigins !== defaults.trustedBrowserOrigins) {
     document.trustedBrowserOrigins = settings.trustedBrowserOrigins;
-  }
-  if (settings.cloudflareAccessTeamDomain !== defaults.cloudflareAccessTeamDomain) {
-    document.cloudflareAccessTeamDomain = settings.cloudflareAccessTeamDomain;
-  }
-  if (settings.cloudflareAccessAud !== defaults.cloudflareAccessAud) {
-    document.cloudflareAccessAud = settings.cloudflareAccessAud;
   }
   if (settings.updateChannel !== defaults.updateChannel) {
     document.updateChannel = settings.updateChannel;
@@ -428,22 +389,17 @@ function setTunnelPairing(
     readonly enabled: boolean;
     readonly url: string | null;
     readonly trustedBrowserOrigins: string | null;
-    readonly cloudflareAccess: CloudflareAccessSettings;
   },
 ): DesktopSettings {
-  const { cloudflareAccess } = input;
   return settings.tunnelPairingEnabled === input.enabled &&
     settings.tunnelPairingUrl === input.url &&
-    settings.trustedBrowserOrigins === input.trustedBrowserOrigins &&
-    settings.cloudflareAccessTeamDomain === cloudflareAccess.cloudflareAccessTeamDomain &&
-    settings.cloudflareAccessAud === cloudflareAccess.cloudflareAccessAud
+    settings.trustedBrowserOrigins === input.trustedBrowserOrigins
     ? settings
     : {
         ...settings,
         tunnelPairingEnabled: input.enabled,
         tunnelPairingUrl: input.url,
         trustedBrowserOrigins: input.trustedBrowserOrigins,
-        ...cloudflareAccess,
       };
 }
 

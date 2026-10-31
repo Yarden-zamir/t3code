@@ -67,6 +67,10 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { makeAcpMcpOverAcpBridge, type AcpMcpOverAcpBridge } from "./mcpOverAcpBridge.ts";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import {
+  NO_THREAD_CREDENTIAL,
+  threadCredentialEnvironment,
+} from "@t3tools/provider-core/server/forkThreadCredential";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import {
   applyAcpAgentTerminalUpdate,
@@ -651,7 +655,8 @@ function acpMcpContext(
   self: SelfInvocation,
 ): AcpMcpContext {
   if (session === undefined) {
-    return { servers: [], acpServers: [] };
+    // A server started from an agent shell must not lend that thread's credential.
+    return { servers: [], acpServers: [], processEnvironment: { ...NO_THREAD_CREDENTIAL } };
   }
   // codex-acp 1.2.0 and pi-acp drop injected HTTP servers; bridge through stdio instead.
   return {
@@ -670,9 +675,10 @@ function acpMcpContext(
     acpServers: [{ type: "acp", name: "t3-code", serverId: "t3-code" }],
     endpoint: session.endpoint,
     authorization: session.authorizationHeader,
+    // Known limit: a forked session reuses its source's agent process, so commands that the agent
+    // itself runs keep the source thread's attestation. Revisit if forks get their own process.
     processEnvironment: {
-      T3_ACP_MCP_ENDPOINT: session.endpoint,
-      T3_ACP_MCP_AUTHORIZATION: session.authorizationHeader,
+      ...threadCredentialEnvironment(session),
       T3_ACP_MCP_NODE: self.command,
       ...(self.entrypoint === undefined ? {} : { T3_ACP_MCP_ENTRYPOINT: self.entrypoint }),
     },

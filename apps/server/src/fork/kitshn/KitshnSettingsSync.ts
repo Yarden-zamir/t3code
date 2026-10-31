@@ -4,6 +4,7 @@
  * then its own part over it, to its server settings, themes and keybindings. The clients read the
  * client values from `clientSettings`.
  */
+import type { DesiredParts } from "@kitshn/local";
 import {
   KEYBINDINGS_SETTING_KEY,
   type MachineMapClientState,
@@ -18,12 +19,14 @@ import {
 } from "@t3tools/contracts";
 import { stableStringify } from "@t3tools/shared/relaySigning";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
@@ -36,12 +39,14 @@ import {
   THEME_SETTING_KEYS,
   withSharedThemes,
 } from "../machineMap/themeSync.ts";
-import { type DesiredParts, grantCount } from "./kitshnProviderProtocol.ts";
+import * as KitshnConnection from "./KitshnConnection.ts";
 import * as KitshnGrants from "./KitshnGrants.ts";
 import * as KitshnProvider from "./KitshnProvider.ts";
 
 const decodePatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 const CLIENT_STATE_REFRESH = Duration.seconds(30);
+// K-709: the daemon waits up to 60 seconds for kitshn, then the `desired` event echoes the rev.
+const STORE_WAIT = Duration.seconds(65);
 const encodeServerSettings = Schema.encodeEffect(ServerSettingsSchema);
 const decodePart = Schema.decodeUnknownOption(ScopedSettingValues);
 
@@ -89,8 +94,51 @@ export interface SettingChange {
   readonly value: unknown;
 }
 
+/**
+ * K-709: sets one part of `t3.settings` and waits until kitshn stored it: the next `desired` event
+ * of the kind echoes the `rev` of this set.
+ */
+const storeSettingsPart = (
+  kitshn: KitshnConnection.KitshnConnection["Service"],
+  rev: string,
+  part: "machine" | "shared",
+  value: unknown,
+) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const subscription = yield* kitshn.subscribe;
+      yield* kitshn.request({
+        type: "desired-set",
+        provider: KitshnProvider.PROVIDER_NAME,
+        kind: KitshnProvider.SETTINGS_KIND,
+        part,
+        value,
+        rev,
+      });
+      const echoed = yield* PubSub.take(subscription).pipe(
+        Effect.repeat({
+          until: (event) =>
+            event.type === "desired" &&
+            event.kind === KitshnProvider.SETTINGS_KIND &&
+            event.rev === rev,
+        }),
+        Effect.timeoutOption(STORE_WAIT),
+      );
+      if (Option.isNone(echoed)) {
+        return yield* new KitshnConnection.KitshnRequestError({
+          message:
+            "kitshn took the setting but did not confirm that it stored it. Check it again later.",
+        });
+      }
+    }),
+  );
+
 /** K-709: the rule and the write of `KitshnSettingsSync.setOne`, on this provider connection. */
-export const makeSetOne = (provider: KitshnProvider.KitshnProvider["Service"]) =>
+export const makeSetOne = (
+  provider: Pick<KitshnProvider.KitshnProvider["Service"], "state">,
+  kitshn: KitshnConnection.KitshnConnection["Service"],
+  newRev: Effect.Effect<string>,
+) =>
   Effect.fn("KitshnSettingsSync.setOne")(function* (change: SettingChange, by: "owner" | "agent") {
     if (isMachineLocalSetting(change.scope, change.key)) {
       return yield* new KitshnSettingRefused({
@@ -113,15 +161,9 @@ export const makeSetOne = (provider: KitshnProvider.KitshnProvider["Service"]) =
       ...before,
       [change.scope]: change.value === undefined ? rest : { ...rest, [change.key]: change.value },
     };
-    yield* provider
-      .request({
-        type: "desired-set",
-        provider: "t3",
-        kind: KitshnProvider.SETTINGS_KIND,
-        part: change.part,
-        value: next,
-      })
-      .pipe(Effect.mapError((error) => new KitshnSettingRefused({ message: error.message })));
+    yield* storeSettingsPart(kitshn, yield* newRev, change.part, next).pipe(
+      Effect.mapError((error) => new KitshnSettingRefused({ message: error.message })),
+    );
   });
 
 export class KitshnSettingsSync extends Context.Service<
@@ -153,7 +195,11 @@ export class KitshnSettingsSync extends Context.Service<
 
 const make = Effect.gen(function* () {
   const provider = yield* KitshnProvider.KitshnProvider;
+  const kitshn = yield* KitshnConnection.KitshnConnection;
   const grants = yield* KitshnGrants.KitshnGrants;
+  const crypto = yield* Crypto.Crypto;
+  // K-709: a set's mark only needs to differ from the other sets of this server.
+  const newRev = crypto.randomUUIDv4().pipe(Effect.orDie);
   const settings = yield* ServerSettings.ServerSettingsService;
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -256,36 +302,28 @@ const make = Effect.gen(function* () {
     Effect.provideService(Path.Path, path),
   );
 
-  // The grants, the link proxy and the last contact change without an event of their own, so a
-  // tick reads them again; the dedupe below sends only a real change.
+  // The machine and the link proxy change without an event of their own, so a tick reads them
+  // again; the dedupe below sends only a real change.
   const clientState: KitshnSettingsSync["Service"]["clientState"] = Stream.zipLatestAll(
     provider.state,
-    provider.hostNotice,
     provider.connection,
     Stream.tick(CLIENT_STATE_REFRESH),
   ).pipe(
-    Stream.mapEffect(([state, hostNotWithKitshn, connection]) =>
-      Effect.all([
-        grants.active,
-        grants.machine,
-        grants.state,
-        grants.paused,
-        provider.linkProxyState,
-      ]).pipe(
-        Effect.map(([joined, machine, grantState, paused, linkProxy]): MachineMapClientState => ({
+    Stream.mapEffect(([state, connection]) =>
+      Effect.all([grants.active, grants.machine, provider.linkSocket]).pipe(
+        Effect.map(([joined, machine, linkSocket]): MachineMapClientState => ({
           joined,
           machine,
           settings: effectiveSettings(state.settings),
-          hostNotWithKitshn,
           connection: {
             status: connection.status,
             detail: connection.detail,
             restartedAt: connection.status === "registered" ? connection.restartedAt : null,
-            grants: grantCount(grantState.tables),
             reachedMachines: new Set(state.reach.map((card) => card.machineId)).size,
-            linkProxy,
-            lastContactAt: grantState.lastContactAt,
-            paused,
+            linkProxy: linkSocket !== null,
+            syncedAt: state.syncedAt,
+            paused: state.paused,
+            problems: state.problems,
           },
         })),
       ),
@@ -302,22 +340,19 @@ const make = Effect.gen(function* () {
         Option.flatMap(state, (value) => decodePart(value.settings?.shared ?? null)),
         () => ({ server: {}, client: {} }),
       );
-      return yield* provider
-        .request({
-          type: "desired-set",
-          provider: "t3",
-          kind: KitshnProvider.SETTINGS_KIND,
-          part: "shared",
-          value: sharedPartAfterShare(shared, current, input),
-        })
-        .pipe(
-          Effect.as({ shared: true }),
-          Effect.catch((error) =>
-            Effect.logWarning("kitshn settings: could not share the settings.", {
-              cause: error.message,
-            }).pipe(Effect.as({ shared: false })),
-          ),
-        );
+      return yield* storeSettingsPart(
+        kitshn,
+        yield* newRev,
+        "shared",
+        sharedPartAfterShare(shared, current, input),
+      ).pipe(
+        Effect.as({ shared: true }),
+        Effect.catch((error) =>
+          Effect.logWarning("kitshn settings: could not share the settings.", {
+            cause: error.message,
+          }).pipe(Effect.as({ shared: false })),
+        ),
+      );
     },
     Effect.provideService(FileSystem.FileSystem, fileSystem),
     Effect.provideService(Path.Path, path),
@@ -328,7 +363,7 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  const setOne = makeSetOne(provider);
+  const setOne = makeSetOne(provider, kitshn, newRev);
 
   return KitshnSettingsSync.of({ run, clientState, share, setOne });
 });

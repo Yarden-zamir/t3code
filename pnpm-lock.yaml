@@ -188,6 +188,9 @@ catalogs:
     '@effect/sql-sqlite-do':
       specifier: 4.0.5
       version: 4.0.5
+    '@kitshn/local':
+      specifier: https://github.com/Yarden-zamir/kitshn/releases/download/edge-7bc03835dd22/kitshn-local.tgz
+      version: https://github.com/Yarden-zamir/kitshn/releases/download/edge-7bc03835dd22/kitshn-local.tgz
     '@noble/curves':
       specifier: 1.9.1
       version: 1.9.1
@@ -853,6 +856,9 @@ importers:
       '@ff-labs/fff-node':
         specifier: 0.11.0
         version: 0.11.0(patch_hash=cc71fcec015f4d39bc96ae2e2bf6b0ca678124c722c66a7841efce9d34b5983c)
+      '@kitshn/local':
+        specifier: 'catalog:'
+        version: https://github.com/Yarden-zamir/kitshn/releases/download/edge-7bc03835dd22/kitshn-local.tgz(effect@4.0.5)
       '@muse-code/sdk':
         specifier: 1.4.6
         version: 1.4.6(patch_hash=7b495b607fc5d76b444c7c4d58821e839726a30e6f3c53564f0d59f2d5b42101)(@types/node@24.12.4)
@@ -4833,6 +4839,12 @@ packages:
   '@js-temporal/polyfill@0.5.1':
     resolution: {integrity: sha512-hloP58zRVCRSpgDxmqCWJNlizAlUgJFqG2ypq79DCvyv9tHjRYMDOcPFjzfl/A1/YxDvRCZz8wvZvmapQnKwFQ==}
     engines: {node: '>=12'}
+
+  '@kitshn/local@https://github.com/Yarden-zamir/kitshn/releases/download/edge-7bc03835dd22/kitshn-local.tgz':
+    resolution: {integrity: sha512-nzun0PQOGrXFQXCGJyXsJdqiz6StvaD+8O8Uhcyyx1+muyPF+jky2+uWx+mqq29z+hWvtKeKMvAcjhqMBYlgBA==, tarball: https://github.com/Yarden-zamir/kitshn/releases/download/edge-7bc03835dd22/kitshn-local.tgz}
+    version: 0.0.0-edge.7bc03835dd22
+    peerDependencies:
+      effect: 4.0.5
 
   '@legendapp/list@3.3.5':
     resolution: {integrity: sha512-XTsLYtpg41SVb5uLBYA+YcDSA3w0tgoPq/W8ZggQ2tx+3lrC/rf+ehTP9KYHea9oFaZIuePAgzACs5/auVMJlQ==}
@@ -14912,6 +14924,10 @@ snapshots:
   '@js-temporal/polyfill@0.5.1':
     dependencies:
       jsbi: 4.3.2
+
+  '@kitshn/local@https://github.com/Yarden-zamir/kitshn/releases/download/edge-7bc03835dd22/kitshn-local.tgz(effect@4.0.5)':
+    dependencies:
+      effect: 4.0.5
 
   '@legendapp/list@3.3.5(patch_hash=6cbdacd8c380d9a5afb9f73d4198dc2cc44be6ef28a955b1183c781469307896)(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)':
     dependencies:

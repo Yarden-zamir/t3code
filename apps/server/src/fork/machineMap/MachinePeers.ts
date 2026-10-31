@@ -1,7 +1,8 @@
 /**
  * Fork: this server as a client of other machines through kitshn links (K-1609): a link to B holds
- * while the reach has B's `t3.app` and `t3.agents` cards. Calls go through the daemon's link proxy,
- * which adds this machine's token. Upstream `PeerLinks` and `PeerMcpClient` run over the links.
+ * while the reach has B's `t3.app` card. Calls go through the daemon's link proxy, which adds this
+ * machine's token. Upstream `PeerLinks` and `PeerMcpClient` run over the links. Commands on B go
+ * through kitshn instead (`MachineExec`, K-722).
  */
 import * as NodeModule from "node:module";
 
@@ -15,12 +16,7 @@ import {
   AuthTokenExchangeGrantType,
   EnvironmentId,
   ExecutionEnvironmentDescriptor,
-  MACHINE_EXEC_STREAM_PATH,
-  type MachineExecInput,
-  MachineExecResult,
-  type MachineExecStreamStart,
   MachineId,
-  type OrchestratorMcpFailure,
   type PeerLink,
   PeerLinkError,
   type PeerLinkSummary,
@@ -29,14 +25,10 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
-import * as Schema from "effect/Schema";
-import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as Socket from "effect/socket/Socket";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
@@ -44,22 +36,20 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import type * as UndiciModule from "undici";
 
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
-import type * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as PeerLinks from "../../peer/PeerLinks.ts";
 import * as PeerMcpClient from "../../peer/PeerMcpClient.ts";
-import { execName } from "../kitshn/KitshnAudit.ts";
-import * as KitshnAudit from "../kitshn/KitshnAudit.ts";
+import type { ReachedCard } from "@kitshn/local";
+
 import * as KitshnGrants from "../kitshn/KitshnGrants.ts";
-import { PROVIDER_NAME, type ReachedCard } from "../kitshn/kitshnProviderProtocol.ts";
+import { PROVIDER_NAME } from "../kitshn/KitshnProvider.ts";
 import * as KitshnProvider from "../kitshn/KitshnProvider.ts";
 import {
   CLI_LOCAL_USER_REFUSAL,
   isCliLocalUser,
   isMachineRequestNamespace,
   MANUAL_LINK_REFUSAL,
+  NO_LINK,
 } from "./machineAccess.ts";
-import { historyCaller, requireMachineExecCaller } from "./machineCallerAccess.ts";
-import { type ExecSocket, openExecSocket, streamUrl } from "./machineExecStream.ts";
 
 // undici is external to the CLI bundle; a Node single-executable loads it from disk only with require.
 const Undici = NodeModule.createRequire(import.meta.url)("undici") as typeof UndiciModule;
@@ -109,23 +99,25 @@ const REQUEST_TIMEOUT = Duration.seconds(15);
 const DESCRIPTOR_TIMEOUT = Duration.seconds(5);
 const NO_EXPIRY = DateTime.makeUnsafe(ARROW_LINK_NO_EXPIRY);
 
-export class MachinePeerError extends Schema.TaggedError<MachinePeerError>()("MachinePeerError", {
-  reason: Schema.Literals([
-    "no-links",
-    "unknown-machine",
-    "no-exec",
-    "caller-refused",
-    "unreachable",
-  ]),
-  /** A message safe to show to the agent. */
-  detail: Schema.String,
-  /** MM-1908: the machine that the call was for, once the call named one in the reach. */
-  target: Schema.optional(MachineId),
-}) {
-  override get message(): string {
-    return this.detail;
-  }
-}
+/**
+ * K-1609, K-1610: the tool that a link call is for. The link proxy records it from the
+ * `Kitshn-Audit-Name` header and drops the header; the call never names its arguments.
+ */
+export const KitshnAuditName = Context.Reference<string | undefined>(
+  "t3/fork/machineMap/KitshnAuditName",
+  { defaultValue: () => undefined },
+);
+const AUDIT_NAME_HEADER = "kitshn-audit-name";
+
+/** A link call with the tool name that `KitshnAuditName` holds, if any. */
+export const withAuditName = Effect.fnUntraced(function* (
+  request: HttpClientRequest.HttpClientRequest,
+) {
+  const name = yield* KitshnAuditName;
+  return name === undefined
+    ? request
+    : HttpClientRequest.setHeader(request, AUDIT_NAME_HEADER, name);
+});
 
 interface PeerSession {
   readonly accessToken: string;
@@ -138,29 +130,9 @@ export interface ReadableEnvironment {
   readonly name: string;
 }
 
-type CallerServices =
-  | McpInvocationContext.McpInvocationContext
-  | ThreadManagement.ThreadManagementService;
-
 export class MachinePeers extends Context.Service<
   MachinePeers,
   {
-    /** MM-1908: `machine_exec` on a machine whose link allows exec. B checks its grants again. */
-    readonly exec: (
-      input: MachineExecInput,
-    ) => Effect.Effect<
-      MachineExecResult,
-      MachinePeerError | OrchestratorMcpFailure,
-      CallerServices
-    >;
-    /** MM-1919: opens the exec stream of `t3 machine exec`, with the same checks as `exec`. */
-    readonly openExec: (
-      input: MachineExecStreamStart,
-    ) => Effect.Effect<
-      ExecSocket,
-      MachinePeerError | OrchestratorMcpFailure,
-      CallerServices | Scope.Scope
-    >;
     /** MM-1907: the linked machines that answer now, with their environment ids. */
     readonly readableEnvironments: Effect.Effect<ReadonlyArray<ReadableEnvironment>>;
     /** MM-1922: the machine that answered as this environment id, once a lookup reached it. */
@@ -168,14 +140,12 @@ export class MachinePeers extends Context.Service<
   }
 >()("t3/fork/machineMap/MachinePeers") {}
 
-/** K-1609: one link from the reach: B's `t3.app` and `t3.agents` cards. */
+/** K-1609: one link from the reach: B's `t3.app` card. */
 export interface LinkTarget {
   readonly machine: { readonly id: MachineId; readonly name: string };
   /** K-1609: the link proxy address of B, `/<provider>/<machine id>`, on the daemon's socket. */
   readonly origin: string;
   readonly access: AuthMcpClientAccess;
-  /** `t3.agents` at exec, and `t3.app` at use or control (MM-1908). */
-  readonly exec: boolean;
 }
 
 /** The `t3.app` level names, by kitshn level or provider level, and their link access (MM-302). */
@@ -188,28 +158,19 @@ const LINK_ACCESS: Readonly<Record<string, AuthMcpClientAccess>> = {
   admin: "full-access",
 };
 
-/** K-1609: the links of a reach. A machine without both cards has no link. */
-export const linkTargets = (reach: ReadonlyArray<ReachedCard>): ReadonlyArray<LinkTarget> => {
-  const machines = new Map<string, { app?: ReachedCard; agents?: ReachedCard }>();
-  for (const card of reach) {
-    const entry = machines.get(card.machineId) ?? {};
-    if (card.kind === "t3.app") entry.app = card;
-    if (card.kind === "t3.agents") entry.agents = card;
-    machines.set(card.machineId, entry);
-  }
-  return [...machines].flatMap(([machineId, { app, agents }]) => {
-    const access = app === undefined ? undefined : LINK_ACCESS[app.level];
-    if (app === undefined || agents === undefined || access === undefined) return [];
+/** K-1609: the links of a reach: one per machine whose `t3.app` card this machine reaches. */
+export const linkTargets = (reach: ReadonlyArray<ReachedCard>): ReadonlyArray<LinkTarget> =>
+  reach.flatMap((card) => {
+    const access = card.kind === "t3.app" ? LINK_ACCESS[card.level] : undefined;
+    if (access === undefined) return [];
     return [
       {
-        machine: { id: MachineId.make(machineId), name: app.machineName },
-        origin: `http://link/${PROVIDER_NAME}/${encodeURIComponent(machineId)}`,
+        machine: { id: MachineId.make(card.machineId), name: card.machineName },
+        origin: `http://link/${PROVIDER_NAME}/${encodeURIComponent(card.machineId)}`,
         access,
-        exec: agents.level === "exec" && access !== "read-only",
       },
     ];
   });
-};
 
 /** What the descriptor of a linked machine says. */
 interface PeerIdentity {
@@ -222,14 +183,6 @@ interface Link extends PeerIdentity {
   readonly target: LinkTarget;
   readonly answered: boolean;
 }
-
-/** A refused WebSocket upgrade: the session of this machine on B ended. */
-const refusedUpgrade = (cause: unknown) =>
-  Predicate.isTagged(cause, "SocketError") &&
-  Predicate.hasProperty(cause, "reason") &&
-  Predicate.hasProperty(cause.reason, "cause") &&
-  Predicate.hasProperty(cause.reason.cause, "message") &&
-  String(cause.reason.cause.message).includes("401");
 
 /**
  * MM-1921: the environment id of a link whose machine has not answered since this server started.
@@ -244,8 +197,6 @@ const machineOfUnanswered = (environmentId: EnvironmentId) =>
     : undefined;
 const notAnswered = (target: LinkTarget) =>
   `${target.machine.name} has not answered since this server started. It may be offline, or run a T3 Code version without kitshn links.`;
-const NO_LINK =
-  "No kitshn link from this machine reaches it. The owner shares the machine's T3 app and T3 agents cards with this machine on the kitshn map.";
 
 const describeFailure = (cause: unknown): string => {
   if (HttpClientError.isHttpClientError(cause)) {
@@ -257,7 +208,6 @@ const describeFailure = (cause: unknown): string => {
 const make = Effect.gen(function* () {
   const provider = yield* KitshnProvider.KitshnProvider;
   const grants = yield* KitshnGrants.KitshnGrants;
-  const audit = yield* KitshnAudit.KitshnAudit;
   // One session per linked machine. B ends it when the grants of this machine change (K-706);
   // the link client then pairs again once.
   const sessions = new Map<string, PeerSession>();
@@ -270,16 +220,15 @@ const make = Effect.gen(function* () {
     { readonly lastReachedAt: DateTime.Utc | null; readonly lastError: string | null }
   >();
 
-  /** The reach and the link proxy now; no proxy (Windows for now) means no links, not an error. */
-  const current = Effect.all([
-    provider.state.pipe(Stream.runHead),
-    provider.linkSocket,
-    grants.paused,
-  ]).pipe(
-    Effect.map(([state, socket, paused]) =>
+  /**
+   * The reach and the link proxy now; no proxy (Windows for now) means no links, not an error. A
+   * kitshn pause empties the reach (K-721).
+   */
+  const current = Effect.all([provider.state.pipe(Stream.runHead), provider.linkSocket]).pipe(
+    Effect.map(([state, socket]) =>
       socket === null || Option.isNone(state)
-        ? { targets: [] as ReadonlyArray<LinkTarget>, socket: null, paused }
-        : { targets: paused ? [] : linkTargets(state.value.reach), socket, paused },
+        ? { targets: [] as ReadonlyArray<LinkTarget>, socket: null }
+        : { targets: linkTargets(state.value.reach), socket },
     ),
   );
 
@@ -296,16 +245,7 @@ const make = Effect.gen(function* () {
                 }),
               }),
             )
-          : socketClient(socket)
-              .execute(request)
-              .pipe(
-                // A connection error: the next use checks the socket with `kitshn link-check` again.
-                Effect.tapError((error) =>
-                  error.reason._tag === "TransportError"
-                    ? provider.linkSocketFailed(socket)
-                    : Effect.void,
-                ),
-              ),
+          : withAuditName(request).pipe(Effect.flatMap(socketClient(socket).execute)),
       ),
     );
 
@@ -619,175 +559,6 @@ const make = Effect.gen(function* () {
     PeerMcpClient.PeerMcpClient,
   );
 
-  /** A linked machine by id or name. */
-  const resolvePeer = Effect.fn("MachinePeers.resolvePeer")(function* (machine: string) {
-    const { targets, socket, paused } = yield* current;
-    if (paused) {
-      return yield* new MachinePeerError({
-        reason: "no-links",
-        detail: `No link to ${machine}: kitshn's emergency pause is on.`,
-      });
-    }
-    if (socket === null) {
-      return yield* new MachinePeerError({
-        reason: "no-links",
-        detail: `No link to ${machine}: this machine has no checked kitshn link proxy now.`,
-      });
-    }
-    const wanted = machine.trim().toLowerCase();
-    const target = targets.find(
-      (candidate) =>
-        candidate.machine.id === machine || candidate.machine.name.toLowerCase() === wanted,
-    );
-    if (target === undefined) {
-      return yield* new MachinePeerError({
-        reason: "unknown-machine",
-        detail: `No machine named "${machine}" is linked: ${NO_LINK}`,
-      });
-    }
-    return { target, socket };
-  });
-
-  /** MM-1908: the checks of this machine before a command goes to a peer. */
-  const admitExec = Effect.fn("MachinePeers.admitExec")(function* (machine: string) {
-    const resolved = yield* resolvePeer(machine);
-    const refused = (reason: MachinePeerError["reason"], detail: string) =>
-      new MachinePeerError({ reason, detail, target: resolved.target.machine.id });
-    // One read of the caller: its limits go out with the call (`T3-Mode-Limit`).
-    const { limits } = yield* requireMachineExecCaller().pipe(
-      Effect.mapError((failure) => refused("caller-refused", failure.message)),
-    );
-    if (!resolved.target.exec) {
-      return yield* refused(
-        "no-exec",
-        `The link to ${resolved.target.machine.name} does not allow exec. It needs its T3 agents card at exec and its T3 app card at use or control, shared with this machine on the kitshn map.`,
-      );
-    }
-    const link = (yield* looks(false)).links.find(
-      (candidate) => candidate.target.machine.id === resolved.target.machine.id,
-    );
-    if (link === undefined) {
-      return yield* refused("unreachable", `${resolved.target.machine.name} does not answer now.`);
-    }
-    const caller = yield* historyCaller();
-    return { resolved, refused, limits, link, caller };
-  });
-
-  /** K-1610: this machine reports each run on another machine; the target reports nothing. */
-  const reportExec = (
-    input: { readonly command: string; readonly cwd?: string | undefined },
-    target: MachineId,
-    outcome: "succeeded" | "refused" | "failed",
-    exitCode: number | null,
-  ) =>
-    historyCaller().pipe(
-      Effect.flatMap((caller) =>
-        audit.report({
-          kind: "exec",
-          target,
-          thread: caller.threadId,
-          name: execName(input.command),
-          cwd: input.cwd ?? null,
-          outcome,
-          exitCode,
-        }),
-      ),
-    );
-  const reportRefusal =
-    (input: { readonly command: string; readonly cwd?: string | undefined }) =>
-    (error: MachinePeerError) =>
-      error.target === undefined
-        ? Effect.void
-        : reportExec(
-            input,
-            error.target,
-            error.reason === "unreachable" ? "failed" : "refused",
-            null,
-          );
-
-  const exec: MachinePeers["Service"]["exec"] = Effect.fn("MachinePeers.exec")(function* (input) {
-    const { resolved, limits, link, caller } = yield* admitExec(input.machine).pipe(
-      Effect.tapError(reportRefusal(input)),
-    );
-    const { caller: _ignored, ...command } = input;
-    return yield* peerMcp
-      .call({
-        environmentId: link.environmentId,
-        tool: "machine_exec",
-        arguments: { ...command, machine: resolved.target.machine.id, caller },
-        limits,
-        success: MachineExecResult,
-      })
-      .pipe(
-        Effect.onExit((exit) =>
-          Exit.isSuccess(exit)
-            ? reportExec(
-                input,
-                resolved.target.machine.id,
-                exit.value.outcome === "exited" ? "succeeded" : "failed",
-                exit.value.exitCode,
-              )
-            : reportExec(input, resolved.target.machine.id, "failed", null),
-        ),
-      );
-  });
-
-  const openExec: MachinePeers["Service"]["openExec"] = Effect.fn("MachinePeers.openExec")(
-    function* (input) {
-      const { resolved, refused, limits, link, caller } = yield* admitExec(input.machine).pipe(
-        Effect.tapError(reportRefusal(input)),
-      );
-      // Known limit: a stream is reported when it opens, without its exit code. Revisit when the
-      // stream end reaches this machine as a frame that names the exit code.
-      yield* reportExec(input, resolved.target.machine.id, "succeeded", null);
-      const dispatcher = dispatcherFor(resolved.socket);
-      // The stream goes through the link proxy too, as undici WebSocket on its dispatcher.
-      const makeWebSocket: Socket.WebSocketConstructor["Service"] = (url, options) =>
-        new Undici.WebSocket(url, {
-          dispatcher,
-          ...(typeof options === "object" &&
-          !Array.isArray(options) &&
-          options.headers !== undefined
-            ? { headers: { ...options.headers } }
-            : {}),
-        }) as unknown as Socket.WebSocketLike;
-      const open = peerLinks.resolve(link.environmentId).pipe(
-        Effect.flatMap((target) =>
-          openExecSocket(streamUrl(target.url, MACHINE_EXEC_STREAM_PATH), {
-            authorization: `Bearer ${target.token}`,
-            [McpInvocationContext.MODE_LIMIT_HEADER]: `${limits.runtimeMode}/${limits.interactionMode}`,
-          }),
-        ),
-        Effect.provideService(Socket.WebSocketConstructor, makeWebSocket),
-      );
-      // B ends the sessions of this machine when its grants change, so a refused upgrade pairs
-      // again once.
-      const socket = yield* open.pipe(
-        Effect.catchIf(refusedUpgrade, () =>
-          Effect.sync(() => sessions.delete(resolved.target.machine.id)).pipe(Effect.andThen(open)),
-        ),
-        Effect.mapError((cause) =>
-          refused(
-            "unreachable",
-            `${resolved.target.machine.name} did not open the exec stream: ${cause.message}`,
-          ),
-        ),
-      );
-      const { caller: _ignored, type: _start, ...command } = input;
-      yield* socket
-        .message({ type: "start", ...command, machine: resolved.target.machine.id, caller })
-        .pipe(
-          Effect.mapError((cause) =>
-            refused(
-              "unreachable",
-              `${resolved.target.machine.name} closed the exec stream: ${cause.message}`,
-            ),
-          ),
-        );
-      return socket;
-    },
-  );
-
   const readableEnvironments: MachinePeers["Service"]["readableEnvironments"] = looks(false).pipe(
     Effect.map(({ links }) =>
       links.map((link) => ({
@@ -802,8 +573,6 @@ const make = Effect.gen(function* () {
   return Context.make(
     MachinePeers,
     MachinePeers.of({
-      exec,
-      openExec,
       readableEnvironments,
       machineOf: (environmentId) => machineOfEnvironment.get(environmentId),
     }),

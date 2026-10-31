@@ -1,18 +1,24 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId, type MachineCommandInput } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type MachineCommandInput,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Sink from "effect/Sink";
-import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/process";
@@ -22,24 +28,24 @@ import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ForkUpdates from "../ForkUpdates.ts";
 import * as MachineHost from "../machineMap/MachineHost.ts";
+import * as ThreadIdentity from "../ThreadIdentity.ts";
 import * as KitshnCli from "./KitshnCli.ts";
-import * as KitshnGrants from "./KitshnGrants.ts";
+import * as KitshnConnection from "./KitshnConnection.ts";
+import { registerAnswer } from "./KitshnConnection.testkit.ts";
 import { threadResourceId } from "./kitshnGrantRules.ts";
-import type { GrantTables } from "./kitshnProviderProtocol.ts";
 import * as KitshnProvider from "./KitshnProvider.ts";
 import type { SharedThread } from "./sharedThreads.ts";
 
 interface FakeChild {
   readonly args: ReadonlyArray<string>;
-  /** The requests that T3 wrote to stdin, parsed. */
+  /** The lines that T3 wrote to stdin, parsed. */
   readonly written: Queue.Queue<Record<string, unknown>>;
   readonly say: (line: string | object) => Effect.Effect<void>;
   readonly exit: (code: number) => Effect.Effect<void>;
   readonly stopped: Deferred.Deferred<void>;
 }
 
-/** The daemon answers `samples` itself; while `answersSamples` is false, the child is stuck. */
-const makeChild = (args: ReadonlyArray<string>, answersSamples: Ref.Ref<boolean>) =>
+const makeChild = (args: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const stdout = yield* Queue.unbounded<string, Cause.Done>();
     const written = yield* Queue.unbounded<Record<string, unknown>>();
@@ -57,16 +63,7 @@ const makeChild = (args: ReadonlyArray<string>, answersSamples: Ref.Ref<boolean>
             .decode(chunk)
             .split("\n")
             .filter((line) => line !== ""),
-          (line) =>
-            Effect.gen(function* () {
-              const request = JSON.parse(line) as Record<string, unknown>;
-              if (request.type === "samples" && (yield* Ref.get(answersSamples))) {
-                const newest = { at: 0, cpu: 0, memory: 0, disk: 0 };
-                const answer = { id: request.id, type: "samples", newest, history: [] };
-                return yield* Queue.offer(stdout, `${JSON.stringify(answer)}\n`);
-              }
-              return yield* Queue.offer(written, request);
-            }),
+          (line) => Queue.offer(written, JSON.parse(line) as Record<string, unknown>),
           { discard: true },
         ),
       ),
@@ -94,38 +91,33 @@ const RESULTS: Partial<Record<MachineCommandInput["_tag"], MachineHost.CommandOu
   restartServer: { ok: true, result: { restarting: true }, error: null, restartAfterReply: true },
 };
 
-const GRANT = {
-  circle: {
-    id: "c",
-    name: "Team",
-    match: "any",
-    needsPasskey: false,
-    rules: [{ everyone: true }, { passkeyGroup: "future rule type" }],
-  },
-  level: "read",
-  endsAt: null,
-};
+const IDENTITY = {
+  active: true,
+  threadId: ThreadId.make("thread-1"),
+  threadTitle: "Fix the build",
+  projectId: ProjectId.make("project-1"),
+  projectName: "t3code",
+  environmentId: EnvironmentId.make("environment:kitshn"),
+  providerInstanceId: ProviderInstanceId.make("codex"),
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  subagent: false,
+  parentThreadId: null,
+  parentEnvironmentId: null,
+  checkedAt: "2026-10-30T00:00:00.000Z",
+} as const;
 
-const GRANT_DECODED = {
-  ...GRANT,
-  circle: { ...GRANT.circle, rules: [{ everyone: true }, { unknown: "passkeyGroup" }] },
-};
-
-const setup = (options: { readonly installed?: boolean } = {}) =>
+const setup = (options: { readonly installed?: boolean; readonly switchOff?: boolean } = {}) =>
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     const children = yield* Queue.unbounded<FakeChild>();
     const binaryCalls = yield* Queue.unbounded<void>();
     const ran = yield* Queue.unbounded<string>();
     const restarted = yield* Deferred.make<void>();
-    const tables = yield* Ref.make<GrantTables | null>(null);
     const shared = yield* Ref.make<ReadonlyArray<SharedThread>>([]);
-    const machine = yield* Ref.make<KitshnGrants.KitshnMachine | null>(null);
-    const linkChecks = yield* Queue.unbounded<string>();
-    const linkCheckExit = yield* Ref.make(0);
     const channels = yield* Queue.unbounded<string>();
-    const contacts = yield* Ref.make(0);
-    const answersSamples = yield* Ref.make(true);
+    const connection = yield* KitshnConnection.make;
+    const events = yield* connection.subscribe;
 
     const layer = Layer.effect(
       KitshnProvider.KitshnProvider,
@@ -133,29 +125,9 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
     ).pipe(
       Layer.provide(
         Layer.mergeAll(
-          Layer.mock(KitshnGrants.KitshnGrants)({
-            replaceTables: (next) => Ref.set(tables, next),
-            contact: Ref.update(contacts, (count) => count + 1),
-            machine: Ref.get(machine),
-            setMachine: (next) => Ref.set(machine, next),
-            setPeerOrigins: () => Effect.void,
-            setAccess: () => Effect.void,
-            trustsPeerOrigin: () => false,
-            peerOrigins: () => [],
-          }),
-          Layer.succeed(ServerConfig.ServerConfig, {
-            ...config,
-            devUrl: undefined,
-            baseDir: "/home/owner/.t3",
-            port: 3773,
-            tunnelPairingUrl: "https://t3-studio.example.com",
-          }),
+          Layer.succeed(KitshnConnection.KitshnConnection, connection),
+          Layer.succeed(ServerConfig.ServerConfig, { ...config, devUrl: undefined, port: 3773 }),
           Layer.mock(KitshnCli.KitshnCli)({
-            linkCheck: (socket) =>
-              Queue.offer(linkChecks, socket).pipe(
-                Effect.andThen(Ref.get(linkCheckExit)),
-                Effect.map((exitCode) => ({ exitCode, stdout: "", stderr: "not this account" })),
-              ),
             binary: Queue.offer(binaryCalls, undefined).pipe(
               Effect.andThen(
                 options.installed === false
@@ -175,7 +147,6 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
               Effect.gen(function* () {
                 const { handle, child } = yield* makeChild(
                   command._tag === "StandardCommand" ? command.args : [],
-                  answersSamples,
                 );
                 yield* Effect.addFinalizer(() => Deferred.succeed(child.stopped, undefined));
                 yield* Queue.offer(children, child);
@@ -203,6 +174,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
                 ran,
                 `${commandId} ${input._tag}${"sessionId" in input ? ` ${input.sessionId}` : ""}`,
               ).pipe(
+                Effect.andThen(input._tag === "pauseScheduledTasks" ? Effect.never : Effect.void),
                 Effect.as(RESULTS[input._tag] ?? { ok: true, result: { done: true }, error: null }),
               ),
             restartProcess: Deferred.succeed(restarted, undefined).pipe(Effect.asVoid),
@@ -214,6 +186,7 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
               } as never),
           }),
           Layer.mock(ServerEnvironment.ServerEnvironment)({
+            getEnvironmentId: Effect.succeed(EnvironmentId.make("environment:kitshn")),
             getDescriptor: Effect.succeed({
               environmentId: EnvironmentId.make("environment:kitshn"),
               label: "studio",
@@ -222,29 +195,49 @@ const setup = (options: { readonly installed?: boolean } = {}) =>
               capabilities: { repositoryIdentity: false },
             }),
           }),
+          Layer.mock(ThreadIdentity.ThreadIdentity)({
+            check: (token) =>
+              token === "slow"
+                ? Effect.never
+                : Effect.succeed(token === "live" ? IDENTITY : { active: false }),
+          }),
         ),
       ),
     );
     const context = yield* Layer.build(layer).pipe(
       Effect.provideService(HostProcess.Platform, "linux"),
       Effect.provideService(HostProcess.HomeDirectory, "/home/owner"),
+      Effect.provideService(
+        HostProcess.Environment,
+        options.switchOff === true ? { T3CODE_KITSHN: "off" } : {},
+      ),
     );
     const provider = Context.get(context, KitshnProvider.KitshnProvider);
     yield* Effect.forkScoped(provider.run);
+    /** The first child, registered with the answer of kitshn's daemon. */
+    const registered = (answer: Partial<KitshnConnection.RegisterAnswer> = {}) =>
+      Effect.gen(function* () {
+        const child = yield* Queue.take(children);
+        const register = yield* Queue.take(child.written);
+        yield* child.say(registerAnswer({ ...answer, id: String(register.id) }));
+        // The connection is attached once the register answer is handled.
+        yield* connection.live.pipe(
+          Stream.filter((live) => live !== null),
+          Stream.runHead,
+        );
+        return { child, register };
+      });
     return {
       provider,
-      tables,
+      connection,
+      events,
       shared,
       children,
       binaryCalls,
       ran,
       restarted,
-      machine,
-      linkChecks,
       channels,
-      contacts,
-      linkCheckExit,
-      answersSamples,
+      registered,
     };
   });
 
@@ -263,216 +256,109 @@ const STATUS = {
   ],
   clients: [
     {
-      sessionId: "s-1",
-      label: null,
-      subject: "owner",
-      deviceType: "mobile",
-      os: "Android",
-      browser: null,
-      connected: true,
-      lastSeenAt: null,
-    },
-    {
-      // Real session ids can be longer than kitshn's 64-character row id.
+      // Real session ids can be longer than 64 characters; kitshn takes row ids up to 200.
       sessionId: `session-${"x".repeat(70)}`,
       label: null,
       subject: "phone",
       deviceType: "mobile",
       os: "Android",
       browser: null,
-      connected: false,
+      connected: true,
       lastSeenAt: null,
     },
   ],
 };
 
-const EXPECTED_REGISTER = {
-  type: "register",
-  provider: "t3",
-  // kitshn's invite page fills {inviteUrl} for each client app.
-  clients: [
-    expect.objectContaining({
-      id: "t3code-fork",
-      open: "t3code-preview://connections/new?inviteUrl={inviteUrl}",
-    }),
-  ],
-  kinds: [
-    {
-      id: "t3.app",
-      name: "T3 app",
-      levels: { view: "read", use: "standard", control: "admin" },
-      ownerControl: true,
-      settings: [
-        {
-          id: "updateChannel",
-          title: "Update channel",
-          values: ["nightly", "daily"],
-          default: "nightly",
-        },
-      ],
-    },
-    { id: "t3.thread", name: "T3 thread", levels: { view: "view", use: "send" } },
-    {
-      id: "t3.agents",
-      name: "T3 agents",
-      levels: { use: "use", control: "exec" },
-      ownerControl: true,
-    },
-    { id: "t3.settings", name: "T3 settings", levels: {}, state: {} },
-  ],
-  commands: [
-    { id: "restart-server", title: "Restart server", kinds: ["t3.app"], confirm: true },
-    { id: "install-update", title: "Install update when idle", kinds: ["t3.app"], confirm: true },
-    { id: "stop-all-agents", title: "Stop all agents", kinds: ["t3.app"], confirm: true },
-    {
-      id: "pause-scheduled-tasks",
-      title: "Pause scheduled tasks",
-      kinds: ["t3.app"],
-      confirm: true,
-    },
-    { id: "collect-diagnostics", title: "Collect diagnostics", kinds: ["t3.app"], confirm: false },
-    { id: "run-task", title: "Run now", kinds: ["t3.app"], confirm: true },
-    { id: "pause-task", title: "Pause", kinds: ["t3.app"], confirm: false },
-    { id: "resume-task", title: "Resume", kinds: ["t3.app"], confirm: false },
-    { id: "revoke-session", title: "Revoke session", kinds: ["t3.app"], confirm: true },
-  ],
-  resources: [
-    {
-      id: "app",
-      kind: "t3.app",
-      name: "T3 on studio",
-      status: "running",
-      // K-1623: the label of the tunnel host and the real port.
-      site: { name: "t3-studio", port: 3773 },
-      facts: [
-        { label: "Version", value: "1.2.3", role: "version" },
-        { label: "Running turns", value: "1" },
-        { label: "Busy", value: "true", role: "busy" },
-      ],
-      lists: [
-        {
-          id: "tasks",
-          title: "Scheduled tasks",
-          columns: [
-            { id: "title", title: "Task" },
-            { id: "schedule", title: "Schedule" },
-            { id: "state", title: "State" },
-            { id: "next", title: "Next run" },
-          ],
-          rows: [
-            {
-              id: "task:daily",
-              cells: {
-                title: "Daily digest",
-                schedule: "Every day at 09:00",
-                state: "on",
-                next: "2026-10-30T06:00:00.000Z",
-              },
-              commands: ["run-task", "pause-task"],
-            },
-          ],
-        },
-        {
-          id: "sessions",
-          title: "Client sessions",
-          columns: [
-            { id: "client", title: "Client" },
-            { id: "device", title: "Device" },
-            { id: "connected", title: "Connected" },
-            { id: "lastSeen", title: "Last seen" },
-          ],
-          rows: [
-            {
-              id: "session:s-1",
-              cells: { client: "owner", device: "mobile, Android", connected: "yes", lastSeen: "" },
-              commands: ["revoke-session"],
-            },
-            {
-              id: expect.stringMatching(/^session:[0-9a-f]{56}$/),
-              cells: { client: "phone", device: "mobile, Android", connected: "no", lastSeen: "" },
-              commands: ["revoke-session"],
-            },
-          ],
-        },
-      ],
-    },
-    { id: "agents", kind: "t3.agents", name: "Agents on studio", status: "running", parent: "app" },
-  ],
-};
-
-/** K-706: after a register answer, the provider asks kitshn for its state to prove contact. */
-const takeProbe = (child: FakeChild) =>
-  Queue.take(child.written).pipe(
-    Effect.tap((line) =>
-      Effect.sync(() => expect(line).toMatchObject({ type: "ask", action: "state" })),
-    ),
-  );
-
-const command = (commandId: number, name: string, row?: string) => ({
+const command = (
+  commandId: number,
+  name: string,
+  row: string | null = null,
+  deadline = 300_000,
+) => ({
   type: "command",
-  provider: "t3",
   commandId,
   command: name,
   resource: "app",
-  ...(row === undefined ? {} : { row }),
+  row,
+  deadline,
 });
 
 it.layer(
   ServerConfig.layerTest(process.cwd(), { prefix: "kitshn-provider-" }).pipe(
     Layer.provideMerge(NodeServices.layer),
   ),
-)("KitshnProvider", (it) => {
-  it.effect("registers on connect, and again 1 second after a registered child exits", () =>
+)("KitshnProvider (protocol 2)", (it) => {
+  it.effect("registers with protocol 2 and its instance, and again 1 second after an exit", () =>
     Effect.gen(function* () {
       const harness = yield* setup();
-      const first = yield* Queue.take(harness.children);
-      expect(first.args).toEqual(["provider"]);
-      const register = yield* Queue.take(first.written);
-      expect(register).toEqual({ id: expect.any(String), ...EXPECTED_REGISTER });
-      yield* first.say({
-        id: register.id,
+      const { child, register } = yield* harness.registered();
+      expect(child.args).toEqual(["provider"]);
+      expect(register).toMatchObject({
         type: "register",
-        machineId: "m-1",
-        grants: { app: [GRANT] },
+        protocol: 2,
+        provider: "t3",
+        instance: "environment:kitshn",
+        clients: [{ id: "t3code-fork" }],
       });
-      // The next line is answered only after the register answer above.
-      yield* first.say(command(1, "stop-all-agents"));
-      yield* Queue.take(first.written);
-      expect(yield* Ref.get(harness.tables)).toEqual({ app: [GRANT_DECODED] });
-      yield* first.exit(1);
+      const kinds = (register.kinds as ReadonlyArray<{ id: string }>).map((kind) => kind.id);
+      expect(kinds).toEqual(["t3.app", "t3.thread", "t3.settings"]);
+      const [app, ...others] = register.resources as ReadonlyArray<Record<string, unknown>>;
+      expect(others).toEqual([]);
+      // K-705: kitshn names the site, also of a machine without a portal tunnel.
+      expect(app).toMatchObject({ id: "app", kind: "t3.app", site: { port: 3773 } });
+      expect(app?.site).toEqual({ port: 3773 });
+      yield* child.exit(1);
       yield* TestClock.adjust("1 second");
       const second = yield* Queue.take(harness.children);
-      const again = yield* Queue.take(second.written);
-      expect(again).toEqual({ id: expect.any(String), ...EXPECTED_REGISTER });
-      // An exit that T3 did not cause shows no detail once the child registers again.
-      yield* second.say({ id: again.id, type: "register", machineId: "m-1", grants: {} });
-      yield* takeProbe(second);
-      const connection = yield* harness.provider.connection.pipe(Stream.runHead);
-      expect(Option.getOrThrow(connection)).toEqual({
-        status: "registered",
-        detail: null,
-        restartedAt: null,
-      });
+      expect(yield* Queue.take(second.written)).toMatchObject({ type: "register", protocol: 2 });
     }).pipe(Effect.scoped),
   );
 
-  it.effect("answers each command once, skips bad lines and refuses unknown commands", () =>
+  it.effect("answers each ping, and drops a daemon that is silent for graceMs (C-7, C-8)", () =>
     Effect.gen(function* () {
       const harness = yield* setup();
-      const child = yield* Queue.take(harness.children);
-      const register = yield* Queue.take(child.written);
-      yield* child.say({
-        id: register.id,
-        type: "register",
-        machineId: "m-1",
-        grants: { app: [GRANT] },
+      const { child } = yield* harness.registered({ graceMs: 2000 });
+      yield* child.say({ type: "ping", at: 1 });
+      expect(yield* Queue.take(child.written)).toEqual({ type: "pong" });
+      yield* TestClock.adjust("1999 millis");
+      expect(yield* Deferred.isDone(child.stopped)).toBe(false);
+      yield* TestClock.adjust("1 millis");
+      yield* Deferred.await(child.stopped);
+      const connection = yield* harness.provider.connection.pipe(Stream.runHead);
+      expect(Option.getOrThrow(connection)).toMatchObject({
+        status: "connecting",
+        detail: "kitshn sent nothing for 2s, so T3 ended the connection",
       });
-      yield* takeProbe(child);
+      // K-1611: the next registered connection says why T3 ended the last one, and when.
+      // A child that T3 ended itself backs off, so a refusing daemon gets no tight loop.
+      yield* TestClock.adjust("5 seconds");
+      const second = yield* Queue.take(harness.children);
+      const again = yield* Queue.take(second.written);
+      yield* second.say(registerAnswer({ id: String(again.id) }));
+      const registered = yield* harness.provider.connection.pipe(
+        Stream.filter((status) => status.status === "registered"),
+        Stream.runHead,
+      );
+      const state = Option.getOrThrow(registered);
+      expect(state).toMatchObject({
+        status: "registered",
+        detail: "kitshn sent nothing for 2s, so T3 ended the connection",
+      });
+      // Between the drop and the next try.
+      const restartedAt = state.status === "registered" ? state.restartedAt : null;
+      expect(restartedAt).toBeGreaterThanOrEqual(2000);
+      expect(restartedAt).toBeLessThanOrEqual(7000);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("answers each command once, by its row id, and before kitshn's deadline", () =>
+    Effect.gen(function* () {
+      const harness = yield* setup();
+      const { child, register } = yield* harness.registered();
       yield* child.say("not json");
-      yield* child.say({ type: "something-new" });
+      yield* child.say({ type: "something-new", field: 1 });
       yield* child.say(command(7, "collect-diagnostics"));
-      const result = yield* Queue.take(child.written);
-      expect(result).toMatchObject({
+      expect(yield* Queue.take(child.written)).toMatchObject({
         type: "command-result",
         provider: "t3",
         commandId: 7,
@@ -480,38 +366,53 @@ it.layer(
       });
       expect(yield* Queue.take(harness.ran)).toBe("kitshn:7 collectDiagnostics");
       yield* child.say(command(8, "format-disk"));
-      expect(yield* Queue.take(child.written)).toMatchObject({
-        type: "command-result",
-        commandId: 8,
-        ok: false,
-      });
-      // K-1625: a row command runs for its row, and only for a row of its own list.
-      yield* child.say(command(9, "pause-task", "task:daily"));
-      expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 9, ok: true });
-      expect(yield* Queue.take(harness.ran)).toBe("kitshn:9 setScheduledTaskEnabled");
-      yield* child.say(command(10, "revoke-session", "task:daily"));
-      expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 10, ok: false });
-      // A long session id goes out as a hashed row id, and the row command finds it again.
-      const longRow = (
+      expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 8, ok: false });
+      // K-1625: a row id is the prefix and the id itself, also past 64 characters.
+      const rows = (
         register.resources as ReadonlyArray<{
           lists?: ReadonlyArray<{ rows: ReadonlyArray<{ id: string }> }>;
         }>
-      )[0]?.lists?.[1]?.rows[1]?.id;
-      yield* child.say(command(11, "revoke-session", longRow));
-      expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 11, ok: true });
+      )[0]?.lists?.[1]?.rows;
+      expect(rows?.[0]?.id).toBe(`session:session-${"x".repeat(70)}`);
+      yield* child.say(command(9, "revoke-session", rows?.[0]?.id ?? null));
+      expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 9, ok: true });
       expect(yield* Queue.take(harness.ran)).toBe(
-        `kitshn:11 revokeClient session-${"x".repeat(70)}`,
+        `kitshn:9 revokeClient session-${"x".repeat(70)}`,
       );
-      // An unknown rule type keeps the rest of the table readable.
-      expect(yield* Ref.get(harness.tables)).toEqual({ app: [GRANT_DECODED] });
+      yield* child.say(command(10, "revoke-session", "task:daily"));
+      expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 10, ok: false });
+      // A command that runs past the deadline gets its failure in time for the job.
+      yield* child.say(command(11, "pause-scheduled-tasks", null, 10_000));
+      yield* Queue.take(harness.ran);
+      yield* TestClock.adjust("8 seconds");
+      expect(yield* Queue.take(child.written)).toMatchObject({
+        commandId: 11,
+        ok: false,
+        output: "The command did not finish before kitshn's deadline.",
+      });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("ends a child that the daemon no longer knows, and registers on a new one", () =>
+    Effect.gen(function* () {
+      const harness = yield* setup();
+      const { child } = yield* harness.registered();
+      yield* child.say({
+        id: "7",
+        type: "error",
+        error: "register t3 on this connection first (K-704).",
+      });
+      yield* Deferred.await(child.stopped);
+      yield* TestClock.adjust("5 seconds");
+      const second = yield* Queue.take(harness.children);
+      expect(yield* Queue.take(second.written)).toMatchObject({ type: "register", protocol: 2 });
     }).pipe(Effect.scoped),
   );
 
   it.effect("answers a restart before it restarts", () =>
     Effect.gen(function* () {
       const harness = yield* setup();
-      const child = yield* Queue.take(harness.children);
-      yield* Queue.take(child.written);
+      const { child } = yield* harness.registered();
       yield* child.say(command(9, "restart-server"));
       expect(yield* Queue.take(child.written)).toMatchObject({ commandId: 9, ok: true });
       expect(yield* Deferred.isDone(harness.restarted)).toBe(false);
@@ -520,284 +421,175 @@ it.layer(
     }).pipe(Effect.scoped),
   );
 
-  it.effect("runs normally without kitshn and tries again later", () =>
+  it.effect("runs normally without kitshn, and stays off with T3CODE_KITSHN=off", () =>
     Effect.gen(function* () {
-      const harness = yield* setup({ installed: false });
-      yield* Queue.take(harness.binaryCalls);
+      const missing = yield* setup({ installed: false });
+      yield* Queue.take(missing.binaryCalls);
       yield* TestClock.adjust("5 seconds");
-      yield* Queue.take(harness.binaryCalls);
-      expect(yield* Queue.size(harness.children)).toBe(0);
+      yield* Queue.take(missing.binaryCalls);
+      expect(yield* Queue.size(missing.children)).toBe(0);
+
+      const off = yield* setup({ switchOff: true });
+      const status = yield* off.provider.connection.pipe(
+        Stream.filter((connection) => connection.status === "off"),
+        Stream.runHead,
+      );
+      expect(Option.getOrThrow(status).detail).toBe("turned off by T3CODE_KITSHN=off");
+      expect(yield* Queue.size(off.binaryCalls)).toBe(0);
     }).pipe(Effect.scoped),
   );
 
-  it.effect(
-    "registers a card per shared thread, and upserts and removes them as shares change",
-    () =>
-      Effect.gen(function* () {
-        const harness = yield* setup();
-        const share = (threadId: string, expiresAt = "2100-01-01T00:00:00.000Z") => ({
-          threadId,
-          title: `Thread ${threadId}`,
-          shareId: `share-${threadId}`,
-          host: "t3-studio.example.com",
-          expiresAt,
-        });
-        yield* Ref.set(harness.shared, [share("t1"), share("old", "1970-01-01T00:00:00.000Z")]);
-        const child = yield* Queue.take(harness.children);
-        const register = yield* Queue.take(child.written);
-        const card = (threadId: string) => ({
-          id: threadResourceId(threadId),
-          kind: "t3.thread",
-          name: `Thread ${threadId}`,
-          status: "running",
-          parent: "app",
-          stickers: [
-            {
-              text: "Open thread",
-              tone: "info",
-              link: `https://t3-studio.example.com/guest?share=share-${threadId}`,
-            },
-          ],
-        });
-        expect(register.resources).toEqual([...EXPECTED_REGISTER.resources, card("t1")]);
-        yield* child.say({ id: register.id, type: "register", machineId: "m-1", grants: {} });
-        yield* takeProbe(child);
-
-        yield* Ref.set(harness.shared, [share("t2")]);
-        yield* TestClock.adjust("15 seconds");
-        expect(yield* Queue.take(child.written)).toMatchObject({
-          type: "remove",
-          ids: [threadResourceId("t1")],
-        });
-        expect(yield* Queue.take(child.written)).toMatchObject({
-          type: "upsert",
-          resources: [card("t2")],
-        });
-      }).pipe(Effect.scoped),
-  );
-
-  it.effect(
-    "sends local requests over the live connection and keeps the machine name and channel",
-    () =>
-      Effect.gen(function* () {
-        const harness = yield* setup();
-        const child = yield* Queue.take(harness.children);
-        const register = yield* Queue.take(child.written);
-        // Before kitshn answers the register, nothing goes out.
-        const early = yield* Effect.flip(harness.provider.request({ type: "samples" }));
-        expect(early.message).toContain("no connection to kitshn");
-        // kitshn's full register answer: every field that packages/local/src/index.ts sends.
-        yield* child.say({
-          id: register.id,
-          type: "register",
-          machineId: "m-1",
-          grants: {},
-          desired: { "t3.settings": { shared: { server: {}, client: {} }, machine: null } },
-          settings: { app: { updateChannel: "daily" } },
-          reach: [
-            {
-              machineId: "m-2",
-              machineName: "vps",
-              kind: "t3.app",
-              id: "app",
-              address: "t3-vps.example.com",
-              level: "use",
-            },
-          ],
-          access: null,
-          linkSocket: null,
-          machineName: "studio",
-        });
-        // K-717: the T3 card's update channel reaches the updater.
-        expect(yield* Queue.take(harness.channels)).toBe("nightly");
-        expect(yield* Queue.take(harness.channels)).toBe("daily");
-        // K-706: the daemon's own register answer proves no contact with kitshn; kitshn's answer does.
-        const probe = yield* takeProbe(child);
-        expect(yield* Ref.get(harness.contacts)).toBe(0);
-        yield* child.say({ id: probe.id, type: "ask", outcome: "done", result: {} });
-        const asking = yield* harness.provider
-          .request({ type: "job-cancel", jobId: 42 })
-          .pipe(Effect.forkChild);
-        const sent = yield* Queue.take(child.written);
-        expect(sent).toEqual({ id: expect.any(String), type: "job-cancel", jobId: 42 });
-        yield* child.say({ id: sent.id, type: "error", error: "not queued" });
-        const refused = yield* Effect.flip(Fiber.join(asking));
-        expect(refused.message).toBe("not queued");
-        expect(yield* Ref.get(harness.machine)).toEqual({ id: "m-1", name: "studio" });
-        const state = Option.getOrThrow(yield* harness.provider.state.pipe(Stream.runHead));
-        expect(state.reach.map((card) => card.machineId)).toEqual(["m-2"]);
-        expect(yield* Ref.get(harness.contacts)).toBe(1);
-        // K-1623: before the handover the host notice shows, also for an empty audience list.
-        const hostNotice = harness.provider.hostNotice.pipe(Stream.runHead);
-        expect(yield* hostNotice).toEqual(Option.some(true));
-        const team = "team.cloudflareaccess.com";
-        yield* child.say({
-          type: "access",
-          provider: "t3",
-          access: { teamDomain: team, audiences: [] },
-        });
-        yield* child.say(command(4, "collect-diagnostics"));
-        yield* Queue.take(child.written);
-        expect(yield* hostNotice).toEqual(Option.some(true));
-        yield* child.say({
-          type: "access",
-          provider: "t3",
-          access: { teamDomain: team, audiences: ["a"] },
-        });
-        yield* child.say(command(5, "collect-diagnostics"));
-        yield* Queue.take(child.written);
-        expect(yield* hostNotice).toEqual(Option.some(false));
-        // An access push without `served` (an older kitshn) means that kitshn serves no host.
-        const served = harness.provider.servedHosts.pipe(Stream.runHead);
-        expect(yield* served).toEqual(Option.some([]));
-        yield* child.say({
-          type: "access",
-          provider: "t3",
-          access: { teamDomain: team, audiences: ["a"], served: ["t3-studio.example.com"] },
-        });
-        yield* child.say(command(6, "collect-diagnostics"));
-        yield* Queue.take(child.written);
-        expect(yield* served).toEqual(Option.some(["t3-studio.example.com"]));
-        // K-1722: the answer to a waiting ask is kept for machines_read.
-        yield* child.say({ type: "ask-result", proposalId: "p1", outcome: "approved" });
-        yield* child.say(command(3, "collect-diagnostics"));
-        yield* Queue.take(child.written);
-        expect(yield* harness.provider.askResults).toEqual([
-          { type: "ask-result", proposalId: "p1", outcome: "approved" },
-        ]);
-      }).pipe(Effect.scoped),
-  );
-  it.effect("counts no contact while every hourly probe is answered refused (K-706)", () =>
+  it.effect("upserts and removes the cards of shared threads as shares change", () =>
     Effect.gen(function* () {
       const harness = yield* setup();
-      const child = yield* Queue.take(harness.children);
-      const register = yield* Queue.take(child.written);
-      yield* child.say({ id: register.id, type: "register", machineId: "m-1", grants: {} });
-      // The daemon answers an ask `refused` itself when kitshn does not answer in 60 seconds.
-      for (let hour = 0; hour < 25; hour++) {
-        const probe = yield* takeProbe(child);
-        yield* child.say({ id: probe.id, type: "ask", outcome: "refused", reason: "timeout" });
-        yield* TestClock.adjust("1 hour");
-      }
-      // The saved table then expires 24 hours after kitshn's last answer (KitshnGrants.test).
-      expect(yield* Ref.get(harness.contacts)).toBe(0);
-      const probe = yield* takeProbe(child);
-      yield* child.say({ id: probe.id, type: "ask", outcome: "done", result: {} });
-      yield* child.say(command(1, "collect-diagnostics"));
-      yield* Queue.take(child.written);
-      expect(yield* Ref.get(harness.contacts)).toBe(1);
+      const share = (threadId: string) => ({
+        threadId,
+        title: `Thread ${threadId}`,
+        shareId: `share-${threadId}`,
+        host: "t3-studio.example.com",
+        expiresAt: "2100-01-01T00:00:00.000Z",
+      });
+      yield* Ref.set(harness.shared, [share("t1")]);
+      const { child, register } = yield* harness.registered();
+      expect((register.resources as ReadonlyArray<{ id: string }>).map((card) => card.id)).toEqual([
+        "app",
+        threadResourceId("t1"),
+      ]);
+      yield* Ref.set(harness.shared, [share("t2")]);
+      yield* TestClock.adjust("15 seconds");
+      expect(yield* Queue.take(child.written)).toMatchObject({
+        type: "remove",
+        ids: [threadResourceId("t1")],
+      });
+      expect(yield* Queue.take(child.written)).toMatchObject({
+        type: "upsert",
+        resources: [{ id: threadResourceId("t2"), kind: "t3.thread", parent: "app" }],
+      });
     }).pipe(Effect.scoped),
   );
 
-  it.effect("keeps a child that answers, and replaces one that stops answering", () =>
+  it.effect("keeps what kitshn says: settings, reach, problems, sync, results", () =>
+    Effect.gen(function* () {
+      const harness = yield* setup();
+      // Before kitshn answers the register, nothing goes out.
+      const early = yield* Effect.flip(harness.connection.request({ type: "samples" }));
+      expect(early.message).toContain("no connection to kitshn");
+      const reached = {
+        machineId: "m-2",
+        machineName: "vps",
+        kind: "t3.app",
+        id: "app",
+        address: "t3-vps.example.com",
+        level: "use",
+      };
+      const problem = { path: "resources[0].lists[1].rows[3]", reason: "too long; row dropped" };
+      const { child } = yield* harness.registered({
+        problems: [problem],
+        syncedAt: 1000,
+        linkSocket: "/run/kitshn/link.sock",
+        saved: {
+          desired: { "t3.settings": { shared: { server: {}, client: {} }, machine: null } },
+          settings: { app: { updateChannel: "daily" } },
+          reach: [reached],
+          served: [],
+        },
+      });
+      // K-717: the T3 card's update channel reaches the updater.
+      expect(yield* Queue.take(harness.channels)).toBe("nightly");
+      expect(yield* Queue.take(harness.channels)).toBe("daily");
+      expect(yield* harness.provider.linkSocket).toBe("/run/kitshn/link.sock");
+      const stateNow = harness.provider.state.pipe(Stream.runHead, Effect.map(Option.getOrThrow));
+      expect(yield* stateNow).toMatchObject({
+        reach: [reached],
+        problems: [problem],
+        syncedAt: 1000,
+        paused: false,
+      });
+      // Local requests go over the live connection; an error answer fails with its text.
+      const asking = yield* harness.connection
+        .request({ type: "job-cancel", jobId: 42 })
+        .pipe(Effect.forkChild);
+      const sent = yield* Queue.take(child.written);
+      expect(sent).toEqual({ id: expect.any(String), type: "job-cancel", jobId: 42 });
+      yield* child.say({ id: sent.id, type: "error", error: "not queued" });
+      expect((yield* Effect.flip(Fiber.join(asking))).message).toBe("not queued");
+      // K-721: a pause comes in `sync`; results of asks and jobs are kept for machines_read.
+      yield* child.say({ type: "sync", syncedAt: 2000, paused: true });
+      yield* child.say({ type: "ask-result", proposalId: "p1", outcome: "approved" });
+      yield* child.say({
+        type: "job-result",
+        jobId: 7,
+        state: "done",
+        exitCode: 0,
+        output: "ok",
+      });
+      yield* child.say({ type: "grants-changed", at: 3 });
+      // Events that other services read go to the connection, after the lines before them.
+      expect(yield* PubSub.take(harness.events)).toEqual({ type: "grants-changed", at: 3 });
+      expect(yield* stateNow).toMatchObject({ syncedAt: 2000, paused: true });
+      expect(yield* harness.provider.askResults).toMatchObject([{ proposalId: "p1" }]);
+      expect(yield* harness.provider.jobResults).toMatchObject([{ jobId: 7, state: "done" }]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "attests a live thread with bare labels, and refuses an inactive or slow one (C-12)",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* setup();
+        const { child } = yield* harness.registered();
+        yield* child.say({ type: "attest", attestId: "a1", token: "live" });
+        expect(yield* Queue.take(child.written)).toMatchObject({
+          type: "attest-result",
+          attestId: "a1",
+          active: true,
+          labels: {
+            "thread.id": "thread-1",
+            "thread.title": "Fix the build",
+            "project.name": "t3code",
+            subagent: "false",
+            "thread.parent": "",
+          },
+        });
+        yield* child.say({ type: "attest", attestId: "a2", token: "revoked" });
+        expect(yield* Queue.take(child.written)).toEqual({
+          id: expect.any(String),
+          type: "attest-result",
+          attestId: "a2",
+          active: false,
+        });
+        // K-1752: kitshn refuses after 2 seconds, so T3 answers inactive before.
+        yield* child.say({ type: "attest", attestId: "a3", token: "slow" });
+        yield* TestClock.adjust("1800 millis");
+        expect(yield* Queue.take(child.written)).toMatchObject({ attestId: "a3", active: false });
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("shows a refused register, and replaces a child that never answers it", () =>
     Effect.gen(function* () {
       const harness = yield* setup();
       const first = yield* Queue.take(harness.children);
       const register = yield* Queue.take(first.written);
-      yield* first.say({ id: register.id, type: "register", machineId: "m-1", grants: {} });
-      // An ask that kitshn does not answer in time leaves the child, because it answers `samples`.
-      yield* takeProbe(first);
-      yield* TestClock.adjust("65 seconds");
-      yield* TestClock.adjust("3 minutes");
-      expect(yield* Deferred.isDone(first.stopped)).toBe(false);
-      expect(yield* Queue.size(harness.children)).toBe(0);
-
-      // The daemon went away but the child did not exit: the next probe gets no answer.
-      yield* Ref.set(harness.answersSamples, false);
-      const silentFrom = yield* Clock.currentTimeMillis;
-      yield* TestClock.adjust("120 seconds");
-      expect(yield* Queue.take(first.written)).toMatchObject({ type: "samples" });
-      yield* TestClock.adjust("35 seconds");
-      const endedBy = yield* Clock.currentTimeMillis;
-      yield* Deferred.await(first.stopped);
-      yield* TestClock.adjust("1 second");
-      const second = yield* Queue.take(harness.children);
-      const again = yield* Queue.take(second.written);
-      yield* second.say({ id: again.id, type: "register", machineId: "m-1", grants: {} });
-      yield* takeProbe(second);
-      // K-1611: the connection shows why T3 replaced the child, and when.
-      const connection = yield* harness.provider.connection.pipe(Stream.runHead);
-      expect(Option.getOrThrow(connection)).toEqual({
-        status: "registered",
-        detail: "the kitshn provider did not answer in 35s, so T3 ended it",
-        restartedAt: expect.any(Number),
+      // C-2, C-4: a refusal of the whole register names its reason.
+      yield* first.say({
+        id: register.id,
+        type: "error",
+        error: "the provider t3 is connected as instance other; stop it first",
       });
-      // The time when the unanswered probe ended the child.
-      const state = Option.getOrThrow(connection);
-      const restartedAt = state.status === "registered" ? state.restartedAt : null;
-      expect(restartedAt).toBeGreaterThan(silentFrom);
-      expect(restartedAt).toBeLessThanOrEqual(endedBy);
-    }).pipe(Effect.scoped),
-  );
-
-  it.effect("replaces a child that never answers register", () =>
-    Effect.gen(function* () {
-      const harness = yield* setup();
-      const first = yield* Queue.take(harness.children);
-      yield* Queue.take(first.written);
-      yield* TestClock.adjust("35 seconds");
-      yield* Deferred.await(first.stopped);
-      const connection = yield* harness.provider.connection.pipe(Stream.runHead);
-      expect(Option.getOrThrow(connection)).toEqual({
-        status: "connecting",
-        detail: "kitshn did not answer register in 35s, so T3 ended it",
-      });
-      // Not registered, so the next try waits 5 seconds.
+      const refused = yield* harness.provider.connection.pipe(
+        Stream.filter(
+          (connection) => connection.status === "connecting" && connection.detail !== null,
+        ),
+        Stream.runHead,
+      );
+      expect(Option.getOrThrow(refused).detail).toBe(
+        "kitshn refused the registration: the provider t3 is connected as instance other; stop it first",
+      );
       yield* TestClock.adjust("5 seconds");
       const second = yield* Queue.take(harness.children);
-      expect(yield* Queue.take(second.written)).toMatchObject({ type: "register" });
+      yield* Queue.take(second.written);
+      yield* TestClock.adjust("10 seconds");
+      yield* Deferred.await(second.stopped);
     }).pipe(Effect.scoped),
   );
-
-  it.effect(
-    "uses the link socket only after link-check, and drops it when the connection closes",
-    () =>
-      Effect.gen(function* () {
-        const harness = yield* setup();
-        const child = yield* Queue.take(harness.children);
-        const register = yield* Queue.take(child.written);
-        yield* child.say({
-          id: register.id,
-          type: "register",
-          machineId: "m-1",
-          machineName: "studio",
-          grants: {},
-          linkSocket: "/run/kitshn/link.sock",
-        });
-        // The command result comes only after the register answer above was handled.
-        yield* child.say(command(1, "collect-diagnostics"));
-        yield* Queue.take(child.written);
-        // The first use runs link-check; a passed check holds for later uses.
-        expect(yield* harness.provider.linkSocket).toBe("/run/kitshn/link.sock");
-        expect(yield* harness.provider.linkSocket).toBe("/run/kitshn/link.sock");
-        expect(yield* Queue.takeAll(harness.linkChecks)).toEqual(["/run/kitshn/link.sock"]);
-
-        // A connection error: the next use checks again, and a failed check gives no socket.
-        yield* harness.provider.linkSocketFailed("/run/kitshn/link.sock");
-        yield* Ref.set(harness.linkCheckExit, 1);
-        expect(yield* harness.provider.linkSocket).toBeNull();
-        expect(yield* Queue.takeAll(harness.linkChecks)).toEqual(["/run/kitshn/link.sock"]);
-
-        // The connection that gave the socket closes: no call goes to the old path.
-        yield* Ref.set(harness.linkCheckExit, 0);
-        yield* child.exit(1);
-        yield* Deferred.await(child.stopped);
-        expect(yield* harness.provider.linkSocket).toBeNull();
-        expect(yield* Queue.size(harness.linkChecks)).toBe(0);
-      }).pipe(Effect.scoped),
-  );
-});
-
-it("names the site from the portal host, else from the kitshn machine name", () => {
-  const port = 3773;
-  expect(
-    KitshnProvider.appSite({ tunnelPairingUrl: "https://t3-studio.example.com", port }, "x"),
-  ).toEqual({ name: "t3-studio", port });
-  // A machine that joined kitshn without a portal tunnel still needs a site, or links refuse it.
-  expect(KitshnProvider.appSite({ port }, "Windows 2")).toEqual({ name: "t3-windows-2", port });
-  expect(
-    KitshnProvider.appSite({ tunnelPairingUrl: "https://other.example.com", port }, "vps"),
-  ).toEqual({ name: "t3-vps", port });
-  expect(KitshnProvider.appSite({ port }, null)).toBeUndefined();
-  expect(KitshnProvider.appSite({ port }, " -- ")).toBeUndefined();
 });

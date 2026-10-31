@@ -25,7 +25,6 @@ import * as CliError from "effect/cli/CliError";
 import { readBootstrapEnvelope } from "../bootstrap.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
-import { readPortalTunnel } from "../fork/portalTunnelFile.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 
@@ -174,14 +173,6 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-  cloudflareAccessTeamDomain: Config.String("T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN").pipe(
-    Config.option,
-    Config.map(Option.getOrUndefined),
-  ),
-  cloudflareAccessAud: Config.String("T3CODE_CLOUDFLARE_ACCESS_AUD").pipe(
-    Config.option,
-    Config.map(Option.getOrUndefined),
-  ),
 });
 
 const DevAuthTokenConfig = Config.Redacted("T3CODE_DEV_AUTH_TOKEN").pipe(
@@ -296,30 +287,6 @@ export const resolveTrustedBrowserOrigins = (raw: string | undefined) =>
           );
     },
   );
-
-// Fork: the Access check of kitshn grants (K-706). Both values turn it on, neither turns it off,
-// and one alone fails startup so a missing value never weakens the check.
-export const resolveCloudflareAccess = Effect.fn("config.resolveCloudflareAccess")(function* (raw: {
-  readonly teamDomain: string | undefined;
-  readonly aud: string | undefined;
-}) {
-  const teamDomain = raw.teamDomain?.trim() ?? "";
-  const aud = raw.aud?.trim() ?? "";
-  if (teamDomain === "" && aud === "") return undefined;
-  if (teamDomain === "" || aud === "") {
-    return yield* new CliError.UserError({
-      cause:
-        "T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN and T3CODE_CLOUDFLARE_ACCESS_AUD must be set together.",
-    });
-  }
-  const teamUrl = URL.parse(`https://${teamDomain}`);
-  if (teamUrl === null || teamUrl.host !== teamDomain || teamUrl.username !== "") {
-    return yield* new CliError.UserError({
-      cause: `T3CODE_CLOUDFLARE_ACCESS_TEAM_DOMAIN must be a host such as team.cloudflareaccess.com, got ${teamDomain}.`,
-    });
-  }
-  return { teamDomain, aud } satisfies ServerConfig.CloudflareAccessConfig;
-});
 
 const resolveOptionPrecedence = <Value>(
   ...values: ReadonlyArray<Option.Option<Value>>
@@ -489,22 +456,11 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     ),
     () => 443,
   );
-  const explicitTunnelUrl = env.tunnelPairingUrl ?? bootstrap?.tunnelPairingUrl;
-  const explicitAccess = {
-    teamDomain: env.cloudflareAccessTeamDomain ?? bootstrap?.cloudflareAccessTeamDomain,
-    aud: env.cloudflareAccessAud ?? bootstrap?.cloudflareAccessAud,
-  };
-  const portalTunnel = yield* readPortalTunnel(derivedPaths.stateDir);
   const tunnelPairingUrl = yield* resolveTunnelPairingUrl(
-    explicitTunnelUrl ?? portalTunnel?.origin,
+    env.tunnelPairingUrl ?? bootstrap?.tunnelPairingUrl,
   );
   const trustedBrowserOrigins = yield* resolveTrustedBrowserOrigins(
     env.trustedBrowserOrigins ?? bootstrap?.trustedBrowserOrigins,
-  );
-  const cloudflareAccess = yield* resolveCloudflareAccess(
-    portalTunnel !== undefined && Object.values(explicitAccess).every((v) => v === undefined)
-      ? portalTunnel.access
-      : explicitAccess,
   );
   const staticDir = devUrl ? undefined : yield* ServerConfig.resolveStaticDir();
   const explicitHost = resolveOptionPrecedence(
@@ -610,7 +566,6 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     tailscaleServePort,
     ...(tunnelPairingUrl === undefined ? {} : { tunnelPairingUrl }),
     ...(trustedBrowserOrigins.length === 0 ? {} : { trustedBrowserOrigins }),
-    ...(cloudflareAccess === undefined ? {} : { cloudflareAccess }),
   };
 
   return config;

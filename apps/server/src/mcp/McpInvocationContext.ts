@@ -33,7 +33,7 @@ export interface McpThreadCaller {
   /**
    * Fork: the `Authorization` value of a request that this thread's own MCP credential made. It
    * lives on the thread, so a scope rebuilt for another thread drops it. The kitshn tools pass it
-   * to the kitshn daemon, which asks `/api/thread-identity` about it.
+   * to the kitshn daemon as `KITSHN_ATTEST`, and the daemon asks this server about it (K-1752).
    */
   readonly authorization?: Redacted.Redacted<string> | undefined;
 }

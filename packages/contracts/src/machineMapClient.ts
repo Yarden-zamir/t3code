@@ -15,14 +15,12 @@ import { ScopedSettingValues, SettingValues } from "./machineMap.ts";
 
 /** What a client needs of this server's kitshn connection. */
 export const MachineMapClientState = Schema.Struct({
-  /** kitshn answered a `register` of this server, so it is a kitshn provider (K-704). */
+  /** kitshn answered a `register` of this server once, so it is a kitshn provider (K-704). */
   joined: Schema.Boolean,
   /** This machine on the kitshn map; the name is null before the daemon reached kitshn. */
   machine: Schema.NullOr(Schema.Struct({ id: Schema.String, name: Schema.NullOr(Schema.String) })),
   /** K-709: the effective `t3.settings`: the shared part with this machine's part over it. */
   settings: ScopedSettingValues,
-  /** K-1623: this machine's T3 host is not with kitshn yet; run the host handover for it. */
-  hostNotWithKitshn: Schema.Boolean,
   /** K-1611: the provider connection to the kitshn daemon and what kitshn gave it. */
   connection: Schema.Struct({
     /** `off`: this server does not speak for the machine, with the reason in `detail`. */
@@ -31,13 +29,15 @@ export const MachineMapClientState = Schema.Struct({
     detail: Schema.NullOr(Schema.String),
     /** Epoch ms when T3 ended a stuck connection before this registered one; `detail` says why. */
     restartedAt: Schema.NullOr(Schema.Number),
-    grants: NonNegativeInt,
     reachedMachines: NonNegativeInt,
-    linkProxy: Schema.Literals(["none", "unchecked", "checked"]),
-    /** Epoch ms of kitshn's last answer; the saved grants hold 24 hours after it. */
-    lastContactAt: Schema.NullOr(Schema.Number),
-    /** K-1618: kitshn's emergency pause is on. */
+    /** K-1609: the daemon named a link proxy for this connection. */
+    linkProxy: Schema.Boolean,
+    /** K-721: epoch ms of kitshn's last answer to the daemon; null before the first one. */
+    syncedAt: Schema.NullOr(Schema.Number),
+    /** K-721: kitshn's emergency pause is on. */
     paused: Schema.Boolean,
+    /** Protocol 2: the items that the daemon dropped from the last register or upsert. */
+    problems: Schema.Array(Schema.Struct({ path: Schema.String, reason: Schema.String })),
   }),
 });
 export type MachineMapClientState = typeof MachineMapClientState.Type;
@@ -87,8 +87,8 @@ export class MachineMapRequestError extends Schema.TaggedError<MachineMapRequest
 }
 
 /**
- * MM-1908: the longest `machine_exec` run. Cloudflare ends a proxied answer after 100 seconds,
- * and the call waits for the whole run. Revisit when long runs need a job with its own status.
+ * MM-1908: the longest `machine_exec` run; the tool call waits for the whole run. Revisit when
+ * long runs need a job with its own status.
  */
 const MACHINE_EXEC_MAX_TIMEOUT_SECONDS = 90;
 /** MM-1908: the most bytes of stdout and of stderr that `machine_exec` returns. */
@@ -100,12 +100,12 @@ export const MachineExecInput = Schema.Struct({
   }),
   command: TrimmedNonEmptyString.annotate({
     description:
-      "Shell command. macOS and Linux run it with `$SHELL -c` (or `/bin/sh -c`). Windows runs it with Windows PowerShell. It runs as the user of the T3 server on that machine, with its environment.",
+      "Shell command. macOS and Linux run it with `sh -c`. Windows runs it with PowerShell. It runs on that machine as the user of its T3 provider (kitshn's exec user), through kitshn, also when T3 does not run there.",
   }),
   cwd: Schema.optionalKey(
     TrimmedNonEmptyString.annotate({
       description:
-        "Working directory: an absolute path, or a path that starts with ~. Omit for the home directory of that user. A project path from t3_project_list on that machine works.",
+        "Working directory on that machine. Omit for the home directory of the user that runs it. A project path from t3_project_list on that machine works.",
     }),
   ),
   timeoutSeconds: Schema.optionalKey(
@@ -115,39 +115,40 @@ export const MachineExecInput = Schema.Struct({
       description: `Seconds before the command and its child processes stop. Default 30, at most ${MACHINE_EXEC_MAX_TIMEOUT_SECONDS}.`,
     }),
   ),
-  caller: Schema.optionalKey(
-    Schema.Struct({
-      threadId: Schema.NullOr(Schema.String),
-      threadTitle: Schema.NullOr(Schema.String),
-    }).annotate({
-      description: "Leave out. The calling machine sets it for the History of the portal.",
-    }),
-  ),
 });
 export type MachineExecInput = typeof MachineExecInput.Type;
 
-export const MachineExecResult = Schema.Struct({
-  /** The name of the machine that ran the command. */
-  machine: TrimmedNonEmptyString,
-  cwd: Schema.String,
-  shell: Schema.String,
-  /** `timedOut`: the timeout stopped the command, and its output is lost. */
-  outcome: Schema.Literals(["exited", "timedOut"]),
-  exitCode: Schema.NullOr(Schema.Int),
-  stdout: Schema.String,
-  stderr: Schema.String,
-  /** The stream had more than `MACHINE_EXEC_MAX_OUTPUT_BYTES`; its text ends with a marker. */
-  stdoutTruncated: Schema.Boolean,
-  stderrTruncated: Schema.Boolean,
-  durationMs: NonNegativeInt,
-});
+export const MachineExecResult = Schema.Union([
+  Schema.Struct({
+    /** The name of the machine that ran the command. */
+    machine: TrimmedNonEmptyString,
+    /** `timedOut`: the timeout stopped the command. */
+    outcome: Schema.Literals(["exited", "timedOut"]),
+    exitCode: Schema.NullOr(Schema.Int),
+    /** The signal that ended the command, such as `SIGKILL` after a timeout. */
+    signal: Schema.NullOr(Schema.String),
+    stdout: Schema.String,
+    stderr: Schema.String,
+    /** The stream had more than `MACHINE_EXEC_MAX_OUTPUT_BYTES`; its text ends with a marker. */
+    stdoutTruncated: Schema.Boolean,
+    stderrTruncated: Schema.Boolean,
+    durationMs: NonNegativeInt,
+  }),
+  /** K-722: the owner did not approve the run within the call; it runs once they do. */
+  Schema.Struct({
+    machine: TrimmedNonEmptyString,
+    outcome: Schema.Literal("waiting"),
+    proposalId: Schema.String,
+    message: Schema.String,
+  }),
+]);
 export type MachineExecResult = typeof MachineExecResult.Type;
 
 /**
  * MM-1919: the WebSocket route of `t3 machine exec`. The CLI opens it on its own server with the
- * MCP credential of its thread; that server opens it on the target with the session of its arrow
- * link. Binary frames carry the data: one channel byte (`MachineExecStreamChannel`), then bytes.
- * Text frames carry `MachineExecStreamMessage` as JSON.
+ * MCP credential of its thread; that server runs the command through kitshn (K-722). Binary
+ * frames carry the data: one channel byte (`MachineExecStreamChannel`), then bytes. Text frames
+ * carry `MachineExecStreamMessage` as JSON.
  */
 export const MACHINE_EXEC_STREAM_PATH = "/mcp/machine-exec";
 
@@ -164,8 +165,10 @@ export const MachineExecStreamMessage = Schema.Union([
   }),
   /** From the caller: its stdin ended. */
   Schema.Struct({ type: Schema.Literal("eof") }),
-  /** From both ends, so that idle streams stay open through Cloudflare. */
+  /** From both ends, so that an idle stream shows that the other end is still there. */
   Schema.Struct({ type: Schema.Literal("ping") }),
+  /** From the server: the run waits for the owner's approval in kitshn. */
+  Schema.Struct({ type: Schema.Literal("waiting"), proposalId: Schema.String }),
   /** The last frame from the target, after all output. */
   Schema.Struct({
     type: Schema.Literal("exit"),

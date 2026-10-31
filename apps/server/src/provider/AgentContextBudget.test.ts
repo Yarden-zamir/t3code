@@ -41,6 +41,7 @@ import { SourceControlRepositoryService } from "../sourceControl/SourceControlRe
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { MachineExec } from "../fork/machineMap/MachineExec.ts";
 import { KitshnCli } from "../fork/kitshn/KitshnCli.ts";
+import { KitshnConnection } from "../fork/kitshn/KitshnConnection.ts";
 import { KitshnGrants } from "../fork/kitshn/KitshnGrants.ts";
 import { KitshnProvider } from "../fork/kitshn/KitshnProvider.ts";
 import { KitshnSettingsSync } from "../fork/kitshn/KitshnSettingsSync.ts";
@@ -95,6 +96,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(KitshnCli)({}),
   Layer.mock(KitshnGrants)({ trustsPeerOrigin: () => false, peerOrigins: () => [] }),
   Layer.mock(KitshnProvider)({}),
+  Layer.mock(KitshnConnection)({}),
   Layer.mock(KitshnSettingsSync)({}),
   Layer.mock(MachinePeers)({ machineOf: () => undefined }),
   Layer.mock(PeerForwarding)({}),

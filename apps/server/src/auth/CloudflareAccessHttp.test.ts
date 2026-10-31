@@ -1,23 +1,21 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentHttpApi } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as FileSystem from "effect/FileSystem";
 import * as Etag from "effect/http/Etag";
 import * as HttpPlatform from "effect/http/HttpPlatform";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpRouter from "effect/http/HttpRouter";
-import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import { answerCheck, layerKitshnConnection } from "../fork/kitshn/KitshnConnection.testkit.ts";
 import * as KitshnGrants from "../fork/kitshn/KitshnGrants.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as SessionStore from "./SessionStore.ts";
@@ -28,61 +26,29 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 class AuthTestApi extends HttpApi.make("environment").add(EnvironmentHttpApi.groups.auth) {}
 
-const ACCESS_TEAM = "team.cloudflareaccess.com";
-const CERTS_URL = `https://${ACCESS_TEAM}/cdn-cgi/access/certs`;
-const accessKeys = await generateKeyPair("RS256");
-const accessJwk = { ...(await exportJWK(accessKeys.publicKey)), kid: "key-1", alg: "RS256" };
-const signAccessJwt = (email: string) =>
-  new SignJWT({ email })
-    .setProtectedHeader({ alg: "RS256", kid: "key-1" })
-    .setIssuer(`https://${ACCESS_TEAM}`)
-    .setAudience("aud-tag")
-    .setIssuedAt()
-    .setExpirationTime("5m")
-    .sign(accessKeys.privateKey);
+const ALLOWED = "token-of-dev";
+const UNLISTED = "token-of-someone";
 
-const layerConfig = Layer.effect(
-  ServerConfig.ServerConfig,
-  Effect.gen(function* () {
-    const config = yield* ServerConfig.ServerConfig;
-    return {
-      ...config,
-      cloudflareAccess: { teamDomain: ACCESS_TEAM, aud: "aud-tag" },
-    } satisfies ServerConfig.ServerConfig["Service"];
-  }),
-).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-auth-access-test-" })));
+const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "t3-auth-access-test-" });
 
-// The saved table of a server that kitshn answered: dev@example.com holds `t3.app` at standard.
-const layerSavedGrants = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const { stateDir } = yield* ServerConfig.ServerConfig;
-    const fileSystem = yield* FileSystem.FileSystem;
-    const grant = {
-      circle: {
-        id: "c",
-        name: "Dev",
-        match: "any",
-        needsPasskey: false,
-        rules: [{ email: "dev@example.com" }],
-      },
-      level: "standard",
-      endsAt: null,
-    };
-    yield* fileSystem.makeDirectory(stateDir, { recursive: true });
-    yield* fileSystem.writeFileString(
-      `${stateDir}/kitshn-grants.json`,
-      encodeJson({
-        tables: { app: [grant] },
-        lastContactAt: yield* Clock.currentTimeMillis,
-        pendingRevocations: [],
-        machine: null,
-      }),
-    );
-  }),
-).pipe(Layer.provide(layerConfig), Layer.provide(NodeServices.layer));
+// K-721: the daemon names dev@example.com at `t3.app` standard and refuses any other token.
+const layerKitshn = layerKitshnConnection(
+  answerCheck((headers) =>
+    headers["cf-access-jwt-assertion"] === ALLOWED
+      ? {
+          subject: { type: "person", id: "dev@example.com", name: "dev@example.com" },
+          levels: { app: "standard" },
+          rights: [],
+          until: Number.MAX_SAFE_INTEGER,
+        }
+      : headers["cf-access-jwt-assertion"] === undefined
+        ? { anonymous: true }
+        : { refused: { code: "no-access", reason: "no grant" } },
+  ),
+);
 
 const layerGrants = KitshnGrants.layer.pipe(
-  Layer.provide(layerSavedGrants),
+  Layer.provide(layerKitshn),
   Layer.provide(SessionStore.layer),
   Layer.provide(ServerSecretStore.layer),
   Layer.provide(SqlitePersistence.layerMemory),
@@ -128,22 +94,7 @@ const unusedSecretStore = ServerSecretStore.ServerSecretStore.of({
   remove: () => Effect.void,
 });
 
-// The Access keys come from the team certs URL, so the test serves them from a fetch stub.
-const withCertsFetch = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => {
-      const realFetch = globalThis.fetch;
-      globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) =>
-        (input instanceof Request ? input.url : String(input)) === CERTS_URL
-          ? Response.json({ keys: [accessJwk] })
-          : new Response(null, { status: 404 })) as typeof fetch;
-      return realFetch;
-    }),
-    () => effect,
-    (realFetch) => Effect.sync(() => (globalThis.fetch = realFetch)),
-  );
-
-it.effect("logs a visitor with a kitshn grant in through Access, without a pairing link", () =>
+it.effect("logs a kitshn visitor in through Access, without a pairing link", () =>
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
     const requestContext = Context.make(Crypto.Crypto, crypto).pipe(
@@ -153,8 +104,8 @@ it.effect("logs a visitor with a kitshn grant in through Access, without a pairi
       Effect.sync(() => HttpRouter.toWebHandler(layerRoutes, { disableLogger: true })),
       (environment) =>
         Effect.tryPromise(async () => {
-          const allowed = await signAccessJwt("dev@example.com");
-          const unlisted = await signAccessJwt("someone@example.com");
+          const allowed = ALLOWED;
+          const unlisted = UNLISTED;
 
           const anonymous = await environment.handler(
             request("/api/auth/session", { headers: { "cf-access-jwt-assertion": unlisted } }),
@@ -177,7 +128,7 @@ it.effect("logs a visitor with a kitshn grant in through Access, without a pairi
             requestContext,
           );
           expect(await withCookie.json()).toMatchObject({ authenticated: true });
-          // A grant session works only through a request that the grants check.
+          // A kitshn session works only through a request that kitshn checks.
           const cookieOnly = await environment.handler(
             request("/api/auth/session", { headers: { cookie } }),
             requestContext,
@@ -186,10 +137,10 @@ it.effect("logs a visitor with a kitshn grant in through Access, without a pairi
         }),
       (environment) => Effect.promise(() => environment.dispose()),
     );
-  }).pipe(withCertsFetch, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(NodeServices.layer)),
 );
 
-it.effect("gives a pairing credential only to an Access visitor with a kitshn grant", () =>
+it.effect("gives a pairing credential only to a kitshn visitor with a level", () =>
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
     const requestContext = Context.make(Crypto.Crypto, crypto).pipe(
@@ -206,7 +157,7 @@ it.effect("gives a pairing credential only to an Access visitor with a kitshn gr
           );
           expect(rejected.status).toBe(401);
 
-          const allowed = await signAccessJwt("dev@example.com");
+          const allowed = ALLOWED;
           const pairing = await environment.handler(
             request(path, { method: "POST", headers: { "cf-access-jwt-assertion": allowed } }),
             requestContext,
@@ -227,5 +178,5 @@ it.effect("gives a pairing credential only to an Access visitor with a kitshn gr
         }),
       (environment) => Effect.promise(() => environment.dispose()),
     );
-  }).pipe(withCertsFetch, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(NodeServices.layer)),
 );

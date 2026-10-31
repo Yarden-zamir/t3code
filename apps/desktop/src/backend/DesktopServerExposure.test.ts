@@ -212,8 +212,6 @@ describe("DesktopServerExposure", () => {
           tunnelPairingEnabled: false,
           tunnelPairingUrl: null,
           trustedBrowserOrigins: null,
-          cloudflareAccessTeamDomain: null,
-          cloudflareAccessAud: null,
         });
 
         const backendConfig = yield* serverExposure.backendConfig;
