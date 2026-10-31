@@ -3180,6 +3180,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             NodeServices.layer,
             ServerSettings.layerTest(),
             Layer.mock(PullRequestService.PullRequestService)({
+              withSharedProjectReads: (effect) => effect,
               detail: () => Effect.die("host unreachable"),
               activity: () => Effect.die("host unreachable"),
             }),
@@ -3242,6 +3243,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         NodeServices.layer,
         ServerSettings.layerTest(),
         Layer.mock(PullRequestService.PullRequestService)({
+          withSharedProjectReads: (effect) => effect,
           detail: () =>
             Effect.sync(() => ({
               ...watchedPullRequestDetail({
@@ -3341,6 +3343,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         NodeServices.layer,
         ServerSettings.layerTest(),
         Layer.mock(PullRequestService.PullRequestService)({
+          withSharedProjectReads: (effect) => effect,
           detail: () =>
             Effect.sync(() => ({
               ...watchedPullRequestDetail({
@@ -3486,6 +3489,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         NodeServices.layer,
         ServerSettings.layerTest(),
         Layer.mock(PullRequestService.PullRequestService)({
+          withSharedProjectReads: (effect) => effect,
           detail: () =>
             Effect.sync(() => ({
               ...watchedPullRequestDetail({ projectId, number: 13, at: commentAt }),
@@ -3585,6 +3589,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         NodeServices.layer,
         ServerSettings.layerTest(),
         Layer.mock(PullRequestService.PullRequestService)({
+          withSharedProjectReads: (effect) => effect,
           detail: () =>
             Effect.sync(() => ({
               ...watchedPullRequestDetail({
@@ -3689,6 +3694,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         NodeServices.layer,
         ServerSettings.layerTest(),
         Layer.mock(PullRequestService.PullRequestService)({
+          withSharedProjectReads: (effect) => effect,
           detail: () =>
             Effect.sync(() => ({
               ...watchedPullRequestDetail({
@@ -3920,6 +3926,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             NodeServices.layer,
             ServerSettings.layerTest(),
             Layer.mock(PullRequestService.PullRequestService)({
+              withSharedProjectReads: (effect) => effect,
               detail: () => Effect.succeed(detail),
               activity: () =>
                 Effect.succeed({
