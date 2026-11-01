@@ -6,6 +6,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { kitshnMapUrl } from "@t3tools/client-runtime/fork/arrowLinks";
 import {
+  FLEET_UPDATE_MODE_TEXT,
   fleetDaemonText,
   fleetMenuEntries,
   fleetTaskSummary,
@@ -158,7 +159,7 @@ function FleetMachineRow({
   const updateText = hostedByThisApp
     ? desktopUpdateText(desktopUpdate)
     : [
-        config === null ? null : `Auto-update ${config.settings.forkAutoUpdate ? "on" : "off"}`,
+        config === null ? null : FLEET_UPDATE_MODE_TEXT[config.settings.forkUpdateMode],
         mismatch === null ? null : `Behind this app (${mismatch.clientVersion})`,
       ]
         .filter(Boolean)

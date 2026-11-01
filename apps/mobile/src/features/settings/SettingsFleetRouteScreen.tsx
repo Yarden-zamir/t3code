@@ -4,7 +4,11 @@
  */
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
-import { fleetDaemonText, fleetTaskSummary } from "@t3tools/client-runtime/fork/fleet";
+import {
+  FLEET_UPDATE_MODE_TEXT,
+  fleetDaemonText,
+  fleetTaskSummary,
+} from "@t3tools/client-runtime/fork/fleet";
 import { kitshnJoinedText, type ScheduledTask } from "@t3tools/contracts";
 import { useNavigation } from "@react-navigation/native";
 import { AsyncResult } from "effect/reactivity";
@@ -79,7 +83,7 @@ function FleetRow({ environment }: { readonly environment: ConnectedEnvironment 
       traceId: null,
     }),
     config === null ? null : `T3 ${config.environment.serverVersion}`,
-    config === null ? null : `Auto-update ${config.settings.forkAutoUpdate ? "on" : "off"}`,
+    config === null ? null : FLEET_UPDATE_MODE_TEXT[config.settings.forkUpdateMode],
     connected ? scheduledTasksText(AsyncResult.getOrElse(tasks, () => null)?.tasks ?? null) : null,
   ]
     .filter(Boolean)

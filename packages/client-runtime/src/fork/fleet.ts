@@ -1,11 +1,17 @@
 /** Fork: the scheduled task summary and the command menu of one Fleet row, for web and mobile. */
 import type {
   FleetCommandInput,
+  ForkUpdateMode,
   KitshnDaemon,
   KitshnMachineRef,
   MachineCommandKind,
   ScheduledTask,
 } from "@t3tools/contracts";
+
+export const FLEET_UPDATE_MODE_TEXT: Record<ForkUpdateMode, string> = {
+  automatic: "Automatic updates",
+  manual: "Manual updates",
+};
 
 export interface FleetTaskSummary {
   readonly enabled: number;
