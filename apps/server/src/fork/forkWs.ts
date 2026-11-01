@@ -4,7 +4,6 @@
  */
 import {
   CommandId,
-  type ExecutionEnvironmentDescriptor,
   FORK_WS_METHODS,
   ForkWsRpcGroup,
   OrchestrationV2ThreadLaunchError,
@@ -25,10 +24,10 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as ForkChangelog from "./ForkChangelog.ts";
 import { sessionAllowed } from "./kitshn/kitshnGrantRules.ts";
+import { kitshnMachineRef } from "./kitshn/environmentLabel.ts";
 import * as KitshnGrants from "./kitshn/KitshnGrants.ts";
 import * as ForkUpdates from "./ForkUpdates.ts";
 import { isMachineSubject } from "./machineMap/machineAccess.ts";
-import * as KitshnProvider from "./kitshn/KitshnProvider.ts";
 import * as KitshnSettingsSync from "./kitshn/KitshnSettingsSync.ts";
 import * as MachinePeers from "./machineMap/MachinePeers.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
@@ -39,31 +38,55 @@ import * as WebPush from "./webPush/WebPush.ts";
 /** The fork RPC tags, which the upstream handler object in `ws.ts` omits. */
 export const FORK_WS_RPC_TAGS = Object.values(FORK_WS_METHODS);
 
-const kitshnDescriptorKey = (value: ExecutionEnvironmentDescriptor) =>
-  JSON.stringify([value.label, value.kitshnMachine?.id ?? null, value.kitshnMachine?.name ?? null]);
+/**
+ * The kitshn machine for the server config, only while this server run registered with kitshn.
+ * The config needs a session, so the public descriptor never names the machine.
+ */
+export const kitshnMachineConfig = Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
+  Effect.flatMap((grants) =>
+    Option.isNone(grants)
+      ? Effect.succeed(null)
+      : grants.value.joinedMachine.pipe(Stream.runHead, Effect.map(Option.getOrNull)),
+  ),
+  Effect.map((machine) => {
+    const ref = machine === null ? null : kitshnMachineRef(machine);
+    return ref === null ? {} : { kitshnMachine: ref };
+  }),
+);
+
+const kitshnConfigKey = (value: Pick<ServerConfig, "environment" | "kitshnMachine">) =>
+  JSON.stringify([
+    value.environment.label,
+    value.kitshnMachine?.id ?? null,
+    value.kitshnMachine?.name ?? null,
+  ]);
 
 // Reuse snapshots so older clients do not need a new config event type.
 export const environmentLabelUpdates = <E>(
   loadConfig: Effect.Effect<ServerConfig, E>,
-  initial: ExecutionEnvironmentDescriptor,
+  initial: ServerConfig,
 ) =>
   Stream.unwrap(
     Effect.gen(function* () {
-      const provider = yield* Effect.serviceOption(KitshnProvider.KitshnProvider);
-      if (Option.isNone(provider)) return Stream.empty;
+      const grants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
+      if (Option.isNone(grants)) return Stream.empty;
       const settings = yield* ServerSettings.ServerSettingsService;
       const environment = yield* ServerEnvironment.ServerEnvironment;
-      // Each `register` answer can bring a new machine name or id; the descriptor reads it again.
+      // Each `register` answer can bring a new machine name or id; the key reads both again.
       const changes = Stream.merge(
-        provider.value.state.pipe(Stream.map(() => "kitshn")),
+        grants.value.joinedMachine.pipe(Stream.map(() => "kitshn")),
         settings.streamChanges.pipe(
           Stream.map((value) => String(value.environmentLabelFromMachineMap)),
           Stream.changes,
         ),
       ).pipe(
-        Stream.mapEffect(() => environment.getDescriptor.pipe(Effect.map(kitshnDescriptorKey))),
+        Stream.mapEffect(() =>
+          Effect.all({ environment: environment.getDescriptor, config: kitshnMachineConfig }).pipe(
+            Effect.map(({ environment, config }) => kitshnConfigKey({ environment, ...config })),
+          ),
+        ),
       );
-      return Stream.concat(Stream.make(kitshnDescriptorKey(initial)), changes).pipe(
+      return Stream.concat(Stream.make(kitshnConfigKey(initial)), changes).pipe(
         Stream.changes,
         Stream.drop(1),
         Stream.mapEffect(() => loadConfig),

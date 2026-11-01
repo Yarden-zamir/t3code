@@ -131,6 +131,11 @@ export class KitshnGrants extends Context.Service<
     readonly machineMayExec: (machineId: string) => Effect.Effect<boolean>;
     /** This machine, from the last `register` answer; saved, so it holds across a restart. */
     readonly machine: Effect.Effect<KitshnMachine | null>;
+    /**
+     * This machine from a `register` answer of this server run, now and then each change. It stays
+     * null with T3CODE_KITSHN=off, and after kitshn forgot the provider, which a restart follows.
+     */
+    readonly joinedMachine: Stream.Stream<KitshnMachine | null>;
     /** MM-1311: true for the origin of a linked machine's app. Sync: each request reads it. */
     readonly trustsPeerOrigin: (origin: string) => boolean;
     /** MM-1311: the trusted peer origins, sorted, for the server config of the clients. */
@@ -235,6 +240,7 @@ const make = Effect.gen(function* () {
   );
   const pending = new Set<AuthSessionId>(loaded.pendingRevocations);
   let machine = loaded.machine;
+  const joinedMachine = yield* SubscriptionRef.make<KitshnMachine | null>(null);
   // The headers of the last register answer; they stay known while the daemon is away.
   let identityHeaders: ReadonlyArray<string> = [];
   let peerOrigins: ReadonlySet<string> = new Set();
@@ -438,6 +444,7 @@ const make = Effect.gen(function* () {
         : Effect.gen(function* () {
             peerOrigins = new Set(peerOriginsOf(connection.answer.saved.reach));
             yield* setMachine(connection.answer.machine);
+            yield* SubscriptionRef.set(joinedMachine, connection.answer.machine);
             if (reconnect) yield* rechecks.withPermits(1)(recheckAll());
             reconnect = true;
           }),
@@ -480,6 +487,7 @@ const make = Effect.gen(function* () {
       );
     }),
     machine: Effect.sync(() => machine),
+    joinedMachine: SubscriptionRef.changes(joinedMachine),
     trustsPeerOrigin: (origin) => peerOrigins.has(origin),
     peerOrigins: () => [...peerOrigins].toSorted(),
   });

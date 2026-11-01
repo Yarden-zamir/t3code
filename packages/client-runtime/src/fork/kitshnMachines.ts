@@ -1,4 +1,4 @@
-/** Fork: the kitshn machine of each kitshn-joined environment, from its server descriptor. */
+/** Fork: the kitshn machine of each kitshn-joined environment, from its server config. */
 import type { EnvironmentId, KitshnMachineRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
@@ -23,8 +23,7 @@ export const makeKitshnMachineByIdAtom = (
   Atom.make((get) => {
     const next = new Map(
       get(environmentIdsAtom).flatMap((environmentId) => {
-        const machine = get(presentationAtom(environmentId))?.serverConfig?.environment
-          .kitshnMachine;
+        const machine = get(presentationAtom(environmentId))?.serverConfig?.kitshnMachine;
         return machine === undefined ? [] : [[environmentId, machine] as const];
       }),
     );

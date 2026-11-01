@@ -6,7 +6,6 @@
 import {
   cloudflareAccessServiceToken,
   requestHeaderOrigin,
-  withCloudflareAccessServiceToken,
 } from "@t3tools/client-runtime/connection";
 import {
   type DeviceTransport,
@@ -23,7 +22,7 @@ import { environmentCatalog } from "../connection/catalog";
 import {
   connectPairing as connectPairingAtom,
   readRequestHeaders as readRequestHeadersAtom,
-  saveRequestHeaders as saveRequestHeadersAtom,
+  saveDeviceToken as saveDeviceTokenAtom,
 } from "../connection/onboarding";
 import { pairSiblingWhenDue } from "../connection/siblingEnvironments";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
@@ -79,7 +78,7 @@ const desktopDeviceName = () => `T3 Code desktop · ${navigator.platform}`.slice
 function useDeviceSteps() {
   const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
   const readRequestHeaders = useAtomCommand(readRequestHeadersAtom, { reportFailure: false });
-  const saveRequestHeaders = useAtomCommand(saveRequestHeadersAtom, { reportFailure: false });
+  const saveDeviceToken = useAtomCommand(saveDeviceTokenAtom, { reportFailure: false });
   const removeEnvironment = useAtomCommand(environmentCatalog.remove, { reportFailure: false });
 
   const tokenOf = async (origin: string) => {
@@ -87,12 +86,7 @@ function useDeviceSteps() {
     return current._tag === "Success" ? cloudflareAccessServiceToken(current.value) : null;
   };
   const saveToken = async (origin: string, token: CloudflareAccessServiceToken | null) => {
-    const current = await readRequestHeaders(origin);
-    if (current._tag === "Failure") throw new Error(`Could not read the headers of ${origin}.`);
-    const saved = await saveRequestHeaders({
-      origin,
-      headers: withCloudflareAccessServiceToken(current.value, token),
-    });
+    const saved = await saveDeviceToken({ origin, token });
     if (saved._tag === "Failure") throw new Error(`Could not save the token for ${origin}.`);
   };
   /** Pairs with the backoff of sibling pairing; throws with the reason when it fails. */

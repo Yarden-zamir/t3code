@@ -1,7 +1,8 @@
 import {
+  type CloudflareAccessServiceToken,
   ConnectionOnboarding,
-  type RequestHeader,
   RequestHeaderStore,
+  withCloudflareAccessServiceToken,
 } from "@t3tools/client-runtime/connection";
 import {
   createAtomCommandScheduler,
@@ -46,12 +47,29 @@ export const readRequestHeaders = createRuntimeCommand(connectionAtomRuntime, {
     RequestHeaderStore.pipe(Effect.flatMap((store) => store.get(origin))),
 });
 
-export const saveRequestHeaders = createRuntimeCommand(connectionAtomRuntime, {
-  label: "web:connection:save-request-headers",
+/**
+ * Fork: the only writer of saved request headers. A kitshn device invite saves the Cloudflare Access
+ * token of this device for one origin (K-1601), and null takes it away. Other headers stay.
+ */
+export const saveDeviceToken = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:connection:save-kitshn-device-token",
   concurrency: {
     mode: "serial",
     key: (input: { readonly origin: string }) => input.origin,
   },
-  execute: (input: { readonly origin: string; readonly headers: ReadonlyArray<RequestHeader> }) =>
-    RequestHeaderStore.pipe(Effect.flatMap((store) => store.set(input.origin, input.headers))),
+  execute: (input: {
+    readonly origin: string;
+    readonly token: CloudflareAccessServiceToken | null;
+  }) =>
+    RequestHeaderStore.pipe(
+      Effect.flatMap((store) =>
+        store
+          .get(input.origin)
+          .pipe(
+            Effect.flatMap((current) =>
+              store.set(input.origin, withCloudflareAccessServiceToken(current, input.token)),
+            ),
+          ),
+      ),
+    ),
 });

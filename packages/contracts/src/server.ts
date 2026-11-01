@@ -29,6 +29,7 @@ import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { ServerProviderUsageLimits, UsageLimitSourceSnapshots } from "./providerUsageLimits.ts";
 import { ServerSettings } from "./settings.ts";
 import { DesktopUpdateChannelSchema } from "./ipc.ts";
+import { KitshnMachineRef } from "./machineMap.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
   kind: Schema.Literal("keybindings.malformed-config"),
@@ -680,6 +681,11 @@ export const ServerConfig = Schema.Struct({
    * this server's page, so the page sends cookies to them when they are siblings. Absent when none.
    */
   trustedBrowserOrigins: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  /**
+   * Fork: the kitshn machine of this server, present while this server run is joined to kitshn.
+   * It is here and not in the public descriptor, so only a signed-in client reads it.
+   */
+  kitshnMachine: Schema.optionalKey(KitshnMachineRef),
   observability: ServerObservability,
   settings: ServerSettings,
   shellResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),

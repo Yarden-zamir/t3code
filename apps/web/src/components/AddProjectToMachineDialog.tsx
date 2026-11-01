@@ -32,7 +32,8 @@ import {
 import { formatBytes } from "../lib/formatBytes";
 import { newProjectId } from "../lib/utils";
 import { readProject, subscribeProject, useProject } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { useEnvironments, useKitshnMachines } from "../state/environments";
+import { KitshnBadge } from "./machines/KitshnMark";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
@@ -95,6 +96,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
   const handleNewThread = useNewThreadHandler();
   const { draftId: routeDraftId } = useParams({ strict: false });
   const { environments } = useEnvironments();
+  const kitshnMachines = useKitshnMachines();
   const targets = useAddProjectTargets(project, useLogicalProjectEnvironments(project, false));
   const [targetId, setTargetId] = useState(request.targetEnvironmentId);
   const target = targets.find((t) => t.environmentId === targetId) ?? targets[0] ?? null;
@@ -274,6 +276,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
                           <span className="inline-flex items-center gap-1.5">
                             <EnvironmentMachineIcon kind={t.machine} className="size-3" />
                             {t.label}
+                            <KitshnBadge machine={kitshnMachines.get(t.environmentId)} />
                           </span>
                         </SelectItem>
                       ))}
