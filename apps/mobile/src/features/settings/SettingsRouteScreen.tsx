@@ -36,6 +36,8 @@ import {
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { filterSettingsSections } from "./settings-search";
+import { forkMobileMessagePins } from "./SettingsForkPinsRouteScreen";
+import { useServerConfigs } from "../../state/entities";
 import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 
 export function SettingsRouteScreen() {
@@ -212,6 +214,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
 function useSettingsIndexSections(): SettingsListSection[] {
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const noServerTargets = selectedTargets.length === 0;
+  const pinCount = forkMobileMessagePins(useServerConfigs()).length;
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
   const scopedProjectMembers =
     selectedProject?.members
@@ -285,6 +288,17 @@ function useSettingsIndexSections(): SettingsListSection[] {
           disabled: noServerTargets,
         },
         { id: "SettingsVoice", icon: "mic", label: "Voice", target: "SettingsVoice" },
+        ...(pinCount === 0
+          ? []
+          : [
+              {
+                id: "SettingsForkPins",
+                icon: "pin",
+                label: "Pinned messages",
+                value: String(pinCount),
+                target: "SettingsForkPins",
+              } satisfies SettingsListRow,
+            ]),
       ],
     },
     {

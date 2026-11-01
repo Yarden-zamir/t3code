@@ -20,6 +20,7 @@ import * as ServiceLauncherClient from "../cloud/serviceLauncherClient.ts";
 import * as ServerSelfUpdate from "../cloud/selfUpdate.ts";
 import * as ServerConfig from "../config.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as ServerLifecycleEvents from "../serverLifecycleEvents.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ForkUpdates from "./ForkUpdates.ts";
@@ -95,6 +96,7 @@ const desktopHold = Effect.gen(function* () {
             forkPrintNotice: ({ threadId }) => Queue.offer(notices, threadId).pipe(Effect.asVoid),
           }),
           Layer.mock(ServerSettings.ServerSettingsService)({}),
+          ServerLifecycleEvents.layer,
           FetchHttpClient.layer,
           NodeServices.layer,
         ),

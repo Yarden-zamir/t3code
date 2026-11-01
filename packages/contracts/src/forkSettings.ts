@@ -179,13 +179,6 @@ export const ForkClientSettingsFields = {
   /** Fork: a changelog of fork releases, upstream changes and Fork Sync runs from the update UI. */
   forkChangelogEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
-   * Fork: an install of a downloaded desktop update checks for a newer release first, and offers
-   * to download that one instead. Unattended installs take the newer release.
-   */
-  checkNewerBeforeUpdateInstall: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
-  ),
-  /**
    * Fork: the web app registers a service worker for the installed app (`apps/web/public/sw.js`):
    * an offline page, notifications on Android and iOS, and the badge on the app icon.
    */
@@ -297,7 +290,6 @@ export const ForkClientSettingsPatchFields = {
   backgroundWorkDetails: Schema.optionalKey(Schema.Boolean),
   messagePins: Schema.optionalKey(Schema.Boolean),
   forkChangelogEnabled: Schema.optionalKey(Schema.Boolean),
-  checkNewerBeforeUpdateInstall: Schema.optionalKey(Schema.Boolean),
   installedAppEnabled: Schema.optionalKey(Schema.Boolean),
   webPushEnabled: Schema.optionalKey(Schema.Boolean),
   pullRequestFilters: Schema.optionalKey(Schema.Boolean),
@@ -329,14 +321,25 @@ export const ForkClientSettingsPatchFields = {
  * opens a draft in the project of the last new thread on the phone, and `none` opens a draft
  * without a project. A thread link, a share or a prompt link keeps its own project.
  */
+/** Fork: manual installs only on a request; automatic installs the newest release when idle. */
+export const ForkUpdateMode = Schema.Literals(["manual", "automatic"]);
+export type ForkUpdateMode = typeof ForkUpdateMode.Type;
+
 export const MobileNewThreadProject = Schema.Literals(["picker", "last", "none"]);
 export type MobileNewThreadProject = typeof MobileNewThreadProject.Type;
 
 export const ForkServerSettingsFields = {
-  worktreeArtifactEviction: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  worktreeArtifactEvictionDays: Schema.Int.check(
-    Schema.isBetween({ minimum: 1, maximum: 3650 }),
-  ).pipe(Schema.withDecodingDefault(Effect.succeed(14))),
+  /**
+   * Fork worktree lifecycle, "keep" stage: remove ignored build outputs and dependencies of a
+   * worktree after this many idle days. Null keeps them. See docs/fork/features.md.
+   */
+  worktreeArtifactsAfterDays: Schema.NullOr(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  /**
+   * Fork worktree lifecycle, "restore" and "clean" stages: rebuild a missing worktree on resume,
+   * and let storage cleanup delete a branch that restore can rebuild.
+   */
   restoreWorktreesOnResume: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
    * Fork: auto-settle skips a thread while a background command of its agent runs. Settling
@@ -350,8 +353,8 @@ export const ForkServerSettingsFields = {
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   /**
-   * Fork: where new worktrees go, such as `{repoDir}/{branchLeaf}`. Empty
-   * keeps the `worktreesDirectory` layout. See docs/fork/features.md.
+   * Fork worktree lifecycle, "place" stage: where new worktrees go, such as
+   * `{repoDir}/{branchLeaf}`. Empty keeps the `worktreesDirectory` layout. See docs/fork/features.md.
    */
   worktreePathTemplate: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   /**
@@ -372,10 +375,12 @@ export const ForkServerSettingsFields = {
     ),
   ),
   /**
-   * Fork: a server that runs as the background service installs each newer
-   * fork release when no agent turn runs. See docs/fork/operations.md "Server updates".
+   * Fork: "automatic" installs the newest fork release when this machine is idle. The background
+   * service and the desktop app both follow it. See docs/fork/features.md "Updates".
    */
-  forkAutoUpdate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  forkUpdateMode: ForkUpdateMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("manual" as const)),
+  ),
   /**
    * Scripts available in every project of this environment. They run where a
    * project script runs for the thread: its worktree, else the project root.
@@ -479,9 +484,8 @@ export const ForkServerSettingsFields = {
 };
 
 export const ForkServerSettingsPatchFields = {
-  worktreeArtifactEviction: Schema.optionalKey(Schema.Boolean),
-  worktreeArtifactEvictionDays: Schema.optionalKey(
-    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })),
+  worktreeArtifactsAfterDays: Schema.optionalKey(
+    Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 }))),
   ),
   restoreWorktreesOnResume: Schema.optionalKey(Schema.Boolean),
   autoSettleWaitsForBackgroundCommands: Schema.optionalKey(Schema.Boolean),
@@ -490,7 +494,7 @@ export const ForkServerSettingsPatchFields = {
   recoverInterruptedTurns: Schema.optionalKey(Schema.Boolean),
   recoverInterruptedTurnsMessage: Schema.optionalKey(TrimmedNonEmptyString),
   recoverInterruptedTurnsSubagentMessage: Schema.optionalKey(TrimmedNonEmptyString),
-  forkAutoUpdate: Schema.optionalKey(Schema.Boolean),
+  forkUpdateMode: Schema.optionalKey(ForkUpdateMode),
   globalScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
   pinnedGlobalScriptIds: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   /** Per-project entry replacement: each entry replaces that project's pins and `null` removes them. */

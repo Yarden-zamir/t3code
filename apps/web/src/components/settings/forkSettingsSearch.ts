@@ -34,15 +34,9 @@ export const WORKTREE_ITEMS = [
     to: "/settings/worktrees",
     scope: "environment-defaults",
     environmentOnly: true,
-    searchTerms: ["storage cleanup disk node_modules caches build dependencies worktrees"],
-  },
-  {
-    id: "worktree-artifact-eviction-days",
-    title: "Artifact eviction inactivity days",
-    to: "/settings/worktrees",
-    scope: "environment-defaults",
-    environmentOnly: true,
-    searchTerms: ["storage cleanup disk inactive days worktrees"],
+    searchTerms: [
+      "storage cleanup disk node_modules caches build dependencies worktrees inactive days",
+    ],
   },
   {
     id: "restore-worktrees-on-resume",
@@ -51,7 +45,7 @@ export const WORKTREE_ITEMS = [
     scope: "environment-defaults",
     environmentOnly: true,
     searchTerms: [
-      "missing folder restore recreate deleted branch checkout dependencies setup node_modules",
+      "missing folder restore recreate deleted branch checkout dependencies setup node_modules cleanup delete branches",
     ],
   },
   {
@@ -112,7 +106,7 @@ export const APPEARANCE_ITEMS = [
     to: "/settings/appearance",
     searchTerms: [
       "thread link chip chat url open app machine environment",
-      "copy message link scroll jump highlight anchor fragment",
+      "message link scroll jump highlight anchor fragment",
       "address browser tab slack github desktop app deep link",
     ],
     environmentOnly: true,
@@ -319,17 +313,13 @@ export const ABOUT_ITEMS = [
     searchTerms: ["changelog release notes versions upstream fork sync workflow"],
   },
   {
-    id: "check-newer-before-update-install",
-    title: "Check for a newer update before install",
-    to: "/settings/about",
-    searchTerms: ["desktop update install newer release download restart"],
-  },
-  {
-    id: "fork-auto-update",
-    title: "Server auto-update",
+    id: "fork-update-mode",
+    title: "Automatic updates",
     to: "/settings/maintenance",
     scope: "environment-defaults",
-    searchTerms: ["fork release install update idle background service headless server automatic"],
+    searchTerms: [
+      "fork release install update idle background service headless server desktop automatic manual",
+    ],
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 

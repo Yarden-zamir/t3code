@@ -195,7 +195,7 @@ it.effect("a plan thread cannot change anything, and a full-access one sends a k
     for (const [tool, input] of [
       [
         "machines_set_setting",
-        { part: "shared", scope: "server", key: "forkAutoUpdate", value: true },
+        { part: "shared", scope: "server", key: "forkUpdateMode", value: "automatic" },
       ],
       ["machines_command", { machineId: "vps", command: "restart-server" }],
       ["machines_queue_cancel", { jobId: 7 }],
@@ -234,16 +234,16 @@ it.effect("a setting goes into one part of the settings state, keeping its other
     const agent = yield* callTool(threadCaller, "machines_set_setting", {
       part: "shared",
       scope: "server",
-      key: "forkAutoUpdate",
-      value: true,
+      key: "forkUpdateMode",
+      value: "automatic",
     }).pipe(Effect.provide(tools));
     expect(resultText(agent)).toContain("Agents do not change the shared settings");
     expect(requests).toEqual([]);
     const set = yield* callTool(ownerCaller, "machines_set_setting", {
       part: "shared",
       scope: "server",
-      key: "forkAutoUpdate",
-      value: true,
+      key: "forkUpdateMode",
+      value: "automatic",
     }).pipe(Effect.provide(tools));
     expect(set.isError).not.toBe(true);
     expect(requests).toEqual([
@@ -252,7 +252,7 @@ it.effect("a setting goes into one part of the settings state, keeping its other
         provider: "t3",
         kind: "t3.settings",
         part: "shared",
-        value: { server: { a: 1, forkAutoUpdate: true }, client: {} },
+        value: { server: { a: 1, forkUpdateMode: "automatic" }, client: {} },
         rev: "rev-1",
       },
     ]);

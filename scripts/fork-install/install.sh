@@ -6,7 +6,7 @@
 # Linux with a display: the script installs the newest nightly AppImage from the fork releases.
 # Linux without a display: the script runs scripts/install.sh (the upstream installer, pointed at
 #   the fork releases) and the upstream background service `t3 service install`, on loopback.
-#   The server then updates itself (docs/fork/operations.md "Server updates").
+#   The server then updates itself (docs/fork/operations.md "Update and install").
 # macOS: the script installs the newest nightly app from the fork releases.
 set -euo pipefail
 
@@ -152,7 +152,7 @@ EOF
 
 # Installs the newest fork release with scripts/install.sh, the upstream installer: the runtime in
 # <T3 home>/runtime/versions/<version> and the link ~/.local/bin/t3. The upstream background service
-# (`t3 service install`) runs it and updates it (docs/fork/operations.md "Server updates"). The machine needs
+# (`t3 service install`) runs it and updates it (docs/fork/operations.md "Update and install"). The machine needs
 # no Node.
 install_linux_server() {
   need curl "Install it with your package manager, for example: $APT_HINT"

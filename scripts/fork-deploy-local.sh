@@ -1,41 +1,156 @@
 #!/usr/bin/env bash
-# Deploy a local build of this checkout to a headless Linux server over SSH, without a release.
-# The server must run as the upstream background service (`t3 service install`).
+# Deploy a local build of this checkout, without a release. See docs/fork/operations.md
+# "Update and install".
 # Usage:
-#   scripts/fork-deploy-local.sh <ssh-host>                    build, install and switch the server
-#   scripts/fork-deploy-local.sh --archive <linux-x64|linux-arm64>   build the archive only
-# The script builds the `t3` executable and the web client here, and takes the native packages
-# and the resource monitor from the newest fork release. It unpacks the result into
-# <T3 home>/runtime/versions/<version> on the server, and runs `t3 update <version> --yes`
-# there. The restart stops running agent turns. If the server does not report the new version, the
-# script goes back to the previous version. See docs/fork/operations.md "Deploy a local build".
+#   scripts/fork-deploy-local.sh <ssh-host>                         server: build, install, switch
+#   scripts/fork-deploy-local.sh --archive <linux-x64|linux-arm64>  server: build the archive only
+#   scripts/fork-deploy-local.sh --mac                              Mac app: build the signed zip only
+#   scripts/fork-deploy-local.sh --mac --install                    Mac app: build and replace the app
+#   scripts/fork-deploy-local.sh --mac --publish                    Mac app: build and publish a prerelease
+# The build and the version rule are the same for both programs. Only the last step differs: the
+# server switches with `t3 update <version> --yes`, and the Mac app replaces /Applications.
 set -euo pipefail
 
 readonly FORK_REPOSITORY="Yarden-zamir/t3code"
-# Files that decide the native packages in the archive. A local change to one of them needs a
-# release, because the archive keeps the native packages of the release.
+readonly SIGN_IDENTITY="Yarden Zamir T3 Fork"
+# Files that decide the native packages in the server archive. A local change to one of them needs
+# a release, because the archive keeps the native packages of the release.
 readonly NATIVE_INPUTS=(apps/server/package.json pnpm-workspace.yaml pnpm-lock.yaml patches)
 
+usage() {
+  echo "Usage: $0 <ssh-host> | --archive <linux-x64|linux-arm64> | --mac [--install | --publish]" >&2
+  exit 2
+}
+
+target=""
 host=""
 platform=""
+mac_step=build
 case "${1:-}" in
   --archive)
+    target=server
     platform="${2:-}"
-    [[ "$platform" == linux-x64 || "$platform" == linux-arm64 ]] || {
-      echo "--archive needs linux-x64 or linux-arm64." >&2
-      exit 2
-    }
+    [[ "$platform" == linux-x64 || "$platform" == linux-arm64 ]] || usage
     ;;
-  "" | -*)
-    echo "Usage: $0 <ssh-host> | --archive <linux-x64|linux-arm64>" >&2
-    exit 2
+  --mac)
+    target=mac
+    case "${2:-}" in
+      "") ;;
+      --install) mac_step=install ;;
+      --publish) mac_step=publish ;;
+      *) usage ;;
+    esac
     ;;
-  *) host="$1" ;;
+  "" | -*) usage ;;
+  *)
+    target=server
+    host="$1"
+    ;;
 esac
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 export PATH="$repo_root/node_modules/.bin:$PATH"
+sha="$(git rev-parse HEAD)"
+
+# The fork releases from CI, highest build number first. The list order is not the build order:
+# the daily release moves to the top. Local releases end with "(local)" and do not count.
+ci_releases="$(gh api "repos/$FORK_REPOSITORY/releases?per_page=50" \
+  --jq '[.[] | select(.draft | not) | select(.name | endswith("(local)") | not)
+        | {tag: .tag_name, name: .name, sums: any(.assets[]; .name == "SHA256SUMS"),
+           number: (.tag_name | split(".") | last | tonumber)}] | sort_by(-.number)')"
+# Prints one field of the first release: of any release, or of one with SHA256SUMS.
+ci_field() {
+  node -p 'const [json, which, field] = process.argv.slice(1);
+    JSON.parse(json).find((release) => which === "any" || release.sums)?.[field] ?? ""' \
+    "$ci_releases" "$1" "$2"
+}
+
+# Versions: the newest CI number plus the minute of the UTC day (1 to 1440). The version sorts
+# above the CI release it follows and below the next one, so the next CI release replaces it.
+ci_number="$(ci_field any number)"
+[[ "$ci_number" =~ ^[0-9]+$ ]] || { echo "Could not read the newest CI build number." >&2; exit 1; }
+minute_of_day=$((10#$(date -u +%H) * 60 + 10#$(date -u +%M) + 1))
+version="$(node scripts/resolve-nightly-release.ts \
+  --date "$(date -u +%Y%m%d)" --run-number "$((ci_number + minute_of_day))" --sha "$sha" |
+  sed -n 's/^version=//p')"
+[[ -n "$version" ]] || { echo "Could not resolve the build version." >&2; exit 1; }
+
+# Mac app ----------------------------------------------------------------------------------------
+
+build_mac() {
+  if ! security find-identity -v -p codesigning | grep -q "\"$SIGN_IDENTITY\""; then
+    echo "No trusted code signing identity \"$SIGN_IDENTITY\" in the keychain. See docs/fork/operations.md." >&2
+    exit 1
+  fi
+  if [[ "$mac_step" == publish ]] && ! git branch -r --contains "$sha" | grep -q "origin/"; then
+    echo "Push $sha to origin before you publish, so the release tag points at a public commit." >&2
+    exit 1
+  fi
+  rm -rf release
+  T3CODE_DESKTOP_UPDATE_REPOSITORY="$FORK_REPOSITORY" \
+    T3CODE_DESKTOP_MAC_SELF_SIGNED=true \
+    CSC_NAME="$SIGN_IDENTITY" \
+    vp run dist:desktop:artifact \
+    --platform mac --target zip --arch arm64 --build-version "$version" --signed --verbose
+  # The build keeps only the zip, so check the app inside it.
+  verify_dir="$(mktemp -d)"
+  ditto -x -k release/*-arm64.zip "$verify_dir"
+  codesign --verify --deep --strict "$verify_dir"/*.app
+  echo "Built $version in $repo_root/release"
+}
+
+# The last step of the Mac app: replace the app in /Applications and start it.
+install_mac() {
+  local app_name installed backup
+  app_name="$(basename "$verify_dir"/*.app)"
+  installed="/Applications/$app_name"
+  # One backup only: the previous install. Older backups are not kept.
+  backup="$repo_root/../_shared/backup/$app_name"
+  mkdir -p "$(dirname "$backup")"
+  # Drop an update the old app downloaded; macOS installs it on quit otherwise, so clear it before the quit.
+  rm -rf "$HOME/Library/Caches/t3code-updater" "$HOME/Library/Caches/com.t3tools.t3code.ShipIt"
+  osascript -e "quit app \"${app_name%.app}\"" || true
+  # Fixed-string match: pgrep -f reads "(Nightly)" in the path as a regex group.
+  running() { ps -axo command= | grep -qF "$installed/Contents/MacOS/"; }
+  for _ in $(seq 1 30); do running || break; sleep 1; done
+  if running; then
+    echo "$app_name did not quit; the install stopped." >&2
+    exit 1
+  fi
+  rm -rf "$backup"
+  [[ -d "$installed" ]] && mv "$installed" "$backup"
+  mv "$verify_dir/$app_name" "$installed"
+  open "$installed"
+  echo "Installed $version to $installed"
+}
+
+publish_mac() {
+  shopt -s nullglob
+  local assets=(release/*.zip release/*.blockmap release/nightly-mac.yml)
+  if [[ ! -f release/nightly-mac.yml ]]; then
+    echo "release/nightly-mac.yml is missing; the updater cannot find this build." >&2
+    exit 1
+  fi
+  gh release create "v$version" "${assets[@]}" \
+    --repo "$FORK_REPOSITORY" \
+    --target "$sha" \
+    --title "T3 Code Fork v$version (local)" \
+    --notes "Local fork build from $sha." \
+    --prerelease
+}
+
+if [[ "$target" == mac ]]; then
+  build_mac
+  case "$mac_step" in
+    install) install_mac ;;
+    publish) publish_mac ;;
+  esac
+  rm -rf "$verify_dir"
+  exit 0
+fi
+
+# Server -----------------------------------------------------------------------------------------
 
 if [[ -n "$host" ]]; then
   case "$(ssh "$host" uname -sm)" in
@@ -45,14 +160,12 @@ if [[ -n "$host" ]]; then
   esac
 fi
 
-# The newest CI release that servers can install: it has SHA256SUMS.
-release_json="$(gh api "repos/$FORK_REPOSITORY/releases?per_page=30" \
-  --jq '[.[] | select(.draft | not) | select(.name | endswith("(local)") | not)
-        | select(any(.assets[]; .name == "SHA256SUMS"))][0] | {tag: .tag_name, name: .name}')"
-release_tag="$(node -p 'JSON.parse(process.argv[1]).tag' "$release_json")"
-release_name="$(node -p 'JSON.parse(process.argv[1]).name' "$release_json")"
+# The newest CI release that servers can install: it has SHA256SUMS. Its name ends with
+# "(<12-character commit>)".
+release_tag="$(ci_field sums tag)"
+release_name="$(ci_field sums name)"
+[[ -n "$release_tag" ]] || { echo "No fork release has SHA256SUMS." >&2; exit 1; }
 release_version="${release_tag#v}"
-# The release name ends with "(<12-character commit>)".
 release_sha="${release_name##*(}"
 release_sha="${release_sha%)}"
 if [[ ! "$release_sha" =~ ^[0-9a-f]{12}$ ]]; then
@@ -65,15 +178,6 @@ if ! git diff --quiet "$release_sha" -- "${NATIVE_INPUTS[@]}"; then
   echo "The archive keeps the native packages of the release, so wait for a release with this change." >&2
   exit 1
 fi
-
-# Same rule as scripts/fork-desktop-mac.sh: the newest CI number plus the minute of the UTC day.
-# The version sorts above the release it follows and below the next one, so auto-update replaces it.
-ci_number="${release_version##*.}"
-minute_of_day=$((10#$(date -u +%H) * 60 + 10#$(date -u +%M) + 1))
-version="$(node scripts/resolve-nightly-release.ts \
-  --date "$(date -u +%Y%m%d)" --run-number "$((ci_number + minute_of_day))" --sha "$(git rev-parse HEAD)" |
-  sed -n 's/^version=//p')"
-[[ -n "$version" ]] || { echo "Could not resolve the build version." >&2; exit 1; }
 
 work="$(mktemp -d)"
 version_backup="$work/package-versions"
@@ -134,9 +238,9 @@ COPYFILE_DISABLE=1 tar --no-xattrs -czf "$archive" -C "$work" "$stem"
 echo "Built $archive"
 [[ -n "$host" ]] || exit 0
 
-# `t3 update` checks that the new `t3` runs and reports the version, then points the service at it
-# and restarts it. It does not go back by itself, so the script waits for the server to report the
-# new version and goes back to the previous version when it does not.
+# The last step of the server: `t3 update` checks that the new `t3` runs and reports the version,
+# points the `t3` launcher and the service at it and restarts the service. It does not go back by
+# itself, so the script waits for the server to report the new version and goes back when it does not.
 remote_archive="/tmp/$stem.tar.gz"
 scp -q "$archive" "$host:$remote_archive"
 if ! ssh "$host" bash -s -- "$version" "$remote_archive" <<'REMOTE'; then

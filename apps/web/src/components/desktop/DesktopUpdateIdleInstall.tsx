@@ -1,10 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import { createEnvironmentRpcSubscriptionAtomFamily } from "@t3tools/client-runtime/state/runtime";
-import { TERMINAL_UPDATE_HOLD_MAX_HOURS, WS_METHODS } from "@t3tools/contracts";
+import { type EnvironmentId, TERMINAL_UPDATE_HOLD_MAX_HOURS, WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { useEffect } from "react";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { primaryEnvironmentIdAtom } from "../../state/primaryEnvironment";
@@ -17,7 +18,6 @@ import {
   idleInstallWorkTitle,
 } from "../desktopUpdateIdleInstall.logic";
 import { installLocalUpdate } from "../sidebar/SidebarUpdatePill";
-import { DesktopUpdateNewerDialog } from "./DesktopUpdateNewerCheck";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -101,11 +101,12 @@ export function armIdleInstall(): void {
 /** Desktop only. Hosts the prompt and runs an armed install when the work finishes. */
 export function DesktopUpdateIdleInstall() {
   const { promptOpen, armedAt } = useAtomValue(idleInstallAtom);
+  const environmentId = useAtomValue(primaryEnvironmentIdAtom);
   const armed = armedAt !== null;
   return (
     <>
+      {environmentId === null ? null : <AutomaticInstall environmentId={environmentId} />}
       {armedAt === null ? null : <ArmedInstallWatcher armedAt={armedAt} />}
-      <DesktopUpdateNewerDialog />
       <AlertDialog
         open={promptOpen}
         onOpenChange={(open) => {
@@ -118,6 +119,26 @@ export function DesktopUpdateIdleInstall() {
       </AlertDialog>
     </>
   );
+}
+
+/**
+ * Fork update policy: with `forkUpdateMode` "automatic" on this app's server, a downloaded update
+ * waits for idle as after "Install when idle". "Stop waiting" holds it until the next download.
+ */
+function AutomaticInstall({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const automatic = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings.forkUpdateMode === "automatic",
+  );
+  const state = useDesktopUpdateState();
+  const downloaded = state ? resolveDesktopUpdateButtonAction(state) === "install" : false;
+  const version = downloaded ? (state?.downloadedVersion ?? null) : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the desktop updater outside React finishes a download.
+  useEffect(() => {
+    if (!automatic || version === null) return;
+    if (appAtomRegistry.get(idleInstallAtom).armedAt === null) armIdleInstall();
+  }, [automatic, version]);
+  return null;
 }
 
 function ArmedInstallWatcher({ armedAt }: { readonly armedAt: number }) {
@@ -148,7 +169,7 @@ function ArmedInstallWatcher({ armedAt }: { readonly armedAt: number }) {
       );
       return;
     }
-    void installLocalUpdate(bridge, undefined, { unattended: true });
+    void installLocalUpdate(bridge);
   }, [count, ready, state]);
 
   return null;

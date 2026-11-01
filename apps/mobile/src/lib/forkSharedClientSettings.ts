@@ -2,6 +2,7 @@ import { ClientSettingsPatch, type SettingValues } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 import type { Preferences } from "../persistence/mobile-preferences";
+import { mobileProjectGroupingModePatch } from "../state/project-grouping.logic";
 
 const isClientSettingsPatch = Schema.is(ClientSettingsPatch);
 
@@ -28,5 +29,8 @@ export function mobilePreferencesFromSharedClientSettings(
     ...(valid.sidebarWorkingShelfEnabled === undefined
       ? {}
       : { workingShelfEnabled: valid.sidebarWorkingShelfEnabled }),
+    ...(valid.sidebarProjectGroupingMode === undefined
+      ? {}
+      : mobileProjectGroupingModePatch(valid.sidebarProjectGroupingMode)),
   };
 }

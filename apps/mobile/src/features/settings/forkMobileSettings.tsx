@@ -100,6 +100,13 @@ const FORK_MOBILE_SWITCHES = [
       "After the thread list syncs, load the newest threads into the message cache, so they open without a wait.",
   },
   {
+    key: "terminalThreads",
+    icon: "terminal",
+    label: "Terminal threads",
+    subtitle:
+      "A new thread draft offers Terminal: a thread whose screen is a live shell on the server.",
+  },
+  {
     key: "threadAddressing",
     icon: "link",
     label: "Thread addressing",

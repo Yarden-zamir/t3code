@@ -29,12 +29,52 @@ Local builds can keep their disposable Vite caches and Android app outputs outsi
 
 ## Worktrees
 
-### Restore worktrees on resume
+### Worktree lifecycle
+
+A thread worktree goes through four stages. The fork adds three server settings to upstream's worktree location and storage cleanup rules.
+
+| Stage   | What it decides                   | Setting                                                                          |
+| ------- | --------------------------------- | -------------------------------------------------------------------------------- |
+| Place   | Where a new worktree goes         | `worktreePathTemplate` (empty by default: the worktree location applies)         |
+| Keep    | What stays while a thread is idle | `worktreeArtifactsAfterDays` (off by default; 1–3650 days)                       |
+| Clean   | When the folder and the branch go | Upstream cleanup rules for the folder; `restoreWorktreesOnResume` for the branch |
+| Restore | What resume rebuilds              | `restoreWorktreesOnResume` (off by default)                                      |
+
+All three are in Settings > Worktrees > Creation: "Worktree path template", "Evict worktree artifacts" and "Restore worktrees on resume". The stages work on the server, for web, desktop, mobile, agent tools and scheduled turns.
+
+#### Place
+
+A template decides where new worktrees go, for example next to `main/` in a `.bare` container.
+
+- The variables are `{worktrees}` (the worktree location), `{repoDir}` (the checkout, or the `.bare` container), `{repo}` (the folder name of `{repoDir}`), `{branch}` (with `/` changed to `-`) and `{branchLeaf}` (the last part of the branch). The template must hold `{branch}` or `{branchLeaf}`.
+- For a `.bare` container, use `{repoDir}/{branchLeaf}`. A worktree for `feat/api/qcdi-1234-auth` then goes to `<container>/qcdi-1234-auth`, next to `main/`.
+- In a normal clone, a template path inside a checkout uses the default worktree location instead, so `{repoDir}/{branchLeaf}` works for both layouts. To place normal clone worktrees elsewhere, use `{worktrees}/{repo}/{branch}` or `{repoDir}/../{repo}-{branch}`.
+- With a template, an auto-named thread names its branch from the first six words of its first message, so the folder and the branch keep the same name. The static branch naming mode adds its prefix. A taken name gets a `-1`, `-2` suffix. After 100 taken suffixes, the thread keeps its temporary `t3/<id>` branch. When a branch such as `t3` blocks `t3/x`, the name becomes `t3-x`.
+- Storage cleanup treats a template worktree outside the worktree location as managed, because T3 marks the worktrees that it creates.
+- **Limits:** a branch that you type, and a pull request branch, keep their names. If their folder exists, the launch fails and names the folder. Use `{branch}` when different branches end in the same last part.
+
+#### Keep
+
+The folder, the branch and the saved path of a thread stay until a clean rule applies. With `worktreeArtifactsAfterDays` set, ignored build outputs go before dependencies, and the worktree and its branch stay. The storage cleanup report splits logical file bytes and folder counts into Android builds, Gradle caches, other builds, other caches and `node_modules`. These are not recorded as physical space freed: pnpm files can share APFS blocks with its store. Evicted dependencies run normal project setup before the next turn, even if eviction has since been switched off. Build outputs do not trigger setup or an extra build step on resume; the agent's next build recreates them.
+
+The measured Mac examples were 6.91 GiB logical `node_modules` removed for 0.13 GiB reclaimed, and 1.35 GiB `apps/mobile/android/app/build` removed for 1.18 GiB reclaimed. These are reference measurements, not a conversion rule or a prediction of the next cleanup's physical reclamation.
+
+- **Eligibility:** this protects process cwds and T3-known active work. A single idle thread must own the checkout. It must be inactive for the configured days, or settled for one minute. Shared threads and subagents, running, queued or pending work, setup, builds, open terminals and uncertain process visibility keep artifacts. T3 metadata naming the worktree blocks cleanup even when its cwd is higher. Any process cwd in the checkout, a descendant or its container (the immediate parent holding sibling worktrees) also blocks cleanup. A deleted or unreadable cwd blocks cleanup only when its old path is in the checkout, a descendant or its container. The nearest readable folder above it gives that path. This rule also applies to T3 terminal and provider session cwds. A project setup script must be configured. These guards stay independent of the process scan and run again before deletion.
+- **Files:** exact reviewed relative paths only, including `apps/mobile/android/app/build`; there is no arbitrary `build` or `dist` basename rule. Dependency paths are expanded from workspace declarations into exact `node_modules` paths. Git must ignore each folder and track no file within it. Extension and path rules classify conservatively; they do not prove where a file came from or distinguish every hand-written ignored `.js` or `.json` file from generated output. A `.env*` file, secret, original source or unknown content, `_shared` link, or link outside the checkout keeps the whole folder. For an unrecognized file type, the report says the folder was kept and gives its reason and an example path. Kotlin incremental table exceptions apply only under `kotlin/<task>/cacheable/caches-jvm/`. Shared pnpm storage is not managed by this feature.
+- **Limits:** orphan Git worktrees without a stored T3 thread are excluded. A clean process list does not prove no external activity. A process above the container, such as one with cwd `$HOME` or `/`, can still act on the worktree through an absolute path; revisit if a real tool does that. T3-known active work remains protected independently of that cwd bound. Process checks support macOS and Linux. Other systems keep artifacts until inspection is available. This setting does not change upstream whole-worktree cleanup rules. With [central build caches](#central-build-caches) on, `apps/mobile/android/app/build` is a link, so this feature keeps it. Use `node scripts/fork-build-cache-prune.ts` for the central caches.
+
+#### Clean
+
+Upstream's storage cleanup rules decide when a worktree folder goes (Settings > Storage, and per project). With `restoreWorktreesOnResume` on, each cleanup run also deletes the local branch of a thread worktree whose folder is gone, when restore can rebuild that branch. This keeps a repeated message, such as a scheduled task, from using up all branch name suffixes.
+
+- **Rule:** cleanup deletes a branch only when all of these are true. No Git worktree registration uses it, also one whose folder is gone. It is not the default branch of `origin`. No thread folder that names it still exists. If a thread that can still resume names it, including an archived thread, its tip is on `origin`'s default branch, because restore recreates a deleted branch from there. If only deleted threads name it, each commit is on the default branch or on a remote-tracking ref. A branch with other commits always stays.
+- **See it:** the storage cleanup report shows "Deleted branch …" with the reason, and the server log has one line for each deleted branch.
+- **Limits:** without `origin` or its default branch (`refs/remotes/origin/HEAD`), every branch stays. A stale remote-tracking ref counts as on the remote; cleanup does not fetch for it. A branch with a squash-merged pull request has commits beyond the default branch, so it stays. Revisit this when such branches pile up.
+
+#### Restore
 
 Restore a missing worktree at its saved path before starting the next turn. An existing folder starts as it is, on any branch, as upstream does. After artifact eviction, setup runs in it when it is still a worktree of the project. If its branch still exists, recovery preserves it. If the branch was deleted, recovery fetches origin's default branch and creates the saved branch name from that revision. The thread warns that earlier uncommitted work is not in the recreated checkout. Project setup runs before the agent starts. Dependencies that artifact eviction removed also run normal setup. A missing `node_modules` that eviction did not remove does not run setup. The thread shows the restore as an activity. A stopped, failed or crashed setup closes that activity, and so does a server restart during setup. Missing build outputs do not add a setup or build step on resume; the next build recreates them.
 
-- **Setting:** `restoreWorktreesOnResume` (server setting, off by default). Settings > Worktrees > Creation > "Restore worktrees on resume".
-- **Works on:** server, for web, desktop, mobile, agent tools and scheduled turns.
 - **Way out:** when the folder of a branch worktree is gone and cannot be restored, the failure row offers "Recreate on a new branch" on web, desktop and mobile. It creates a worktree on `<branch>-restored`, from the old branch when it still exists and from the default branch otherwise. It runs project setup and sends the message of the latest failed run again, as the user who clicked. That message runs before the messages that the failure held. If the message cannot be sent, the button shows the error. A lead agent moves such a thread with `t3_worktree_handoff` and its `threadId`. A `continuationPrompt` from the lead can run after the messages that the failure held, and the lead gets its result.
 - **Limits:** a conflicting path stops recovery and setup after eviction. A failed recovery fails the turn with the reason ("Couldn't restore thread workspace"). Only this checkout's Git registration is repaired; no broad prune runs. When its branch exists, its saved index and refs, including staged changes, stay. Existing branches are never reset. Deleted-branch recovery requires a reachable origin with a discoverable default branch; its old index is not restored. Dependencies require a configured project setup script. When this setting is off, upstream's recovery runs unchanged: for a managed worktree path, it runs `git worktree prune` and adds the worktree again, without project setup. It creates a deleted branch from the current branch of the project, and a failed recovery fails the turn. Pending dependency restoration after artifact eviction still runs.
 
@@ -45,18 +85,6 @@ Auto-settle skips a thread while a background command of its agent runs, for exa
 - **Setting:** `autoSettleWaitsForBackgroundCommands` (server setting, off by default). Settings > Threads > Auto-settle > "Auto-settle waits for background commands".
 - **Works on:** server, for every provider that reports background commands. Manual settle still stops the session.
 - **Limits:** a command left running, such as a dev server, holds the thread until the session releases idle background work (`DEFAULT_MAX_IDLE_PIN_MS` in `apps/server/src/orchestration-v2/ProviderSessionManager.ts`). Revisit this if threads with dev servers stay unsettled too long.
-
-### Artifact-only worktree cleanup
-
-Remove regenerable build outputs before dependencies, without removing the worktree or its branch. The storage cleanup report splits logical file bytes and folder counts into Android builds, Gradle caches, other builds, other caches and `node_modules`. These are not recorded as physical space freed: pnpm files can share APFS blocks with its store. Evicted dependencies run normal project setup before the next turn, even if eviction has since been switched off. Build outputs do not trigger setup or an extra build step on resume; the agent's next build recreates them.
-
-The measured Mac examples were 6.91 GiB logical `node_modules` removed for 0.13 GiB reclaimed, and 1.35 GiB `apps/mobile/android/app/build` removed for 1.18 GiB reclaimed. These are reference measurements, not a conversion rule or a prediction of the next cleanup's physical reclamation.
-
-- **Setting:** `worktreeArtifactEviction` (server setting, off by default) and `worktreeArtifactEvictionDays` (14 days by default, 1–3650). Settings > Worktrees > Creation > "Evict worktree artifacts".
-- **Works on:** server. All clients, scheduled turns and agent tools use the same recovery path.
-- **Eligibility:** this protects process cwds and T3-known active work. A single idle thread must own the checkout and be settled or inactive for the configured days. Shared threads and subagents, running, queued or pending work, setup, builds, open terminals and uncertain process visibility keep artifacts. T3 metadata naming the worktree blocks cleanup even when its cwd is higher. Any process cwd in the checkout, a descendant or its container (the immediate parent holding sibling worktrees) also blocks cleanup. A deleted or unreadable cwd blocks cleanup only when its old path is in the checkout, a descendant or its container. The nearest readable folder above it gives that path. This rule also applies to T3 terminal and provider session cwds. A project setup script must be configured. These guards stay independent of the process scan and run again before deletion.
-- **Files:** exact reviewed relative paths only, including `apps/mobile/android/app/build`; there is no arbitrary `build` or `dist` basename rule. Dependency paths are expanded from workspace declarations into exact `node_modules` paths. Git must ignore each folder and track no file within it. Extension and path rules classify conservatively; they do not prove where a file came from or distinguish every hand-written ignored `.js` or `.json` file from generated output. A `.env*` file, secret, original source or unknown content, `_shared` link, or link outside the checkout keeps the whole folder. For an unrecognized file type, the report says the folder was kept and gives its reason and an example path. Kotlin incremental table exceptions apply only under `kotlin/<task>/cacheable/caches-jvm/`. Shared pnpm storage is not managed by this feature.
-- **Limits:** orphan Git worktrees without a stored T3 thread are excluded. A clean process list does not prove no external activity. A process above the container, such as one with cwd `$HOME` or `/`, can still act on the worktree through an absolute path; revisit if a real tool does that. T3-known active work remains protected independently of that cwd bound. Process checks support macOS and Linux. Other systems keep artifacts until inspection is available. This setting does not change or disable upstream whole-worktree cleanup rules; turn those off separately if you want every checkout kept. With [central build caches](#central-build-caches) on, `apps/mobile/android/app/build` is a link, so this feature keeps it. Use `node scripts/fork-build-cache-prune.ts` for the central caches.
 
 ## Remote access
 
@@ -209,7 +237,7 @@ The `t3.settings` state on kitshn holds a shared part and a part for each machin
 
 - Custom themes (the `themes/` folder, as `sharedThemes`) and `defaultTheme` sync too.
 - Keybindings sync while `keybindingSync` is on (off by default). Settings > Keybindings > "Sync keybindings". The shared value replaces the whole `keybindings.json` of each machine, and the machine keeps the file before it as `keybindings.json.bak`.
-- Web, desktop and mobile apply the client settings of the machine that serves them. A browser leaves out the settings that only the desktop app uses. The mobile app takes only the settings that it has. A change on the device stays until the synced value changes again.
+- Web, desktop and mobile apply the client settings of the machine that serves them. A browser leaves out the settings that only the desktop app uses. The mobile app takes only the settings that it has: `followUpBehavior`, `mathRenderingEnabled`, `planModeEnabled`, `sidebarWorkingShelfEnabled` and `sidebarProjectGroupingMode`. A change on the device stays until the synced value changes again.
 - Agents set one value of their own machine with `machines_set_setting`. Only the owner changes the shared part: in T3 Settings, or with `t3 tool call` from a shell.
 - Paths, secrets and project-keyed maps stay on each machine.
 
@@ -262,31 +290,26 @@ A signed Android APK of fork main, on fork releases that changed the app. It ins
   - No over-the-air updates, because those come from the upstream Expo project. Update with Obtainium.
   - arm64 phones only.
 
-### Fork installers
+### Updates
 
-One command installs the fork from the fork releases on macOS, Windows or Linux, then names the kitshn join step. The installer does not build from source. Commands and options: [Install the fork](operations.md#install-the-fork).
+One update policy for the desktop app and the server. Only the last step differs: the desktop app replaces itself with its updater (Squirrel.Mac, NSIS on Windows, the AppImage on Linux), and the server switches its runtime through the service launcher. How it works for maintainers: [Update and install](operations.md#update-and-install).
 
-### Install when idle
-
-While agents or programs in terminal threads run, the desktop update button offers "Install when idle" next to "Install now". The app installs the update when no agent turn and no terminal thread program runs. A terminal thread program holds the update by the rules of [Server auto-update](#server-auto-update): at most 6 hours from the choice, then a notice in its terminal, and the install about 10 minutes later.
-
-- **Works on:** desktop.
-- **Limits:** the wait lives in the window, so a window reload drops it. Revisit if a reload during the wait loses an update in practice.
-
-### Server auto-update
-
-A headless server that runs as the background service installs each newer fork release when no agent turn, no background shell and no program in a terminal thread runs. A program in a terminal thread holds the update for at most 6 hours (`TERMINAL_UPDATE_HOLD_MAX_HOURS` in `packages/contracts/src/forkTerminalThreads.ts`). Then its terminal shows a notice, and the update installs about 10 minutes later and ends the program.
-
-- **Setting:** server setting `forkAutoUpdate` (off by default). Settings > Maintenance > Updates > "Server auto-update".
-- **Works on:** server (the background service of `t3 service install`). The desktop app updates itself.
-- **Limits:** the restart stops running turns. Turn on [Recover interrupted agents](#recover-interrupted-agents) to continue them. Details: [Server updates](operations.md#server-updates).
-
-### Newer update before install
-
-Before the desktop app installs a downloaded update, it checks for a newer release. If one exists, it asks "Download newer" or "Install this one". Install when idle and the kitshn install-update command take the newer release.
-
-- **Setting:** client setting `checkNewerBeforeUpdateInstall` (off by default). Settings > About > App > "Check for a newer update before install".
-- **Works on:** desktop.
+- **Policy:**
+  - The newest fork release. The server takes the newest release that has `SHA256SUMS`. Before the desktop app installs a downloaded update, it checks for a newer release and downloads that one instead.
+  - A checksum. The server checks the archive against `SHA256SUMS`, and the desktop updater checks its download against the release feed.
+  - When idle: no agent turn and no background shell runs. A program in a terminal thread holds the update for at most 6 hours (`TERMINAL_UPDATE_HOLD_MAX_HOURS` in `packages/contracts/src/forkTerminalThreads.ts`). Then its terminal shows a notice, and the update installs about 10 minutes later and ends the program.
+  - The `t3` command follows: after the update, `t3 --version` names the new version.
+- **Setting:** server setting `forkUpdateMode`, `manual` (default) or `automatic`. Settings > Maintenance > Updates > "Automatic updates". With `automatic`, the server checks the fork releases every 5 minutes and installs when idle, and the desktop app installs each download when idle. The desktop app reads the setting of its own server.
+- **Start an update by hand:**
+  - Desktop: the update button. While agents or terminal programs run, it offers "Install when idle" next to "Install now".
+  - Server: `t3 update` on the machine.
+  - Agents and other machines: the kitshn command install-update of the T3 card (`machines_command` with `install-update`). It waits for idle with either setting.
+- **Install:** one command per OS family, see [Install the fork](operations.md#install-the-fork).
+- **Works on:** desktop (macOS, Windows, Linux) and the server of `t3 service install` on Linux. The fork publishes server archives only for Linux.
+- **Limits:**
+  - An update restarts the server and stops running turns. Turn on [Recover interrupted agents](#recover-interrupted-agents) to continue them.
+  - The desktop wait lives in the window, so a window reload drops it. Revisit if a reload during the wait loses an update in practice.
+  - The installers download the desktop apps without a checksum check. Revisit if a release asset can change after its upload.
 
 ### Changelog
 
@@ -307,8 +330,7 @@ A timeline of fork releases and their commits, the upstream commits that fork ma
 
 These README lines are maintainer procedures:
 
-- Local deploy: [Deploy a local build](operations.md#deploy-a-local-build).
-- Local Mac build: [Local Mac build](operations.md#local-mac-build).
+- Local deploy of a server or the Mac app: [Deploy a local build](operations.md#deploy-a-local-build).
 - Fork Sync: [Fork Sync](operations.md#fork-sync).
 - Fork CI: [Fork CI](operations.md#fork-ci).
 - Repair agent: [Repair agent](operations.md#repair-agent).
@@ -449,18 +471,6 @@ The sidebar lists threads that wait in a Waiting shelf, under the Working shelf.
 - **Use it:** a thread is in the Waiting shelf when its run waits on another thread, or when background work that the agent waits on holds its completion (`forkThreadIsWaiting` in `packages/client-runtime/src/state/forkTerminalThreads.ts`). A thread is in one shelf only. Waiting wins over Working. The shelf has the count, the collapse toggle, the sort and the drag rules of the Working shelf. When no thread waits, the shelf does not show.
 - **Limits:** the boring sidebar in Labs has no Working shelf, so it has no Waiting shelf.
 
-### Worktree path template
-
-A template decides where new worktrees go, for example next to `main/` in a `.bare` container.
-
-- **Setting:** server setting `worktreePathTemplate` (empty by default: the worktree location setting applies). Settings > Worktrees > Creation > "Worktree path template".
-- **Works on:** server.
-- The variables are `{worktrees}` (the worktree location), `{repoDir}` (the checkout, or the `.bare` container), `{repo}` (the folder name of `{repoDir}`), `{branch}` (with `/` changed to `-`) and `{branchLeaf}` (the last part of the branch). The template must hold `{branch}` or `{branchLeaf}`.
-- For a `.bare` container, use `{repoDir}/{branchLeaf}`. A worktree for `feat/api/qcdi-1234-auth` then goes to `<container>/qcdi-1234-auth`, next to `main/`.
-- In a normal clone, a template path inside a checkout uses the default worktree location instead, so `{repoDir}/{branchLeaf}` works for both layouts. To place normal clone worktrees elsewhere, use `{worktrees}/{repo}/{branch}` or `{repoDir}/../{repo}-{branch}`.
-- With a template, an auto-named thread names its branch from the first six words of its first message, so the folder and the branch keep the same name. The static branch naming mode adds its prefix. A taken name gets a `-1`, `-2` suffix. Storage cleanup keeps branches, so a repeated message such as a scheduled task can use up all 100 suffixes; the thread then keeps its temporary `t3/<id>` branch. When a branch such as `t3` blocks `t3/x`, the name becomes `t3-x`.
-- **Limits:** a branch that you type, and a pull request branch, keep their names. If their folder exists, the launch fails and names the folder. Use `{branch}` when different branches end in the same last part.
-
 ### Thread addressing
 
 Thread links in chat open the thread in T3 Code, each message has a link of its own, and a thread address from another app opens the desktop app.
@@ -492,7 +502,7 @@ Thread links in chat open the thread in T3 Code, each message has a link of its 
 Pin a message with the pin button beside its copy buttons, or with the command palette item "Pin or unpin message" for the message under the timeline cursor. Bind `timeline.pinMessage` in Settings > Keybindings if needed. A pinned message keeps its buttons visible. **Pins** in thread details lists the pins of the thread. A pin button next to Usage in the sidebar footer lists the pins of all connected environments; it shows only while one pin or more exists. A click on a pin opens the thread at that message.
 
 - **Settings:** client setting `messagePins` (off by default), Settings > General > Display > "Message pins". Server setting `mobileMessagePins` (off by default), Settings > Appearance > Mobile app > "Message pins on mobile": a long press on a message in the mobile app offers Pin and Unpin.
-- **Works on:** web and desktop. Mobile: Pin and Unpin only, no list.
+- **Works on:** web and desktop. Mobile: Pin and Unpin, and Settings > Fork > "Pinned messages", which lists the pins of the environments with `mobileMessagePins` on. A tap opens the thread at the message, and the pin button unpins it. The row shows only while one pin or more exists.
 - **Storage:** the server setting `pinnedMessages` of the environment, so all its clients show the same pins. Restore defaults keeps the pins. kitshn does not sync them, because thread ids belong to one environment.
 - **Limits:** an environment keeps 200 pins. A pin keeps a 160-character excerpt and the thread title from the time of the pin. A pin of a thread that the sidebar does not list shows "Thread archived or deleted". "Message deleted" shows only for the open thread, when all its history is loaded. Agents have no MCP tool for pins.
 
@@ -603,6 +613,7 @@ Tooltips, menus and the command palette show the keys of an action as chips, suc
 - **Setting:** client settings `tooltipShortcuts` (on by default) and `tooltipShortcutLimit` (default 4, 1 to 9). Settings > Keybindings > Keyboard > "Shortcuts in tooltips" and "Keys per tooltip".
 - **Works on:** web, desktop.
 - Your own keys come first. More keys than the limit show as "+N".
+- Compaction keys: `chat.compactContext` (`mod+alt+shift+c`) runs "Compact context". `composer.toggleCompactBeforeSend` (`mod+alt+shift+k`) flips the "Compact" or "Keep" toggle, with the `when` condition `compactBeforeSendShown`.
 - **Limits:** a sidebar tab names no digit while focus levels are off. A sidebar row names the pin and settle keys only for the open thread.
 
 ### Keyboard cheat sheet
@@ -627,7 +638,7 @@ On a Settings page, `mod+f` opens a find box in the header. The rows of that pag
 
 A thread whose screen is a live terminal, next to the other threads of a project. A schedule or an agent can type into it; a webhook task cannot. User guide: [Terminal threads](terminal-threads.md).
 
-- **Setting:** server setting `terminalThreads` (off by default); client settings `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax` (8 and 24), the zoom limits of every terminal (Cmd+=, Cmd+-, Cmd+0, macOS only, because Ctrl+- is undo in shells), and `currentProjectTerminalOpensThread` (off), which makes New terminal thread in current project press the enlarge button at once. Settings > Terminal (`TerminalSettings.tsx`), which holds every terminal setting: the drawer terminal and terminal threads. The terminal font stays in Appearance > Typography, where upstream keeps it; Settings > Terminal has a row that opens it there. Its fork rows render through the places `terminal-all-terminals` and `terminal-threads` (`forkSettingsCatalog.ts`). The Fork page lists them again, with a link to Settings > Terminal, and the settings search finds each row at both places. Keybinding commands `chat.newTerminal` (`mod+alt+t`) and `chat.newTerminalLocal` (`mod+alt+shift+n`).
+- **Setting:** server setting `terminalThreads` (off by default); client settings `terminalThreadFontSizeMin` and `terminalThreadFontSizeMax` (8 and 24), the zoom limits of every terminal (Cmd+=, Cmd+-, Cmd+0, macOS only, because Ctrl+- is undo in shells), and `currentProjectTerminalOpensThread` (off), which makes New terminal thread in current project press the enlarge button at once. Settings > Terminal (`TerminalSettings.tsx`), which holds every terminal setting: the drawer terminal and terminal threads. The terminal font stays in Appearance > Typography, where upstream keeps it; Settings > Terminal has a row that opens it there. Its fork rows render through the places `terminal-all-terminals` and `terminal-threads` (`forkSettingsCatalog.ts`). The Fork page lists them again, with a link to Settings > Terminal, and the settings search finds each row at both places. Keybinding commands `chat.newTerminal` (`mod+alt+t`) and `chat.newTerminalLocal` (`mod+alt+shift+n`). In the mobile Settings, Fork has a "Terminal threads" switch for `terminalThreads`.
 - **Works on:** web, desktop and mobile create and use them. The mobile app opens one on its native terminal screen. It has no draft terminal: the Terminal control of the new-thread draft (`ForkNewTerminalThreadControl.tsx`), shown only for a draft with a project because a terminal thread needs a project folder, opens a sheet (`ForkNewTerminalThreadSheet.tsx`) that takes the shell and the folder (project folder, an existing worktree from the first page of branches, or a new worktree from the base branch of the draft through `vcs.prepareDraftWorktree`), then creates the thread at once, with the input that the web draft also uses (`terminalThreadCreateInput` in `client-runtime/src/state/forkTerminalThreadCreation.ts`). The mobile terminal screen renames such a thread after its first command, as the web screen does. Remote environments work the same, because the terminal runs on the server of the thread.
 - **Setting off:** the server starts no shell of a terminal thread. `terminal.open` and `terminal.restart` of its main terminal, and any `shell` field, fail with `TerminalThreadsOffError`. `terminal.attach` of its main terminal streams the live session or the saved output without a shell (`TerminalManager.forkSavedOutputStream`), so every client, also an older one, shows it read only. The web screen blocks input and names the setting (`readOnlyNotice` of `ForkShellTerminal`). The `terminal` provider instance is disabled, so a message, a schedule or an MCP launch fails. Agents get the text about terminal threads only while the setting is on: it is the `usage` of the `terminal` entry of `orchestrator_capabilities` (`fork/terminalProvider/agentUsage.ts`), not part of the session instructions. A program that still runs keeps running, and its drawer terminals work as in any thread.
 - **Thread:** a normal thread with the provider `terminal` (constants in `packages/contracts/src/forkTerminalThreads.ts`). `ThreadRouteView` renders `ForkTerminalThreadScreen` for it, not `ChatView`: the thread header above the main terminal `term-1`, with the drawer for the other terminals. The right panel, the thread details and their shortcuts work like the ones of ChatView: `components/chat/useThreadRightPanel.tsx` holds the panel state of the screen and takes its actions and its layout from ChatView's `useRightPanelActions` and `ChatRightPanel`. Without a composer (`composerDraftTarget` null), the panel offers no "send to chat", "Add to chat" or diff and file comments, and the thread details leave out the project scripts. The environment notices are ChatView's (`useSystemComposerBanners`). The snooze and settle line (`useForkThreadStatusLine`, with the terminal snooze rule) copies the status line part of ChatView's `useThreadLifecycle`, which needs a composer. The thread error banner is the only place a failed message shows.
@@ -665,7 +676,7 @@ App shortcuts take priority in a focused terminal, and the app asks before a ter
 
 - **Setting:** client settings `terminalAppShortcutsFirst` (off by default) and `confirmTerminalClose` (on by default). Settings > Terminal > "App shortcuts in terminal" and "Terminal close confirmation".
 - **Works on:** web, desktop.
-- **Limits:** the mobile app does not ask before a terminal closes. Revisit if a mobile user closes a running terminal by mistake.
+- **Limits:** the mobile app does not ask, because it never closes a terminal: its close button only leaves the terminal screen. Revisit if the mobile app gets a close action.
 
 ## Web app and look
 
@@ -750,7 +761,7 @@ The fork desktop app, its notifications and the bundled web page use the Tick3d 
 
 ### Fork settings on mobile
 
-Fork in the mobile Settings holds the fork settings that apply to the mobile app: [themes](#themes), the camera in the composer, thread addressing and what New thread opens. Threads also shows the camera, thread addressing and what New thread opens. A change writes the setting to each selected environment.
+Fork in the mobile Settings holds the fork settings that apply to the mobile app: [themes](#themes), the camera in the composer, message pins, sidebar tabs, terminal threads, thread addressing and what New thread opens. It also has "Pinned messages", see [Message pins](#message-pins). Threads also shows the camera, message pins, thread addressing and what New thread opens. A change writes the setting to each selected environment.
 
 - **Works on:** mobile.
 - **Limits:** a change on the phone is the own value of each server, not the shared value on kitshn. Set the shared value with "All environments" in T3 Settings.

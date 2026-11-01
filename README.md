@@ -32,13 +32,9 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Fork releases](docs/fork/features.md#fork-releases):** nightly desktop builds and Linux server archives from fork main.
 - **[Daily release](docs/fork/operations.md#daily-release):** each morning a VPS task promotes the newest nightly to a release with highlighted notes.
 - **[Android APK](docs/fork/features.md#android-apk):** a signed APK of fork main that installs next to the store app.
-- **[Fork installers](docs/fork/features.md#fork-installers):** one command installs the fork.
-- **[Install when idle](docs/fork/features.md#install-when-idle):** while agents run, the update offers "Install when idle".
-- **[Server auto-update](docs/fork/features.md#server-auto-update):** a headless server installs each newer fork release when idle.
-- **[Newer update before install](docs/fork/features.md#newer-update-before-install):** the desktop app checks for a newer release before it installs.
+- **[Updates](docs/fork/features.md#updates):** one install command per OS, and one update policy for the desktop app and the server: the newest release, when idle, automatic or manual.
 - **[Changelog](docs/fork/features.md#changelog):** a timeline of fork releases, upstream commits and Fork Sync runs.
-- **[Local deploy](docs/fork/operations.md#deploy-a-local-build):** `scripts/fork-deploy-local.sh <ssh-host>` deploys this checkout to a headless Linux server.
-- **[Local Mac build](docs/fork/operations.md#local-mac-build):** `scripts/fork-desktop-mac.sh` builds and signs the Mac app from this checkout.
+- **[Local deploy](docs/fork/operations.md#deploy-a-local-build):** `scripts/fork-deploy-local.sh` deploys this checkout to a headless Linux server or to the Mac app.
 - **[Central build caches](docs/fork/features.md#central-build-caches):** opt-in Vite caches and Android app outputs outside checkouts, with central-only pruning.
 - **[Fork Sync](docs/fork/operations.md#fork-sync):** a workflow merges upstream main into fork main; a T3 task on the VPS starts it every 2 hours.
 - **[Fork CI](docs/fork/operations.md#fork-ci):** runs on each push and pull request to main; branch protection requires "Fork CI result".
@@ -58,13 +54,11 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 **Threads**
 
-- **[Restore worktrees on resume](docs/fork/features.md#restore-worktrees-on-resume):** recover a missing checkout at its saved path, recreate a deleted branch from the origin default branch, run project setup before continuing, and offer "Recreate on a new branch" when the folder cannot be restored (off by default).
-- **[Artifact-only worktree cleanup](docs/fork/features.md#artifact-only-worktree-cleanup):** evict ignored build outputs before dependencies, keep checkouts and branches, and report logical bytes per folder type (off by default; no orphan cleanup).
+- **[Worktree lifecycle](docs/fork/features.md#worktree-lifecycle):** a path template places new worktrees, idle worktrees lose ignored build outputs and dependencies, cleanup deletes branches that restore can rebuild, and resume recreates a missing checkout with project setup (each part off by default).
 - **[Sidebar tabs](docs/fork/features.md#sidebar-tabs):** tabs above the sidebar list that hold threads, filled by drag or by rules. Mobile shows and edits them too.
 - **[Waiting shelf](docs/fork/features.md#waiting-shelf):** threads that wait on other threads or background work get their own shelf under Working.
-- **[Worktree path template](docs/fork/features.md#worktree-path-template):** a template decides where new worktrees go.
+- **[Message pins](docs/fork/features.md#message-pins):** pin messages, and list the pins in thread details, in the sidebar and in the mobile Settings.
 - **[Thread addressing](docs/fork/features.md#thread-addressing):** thread links in chat show as attached-thread chips, each message has a link of its own, and a thread address from Slack or GitHub opens the desktop app (off by default).
-- **[Message pins](docs/fork/features.md#message-pins):** pin messages, and list the pins in thread details and in the sidebar.
 - **[New thread on mobile](docs/fork/features.md#new-thread-on-mobile):** New thread in the mobile app opens the project list, the last project, or no project.
 - **[Camera in the mobile composer](docs/fork/features.md#camera-in-the-mobile-composer):** the plus button of the mobile composer can take a photo.
 - **[Android assistant panel](docs/fork/features.md#android-assistant-panel):** the Android assistant button starts a thread with the screen.

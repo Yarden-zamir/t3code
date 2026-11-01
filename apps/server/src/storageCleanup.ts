@@ -36,6 +36,7 @@ import { parse as parseYaml } from "yaml";
 
 import * as ServerConfig from "./config.ts";
 import * as ForkWorktreeArtifacts from "./fork/ForkWorktreeArtifacts.ts";
+import * as ForkWorktreeBranches from "./fork/ForkWorktreeBranches.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -304,6 +305,7 @@ const make = Effect.gen(function* () {
     idle: storageCleanupThreadIdle,
     activityAt: storageCleanupActivityAt,
   }).pipe(Effect.provide(ForkWorktreeArtifacts.layerDefault));
+  const cleanWorktreeBranches = yield* ForkWorktreeBranches.makeSweep;
 
   // pnpm imports packages by clone or reflink when its store shares a device
   // with the worktree. Those files have one link but share blocks with the
@@ -1094,6 +1096,7 @@ const make = Effect.gen(function* () {
         entries.push({ ...entry, outcome: "removed", reason: sentence(removalReason), bytes });
         yield* gitManager.invalidateStatus(project.workspaceRoot);
         // Preserve branch/path so ProviderTurnStartService can recreate the checkout on resume.
+        // Fork: ForkWorktreeBranches deletes the branch later in this sweep only when restore can rebuild it.
         yield* Effect.logInfo("storage cleanup removed worktree", { threadId: thread.id });
       }).pipe(
         (effect) => withWorkspaceLease(worktreePath, effect),
@@ -1197,6 +1200,7 @@ const make = Effect.gen(function* () {
     keptDeletedWorktrees = deletedWorktrees.kept;
     sweptDeletions = deletionsAtStart;
     yield* cleanWorktreeArtifacts(serverSettings, now, entries);
+    yield* cleanWorktreeBranches(serverSettings, entries);
     for (const category of [
       {
         kind: "browser-artifacts" as const,
@@ -1330,7 +1334,8 @@ const make = Effect.gen(function* () {
           Equal.equals(settings.storageCleanup, lastSettings.storageCleanup) &&
           Equal.equals(settings.worktreeCleanup, lastSettings.worktreeCleanup) &&
           sameProjectWorktreePolicies(settings, lastSettings) &&
-          ForkWorktreeArtifacts.sameSettings(settings, lastSettings)
+          ForkWorktreeArtifacts.sameSettings(settings, lastSettings) &&
+          ForkWorktreeBranches.sameSettings(settings, lastSettings)
         )
           return Effect.void;
         lastSettings = settings;
