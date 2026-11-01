@@ -1,6 +1,6 @@
 import { isElectron } from "../../env";
 import { DeviceInviteSettingsRow } from "../../machineMap/desktopDevice";
-import { useKitshnMachines } from "../../state/environments";
+import { useKitshnMachines, usePrimaryEnvironmentId } from "../../state/environments";
 import { useMachineMapState } from "../../state/machineMap";
 import { KitshnBadge } from "../machines/KitshnMark";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
@@ -20,6 +20,7 @@ export function MachinesSettingsPanel() {
   const { environment } = useSettingsScope();
   const { state } = useMachineMapState(environment?.environmentId ?? null);
   const kitshnMachines = useKitshnMachines();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   if (environment === null) return null;
   const kitshnMachine = kitshnMachines.get(environment.environmentId);
   const problems = state?.connection.problems ?? [];
@@ -49,9 +50,11 @@ export function MachinesSettingsPanel() {
             </span>
           }
           description={
-            kitshnMachine === undefined
-              ? "A manual environment: an address that you added and paired."
-              : kitshnJoinedText(kitshnMachine)
+            kitshnMachine !== undefined
+              ? kitshnJoinedText(kitshnMachine)
+              : environment.environmentId === primaryEnvironmentId
+                ? "This machine is not joined to kitshn."
+                : "A manual environment: an address that you added and paired."
           }
         />
         {state === null ? null : <ConnectionRow connection={state.connection} />}
