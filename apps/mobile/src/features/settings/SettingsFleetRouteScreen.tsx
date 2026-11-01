@@ -4,7 +4,7 @@
  */
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
-import { fleetTaskSummary } from "@t3tools/client-runtime/fork/fleet";
+import { fleetDaemonText, fleetTaskSummary } from "@t3tools/client-runtime/fork/fleet";
 import { kitshnJoinedText, type ScheduledTask } from "@t3tools/contracts";
 import { useNavigation } from "@react-navigation/native";
 import { AsyncResult } from "effect/reactivity";
@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ListRow } from "../../components/ui/ListRow";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
+import { fleetDaemon } from "../../state/forkMachineMap";
 import { serverEnvironment } from "../../state/server";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -61,7 +62,16 @@ function FleetRow({ environment }: { readonly environment: ConnectedEnvironment 
       input: {},
     }),
   );
+  const daemonQuery = useAtomValue(
+    fleetDaemon({ environmentId: environment.environmentId, input: {} }),
+  );
   const kitshnMachine = config?.kitshnMachine;
+  const daemonText = fleetDaemonText(
+    kitshnMachine,
+    !connected || AsyncResult.isFailure(daemonQuery)
+      ? null
+      : AsyncResult.getOrElse(daemonQuery, () => undefined),
+  );
   const detail = [
     connectionStatusText({
       phase: environment.connectionState,
@@ -82,7 +92,9 @@ function FleetRow({ environment }: { readonly environment: ConnectedEnvironment 
         kitshnMachine ? `${environment.environmentLabel} · kitshn` : environment.environmentLabel
       }
       description={
-        kitshnMachine ? kitshnJoinedText(kitshnMachine) : "Manual environment: an address you added"
+        kitshnMachine
+          ? [kitshnJoinedText(kitshnMachine), daemonText].filter(Boolean).join(" · ")
+          : "Manual environment: an address you added"
       }
       detail={detail}
       onPress={() =>

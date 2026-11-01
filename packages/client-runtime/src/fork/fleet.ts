@@ -1,5 +1,11 @@
 /** Fork: the scheduled task summary and the command menu of one Fleet row, for web and mobile. */
-import type { FleetCommandInput, MachineCommandKind, ScheduledTask } from "@t3tools/contracts";
+import type {
+  FleetCommandInput,
+  KitshnDaemon,
+  KitshnMachineRef,
+  MachineCommandKind,
+  ScheduledTask,
+} from "@t3tools/contracts";
 
 export interface FleetTaskSummary {
   readonly enabled: number;
@@ -58,4 +64,18 @@ export function fleetMenuEntries(
   return FLEET_MENU.filter((entry) => supported.has(entry.command._tag)).map((entry, index) =>
     index === 0 ? { ...entry, separatorBefore: false } : entry,
   );
+}
+
+/**
+ * The daemon part of a Fleet row: null for a manual environment and while the read is pending.
+ * `daemon` is null when the server does not know it, for example while kitshn shows it offline.
+ */
+export function fleetDaemonText(
+  kitshnMachine: KitshnMachineRef | undefined,
+  daemon: KitshnDaemon | null | undefined,
+): string | null {
+  if (kitshnMachine === undefined || daemon === undefined) return null;
+  return daemon === null
+    ? "daemon unknown"
+    : `daemon ${daemon.version} · protocol ${daemon.protocol}`;
 }

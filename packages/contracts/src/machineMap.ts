@@ -36,6 +36,15 @@ export const KitshnMachineRef = Schema.Struct({
 });
 export type KitshnMachineRef = typeof KitshnMachineRef.Type;
 
+/** The kitshn daemon of an online machine, from its machine card in the kitshn state. */
+export const KitshnDaemon = Schema.Struct({
+  /** The kitshn release, such as `a573a04848bd`. */
+  version: Schema.String,
+  /** The kitshn wire version, such as `2.1.0`. */
+  protocol: Schema.String,
+});
+export type KitshnDaemon = typeof KitshnDaemon.Type;
+
 /** The secondary line of a kitshn-joined environment in an environment list. */
 export const kitshnJoinedText = (machine: Pick<KitshnMachineRef, "name">): string =>
   machine.name === null ? "Joined through kitshn" : `Joined through kitshn as ${machine.name}`;

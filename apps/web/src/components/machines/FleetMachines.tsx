@@ -5,9 +5,14 @@
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { kitshnMapUrl } from "@t3tools/client-runtime/fork/arrowLinks";
-import { fleetMenuEntries, fleetTaskSummary } from "@t3tools/client-runtime/fork/fleet";
+import {
+  fleetDaemonText,
+  fleetMenuEntries,
+  fleetTaskSummary,
+} from "@t3tools/client-runtime/fork/fleet";
 import {
   type FleetCommandInput,
+  type KitshnDaemon,
   kitshnJoinedText,
   type KitshnMachineRef,
   resolveEnvironmentMachineKind,
@@ -25,7 +30,7 @@ import {
   usePrimaryEnvironmentId,
 } from "~/state/environments";
 import { useDesktopUpdateState } from "~/state/desktopUpdate";
-import { fleetRunCommand, linkedMachines } from "~/state/machineMap";
+import { fleetDaemon, fleetRunCommand, linkedMachines } from "~/state/machineMap";
 import { useEnvironmentQuery } from "~/state/query";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -40,6 +45,9 @@ import { KitshnBadge } from "./KitshnMark";
 
 const fleetTasksAtom = environmentAtomList("web-fleet-scheduled-tasks", (environmentId) =>
   serverEnvironment.scheduledTasksLive({ environmentId, input: {} }),
+);
+const fleetDaemonsAtom = environmentAtomList("web-fleet-daemons", (environmentId) =>
+  fleetDaemon({ environmentId, input: {} }),
 );
 const fleetCommandPermissionsAtom = environmentAtomList(
   "web-fleet-command-permissions",
@@ -77,6 +85,7 @@ export function FleetMachines() {
   const connectedKey = environmentIdsKey(connectedIds);
   const taskQueries = useAtomValue(fleetTasksAtom(connectedKey));
   const permissions = useAtomValue(fleetCommandPermissionsAtom(connectedKey));
+  const daemonQueries = useAtomValue(fleetDaemonsAtom(connectedKey));
   // Machines that kitshn links to this one but that this app does not reach itself.
   const linked = useEnvironmentQuery(
     primaryEnvironmentId === null
@@ -91,6 +100,7 @@ export function FleetMachines() {
       {ordered.map((environment) => {
         const index = connectedIds.indexOf(environment.environmentId);
         const query = index < 0 ? null : taskQueries[index]!;
+        const daemonQuery = index < 0 ? null : daemonQueries[index]!;
         return (
           <FleetMachineRow
             key={environment.environmentId}
@@ -101,6 +111,11 @@ export function FleetMachines() {
               query === null ? null : (AsyncResult.getOrElse(query, () => null)?.tasks ?? null)
             }
             canRunCommands={index >= 0 && permissions[index] === true}
+            daemon={
+              daemonQuery === null || AsyncResult.isFailure(daemonQuery)
+                ? null
+                : AsyncResult.getOrElse(daemonQuery, () => undefined)
+            }
           />
         );
       })}
@@ -123,12 +138,15 @@ function FleetMachineRow({
   kitshnMachine,
   tasks,
   canRunCommands,
+  daemon,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly isPrimary: boolean;
   readonly kitshnMachine: KitshnMachineRef | undefined;
   readonly tasks: ReadonlyArray<ScheduledTask> | null;
   readonly canRunCommands: boolean;
+  /** Undefined while the read is pending. */
+  readonly daemon: KitshnDaemon | null | undefined;
 }) {
   const navigate = useNavigate();
   const runCommand = useAtomCommand(fleetRunCommand, { reportFailure: false });
@@ -180,7 +198,9 @@ function FleetMachineRow({
         <>
           <p className="truncate text-xs text-muted-foreground">
             {kitshnMachine !== undefined
-              ? kitshnJoinedText(kitshnMachine)
+              ? [kitshnJoinedText(kitshnMachine), fleetDaemonText(kitshnMachine, daemon)]
+                  .filter(Boolean)
+                  .join(" · ")
               : isPrimary
                 ? "Not joined to kitshn."
                 : "Manual environment: an address that you added and paired."}

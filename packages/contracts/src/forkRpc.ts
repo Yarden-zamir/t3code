@@ -22,7 +22,7 @@ import {
   ForkUpstreamPending,
 } from "./forkChangelog.ts";
 import { ForkLocalListenerList } from "./forkPreview.ts";
-import { FleetCommandInput, FleetCommandResult } from "./machineMap.ts";
+import { FleetCommandInput, FleetCommandResult, KitshnDaemon } from "./machineMap.ts";
 import {
   ForkMoveTerminalToThreadError,
   ForkMoveTerminalToThreadInput,
@@ -63,6 +63,8 @@ export const FORK_WS_METHODS = {
   machineMapReadableEnvironments: "machineMap.readableEnvironments",
   // Fork: a machine command from the Fleet view, run by the server that the client reaches.
   fleetRunCommand: "fleet.runCommand",
+  // Fork: the kitshn daemon of the machine of this server, for its Fleet row.
+  fleetDaemon: "fleet.daemon",
 
   // Fork: Web Push (webPush.ts)
   webPushPublicKey: "webPush.publicKey",
@@ -142,6 +144,13 @@ const WsFleetRunCommandRpc = Rpc.make(FORK_WS_METHODS.fleetRunCommand, {
   error: EnvironmentAuthorizationError,
 });
 
+/** Fork: the daemon of this machine, or null when kitshn does not show it online. */
+const WsFleetDaemonRpc = Rpc.make(FORK_WS_METHODS.fleetDaemon, {
+  payload: Schema.Struct({}),
+  success: Schema.NullOr(KitshnDaemon),
+  error: EnvironmentAuthorizationError,
+});
+
 const webPushError = Schema.Union([WebPushError, EnvironmentAuthorizationError]);
 /** Fork: the key that a browser subscribes with, so that this server can push to it. */
 const WsWebPushPublicKeyRpc = Rpc.make(FORK_WS_METHODS.webPushPublicKey, {
@@ -208,6 +217,7 @@ export const ForkWsRpcGroup = RpcGroup.make(
   WsMachineMapShareSettingsRpc,
   WsMachineMapReadableEnvironmentsRpc,
   WsFleetRunCommandRpc,
+  WsFleetDaemonRpc,
   WsWebPushPublicKeyRpc,
   WsWebPushSubscribeRpc,
   WsWebPushTestRpc,
@@ -247,6 +257,8 @@ export const FORK_RPC_READ_SCOPES = {
   // Fork: MM-1701. The same data that an agent with read access gets from `machines_read`.
   // Fork: MM-1907. Names the machines whose threads this server's agents can read.
   [FORK_WS_METHODS.machineMapReadableEnvironments]: AuthOrchestrationReadScope,
+  // Fork: the daemon release that `machines_read` shows for this machine.
+  [FORK_WS_METHODS.fleetDaemon]: AuthOrchestrationReadScope,
   // Fork: a subscription receives the thread titles of this server, which reading allows already.
   [FORK_WS_METHODS.webPushPublicKey]: AuthOrchestrationReadScope,
   [FORK_WS_METHODS.webPushSubscribe]: AuthOrchestrationReadScope,

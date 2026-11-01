@@ -1,7 +1,7 @@
-import type { ScheduledTask } from "@t3tools/contracts";
+import { MachineId, type ScheduledTask } from "@t3tools/contracts";
 import { expect, it } from "vite-plus/test";
 
-import { fleetMenuEntries, fleetTaskSummary } from "./fleet.ts";
+import { fleetDaemonText, fleetMenuEntries, fleetTaskSummary } from "./fleet.ts";
 
 const task = (
   title: string,
@@ -37,4 +37,14 @@ it("offers only the commands that the server of the row runs", () => {
     "Restart server",
   ]);
   expect(fleetMenuEntries(undefined)).toEqual([]);
+});
+
+it("names the kitshn daemon only for a kitshn-joined row", () => {
+  const machine = { id: MachineId.make("mac-bbec10"), name: "Mac" };
+  expect(fleetDaemonText(machine, { version: "5156a69eb82c", protocol: "2.0.0" })).toBe(
+    "daemon 5156a69eb82c · protocol 2.0.0",
+  );
+  expect(fleetDaemonText(machine, null)).toBe("daemon unknown");
+  expect(fleetDaemonText(machine, undefined)).toBeNull();
+  expect(fleetDaemonText(undefined, null)).toBeNull();
 });

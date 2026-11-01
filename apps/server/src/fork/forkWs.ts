@@ -25,6 +25,7 @@ import * as PortScanner from "../preview/PortScanner.ts";
 import * as ForkChangelog from "./ForkChangelog.ts";
 import { sessionAllowed } from "./kitshn/kitshnGrantRules.ts";
 import { kitshnMachineRef } from "./kitshn/environmentLabel.ts";
+import { ownDaemon } from "./kitshn/kitshnDaemon.ts";
 import * as KitshnGrants from "./kitshn/KitshnGrants.ts";
 import * as ForkUpdates from "./ForkUpdates.ts";
 import { isMachineSubject } from "./machineMap/machineAccess.ts";
@@ -146,6 +147,9 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
         [FORK_WS_METHODS.machineMapShareSettings]: (input) => settingsSync.share(input),
         [FORK_WS_METHODS.machineMapReadableEnvironments]: (_input) => readableEnvironments(),
         [FORK_WS_METHODS.fleetRunCommand]: (input) => machineHost.runForClient(input.command),
+        // Another machine reads its own daemon; it must not ask kitshn as this machine.
+        [FORK_WS_METHODS.fleetDaemon]: (_input) =>
+          isMachineSubject(currentSession.subject) ? Effect.succeed(null) : ownDaemon(),
         [FORK_WS_METHODS.webPushPublicKey]: (_input) =>
           webPush.publicKey.pipe(Effect.map((publicKey) => ({ publicKey }))),
         [FORK_WS_METHODS.webPushSubscribe]: (input) => webPush.subscribe(input).pipe(Effect.as({})),

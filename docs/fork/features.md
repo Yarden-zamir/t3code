@@ -142,7 +142,7 @@ Settings > Fleet lists every machine of this app, this one first: name, joined t
 - **Works on:** web, desktop, mobile. Mobile has the list under Settings > Fleet, in the Fork group, with the read-only parts. A row opens the settings of that environment, where the mobile actions are.
 - **Limits:**
   - Each row reads what its own server pushes: the server config, the connection and the scheduled task list. A row of a machine that this app does not reach shows no state.
-  - The rows show no kitshn daemon version: T3 does not get it from the daemon. Revisit when the daemon reports its version in `register`.
+  - A kitshn-joined row shows "daemon <release> · protocol <version>", from the machine card in the kitshn `state` ask of its own server, the same ask as `machines_read`. It shows "daemon unknown" while kitshn shows the machine offline or the server cannot ask. A manual environment shows no daemon.
   - The card busy fact and lists refresh every 15 seconds. kitshn gets a card again only when it changed.
   - The changelog reads GitHub with the GitHub credential of its machine (settings, `GH_TOKEN` or `gh auth login`). Without a credential, it shows the GitHub error. Each release costs two GitHub requests, so the timeline shows 10 releases first, and "Show older releases" adds 10 more. A range of more than 500 commits stops at 500 with a note. When GitHub does not answer, the update popover shows the release notes instead. Revisit if GitHub rate limits become a problem.
 
