@@ -232,7 +232,8 @@ export const updateCommand = Command.make("update", {
   version: versionArgument,
 }).pipe(
   Command.withDescription(
-    "Download a newer t3 and switch this machine to it, including the background service when one is installed.",
+    // Fork: the manual entry of the fork update policy (docs/fork/features.md "Updates").
+    "Install the newest fork release now: verify its checksum, point the t3 launcher at it and switch the background service when one is installed. With the server setting forkUpdateMode set to automatic, the service does the same when the machine is idle.",
   ),
   Command.withHandler((flags) =>
     Effect.gen(function* () {

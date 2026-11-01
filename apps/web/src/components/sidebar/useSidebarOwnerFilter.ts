@@ -38,13 +38,13 @@ export function useSidebarOwnerFilter<Group extends SidebarProjectSnapshot>(inpu
   const { unsortedProjectGroups, projectGroups, projectGroupingSettings } = input;
   // Counts cover the threads the sidebar lists: no archived threads and no subagents.
   const threads = filterSidebarV2VisibleThreads(input.threads, null, useDelegatedUnderParent());
-  const repositoryOwnerFiltersEnabled = useClientSettings((s) => s.repositoryOwnerFilters);
+  const pullRequestFiltersEnabled = useClientSettings((s) => s.pullRequestFilters);
   const savedOwnerFilter = useClientSettings((s) => s.sidebarOwnerFilter);
   const ownerFilter = resolveSidebarOwnerFilter({
-    enabled: repositoryOwnerFiltersEnabled,
+    enabled: pullRequestFiltersEnabled,
     filter: savedOwnerFilter,
   });
-  const ownerOptions = repositoryOwnerFiltersEnabled
+  const ownerOptions = pullRequestFiltersEnabled
     ? buildSidebarOwnerOptions(unsortedProjectGroups, threads, savedOwnerFilter.owners)
     : [];
   const ownerVisibleGroups = filterSidebarProjectGroupsByOwner(unsortedProjectGroups, ownerFilter);
@@ -60,7 +60,7 @@ export function useSidebarOwnerFilter<Group extends SidebarProjectSnapshot>(inpu
     const { sidebarProjectScopeKeys, setSidebarProjectScopeKeys } = useUiStateStore.getState();
     const visible = filterSidebarProjectGroupsByOwner(
       unsortedProjectGroups,
-      resolveSidebarOwnerFilter({ enabled: repositoryOwnerFiltersEnabled, filter }),
+      resolveSidebarOwnerFilter({ enabled: pullRequestFiltersEnabled, filter }),
     );
     const shownKeys = resolveSidebarProjectScopeKeys({
       groups: visible,
@@ -75,7 +75,7 @@ export function useSidebarOwnerFilter<Group extends SidebarProjectSnapshot>(inpu
     ownerVisibleProjectKeys,
   );
   return {
-    repositoryOwnerFiltersEnabled,
+    pullRequestFiltersEnabled,
     savedOwnerFilter,
     ownerFilter,
     ownerOptions,

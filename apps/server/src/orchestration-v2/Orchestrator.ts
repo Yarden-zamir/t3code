@@ -186,6 +186,7 @@ import {
   ThreadForkServiceV2,
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
+import { pullRequestWakeMessagePrefix } from "./pullRequestWatch.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 
@@ -331,6 +332,16 @@ export class OrchestratorCommandIdConflictError extends Schema.TaggedError<Orche
   }
 }
 
+/** Fork: an earlier wake for the same pull request still waits in the thread's queue. */
+export class OrchestratorPullRequestWakeHeldError extends Schema.TaggedError<OrchestratorPullRequestWakeHeldError>()(
+  "OrchestratorPullRequestWakeHeldError",
+  { commandId: CommandId, threadId: ThreadId },
+) {
+  override get message(): string {
+    return "An earlier wake for this pull request still waits in the queue.";
+  }
+}
+
 export const OrchestratorV2Error = Schema.Union([
   OrchestratorDispatchError,
   OrchestratorThreadAlreadyExistsError,
@@ -342,6 +353,7 @@ export const OrchestratorV2Error = Schema.Union([
   OrchestratorCommandIdConflictError,
   OrchestratorSubagentThreadReadOnlyError,
   OrchestratorThreadAboveModeLimitError,
+  OrchestratorPullRequestWakeHeldError,
 ]);
 export type OrchestratorV2Error = typeof OrchestratorV2Error.Type;
 
@@ -2842,6 +2854,48 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     });
   });
 
+  // Fork: a wake waits in the queue while the thread works, so it can outlive its watch.
+  const queuedPullRequestWakes = Effect.fn("orchestrationV2.queuedPullRequestWakes")(function* (
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      {
+        readonly type:
+          | "thread.pull-request.watch"
+          | "thread.pull-request.unlink"
+          | "thread.pull-request-watch.sync";
+      }
+    >,
+  ) {
+    const prefix = pullRequestWakeMessagePrefix(normalizeThreadPullRequestKey(command));
+    const { runs } = yield* projectionStore
+      .getThreadRecords(command.threadId, ["runs"])
+      .pipe(mapDispatchError(command));
+    return {
+      prefix,
+      runs: runs.filter((run) => run.status === "queued" && run.userMessageId.startsWith(prefix)),
+    };
+  });
+
+  const cancelQueuedPullRequestWakes = Effect.fn("orchestrationV2.cancelQueuedPullRequestWakes")(
+    function* (
+      command: Parameters<typeof queuedPullRequestWakes>[0],
+      runs: ReadonlyArray<OrchestrationV2Run>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      for (const run of runs) {
+        yield* dispatchQueuedRunCancel(
+          {
+            type: "queued-run.cancel",
+            commandId: command.commandId,
+            threadId: command.threadId,
+            runId: run.id,
+          },
+          events,
+        );
+      }
+    },
+  );
+
   // Recheck under the lock after reading the host. Record the watch first so wake events carry it.
   const dispatchPullRequestWatchSync = Effect.fn("orchestrationV2.dispatch.pullRequestWatchSync")(
     function* (
@@ -2876,7 +2930,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause: "The pull request watch ended or its thread settled while it was read.",
         });
       }
+      const queued = yield* queuedPullRequestWakes(command);
+      if (command.wake !== undefined && !command.wake.messageId.startsWith(queued.prefix)) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Pull request wake ${command.wake.messageId} must start with ${queued.prefix}.`,
+        });
+      }
+      // An open watch keeps its news until the queued wake runs, so the next wake tells all of it.
+      // Limit: until then the reactor rereads the pull request each sweep.
+      // Revisit if busy threads with many watches strain the host quota.
+      if (command.wake !== undefined && command.watch !== null && queued.runs.length > 0) {
+        return yield* new OrchestratorPullRequestWakeHeldError({
+          commandId: command.commandId,
+          threadId: command.threadId,
+        });
+      }
       yield* dispatchThreadMutation(command, events, effects);
+      // An ended watch drops its queued wakes; only its own last wake, if any, still runs.
+      if (command.watch === null) yield* cancelQueuedPullRequestWakes(command, queued.runs, events);
       if (command.wake === undefined) return;
       yield* dispatchMessage(
         {
@@ -13069,9 +13142,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.mark-unread":
       case "thread.metadata.update":
       case "thread.pull-request.link":
-      case "thread.pull-request.unlink":
       case "thread.pull-request-link.sync":
-      case "thread.pull-request.watch":
       case "thread.pull-request.sync":
       case "thread.title.regeneration.complete":
       case "thread.runtime-mode.set":
@@ -13079,6 +13150,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.model-selection.set":
       case "provider.switch":
         yield* dispatchThreadMutation(command, events, effects);
+        break;
+      case "thread.pull-request.unlink":
+      case "thread.pull-request.watch":
+        yield* dispatchThreadMutation(command, events, effects);
+        if (command.type === "thread.pull-request.unlink" || !command.watching) {
+          const queued = yield* queuedPullRequestWakes(command);
+          yield* cancelQueuedPullRequestWakes(command, queued.runs, events);
+        }
         break;
       case "thread.pull-request-watch.sync":
         yield* dispatchPullRequestWatchSync(command, events, effects);

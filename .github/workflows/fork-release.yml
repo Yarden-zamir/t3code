@@ -88,7 +88,7 @@ jobs:
 
       # <base>-nightly.<UTC date>.<run number x 10000>. The date and the run number
       # only grow. The gap of 10000 leaves room for local builds between two CI
-      # releases (scripts/fork-desktop-mac.sh). The app needs one integer here.
+      # releases (scripts/fork-deploy-local.sh). The app needs one integer here.
       - id: version
         name: Resolve release version
         run: |

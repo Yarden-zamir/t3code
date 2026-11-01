@@ -12,7 +12,10 @@ the theme. **Cmd+Option+Shift+A** on macOS or **Ctrl+Alt+Shift+A** on Windows/Li
 those modes. Customize these shortcuts under **Settings → Keybindings**.
 
 On mobile, open **Settings → Appearance**. Mobile has its own themes and text,
-code, and terminal preferences. It does not follow environment themes or defaults.
+code, and terminal preferences. It does not follow environment themes or defaults, unless the
+server turns on **Themes on mobile** in **Settings → Appearance → Mobile app**. Then Appearance on
+the phone also offers the published themes under **From your servers**, and the phone takes the
+server default theme once.
 
 On Android 12 or newer, choose the **Material You** theme in Appearance to use colors from
 your wallpaper. Selecting another theme replaces those colors. Like other themes, Material You
@@ -114,3 +117,8 @@ view.
 
 Write updates to a temporary file and rename it into place so clients never read a partial theme.
 Invalid files are not published.
+
+A published theme can also set its shape, fonts, a canvas pattern, CSS, and icons, with the fields
+`radius`, `borderWidth`, `shadow`, `fonts`, `canvasPattern`, `canvasPatternColor`, `css`, and
+`icons`. These apply while the theme is selected. See [Themes](../fork/features.md#themes) for the
+icon slots and for what the mobile app supports.

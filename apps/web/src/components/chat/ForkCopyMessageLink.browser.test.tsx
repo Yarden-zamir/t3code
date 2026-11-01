@@ -10,7 +10,7 @@ import { ForkCopyMessageLink } from "./ForkCopyMessageLink";
 
 const state = vi.hoisted(() => ({ enabled: true }));
 vi.mock(import("./ForkMessageLinkTarget"), () => ({
-  useForkMessageLinks: () => state.enabled,
+  useForkThreadAddressing: () => state.enabled,
   forkMessageLinkNavigation: () => ({}),
 }));
 vi.mock(import("../../hooks/useSettings"), () => ({
@@ -27,7 +27,7 @@ function setup() {
   state.enabled = true;
 }
 
-it("copies a message autolink without a shell, and hides the action when message links are off", async () => {
+it("copies a message autolink without a shell, and hides the action when thread addressing is off", async () => {
   setup();
   await using screen = await render(
     <ForkCopyMessageLink threadRef={threadRef} messageId="user:1" />,

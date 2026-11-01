@@ -172,7 +172,8 @@ Join modifiers and a key with `+`, such as `mod+shift+d` or `ctrl+l`.
 Available context keys are `terminalFocus`, `terminalOpen`, `previewFocus`,
 `previewOpen`, `modelPickerOpen`, `usagePageOpen`, `composerFocus`, `draftThreadRoute`,
 `turnRunning`, `editableFocus`, `timelineFocus`, `sidebarFocus`, `rightPanelFocus`,
-`approvalPending`, `isWeb`, and `isDesktop`.
+`approvalPending`, `compactBeforeSendShown`, `isWeb`, and `isDesktop`.
+`compactBeforeSendShown` is true while the composer shows the **Compact** or **Keep** toggle.
 `draftThreadRoute` is true on a draft thread, including a restored draft, until it is first sent.
 `editableFocus` is true while a text field, the composer, or another editor has
 the keyboard. `isWeb` is true in a browser tab. `isDesktop` is true in the

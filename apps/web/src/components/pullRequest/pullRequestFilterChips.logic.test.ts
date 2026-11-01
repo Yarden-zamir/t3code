@@ -22,13 +22,11 @@ function chips(
   options: {
     typed?: Parameters<typeof pullRequestFilterChips>[0]["typed"];
     names?: Partial<PullRequestFilterChipNames>;
-    ownerFilters?: boolean;
   } = {},
 ) {
   return pullRequestFilterChips({
     search: { involvement: "all", state: "open", ...search },
     typed: options.typed ?? { filters: {} },
-    ownerFilters: options.ownerFilters ?? true,
     names: { ...names, ...options.names },
   });
 }
@@ -46,8 +44,7 @@ describe("pullRequestFilterChips", () => {
     expect(chips({ owners: ["a"] })[0]?.flip).toStrictEqual({ ownerOperator: "is_not" });
   });
 
-  it("leaves out the owner menu while the owner setting is off or a typed owner replaces it", () => {
-    expect(chips({ owners: ["a"] }, { ownerFilters: false })).toEqual([]);
+  it("leaves out the owner menu while a typed owner replaces it", () => {
     const typed = { filters: {}, owners: { include: [], exclude: ["b"] } };
     expect(chips({ owners: ["a"] }, { typed })).toEqual([]);
   });

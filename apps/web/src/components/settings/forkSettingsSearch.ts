@@ -34,15 +34,9 @@ export const WORKTREE_ITEMS = [
     to: "/settings/worktrees",
     scope: "environment-defaults",
     environmentOnly: true,
-    searchTerms: ["storage cleanup disk node_modules caches build dependencies worktrees"],
-  },
-  {
-    id: "worktree-artifact-eviction-days",
-    title: "Artifact eviction inactivity days",
-    to: "/settings/worktrees",
-    scope: "environment-defaults",
-    environmentOnly: true,
-    searchTerms: ["storage cleanup disk inactive days worktrees"],
+    searchTerms: [
+      "storage cleanup disk node_modules caches build dependencies worktrees inactive inactivity eviction days",
+    ],
   },
   {
     id: "restore-worktrees-on-resume",
@@ -51,7 +45,7 @@ export const WORKTREE_ITEMS = [
     scope: "environment-defaults",
     environmentOnly: true,
     searchTerms: [
-      "missing folder restore recreate deleted branch checkout dependencies setup node_modules",
+      "missing folder restore recreate deleted branch checkout dependencies setup node_modules cleanup delete branches",
     ],
   },
   {
@@ -88,18 +82,13 @@ export const ORGANIZATION_ITEMS = [
     searchTerms: ["sidebar tab one thread open directly"],
   },
   {
-    id: "repository-owner-filters",
-    title: "Repository owner filters",
+    id: "pull-request-filters",
+    title: "Pull request filters",
     to: "/settings/general",
     searchTerms: [
-      "github organization org owner account filter hide exclude pull requests pr sidebar work personal",
+      "github organization org owner account repository filter hide exclude pull requests pr sidebar work personal",
+      "active filters chips exclude negative is not pull requests pr list empty",
     ],
-  },
-  {
-    id: "pull-request-filter-chips",
-    title: "Pull request filter chips",
-    to: "/settings/general",
-    searchTerms: ["active filters chips exclude negative is not pull requests pr list empty"],
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
@@ -112,31 +101,23 @@ export const APPEARANCE_ITEMS = [
     searchTerms: ["thread card sidebar compact density rows builder layout mobile branch"],
   },
   {
-    id: "thread-link-chips",
-    title: "Thread link chips",
+    id: "thread-addressing",
+    title: "Thread addressing",
     to: "/settings/appearance",
-    searchTerms: ["thread link chip chat message url open app machine environment"],
-    environmentOnly: true,
-  },
-  {
-    id: "thread-links-open-desktop-app",
-    title: "Thread addresses open the desktop app",
-    to: "/settings/appearance",
-    searchTerms: ["thread link address url browser tab slack github desktop app deep link open"],
-    environmentOnly: true,
-  },
-  {
-    id: "message-links",
-    title: "Message links",
-    to: "/settings/appearance",
-    searchTerms: ["message link thread scroll jump highlight anchor fragment"],
+    searchTerms: [
+      "thread link chip chat url open app machine environment",
+      "message link scroll jump highlight anchor fragment",
+      "address browser tab slack github desktop app deep link",
+    ],
     environmentOnly: true,
   },
   {
     id: "mobile-published-themes",
-    title: "Published themes on mobile",
+    title: "Themes on mobile",
     to: "/settings/appearance",
-    searchTerms: ["mobile phone android app theme published fonts shape radius canvas pattern"],
+    searchTerms: [
+      "mobile phone android app theme published default fonts shape radius canvas pattern",
+    ],
     environmentOnly: true,
   },
   {
@@ -325,17 +306,13 @@ export const ABOUT_ITEMS = [
     searchTerms: ["changelog release notes versions upstream fork sync workflow"],
   },
   {
-    id: "check-newer-before-update-install",
-    title: "Check for a newer update before install",
-    to: "/settings/about",
-    searchTerms: ["desktop update install newer release download restart"],
-  },
-  {
-    id: "fork-auto-update",
-    title: "Server auto-update",
+    id: "fork-update-mode",
+    title: "Automatic updates",
     to: "/settings/maintenance",
     scope: "environment-defaults",
-    searchTerms: ["fork release install update idle background service headless server automatic"],
+    searchTerms: [
+      "fork release install update idle background service headless server desktop automatic manual",
+    ],
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 

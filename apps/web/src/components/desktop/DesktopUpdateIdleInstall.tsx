@@ -1,10 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import { createEnvironmentRpcSubscriptionAtomFamily } from "@t3tools/client-runtime/state/runtime";
-import { TERMINAL_UPDATE_HOLD_MAX_HOURS, WS_METHODS } from "@t3tools/contracts";
+import { type EnvironmentId, TERMINAL_UPDATE_HOLD_MAX_HOURS, WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { useEffect } from "react";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { primaryEnvironmentIdAtom } from "../../state/primaryEnvironment";
@@ -14,10 +15,11 @@ import { resolveDesktopUpdateButtonAction } from "../desktopUpdate.logic";
 import {
   countRunningAgentTurns,
   countRunningTerminalPrograms,
+  type IdleInstallArm,
   idleInstallWorkTitle,
+  nextAutomaticArm,
 } from "../desktopUpdateIdleInstall.logic";
 import { installLocalUpdate } from "../sidebar/SidebarUpdatePill";
-import { DesktopUpdateNewerDialog } from "./DesktopUpdateNewerCheck";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -33,13 +35,13 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 interface IdleInstallState {
   readonly promptOpen: boolean;
   /**
-   * When the user chose to install as soon as no agent or terminal program runs (epoch ms), or
-   * null. The terminal hold counts from it. Client only: a window reload drops it.
+   * The wait to install as soon as no agent or terminal program runs, or null. The terminal hold
+   * counts from its `at` (epoch ms). Client only: a window reload drops it.
    */
-  readonly armedAt: number | null;
+  readonly arm: IdleInstallArm | null;
 }
 
-const idleInstallAtom = Atom.make<IdleInstallState>({ promptOpen: false, armedAt: null }).pipe(
+const idleInstallAtom = Atom.make<IdleInstallState>({ promptOpen: false, arm: null }).pipe(
   Atom.keepAlive,
   Atom.withLabel("desktop:update-idle-install"),
 );
@@ -72,7 +74,7 @@ function setIdleInstallState(next: Partial<IdleInstallState>): void {
 }
 
 export function useIdleInstallArmed(): boolean {
-  return useAtomValue(idleInstallAtom).armedAt !== null;
+  return useAtomValue(idleInstallAtom).arm !== null;
 }
 
 /**
@@ -90,22 +92,15 @@ export function openIdleInstallPromptIfWorkRuns(): boolean {
   return true;
 }
 
-/**
- * Fork machine map (MM-1402): install as soon as no agent or terminal program runs, without the
- * prompt.
- */
-export function armIdleInstall(): void {
-  setIdleInstallState({ armedAt: Date.now() });
-}
-
 /** Desktop only. Hosts the prompt and runs an armed install when the work finishes. */
 export function DesktopUpdateIdleInstall() {
-  const { promptOpen, armedAt } = useAtomValue(idleInstallAtom);
-  const armed = armedAt !== null;
+  const { promptOpen, arm } = useAtomValue(idleInstallAtom);
+  const environmentId = useAtomValue(primaryEnvironmentIdAtom);
+  const armed = arm !== null;
   return (
     <>
-      {armedAt === null ? null : <ArmedInstallWatcher armedAt={armedAt} />}
-      <DesktopUpdateNewerDialog />
+      {environmentId === null ? null : <AutomaticInstall environmentId={environmentId} />}
+      {arm === null ? null : <ArmedInstallWatcher armedAt={arm.at} />}
       <AlertDialog
         open={promptOpen}
         onOpenChange={(open) => {
@@ -118,6 +113,28 @@ export function DesktopUpdateIdleInstall() {
       </AlertDialog>
     </>
   );
+}
+
+/**
+ * Fork update policy: with `forkUpdateMode` "automatic" on this app's server, a downloaded update
+ * waits for idle as after "Install when idle". "Stop waiting" holds it until the next download.
+ * A switch to "manual" cancels that wait.
+ */
+function AutomaticInstall({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const automatic = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings.forkUpdateMode === "automatic",
+  );
+  const state = useDesktopUpdateState();
+  const downloaded = state ? resolveDesktopUpdateButtonAction(state) === "install" : false;
+  const version = downloaded ? (state?.downloadedVersion ?? null) : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the desktop updater outside React finishes a download.
+  useEffect(() => {
+    const current = appAtomRegistry.get(idleInstallAtom).arm;
+    const next = nextAutomaticArm(current, automatic, version !== null, Date.now());
+    if (next !== current) setIdleInstallState({ arm: next });
+  }, [automatic, version]);
+  return null;
 }
 
 function ArmedInstallWatcher({ armedAt }: { readonly armedAt: number }) {
@@ -135,8 +152,8 @@ function ArmedInstallWatcher({ armedAt }: { readonly armedAt: number }) {
 
   useEffect(() => {
     // The registry check keeps a repeated effect run from installing twice.
-    if (count > 0 || !ready || appAtomRegistry.get(idleInstallAtom).armedAt === null) return;
-    setIdleInstallState({ promptOpen: false, armedAt: null });
+    if (count > 0 || !ready || appAtomRegistry.get(idleInstallAtom).arm === null) return;
+    setIdleInstallState({ promptOpen: false, arm: null });
     const bridge = window.desktopBridge;
     if (!bridge || !state || resolveDesktopUpdateButtonAction(state) !== "install") {
       toastManager.add(
@@ -148,7 +165,7 @@ function ArmedInstallWatcher({ armedAt }: { readonly armedAt: number }) {
       );
       return;
     }
-    void installLocalUpdate(bridge, undefined, { unattended: true });
+    void installLocalUpdate(bridge);
   }, [count, ready, state]);
 
   return null;
@@ -159,7 +176,7 @@ function IdleInstallPromptContent({ armed }: { readonly armed: boolean }) {
   const terminalPrograms = useAtomValue(runningTerminalProgramCountAtom);
 
   const installNow = () => {
-    setIdleInstallState({ promptOpen: false, armedAt: null });
+    setIdleInstallState({ promptOpen: false, arm: null });
     const bridge = window.desktopBridge;
     if (bridge) void installLocalUpdate(bridge);
   };
@@ -184,7 +201,7 @@ function IdleInstallPromptContent({ armed }: { readonly armed: boolean }) {
         {armed ? (
           <Button
             variant="outline"
-            onClick={() => setIdleInstallState({ promptOpen: false, armedAt: null })}
+            onClick={() => setIdleInstallState({ promptOpen: false, arm: null })}
           >
             Stop waiting
           </Button>
@@ -193,7 +210,11 @@ function IdleInstallPromptContent({ armed }: { readonly armed: boolean }) {
           Install now
         </Button>
         {armed ? null : (
-          <Button onClick={() => setIdleInstallState({ promptOpen: false, armedAt: Date.now() })}>
+          <Button
+            onClick={() =>
+              setIdleInstallState({ promptOpen: false, arm: { at: Date.now(), by: "user" } })
+            }
+          >
             Install when idle
           </Button>
         )}

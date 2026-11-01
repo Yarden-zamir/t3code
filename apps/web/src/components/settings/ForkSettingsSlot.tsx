@@ -18,9 +18,8 @@ import {
   AutoSettleWaitsForBackgroundCommandsSettingsRow,
   BackgroundWorkDetailsSettingsRow,
   MessagePinsSettingsRow,
-  CheckNewerBeforeUpdateInstallSettingsRow,
   CurrentProjectTerminalOpensThreadSettingsRow,
-  ForkAutoUpdateSettingsRow,
+  ForkUpdateModeSettingsRow,
   RestartReconnectWarningGraceSettingsRow,
   SettingsFindSettingsRow,
   TerminalAppShortcutsFirstSettingsRow,
@@ -41,10 +40,9 @@ import {
 } from "./MobileAppSettings";
 import { PreferOriginRemoteSettingsRow } from "./PreferOriginRemoteSettings";
 import { PreviewLocalServerGroupsSettingsRow } from "./PreviewLocalServerGroupsSettingsRow";
-import { PullRequestFilterChipsSettingsRow } from "./PullRequestFilterChipsSettingsRow";
+import { PullRequestFiltersSettingsRow } from "./PullRequestFiltersSettingsRow";
 import { PullRequestWatchSettingsRows } from "./PullRequestWatchSettings";
 import { RecoverInterruptedTurnsSettings } from "./RecoverInterruptedTurnsSettings";
-import { RepositoryOwnerFiltersSettingsRow } from "./RepositoryOwnerFiltersSettingsRow";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import { SidebarTabsSettingsRow } from "./SidebarTabsSettingsRow";
 import { TerminalHistorySettingsRows } from "./TerminalHistorySettingsRows";
@@ -52,11 +50,7 @@ import { TerminalKeyMappingsSettingsRow } from "./TerminalKeyMappingsSettingsRow
 import { TerminalThreadFontLimitsSettingsRow } from "./TerminalThreadFontLimitsSettingsRow";
 import { TerminalThreadsSettingsRow } from "./TerminalThreadsSettingsRow";
 import { ThreadCardLayoutSettingsRows } from "./ThreadCardLayoutSettings";
-import {
-  MessageLinksSettingsRow,
-  ThreadLinkChipsSettingsRow,
-  ThreadLinksOpenDesktopAppSettingsRow,
-} from "./ThreadLinkChipsSettings";
+import { ThreadAddressingSettingsRow } from "./ThreadAddressingSettingsRow";
 import { TunnelPairingSettingsRow } from "./TunnelPairingSettingsRow";
 import { WebPushSettingsRow } from "./WebPushSettingsRow";
 import { WorktreePathTemplateRow } from "./WorktreePathTemplateRow";
@@ -90,9 +84,8 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "in-app-notification-seconds": InAppNotificationSettingsRows,
   "installed-app": InstalledAppSettingsRow,
   "web-push": WebPushSettingsRow,
-  "fork-auto-update": ForkAutoUpdateSettingsRow,
+  "fork-update-mode": ForkUpdateModeSettingsRow,
   "fork-changelog": ForkChangelogSettingsRow,
-  "check-newer-before-update-install": CheckNewerBeforeUpdateInstallSettingsRow,
   "recover-interrupted-turns": RecoverInterruptedTurnsSettings,
   "background-work-details": BackgroundWorkDetailsSettingsRow,
   "message-pins": MessagePinsSettingsRow,
@@ -101,8 +94,7 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "agent-session-import-window": AgentSessionImportSettingsRows,
   "sidebar-tabs": SidebarTabsSettingsRow,
   "storage-worktree-path-template": WorktreePathTemplateRow,
-  "repository-owner-filters": RepositoryOwnerFiltersSettingsRow,
-  "pull-request-filter-chips": PullRequestFilterChipsSettingsRow,
+  "pull-request-filters": PullRequestFiltersSettingsRow,
   "global-scripts": GlobalScriptsSettingsRows,
   "app-toggle-shortcuts": AppToggleShortcutsSettingsRow,
   "terminal-app-shortcuts-first": TerminalAppShortcutsFirstSettingsRow,
@@ -113,9 +105,7 @@ export const FORK_SETTING_ROWS: Readonly<Record<ForkSettingRowId, ComponentType>
   "settings-find": SettingsFindSettingsRow,
   "terminal-close-confirmation": TerminalCloseConfirmationSettingsRow,
   "thread-card-layout": ThreadCardLayoutSettingsRows,
-  "thread-link-chips": ThreadLinkChipsSettingsRow,
-  "thread-links-open-desktop-app": ThreadLinksOpenDesktopAppSettingsRow,
-  "message-links": MessageLinksSettingsRow,
+  "thread-addressing": ThreadAddressingSettingsRow,
   "preview-local-server-groups": PreviewLocalServerGroupsSettingsRow,
   "terminal-threads": TerminalThreadsSettingsRow,
   "current-project-terminal-opens-thread": CurrentProjectTerminalOpensThreadSettingsRow,

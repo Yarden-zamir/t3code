@@ -312,6 +312,10 @@ export interface ChatComposerHandle {
   isModelPickerOpen: () => boolean;
   isCaretAtStart: () => boolean;
   compactContext: () => void;
+  canCompactContext: () => boolean;
+  /** Whether the composer shows the "Compact before send" toggle. */
+  isCompactBeforeSendShown: () => boolean;
+  toggleCompactBeforeSend: () => void;
   readSnapshot: () => {
     value: string;
     cursor: number;
@@ -2147,22 +2151,32 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setPrompt(savedValue);
   };
   const saveCitationDraftToPromptStable = useStableCallback(saveCitationDraftToPrompt);
+  const canCompactThreadContext = () =>
+    readEnvironmentScope(environmentId, AuthOrchestrationOperateScope) &&
+    !compactDisabled &&
+    !noProviderAvailable &&
+    activePendingApproval === null &&
+    pendingUserInputs.length === 0 &&
+    phase !== "running" &&
+    !isSendBusy &&
+    Boolean(activeThreadId);
   const compactThreadContext = () => {
-    if (
-      !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope) ||
-      compactDisabled ||
-      noProviderAvailable ||
-      activePendingApproval !== null ||
-      pendingUserInputs.length > 0 ||
-      phase === "running" ||
-      isSendBusy ||
-      !activeThreadId
-    ) {
-      return;
-    }
-    onCompactContext();
+    if (canCompactThreadContext()) onCompactContext();
   };
   const compactThreadContextStable = useStableCallback(compactThreadContext);
+  // The same gates as the "Compact context" button and the "Compact before send" toggle.
+  const canCompactContextStable = useStableCallback(
+    () => compactCommandAvailable && canCompactThreadContext(),
+  );
+  const isCompactBeforeSendShown = () =>
+    props.resumeCompactionTokens !== null &&
+    !showResumeAction &&
+    !isEditingQueuedMessage &&
+    canOperateThread;
+  const isCompactBeforeSendShownStable = useStableCallback(isCompactBeforeSendShown);
+  const toggleCompactBeforeSendStable = useStableCallback(() => {
+    if (isCompactBeforeSendShown()) props.onToggleKeepFullHistory();
+  });
   const expandMobileComposer = () => {
     if (composerBlurFrameRef.current !== null) {
       window.cancelAnimationFrame(composerBlurFrameRef.current);
@@ -2888,6 +2902,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         trigger.click();
       },
       compactContext: compactThreadContextStable,
+      canCompactContext: canCompactContextStable,
+      isCompactBeforeSendShown: isCompactBeforeSendShownStable,
+      toggleCompactBeforeSend: toggleCompactBeforeSendStable,
       isModelPickerOpen: () => isComposerModelPickerOpen,
       isCaretAtStart: () => {
         const range = composerEditorRef.current?.readSelectionRange();
@@ -3048,6 +3065,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       interactionMode,
       planModeUiEnabled,
       compactThreadContextStable,
+      canCompactContextStable,
+      isCompactBeforeSendShownStable,
+      toggleCompactBeforeSendStable,
     ],
   );
 

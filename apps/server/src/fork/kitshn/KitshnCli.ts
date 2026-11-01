@@ -4,6 +4,7 @@
  * this T3 who holds the thread token in `KITSHN_ATTEST` (K-1752), so an agent never holds a kitshn
  * token.
  */
+import { legacyProtocol } from "@kitshn/local";
 import { TrimmedNonEmptyString } from "@t3tools/contracts";
 import {
   KITSHN_ATTEST_ENV,
@@ -39,8 +40,20 @@ const Kitshn2Version = Schema.Struct({
   product: Schema.Literal("kitshn"),
   generation: Schema.Literal(2),
   version: Schema.String,
+  /** K-724: unknown, because a value that is not a string refuses instead of hiding kitshn 2. */
+  protocol: Schema.optional(Schema.Unknown),
 });
 const decodeKitshn2Version = Schema.decodeUnknownOption(Schema.fromJsonString(Kitshn2Version));
+
+/** K-724: a kitshn 2 before K-724 names no protocol, which reads as 2.0.0. */
+const protocolOrLegacy = (protocol: unknown) =>
+  protocol === undefined ? legacyProtocol(2) : typeof protocol === "string" ? protocol : "none";
+
+/** The machine's kitshn 2 binary and the protocol that its `version --json` names. */
+export interface KitshnBinary {
+  readonly path: string;
+  readonly protocol: string;
+}
 
 /** The last stderr line that is not a `waiting:` note of a call that waits for the owner. */
 export const lastLine = (stderr: string) =>
@@ -102,8 +115,8 @@ export class KitshnCli extends Context.Service<
       readonly code: string;
       readonly server: string;
     }) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
-    /** The path of the machine's kitshn 2 binary, after its version check. */
-    readonly binary: Effect.Effect<string, KitshnCliError>;
+    /** The machine's kitshn 2 binary, after its version check. */
+    readonly binary: Effect.Effect<KitshnBinary, KitshnCliError>;
   }
 >()("t3/fork/kitshn/KitshnCli") {}
 
@@ -114,8 +127,8 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const runner = yield* ProcessRunner.ProcessRunner;
-  /** Per path and mtime, so an update or a new install is checked again. */
-  const checked = new Map<string, boolean>();
+  /** Per path and mtime, so an update or a new install is checked again. The protocol, or null. */
+  const checked = new Map<string, string | null>();
 
   /** `~/.local/bin/kitshn`, then each `kitshn` on PATH (POSIX only), which the server reads from the login shell at start. */
   const candidates = Effect.gen(function* () {
@@ -144,13 +157,13 @@ const make = Effect.gen(function* () {
     };
   });
 
-  const isKitshn2 = Effect.fn("KitshnCli.isKitshn2")(function* (
+  /** The protocol of a kitshn 2 binary, or null for any other file. */
+  const kitshn2Protocol = Effect.fn("KitshnCli.kitshn2Protocol")(function* (
     binary: string,
     mtime: Option.Option<Date>,
   ) {
     const key = Option.map(mtime, (date) => `${binary}\0${date.getTime()}`);
-    const cached = Option.flatMap(key, (value) => Option.fromNullishOr(checked.get(value)));
-    if (Option.isSome(cached)) return cached.value;
+    if (Option.isSome(key) && checked.has(key.value)) return checked.get(key.value) ?? null;
     const output = yield* runner
       .run({
         command: binary,
@@ -159,10 +172,11 @@ const make = Effect.gen(function* () {
         timeout: VERSION_TIMEOUT,
       })
       .pipe(Effect.option);
-    const result =
-      Option.isSome(output) &&
-      output.value.code === 0 &&
-      Option.isSome(decodeKitshn2Version(output.value.stdout));
+    const decoded =
+      Option.isSome(output) && output.value.code === 0
+        ? decodeKitshn2Version(output.value.stdout)
+        : Option.none();
+    const result = Option.isSome(decoded) ? protocolOrLegacy(decoded.value.protocol) : null;
     if (Option.isSome(key)) checked.set(key.value, result);
     return result;
   });
@@ -175,7 +189,8 @@ const make = Effect.gen(function* () {
       if (Option.isNone(info) || info.value.type !== "File") continue;
       // Windows has no execute bit; the `.exe` name marks a program there.
       if (!windows && (info.value.mode & 0o111) === 0) continue;
-      if (yield* isKitshn2(candidate, info.value.mtime)) return candidate;
+      const protocol = yield* kitshn2Protocol(candidate, info.value.mtime);
+      if (protocol !== null) return { path: candidate, protocol } satisfies KitshnBinary;
       refused.push(candidate);
     }
     return yield* refused.length === 0
@@ -188,7 +203,7 @@ const make = Effect.gen(function* () {
 
   const run: KitshnCli["Service"]["run"] = Effect.fn("KitshnCli.run")(
     function* (args, threadAuthorization) {
-      const command = yield* binary;
+      const { path: command } = yield* binary;
       const header = Redacted.value(threadAuthorization);
       const token = header.startsWith(BEARER) ? header.slice(BEARER.length) : header;
       const waiting = yield* Deferred.make<void>();
@@ -237,7 +252,7 @@ const make = Effect.gen(function* () {
   );
 
   const join: KitshnCli["Service"]["join"] = Effect.fn("KitshnCli.join")(function* (input) {
-    const command = yield* binary;
+    const { path: command } = yield* binary;
     const output = yield* runner
       .run({
         command,

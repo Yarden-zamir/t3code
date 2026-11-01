@@ -10,7 +10,7 @@ import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../Sideb
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Tooltip, TooltipPopup } from "../ui/tooltip";
 import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import {
@@ -72,6 +72,9 @@ const formatPendingPrimaryActionLabel = (input: {
   }
   return input.questionIndex > 0 ? "Submit answers" : "Submit answer";
 };
+
+// The toggle shows only while its key works, so its chip names the key.
+const COMPACT_BEFORE_SEND_SHOWN = { compactBeforeSendShown: true };
 
 const messageActionPillClassName =
   "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-message-action font-medium text-base text-message-action-foreground shadow-xs shadow-message-action/24 outline-none hover:bg-message-action-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none sm:text-sm";
@@ -374,7 +377,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   return (
     <div data-chat-composer-compact-send="true" className="flex items-center gap-2">
       <Tooltip>
-        <TooltipTrigger
+        <ShortcutTrigger
+          command="composer.toggleCompactBeforeSend"
+          context={COMPACT_BEFORE_SEND_SHOWN}
           render={
             <button
               type="button"
@@ -392,14 +397,20 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             {keepFullHistory ? "Keep" : "Compact"}
           </span>
           <span className="text-muted-foreground">{compactTokens}</span>
-        </TooltipTrigger>
+        </ShortcutTrigger>
         <TooltipPopup>
           <div>
             {keepFullHistory
               ? `Next send keeps all ${compactTokens} tokens.`
               : `Next send compacts ${compactTokens} tokens first.`}
           </div>
-          <div>{keepFullHistory ? "Click to compact first" : "Click to keep full history"}</div>
+          <div>
+            {keepFullHistory ? "Click to compact first" : "Click to keep full history"}
+            <ShortcutHint
+              command="composer.toggleCompactBeforeSend"
+              context={COMPACT_BEFORE_SEND_SHOWN}
+            />
+          </div>
         </TooltipPopup>
       </Tooltip>
       {submit}

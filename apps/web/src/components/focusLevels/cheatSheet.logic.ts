@@ -119,6 +119,7 @@ function areaOf(command: KeybindingCommand): CheatSheetAreaId {
 const EXTRA_CONTEXT: Partial<Record<KeybindingCommand, Record<string, boolean>>> = {
   "composer.sendAlternate": { turnRunning: true },
   "composer.sendBackground": { draftThreadRoute: true },
+  "composer.toggleCompactBeforeSend": { compactBeforeSendShown: true },
   "approval.approve": { approvalPending: true },
   "approval.alwaysAllow": { approvalPending: true },
   "approval.decline": { approvalPending: true },
@@ -180,6 +181,7 @@ const LABELS: Partial<Record<KeybindingCommand, string>> = {
   "composer.mode": "Choose access mode",
   "composer.workspace": "Choose workspace",
   "composer.branch": "Choose branch",
+  "composer.toggleCompactBeforeSend": "Compact before send or keep full history",
   "modelPicker.toggle": "Choose model",
   "sidebar.toggle": "Toggle sidebar",
   "sidebar.search": "Search threads",
@@ -222,6 +224,7 @@ const LABELS: Partial<Record<KeybindingCommand, string>> = {
   "chat.newTerminal": "New terminal thread",
   "chat.newTerminalLocal": "New terminal thread in current project",
   "chat.find": "Find in thread",
+  "chat.compactContext": "Compact context",
   "settings.open": "Open settings",
   "settings.find": "Find in settings",
   "usage.cost": "Usage page: show cost",

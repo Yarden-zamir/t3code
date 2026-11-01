@@ -50,7 +50,6 @@ const DESKTOP_ONLY_CLIENT_SETTINGS = [
   "browserRecordingFrameRate",
   "browserRecordingShowKeyPresses",
   "browserRecordingShowMousePresses",
-  "checkNewerBeforeUpdateInstall",
   "confirmQuit",
 ] as const satisfies ReadonlyArray<keyof ClientSettings>;
 

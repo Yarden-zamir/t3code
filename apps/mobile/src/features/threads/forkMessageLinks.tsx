@@ -34,9 +34,9 @@ export interface ForkMessageLinkRequest {
   readonly onHandled: () => void;
 }
 
-/** Fork: whether `environmentId` has the `messageLinks` server setting on. On until it loads. */
-export function useForkMessageLinksEnabled(environmentId: EnvironmentId | null): boolean {
-  return useEnvironmentServerConfig(environmentId)?.settings.messageLinks !== false;
+/** Fork: whether `environmentId` has the `threadAddressing` server setting on. */
+export function useForkThreadAddressing(environmentId: EnvironmentId | null): boolean {
+  return useEnvironmentServerConfig(environmentId)?.settings.threadAddressing === true;
 }
 
 /**

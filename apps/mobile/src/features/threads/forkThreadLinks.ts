@@ -29,14 +29,14 @@ const threadPill = enrichedContextLinkCustomization(
 );
 
 /**
- * Fork: thread links in a feed of `environmentId` while its server setting `threadLinkChips` is on.
+ * Fork: thread links in a feed of `environmentId` while its server setting `threadAddressing` is on.
  * A `t3-thread://` link or a known web thread address (`parseThreadAddress`) gets the attached
  * thread pill and opens here, not in the browser. A message link opens the
  * thread at it (`messageParams`) with a message icon. With the setting off, both return nothing.
  */
 export function useForkThreadLinks(environmentId: EnvironmentId) {
   const selectDetail = useSelectWorkspaceDetail();
-  const chips = useEnvironmentServerConfig(environmentId)?.settings.threadLinkChips === true;
+  const chips = useEnvironmentServerConfig(environmentId)?.settings.threadAddressing === true;
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
   const knownThreadAddress = useCallback(
     (href: string) => {
@@ -86,12 +86,12 @@ const NO_MARKER_TARGETS: ThreadMarkerTargets = new Map();
 // Null, not an empty Map: `Atom.make` reads an iterable as something other than a plain value.
 const NO_MARKER_TARGETS_ATOM = Atom.make<ThreadMarkerTargets | null>(null);
 
-/** Fork: `threadMarkerTargets` of a thread, while its server setting `threadLinkChips` is on. */
+/** Fork: `threadMarkerTargets` of a thread, while its server setting `threadAddressing` is on. */
 const threadMarkerTargetsAtom = Atom.family((key: string) => {
   const [environmentId, threadId] = key.split("\u0000") as [EnvironmentId, ThreadId];
   const ref = scopeThreadRef(environmentId, threadId);
   return Atom.make((get): ThreadMarkerTargets => {
-    if (get(serverEnvironment.configValueAtom(environmentId))?.settings.threadLinkChips !== true) {
+    if (get(serverEnvironment.configValueAtom(environmentId))?.settings.threadAddressing !== true) {
       return NO_MARKER_TARGETS;
     }
     const messages = get(environmentThreadDetails.threadAtom(ref))?.projection.messages ?? [];

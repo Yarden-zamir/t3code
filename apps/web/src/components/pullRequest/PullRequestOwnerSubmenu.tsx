@@ -1,6 +1,6 @@
 /**
  * Fork: the Owner submenu of the pull request Filters menu, shown only while
- * `repositoryOwnerFilters` is on. It lives in its own file, so that the upstream menu file changes
+ * `pullRequestFilters` is on. It lives in its own file, so that the upstream menu file changes
  * little. If upstream T3 Code ships an owner or organization filter, drop this fork version and
  * use theirs.
  */

@@ -96,6 +96,7 @@ import { SettingsNavigationRouteScreen } from "./features/settings/SettingsNavig
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
 import { SettingsForkRouteScreen } from "./features/settings/SettingsForkRouteScreen";
 import { SettingsVoiceRouteScreen } from "./features/settings/SettingsVoiceRouteScreen";
+import { SettingsForkPinsRouteScreen } from "./features/settings/SettingsForkPinsRouteScreen";
 import { SettingsVoiceProjectRouteScreen } from "./features/settings/SettingsVoiceProjectRouteScreen";
 import { SettingsSidebarTabRouteScreen } from "./features/settings/forkSidebarTabEditor";
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
@@ -341,6 +342,11 @@ const SETTINGS_SCREENS = {
     screen: SettingsForkRouteScreen,
     linking: "settings/fork",
     options: { ...SETTINGS_PAGE_OPTIONS, title: "Fork" },
+  }),
+  SettingsForkPins: createNativeStackScreen({
+    screen: SettingsForkPinsRouteScreen,
+    linking: "settings/fork/pins",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Pinned messages" },
   }),
   SettingsVoice: createNativeStackScreen({
     screen: SettingsVoiceRouteScreen,

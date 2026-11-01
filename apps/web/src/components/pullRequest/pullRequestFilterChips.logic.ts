@@ -1,5 +1,5 @@
 /**
- * Fork: chips for the `pullRequestFilterChips` setting. Each active menu filter becomes a chip
+ * Fork: chips for the `pullRequestFilters` setting. Each active menu filter becomes a chip
  * with the scope change that removes it and, if it has a negative form, the change that flips it.
  * Typed qualifiers get no chip, since the search box shows them, and neither does a menu filter
  * they replace. If upstream ships its own active-filter chips, use theirs and drop this file.
@@ -57,8 +57,6 @@ export function pullRequestFilterChips(input: {
     readonly filters: PullRequestListFilters;
     readonly owners?: PullRequestOwnerFilter | undefined;
   };
-  /** The `repositoryOwnerFilters` setting. */
-  readonly ownerFilters: boolean;
   readonly names: PullRequestFilterChipNames;
 }): ReadonlyArray<PullRequestFilterChip> {
   const { search, typed, names } = input;
@@ -115,7 +113,7 @@ export function pullRequestFilterChips(input: {
     }
   }
   const owners = search.owners ?? [];
-  if (input.ownerFilters && owners.length > 0 && typed.owners === undefined) {
+  if (owners.length > 0 && typed.owners === undefined) {
     const operator = search.ownerOperator ?? "is";
     chips.push({
       key: "owner",

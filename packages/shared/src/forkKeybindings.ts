@@ -27,6 +27,12 @@ export const FORK_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "arrowright", command: "sidebar.nextTab", when: SIDEBAR_KEYS },
   { key: "mod+alt+t", command: "chat.newTerminal", when: "!terminalFocus" },
   { key: "mod+alt+shift+n", command: "chat.newTerminalLocal", when: "!terminalFocus" },
+  { key: "mod+alt+shift+c", command: "chat.compactContext", when: "!terminalFocus" },
+  {
+    key: "mod+alt+shift+k",
+    command: "composer.toggleCompactBeforeSend",
+    when: "compactBeforeSendShown && !terminalFocus",
+  },
   { key: "mod+alt+[", command: "sidebar.previousTab", when: "!terminalFocus" },
   { key: "mod+alt+]", command: "sidebar.nextTab", when: "!terminalFocus" },
   { key: "mod+f", command: "sidebar.search", when: "sidebarFocus" },

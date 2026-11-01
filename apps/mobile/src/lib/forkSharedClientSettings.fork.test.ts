@@ -8,9 +8,15 @@ describe("mobilePreferencesFromSharedClientSettings (MM-416)", () => {
       mobilePreferencesFromSharedClientSettings({
         followUpBehavior: "queue",
         sidebarWorkingShelfEnabled: false,
+        sidebarProjectGroupingMode: "separate",
         chatWidth: "wide",
       }),
-    ).toEqual({ followUpBehavior: "queue", workingShelfEnabled: false });
+    ).toEqual({
+      followUpBehavior: "queue",
+      workingShelfEnabled: false,
+      projectGroupingMode: "separate",
+      projectGroupingEnabled: false,
+    });
   });
 
   it("leaves out a value that the client settings schema refuses", () => {

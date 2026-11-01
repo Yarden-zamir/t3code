@@ -56,5 +56,7 @@ export const FORK_KEYBINDING_COMMANDS = [
   "keyboard.cheatSheet",
   "chat.newTerminal",
   "chat.newTerminalLocal",
+  "chat.compactContext",
+  "composer.toggleCompactBeforeSend",
 ] as const;
 export type ForkKeybindingCommand = (typeof FORK_KEYBINDING_COMMANDS)[number];

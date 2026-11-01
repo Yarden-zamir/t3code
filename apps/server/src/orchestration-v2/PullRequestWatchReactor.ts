@@ -39,6 +39,7 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import {
   evaluatePullRequestWatch,
   PULL_REQUEST_WATCH_NO_CHECKS_MS,
+  pullRequestWakeMessagePrefix,
   pullRequestWatchMessage,
 } from "./pullRequestWatch.ts";
 
@@ -60,6 +61,10 @@ const isRateLimited = (cause: Cause.Cause<PullRequestService.PullRequestError>) 
       isProviderError(error.cause) &&
       error.cause.reason === "rate-limited",
   });
+
+const isWakeHeldError = Schema.is(Orchestrator.OrchestratorPullRequestWakeHeldError);
+const isWakeHeld = <E>(cause: Cause.Cause<E>) =>
+  Option.match(Cause.findErrorOption(cause), { onNone: () => false, onSome: isWakeHeldError });
 
 const logFailure =
   (message: string, fields: Record<string, unknown>) =>
@@ -290,7 +295,14 @@ export const make = Effect.gen(function* () {
       ...(endedWatch === undefined ? {} : { endedWatch }),
       ...(wake === undefined
         ? {}
-        : { wake: { ...wake, messageId: MessageId.make(`message:pr-watch:${uuid}`) } }),
+        : {
+            wake: {
+              ...wake,
+              messageId: MessageId.make(
+                `${pullRequestWakeMessagePrefix(normalizeThreadPullRequestKey(identityOf(target.link)))}${uuid}`,
+              ),
+            },
+          }),
     });
   });
 
@@ -428,10 +440,13 @@ export const make = Effect.gen(function* () {
         Effect.as(true),
         Effect.catchCause((cause) => {
           lastReads.delete(group.key);
-          return logFailure("pull request watch update failed", {
-            threadId: target.thread.id,
-            pullRequest: group.key,
-          })(cause).pipe(Effect.as(false));
+          const fields = { threadId: target.thread.id, pullRequest: group.key };
+          // Fork: a held wake is expected while the thread works; the next sweep reads again.
+          return (
+            isWakeHeld(cause)
+              ? Effect.logDebug("pull request watch wake held behind a queued wake", fields)
+              : logFailure("pull request watch update failed", fields)(cause)
+          ).pipe(Effect.as(false));
         }),
       ),
     ).pipe(Effect.map((landed) => landed.every(Boolean)));

@@ -68,7 +68,7 @@ import * as ProviderRuntimeRecoveryService from "./ProviderRuntimeRecoveryServic
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as PullRequestWatchReactor from "./PullRequestWatchReactor.ts";
-import { PULL_REQUEST_WATCH_WAKE_LIMIT } from "./pullRequestWatch.ts";
+import { PULL_REQUEST_WATCH_WAKE_LIMIT, pullRequestWakeMessagePrefix } from "./pullRequestWatch.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
@@ -2974,6 +2974,116 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
       assert.deepEqual(messages, []);
     }),
+  );
+
+  // regression: queued wakes ran after unwatch and merge, and every sweep queued one more
+  it.effect.each(["unwatch", "unlink", "merged"] as const)(
+    "a busy thread holds one queued wake per pull request, and the watch end drops it: %s",
+    (end) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const threadId = ThreadId.make(`pr-watch-queued-${end}`);
+        const projectId = ProjectId.make(`pr-watch-queued-project-${end}`);
+        yield* seedProject({
+          projectId,
+          title: "Busy lead",
+          workspaceRoot: `/workspace/pr-watch-queued-${end}`,
+          defaultModelSelection: null,
+          createdAt: "2026-10-01T00:00:00.000Z",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`pr-watch-queued-create-${end}`),
+          threadId,
+          projectId,
+          title: "Busy lead",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`pr-watch-queued-busy-${end}`),
+          threadId,
+          messageId: MessageId.make(`pr-watch-queued-busy-${end}`),
+          text: "Work for a long time.",
+          attachments: [],
+          dispatchMode: { type: "start_immediately" },
+        });
+        const key = { host: "github.com", repository: "pingdotgg/t3code", number: 7 };
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-queued-start-${end}`),
+          threadId,
+          ...key,
+          watching: true,
+          link: { url: "https://github.com/pingdotgg/t3code/pull/7", source: "agent" },
+        });
+        const started = (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch;
+        assert.isDefined(started);
+        if (started === undefined) return;
+        const sync = (name: string, watch: typeof started | null) =>
+          orchestrator.dispatch({
+            type: "thread.pull-request-watch.sync",
+            commandId: CommandId.make(`pr-watch-queued-${name}-${end}`),
+            threadId,
+            ...key,
+            startedAt: started.startedAt,
+            watch,
+            wake: {
+              messageId: MessageId.make(`${pullRequestWakeMessagePrefix(key)}${name}-${end}`),
+              text: `Update ${name}`,
+              notification: { source: { kind: "monitor" }, outcome: "updated", summary: "#7" },
+            },
+          });
+        const first = { ...started, headSha: "old", failedChecks: ["lint"] };
+        yield* sync("first", first);
+        const held = yield* sync("second", { ...first, conflicting: true }).pipe(Effect.flip);
+        assert.equal(held._tag, "OrchestratorPullRequestWakeHeldError");
+        assert.deepEqual(
+          (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch,
+          first,
+        );
+        const queuedWakes = Effect.map(orchestrator.getThreadProjection(threadId), ({ runs }) =>
+          runs.filter((run) => run.status === "queued").map((run) => run.userMessageId),
+        );
+        assert.deepEqual(yield* queuedWakes, [
+          MessageId.make(`${pullRequestWakeMessagePrefix(key)}first-${end}`),
+        ]);
+
+        if (end === "merged") {
+          yield* orchestrator.dispatch({
+            type: "thread.pull-request-watch.sync",
+            commandId: CommandId.make(`pr-watch-queued-merged-${end}`),
+            threadId,
+            ...key,
+            startedAt: started.startedAt,
+            watch: null,
+          });
+        } else if (end === "unlink") {
+          yield* orchestrator.dispatch({
+            type: "thread.pull-request.unlink",
+            commandId: CommandId.make(`pr-watch-queued-unlink-${end}`),
+            threadId,
+            ...key,
+          });
+        } else {
+          yield* orchestrator.dispatch({
+            type: "thread.pull-request.watch",
+            commandId: CommandId.make(`pr-watch-queued-stop-${end}`),
+            threadId,
+            ...key,
+            watching: false,
+          });
+        }
+        assert.deepEqual(yield* queuedWakes, []);
+      }),
   );
 
   it.effect.each(["manual", "automatic"])("settling ends every pull request watch: %s", (mode) =>
