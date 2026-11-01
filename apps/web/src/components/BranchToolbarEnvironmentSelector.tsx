@@ -11,6 +11,8 @@ import { memo } from "react";
 
 import { ADD_TO_MACHINE_LABEL_CLASS, type EnvironmentOption } from "./BranchToolbar.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+import { KitshnBadge } from "./machines/KitshnMark";
+import { useKitshnMachines } from "../state/environments";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import {
   Select,
@@ -46,6 +48,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   onAddToMachine,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
+  const kitshnMachines = useKitshnMachines();
   const shortcutLabel = shortcutLabelForCommand(
     useAtomValue(primaryServerKeybindingsAtom),
     "composer.host",
@@ -157,6 +160,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
               <span className="inline-flex items-center gap-1.5">
                 <EnvironmentMachineIcon kind={env.machine} className="size-3" />
                 {env.label}
+                <KitshnBadge machine={kitshnMachines.get(env.environmentId)} />
               </span>
             </SelectItem>
           ))}

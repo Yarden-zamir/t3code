@@ -219,7 +219,7 @@ export function SavedBackendListRow({
     environment.entry,
     environment.connection.error,
   );
-  const kitshnMachine = (environment.serverConfig?.environment ?? lastDescriptor)?.kitshnMachine;
+  const kitshnMachine = environment.serverConfig?.kitshnMachine;
   const subtitleText = [
     environmentTransportLabel(environment, connectedTarget),
     // The headline below names the failure in full.

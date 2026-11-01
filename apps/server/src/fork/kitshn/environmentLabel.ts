@@ -5,7 +5,7 @@ import * as Option from "effect/Option";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as KitshnGrants from "./KitshnGrants.ts";
 
-/** The descriptor fields of a kitshn machine: its id and name, without an empty name. */
+/** The server config fields of a kitshn machine: its id and name, without an empty name. */
 export function kitshnMachineRef(machine: { readonly id: string; readonly name: string | null }) {
   const id = machine.id.trim();
   return id === "" ? null : { id: MachineId.make(id), name: machine.name?.trim() || null };
@@ -35,11 +35,9 @@ export const withKitshnMachineLabel = Effect.fn("KitshnGrants.withKitshnMachineL
       Effect.orElseSucceed(() => false),
     );
     const machine = yield* grants.value.machine;
-    const ref = machine === null ? null : kitshnMachineRef(machine);
     return {
       ...current,
       label: kitshnEnvironmentLabel(current.label, enabled, machine?.name ?? null),
-      ...(ref === null ? {} : { kitshnMachine: ref }),
     };
   });
 });

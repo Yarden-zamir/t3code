@@ -8,6 +8,7 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -320,6 +321,28 @@ describe("KitshnGrants (K-721)", () => {
       yield* Ref.set(test.revokeFails, false);
       yield* test.start;
       expect(yield* Queue.take(test.revoked)).toBe("sam");
+    }).pipe(isolated),
+  );
+
+  it.effect("names the joined machine only after a register of this server run", () =>
+    Effect.gen(function* () {
+      const test = yield* harness;
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const grants = yield* test.start;
+          yield* test.connect;
+          const joined = yield* grants.joinedMachine.pipe(
+            Stream.filter((machine) => machine !== null),
+            Stream.runHead,
+          );
+          expect(Option.getOrNull(joined)).toEqual({ id: "self", name: "Mac" });
+        }),
+      );
+      // With T3CODE_KITSHN=off, or after kitshn forgot the provider, the next run never registers.
+      yield* test.disconnect;
+      const grants = yield* test.start;
+      expect(yield* grants.machine).toEqual({ id: "self", name: "Mac" });
+      expect(Option.getOrNull(yield* Stream.runHead(grants.joinedMachine))).toBeNull();
     }).pipe(isolated),
   );
 

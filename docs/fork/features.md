@@ -114,7 +114,7 @@ An environment is one of two kinds:
 - **Joined through kitshn:** the machine is on the kitshn map. kitshn gives it its access, the origins that it trusts and, with [Environment name from kitshn](#environment-name-from-kitshn), its name. A phone or a desktop app reaches it with its [device token](#device-invites).
 - **Manual:** an address that the user typed and paired. It gets no access, trust or name from kitshn.
 
-The server descriptor of a joined machine carries its kitshn machine id and name (`kitshnMachine`). The sidebar project badge, Settings > Connections, Settings > Fleet, the mobile environment list and the Android assistant machine list mark a joined machine with "kitshn" and the line "Joined through kitshn as <name>". A manual environment has no mark.
+The server config of a joined machine carries its kitshn machine id and name (`kitshnMachine`), only while this server run registered with kitshn. The config needs a session, so the public descriptor does not name the machine. The sidebar project badge, Settings > Connections, Settings > Fleet, the environment pickers (the composer "Run on" menu, the add-project-to-machine dialog and the command palette), the mobile environment list and the Android assistant machine list mark a joined machine with "kitshn" and the line "Joined through kitshn as <name>". A manual environment has no mark.
 
 - **Setting:** none.
 - **Works on:** web, desktop, mobile.

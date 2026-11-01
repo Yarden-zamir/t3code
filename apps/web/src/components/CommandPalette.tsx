@@ -127,8 +127,10 @@ import { reportProjectFailure, useProjectPin } from "../hooks/useProjectGroupUpd
 import {
   useEnvironmentProviders,
   useEnvironments,
+  useKitshnMachines,
   usePrimaryEnvironmentId,
 } from "../state/environments";
+import { KitshnBadge } from "./machines/KitshnMark";
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
@@ -555,6 +557,7 @@ function OpenCommandPaletteDialog(props: {
       : null;
   };
 
+  const kitshnMachines = useKitshnMachines();
   const addProjectEnvironmentOptions = (() => {
     const options = environments
       .filter((environment) => canCreateProjectInEnvironment(environment.connection.phase))
@@ -1135,6 +1138,7 @@ function OpenCommandPaletteDialog(props: {
       : option.status,
     disabled: !option.isConnected,
     icon: <EnvironmentMachineIcon kind={option.machine} className={ITEM_ICON_CLASS} />,
+    titleTrailingContent: <KitshnBadge machine={kitshnMachines.get(option.environmentId)} />,
     keepOpen: true,
     run: async () => {
       run(option.environmentId);
@@ -2249,7 +2253,10 @@ function OpenCommandPaletteDialog(props: {
             ...(option.environmentId === newProjectFlow.environmentId
               ? {
                   titleTrailingContent: (
-                    <CheckIcon className="ms-auto size-4 shrink-0 text-muted-foreground/70" />
+                    <>
+                      <KitshnBadge machine={kitshnMachines.get(option.environmentId)} />
+                      <CheckIcon className="ms-auto size-4 shrink-0 text-muted-foreground/70" />
+                    </>
                   ),
                 }
               : {}),

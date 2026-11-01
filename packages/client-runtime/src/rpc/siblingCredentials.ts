@@ -1,7 +1,7 @@
 // Fork: cookies for sibling environments behind a proxy such as Cloudflare Access, which redirects
 // a request without its cookie to a login. The browser sends only cookies that it holds for the
-// target, and the target must list the page origin (T3CODE_TRUSTED_BROWSER_ORIGINS). The page
-// server must also list the target, so cookies stay off until the user opts in on the servers.
+// target, and the target must list the page origin among its kitshn peer origins. The page
+// server must also list the target, so cookies stay off until kitshn links both machines.
 
 // Origins that the page's own server trusts (`trustedBrowserOrigins`), empty until config loads.
 // Limit: a remote request before then goes without cookies and fails once; the retry succeeds.

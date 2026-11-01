@@ -61,7 +61,7 @@ function FleetRow({ environment }: { readonly environment: ConnectedEnvironment 
       input: {},
     }),
   );
-  const kitshnMachine = config?.environment.kitshnMachine;
+  const kitshnMachine = config?.kitshnMachine;
   const detail = [
     connectionStatusText({
       phase: environment.connectionState,

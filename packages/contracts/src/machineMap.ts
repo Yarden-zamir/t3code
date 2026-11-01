@@ -27,7 +27,7 @@ export type MachineId = typeof MachineId.Type;
 
 /**
  * The kitshn machine that a T3 server runs as. A server joined to kitshn reports it in its
- * environment descriptor; an environment without it is one that the user added by its address.
+ * server config; an environment without it is one that the user added by its address.
  */
 export const KitshnMachineRef = Schema.Struct({
   id: MachineId,
