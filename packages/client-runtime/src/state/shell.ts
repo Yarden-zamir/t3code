@@ -390,6 +390,9 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       Effect.gen(function* () {
         if (Option.isNone(next) || earlySnapshot?.prepared === next.value) return;
         if (Option.isNone(snapshotOmission)) return;
+        // A finished snapshot that no socket used stays the only one, so a socket that
+        // fails on each retry costs one snapshot, not one per attempt.
+        if (earlySnapshot !== undefined && earlySnapshot.fiber.pollUnsafe() !== undefined) return;
         if (earlySnapshot !== undefined) yield* Fiber.interrupt(earlySnapshot.fiber);
         earlySnapshot = {
           prepared: next.value,

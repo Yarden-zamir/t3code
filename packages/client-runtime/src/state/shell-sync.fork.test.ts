@@ -13,6 +13,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   AVAILABLE_CONNECTION_STATE,
@@ -76,11 +77,12 @@ const makeHarness = Effect.fn("test.makeEarlyShellSnapshotHarness")(function* (i
     closed: Effect.never,
   };
   const session = yield* SubscriptionRef.make(Option.none<RpcSession.RpcSession>());
+  const prepared = yield* SubscriptionRef.make(Option.some(PREPARED));
   const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
     target: TARGET,
     state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
     session,
-    prepared: yield* SubscriptionRef.make(Option.some(PREPARED)),
+    prepared,
     connect: Effect.void,
     disconnect: Effect.void,
     retryNow: Effect.void,
@@ -119,7 +121,7 @@ const makeHarness = Effect.fn("test.makeEarlyShellSnapshotHarness")(function* (i
     Effect.provideService(ShellSnapshotLoader.ShellSnapshotLoader, snapshotLoader),
   );
   const openSocket = SubscriptionRef.set(session, Option.some(socketSession));
-  return { loads, firstLoad, firstLoadInterrupted, subscribeInput, openSocket };
+  return { loads, firstLoad, firstLoadInterrupted, subscribeInput, openSocket, prepared };
 });
 
 describe("early environment shell snapshot", () => {
@@ -177,6 +179,27 @@ describe("early environment shell snapshot", () => {
       expect(yield* Ref.get(h.loads)).toEqual([
         { omitIdleSubagents: false, omitOlderSettled: false },
       ]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps one unused early snapshot across a failed attempt and a retry", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        cachedConfig: Option.some(familiesConfig(true)),
+        socketConfig: familiesConfig(true),
+      });
+
+      yield* Deferred.await(h.firstLoad);
+      // Lets the early load finish before the attempt fails.
+      yield* TestClock.adjust("0 millis");
+      yield* SubscriptionRef.set(h.prepared, Option.none());
+      yield* SubscriptionRef.set(h.prepared, Option.some({ ...PREPARED }));
+      yield* TestClock.adjust("0 millis");
+      expect(yield* Ref.get(h.loads)).toHaveLength(1);
+
+      yield* h.openSocket;
+      expect(yield* Deferred.await(h.subscribeInput)).toMatchObject({ afterSequence: 1 });
+      expect(yield* Ref.get(h.loads)).toHaveLength(2);
     }).pipe(Effect.scoped),
   );
 });
