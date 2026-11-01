@@ -67,7 +67,7 @@ describe("threadSyncActivity", () => {
       const environmentId = EnvironmentId.make("warmup-timings-environment");
       const opened = yield* threadState("synchronizing");
       const warmed = yield* threadState("synchronizing");
-      const doneWarming = markWarmingThread(environmentId, ThreadId.make("warmed"));
+      const doneWarming = markWarmingThread(environmentId, ThreadId.make("warmed"), () => {});
       yield* followThreadSync(environmentId, ThreadId.make("warmed"), warmed);
       yield* SubscriptionRef.set(warmed, { status: "live" as EnvironmentThreadStatus });
       doneWarming();

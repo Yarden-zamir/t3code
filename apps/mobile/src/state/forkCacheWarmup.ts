@@ -44,7 +44,8 @@ export function installCacheWarmup(): () => void {
     new Promise<WarmupOutcome>((resolve) => {
       let settled = false;
       let unsubscribe: (() => void) | undefined;
-      const doneWarming = markWarmingThread(environmentId, threadId);
+      // A retained snapshot can show "live" at once, so only the confirmed subscription counts.
+      const doneWarming = markWarmingThread(environmentId, threadId, () => finish("success"));
       const finish = (outcome: WarmupOutcome) => {
         if (settled) return;
         settled = true;
@@ -61,7 +62,7 @@ export function installCacheWarmup(): () => void {
         environmentThreads.stateAtom(environmentId, threadId),
         (result) => {
           const state = AsyncResult.getOrElse(result, () => EMPTY_ENVIRONMENT_THREAD_STATE);
-          if (state.status === "live" || state.status === "deleted") finish("success");
+          if (state.status === "deleted") finish("success");
           else if (Option.isSome(state.error)) finish("failure");
         },
         { immediate: true },

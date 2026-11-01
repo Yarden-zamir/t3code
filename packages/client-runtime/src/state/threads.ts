@@ -48,7 +48,7 @@ import {
   type ThreadHistoryMeta,
 } from "./threadHistoryMerge.ts";
 import * as ThreadSnapshotLoader from "./threadSnapshotHttp.ts";
-import { followThreadSync } from "../fork/threadSyncActivity.ts";
+import { confirmThreadSync, followThreadSync } from "../fork/threadSyncActivity.ts";
 import { makeThreadRequestsResolvedAnnouncer, pendingRuntimeRequestIds } from "./threadRequests.ts";
 import {
   EMPTY_ENVIRONMENT_THREAD_STATE,
@@ -659,6 +659,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         }
         yield* applyEventsLocked(events);
         yield* remember;
+        if (items.some((item) => item.kind === "synchronized")) {
+          confirmThreadSync(environmentId, threadId);
+        }
       }),
     );
   });

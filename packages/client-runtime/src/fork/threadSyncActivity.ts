@@ -71,20 +71,32 @@ const THREAD_TIMING_MARKS: Partial<Record<EnvironmentThreadStatus, SyncTimingMar
   live: "threadLive",
 };
 
-const warmingThreads = new Set<string>();
+// Each warming thread maps to the callback for its next confirmed subscription.
+const warmingThreads = new Map<string, () => void>();
 const threadKey = (environmentId: EnvironmentId, threadId: ThreadId) =>
   `${environmentId}\u0000${threadId}`;
 
 /**
- * Keeps a background mount of a thread out of the open thread timings until the result is
- * called. A user who opens that thread meanwhile gets no open thread marks for it.
+ * Marks a background mount of a thread until the result is called. It stays out of the open
+ * thread timings, and `onConfirmed` runs when its subscription confirms the state. A retained
+ * "live" status shows before that confirmation. A user who opens that thread meanwhile gets no
+ * open thread marks for it.
  */
-export const markWarmingThread = (environmentId: EnvironmentId, threadId: ThreadId) => {
+export const markWarmingThread = (
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  onConfirmed: () => void,
+) => {
   const key = threadKey(environmentId, threadId);
-  warmingThreads.add(key);
+  warmingThreads.set(key, onConfirmed);
   return () => {
-    warmingThreads.delete(key);
+    if (warmingThreads.get(key) === onConfirmed) warmingThreads.delete(key);
   };
+};
+
+/** Called after a thread subscription applied its completion marker and kept the result. */
+export const confirmThreadSync = (environmentId: EnvironmentId, threadId: ThreadId) => {
+  warmingThreads.get(threadKey(environmentId, threadId))?.();
 };
 
 /** Follows a thread state for the sync activity, and for the sync timings when they record. */
