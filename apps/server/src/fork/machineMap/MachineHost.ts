@@ -6,6 +6,8 @@ import {
   AuthSessionId,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
+  type FleetCommandInput,
+  type FleetCommandResult,
   type MachineClientSession,
   type MachineCommand,
   type MachineCommandInput,
@@ -117,6 +119,9 @@ const portalTask = (task: ScheduledTask): MachineScheduledTask => ({
   lastRunError: task.lastRunError,
 });
 
+/** Time for the reply to reach the client before a restart ends the process. */
+const RESTART_FLUSH = Duration.millis(500);
+
 /** Host load changes every second; the status reads it at most once a minute. */
 const RESOURCE_SAMPLE_MAX_AGE = Duration.minutes(1);
 
@@ -170,6 +175,8 @@ export class MachineHost extends Context.Service<
       commandId: string,
       input: MachineCommandInput,
     ) => Effect.Effect<CommandOutcome>;
+    /** The Fleet view: runs one command for a client, and restarts after the reply. */
+    readonly runForClient: (input: FleetCommandInput) => Effect.Effect<FleetCommandResult>;
     /** Ends this process so that its supervisor starts the server again. */
     readonly restartProcess: Effect.Effect<void>;
     /** A supervisor starts the server again after `restartProcess`. */
@@ -531,12 +538,30 @@ const make = Effect.gen(function* () {
     process.kill(process.pid, "SIGTERM");
   });
 
+  const layerScope = yield* Effect.scope;
+  const fleetCommands = yield* Ref.make(0);
+  const runForClient: MachineHost["Service"]["runForClient"] = Effect.fn(
+    "MachineHost.runForClient",
+  )(function* (input) {
+    const count = yield* Ref.updateAndGet(fleetCommands, (value) => value + 1);
+    const outcome = yield* runInput(`fleet-${yield* Clock.currentTimeMillis}-${count}`, input);
+    // Answer first, then restart, as for a kitshn job.
+    if (outcome.restartAfterReply === true) {
+      yield* Effect.sleep(RESTART_FLUSH).pipe(
+        Effect.andThen(restartProcess),
+        Effect.forkIn(layerScope),
+      );
+    }
+    return { error: outcome.ok ? null : (outcome.error ?? "The command failed.") };
+  });
+
   return MachineHost.of({
     isDesktopCommand,
     supportedCommands,
     status,
     run,
     runInput,
+    runForClient,
     restartProcess,
     supervised,
   });

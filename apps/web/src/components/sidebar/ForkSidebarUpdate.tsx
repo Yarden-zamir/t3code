@@ -3,10 +3,9 @@
  * update popover, the idle install prompt and the newer-update check before install.
  */
 import type { ClientSettings, DesktopUpdateState } from "@t3tools/contracts";
-import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import { useClientSettings } from "../../hooks/useSettings";
-import { ForkChangelogDialog } from "../forkChangelog/ForkChangelogDialog";
 import { ForkUpdateChanges } from "../forkChangelog/ForkUpdateChanges";
 import { Button } from "../ui/button";
 
@@ -21,8 +20,7 @@ const selectForkChangelogEnabled = (settings: ClientSettings) => settings.forkCh
 /** With the changelog on, the popover opens even when no update is available. */
 export function useForkChangelog() {
   const enabled = useClientSettings(selectForkChangelogEnabled);
-  const [open, setOpen] = useState(false);
-  return { enabled, open, setOpen };
+  return { enabled };
 }
 type ForkChangelog = ReturnType<typeof useForkChangelog>;
 
@@ -33,6 +31,7 @@ export function ForkUpdatePopoverChanges(props: {
   readonly state: DesktopUpdateState;
   readonly tooltip: string;
 }) {
+  const navigate = useNavigate();
   return (
     <>
       <ForkUpdateChanges state={props.state} tooltip={props.tooltip} />
@@ -42,7 +41,7 @@ export function ForkUpdatePopoverChanges(props: {
           variant="outline"
           onClick={() => {
             props.popover.close();
-            props.changelog.setOpen(true);
+            void navigate({ to: "/settings/machines", search: { tab: "changelog" } });
           }}
         >
           Open changelog
@@ -50,10 +49,4 @@ export function ForkUpdatePopoverChanges(props: {
       </div>
     </>
   );
-}
-
-export function ForkChangelogDialogHost({ changelog }: { readonly changelog: ForkChangelog }) {
-  return changelog.enabled ? (
-    <ForkChangelogDialog open={changelog.open} onOpenChange={changelog.setOpen} />
-  ) : null;
 }

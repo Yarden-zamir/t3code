@@ -133,6 +133,7 @@ import {
 import * as KitshnSettingsSync from "./fork/kitshn/KitshnSettingsSync.ts";
 import * as ForkChangelog from "./fork/ForkChangelog.ts";
 import * as ForkUpdates from "./fork/ForkUpdates.ts";
+import * as MachineHost from "./fork/machineMap/MachineHost.ts";
 import * as PreviewServerGroups from "./fork/PreviewServerGroups.ts";
 import * as TerminalThreadMove from "./fork/TerminalThreadMove.ts";
 import * as ForkWorktreeRecreate from "./fork/ForkWorktreeRecreate.ts";
@@ -607,6 +608,11 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({}),
   Layer.mock(ForkChangelog.ForkChangelog)({}),
   Layer.mock(ForkUpdates.ForkUpdates)({ available: false }),
+  Layer.mock(MachineHost.MachineHost)({
+    isDesktopCommand: () => false,
+    supportedCommands: () => [],
+    supervised: false,
+  }),
   Layer.mock(PreviewServerGroups.PreviewServerGroups)({}),
   Layer.mock(TerminalThreadMove.TerminalThreadMove)({}),
   Layer.mock(ForkWorktreeRecreate.ForkWorktreeRecreate)({}),

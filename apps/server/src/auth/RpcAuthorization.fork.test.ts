@@ -1,4 +1,5 @@
 import {
+  AuthEnvironmentMaintainScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthSourceControlWriteScope,
@@ -28,6 +29,15 @@ describe("RPC authorization scopes fork", () => {
     ]) {
       expect(RpcAuthorization.requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
     }
+  });
+
+  it("requires the maintain scope to run a Fleet command, like a server update", () => {
+    expect(RpcAuthorization.requiredScopeForRpcMethod(WS_METHODS.fleetRunCommand)).toBe(
+      AuthEnvironmentMaintainScope,
+    );
+    expect(RpcAuthorization.requiredScopeForRpcMethod(WS_METHODS.serverUpdateServer)).toBe(
+      AuthEnvironmentMaintainScope,
+    );
   });
 
   it("requires source control writes to prepare the new worktree of a terminal draft", () => {

@@ -43,14 +43,6 @@ import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { PullRequestActorAvatar } from "../pullRequest/pullRequestPresentation";
 import { Badge } from "../ui/badge";
 import { Button, InlineButton } from "../ui/button";
-import {
-  Dialog,
-  DialogDescription,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Spinner } from "../ui/spinner";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -80,57 +72,36 @@ export function ChangelogClockProvider({ children }: { readonly children: ReactN
 }
 
 /**
- * Fork feature: a timeline of fork releases and their fork and upstream commits, the upstream
- * commits that fork main does not have yet, and the Fork Sync workflow. Reads run only while it
- * is open.
+ * Fork feature: the Changelog tab of the Fleet view. A timeline of fork releases and their fork
+ * and upstream commits, the upstream commits that fork main does not have yet, and the Fork Sync
+ * workflow. Reads run only while the tab shows.
  */
-export function ForkChangelogDialog({
-  open,
-  onOpenChange,
-}: {
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-}) {
+export function ForkChangelogSection() {
   const [tab, setTab] = useState<ForkChangelogTab>("releases");
   const environmentId = usePrimaryEnvironmentId();
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Changelog</DialogTitle>
-          <DialogDescription>
-            Fork releases, and the upstream changes that fork main does not have yet.
-          </DialogDescription>
-          {/* The header stays in place while the panel below scrolls. */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <ToggleGroup
-              aria-label="Changelog view"
-              value={[tab]}
-              onValueChange={(next) => {
-                const value = next[0];
-                if (value === "releases" || value === "upstream") setTab(value);
-              }}
-            >
-              <Toggle value="releases">Releases</Toggle>
-              <Toggle value="upstream">Upstream</Toggle>
-            </ToggleGroup>
-            {environmentId === null ? null : (
-              <ForkChangelogAgentMenu
-                environmentId={environmentId}
-                tab={tab}
-                onOpened={() => onOpenChange(false)}
-              />
-            )}
-          </div>
-        </DialogHeader>
-        <DialogPanel>
-          <ChangelogClockProvider>
-            <ForkChangelogBody environmentId={environmentId} tab={tab} />
-          </ChangelogClockProvider>
-        </DialogPanel>
-      </DialogPopup>
-    </Dialog>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <ToggleGroup
+          aria-label="Changelog view"
+          value={[tab]}
+          onValueChange={(next) => {
+            const value = next[0];
+            if (value === "releases" || value === "upstream") setTab(value);
+          }}
+        >
+          <Toggle value="releases">Releases</Toggle>
+          <Toggle value="upstream">Upstream</Toggle>
+        </ToggleGroup>
+        {environmentId === null ? null : (
+          <ForkChangelogAgentMenu environmentId={environmentId} tab={tab} />
+        )}
+      </div>
+      <ChangelogClockProvider>
+        <ForkChangelogBody environmentId={environmentId} tab={tab} />
+      </ChangelogClockProvider>
+    </div>
   );
 }
 

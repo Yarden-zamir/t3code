@@ -611,7 +611,6 @@ function SidebarUpdateControl() {
           </PopoverPopup>
         ) : null}
       </Popover>
-      <ForkUpdate.ForkChangelogDialogHost changelog={forkChangelog} />
       {confirmDialog}
     </SidebarMenuItem>
   );

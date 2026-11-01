@@ -30,6 +30,7 @@ import * as ForkUpdates from "./ForkUpdates.ts";
 import { isMachineSubject } from "./machineMap/machineAccess.ts";
 import * as KitshnProvider from "./kitshn/KitshnProvider.ts";
 import * as KitshnSettingsSync from "./kitshn/KitshnSettingsSync.ts";
+import * as MachineHost from "./machineMap/MachineHost.ts";
 import * as MachinePeers from "./machineMap/MachinePeers.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
 import * as TerminalThreadMove from "./TerminalThreadMove.ts";
@@ -87,6 +88,7 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const terminalThreadMove = yield* TerminalThreadMove.TerminalThreadMove;
       const forkUpdates = yield* ForkUpdates.ForkUpdates;
+      const machineHost = yield* MachineHost.MachineHost;
       const worktreeRecreate = yield* ForkWorktreeRecreate.ForkWorktreeRecreate;
       /** MM-1907: this environment first, then the machines that its agents read. */
       const readableEnvironments = Effect.fn("ForkWs.readableEnvironments")(function* () {
@@ -111,6 +113,7 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
         [FORK_WS_METHODS.machineMapSubscribe]: (_input) => settingsSync.clientState,
         [FORK_WS_METHODS.machineMapShareSettings]: (input) => settingsSync.share(input),
         [FORK_WS_METHODS.machineMapReadableEnvironments]: (_input) => readableEnvironments(),
+        [FORK_WS_METHODS.fleetRunCommand]: (input) => machineHost.runForClient(input.command),
         [FORK_WS_METHODS.webPushPublicKey]: (_input) =>
           webPush.publicKey.pipe(Effect.map((publicKey) => ({ publicKey }))),
         [FORK_WS_METHODS.webPushSubscribe]: (input) => webPush.subscribe(input).pipe(Effect.as({})),

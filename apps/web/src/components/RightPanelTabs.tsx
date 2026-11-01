@@ -400,8 +400,8 @@ function RightPanelEmptyState(props: {
       onClick: props.onAddPullRequests,
     },
     {
-      label: "Machines",
-      description: "The machines that the kitshn links of this machine reach.",
+      label: "Fleet",
+      description: "Every machine: its version, updates, tasks and commands.",
       icon: Network,
       shortcut: "N",
       available: props.machinesAvailable,
@@ -616,8 +616,6 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
-    case "machines":
-      return "Machines";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "side-chat":
@@ -710,8 +708,6 @@ function SurfaceIcon({
       );
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
-    case "machines":
-      return <Network className="size-3 shrink-0" />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "device":
@@ -1172,7 +1168,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddPullRequests,
     },
     {
-      label: "Machines",
+      label: "Fleet",
       icon: Network,
       shortcut: "N",
       available: props.machinesAvailable,

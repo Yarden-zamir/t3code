@@ -253,6 +253,21 @@ export const MachineCommandInput = Schema.Union([
 export type MachineCommandInput = typeof MachineCommandInput.Type;
 export type MachineCommandKind = MachineCommandInput["_tag"];
 
+/**
+ * The machine commands of the Fleet view. A client sends them to the server that runs them, the
+ * same commands that kitshn jobs and `machines_command` run there.
+ */
+export const FleetCommandInput = Schema.Union([
+  MachineCommandInput.members[0],
+  MachineCommandInput.members[1],
+  MachineCommandInput.members[2],
+  MachineCommandInput.members[3],
+  MachineCommandInput.members[4],
+]);
+export type FleetCommandInput = typeof FleetCommandInput.Type;
+export const FleetCommandResult = Schema.Struct({ error: Schema.NullOr(Schema.String) });
+export type FleetCommandResult = typeof FleetCommandResult.Type;
+
 export const MachineCommandKindSchema = Schema.Literals([
   "restartServer",
   "installUpdate",

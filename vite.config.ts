@@ -629,7 +629,7 @@ export default defineConfig({
           "apps/web/src/components/focusLevels/useFocusLevelShortcuts.ts",
           "apps/web/src/components/focusLevels/useSidebarKeyboard.ts",
           "apps/web/src/components/ForkAccessChangeNotices.tsx",
-          "apps/web/src/components/forkChangelog/ForkChangelogDialog.tsx",
+          "apps/web/src/components/forkChangelog/ForkChangelog.tsx",
           "apps/web/src/components/ForkContextMenuHost.tsx",
           "apps/web/src/components/ForkNavigationHistory.tsx",
           "apps/web/src/components/ForkShellTerminal.tsx",

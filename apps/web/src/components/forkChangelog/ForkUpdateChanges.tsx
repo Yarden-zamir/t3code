@@ -10,7 +10,7 @@ import { forkReleaseChanges, forkReleases } from "../../state/forkChangelog";
 import { useEnvironmentQuery } from "../../state/query";
 import { SidebarUpdateReleaseNotes } from "../sidebar/SidebarUpdateReleaseNotes";
 import { Spinner } from "../ui/spinner";
-import { ChangelogClockProvider, CommitList, Hint } from "./ForkChangelogDialog";
+import { ChangelogClockProvider, CommitList, Hint } from "./ForkChangelog";
 import { releasesInUpdate } from "./forkChangelog.logic";
 
 interface ForkUpdateChangesProps {

@@ -1419,21 +1419,20 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  // Fork: the Fleet view.
+  actionItems.push({
+    kind: "action",
+    value: "action:open-fleet",
+    searchTerms: ["fleet", "machines", "kitshn", "updates", "versions", "changelog"],
+    title: "Open Fleet",
+    icon: <NetworkIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/settings/machines" });
+    },
+  });
+
   if (activeThread !== null) {
     const thread = activeThread;
-    // Fork: MM-1701.
-    actionItems.push({
-      kind: "action",
-      value: "action:open-machines",
-      searchTerms: ["show machines", "kitshn", "links", "machine map"],
-      title: "Show machines",
-      icon: <NetworkIcon className={ITEM_ICON_CLASS} />,
-      run: async () => {
-        useRightPanelStore
-          .getState()
-          .open(scopeThreadRef(thread.environmentId, thread.id), "machines");
-      },
-    });
     actionItems.push({
       kind: "action",
       value: "action:restart-agent-session",

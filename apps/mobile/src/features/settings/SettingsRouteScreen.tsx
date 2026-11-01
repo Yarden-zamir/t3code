@@ -284,6 +284,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
           target: "SettingsFork",
           disabled: noServerTargets,
         },
+        { id: "SettingsFleet", icon: "desktopcomputer", label: "Fleet", target: "SettingsFleet" },
         { id: "SettingsVoice", icon: "mic", label: "Voice", target: "SettingsVoice" },
       ],
     },

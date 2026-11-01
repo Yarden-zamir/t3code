@@ -22,6 +22,7 @@ import {
   ForkUpstreamPending,
 } from "./forkChangelog.ts";
 import { ForkLocalListenerList } from "./forkPreview.ts";
+import { FleetCommandInput, FleetCommandResult } from "./machineMap.ts";
 import {
   ForkMoveTerminalToThreadError,
   ForkMoveTerminalToThreadInput,
@@ -60,6 +61,8 @@ export const FORK_WS_METHODS = {
   machineMapSubscribe: "machineMap.subscribe",
   machineMapShareSettings: "machineMap.shareSettings",
   machineMapReadableEnvironments: "machineMap.readableEnvironments",
+  // Fork: a machine command from the Fleet view, run by the server that the client reaches.
+  fleetRunCommand: "fleet.runCommand",
 
   // Fork: Web Push (webPush.ts)
   webPushPublicKey: "webPush.publicKey",
@@ -122,7 +125,6 @@ const WsMachineMapShareSettingsRpc = Rpc.make(FORK_WS_METHODS.machineMapShareSet
   error: machineMapError,
 });
 
-/** Fork: MM-1701. `machines_read` through the portal connection, for the Machines panel. */
 /** MM-1907: the environments whose threads the agents of this server can read. */
 const WsMachineMapReadableEnvironmentsRpc = Rpc.make(
   FORK_WS_METHODS.machineMapReadableEnvironments,
@@ -132,6 +134,13 @@ const WsMachineMapReadableEnvironmentsRpc = Rpc.make(
     error: machineMapError,
   },
 );
+
+/** Fork: runs one Fleet command on this server. `error` is null when it ran. */
+const WsFleetRunCommandRpc = Rpc.make(FORK_WS_METHODS.fleetRunCommand, {
+  payload: Schema.Struct({ command: FleetCommandInput }),
+  success: FleetCommandResult,
+  error: EnvironmentAuthorizationError,
+});
 
 const webPushError = Schema.Union([WebPushError, EnvironmentAuthorizationError]);
 /** Fork: the key that a browser subscribes with, so that this server can push to it. */
@@ -198,6 +207,7 @@ export const ForkWsRpcGroup = RpcGroup.make(
   WsMachineMapSubscribeRpc,
   WsMachineMapShareSettingsRpc,
   WsMachineMapReadableEnvironmentsRpc,
+  WsFleetRunCommandRpc,
   WsWebPushPublicKeyRpc,
   WsWebPushSubscribeRpc,
   WsWebPushTestRpc,
@@ -214,6 +224,8 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [FORK_WS_METHODS.forkChangelogStartSync]: AuthSourceControlWriteScope,
   // Fork: MM-411. Sets shared values of the map, like a settings change on every machine.
   [FORK_WS_METHODS.machineMapShareSettings]: AuthSettingsWriteScope,
+  // Fork: installs an update, restarts the server or stops its agents, like `server.updateServer`.
+  [FORK_WS_METHODS.fleetRunCommand]: AuthEnvironmentMaintainScope,
   // Fork: the local desktop app reports desktop command results and its waiting update.
   // Fork: creates a worktree, as `vcs.createWorktree` does, and runs the project setup script.
   [FORK_WS_METHODS.vcsPrepareDraftWorktree]: AuthSourceControlWriteScope,

@@ -279,7 +279,7 @@ const OBTAINIUM_FORK_APP =
 
 /**
  * K-720: the apps that open a kitshn device invite. The phone fills Settings > Connections > New
- * with it; the desktop app joins as in Settings > Machines. The store apps have no invite link.
+ * with it; the desktop app joins as in Settings > Fleet. The store apps have no invite link.
  */
 const CLIENT_APPS: ReadonlyArray<ProviderClient> = [
   {
