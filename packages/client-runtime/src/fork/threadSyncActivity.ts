@@ -7,28 +7,38 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { EnvironmentThreadStatus } from "../state/threadState.ts";
 import { type SyncTimingMark, syncTimings } from "./syncTimings.ts";
 
-/** Counts the thread states that synchronize, so that background work can wait for them. */
+/**
+ * Counts the thread states that synchronize per environment, so that background work for an
+ * environment can wait for them.
+ */
 export function makeThreadSyncActivity() {
-  let synchronizing = 0;
-  let idleWaiters: Array<() => void> = [];
-  const change = (delta: 1 | -1) => {
-    synchronizing += delta;
-    if (synchronizing > 0) return;
-    const waiters = idleWaiters;
-    idleWaiters = [];
-    for (const resolve of waiters) resolve();
+  const synchronizing = new Map<EnvironmentId, number>();
+  const idleWaiters = new Map<EnvironmentId, Set<() => void>>();
+  const change = (environmentId: EnvironmentId, delta: 1 | -1) => {
+    const count = (synchronizing.get(environmentId) ?? 0) + delta;
+    if (count > 0) {
+      synchronizing.set(environmentId, count);
+      return;
+    }
+    synchronizing.delete(environmentId);
+    const waiters = idleWaiters.get(environmentId);
+    idleWaiters.delete(environmentId);
+    for (const resolve of waiters ?? []) resolve();
   };
 
   const follow = Effect.fn("ThreadSyncActivity.follow")(function* <
     S extends { readonly status: EnvironmentThreadStatus },
-  >(state: SubscriptionRef.SubscriptionRef<S>): Effect.fn.Return<void, never, Scope.Scope> {
+  >(
+    environmentId: EnvironmentId,
+    state: SubscriptionRef.SubscriptionRef<S>,
+  ): Effect.fn.Return<void, never, Scope.Scope> {
     let counted = false;
     const track = (status: EnvironmentThreadStatus) => {
       if ((status === "synchronizing") === counted) return;
       counted = !counted;
-      change(counted ? 1 : -1);
+      change(environmentId, counted ? 1 : -1);
     };
-    yield* Effect.addFinalizer(() => Effect.sync(() => counted && change(-1)));
+    yield* Effect.addFinalizer(() => Effect.sync(() => counted && change(environmentId, -1)));
     track((yield* SubscriptionRef.get(state)).status);
     yield* SubscriptionRef.changes(state).pipe(
       Stream.runForEach((value) => Effect.sync(() => track(value.status))),
@@ -36,11 +46,20 @@ export function makeThreadSyncActivity() {
     );
   });
 
-  /** Resolves once no followed thread state is synchronizing. */
-  const whenNoThreadSynchronizes = () =>
-    synchronizing === 0
-      ? Promise.resolve()
-      : new Promise<void>((resolve) => idleWaiters.push(resolve));
+  /** Resolves once no followed thread state of the environment synchronizes, or on abort. */
+  const whenNoThreadSynchronizes = (environmentId: EnvironmentId, signal: AbortSignal) =>
+    new Promise<void>((resolve) => {
+      if (!synchronizing.has(environmentId) || signal.aborted) return resolve();
+      const waiters = idleWaiters.get(environmentId) ?? new Set<() => void>();
+      idleWaiters.set(environmentId, waiters);
+      const done = () => {
+        waiters.delete(done);
+        signal.removeEventListener("abort", done);
+        resolve();
+      };
+      waiters.add(done);
+      signal.addEventListener("abort", done);
+    });
 
   return { follow, whenNoThreadSynchronizes };
 }
@@ -58,5 +77,5 @@ export const followThreadSync = <S extends { readonly status: EnvironmentThreadS
   state: SubscriptionRef.SubscriptionRef<S>,
 ): Effect.Effect<void, never, Scope.Scope> =>
   threadSyncActivity
-    .follow(state)
+    .follow(environmentId, state)
     .pipe(Effect.andThen(syncTimings.followStatus<S>(environmentId, state, THREAD_TIMING_MARKS)));

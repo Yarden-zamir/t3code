@@ -24,20 +24,20 @@ const CACHE_WARMUP_THREAD_TIMEOUT_MS = 20_000;
 type WarmupOutcome = "success" | "failure" | "interrupted";
 
 /**
- * Loads the newest threads of each environment into the message cache after its thread list
- * is live. It mounts the same thread state atom that an opened thread mounts, one thread and
- * one environment at a time, after no thread synchronizes, and stops in the background. The
- * server setting `mobileWarmRecentChats` of each environment turns it off.
+ * Loads the newest threads of each live environment into the message cache through the thread
+ * state atom of an opened thread, one at a time, after no thread of that environment
+ * synchronizes. It stops in the background. `mobileWarmRecentChats` turns it off.
  */
 export function installCacheWarmup(): () => void {
-  let foreground = AppState.currentState === "active";
-  let generation = 0;
-  let running = false;
+  // iOS reports "inactive" for a notification banner or the app switcher, so only
+  // "background" stops the warm-up.
+  let foreground = AppState.currentState !== "background";
+  // The running drain. Abort ends it at its next wait.
+  let run: AbortController | undefined;
   const queue: Array<EnvironmentId> = [];
   const shellStatus = new Map<EnvironmentId, { status: string; unsubscribe: () => void }>();
-  let cancelThread: (() => void) | undefined;
 
-  const warmThread = (environmentId: EnvironmentId, threadId: ThreadId) =>
+  const warmThread = (environmentId: EnvironmentId, threadId: ThreadId, signal: AbortSignal) =>
     new Promise<WarmupOutcome>((resolve) => {
       let settled = false;
       let unsubscribe: (() => void) | undefined;
@@ -45,12 +45,13 @@ export function installCacheWarmup(): () => void {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        cancelThread = undefined;
+        signal.removeEventListener("abort", interrupt);
         unsubscribe?.();
         resolve(outcome);
       };
-      const timer = setTimeout(() => finish("interrupted"), CACHE_WARMUP_THREAD_TIMEOUT_MS);
-      cancelThread = () => finish("interrupted");
+      const interrupt = () => finish("interrupted");
+      const timer = setTimeout(interrupt, CACHE_WARMUP_THREAD_TIMEOUT_MS);
+      signal.addEventListener("abort", interrupt);
       unsubscribe = appAtomRegistry.subscribe(
         environmentThreads.stateAtom(environmentId, threadId),
         (result) => {
@@ -63,7 +64,9 @@ export function installCacheWarmup(): () => void {
       if (settled) unsubscribe();
     });
 
-  const warmEnvironment = async (environmentId: EnvironmentId, started: number) => {
+  const warmEnvironment = async (environmentId: EnvironmentId, signal: AbortSignal) => {
+    // A shell that left "live" queues the environment again when it returns.
+    if (shellStatus.get(environmentId)?.status !== "live") return;
     const config = appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId);
     if (config?.settings.mobileWarmRecentChats !== true) return;
     const shell = appAtomRegistry.get(environmentShell.stateValueAtom(environmentId));
@@ -83,31 +86,37 @@ export function installCacheWarmup(): () => void {
     const threadIds = selectCacheWarmupThreads(threads, savedAt);
     syncTimings.mark(environmentId, "cacheWarmupStarted");
     for (const threadId of threadIds) {
-      await threadSyncActivity.whenNoThreadSynchronizes();
-      if (generation !== started) return;
+      await threadSyncActivity.whenNoThreadSynchronizes(environmentId, signal);
+      if (signal.aborted) return;
       const end = syncTimings.startStep(environmentId, "CacheWarmup.thread");
-      end(await warmThread(environmentId, threadId));
-      if (generation !== started) return;
+      end(await warmThread(environmentId, threadId, signal));
+      if (signal.aborted) return;
     }
     syncTimings.mark(environmentId, "cacheWarmupDone");
   };
 
   const drain = async () => {
-    if (running) return;
-    running = true;
+    if (run !== undefined) return;
+    const controller = new AbortController();
+    run = controller;
     try {
-      const started = generation;
       for (;;) {
-        if (!foreground || generation !== started) return;
+        if (controller.signal.aborted) return;
         const environmentId = queue.shift();
         if (environmentId === undefined) return;
-        await warmEnvironment(environmentId, started);
+        await warmEnvironment(environmentId, controller.signal);
       }
     } finally {
-      running = false;
-      // An environment that went live while a cancelled run ended still waits in the queue.
+      run = undefined;
+      // An environment that was queued while a cancelled run ended still waits in the queue.
       if (foreground && queue.length > 0) void drain();
     }
+  };
+
+  const enqueue = (environmentId: EnvironmentId) => {
+    if (!foreground || queue.includes(environmentId)) return;
+    queue.push(environmentId);
+    void drain();
   };
 
   const followEnvironments = () => {
@@ -128,9 +137,7 @@ export function installCacheWarmup(): () => void {
         (status) => {
           const becameLive = status === "live" && entry.status !== "live";
           entry.status = status;
-          if (!becameLive || !foreground || queue.includes(environmentId)) return;
-          queue.push(environmentId);
-          void drain();
+          if (becameLive) enqueue(environmentId);
         },
         { immediate: true },
       );
@@ -143,17 +150,23 @@ export function installCacheWarmup(): () => void {
     { immediate: true },
   );
   const appState = AppState.addEventListener("change", (state) => {
-    foreground = state === "active";
-    if (foreground) return;
-    generation += 1;
-    queue.length = 0;
-    cancelThread?.();
+    if (state === "background") {
+      foreground = false;
+      queue.length = 0;
+      run?.abort();
+      return;
+    }
+    if (state !== "active" || foreground) return;
+    foreground = true;
+    for (const [environmentId, entry] of shellStatus) {
+      if (entry.status === "live") enqueue(environmentId);
+    }
   });
 
   return () => {
-    generation += 1;
+    foreground = false;
     queue.length = 0;
-    cancelThread?.();
+    run?.abort();
     appState.remove();
     unsubscribeCatalog();
     for (const entry of shellStatus.values()) entry.unsubscribe();
