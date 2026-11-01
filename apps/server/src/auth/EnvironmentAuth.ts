@@ -789,9 +789,6 @@ export const make = Effect.gen(function* () {
     ...(config.devUrl ? [config.devUrl.origin] : []),
     ...DESKTOP_RENDERER_ORIGINS,
     ...config.devAllowedOrigins,
-    // Fork: T3CODE_TRUSTED_BROWSER_ORIGINS. Their pages send credentialed requests for the
-    // Cloudflare Access cookie, so this server's own session cookie arrives with them.
-    ...(config.trustedBrowserOrigins ?? []),
   ]);
   const trustedOrigins = ForkAuth.withPeerOrigins(trustedBrowserOrigins, kitshnGrants);
 

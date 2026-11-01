@@ -211,7 +211,6 @@ describe("DesktopServerExposure", () => {
           tailscaleServePort: 443,
           tunnelPairingEnabled: false,
           tunnelPairingUrl: null,
-          trustedBrowserOrigins: null,
         });
 
         const backendConfig = yield* serverExposure.backendConfig;

@@ -24,7 +24,6 @@ import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput, type AppTextInputProps } from "../../components/ui/AppText";
 import { FrostedCutout } from "../../components/ui/FrostedCutout";
 import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
-import { useAddEnvironmentCloudflareAccess } from "./CloudflareAccessFields";
 import { useClientEnroll } from "./useClientEnroll";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -96,11 +95,6 @@ function PairingForm({
   // A good scan parks the camera so it can't re-read the code over later edits.
   const [scanComplete, setScanComplete] = useState(false);
   const enrollInvite = useClientEnroll(setIsSubmitting, setSubmitError);
-  const access = useAddEnvironmentCloudflareAccess({
-    pairingUrl: buildPairingUrl(hostInput, codeInput),
-    failure: pairingConnectionError,
-    disabled: isSubmitting,
-  });
 
   const headerIconColor = useUniwindTheme()["--color-icon"];
 
@@ -177,8 +171,6 @@ function PairingForm({
     const pairingUrl = buildPairingUrl(hostInput, codeInput);
     setOwnAttempt(true);
     setSubmitError(null);
-    const staged = await access.stage();
-    if ("error" in staged) return setSubmitError(staged.error);
     setIsSubmitting(true);
     onChangeConnectionPairingUrl(pairingUrl);
     const outcome = await onConnectPress(pairingUrl, routeFor);
@@ -189,7 +181,6 @@ function PairingForm({
         ? Haptics.NotificationFeedbackType.Success
         : Haptics.NotificationFeedbackType.Error,
     );
-    if (!outcome.ok) await staged.undo();
     if (outcome.ok) {
       // Replacing with Home would nest it inside any sheet below; return to the opener.
       if (!navigation.canGoBack()) {
@@ -274,13 +265,10 @@ function PairingForm({
                 pairingConnectionError ? "text-danger-foreground" : "text-foreground-muted",
               )}
             >
-              {access.message ??
-                pairingConnectionError ??
+              {pairingConnectionError ??
                 "For machines on your local network or tailnet. The machine keeps its own provider credentials."}
             </Text>
           </View>
-
-          {access.section}
 
           {hasCloudPublicConfig() ? <T3ConnectSection /> : null}
         </View>

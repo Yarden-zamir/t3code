@@ -1,9 +1,15 @@
-import type { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
+import { type ExecutionEnvironmentDescriptor, MachineId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as ServerSettings from "../../serverSettings.ts";
 import * as KitshnGrants from "./KitshnGrants.ts";
+
+/** The descriptor fields of a kitshn machine: its id and name, without an empty name. */
+export function kitshnMachineRef(machine: { readonly id: string; readonly name: string | null }) {
+  const id = machine.id.trim();
+  return id === "" ? null : { id: MachineId.make(id), name: machine.name?.trim() || null };
+}
 
 /** The kitshn map name of this machine while the setting asks for it, else the upstream label. */
 export function kitshnEnvironmentLabel(
@@ -29,9 +35,11 @@ export const withKitshnMachineLabel = Effect.fn("KitshnGrants.withKitshnMachineL
       Effect.orElseSucceed(() => false),
     );
     const machine = yield* grants.value.machine;
+    const ref = machine === null ? null : kitshnMachineRef(machine);
     return {
       ...current,
       label: kitshnEnvironmentLabel(current.label, enabled, machine?.name ?? null),
+      ...(ref === null ? {} : { kitshnMachine: ref }),
     };
   });
 });

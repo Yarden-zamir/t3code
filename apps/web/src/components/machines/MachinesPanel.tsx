@@ -3,6 +3,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { ExternalLinkIcon, NetworkIcon } from "lucide-react";
 
 import { linkedMachines, useMachineMapState } from "~/state/machineMap";
+import { KitshnBadge } from "./KitshnMark";
 import { useEnvironmentQuery } from "~/state/query";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
@@ -41,6 +42,8 @@ export function MachinesPanel({ environmentId }: { environmentId: EnvironmentId 
               >
                 <NetworkIcon className="size-3.5 text-muted-foreground" />
                 {machine.name}
+                {/* Every link comes from kitshn, so each machine is kitshn-joined. */}
+                <KitshnBadge machine={{ name: machine.name }} />
               </div>
             ))}
           </div>

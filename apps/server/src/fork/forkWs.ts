@@ -4,6 +4,7 @@
  */
 import {
   CommandId,
+  type ExecutionEnvironmentDescriptor,
   FORK_WS_METHODS,
   ForkWsRpcGroup,
   OrchestrationV2ThreadLaunchError,
@@ -38,10 +39,13 @@ import * as WebPush from "./webPush/WebPush.ts";
 /** The fork RPC tags, which the upstream handler object in `ws.ts` omits. */
 export const FORK_WS_RPC_TAGS = Object.values(FORK_WS_METHODS);
 
+const kitshnDescriptorKey = (value: ExecutionEnvironmentDescriptor) =>
+  JSON.stringify([value.label, value.kitshnMachine?.id ?? null, value.kitshnMachine?.name ?? null]);
+
 // Reuse snapshots so older clients do not need a new config event type.
 export const environmentLabelUpdates = <E>(
   loadConfig: Effect.Effect<ServerConfig, E>,
-  initialLabel: string,
+  initial: ExecutionEnvironmentDescriptor,
 ) =>
   Stream.unwrap(
     Effect.gen(function* () {
@@ -49,7 +53,7 @@ export const environmentLabelUpdates = <E>(
       if (Option.isNone(provider)) return Stream.empty;
       const settings = yield* ServerSettings.ServerSettingsService;
       const environment = yield* ServerEnvironment.ServerEnvironment;
-      // Each `register` answer can bring a new machine name; the label reads it again.
+      // Each `register` answer can bring a new machine name or id; the descriptor reads it again.
       const changes = Stream.merge(
         provider.value.state.pipe(Stream.map(() => "kitshn")),
         settings.streamChanges.pipe(
@@ -57,9 +61,9 @@ export const environmentLabelUpdates = <E>(
           Stream.changes,
         ),
       ).pipe(
-        Stream.mapEffect(() => environment.getDescriptor.pipe(Effect.map((value) => value.label))),
+        Stream.mapEffect(() => environment.getDescriptor.pipe(Effect.map(kitshnDescriptorKey))),
       );
-      return Stream.concat(Stream.make(initialLabel), changes).pipe(
+      return Stream.concat(Stream.make(kitshnDescriptorKey(initial)), changes).pipe(
         Stream.changes,
         Stream.drop(1),
         Stream.mapEffect(() => loadConfig),
@@ -135,19 +139,13 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
     }),
   );
 
-/** MM-1311: linked machines join the explicit list of trusted browser origins (K-1609). */
-export const trustedBrowserOriginsConfig = (configured: ReadonlyArray<string> | undefined) =>
-  Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
-    Effect.map((grants) => {
-      const origins = [
-        ...new Set([
-          ...(configured ?? []),
-          ...(Option.isSome(grants) ? grants.value.peerOrigins() : []),
-        ]),
-      ];
-      return origins.length === 0 ? {} : { trustedBrowserOrigins: origins };
-    }),
-  );
+/** MM-1311: the origins of the machines that kitshn links, which trust this page (K-1609). */
+export const trustedBrowserOriginsConfig = Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
+  Effect.map((grants) => {
+    const origins = Option.isSome(grants) ? grants.value.peerOrigins() : [];
+    return origins.length === 0 ? {} : { trustedBrowserOrigins: [...new Set(origins)] };
+  }),
+);
 
 /**
  * A launch is accepted before its worktree exists, so a branch that cannot be created is refused

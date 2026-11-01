@@ -676,9 +676,8 @@ export const ServerConfig = Schema.Struct({
   /** Hints only; verify each address answers as this environment. */
   directEndpoints: Schema.optionalKey(ForwardCompatibleArray(ServerDirectEndpoint)),
   /**
-   * Fork: https origins this server lets call it with cookies
-   * (T3CODE_TRUSTED_BROWSER_ORIGINS). A page served by this server sends
-   * cookies to these origins when they are siblings. Absent when unset.
+   * Fork: the https origins of the machines that kitshn links (K-1609). They accept cookies from
+   * this server's page, so the page sends cookies to them when they are siblings. Absent when none.
    */
   trustedBrowserOrigins: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   observability: ServerObservability,

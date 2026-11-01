@@ -115,6 +115,11 @@ export function useEnvironmentMachines() {
   return useAtomValue(environmentSummaries.machineByIdAtom);
 }
 
+/** Fork: the kitshn machine of each kitshn-joined environment. */
+export function useKitshnMachines() {
+  return useAtomValue(environmentSummaries.kitshnMachineByIdAtom);
+}
+
 export function useConnectedEnvironmentIds() {
   return useAtomValue(environmentSummaries.connectedEnvironmentIdsAtom);
 }

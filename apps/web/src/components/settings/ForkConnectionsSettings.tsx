@@ -1,51 +1,62 @@
 /**
- * The fork parts of `ConnectionsSettings.tsx`: request headers per origin (for proxies such as
- * Cloudflare Access), the Access sign-in message and the sibling sign-in rows. The upstream file
- * imports this module once and keeps one line per hook.
+ * The fork parts of `ConnectionsSettings.tsx`: the Cloudflare Access refusal message, the kitshn
+ * mark of a saved environment and the sibling sign-in rows. The upstream file imports this module
+ * once and keeps one line per hook.
  */
 import {
   CLOUDFLARE_ACCESS_MESSAGE,
   type ConnectionCatalogEntry,
+  connectionRoutes,
   requestHeaderOrigin,
 } from "@t3tools/client-runtime/connection";
-import { resolveRemotePairingTarget } from "@t3tools/shared/remote";
-import { ChevronRightIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import {
-  readRequestHeaders as readRequestHeadersAtom,
-  saveRequestHeaders as saveRequestHeadersAtom,
-} from "~/connection/onboarding";
 import { type SiblingIssue, useSiblingIssues } from "~/connection/siblingEnvironments";
-import { cn } from "../../lib/utils";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
-import {
-  EMPTY_REQUEST_HEADERS_FORM,
-  OriginRequestHeadersEditor,
-  RequestHeadersFields,
-  type RequestHeadersForm,
-  environmentRequestHeaderOrigins,
-  isCloudflareAccessChallenged,
-  requestHeadersFromForm,
-  supportsRequestHeaders,
-  useCloudflareAccessChallenged,
-} from "./RequestHeadersEditor";
 import { SettingsRow } from "./settingsLayout";
 
 export { ForkSettingsSlot } from "./ForkSettingsSlot";
 
-/** Request headers and the Access state of one saved backend row. */
-export function useEnvironmentRequestHeaders(
+/** The distinct origins of an environment's direct (bearer) routes. */
+function environmentOrigins(entry: ConnectionCatalogEntry): ReadonlyArray<string> {
+  const origins = connectionRoutes(entry).flatMap((route) =>
+    route.profile._tag === "Some" && route.profile.value._tag === "BearerConnectionProfile"
+      ? (requestHeaderOrigin(route.profile.value.httpBaseUrl) ?? [])
+      : [],
+  );
+  return [...new Set(origins)];
+}
+
+/** Asks the desktop app whether the last response from `url` was a Cloudflare Access login. */
+async function isCloudflareAccessChallenged(url: string): Promise<boolean> {
+  const query = window.desktopBridge?.isCloudflareAccessChallenged;
+  if (query === undefined) return false;
+  return query(url).catch(() => false);
+}
+
+/**
+ * True while an origin of `entry` answered with a Cloudflare Access login, for example after kitshn
+ * refused the device token. Re-checks when the connection error changes.
+ */
+export function useAccessChallenged(
   entry: ConnectionCatalogEntry,
   connectionError: string | null,
-) {
-  const [open, setOpen] = useState(false);
-  const origins = supportsRequestHeaders() ? environmentRequestHeaderOrigins(entry) : [];
-  const accessChallenged = useCloudflareAccessChallenged(origins, connectionError);
-  return { open, setOpen, origins, accessChallenged };
+): boolean {
+  const [challenged, setChallenged] = useState(false);
+  const originsKey = environmentOrigins(entry).join(" ");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the desktop main process, outside React.
+  useEffect(() => {
+    if (connectionError === null || originsKey === "") return;
+    let cancelled = false;
+    void Promise.all(originsKey.split(" ").map(isCloudflareAccessChallenged)).then((results) => {
+      if (!cancelled) setChallenged(results.some(Boolean));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionError, originsKey]);
+  return connectionError !== null && originsKey !== "" && challenged;
 }
-type EnvironmentRequestHeaders = ReturnType<typeof useEnvironmentRequestHeaders>;
 
 /** The line that the row subtitle adds while Cloudflare Access asks for a sign-in. */
 export const accessChallengeSubtitle = (show: boolean) =>
@@ -55,163 +66,7 @@ export function AccessChallengeMessage({ show }: { readonly show: boolean }) {
   return show ? <p className="mt-1 text-xs text-destructive">{CLOUDFLARE_ACCESS_MESSAGE}</p> : null;
 }
 
-export function RequestHeadersToggle({
-  state,
-  environmentId,
-}: {
-  readonly state: EnvironmentRequestHeaders;
-  readonly environmentId: string;
-}) {
-  const { open, setOpen, origins } = state;
-  return origins.length > 0 ? (
-    <>
-      <span aria-hidden className="shrink-0">
-        ·
-      </span>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={`request-headers-${environmentId}`}
-        onClick={() => setOpen((isOpen) => !isOpen)}
-        className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-      >
-        Request headers
-        <ChevronRightIcon
-          aria-hidden
-          className={cn(
-            "size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
-            open && "rotate-90",
-          )}
-        />
-      </button>
-    </>
-  ) : null;
-}
-
-export function RequestHeadersPanel({
-  state,
-  environmentId,
-}: {
-  readonly state: EnvironmentRequestHeaders;
-  readonly environmentId: string;
-}) {
-  const { open, origins } = state;
-  return open ? (
-    <div
-      id={`request-headers-${environmentId}`}
-      className="mt-2 max-w-xl border-t border-border/50"
-    >
-      {origins.map((origin) => (
-        <OriginRequestHeadersEditor key={origin} origin={origin} showOrigin={origins.length > 1} />
-      ))}
-    </div>
-  ) : null;
-}
-
-type RemotePairingInput = Parameters<typeof resolveRemotePairingTarget>[0];
-type RequestHeaders = ReadonlyArray<{ readonly name: string; readonly value: string }>;
-export type PairingRequestHeaders =
-  | { readonly _tag: "Error"; readonly message: string }
-  | {
-      readonly _tag: "Saved";
-      /** A failed pairing saves no environment, so this restores the origin's headers. */
-      readonly restore: () => Promise<void>;
-      /** The Access sign-in message when Access blocked the pairing, else `fallback`. */
-      readonly failureMessage: (fallback: string) => Promise<string>;
-    };
-
-/** The request headers form of the add backend dialog. */
-export function useAddBackendRequestHeaders() {
-  const readRequestHeaders = useAtomCommand(readRequestHeadersAtom, { reportFailure: false });
-  const saveRequestHeaders = useAtomCommand(saveRequestHeadersAtom, { reportFailure: false });
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<RequestHeadersForm>(EMPTY_REQUEST_HEADERS_FORM);
-
-  const reset = () => {
-    setForm(EMPTY_REQUEST_HEADERS_FORM);
-    setOpen(false);
-  };
-
-  // Headers are keyed by origin, so they are saved before pairing to let
-  // the pairing request itself pass a proxy such as Cloudflare Access.
-  const saveForPairing = async (input: RemotePairingInput): Promise<PairingRequestHeaders> => {
-    let httpBaseUrl: string;
-    try {
-      httpBaseUrl = resolveRemotePairingTarget(input).httpBaseUrl;
-    } catch (error) {
-      return {
-        _tag: "Error",
-        message: error instanceof Error ? error.message : "Failed to add backend.",
-      };
-    }
-    const headerOrigin = requestHeaderOrigin(httpBaseUrl);
-    const parsedHeaders = requestHeadersFromForm(form);
-    if ("error" in parsedHeaders) {
-      return { _tag: "Error", message: parsedHeaders.error };
-    }
-    let previousHeaders: RequestHeaders | null = null;
-    if (headerOrigin !== null && parsedHeaders.headers.length > 0) {
-      const previous = await readRequestHeaders(headerOrigin);
-      const saved =
-        previous._tag === "Success"
-          ? await saveRequestHeaders({ origin: headerOrigin, headers: parsedHeaders.headers })
-          : previous;
-      if (previous._tag !== "Success" || saved._tag !== "Success") {
-        return { _tag: "Error", message: "Could not save the request headers." };
-      }
-      previousHeaders = previous.value;
-    }
-    return {
-      _tag: "Saved",
-      restore: async () => {
-        if (headerOrigin !== null && previousHeaders !== null) {
-          await saveRequestHeaders({ origin: headerOrigin, headers: previousHeaders });
-        }
-      },
-      failureMessage: async (fallback) =>
-        (await isCloudflareAccessChallenged(httpBaseUrl)) ? CLOUDFLARE_ACCESS_MESSAGE : fallback,
-    };
-  };
-
-  return { open, setOpen, form, setForm, reset, saveForPairing };
-}
-type AddBackendRequestHeaders = ReturnType<typeof useAddBackendRequestHeaders>;
-
-export function AddBackendRequestHeadersFields({
-  state,
-  disabled,
-}: {
-  readonly state: AddBackendRequestHeaders;
-  readonly disabled: boolean;
-}) {
-  const { open, setOpen, form, setForm } = state;
-  return supportsRequestHeaders() ? (
-    <div>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((isOpen) => !isOpen)}
-        className="inline-flex items-center gap-0.5 rounded-sm text-xs font-medium text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-      >
-        Request headers
-        <ChevronRightIcon
-          aria-hidden
-          className={cn(
-            "size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
-            open && "rotate-90",
-          )}
-        />
-      </button>
-      {open ? (
-        <div className="mt-2">
-          <RequestHeadersFields form={form} disabled={disabled} onChange={setForm} />
-        </div>
-      ) : null}
-    </div>
-  ) : null;
-}
-
-// Trusted siblings that could not pair yet. Most often the browser has no
+// Siblings that kitshn links and that could not pair yet. Most often the browser has no
 // Cloudflare Access cookie for them: opening one signs in, and the page tries
 // again when it gets focus.
 const SIBLING_ISSUE_TEXT: Record<SiblingIssue, { title: string; description: string }> = {

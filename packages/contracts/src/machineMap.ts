@@ -25,6 +25,21 @@ export type MapTime = typeof MapTime.Type;
 export const MachineId = TrimmedNonEmptyString.pipe(Schema.brand("MachineId"));
 export type MachineId = typeof MachineId.Type;
 
+/**
+ * The kitshn machine that a T3 server runs as. A server joined to kitshn reports it in its
+ * environment descriptor; an environment without it is one that the user added by its address.
+ */
+export const KitshnMachineRef = Schema.Struct({
+  id: MachineId,
+  /** The kitshn map name, or null before kitshn named the machine. */
+  name: Schema.NullOr(Schema.String),
+});
+export type KitshnMachineRef = typeof KitshnMachineRef.Type;
+
+/** The secondary line of a kitshn-joined environment in an environment list. */
+export const kitshnJoinedText = (machine: Pick<KitshnMachineRef, "name">): string =>
+  machine.name === null ? "Joined through kitshn" : `Joined through kitshn as ${machine.name}`;
+
 /** What one machine can do on another (MM-302). */
 export const MachineLevel = Schema.Literals(["none", "read", "standard", "admin"]);
 export type MachineLevel = typeof MachineLevel.Type;

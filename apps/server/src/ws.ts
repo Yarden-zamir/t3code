@@ -1816,7 +1816,7 @@ export const layerWsRpc = (
           issues: keybindingsConfig.issues,
           providers,
           ...discovery,
-          ...(yield* ForkWs.trustedBrowserOriginsConfig(config.trustedBrowserOrigins)),
+          ...(yield* ForkWs.trustedBrowserOriginsConfig),
           observability: {
             logsDirectoryPath: config.logsDir,
             localTracingEnabled: true,
@@ -3265,7 +3265,7 @@ export const layerWsRpc = (
                       workspaceSnapshotsOnDemand,
                       deferRemoteOpenTargets: false,
                     }),
-                    config.environment.label,
+                    config.environment,
                   ),
                 ),
               );

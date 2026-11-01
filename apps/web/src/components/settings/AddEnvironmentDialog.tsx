@@ -18,7 +18,6 @@ import * as Option from "effect/Option";
 
 import { cn } from "../../lib/utils";
 import { formatDesktopSshTarget } from "./EnvironmentRow";
-import * as ForkConnections from "./ForkConnectionsSettings";
 import { Input } from "../ui/input";
 import { CommandShortcut } from "../ui/command";
 import {
@@ -114,7 +113,6 @@ export function AddEnvironmentDialog({
   const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh">("remote");
   const [savedBackendHost, setSavedBackendHost] = useState("");
   const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
-  const savedBackendRequestHeaders = ForkConnections.useAddBackendRequestHeaders();
   const [savedBackendSshHost, setSavedBackendSshHost] = useState("");
   const [savedBackendSshUsername, setSavedBackendSshUsername] = useState("");
   const [savedBackendSshPort, setSavedBackendSshPort] = useState("");
@@ -156,7 +154,6 @@ export function AddEnvironmentDialog({
       setSavedBackendMode("remote");
       setSavedBackendHost("");
       setSavedBackendPairingCode("");
-      savedBackendRequestHeaders.reset();
       setSavedBackendSshHost("");
       setSavedBackendSshUsername("");
       setSavedBackendSshPort("");
@@ -231,31 +228,14 @@ export function AddEnvironmentDialog({
       return;
     }
 
-    const requestHeaders = await savedBackendRequestHeaders.saveForPairing(remotePairingInput);
-    if (requestHeaders._tag === "Error") {
-      onErrorChange(requestHeaders.message);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Could not add backend",
-          description: requestHeaders.message,
-        }),
-      );
-      setIsAddingSavedBackend(false);
-      return;
-    }
-
     const result = await connectPairing({
       ...remotePairingInput,
       ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
     });
     if (result._tag === "Failure") {
-      await requestHeaders.restore();
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        const message = await requestHeaders.failureMessage(
-          error instanceof Error ? error.message : "Failed to add backend.",
-        );
+        const message = error instanceof Error ? error.message : "Failed to add backend.";
         onErrorChange(message);
         toastManager.add(
           stackedThreadToast({
@@ -439,10 +419,6 @@ export function AddEnvironmentDialog({
           Paste a full pairing URL here to fill both fields automatically.
         </span>
       </div>
-      <ForkConnections.AddBackendRequestHeadersFields
-        state={savedBackendRequestHeaders}
-        disabled={isAddingSavedBackend}
-      />
     </div>
   );
   const relayRouteOffer =

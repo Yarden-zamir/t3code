@@ -377,9 +377,7 @@ export const CONNECTIONS_ITEMS = [
     id: "tunnel-pairing",
     title: "Allow pairing through a tunnel",
     to: "/settings/access",
-    searchTerms: [
-      "tunnel cloudflared pairing loopback trusted browser origins cookies cloudflare access login team domain audience aud emails service token",
-    ],
+    searchTerms: ["tunnel cloudflared pairing loopback cloudflare access"],
     desktopOnly: true,
     localBackendManagementOnly: true,
   },

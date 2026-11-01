@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as KitshnGrants from "../fork/kitshn/KitshnGrants.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 
@@ -106,7 +107,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer fork", (it) => {
     ),
   );
 
-  it.effect("accepts cookie sessions from configured trusted browser origins", () =>
+  it.effect("accepts cookie sessions from the origins of kitshn peers", () =>
     Effect.gen(function* () {
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
       const sessions = yield* SessionStore.SessionStore;
@@ -127,7 +128,15 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer fork", (it) => {
       expect(untrusted._tag).toBe("ServerAuthInvalidCredentialError");
     }).pipe(
       Effect.provide(
-        layerEnvironmentAuth({ trustedBrowserOrigins: ["https://t3-vps.example.com"] }),
+        layerEnvironmentAuth().pipe(
+          Layer.provide(
+            Layer.mock(KitshnGrants.KitshnGrants)({
+              trustsPeerOrigin: (origin) => origin === "https://t3-vps.example.com",
+              peerOrigins: () => ["https://t3-vps.example.com"],
+              visitor: () => Effect.succeed({ _tag: "anonymous" as const }),
+            }),
+          ),
+        ),
       ),
     ),
   );

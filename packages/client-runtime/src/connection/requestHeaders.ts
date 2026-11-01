@@ -5,8 +5,8 @@ import * as Schema from "effect/Schema";
 import type { ConnectionTransientError } from "./model.ts";
 
 /**
- * Extra request headers that the desktop app adds to every request to one
- * origin, for example a Cloudflare Access service token. Values are secrets.
+ * Extra request headers that the app adds to every request to one origin. Only a kitshn device
+ * invite writes them: the Cloudflare Access service token of this device. Values are secrets.
  */
 export const RequestHeader = Schema.Struct({
   name: Schema.String,
@@ -21,10 +21,10 @@ export const OriginRequestHeaders = Schema.Struct({
 });
 export type OriginRequestHeaders = typeof OriginRequestHeaders.Type;
 
-export const CLOUDFLARE_ACCESS_CLIENT_ID_HEADER = "CF-Access-Client-Id";
-export const CLOUDFLARE_ACCESS_CLIENT_SECRET_HEADER = "CF-Access-Client-Secret";
+const CLOUDFLARE_ACCESS_CLIENT_ID_HEADER = "CF-Access-Client-Id";
+const CLOUDFLARE_ACCESS_CLIENT_SECRET_HEADER = "CF-Access-Client-Secret";
 export const CLOUDFLARE_ACCESS_MESSAGE =
-  "This server is behind Cloudflare Access. Add a service token under Request headers.";
+  "Cloudflare Access refused this app. Join it to kitshn with a device invite.";
 
 export const MAX_REQUEST_HEADERS = 16;
 const MAX_REQUEST_HEADER_NAME_LENGTH = 128;

@@ -258,12 +258,10 @@ export const layerBrowserApiCors = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     const devOrigin = config.devUrl?.origin;
-    const trustedOrigins = config.trustedBrowserOrigins ?? [];
-    // Fork (MM-1311): the pages of linked machines are trusted like the list above (K-1609).
+    // Fork (MM-1311): the pages of the machines that kitshn links get credentialed CORS (K-1609).
     const kitshnGrants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
     const isTrusted = (origin: string) =>
-      trustedOrigins.includes(origin) ||
-      (Option.isSome(kitshnGrants) && kitshnGrants.value.trustsPeerOrigin(origin));
+      Option.isSome(kitshnGrants) && kitshnGrants.value.trustsPeerOrigin(origin);
     const shared = {
       allowedMethods: browserApiCorsAllowedMethods,
       allowedHeaders: browserApiCorsAllowedHeaders,
@@ -277,19 +275,17 @@ export const layerBrowserApiCors = Layer.unwrap(
           devOrigin,
           ...DESKTOP_RENDERER_ORIGINS,
           ...config.devAllowedOrigins,
-          ...trustedOrigins,
           ...(Option.isSome(kitshnGrants) ? kitshnGrants.value.peerOrigins() : []),
         ],
         credentials: true,
         ...shared,
       });
     }
-    if (trustedOrigins.length === 0 && Option.isNone(kitshnGrants)) {
+    if (Option.isNone(kitshnGrants)) {
       return HttpRouter.cors(shared);
     }
-    // Fork: T3CODE_TRUSTED_BROWSER_ORIGINS. A trusted origin gets its exact
-    // origin with credentials, so its cookies (for example Cloudflare Access)
-    // reach this server. Every other origin keeps the wildcard without credentials.
+    // A kitshn peer gets its exact origin with credentials, so its cookies (for example
+    // Cloudflare Access) reach this server. Every other origin keeps the wildcard.
     const wildcard = HttpMiddleware.cors(shared);
     const credentialed = HttpMiddleware.cors({
       allowedOrigins: isTrusted,

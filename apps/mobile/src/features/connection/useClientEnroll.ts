@@ -7,6 +7,7 @@ import { requestHeaderOrigin } from "@t3tools/client-runtime/connection";
 import { useAtomSet } from "@effect/atom-react";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
+import { AsyncResult } from "effect/reactivity";
 import { useCallback } from "react";
 
 import {
@@ -23,9 +24,10 @@ import {
   kitshnTransport,
 } from "../../connection/clientEnroll";
 import { requestAppTokenSync } from "../../connection/forkAppTokenRepair";
+import { saveDeviceToken } from "../../connection/kitshnDeviceToken";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { updateMobilePreferencesAtom } from "../../state/preferences";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
-import { useSaveCloudflareAccessToken } from "./CloudflareAccessFields";
 import { buildPairingUrl } from "./pairing";
 
 function message(cause: unknown): string {
@@ -33,7 +35,7 @@ function message(cause: unknown): string {
 }
 
 function useEnrollClient() {
-  const saveToken = useSaveCloudflareAccessToken();
+  const saveToken = useAtomCommand(saveDeviceToken, { reportFailure: false });
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const { onConnectPress } = useRemoteConnections();
   return useCallback(
@@ -42,8 +44,8 @@ function useEnrollClient() {
         exchange: (next) => exchangeDeviceInvite(next, deviceName(), kitshnTransport),
         origin: requestHeaderOrigin,
         saveToken: async (origin, token) => {
-          const saved = await saveToken(origin, token);
-          if ("error" in saved) throw new Error(saved.error);
+          const saved = await saveToken({ origin, token });
+          if (!AsyncResult.isSuccess(saved)) throw new Error("Could not save the device token.");
         },
         saveClient: (client) => savePreferences({ appTokenClient: client }),
         pair: async (machine) => {

@@ -24,6 +24,7 @@ import { ConnectionDiagnosisDetails, useConnectionDiagnosis } from "./Connection
 import { ConnectionFormField } from "./ConnectionFormField";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 import { environmentStatusText } from "./environmentStatusText";
+import { KitshnJoinedLine, KitshnPill } from "./KitshnMark";
 
 function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string | null {
   if (!environment.isEnabled && environment.connectionState !== "unsupported") {
@@ -120,12 +121,14 @@ export function ConnectionEnvironmentRow(props: {
             >
               {props.environment.environmentLabel}
             </Text>
+            <KitshnPill machine={serverConfig?.environment.kitshnMachine} />
           </View>
           {!props.environment.isRelayManaged && props.environment.displayUrl.trim() ? (
             <Text className="text-xs text-foreground-muted" numberOfLines={1}>
               {props.environment.displayUrl}
             </Text>
           ) : null}
+          <KitshnJoinedLine machine={serverConfig?.environment.kitshnMachine} />
           {diagnosis ? (
             <>
               <Text className="text-xs text-danger-foreground">{diagnosis.headline}</Text>
