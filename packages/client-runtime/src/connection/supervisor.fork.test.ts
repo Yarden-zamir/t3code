@@ -56,6 +56,7 @@ const PROBE_CAPABLE_CONFIG = {
 const makeHarness = Effect.fn("TestReplacementHarness.make")(function* (
   probe: (session: number) => Effect.Effect<void, ConnectionAttemptError>,
   replacementConnectsAfter: Duration.Input = 0,
+  failingSession?: number,
 ) {
   const sessionCount = yield* Ref.make(0);
   const released = yield* Ref.make<ReadonlyArray<number>>([]);
@@ -72,6 +73,9 @@ const makeHarness = Effect.fn("TestReplacementHarness.make")(function* (
         Ref.update(released, (all) => [...all, session]),
       );
       if (session > 1) yield* Effect.sleep(replacementConnectsAfter);
+      if (session === failingSession) {
+        return yield* new ConnectionTransientError({ reason: "network", detail: "No route." });
+      }
       return {
         prepared: PREPARED,
         session: {
@@ -232,6 +236,61 @@ describe("EnvironmentSupervisor long resume replacement", () => {
       yield* h.wake("application-active-probe");
       yield* TestClock.adjust("2499 millis");
       expect(yield* Ref.get(h.sessionCount)).toBe(1);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("drops the dead socket at once while the new one still connects", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness(
+        (session) => (session === 1 ? Effect.never : Effect.void),
+        "5 seconds",
+      );
+
+      yield* h.wake("application-active-long");
+      yield* TestClock.adjust("2501 millis");
+      yield* h.stateWhere((state) => state.phase === "connecting");
+      expect(Option.isNone(yield* SubscriptionRef.get(h.supervisor.session))).toBe(true);
+      expect(yield* Ref.get(h.sessionCount)).toBe(2);
+
+      yield* TestClock.adjust("5 seconds");
+      yield* h.stateWhere((state) => state.phase === "connected" && state.generation === 2);
+      expect(yield* Ref.get(h.sessionCount)).toBe(2);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("reconnects from the start when the new socket fails", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness(
+        (session) => (session === 1 ? Effect.never : Effect.void),
+        "1 second",
+        2,
+      );
+
+      yield* h.wake("application-active-long");
+      yield* TestClock.adjust("1 millis");
+      yield* h.closeFirstSession;
+      yield* TestClock.adjust("2 seconds");
+
+      yield* h.stateWhere((state) => state.phase === "connected" && state.generation === 2);
+      expect(yield* Ref.get(h.sessionCount)).toBe(3);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("drops the new socket and reconnects from the start on a retry", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness(
+        (session) => (session === 1 ? Effect.never : Effect.void),
+        "10 seconds",
+      );
+
+      yield* h.wake("application-active-long");
+      yield* TestClock.adjust("1 millis");
+      yield* h.closeFirstSession;
+      yield* h.stateWhere((state) => state.phase === "connecting");
+      yield* h.supervisor.retryNow;
+      yield* TestClock.adjust("1 millis");
+      expect(yield* Ref.get(h.released)).toContain(2);
+      expect(yield* Ref.get(h.sessionCount)).toBe(3);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 });
