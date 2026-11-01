@@ -3,6 +3,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as DesktopConnectionCatalogStore from "../../app/DesktopConnectionCatalogStore.ts";
+import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
+import { getDesktopOrigin } from "../../electron/ElectronProtocol.ts";
 import * as ElectronRequestHeaders from "../../electron/ElectronRequestHeaders.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
@@ -11,7 +13,11 @@ import * as DesktopIpc from "../DesktopIpc.ts";
 // refreshes the headers the main process adds to requests.
 const applyRequestHeaders = Effect.fn("desktop.ipc.connectionCatalog.applyRequestHeaders")(
   function* (catalog: string | null) {
-    const skipped = ElectronRequestHeaders.applyConnectionCatalog(catalog);
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    const skipped = ElectronRequestHeaders.applyConnectionCatalog(
+      catalog,
+      getDesktopOrigin(environment.isDevelopment),
+    );
     if (skipped.length > 0) {
       yield* Effect.logWarning("Skipped invalid request headers in the connection catalog.", {
         origins: skipped,

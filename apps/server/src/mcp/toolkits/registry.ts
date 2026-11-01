@@ -1,5 +1,6 @@
 import { McpSchema, Tool, Toolkit } from "effect/ai";
 
+import { UsageSourceToolkit } from "../../fork/usageSourceTool.ts";
 import { manualLinkToolsEnabled } from "../../fork/machineMap/machineAccess.ts";
 import * as McpInvocationContext from "../McpInvocationContext.ts";
 
@@ -57,6 +58,7 @@ export const McpToolkits = {
   machineMap: MachineMapToolkit,
   // Fork: kitshn publishing.
   kitshn: KitshnToolkit,
+  usageSources: UsageSourceToolkit,
 } as const;
 
 export type McpToolkitName = keyof typeof McpToolkits;

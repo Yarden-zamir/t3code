@@ -4,6 +4,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { readDeviceInviteAppLink } from "@t3tools/client-runtime/fork/deviceInvite";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { promptLinkAppPath } from "@t3tools/shared/promptLinks";
 import { readPairingAppLink, resolveRemotePairingTarget } from "@t3tools/shared/remote";
@@ -22,11 +23,13 @@ import { useComposerDraftStore } from "../../composerDraftStore";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useScratchProject } from "../../hooks/useScratchProject";
 import { useClientSettings } from "../../hooks/useSettings";
+import { useJoinWithDeviceInvite } from "../../machineMap/desktopDevice";
 import { useOpenChangeRequestLink } from "../../lib/openPullRequestLink";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { resolveThreadRouteTarget } from "../../threadRoutes";
 import { assetEnvironment } from "../../state/assets";
+import { readProject, readThreadShell } from "../../state/entities";
 import { useEnvironmentHttpBaseUrl, usePrimaryEnvironment } from "../../state/environments";
 import { previewEnvironment } from "../../state/preview";
 import { allReachableShellsLiveAtom } from "../../state/shell";
@@ -93,6 +96,7 @@ export function DesktopWebLinkCoordinator() {
   const httpBaseUrl = useEnvironmentHttpBaseUrl(primaryEnvironment?.environmentId ?? null);
   const queueRef = useRef(Promise.resolve());
   const pairedUrlsRef = useRef(new Set<string>());
+  const joinWithDeviceInvite = useJoinWithDeviceInvite();
   const webLinks = window.desktopBridge?.webLinks;
   // A sync IPC read; the setting only changes across a relaunch.
   const [localEnvironmentDisabled] = useState(isLocalEnvironmentDisabled);
@@ -145,6 +149,29 @@ export function DesktopWebLinkCoordinator() {
     });
   };
 
+  // Any page can open the kitshn invite link, so the user confirms the kitshn host before the join.
+  const joinFromLink = async (inviteUrl: string) => {
+    // The invite works once, so a repeated click would only fail.
+    if (pairedUrlsRef.current.has(inviteUrl)) return;
+    const host = new URL(inviteUrl).host;
+    const confirmed =
+      (await requestConfirmDialog(`Join the kitshn at ${host} with this desktop app?`)) ?? false;
+    if (!confirmed) return;
+    const result = await joinWithDeviceInvite(inviteUrl);
+    if (!result.joined) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not join kitshn",
+          description: result.message,
+        }),
+      );
+      return;
+    }
+    pairedUrlsRef.current.add(inviteUrl);
+    toastManager.add({ type: "success", title: "Joined kitshn", description: result.message });
+  };
+
   const startThread = async (url: string): Promise<ScopedThreadRef | null> => {
     const environmentId = scratchEnvironmentId(primaryEnvironment?.environmentId ?? null);
     if (environmentId === null) {
@@ -163,25 +190,14 @@ export function DesktopWebLinkCoordinator() {
     return threadRef;
   };
 
-  const openLink = useEffectEvent(async (url: string) => {
-    const pairingUrl = readPairingAppLink(url);
-    if (pairingUrl !== null) {
-      await pairFromLink(pairingUrl);
-      return;
-    }
-    const appPath = promptLinkAppPath(url);
-    if (appPath !== null) {
-      await router.navigate({ href: appPath });
-      return;
-    }
-    if (openChangeRequest(externalClick, url)) return;
+  const openInBrowser = useEffectEvent(async (url: string) => {
+    const routeParams = router.state.matches.at(-1)?.params ?? {};
     const isFile = url.startsWith("file:");
     // Only this machine's environment serves files, so fail before starting a thread.
     if (isFile && httpBaseUrl === null) {
       reportFailure(url);
       return;
     }
-    const routeParams = router.state.matches.at(-1)?.params ?? {};
     const threadRef =
       threadShowingBrowser(
         routeParams,
@@ -210,15 +226,52 @@ export function DesktopWebLinkCoordinator() {
     }
   });
 
+  const openLink = useEffectEvent(async (url: string) => {
+    const inviteUrl = readDeviceInviteAppLink(url);
+    if (inviteUrl !== null) {
+      await joinFromLink(inviteUrl);
+      return;
+    }
+    const pairingUrl = readPairingAppLink(url);
+    if (pairingUrl !== null) {
+      await pairFromLink(pairingUrl);
+      return;
+    }
+    const appPath = promptLinkAppPath(url);
+    if (appPath !== null) {
+      await router.navigate({ href: appPath });
+      return;
+    }
+    const routeParams = router.state.matches.at(-1)?.params ?? {};
+    const routeTarget = resolveThreadRouteTarget(routeParams);
+    const activeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : undefined;
+    const activeThread = activeThreadRef ? readThreadShell(activeThreadRef) : null;
+    const activeProject =
+      activeThread && activeThreadRef
+        ? readProject(scopeProjectRef(activeThreadRef.environmentId, activeThread.projectId))
+        : null;
+    const commitThreadRef =
+      activeThread &&
+      sourceControlClients.parseCommitUrl(url, activeProject?.repositoryIdentity?.provider) !== null
+        ? activeThreadRef
+        : undefined;
+    // A commit the thread's workspace lacks continues here, after its lookup.
+    const openUnavailableCommit = () => {
+      queueRef.current = queueRef.current.then(() => openInBrowser(url)).catch(() => undefined);
+    };
+    if (openChangeRequest(externalClick, url, commitThreadRef, undefined, openUnavailableCommit))
+      return;
+    await openInBrowser(url);
+  });
+
   const receiveLink = useEffectEvent((url: string) => {
-    // A connected server publishes its config before its project snapshot, so a PR link
-    // delivered at launch would miss its project and fall through to the browser. Hold PR
-    // links, and only those, until discovery settles; an ordinary link never waits for it.
-    // Discovery never settles without the local environment, so those links do not wait.
+    // A connected server publishes its config before its project snapshot, so a source control
+    // link delivered at launch would miss its project and fall through to the browser. Hold
+    // those links until discovery settles; an ordinary link never waits for it.
     const hold =
       openPullRequestsInApp &&
-      !localEnvironmentDisabled &&
-      sourceControlClients.parseChangeRequestUrl(url) !== null
+      (sourceControlClients.parseChangeRequestUrl(url) !== null ||
+        sourceControlClients.parseCommitUrl(url) !== null)
         ? projectsSettled()
         : Promise.resolve();
     void hold.then(() => {

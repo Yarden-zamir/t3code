@@ -12,8 +12,8 @@ import {
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ShortcutHint } from "../focusLevels/ShortcutHint";
+import { Tooltip, TooltipPopup } from "../ui/tooltip";
+import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import type { KeybindingCommand } from "@t3tools/contracts";
 
 export interface SidebarThreadHeaderProps {
@@ -125,6 +125,7 @@ export function SidebarThreadHeader({
         {terminalThreadButton}
         <SidebarHeaderIconButton
           label="New thread"
+          command={newThreadCommand}
           tooltip={
             showNewThreadInProjectHint ? (
               <span className="flex flex-col gap-0.5">
@@ -151,12 +152,15 @@ export function SidebarThreadHeader({
 export function SidebarHeaderIconButton({
   label,
   tooltip = label,
+  command = null,
   className,
   children,
   ...rest
 }: {
   label: string;
   tooltip?: ReactNode;
+  /** The keybinding command that the button runs; its key shows in `tooltip`. */
+  command?: KeybindingCommand | null;
   className?: string | undefined;
   children?: ReactNode;
 } & Omit<
@@ -165,7 +169,8 @@ export function SidebarHeaderIconButton({
 >) {
   return (
     <Tooltip>
-      <TooltipTrigger
+      <ShortcutTrigger
+        command={command}
         render={
           <SidebarMenuButton
             size="icon"
@@ -181,7 +186,7 @@ export function SidebarHeaderIconButton({
           aria-hidden
           className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
         />
-      </TooltipTrigger>
+      </ShortcutTrigger>
       <TooltipPopup side="top">{tooltip}</TooltipPopup>
     </Tooltip>
   );

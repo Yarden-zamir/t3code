@@ -7,6 +7,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 
+import { OBJECT_MENU_ATTRIBUTE } from "../../objectMenu";
 import type { DraftId } from "../../composerDraftStore";
 import { useT3ProjectFileScripts } from "../../hooks/useT3ProjectFileScripts";
 import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
@@ -24,7 +25,11 @@ import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ForkThreadPinsButton } from "./ForkMessagePins";
 import { ThreadServersPanel } from "./ThreadServersPanel";
-import { ThreadDetailsUsage, type ThreadDetailsUsageInput } from "./ThreadDetailsUsage";
+import {
+  ThreadDetailsContext,
+  ThreadDetailsUsage,
+  type ThreadDetailsUsageInput,
+} from "./ThreadDetailsUsage";
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -128,14 +133,16 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
         .map((item) => item.id)
         .join(",")}
       onContextMenu={(event) => {
-        // Popups the card opens bubble here through React; they, fields, links, and selected text
-        // keep their own menus.
+        // Popups the card opens bubble here through React; they, fields, links, objects with their
+        // own menu (`objectMenu.ts`) and selected text keep their own menus.
         const target = event.target;
         const selection = window.getSelection();
         if (
           !(target instanceof Element) ||
           !event.currentTarget.contains(target) ||
-          target.closest("input, textarea, [contenteditable], a[href]") ||
+          target.closest(
+            `input, textarea, [contenteditable], a[href], [${OBJECT_MENU_ATTRIBUTE}]`,
+          ) ||
           (selection &&
             !selection.isCollapsed &&
             (event.currentTarget.contains(selection.anchorNode) ||
@@ -257,14 +264,20 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 />
               ) : null}
 
-              {density === "full" && !props.draftId && visible.lineage ? (
+              {density === "full" && !props.draftId && (visible.lineage || visible.sideChats) ? (
                 <ThreadRelationshipsPanel
                   environmentId={props.environmentId}
                   threadId={props.threadId}
+                  showLineage={visible.lineage}
+                  showSideChats={visible.sideChats}
                 />
               ) : null}
 
               {visible.usage ? <ThreadDetailsUsage {...props.usage} /> : null}
+
+              {visible.context && props.usage.contextWindow ? (
+                <ThreadDetailsContext usage={props.usage.contextWindow} />
+              ) : null}
 
               {/* Shown only when no section above has content, so an emptied card can be refilled. */}
               <div className="p-2 group-has-[>section>:last-child:not(:empty)]/details-items:hidden">

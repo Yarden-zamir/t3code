@@ -8,6 +8,7 @@ import {
   enrollWithDeviceInvite,
   exchangeDeviceInvite,
   parseDeviceInvite,
+  readDeviceInviteAppLink,
   readDeviceMachines,
 } from "./deviceInvite.ts";
 
@@ -59,6 +60,34 @@ describe("parseDeviceInvite", () => {
     "not a link",
   ])("refuses %s", (text) => {
     expect(parseDeviceInvite(text)).toBeNull();
+  });
+});
+
+describe("readDeviceInviteAppLink", () => {
+  const invite = `https://kit.example.com/join/device#code=${CODE}`;
+  // K-720: kitshn fills `{inviteUrl}` with the whole invite link, URL-encoded.
+  const slot = encodeURIComponent(invite);
+
+  it.each([
+    `t3code://join-device?inviteUrl=${slot}`,
+    `t3code-dev://join-device/?inviteUrl=${slot}`,
+  ])("takes the invite from %s", (link) => {
+    expect(readDeviceInviteAppLink(link)).toBe(invite);
+  });
+
+  it.each([
+    `t3code-preview://join-device?inviteUrl=${slot}`,
+    `https://join-device?inviteUrl=${slot}`,
+    `t3code://pair?inviteUrl=${slot}`,
+    `t3code://join-device/other?inviteUrl=${slot}`,
+    `t3code://user@join-device?inviteUrl=${slot}`,
+    `t3code://join-device?inviteUrl=${slot}#x`,
+    `t3code://join-device?inviteUrl=${slot}&inviteUrl=${slot}`,
+    `t3code://join-device?inviteUrl=${slot}&next=x`,
+    `t3code://join-device?inviteUrl=${encodeURIComponent(`http://kit.example.com/join/device#code=${CODE}`)}`,
+    "t3code://join-device",
+  ])("refuses %s", (link) => {
+    expect(readDeviceInviteAppLink(link)).toBeNull();
   });
 });
 

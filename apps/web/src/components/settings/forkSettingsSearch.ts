@@ -307,7 +307,7 @@ export const KEYBOARD_ITEMS = [
     id: "tooltip-shortcuts",
     title: "Shortcuts in tooltips",
     to: "/settings/keybindings",
-    searchTerms: ["keyboard shortcuts keybindings tooltip hint key label"],
+    searchTerms: ["keyboard shortcuts keybindings tooltip menu command palette hint key label"],
   },
   {
     id: "tooltip-shortcut-limit",
@@ -409,7 +409,7 @@ export const MACHINE_MAP_ITEMS = [
   },
   {
     id: "machine-map",
-    title: "kitshn",
+    title: "Join machines",
     to: "/settings/machines",
     searchTerms: ["kitshn join machines map access links grants"],
   },

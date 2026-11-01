@@ -5,9 +5,10 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 import type * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
-import { kitshnMachineAllows } from "../kitshn/kitshnAgents.ts";
+import * as KitshnGrants from "../kitshn/KitshnGrants.ts";
 import { machineOfRequestNamespace } from "./machineAccess.ts";
 
 type RunsWith = Pick<ModelSelection, "instanceId">;
@@ -15,7 +16,7 @@ type RunsWith = Pick<ModelSelection, "instanceId">;
 /**
  * Fork (MM-1923): a terminal thread types messages into a shell, so a launch, send, interrupt or
  * terminal scheduled task runs shell commands, as `machine_exec` does. A machine session needs
- * kitshn grants that allow exec; metadata writes skip this (`metadataOnly`). `runsWith` is the work model,
+ * kitshn's "runs commands" on this machine (K-722); metadata writes skip this (`metadataOnly`). `runsWith` is the work model,
  * an effect that resolves only for a machine session without exec, so others never pay for it.
  */
 export const refuseTerminalThreadWithoutExec = Effect.fn("refuseTerminalThreadWithoutExec")(
@@ -25,13 +26,14 @@ export const refuseTerminalThreadWithoutExec = Effect.fn("refuseTerminalThreadWi
   ) {
     const from = machineOfRequestNamespace(requestNamespace);
     if (from === undefined) return;
-    if (yield* kitshnMachineAllows(from, "exec")) return;
+    const grants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
+    if (Option.isSome(grants) && (yield* grants.value.machineMayExec(from))) return;
     const model = Effect.isEffect(runsWith) ? yield* runsWith : runsWith;
     if (model.instanceId !== TERMINAL_THREAD_INSTANCE_ID) return;
     return yield* new OrchestratorMcpFailure({
       code: "capability_denied",
       message:
-        "A terminal thread runs its messages in a shell, so a call from another machine that runs or stops code in one needs kitshn grants: t3.agents at exec and t3.app at standard or higher. The owner shares them on the kitshn map.",
+        'A terminal thread runs its messages in a shell, so a call from another machine that runs or stops code in one needs kitshn\'s "runs commands" on this machine at automatic. The owner sets it on the kitshn map.',
     });
   },
 );

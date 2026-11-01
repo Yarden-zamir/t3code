@@ -9,7 +9,9 @@ import {
   showAnchoredCopyErrorToast,
   showAnchoredCopySuccessToast,
 } from "../ui/anchoredCopyToast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import type { KeybindingCommand } from "@t3tools/contracts";
+import { ShortcutTrigger } from "../focusLevels/ShortcutHint";
+import { Tooltip, TooltipPopup } from "../ui/tooltip";
 
 export const MessageCopyButton = memo(function MessageCopyButton({
   text,
@@ -19,8 +21,11 @@ export const MessageCopyButton = memo(function MessageCopyButton({
   size = "xs",
   variant = "outline",
   className,
+  keybindingCommand = null,
 }: {
   text: string;
+  /** The keybinding command that copies the same text, such as `timeline.copyMessageLink`. */
+  keybindingCommand?: KeybindingCommand | null;
   label?: string;
   icon?: typeof Copy;
   extraFlavors?: Readonly<Record<string, string>>;
@@ -38,7 +43,8 @@ export const MessageCopyButton = memo(function MessageCopyButton({
 
   return (
     <Tooltip>
-      <TooltipTrigger
+      <ShortcutTrigger
+        command={keybindingCommand}
         render={
           <Button
             aria-label={label}
@@ -56,7 +62,7 @@ export const MessageCopyButton = memo(function MessageCopyButton({
           className={cn("size-3", isCopied && "text-primary")}
           icon={isCopied ? Check : icon}
         />
-      </TooltipTrigger>
+      </ShortcutTrigger>
       <TooltipPopup>
         <p>{label}</p>
       </TooltipPopup>

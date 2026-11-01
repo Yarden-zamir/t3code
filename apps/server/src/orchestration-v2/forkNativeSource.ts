@@ -25,8 +25,10 @@ export const resolveForkSourcePoint = Effect.fn("fork.resolveSourcePoint")(funct
   run: Pick<OrchestrationV2Run, "id" | "providerThreadId" | "providerInstanceId" | "status">,
   point: OrchestrationV2ContextSourcePoint,
 ) {
+  // A run without a provider thread has no native session to fork; the planner takes portable context.
   if (
     (run.status !== "completed" && run.status !== "waiting") ||
+    run.providerThreadId === null ||
     projection.thread.providerInstanceId !== run.providerInstanceId
   )
     return point;

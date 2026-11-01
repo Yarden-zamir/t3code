@@ -89,6 +89,63 @@
   box-shadow: var(--theme-shadow);
 }
 
+/* Segmented controls: ToggleGroup and the composer picker controls marked
+   data-segmented-control. Stock styles fill the track and the selected segment
+   with --input, a border colour that a theme with a border width sets to ink.
+   Draw them like the other ink controls: a bordered track, ruled segments and
+   the selection in the accent surface colour. */
+:root[data-theme-border-width]
+  :is([data-slot="toggle-group"][data-variant="segmented"], [data-segmented-control]) {
+  gap: 0;
+  padding: 0;
+  border: var(--theme-border-width) solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--card);
+}
+:root[data-theme-border-width]
+  :is([data-slot="toggle-group"][data-variant="segmented"], [data-segmented-control])
+  > * {
+  border-radius: 0;
+}
+:root[data-theme-border-width]
+  :is([data-slot="toggle-group"][data-variant="segmented"], [data-segmented-control])
+  > *
+  + * {
+  border-inline-start: var(--theme-border-width) solid var(--border);
+}
+/* The segments stay inside the rounded track without overflow: hidden, which
+   would clip the focus ring. */
+:root[data-theme-border-width]
+  :is([data-slot="toggle-group"][data-variant="segmented"], [data-segmented-control])
+  > :first-child {
+  border-start-start-radius: calc(var(--radius) - var(--theme-border-width));
+  border-end-start-radius: calc(var(--radius) - var(--theme-border-width));
+}
+:root[data-theme-border-width]
+  :is([data-slot="toggle-group"][data-variant="segmented"], [data-segmented-control])
+  > :last-child {
+  border-start-end-radius: calc(var(--radius) - var(--theme-border-width));
+  border-end-end-radius: calc(var(--radius) - var(--theme-border-width));
+}
+:root[data-theme-border-width]
+  :is([data-slot="toggle-group"][data-variant="segmented"], [data-segmented-control])
+  > :is(:hover, [data-highlighted]):not([data-pressed], [data-checked]) {
+  background-color: color-mix(in srgb, var(--accent) 30%, var(--card));
+  color: var(--foreground);
+}
+:root[data-theme-border-width]
+  :is([data-slot="toggle-group"][data-variant="segmented"], [data-segmented-control])
+  > :is([data-pressed], [data-checked]) {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+/* Drops the stock raised shadow, but keeps the focus ring, which is also a box-shadow. */
+:root[data-theme-border-width]
+  :is([data-slot="toggle-group"][data-variant="segmented"], [data-segmented-control])
+  > :is([data-pressed], [data-checked]):not(:focus-visible) {
+  box-shadow: none;
+}
+
 /* One shadow per stack: a themed surface that wraps another themed surface
    (a popup around the details card, for example) drops its own shadow, so
    only the inner surface with the visible border casts one. The composer host

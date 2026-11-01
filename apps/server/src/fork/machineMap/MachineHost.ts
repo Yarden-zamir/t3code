@@ -99,6 +99,8 @@ function scheduleText(schedule: ScheduledTask["schedule"]): string {
           : days.map((day) => WEEKDAY[day] ?? String(day)).join(", ");
       return `${when} at ${schedule.timeOfDay}`;
     }
+    case "once":
+      return `Once at ${schedule.runAt}`;
     case "webhook":
       return "On webhook";
   }

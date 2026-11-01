@@ -24,7 +24,14 @@ import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
-  Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+  // A repository whose remote has a main branch, for the base ref of an agent scheduled task.
+  Layer.provide(
+    Layer.mock(GitVcsDriver.GitVcsDriver)({
+      resolvePrimaryRemoteName: () => Effect.succeed("origin"),
+      resolveDefaultBranchName: () => Effect.succeed(null),
+      resolveCommit: () => Effect.succeed({ commitSha: "abc123" }),
+    }),
+  ),
 );
 
 const environmentId = EnvironmentId.make("environment-mcp-orchestrator-detail");

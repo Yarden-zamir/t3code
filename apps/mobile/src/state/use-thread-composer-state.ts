@@ -8,6 +8,7 @@ import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thre
 import { resolvePendingHandoff } from "@t3tools/client-runtime/handoff";
 import {
   deriveProviderSubagentStatus,
+  deriveResumableRunId,
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
   deriveThreadRuntime,
@@ -34,6 +35,7 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
+import { restoreAttachmentOnlyBootstrapPrompt } from "@t3tools/shared/composerContextReferences";
 import { composerContextSendBlockReason, reidentifyComposerContext } from "../lib/composerContext";
 import { uuidv4 } from "../lib/uuid";
 
@@ -163,6 +165,7 @@ export function useThreadDraftForThread(input: {
 
   return {
     draftMessage: draft.text,
+    draftContext: draft.context,
     draftAttachments: draft.attachments,
   };
 }
@@ -360,6 +363,9 @@ export function useThreadComposerState() {
   // is resumed; the queue sheet lists only the user's own messages.
   // Fork: the server keeps a usage-limited queue held, so Resume would do nothing there.
   const queueHeld = queueWorkflow?.isHeld === true && !queueWorkflow.heldByUsageLimit;
+  const resumableRunId = selectedThreadProjection
+    ? deriveResumableRunId(selectedThreadProjection.projection, selectedThreadRuntime)
+    : null;
 
   const runlessWorkStartedAt = selectedThreadProjection
     ? deriveRunlessWorkStartedAt(selectedThreadProjection.projection)
@@ -404,7 +410,11 @@ export function useThreadComposerState() {
     if (edit === null) return;
     const draft = getComposerDraftSnapshot(queuedEditDraftKey(threadKey, edit.runId));
     const text = draft.text.trim();
-    if (text.length === 0) {
+    if (
+      text.length === 0 &&
+      edit.existingAttachments.length === 0 &&
+      draft.attachments.length === 0
+    ) {
       Dialog.alert("Add a message", "A queued message cannot be left empty.");
       return;
     }
@@ -458,7 +468,7 @@ export function useThreadComposerState() {
       input: {
         threadId: thread.id,
         runId: edit.runId,
-        text,
+        text: restoreAttachmentOnlyBootstrapPrompt(text, payload.attachments.length > 0),
         edit: {
           messageId: edit.messageId,
           attachments: payload.attachments,
@@ -744,6 +754,7 @@ export function useThreadComposerState() {
     followUpBehavior,
     canSteerActiveTurn,
     queueHeld,
+    resumableRunId,
     queuedRunEdit,
     isSavingQueuedEdit,
     cancelQueuedRunEdit,

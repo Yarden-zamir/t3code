@@ -47,6 +47,7 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import * as PreviewControlsHandlers from "./toolkits/previewControls/handlers.ts";
+import { registerUsageSource } from "../fork/usageSourceTool.ts";
 import * as EnvironmentHandlers from "./toolkits/environment/handlers.ts";
 import * as ProjectHandlers from "./toolkits/project/handlers.ts";
 import * as AttachmentHandlers from "./toolkits/attachment/handlers.ts";
@@ -770,10 +771,14 @@ const registerDeviceScreenshot = Effect.fn("McpHttpServer.registerDeviceScreensh
         Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
       ),
     "screenshot",
-    (error) =>
-      isDeviceToolError(error) || isOrchestratorMcpFailure(error)
-        ? error.message
-        : "Device screenshot failed.",
+    (error) => {
+      if (!isDeviceToolError(error)) {
+        return isOrchestratorMcpFailure(error) ? error.message : "Device screenshot failed.";
+      }
+      return error._tag === "DeviceOperationError" && error.reason === "hub_rejected"
+        ? `${error.message} Call device_list to check the device state, and device_open if it needs to be reopened.`
+        : error.message;
+    },
   );
 });
 
@@ -1164,6 +1169,7 @@ const toolkitRegistrations = {
   device: layerDeviceToolkit,
   pullRequests: layerPullRequestsToolkit,
   html: layerHtmlToolkit,
+  usageSources: registerUsageSource(toolkitRegistration),
   // Fork: machine map tools.
   machineMap: toolkitRegistration(McpToolkits.machineMap, MachineMapHandlers.layer),
   // Fork: kitshn tools.

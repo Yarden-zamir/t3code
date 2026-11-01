@@ -79,7 +79,7 @@ options.
   Mac containers above. Do not add a one-off fix for one run.
 - Write each script as a uv script with PEP 723 metadata. Use the standard library. Add a
   dependency only when it removes much code, and check its latest version first.
-- Read paths from git, not from fixed paths. A script must work on the VPS (Linux, root) and on
+- Read paths from git, not from fixed paths. A script must work on the VPS (Linux, user `t3`) and on
   the Mac.
 - Put pure logic in functions and test them in `scripts/test_scripts.py`. `vp run fork:check`
   runs these tests when a file of this skill changed.

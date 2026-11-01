@@ -116,7 +116,8 @@ function SettingsContentLayout() {
     location.pathname === "/settings/providers" ||
     location.pathname === "/settings/machines"
       ? environment?.environmentId
-      : JSON.stringify(search);
+      : // Only the scope remounts the page; page params such as `command` keep its state.
+        JSON.stringify([search.project, search.machine, search.checkout]);
   const [restoreSignal, setRestoreSignal] = useState(0);
 
   return (
@@ -155,7 +156,11 @@ function SettingsRouteLayout() {
     <SettingsScopeProvider
       search={rawSearch}
       // Fork: each environment joins the machine map on its own.
-      singleEnvironment={pathname === "/settings/providers" || pathname === "/settings/machines"}
+      singleEnvironment={
+        pathname === "/settings/providers" ||
+        pathname === "/settings/secrets" ||
+        pathname === "/settings/machines"
+      }
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.
         void navigate({

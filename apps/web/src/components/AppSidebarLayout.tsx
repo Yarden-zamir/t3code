@@ -36,6 +36,7 @@ import {
   usePanelNavigationSuppression,
 } from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
+import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import ThreadSidebar from "./Sidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
@@ -57,8 +58,8 @@ import {
   useSidebar,
   useSidebarVisibility,
 } from "./ui/sidebar";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { ShortcutHint } from "./focusLevels/ShortcutHint";
+import { Tooltip, TooltipPopup } from "./ui/tooltip";
+import { ShortcutHint, ShortcutTrigger } from "./focusLevels/ShortcutHint";
 import { TitlebarPinnedScripts, usePinnedScriptsTargetStore } from "./PinnedScripts";
 import { NavigationHistoryButtons, NavigationHistoryRecorder } from "./ForkNavigationHistory";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -377,7 +378,9 @@ function SidebarControl({
 
   const trigger = (
     <Tooltip>
-      <TooltipTrigger
+      <ShortcutTrigger
+        command="sidebar.toggle"
+        context={{ usagePageOpen }}
         render={
           <SidebarTrigger
             variant={isSidebarVisible && stageBackdropVariant ? "media-navigation" : "ghost"}
@@ -484,7 +487,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         defaultOpen
         style={sidebarProviderStyle}
       >
-        <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />
+        <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
         <KeyboardCheatSheet />
         <Sidebar
           side="left"
@@ -514,6 +517,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           onNavigationButtonsWidthChange={setNavigationButtonsWidth}
         />
         <NavigationHistoryRecorder />
+        {isElectron ? <HistorySwipeNavigation /> : null}
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>
   );

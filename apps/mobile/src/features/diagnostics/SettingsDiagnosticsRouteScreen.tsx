@@ -93,8 +93,6 @@ export function SettingsDiagnosticsRouteScreen() {
       >
         {crashReportingAvailable ? <CrashReportsSetting /> : null}
 
-        <ForkSyncTimingsSection />
-
         <SettingsSection title="Startup crashes">
           {state.status === "loading" ? (
             <View className="items-center gap-3 px-6 py-8">
@@ -135,6 +133,8 @@ export function SettingsDiagnosticsRouteScreen() {
             it over before sharing.
           </Text>
         </View>
+
+        <ForkSyncTimingsSection />
       </ScrollView>
     </SettingsScreen>
   );

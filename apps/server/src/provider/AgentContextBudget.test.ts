@@ -30,6 +30,7 @@ import { RemoteDelegation } from "../peer/RemoteDelegation.ts";
 import { PreviewManager } from "../preview/Manager.ts";
 import { PreviewBrowser } from "../preview/PreviewBrowser.ts";
 import { ManagedProjectFolders } from "../project/ManagedProjectFolders.ts";
+import { ProjectCloneTracker } from "../project/ProjectCloneTracker.ts";
 import { ProjectService } from "../project/ProjectService.ts";
 import { ProjectSetupScriptRunner } from "../project/ProjectSetupScriptRunner.ts";
 import { PullRequestReviewGuideService } from "../pullRequest/PullRequestReviewGuideService.ts";
@@ -40,12 +41,14 @@ import { SourceControlRepositoryService } from "../sourceControl/SourceControlRe
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { MachineExec } from "../fork/machineMap/MachineExec.ts";
 import { KitshnCli } from "../fork/kitshn/KitshnCli.ts";
+import { KitshnConnection } from "../fork/kitshn/KitshnConnection.ts";
 import { KitshnGrants } from "../fork/kitshn/KitshnGrants.ts";
 import { KitshnProvider } from "../fork/kitshn/KitshnProvider.ts";
 import { KitshnSettingsSync } from "../fork/kitshn/KitshnSettingsSync.ts";
 import { MachinePeers } from "../fork/machineMap/MachinePeers.ts";
 import { ProcessRunner } from "../processRunner.ts";
 import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
+import { UsageLimitSources } from "../usage/UsageLimitSources.ts";
 import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import { DocumentText } from "./DocumentText.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
@@ -71,6 +74,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(PreviewBrowser)({}),
   Layer.mock(PreviewManager)({}),
   Layer.mock(ProcessRunner)({}),
+  Layer.mock(ProjectCloneTracker)({}),
   Layer.mock(ProjectService)({}),
   Layer.mock(ProjectSetupScriptRunner)({}),
   Layer.mock(ProviderAdapterRegistryV2)({}),
@@ -83,6 +87,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(ServerEnvironment)({}),
   Layer.mock(ServerSecretStore)({}),
   Layer.mock(ServerSettingsService)({}),
+  Layer.mock(UsageLimitSources)({}),
   Layer.mock(SourceControlRepositoryService)({}),
   Layer.mock(ThreadLaunchService)({}),
   Layer.mock(ThreadManagementService)({}),
@@ -93,6 +98,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(KitshnCli)({}),
   Layer.mock(KitshnGrants)({ trustsPeerOrigin: () => false, peerOrigins: () => [] }),
   Layer.mock(KitshnProvider)({}),
+  Layer.mock(KitshnConnection)({}),
   Layer.mock(KitshnSettingsSync)({}),
   Layer.mock(MachinePeers)({ machineOf: () => undefined }),
   Layer.mock(PeerForwarding)({}),

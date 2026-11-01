@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { objectMenuActionsProps, objectMenuLabelProps, objectMenuProps } from "../../objectMenu";
 import type {
   EnvironmentId,
   PullRequestCheck,
@@ -83,6 +84,11 @@ function ChecksBody({
             (check, index) => (
               /* oxlint-disable react/no-array-index-key -- Check names can repeat; these status rows have no local state. */ <li
                 key={`${index}:${check.name}`}
+                {...objectMenuProps([
+                  { label: "Copy name", value: check.name },
+                  check.url === null ? null : { label: "Copy link", value: check.url },
+                ])}
+                {...objectMenuActionsProps}
                 className="col-span-full grid grid-cols-subgrid items-center text-xs"
               >
                 <PullRequestCheckStatusIcon status={check.status} />
@@ -95,6 +101,7 @@ function ChecksBody({
                 </span>
                 {check.url === null ? null : (
                   <button
+                    {...objectMenuLabelProps("Open check details")}
                     type="button"
                     className="text-primary hover:underline"
                     onClick={() => {

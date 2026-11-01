@@ -1,6 +1,7 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 
 import { cn } from "~/lib/utils";
+import { objectMenuProps } from "~/objectMenu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 
 export function connectionPhaseDotClassName(phase: EnvironmentConnectionPhase): string {
@@ -57,6 +58,7 @@ export function ConnectionStatusDot({
   const dot = (
     <button
       type="button"
+      {...objectMenuProps([{ label: "Copy status", value: tooltipText }])}
       aria-label={tooltipText}
       className="relative flex size-3 shrink-0 cursor-help items-center justify-center rounded-full outline-hidden"
     >

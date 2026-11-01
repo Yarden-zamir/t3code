@@ -8,6 +8,7 @@ import {
   messageLinkFromLocation,
   messageLinkStep,
   threadLinkMessageId,
+  withoutMessageLink,
 } from "./threadMessageLinks.ts";
 
 describe("message links", () => {
@@ -57,6 +58,13 @@ describe("messageLinkFromLocation", () => {
 
   it("reads no message from a fragment that holds app state", () => {
     expect(messageLinkFromLocation("assistant-citation=abc", "")).toBeNull();
+  });
+
+  it("drops the message link of an address and keeps app state", () => {
+    expect(withoutMessageLink("http://h/e/t?x=1&message=m2#m1")).toBe("http://h/e/t?x=1");
+    expect(withoutMessageLink("http://h/e/t#assistant-citation=abc")).toBe(
+      "http://h/e/t#assistant-citation=abc",
+    );
   });
 });
 

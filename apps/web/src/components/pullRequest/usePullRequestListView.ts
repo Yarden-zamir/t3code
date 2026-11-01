@@ -37,7 +37,7 @@ import type { PullRequestListPreferences, PullRequestListSort } from "./pullRequ
 import { assignProjectsToEnvironments } from "./pullRequestProjectAssignment.logic";
 import { parsePullRequestQueryWithOwners } from "./pullRequestOwnerFilter.logic";
 import * as ForkOwners from "./usePullRequestOwnerFilter";
-import { pullRequestFilterProjects } from "./pullRequestProjectFilter.logic";
+import { pullRequestFilterProjects } from "@t3tools/client-runtime/pull-request-project-filter";
 import { pullRequestListEntryId } from "./pullRequestListGroups.logic";
 
 export interface PullRequestsSearch extends PullRequestListPreferences {

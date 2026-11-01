@@ -96,9 +96,19 @@ export function parseAssistantCitationHref(href: string): AssistantCitation | nu
   }
 }
 
+const LABEL_MAX = 64;
+/** A long quote is cut to this length, so the note keeps the rest of the label. */
+const LABEL_QUOTE_WITH_NOTE_MAX = 32;
+
+const cutLabel = (text: string, max: number) =>
+  text.length > max ? `${text.slice(0, max)}…` : text;
+
+/** The quote, then the comment when there is one, on one line and cut to 64 characters. */
 export function assistantCitationLabel(citation: AssistantCitation): string {
-  const preview = (citation.comment?.trim() || citation.text).replace(/\s+/g, " ");
-  return preview.length > 64 ? `${preview.slice(0, 64)}…` : preview;
+  const quote = citation.text.replace(/\s+/g, " ");
+  const comment = citation.comment?.trim().replace(/\s+/g, " ");
+  if (!comment) return cutLabel(quote, LABEL_MAX);
+  return cutLabel(`${cutLabel(quote, LABEL_QUOTE_WITH_NOTE_MAX)} · ${comment}`, LABEL_MAX);
 }
 
 export function serializeAssistantCitation(citation: AssistantCitation): string {

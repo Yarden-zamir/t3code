@@ -437,7 +437,11 @@ export const layerDefault = layer.pipe(
 export const makeSweep = Effect.fn("ForkWorktreeArtifacts.makeSweep")(function* (guards: {
   readonly hasTerminal: (cwd: string) => boolean;
   readonly terminals?: () => ReadonlyArray<TerminalSummary>;
-  readonly idle: (thread: OrchestrationV2ThreadShell, now: number) => boolean;
+  readonly idle: (
+    thread: OrchestrationV2ThreadShell,
+    now: number,
+    settings: ServerSettings,
+  ) => boolean;
   readonly activityAt: (thread: OrchestrationV2ThreadShell) => number;
 }) {
   const artifacts = yield* ForkWorktreeArtifacts;
@@ -584,7 +588,7 @@ export const makeSweep = Effect.fn("ForkWorktreeArtifacts.makeSweep")(function* 
             current.branch !== thread.branch
           )
             return "thread workspace changed";
-          if (!guards.idle(current, checkNow))
+          if (!guards.idle(current, checkNow, currentSettings))
             return "thread is running or has queued or pending work";
           if ((yield* setups.get(current.id))?.phase === "running")
             return "T3-known setup is running for this worktree";

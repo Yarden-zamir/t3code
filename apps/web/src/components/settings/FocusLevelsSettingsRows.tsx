@@ -80,13 +80,13 @@ export function FocusLevelHighlightSettingsRow() {
 
 const selectTooltipShortcuts = (settings: ClientSettings) => settings.tooltipShortcuts;
 
-/** Fork: `tooltipShortcuts`, control tooltips name the keyboard shortcut of the control. */
+/** Fork: `tooltipShortcuts`, tooltips, menus and the command palette name the keys of an action. */
 export function TooltipShortcutsSettingsRow() {
   const enabled = useClientSettings(selectTooltipShortcuts);
   return (
     <SettingsRow
       {...searchableSetting("tooltip-shortcuts")}
-      description="Show the keyboard shortcut of a control in its tooltip, such as the stash, the runtime mode or the approval buttons."
+      description="Show the keyboard shortcuts of actions in tooltips, menus and the command palette."
       resetAction={
         enabled !== DEFAULT_CLIENT_SETTINGS.tooltipShortcuts ? (
           <SettingResetButton

@@ -8,6 +8,7 @@ import { runRegisteredFocusLevelCommand } from "../focusLevels/useFocusLevelShor
 import { toastManager } from "../ui/toast";
 import { useForkMessageLinks } from "./ForkMessageLinkTarget";
 import { ForkPinMessageButton, useForkMessagePinsEnabled } from "./ForkMessagePins";
+import { objectMenuActionsProps } from "../../objectMenu";
 import { MessageCopyButton } from "./MessageCopyButton";
 
 /**
@@ -38,6 +39,7 @@ export function ForkCopyMessageLink(props: {
           text={messageLinkMarkdown(props.threadRef, props.messageId)}
           label="Copy message link"
           icon={Link}
+          keybindingCommand="timeline.copyMessageLink"
           variant="ghost"
         />
       ) : null}
@@ -51,7 +53,10 @@ export function ForkCopyMessageLink(props: {
     </>
   );
   return props.standalone ? (
-    <div className="mt-1.5 flex items-center gap-0.5 opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100 has-[[data-fork-pinned]]:opacity-100">
+    <div
+      {...objectMenuActionsProps}
+      className="mt-1.5 flex items-center gap-0.5 opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100 has-[[data-fork-pinned]]:opacity-100"
+    >
       {buttons}
     </div>
   ) : (

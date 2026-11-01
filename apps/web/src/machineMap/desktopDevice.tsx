@@ -108,21 +108,17 @@ function useDeviceSteps() {
   return { tokenOf, saveToken, pair, removeEnvironment };
 }
 
-/** Settings > Machines: paste a kitshn device invite for this desktop app. */
-export function DeviceInviteSettingsRow() {
+/** The join of Settings > Machines; the `t3code://join-device` link runs the same. */
+export function useJoinWithDeviceInvite() {
   const steps = useDeviceSteps();
-  const [text, setText] = useState("");
-  const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const join = async () => {
+  return async (text: string): Promise<{ readonly joined: boolean; readonly message: string }> => {
     const invite = parseDeviceInvite(text);
     if (invite === null) {
-      setMessage("Paste a kitshn device invite link: https://<kitshn>/join/device#code=…");
-      return;
+      return {
+        joined: false,
+        message: "Paste a kitshn device invite link: https://<kitshn>/join/device#code=…",
+      };
     }
-    setPending(true);
-    setMessage(null);
     const managed = readManaged();
     const result = await enrollWithDeviceInvite(invite, {
       exchange: (next) => exchangeDeviceInvite(next, desktopDeviceName(), desktopTransport),
@@ -138,21 +134,34 @@ export function DeviceInviteSettingsRow() {
       (enrolled) => enrolled,
       (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause))),
     );
-    setPending(false);
-    if (result instanceof Error) {
-      setMessage(result.message);
-      return;
-    }
-    setText("");
-    setMessage(
-      [
+    if (result instanceof Error) return { joined: false, message: result.message };
+    return {
+      joined: true,
+      message: [
         `Joined as "${result.name}". Paired: ${result.paired.join(", ") || "none"}.`,
         ...result.failed.map((entry) => `${entry.name}: ${entry.reason}`),
         result.failed.length > 0 ? "This app tries the other machines again by itself." : "",
       ]
         .filter(Boolean)
         .join("\n"),
-    );
+    };
+  };
+}
+
+/** Settings > Machines: paste a kitshn device invite for this desktop app. */
+export function DeviceInviteSettingsRow() {
+  const joinWithDeviceInvite = useJoinWithDeviceInvite();
+  const [text, setText] = useState("");
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const join = async () => {
+    setPending(true);
+    setMessage(null);
+    const result = await joinWithDeviceInvite(text);
+    setPending(false);
+    setMessage(result.message);
+    if (result.joined) setText("");
   };
 
   return (

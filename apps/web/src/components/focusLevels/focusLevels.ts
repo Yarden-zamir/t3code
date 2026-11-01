@@ -52,6 +52,14 @@ export function focusLevelElement(level: FocusLevel): HTMLElement | null {
   return document.querySelector<HTMLElement>(levelSelector(level));
 }
 
+/** The `when` flags of the focus levels while `keyboardFocusLevels` is off. */
+export const FOCUS_LEVELS_OFF = {
+  composerFocus: false,
+  timelineFocus: false,
+  rightPanelFocus: false,
+  sidebarFocus: false,
+} as const;
+
 /**
  * The `when` flags of the focus levels. All are false while `keyboardFocusLevels` is off, so the
  * level keys fall back to the upstream rules for the same keys, such as `mod+f` for thread find.

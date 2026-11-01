@@ -21,6 +21,7 @@ import {
 } from "./ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { useAtomValue } from "@effect/atom-react";
+import { ShortcutTrigger } from "./focusLevels/ShortcutHint";
 import { shortcutLabelForCommand } from "../keybindings";
 import { primaryServerKeybindingsAtom } from "../state/server";
 
@@ -73,7 +74,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   if (envLocked || forceNewWorktree) {
     const lockedRow = (
       <span
-        className="inline-flex h-7 min-w-0 items-center gap-1 border border-transparent px-1.75 font-normal text-muted-foreground/70 text-xs sm:h-6"
+        className="inline-flex h-7 min-w-0 items-center gap-1.5 border border-transparent px-1.75 font-normal text-muted-foreground/70 text-sm sm:h-6 sm:text-xs"
         data-composer-context-control
       >
         {activeWorktreePath ? (
@@ -117,7 +118,8 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       items={envModeItems}
     >
       <Tooltip>
-        <TooltipTrigger
+        <ShortcutTrigger
+          command="composer.workspace"
           render={
             <ComposerSelectControl
               size="xs"
@@ -139,7 +141,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
           <ComposerContextLabel>
             <SelectValue />
           </ComposerContextLabel>
-        </TooltipTrigger>
+        </ShortcutTrigger>
         <TooltipPopup>
           {effectiveEnvMode === "worktree"
             ? resolveEnvModeLabel("worktree")

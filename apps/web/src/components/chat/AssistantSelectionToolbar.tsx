@@ -5,7 +5,7 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { QuoteIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   captureAssistantTextSelection,
@@ -18,6 +18,7 @@ import {
   type SelectionActionPoint,
 } from "~/lib/selectionActions";
 import { Button } from "../ui/button";
+import { BackgroundThreadContext } from "./backgroundThread";
 
 export function AssistantSelectionToolbar({
   viewport,
@@ -31,18 +32,45 @@ export function AssistantSelectionToolbar({
   const [selection, setSelection] = useState<{
     citation: AssistantCitation;
     position: SelectionActionPoint;
+    /** The top of the first selected line, where the button goes when it cannot go below. */
+    selectionTop: number;
     sourceAnchor: AssistantCitationSourceAnchor;
   } | null>(null);
   const toolbarRef = useRef<HTMLButtonElement>(null);
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
+  const backgroundThread = use(BackgroundThreadContext);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the toolbar DOM node and clamps its position inside the window before paint
   useLayoutEffect(() => {
     const toolbar = toolbarRef.current;
     if (!toolbar || !selection) return;
     const rect = toolbar.getBoundingClientRect();
-    toolbar.style.left = `${Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8))}px`;
-    toolbar.style.top = `${Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8))}px`;
+    const left = Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8));
+    let top = Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8));
+    // The composer and the "Scroll to end" pill float over the bottom of the timeline. Above the
+    // selection the button can still meet the pill, so it moves up past each blocker it meets.
+    const blockers = [
+      ...document.querySelectorAll('[data-chat-composer-stack="true"], [data-scroll-to-end]'),
+    ].map((element) => element.getBoundingClientRect());
+    const blockerAt = (candidateTop: number) =>
+      blockers.find(
+        (blocker) =>
+          left < blocker.right &&
+          left + rect.width > blocker.left &&
+          candidateTop < blocker.bottom &&
+          candidateTop + rect.height > blocker.top,
+      );
+    if (blockerAt(top)) {
+      top = selection.selectionTop - rect.height - 4;
+      for (let tries = 0; tries < blockers.length; tries += 1) {
+        const blocker = blockerAt(top);
+        if (!blocker) break;
+        top = blocker.top - rect.height - 4;
+      }
+      top = Math.max(8, top);
+    }
+    toolbar.style.left = `${left}px`;
+    toolbar.style.top = `${top}px`;
   }, [selection]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to document selectionchange and keydown to track text selections in the viewport
@@ -120,6 +148,10 @@ export function AssistantSelectionToolbar({
             pointer.y <= line.bottom + 8,
         );
       setSelection({
+        // The first line can be scrolled out of view; the top of the visible text is the anchor.
+        selectionTop:
+          Array.from(rects).find((line) => isSelectionRectVisible(line, [viewportRect]))?.top ??
+          rect.top,
         sourceAnchor: { source: captured.source, range: captured.range, viewport },
         citation: {
           version: 1,
@@ -163,7 +195,8 @@ export function AssistantSelectionToolbar({
       event.stopPropagation();
       toolbar.focus({ preventScroll: true });
     };
-    document.addEventListener("keydown", focusActions, true);
+    // Tab belongs to the foreground chat; a background timeline only follows its selection.
+    if (!backgroundThread) document.addEventListener("keydown", focusActions, true);
     document.addEventListener("selectionchange", actions.selectionChanged);
     return () => {
       document.removeEventListener("keydown", focusActions, true);
@@ -171,7 +204,7 @@ export function AssistantSelectionToolbar({
       actions.dispose();
       actionsRef.current = null;
     };
-  }, [threadRef, viewport]);
+  }, [backgroundThread, threadRef, viewport]);
 
   if (!selection) return null;
   const tooLong = selection.citation.text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH;

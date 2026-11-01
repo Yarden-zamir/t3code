@@ -3,7 +3,10 @@
  */
 import {
   type AuthEnvironmentScope,
+  AuthOrchestrationOperateScope,
   type AuthPairingCredentialResult,
+  MACHINE_LEVEL_LINK_ACCESS,
+  MachineId,
   machineSessionSubject,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
@@ -12,13 +15,14 @@ import * as Option from "effect/Option";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 import type { ServerAuthInternalError } from "../auth/EnvironmentAuth.ts";
-import { APP_RESOURCE_ID, type AccessVisitor, appLevelScopes } from "./kitshn/kitshnGrantRules.ts";
-import { kitshnMachineOf } from "./kitshn/kitshnAgents.ts";
-import { KitshnGrants, KITSHN_SESSION_SUBJECT_PREFIX } from "./kitshn/KitshnGrants.ts";
+import { APP_RESOURCE_ID, appLevelScopes, levelFor } from "./kitshn/kitshnGrantRules.ts";
+import {
+  type AccessVisitor,
+  KitshnGrants,
+  KITSHN_SESSION_SUBJECT_PREFIX,
+} from "./kitshn/KitshnGrants.ts";
 
 type Grants = Option.Option<KitshnGrants["Service"]>;
-
-const visitorName = (visitor: AccessVisitor) => visitor.email ?? visitor.clientId ?? "visitor";
 
 /** MM-1311: the pages of linked machines are trusted like the explicit list (K-1609). */
 export const withPeerOrigins = (
@@ -30,9 +34,9 @@ export const withPeerOrigins = (
 });
 
 /**
- * A one-use pairing credential for a request with a verified Access JWT whose visitor holds a
- * `t3.app` grant (K-706), or undefined. A machine's token gets the session `machine:<id>`; any
- * other visitor `kitshn:<email or token>`. Without kitshn 2 there is no Access login (K-712).
+ * A one-use pairing credential for a request whose kitshn visitor holds a `t3.app` level (K-721),
+ * or undefined. Another machine gets the session `machine:<id>`; a person or device
+ * `kitshn:<type>:<id>`. Without kitshn 2 there is no Access login (K-712).
  */
 export type IssueCloudflareAccessPairingCredential = (
   request: HttpServerRequest.HttpServerRequest,
@@ -50,22 +54,22 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
   const { kitshnGrants, issuePairingCredentialForSubject } = input;
 
   const kitshnCredential = Effect.fn("EnvironmentAuth.kitshnCredential")(function* (
-    grants: KitshnGrants["Service"],
     visitor: AccessVisitor,
   ) {
-    const level = yield* grants.level("t3.app", APP_RESOURCE_ID, visitor);
+    const level = levelFor("t3.app", APP_RESOURCE_ID, visitor.levels);
     if (level === null) return undefined;
-    const machineId = yield* kitshnMachineOf(visitor).pipe(
-      Effect.provideService(KitshnGrants, grants),
-    );
+    const { subject } = visitor;
     return yield* issuePairingCredentialForSubject({
       scopes: appLevelScopes(level),
-      ...(machineId === null
+      ...(subject.type === "machine"
         ? {
-            subject: `${KITSHN_SESSION_SUBJECT_PREFIX}${visitorName(visitor)}`,
-            label: `kitshn ${visitorName(visitor)}`,
+            subject: machineSessionSubject(MachineId.make(subject.id)),
+            label: `machine ${subject.name}`,
           }
-        : { subject: machineSessionSubject(machineId), label: `machine ${machineId}` }),
+        : {
+            subject: `${KITSHN_SESSION_SUBJECT_PREFIX}${subject.type}:${subject.id}`,
+            label: `kitshn ${subject.name}`,
+          }),
       ttl: Duration.minutes(2),
     });
   });
@@ -75,12 +79,43 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
       ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
         Effect.succeed(undefined)
       : kitshnGrants.value.visitor(request).pipe(
-          Effect.flatMap((visitor) =>
-            visitor === null
-              ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-                Effect.succeed(undefined)
-              : kitshnCredential(kitshnGrants.value, visitor),
+          Effect.flatMap((result) =>
+            result._tag === "visitor"
+              ? kitshnCredential(result.visitor)
+              : // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
+                Effect.succeed(undefined),
           ),
           Effect.withSpan("EnvironmentAuth.issueCloudflareAccessPairingCredential"),
         );
 };
+
+/**
+ * MM-1307 on kitshn: the MCP client of another machine's session: its kitshn subject is that
+ * machine, with the link access of its `t3.app` level (K-1609). Bearer tokens only.
+ */
+export const kitshnMachineMcpClient = Effect.fn("kitshnMachineMcpClient")(function* (
+  request: HttpServerRequest.HttpServerRequest,
+  session: {
+    readonly subject: string;
+    readonly method: string;
+    readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  },
+) {
+  const grants = yield* Effect.serviceOption(KitshnGrants);
+  if (Option.isNone(grants) || session.method !== "bearer-access-token") return undefined;
+  const result = yield* grants.value.visitor(request);
+  if (result._tag !== "visitor" || result.visitor.subject.type !== "machine") return undefined;
+  const machineId = MachineId.make(result.visitor.subject.id);
+  if (session.subject !== machineSessionSubject(machineId)) return undefined;
+  const app = levelFor("t3.app", APP_RESOURCE_ID, result.visitor.levels);
+  if (app === null) return undefined;
+  return {
+    sessionId: machineSessionSubject(machineId),
+    label: `machine ${result.visitor.subject.name}`,
+    access: session.scopes.includes(AuthOrchestrationOperateScope)
+      ? MACHINE_LEVEL_LINK_ACCESS[app]
+      : ("read-only" as const),
+    peerLink: true as const,
+    machineId,
+  };
+});

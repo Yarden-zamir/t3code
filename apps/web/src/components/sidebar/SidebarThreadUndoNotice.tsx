@@ -6,6 +6,7 @@ import {
   undoLatestThreadAction,
   useThreadUndoNotice,
 } from "../../hooks/showThreadUndoNotice";
+import { keybindingItemProps } from "../../keybindings";
 import { cn } from "../../lib/utils";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { InlineButton } from "../ui/button";
@@ -43,7 +44,12 @@ export function SidebarThreadUndoNotice() {
           !summary && "opacity-0",
         )}
       >
-        <InlineButton onClick={undoLatestThreadAction}>{threadUndoLabel(keybindings)}</InlineButton>
+        <InlineButton
+          {...keybindingItemProps(keybindings, "thread.undo")}
+          onClick={undoLatestThreadAction}
+        >
+          {threadUndoLabel(keybindings)}
+        </InlineButton>
         <span>{text},</span>
       </div>
     </SidebarMenuItem>

@@ -5,6 +5,8 @@ import {
   type PinnedMessages,
 } from "@t3tools/contracts";
 
+import { assistantCitationsToPlainText } from "./assistantCitations.ts";
+
 /** Fork: a patch of the `pinnedMessages` server setting. `null` removes that pin. */
 export type MessagePinsPatch = Readonly<Record<string, MessagePin | null>>;
 
@@ -24,9 +26,12 @@ export function messagePinKey(threadId: string, messageId: string): string {
   return `${threadId}#${messageId}`;
 }
 
-/** Fork: the message text on one line, cut to `MESSAGE_PIN_EXCERPT_MAX` characters. */
+/**
+ * Fork: the message text on one line, cut to `MESSAGE_PIN_EXCERPT_MAX` characters. A citation
+ * shows as its quote, as in the composer stash.
+ */
 export function messagePinExcerpt(text: string): string {
-  const line = text.split(/\s+/).filter(Boolean).join(" ");
+  const line = assistantCitationsToPlainText(text).split(/\s+/).filter(Boolean).join(" ");
   return line.length <= MESSAGE_PIN_EXCERPT_MAX
     ? line
     : `${line.slice(0, MESSAGE_PIN_EXCERPT_MAX - 1).trimEnd()}…`;

@@ -1,10 +1,13 @@
 /**
  * Fork: the only module that knows how T3 reaches kitshn. It runs the machine's kitshn 2 CLI, which
  * forwards each call through the local kitshn daemon. The daemon adds the machine identity and asks
- * T3 who the calling thread is (`/api/thread-identity`) with the thread's MCP credential, so an agent
- * never holds a kitshn token.
+ * this T3 who holds the thread token in `KITSHN_ATTEST` (K-1752), so an agent never holds a kitshn
+ * token.
  */
-import { THREAD_CREDENTIAL_AUTHORIZATION_ENV } from "@t3tools/provider-core/server/forkThreadCredential";
+import {
+  KITSHN_ATTEST_ENV,
+  THREAD_CREDENTIAL_AUTHORIZATION_ENV,
+} from "@t3tools/provider-core/server/forkThreadCredential";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -23,10 +26,9 @@ const KITSHN_2_HOME_PATH = [".local", "bin", "kitshn"] as const;
 const RUN_TIMEOUT = "150 seconds";
 // KitSHn 1 starts through `uv run`, which can take a while the first time.
 const VERSION_TIMEOUT = "30 seconds";
-// The daemon itself gives `attester set` 10 seconds.
-const ATTESTER_TIMEOUT = "15 seconds";
-/** The label prefix of the T3 attester; kitshn reserves it for T3 (K-1755). */
-const T3_ATTESTER_PREFIX = "t3.";
+// The server env can hold the credentials of an agent shell that started it; kitshn skips "".
+const NO_CREDENTIAL = { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "", [KITSHN_ATTEST_ENV]: "" };
+const BEARER = "Bearer ";
 
 /** The answer of `kitshn version --json` of kitshn 2. KitSHn 1 has no such command. */
 const Kitshn2Version = Schema.Struct({
@@ -36,12 +38,6 @@ const Kitshn2Version = Schema.Struct({
 });
 const decodeKitshn2Version = Schema.decodeUnknownOption(Schema.fromJsonString(Kitshn2Version));
 
-/** The answer of `kitshn attester set`: the attesters of this machine after the change. */
-const Attesters = Schema.Array(
-  Schema.Struct({ prefix: Schema.String, address: Schema.String, tokenEnv: Schema.String }),
-);
-const decodeAttesters = Schema.decodeUnknownOption(Schema.fromJsonString(Attesters));
-
 /** The last stderr line that is not a `waiting:` note of a call that waits for the owner. */
 export const lastLine = (stderr: string) =>
   stderr
@@ -50,7 +46,7 @@ export const lastLine = (stderr: string) =>
     .findLast((line) => line !== "" && !line.startsWith("waiting:"));
 
 export class KitshnCliError extends Schema.TaggedError<KitshnCliError>()("KitshnCliError", {
-  reason: Schema.Literals(["not_installed", "not_kitshn_2", "run_failed", "attester_refused"]),
+  reason: Schema.Literals(["not_installed", "not_kitshn_2", "run_failed"]),
   message: Schema.String,
 }) {}
 
@@ -68,8 +64,6 @@ export class KitshnCli extends Context.Service<
       args: ReadonlyArray<string>,
       threadAuthorization: Redacted.Redacted<string>,
     ) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
-    /** Registers `url` as the T3 attester of this machine's daemon, without a credential. */
-    readonly setAttester: (url: string) => Effect.Effect<void, KitshnCliError>;
     /**
      * K-602: `kitshn join <code> --server <server>` as the server user, which joins this machine
      * and starts its daemon. Its output, or the reason that it failed.
@@ -78,11 +72,6 @@ export class KitshnCli extends Context.Service<
       readonly code: string;
       readonly server: string;
     }) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
-    /**
-     * K-1609, K-621: `kitshn link-check <socket>` exits 0 when this account's daemon serves that
-     * link socket or pipe. It runs with no credential.
-     */
-    readonly linkCheck: (socket: string) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
     /** The path of the machine's kitshn 2 binary, after its version check. */
     readonly binary: Effect.Effect<string, KitshnCliError>;
   }
@@ -136,8 +125,7 @@ const make = Effect.gen(function* () {
       .run({
         command: binary,
         args: ["version", "--json"],
-        // The server env can hold the credential of an agent shell that started it; kitshn skips "".
-        env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+        env: NO_CREDENTIAL,
         timeout: VERSION_TIMEOUT,
       })
       .pipe(Effect.option);
@@ -171,11 +159,13 @@ const make = Effect.gen(function* () {
   const run: KitshnCli["Service"]["run"] = Effect.fn("KitshnCli.run")(
     function* (args, threadAuthorization) {
       const command = yield* binary;
+      const header = Redacted.value(threadAuthorization);
+      const token = header.startsWith(BEARER) ? header.slice(BEARER.length) : header;
       const output = yield* runner
         .run({
           command,
           args,
-          env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: Redacted.value(threadAuthorization) },
+          env: { ...NO_CREDENTIAL, [KITSHN_ATTEST_ENV]: `t3:${token}` },
           timeout: RUN_TIMEOUT,
           timeoutBehavior: "timedOutResult",
         })
@@ -200,7 +190,7 @@ const make = Effect.gen(function* () {
       .run({
         command,
         args: ["join", input.code, "--server", input.server],
-        env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
+        env: NO_CREDENTIAL,
         timeout: RUN_TIMEOUT,
         timeoutBehavior: "timedOutResult",
       })
@@ -215,85 +205,7 @@ const make = Effect.gen(function* () {
     return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
   });
 
-  const linkCheck: KitshnCli["Service"]["linkCheck"] = Effect.fn("KitshnCli.linkCheck")(
-    function* (socket) {
-      const command = yield* binary;
-      const output = yield* runner
-        .run({
-          command,
-          args: ["link-check", socket],
-          env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
-          timeout: VERSION_TIMEOUT,
-          timeoutBehavior: "timedOutResult",
-        })
-        .pipe(
-          Effect.mapError((error) =>
-            fail("run_failed", `kitshn at ${command} did not run: ${error._tag}.`),
-          ),
-        );
-      if (output.timedOut || output.code === null) {
-        return yield* fail("run_failed", `kitshn link-check did not finish in ${VERSION_TIMEOUT}.`);
-      }
-      return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
-    },
-  );
-
-  const setAttester: KitshnCli["Service"]["setAttester"] = Effect.fn("KitshnCli.setAttester")(
-    function* (url) {
-      const command = yield* binary;
-      const output = yield* runner
-        .run({
-          command,
-          args: [
-            "attester",
-            "set",
-            "--prefix",
-            T3_ATTESTER_PREFIX,
-            "--url",
-            url,
-            "--token-env",
-            THREAD_CREDENTIAL_AUTHORIZATION_ENV,
-          ],
-          env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "" },
-          timeout: ATTESTER_TIMEOUT,
-          timeoutBehavior: "timedOutResult",
-        })
-        .pipe(
-          Effect.mapError((error) =>
-            fail("run_failed", `kitshn at ${command} did not run: ${error._tag}.`),
-          ),
-        );
-      if (output.timedOut || output.code === null) {
-        return yield* fail(
-          "run_failed",
-          `kitshn attester set did not finish in ${ATTESTER_TIMEOUT}.`,
-        );
-      }
-      if (output.code !== 0) {
-        return yield* fail(
-          "attester_refused",
-          lastLine(output.stderr) ?? `kitshn attester set exited ${output.code}.`,
-        );
-      }
-      const attesters = decodeAttesters(output.stdout);
-      const listed =
-        Option.isSome(attesters) &&
-        attesters.value.some(
-          (attester) =>
-            attester.prefix === T3_ATTESTER_PREFIX &&
-            attester.address === url &&
-            attester.tokenEnv === THREAD_CREDENTIAL_AUTHORIZATION_ENV,
-        );
-      if (!listed) {
-        return yield* fail(
-          "attester_refused",
-          `kitshn attester set did not list the ${T3_ATTESTER_PREFIX} attester at ${url}.`,
-        );
-      }
-    },
-  );
-
-  return KitshnCli.of({ run, join, linkCheck, setAttester, binary });
+  return KitshnCli.of({ run, join, binary });
 });
 
 export const layer = Layer.effect(KitshnCli, make);

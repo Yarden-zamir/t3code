@@ -61,6 +61,7 @@ export function ContextChipPopover(props: {
   copyMarkdown?: string | undefined;
   accessibleLabel: string;
   children: ReactNode;
+  onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 }) {
   return (
     <Popover>
@@ -71,6 +72,7 @@ export function ContextChipPopover(props: {
             render={<button type="button" />}
             aria-label={`${props.accessibleLabel}. Show details`}
             data-markdown-copy={props.copyMarkdown}
+            onContextMenu={props.onContextMenu}
           />
         }
       >

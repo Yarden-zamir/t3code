@@ -6,7 +6,6 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 **Remote access**
 
-- **[Cloudflare Access login](docs/fork/features.md#cloudflare-access-login):** the server accepts the Cloudflare Access JWT as the owner login.
 - **[Request headers per environment](docs/fork/features.md#request-headers-per-environment):** a saved environment sends its own headers, for example a Cloudflare Access service token.
 - **[Tunnel pairing](docs/fork/features.md#tunnel-pairing):** a desktop server on loopback makes pairing links with its tunnel URL.
 - **[Guest links over the tunnel](docs/fork/features.md#guest-links-over-the-tunnel):** guest links work through the Cloudflare tunnel without T3 Connect.
@@ -47,12 +46,12 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 **Agents**
 
+- **[Local usage hubs](docs/fork/features.md#local-usage-hubs):** full-access agents add a local CLIProxyAPI hub through the existing usage source settings.
 - **[Recover interrupted agents](docs/fork/features.md#recover-interrupted-agents):** after a restart, each cut-off thread gets a "Recover and continue" message.
 - **[Background work details](docs/fork/features.md#background-work-details):** background work notifications name their tasks and output files.
 - **[Pull requests from origin](docs/fork/features.md#pull-requests-from-origin):** a fork checkout uses the pull requests of its fork, not of upstream.
 - **[Pull request watch remark filter](docs/fork/features.md#pull-request-watch-remark-filter):** select which comments and reviews wake a watching agent.
 - **[Agent session import limits](docs/fork/features.md#agent-session-import-limits):** the import window and the message limit for imported sessions.
-- **[Thread identity check](docs/fork/features.md#thread-identity-check):** a local service checks which thread holds an agent's MCP credential.
 - **[Publish to kitshn](docs/fork/features.md#publish-to-kitshn):** agents publish a file or folder of their workspace to kitshn through the kitshn daemon of their machine, with no kitshn token.
 - **[kitshn provider](docs/fork/features.md#kitshn-provider):** the server shows itself as a card on the kitshn map, with commands such as Restart server, and its kitshn grants decide tunnel access to the app, shared threads and agent tools (off by default; no site yet).
 - **[Scheduled task model](docs/fork/features.md#scheduled-task-model):** a scheduled task runs on any provider instance, or on the project default model.
@@ -131,7 +130,7 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.
+Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx. If they're set up on your computer, T3 Code can control them.
 
 ## "Wait, what are you selling me?"
 
@@ -142,7 +141,7 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 ## Installation
 
 > [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
+> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, Antigravity, and fx. Install and authenticate at least one provider before use:
 >
 > - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
@@ -150,6 +149,7 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 > - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 > - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
+> - fx: install [fx](https://fx.sh) and run `fx login` on the machine running the T3 Code server ([setup guide](./docs/user/providers-fx.md))
 
 ### Command line
 

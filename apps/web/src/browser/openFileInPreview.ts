@@ -25,7 +25,11 @@ import {
   updatePreviewServerSnapshot,
 } from "~/previewStateStore";
 import { browserMiniPlayerSource, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
-import { selectSelectedRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
+import {
+  rightPanelHostRef,
+  selectSelectedRightPanelSurface,
+  useRightPanelStore,
+} from "~/rightPanelStore";
 
 import { resolveBrowserDefaults } from "./browserDefaults";
 
@@ -60,23 +64,25 @@ export async function openUrlInPreview<E>(input: {
   /** Show the tab in the right panel, or float it over the thread. The right panel when omitted. */
   readonly presentation?: "panel" | "floating";
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
+  // Read before any await: a side chat pane that unmounts meanwhile drops its host mapping.
+  const threadRef = rightPanelHostRef(input.threadRef);
   const defaults = await resolveBrowserDefaults().catch(
     (cause: unknown) => new BrowserSettingsReadError({ cause }),
   );
   if (defaults instanceof BrowserSettingsReadError) {
     return AsyncResult.failure(Cause.fail(defaults));
   }
-  const runtime = previewRuntimeFor(input.threadRef.environmentId);
-  const previousActiveTabId = readThreadPreviewState(input.threadRef).activeTabId;
+  const runtime = previewRuntimeFor(threadRef.environmentId);
+  const previousActiveTabId = readThreadPreviewState(threadRef).activeTabId;
   // The server changes the active tab, not panel selection; selection changes come from the user.
   const selectedSurface = () =>
-    selectSelectedRightPanelSurface(useRightPanelStore.getState().byThreadKey, input.threadRef)
-      ?.id ?? null;
+    selectSelectedRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef)?.id ??
+    null;
   const surfaceBeforeOpen = selectedSurface();
   const result = await input.openPreview({
-    environmentId: input.threadRef.environmentId,
+    environmentId: threadRef.environmentId,
     input: {
-      threadId: input.threadRef.threadId,
+      threadId: threadRef.threadId,
       url: input.url,
       viewport: defaults.viewport,
       profileId: input.profileId ?? defaults.profileId,
@@ -84,27 +90,25 @@ export async function openUrlInPreview<E>(input: {
     },
   });
   return mapAtomCommandResult(result, (snapshot) => {
-    rememberPreviewUrl(input.threadRef, input.url);
+    rememberPreviewUrl(threadRef, input.url);
     if (input.background) {
-      updatePreviewServerSnapshot(input.threadRef, snapshot);
+      updatePreviewServerSnapshot(threadRef, snapshot);
       // Restore focus unless the user picked a tab while opening this one.
       if (
         previousActiveTabId &&
-        readThreadPreviewState(input.threadRef).activeTabId === snapshot.tabId &&
+        readThreadPreviewState(threadRef).activeTabId === snapshot.tabId &&
         selectedSurface() === surfaceBeforeOpen
       ) {
-        setActivePreviewTab(input.threadRef, previousActiveTabId);
+        setActivePreviewTab(threadRef, previousActiveTabId);
       }
       return;
     }
-    applyPreviewServerSnapshot(input.threadRef, snapshot);
+    applyPreviewServerSnapshot(threadRef, snapshot);
     if (input.presentation === "floating") {
-      usePreviewMiniPlayerStore
-        .getState()
-        .open(input.threadRef, browserMiniPlayerSource(snapshot.tabId));
+      usePreviewMiniPlayerStore.getState().open(threadRef, browserMiniPlayerSource(snapshot.tabId));
       return;
     }
-    useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
+    useRightPanelStore.getState().openBrowser(threadRef, snapshot.tabId);
   });
 }
 
@@ -133,6 +137,7 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
       ),
     );
   }
+  const hostRef = rightPanelHostRef(input.threadRef);
   const insideWorkspace =
     mediaFileReference(input.filePath, input.workspaceRoot).relativePath !== undefined;
   const assetResult = await input.createAssetUrl({
@@ -155,7 +160,7 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
     );
   }
   return openUrlInPreview({
-    threadRef: input.threadRef,
+    threadRef: hostRef,
     url: assetUrl,
     openPreview: input.openPreview,
   });

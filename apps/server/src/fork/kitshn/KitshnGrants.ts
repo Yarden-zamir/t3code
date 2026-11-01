@@ -1,8 +1,13 @@
 /**
- * Fork: the kitshn grant tables (K-706), enforced for requests with a verified Access JWT once
- * this server is a kitshn provider. Requests without that JWT keep T3's own auth, and without
- * kitshn 2 the server behaves as upstream (K-712). `KitshnProvider` feeds the tables.
+ * Fork: kitshn access for requests that carry an identity (K-721, protocol 2). The daemon checks
+ * the identity headers and answers the levels of the subject (`check`); T3 never reads the Access
+ * token. Requests without an identity keep T3's own auth, and without kitshn 2 the server behaves
+ * as upstream (K-712).
  */
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- The cache key is a sync hash of the headers.
+import * as NodeCrypto from "node:crypto";
+
+import type { CheckRefusal } from "@kitshn/local";
 import { AuthSessionId, type AuthEnvironmentScope } from "@t3tools/contracts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as Clock from "effect/Clock";
@@ -13,53 +18,36 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PubSub from "effect/PubSub";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
-import type { JWTVerifyGetKey } from "jose";
 
-import {
-  type CloudflareAccessClaims,
-  makeCloudflareAccessClaimsVerifier,
-} from "../../auth/CloudflareAccess.ts";
 import * as SessionStore from "../../auth/SessionStore.ts";
-import { isMachineSubject } from "../machineMap/machineAccess.ts";
 import * as ServerConfig from "../../config.ts";
-import {
-  type AccessVisitor,
-  type GrantState,
-  type Kind,
-  type LevelOf,
-  kitshnPaused,
-  levelFor,
-  nextChangeAt,
-  sessionAllowed,
-} from "./kitshnGrantRules.ts";
-import { type AccessApp, GrantTables } from "./kitshnProviderProtocol.ts";
+import { isMachineSubject } from "../machineMap/machineAccess.ts";
+import * as KitshnConnection from "./KitshnConnection.ts";
+import { peerOriginsOf, sessionAllowed } from "./kitshnGrantRules.ts";
 
-/**
- * The one switch for grant enforcement: this server is a kitshn provider, so kitshn answered a
- * `register` once. The saved file keeps that across a restart. Every gate reads it through
- * `KitshnGrants.active`.
- */
-const kitshnAccessActive = (state: GrantState) => state.lastContactAt !== null;
-
-/** The subject of a session that an Access visitor got through a `t3.app` grant. */
+/** The subject of a session that a person or device got through a `t3.app` level. */
 export const KITSHN_SESSION_SUBJECT_PREFIX = "kitshn:";
-/** A session that exists only through a grant: a person or device, or another machine. */
+/** A session that exists only through kitshn: a person or device, or another machine. */
 const isGrantSubject = (subject: string) =>
   subject.startsWith(KITSHN_SESSION_SUBJECT_PREFIX) || isMachineSubject(subject);
 
-const CONNECTING_IP_HEADER = "cf-connecting-ip";
-// The time of the last contact goes to disk at most this often, so the 24-hour limit can come
-// this much early after a restart.
-const CONTACT_SAVE_INTERVAL = Duration.hours(1);
+// K-721: at most 50 keys in one `check`.
+const CHECK_BATCH = 50;
+// The headers of a request without an Access token name no one; the daemon answer holds a while.
+const ANONYMOUS_LIFETIME = Duration.minutes(5);
+// A refusal can end without `grants-changed`: kitshn came back (`stale`), or the keys rotated (`invalid`).
+const REFUSAL_LIFETIME = Duration.minutes(1);
 const REVOKE_RETRY = Duration.seconds(30);
-// Only sessions of kitshn visitors are kept, one per browser, so the cap is a safety net.
+// Only sessions and visitors of kitshn are kept, so the caps are a safety net.
 const TRACKED_SESSIONS_LIMIT = 1000;
+const CACHED_VISITORS_LIMIT = 1000;
 
 /** This machine on the kitshn map (K-704). The name is null before the daemon reached kitshn. */
 export const KitshnMachine = Schema.Struct({
@@ -69,82 +57,56 @@ export const KitshnMachine = Schema.Struct({
 export type KitshnMachine = typeof KitshnMachine.Type;
 
 const Saved = Schema.Struct({
-  tables: GrantTables,
-  lastContactAt: Schema.NullOr(Schema.Number),
   pendingRevocations: Schema.Array(AuthSessionId),
-  machine: Schema.NullOr(KitshnMachine).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  machine: Schema.NullOr(KitshnMachine),
 });
 type Saved = typeof Saved.Type;
 const SavedJson = Schema.fromJsonString(Saved);
 const decodeSaved = Schema.decodeUnknownEffect(SavedJson);
 const encodeSaved = Schema.encodeEffect(SavedJson);
 
+/** Who a request with an identity is, by kitshn's `check`, and until when the answer holds. */
+export interface AccessVisitor {
+  readonly key: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly subject: {
+    readonly type: "person" | "device" | "machine";
+    readonly id: string;
+    readonly name: string;
+  };
+  /** The provider level names, by resource id, of the resources that the subject reaches. */
+  readonly levels: Readonly<Record<string, string>>;
+  /** K-722: the subject is a machine whose "runs commands" covers this machine at automatic. */
+  readonly exec: boolean;
+  readonly until: number;
+}
+
+export type VisitorResult =
+  /** The request names no one: T3's own auth decides. */
+  | { readonly _tag: "anonymous" }
+  /** `unavailable`: no daemon answered or it could not verify, so no new session (fail closed). */
+  | { readonly _tag: "refused"; readonly code: CheckRefusal }
+  | { readonly _tag: "visitor"; readonly visitor: AccessVisitor };
+
+type Cached =
+  | { readonly _tag: "anonymous"; readonly until: number }
+  /** A refusal holds a short time, so refused requests do not each ask the daemon. */
+  | { readonly _tag: "refused"; readonly code: CheckRefusal; readonly until: number }
+  | { readonly _tag: "visitor"; readonly visitor: AccessVisitor };
+
 interface Tracked {
-  readonly visitor: AccessVisitor;
+  readonly key: string;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
 }
 
-/**
- * K-1623: the Access check of this server, or undefined without any audience. A token passes with
- * an `aud` of kitshn's applications or the portal's, and the issuer `https://<teamDomain>`.
- */
-export const kitshnAccessVerifier = (
-  configured: { readonly teamDomain: string; readonly aud: string } | undefined,
-  kitshn: AccessApp | null,
-  getKey?: JWTVerifyGetKey,
-) => {
-  const verifiers = accessChecks(configured, kitshn).map((check) =>
-    getKey === undefined
-      ? makeCloudflareAccessClaimsVerifier(check)
-      : makeCloudflareAccessClaimsVerifier(check, getKey),
-  );
-  if (verifiers.length === 0) return undefined;
-  return (request: HttpServerRequest.HttpServerRequest) =>
-    Effect.gen(function* () {
-      for (const verify of verifiers) {
-        const claims = yield* verify(request);
-        if (claims !== undefined) return claims;
-      }
-      return undefined;
-    });
-};
-
-/**
- * K-1623: the Access checks of this server: the audiences of kitshn's applications on its host,
- * and the portal's audience from the config. Known limit: the portal's audience stays valid while
- * the portal Worker serves hosts; drop `configured` here when the portal Worker goes.
- */
-const accessChecks = (
-  configured: { readonly teamDomain: string; readonly aud: string } | undefined,
-  kitshn: AccessApp | null,
-): ReadonlyArray<{ readonly teamDomain: string; readonly audiences: ReadonlyArray<string> }> => {
-  const fromKitshn = kitshn === null || kitshn.audiences.length === 0 ? [] : [kitshn];
-  if (configured === undefined) return fromKitshn;
-  const sameTeam = fromKitshn.find((check) => check.teamDomain === configured.teamDomain);
-  if (sameTeam === undefined) {
-    return [...fromKitshn, { teamDomain: configured.teamDomain, audiences: [configured.aud] }];
-  }
-  return [{ teamDomain: sameTeam.teamDomain, audiences: [...sameTeam.audiences, configured.aud] }];
-};
 export class KitshnGrants extends Context.Service<
   KitshnGrants,
   {
-    /** `kitshnAccessActive` now. */
+    /** This server registered with kitshn once (K-704); saved across a restart. */
     readonly active: Effect.Effect<boolean>;
-    /** K-1618: kitshn's emergency pause is on, so links and exec stop. */
-    readonly paused: Effect.Effect<boolean>;
-    /**
-     * The visitor of a request with a verified Access JWT while this server is a kitshn
-     * provider, else null: the request keeps T3's own auth.
-     */
     readonly visitor: (
       request: HttpServerRequest.HttpServerRequest,
-    ) => Effect.Effect<AccessVisitor | null>;
-    readonly level: <K extends Kind>(
-      kind: K,
-      resourceId: string,
-      visitor: AccessVisitor,
-    ) => Effect.Effect<LevelOf<K> | null>;
+    ) => Effect.Effect<VisitorResult>;
     /**
      * True when the session holds no scope above the `t3.app` level of the visitor. A grant
      * session that passes is tracked, so it ends when its visitor loses that level.
@@ -157,33 +119,28 @@ export class KitshnGrants extends Context.Service<
         readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
       },
     ) => Effect.Effect<boolean>;
-    /** Completes once `allowed` is false: at once, or after a new table, an `endsAt` or the limit. */
-    readonly awaitLoss: (allowed: Effect.Effect<boolean>) => Effect.Effect<void>;
-    /** K-706: a `register` answer or `grants` event replaces the whole set; it never moves the clock. */
-    readonly replaceTables: (tables: GrantTables) => Effect.Effect<void>;
-    /** kitshn answered, so the saved table stays good for another 24 hours. */
-    readonly contact: Effect.Effect<void>;
-    readonly state: Effect.Effect<GrantState>;
+    /**
+     * Completes when the visitor's latest answer no longer passes `allowed`: after a re-check on
+     * `grants-changed`, or at its `until`.
+     */
+    readonly awaitLoss: (
+      visitor: AccessVisitor,
+      allowed: (latest: AccessVisitor) => boolean,
+    ) => Effect.Effect<void>;
+    /** K-722: a machine session of `machineId` holds "runs commands" here now. */
+    readonly machineMayExec: (machineId: string) => Effect.Effect<boolean>;
     /** This machine, from the last `register` answer; saved, so it holds across a restart. */
     readonly machine: Effect.Effect<KitshnMachine | null>;
-    readonly setMachine: (machine: KitshnMachine) => Effect.Effect<void>;
     /** MM-1311: true for the origin of a linked machine's app. Sync: each request reads it. */
     readonly trustsPeerOrigin: (origin: string) => boolean;
     /** MM-1311: the trusted peer origins, sorted, for the server config of the clients. */
     readonly peerOrigins: () => ReadonlyArray<string>;
-    readonly setPeerOrigins: (origins: ReadonlyArray<string>) => Effect.Effect<void>;
-    /**
-     * The Access app that kitshn names for this machine's host (pending contract). Null keeps the
-     * configured one, so a server keeps checking JWTs until kitshn sends its value.
-     */
-    readonly setAccess: (access: AccessApp | null) => Effect.Effect<void>;
   }
 >()("t3/fork/kitshn/KitshnGrants") {}
 
 /**
- * kitshn provider (K-706): the `t3.app` grants decide every request with a verified Access JWT,
- * the sessions of other machines too. A grant session needs such a request every time, so it
- * stops working without the JWT.
+ * K-721: the identity decides every request that carries one, the sessions of other machines too.
+ * A grant session needs such a request every time, so it stops working without the identity.
  */
 export const kitshnAllowsSession = (
   grants: Option.Option<KitshnGrants["Service"]>,
@@ -196,34 +153,70 @@ export const kitshnAllowsSession = (
 ): Effect.Effect<boolean> =>
   Option.isNone(grants)
     ? Effect.succeed(true)
-    : grants.value
-        .visitor(request)
-        .pipe(
-          Effect.flatMap((visitor) =>
-            visitor === null
-              ? Effect.succeed(!isGrantSubject(session.subject))
-              : grants.value.allowsSession(visitor, session),
-          ),
-        );
+    : grants.value.visitor(request).pipe(
+        Effect.flatMap((result) => {
+          switch (result._tag) {
+            case "anonymous":
+              return Effect.succeed(!isGrantSubject(session.subject));
+            case "refused":
+              return Effect.succeed(false);
+            case "visitor":
+              return grants.value.allowsSession(result.visitor, session);
+          }
+        }),
+      );
 
-export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
-  /** Tests replace the Access check. */
-  readonly verifyClaims?: (
-    request: HttpServerRequest.HttpServerRequest,
-  ) => Effect.Effect<CloudflareAccessClaims | undefined>;
-}) {
+/**
+ * K-721: `unavailable` means that the daemon could not verify now, for example without the Access
+ * signing keys. It refuses a new session but ends no session.
+ */
+const isTemporary = (code: CheckRefusal) => code === "unavailable";
+
+/** The cache key of a set of identity headers: one hash, so no token sits in a map key. */
+const keyOf = (headers: Readonly<Record<string, string>>) =>
+  NodeCrypto.createHash("sha256")
+    .update(JSON.stringify(Object.entries(headers).toSorted(([a], [b]) => a.localeCompare(b))))
+    .digest("hex")
+    .slice(0, 48);
+
+type CheckResult = Extract<
+  KitshnConnection.AnswerOf<"check">,
+  { readonly type: "check" }
+>["results"][number];
+
+const toCached = (
+  result: CheckResult,
+  headers: Readonly<Record<string, string>>,
+  nowMs: number,
+):
+  | Exclude<Cached, { readonly _tag: "refused" }>
+  | { readonly _tag: "refused"; readonly code: CheckRefusal } => {
+  if ("anonymous" in result) {
+    return { _tag: "anonymous", until: nowMs + Duration.toMillis(ANONYMOUS_LIFETIME) };
+  }
+  if ("refused" in result) return { _tag: "refused", code: result.refused.code };
+  return {
+    _tag: "visitor",
+    visitor: {
+      key: result.key,
+      headers,
+      subject: result.subject,
+      levels: result.levels,
+      exec: result.rights.includes("exec"),
+      until: result.until,
+    },
+  };
+};
+
+const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const sessions = yield* SessionStore.SessionStore;
+  const kitshn = yield* KitshnConnection.KitshnConnection;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const statePath = path.join(config.stateDir, "kitshn-grants.json");
-  const verifierOf = (access: AccessApp | null) =>
-    kitshnAccessVerifier(config.cloudflareAccess, access);
-  let verifyClaims = options?.verifyClaims ?? verifierOf(null);
-  let accessKey: string | null = null;
 
-  // A missing file starts with no table, so every Access request is refused until kitshn
-  // answers. A broken one does the same and says why.
+  // A missing file starts with no machine. A broken one does the same and says why.
   const loaded: Saved = yield* fileSystem.readFileString(statePath).pipe(
     Effect.flatMap(decodeSaved),
     Effect.catch((cause) =>
@@ -236,83 +229,120 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
               })
             : Effect.void,
         ),
-        Effect.as({ tables: {}, lastContactAt: null, pendingRevocations: [], machine: null }),
+        Effect.as({ pendingRevocations: [], machine: null }),
       ),
     ),
   );
-  const state = yield* SubscriptionRef.make<GrantState>({
-    tables: loaded.tables,
-    lastContactAt: loaded.lastContactAt,
-  });
   const pending = new Set<AuthSessionId>(loaded.pendingRevocations);
   let machine = loaded.machine;
+  // The headers of the last register answer; they stay known while the daemon is away.
+  let identityHeaders: ReadonlyArray<string> = [];
   let peerOrigins: ReadonlySet<string> = new Set();
-  let savedContactAt = loaded.lastContactAt;
+  const cache = new Map<string, Cached>();
   const tracked = new Map<AuthSessionId, Tracked>();
+  // Each re-check bumps it, so `awaitLoss` reads the cache again.
+  const generation = yield* SubscriptionRef.make(0);
   const writes = yield* Semaphore.make(1);
 
   const save = writes.withPermits(1)(
-    Effect.gen(function* () {
-      const current = yield* SubscriptionRef.get(state);
-      savedContactAt = current.lastContactAt;
-      yield* encodeSaved({ ...current, pendingRevocations: [...pending], machine }).pipe(
-        Effect.flatMap((contents) => writeFileStringAtomically({ filePath: statePath, contents })),
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(Path.Path, path),
-      );
-    }).pipe(
+    Effect.suspend(() => encodeSaved({ pendingRevocations: [...pending], machine })).pipe(
+      Effect.flatMap((contents) => writeFileStringAtomically({ filePath: statePath, contents })),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
       Effect.catch((cause) =>
         Effect.logWarning("kitshn grants: could not save the file.", { cause: String(cause) }),
       ),
     ),
   );
 
-  const active = Effect.map(SubscriptionRef.get(state), kitshnAccessActive);
-  const paused = Effect.map(SubscriptionRef.get(state), kitshnPaused);
+  const remember = (key: string, entry: Cached) => {
+    cache.delete(key);
+    cache.set(key, entry);
+    if (cache.size > CACHED_VISITORS_LIMIT) cache.delete(cache.keys().next().value!);
+  };
+
+  const identityOf = (request: HttpServerRequest.HttpServerRequest) => {
+    const headers: Record<string, string> = {};
+    for (const name of identityHeaders) {
+      const value = request.headers[name];
+      if (typeof value === "string" && value.length > 0) headers[name] = value;
+    }
+    return headers;
+  };
 
   const visitor: KitshnGrants["Service"]["visitor"] = Effect.fn("KitshnGrants.visitor")(
     function* (request) {
-      if (verifyClaims === undefined || !(yield* active)) return null;
-      const claims = yield* verifyClaims(request);
-      if (claims === undefined) return null;
-      const ip = request.headers[CONNECTING_IP_HEADER];
-      return {
-        email: claims.email?.toLowerCase() ?? null,
-        clientId: claims.commonName ?? null,
-        ip: typeof ip === "string" && ip.length > 0 ? ip : null,
-      } satisfies AccessVisitor;
+      const live = yield* kitshn.current;
+      if (live !== null) {
+        identityHeaders = live.answer.identityHeaders.map((name) => name.toLowerCase());
+      }
+      const headers = identityOf(request);
+      if (Object.keys(headers).length === 0) return { _tag: "anonymous" } as const;
+      const key = keyOf(headers);
+      const nowMs = yield* Clock.currentTimeMillis;
+      const cached = cache.get(key);
+      if (cached !== undefined) {
+        const until = cached._tag === "visitor" ? cached.visitor.until : cached.until;
+        if (until > nowMs) {
+          if (cached._tag === "refused") return { _tag: "refused", code: cached.code } as const;
+          return cached._tag === "visitor" ? cached : ({ _tag: "anonymous" } as const);
+        }
+        cache.delete(key);
+      }
+      const sentAt = yield* kitshn.grantsEpoch;
+      const answer = yield* kitshn
+        .request({ type: "check", requests: [{ key, headers }] })
+        .pipe(Effect.option);
+      const result = Option.isSome(answer)
+        ? answer.value.results.find((entry) => entry.key === key)
+        : undefined;
+      if (result === undefined) return { _tag: "refused", code: "unavailable" } as const;
+      // The grants changed while this check ran: its answer can be older than a re-check's.
+      if ((yield* kitshn.grantsEpoch) !== sentAt) return yield* visitor(request);
+      const next = toCached(result, headers, nowMs);
+      if (next._tag === "refused") {
+        if (!isTemporary(next.code)) {
+          remember(key, { ...next, until: nowMs + Duration.toMillis(REFUSAL_LIFETIME) });
+        }
+        return next;
+      }
+      remember(key, next);
+      return next._tag === "visitor" ? next : ({ _tag: "anonymous" } as const);
     },
   );
 
-  const level: KitshnGrants["Service"]["level"] = (kind, resourceId, visitor) =>
-    Effect.all([SubscriptionRef.get(state), Clock.currentTimeMillis]).pipe(
-      Effect.map(([current, nowMs]) => levelFor(current, kind, resourceId, visitor, nowMs)),
-    );
-
-  const allowsSession: KitshnGrants["Service"]["allowsSession"] = Effect.fn(
-    "KitshnGrants.allowsSession",
-  )(function* (visitor, session) {
-    const [current, nowMs] = yield* Effect.all([
-      SubscriptionRef.get(state),
-      Clock.currentTimeMillis,
-    ]);
-    const allowed = sessionAllowed(current, session, visitor, nowMs);
-    if (allowed && isGrantSubject(session.subject)) {
-      tracked.delete(session.sessionId);
-      tracked.set(session.sessionId, { visitor, scopes: session.scopes });
-      if (tracked.size > TRACKED_SESSIONS_LIMIT) {
-        tracked.delete(tracked.keys().next().value!);
+  const allowsSession: KitshnGrants["Service"]["allowsSession"] = (current, session) =>
+    Effect.sync(() => {
+      const allowed = sessionAllowed(session, current.levels);
+      if (allowed && isGrantSubject(session.subject)) {
+        tracked.delete(session.sessionId);
+        tracked.set(session.sessionId, { key: current.key, scopes: session.scopes });
+        if (tracked.size > TRACKED_SESSIONS_LIMIT) tracked.delete(tracked.keys().next().value!);
       }
-    }
-    return allowed;
-  });
+      return allowed;
+    });
 
-  const awaitLoss: KitshnGrants["Service"]["awaitLoss"] = (allowed) =>
-    SubscriptionRef.changes(state).pipe(
-      Stream.mapEffect(() => allowed),
-      Stream.filter((stillAllowed) => !stillAllowed),
-      Stream.runHead,
-      Effect.asVoid,
+  /** The latest answer of a visitor's key, or null once it no longer names a live visitor. */
+  const latest = (key: string, nowMs: number): AccessVisitor | null => {
+    const cached = cache.get(key);
+    return cached?._tag === "visitor" && cached.visitor.until > nowMs ? cached.visitor : null;
+  };
+
+  const awaitLoss: KitshnGrants["Service"]["awaitLoss"] = (current, allowed) =>
+    Effect.raceFirst(
+      SubscriptionRef.changes(generation).pipe(
+        Stream.mapEffect(() =>
+          Clock.currentTimeMillis.pipe(Effect.map((nowMs) => latest(current.key, nowMs))),
+        ),
+        Stream.filter((now) => now === null || !allowed(now)),
+        Stream.runHead,
+        Effect.asVoid,
+      ),
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((nowMs) =>
+          Effect.sleep(Duration.millis(Math.max(0, current.until - nowMs))),
+        ),
+      ),
     );
 
   /** K-706 rule 7, MM-1306: revocations wait on disk until the session store took them. */
@@ -331,38 +361,101 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
     yield* save;
   });
 
-  /** Ends the tracked kitshn sessions whose visitor lost the level that the session holds. */
-  // One at a time, so `replaceTables` returns only after a lost session is on disk.
-  const reconciling = yield* Semaphore.make(1);
-  const reconcile = Effect.fn("KitshnGrants.reconcile")(function* (current: GrantState) {
-    const nowMs = yield* Clock.currentTimeMillis;
-    const lost = [...tracked].filter(
-      ([, entry]) => !sessionAllowed(current, entry, entry.visitor, nowMs),
+  /**
+   * K-721: `grants-changed` checks every cached visitor again in batches. A session whose visitor
+   * was refused or lost its level ends; one whose token only expired is dropped, not revoked.
+   */
+  const recheckAll = Effect.fn("KitshnGrants.recheckAll")(function* () {
+    const entries = [...cache].flatMap(([key, entry]) =>
+      entry._tag === "visitor" ? [{ key, headers: entry.visitor.headers }] : [],
     );
-    if (lost.length === 0) return;
-    for (const [sessionId] of lost) {
-      tracked.delete(sessionId);
-      pending.add(sessionId);
+    // Anonymous answers and refusals can change, so they are asked again on the next request.
+    for (const [key, entry] of cache) if (entry._tag !== "visitor") cache.delete(key);
+    const expired = new Set<string>();
+    const lostAccess = new Set<string>();
+    for (let start = 0; start < entries.length; start += CHECK_BATCH) {
+      const batch = entries.slice(start, start + CHECK_BATCH);
+      const sentAt = yield* kitshn.grantsEpoch;
+      const answer = yield* kitshn.request({ type: "check", requests: batch }).pipe(Effect.option);
+      // No answer: the cached levels hold until their `until` (fail closed for new sessions only).
+      if (Option.isNone(answer)) continue;
+      // A newer change came in meanwhile; its own re-check, queued behind this one, decides.
+      if ((yield* kitshn.grantsEpoch) !== sentAt) continue;
+      const nowMs = yield* Clock.currentTimeMillis;
+      for (const { key, headers } of batch) {
+        const result = answer.value.results.find((entry) => entry.key === key);
+        const next = result === undefined ? undefined : toCached(result, headers, nowMs);
+        if (next === undefined) continue;
+        if (next._tag === "refused") {
+          // The daemon could not verify now: the answer that T3 holds stays until its `until`.
+          if (isTemporary(next.code)) continue;
+          cache.delete(key);
+          (next.code === "expired" ? expired : lostAccess).add(key);
+          continue;
+        }
+        cache.set(key, next);
+      }
     }
-    yield* Effect.logInfo(`kitshn grants: ${lost.length} sessions lost their access.`);
-    yield* revokePending;
-  }, reconciling.withPermits(1));
+    const lost: Array<AuthSessionId> = [];
+    for (const [sessionId, entry] of tracked) {
+      if (expired.has(entry.key)) {
+        tracked.delete(sessionId);
+        continue;
+      }
+      const current = cache.get(entry.key);
+      const keeps =
+        !lostAccess.has(entry.key) &&
+        (current === undefined ||
+          (current._tag === "visitor" && sessionAllowed(entry, current.visitor.levels)));
+      if (!keeps) {
+        tracked.delete(sessionId);
+        lost.push(sessionId);
+      }
+    }
+    // A lost session is on disk before any reader of the new answers runs.
+    if (lost.length > 0) {
+      for (const sessionId of lost) pending.add(sessionId);
+      yield* save;
+      yield* Effect.logInfo(`kitshn grants: ${lost.length} sessions lost their access.`);
+    }
+    yield* SubscriptionRef.update(generation, (value) => value + 1);
+    if (lost.length > 0) yield* revokePending;
+  });
+  const rechecks = yield* Semaphore.make(1);
 
-  // Each change, `endsAt` and the 24-hour limit wake the readers of `state`.
-  yield* SubscriptionRef.changes(state).pipe(
-    Stream.switchMap((current) =>
-      Stream.fromEffect(
-        Effect.gen(function* () {
-          yield* reconcile(current);
-          const nowMs = yield* Clock.currentTimeMillis;
-          const next = nextChangeAt(current, nowMs);
-          if (next === null) return yield* Effect.never;
-          yield* Effect.sleep(Duration.millis(next - nowMs));
-          yield* SubscriptionRef.update(state, (latest) => ({ ...latest }));
-        }),
-      ),
+  const setMachine = Effect.fn("KitshnGrants.setMachine")(function* (next: KitshnMachine) {
+    if (machine?.id === next.id && machine.name === next.name) return;
+    machine = next;
+    yield* save;
+  });
+
+  // The connection at start meets an empty cache; a later one can follow a change T3 did not hear.
+  let reconnect = false;
+  yield* kitshn.live.pipe(
+    Stream.runForEach((connection) =>
+      connection === null
+        ? Effect.void
+        : Effect.gen(function* () {
+            peerOrigins = new Set(peerOriginsOf(connection.answer.saved.reach));
+            yield* setMachine(connection.answer.machine);
+            if (reconnect) yield* rechecks.withPermits(1)(recheckAll());
+            reconnect = true;
+          }),
     ),
-    Stream.runDrain,
+    Effect.forkScoped,
+  );
+  const subscription = yield* kitshn.subscribe;
+  yield* PubSub.take(subscription).pipe(
+    Effect.flatMap((event) => {
+      if (event.type === "grants-changed") return rechecks.withPermits(1)(recheckAll());
+      if (event.type === "reach") {
+        return Effect.sync(() => {
+          peerOrigins = new Set(peerOriginsOf(event.cards));
+        });
+      }
+      return Effect.void;
+    }),
+    Effect.forever,
     Effect.forkScoped,
   );
   yield* Effect.suspend(() => (pending.size === 0 ? Effect.void : revokePending)).pipe(
@@ -370,61 +463,26 @@ export const make = Effect.fn("KitshnGrants.make")(function* (options?: {
     Effect.forkScoped,
   );
 
-  const replaceTables: KitshnGrants["Service"]["replaceTables"] = Effect.fn(
-    "KitshnGrants.replaceTables",
-  )(function* (tables) {
-    // The `register` answer replays the daemon's saved tables, so only `contact` moves the clock.
-    const next = { tables, lastContactAt: (yield* SubscriptionRef.get(state)).lastContactAt };
-    yield* SubscriptionRef.set(state, next);
-    yield* save;
-    // At once, so a lost session is on disk before anything else runs.
-    yield* reconcile(next);
-  });
-
-  const contact: KitshnGrants["Service"]["contact"] = Effect.gen(function* () {
-    const nowMs = yield* Clock.currentTimeMillis;
-    yield* SubscriptionRef.update(state, (current) => ({ ...current, lastContactAt: nowMs }));
-    if (
-      savedContactAt === null ||
-      nowMs - savedContactAt >= Duration.toMillis(CONTACT_SAVE_INTERVAL)
-    ) {
-      yield* save;
-    }
-  });
-
   return KitshnGrants.of({
-    active,
-    paused,
+    active: Effect.sync(() => machine !== null),
     visitor,
-    level,
     allowsSession,
     awaitLoss,
-    replaceTables,
-    contact,
-    state: SubscriptionRef.get(state),
+    machineMayExec: Effect.fn("KitshnGrants.machineMayExec")(function* (machineId) {
+      const nowMs = yield* Clock.currentTimeMillis;
+      return [...cache.values()].some(
+        (entry) =>
+          entry._tag === "visitor" &&
+          entry.visitor.until > nowMs &&
+          entry.visitor.subject.type === "machine" &&
+          entry.visitor.subject.id === machineId &&
+          entry.visitor.exec,
+      );
+    }),
     machine: Effect.sync(() => machine),
-    setAccess: Effect.fn("KitshnGrants.setAccess")((access: AccessApp | null) =>
-      Effect.sync(() => {
-        if (options?.verifyClaims !== undefined) return;
-        const key = access === null ? null : `${access.teamDomain} ${access.audiences.join(",")}`;
-        if (key === accessKey) return;
-        accessKey = key;
-        verifyClaims = verifierOf(access);
-      }),
-    ),
     trustsPeerOrigin: (origin) => peerOrigins.has(origin),
     peerOrigins: () => [...peerOrigins].toSorted(),
-    setPeerOrigins: Effect.fn("KitshnGrants.setPeerOrigins")((origins: ReadonlyArray<string>) =>
-      Effect.sync(() => {
-        peerOrigins = new Set(origins);
-      }),
-    ),
-    setMachine: Effect.fn("KitshnGrants.setMachine")(function* (next) {
-      if (machine?.id === next.id && machine.name === next.name) return;
-      machine = next;
-      yield* save;
-    }),
   });
 });
 
-export const layer = Layer.effect(KitshnGrants, make());
+export const layer = Layer.effect(KitshnGrants, make);

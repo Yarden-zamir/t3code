@@ -1,4 +1,6 @@
 import { usePullRequestConnected } from "./usePullRequestConnected";
+import { LongPressMenu } from "../../components/LongPressMenu";
+import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import type { PullRequestAction, PullRequestDetail } from "@t3tools/contracts";
@@ -154,15 +156,42 @@ export function PullRequestChecksRow(props: RowProps) {
               const status = checkStatus(check);
               const url = check.url;
               return (
-                <PullRequestCardRow
+                <LongPressMenu
                   key={`${check.name}:${url}`}
-                  title={check.name}
-                  icon={status.icon}
-                  tint={status.tint}
-                  value={status.label}
-                  detail={check.description ?? undefined}
-                  onPress={url ? () => void Linking.openURL(url) : undefined}
-                />
+                  entries={[
+                    url
+                      ? {
+                          id: "open",
+                          title: "Open check details",
+                          image: "arrow.up.right",
+                          run: () => void Linking.openURL(url),
+                        }
+                      : null,
+                    {
+                      id: "copy-name",
+                      title: "Copy name",
+                      image: "doc.on.doc",
+                      run: () => void tryCopyTextWithHaptic(check.name, { target: "check name" }),
+                    },
+                    url
+                      ? {
+                          id: "copy-link",
+                          title: "Copy link",
+                          image: "link",
+                          run: () => void tryCopyTextWithHaptic(url, { target: "check link" }),
+                        }
+                      : null,
+                  ]}
+                >
+                  <PullRequestCardRow
+                    title={check.name}
+                    icon={status.icon}
+                    tint={status.tint}
+                    value={status.label}
+                    detail={check.description ?? undefined}
+                    onPress={url ? () => void Linking.openURL(url) : undefined}
+                  />
+                </LongPressMenu>
               );
             })}
           {!props.pr.checks.length ? (

@@ -9,6 +9,7 @@ import {
   type AssistantCitation,
 } from "@t3tools/contracts";
 import {
+  assistantCitationLabel,
   assistantCitationsToPlainText,
   collectAssistantCitations,
   expandAssistantCitationsForProvider,
@@ -271,6 +272,16 @@ describe("assistant citation references", () => {
         "",
         "",
       ].join("\n"),
+    );
+  });
+});
+
+describe("assistantCitationLabel", () => {
+  it("keeps room for the note after a long quote", () => {
+    const longQuote = { ...citation, text: "word ".repeat(30) };
+    expect(assistantCitationLabel(longQuote)).toBe(`${"word ".repeat(30).slice(0, 64)}…`);
+    expect(assistantCitationLabel({ ...longQuote, comment: "fix this" })).toBe(
+      `${"word ".repeat(30).slice(0, 32)}… · fix this`,
     );
   });
 });

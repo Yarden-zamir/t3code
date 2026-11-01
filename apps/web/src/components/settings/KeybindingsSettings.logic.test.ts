@@ -9,9 +9,11 @@ import { resolveShortcutCommand } from "../../keybindings";
 
 import {
   buildKeybindingRows,
+  defaultWhenForCommand,
   filterKeybindingRows,
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
+  needsFocusLevels,
   parseWhenExpressionDraft,
   shortcutToKeybindingInput,
   validateKeybindingsSearch,
@@ -299,5 +301,63 @@ describe("KeybindingsSettings.logic", () => {
     });
     expect(validateKeybindingsSearch({ command: "thread.unknown" })).toEqual({});
     expect(validateKeybindingsSearch({ command: 3 })).toEqual({});
+    expect(validateKeybindingsSearch({ command: "thread.rename", add: true })).toEqual({
+      command: "thread.rename",
+      add: true,
+    });
+    expect(validateKeybindingsSearch({ add: true })).toEqual({});
+  });
+
+  it("starts a new binding with the condition of the default binding", () => {
+    expect(whenAstToExpression(defaultWhenForCommand("thread.pin"))).toBe("!terminalFocus");
+    expect(defaultWhenForCommand("composer.cycleHost")).toBeUndefined();
+  });
+
+  it("marks a condition that only a focus level can make true", () => {
+    const when = (expression: string) => {
+      const parsed = parseWhenExpressionDraft(expression);
+      if (!parsed.ok) throw new Error(parsed.message);
+      return parsed.value;
+    };
+    expect(needsFocusLevels(when("sidebarFocus || timelineFocus"))).toBe(true);
+    expect(needsFocusLevels(when("sidebarFocus && !terminalFocus"))).toBe(true);
+    expect(needsFocusLevels(when("sidebarFocus || terminalFocus"))).toBe(false);
+    expect(needsFocusLevels(when("!sidebarFocus"))).toBe(false);
+    expect(needsFocusLevels(when("terminalFocus"))).toBe(false);
+    expect(needsFocusLevels(undefined)).toBe(false);
+  });
+
+  it.each([
+    { platform: "Linux x86_64", ctrl: ["Chat: New"], meta: [] },
+    { platform: "Win32", ctrl: ["Chat: New"], meta: [] },
+    { platform: "MacIntel", ctrl: [], meta: ["Chat: New"] },
+  ])("resolves mod to the $platform modifier when reporting conflicts", (expected) => {
+    const rows = buildKeybindingRows(
+      compileResolvedKeybindingsConfig([
+        { command: "chat.new", key: "mod+k" },
+        { command: "chat.newLocal", key: "ctrl+k" },
+        { command: "thread.copyReference", key: "meta+k" },
+      ]),
+      expected.platform,
+    );
+    const conflictsFor = (key: string) => rows.find((row) => row.key === key)?.conflicts;
+
+    expect(conflictsFor("ctrl+k")).toEqual(expected.ctrl);
+    expect(conflictsFor("meta+k")).toEqual(expected.meta);
+    expect(
+      keybindingConflictLabels(rows, { rowId: "new", key: "ctrl+k", when: "" }, expected.platform),
+    ).toEqual(["Chat: New Local", ...expected.ctrl].toSorted());
+  });
+
+  it("keeps mod and ctrl shortcuts apart when their when contexts differ", () => {
+    const rows = buildKeybindingRows(
+      compileResolvedKeybindingsConfig([
+        { command: "chat.new", key: "mod+k", when: "!terminalFocus" },
+        { command: "chat.newLocal", key: "ctrl+k", when: "terminalFocus" },
+      ]),
+      "Linux x86_64",
+    );
+
+    expect(rows.map((row) => row.conflicts)).toEqual([[], []]);
   });
 });

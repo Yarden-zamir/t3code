@@ -1,9 +1,14 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import { createBrowserHistory, createHashHistory } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 
 import { applyAppearanceContrast } from "./appearanceContrast";
-import { applyAppearanceFontVariables, fontSettingOrThemeFont } from "./appearanceFonts";
+import {
+  applyAppearanceFontVariables,
+  fontSettingOrThemeFont,
+  TYPOGRAPHY_ADVANCED_STORAGE_KEY,
+} from "./appearanceFonts";
 import { startElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
@@ -31,6 +36,7 @@ import {
 } from "./composerDraftStore";
 import { startDefaultThemeAdoption } from "./hooks/useDefaultTheme";
 import { startEnvironmentThemeRepaint } from "./hooks/useEnvironmentTheme";
+import { readLocalStorageValue, subscribeLocalStorageKey } from "./hooks/useLocalStorage";
 import {
   getClientSettings,
   startModelPreferencesMigration,
@@ -51,6 +57,7 @@ import { getActiveThemeFonts, subscribeToActiveThemeFonts } from "./forkThemeSty
 import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
 import { installContextMenuKeybindings } from "./keybindingsMenu";
+import { installObjectMenus } from "./objectMenu";
 import { startWorkspaceFocus } from "./lib/workspaceFocus";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
@@ -62,6 +69,7 @@ function startClientAppearance(): void {
   const root = document.documentElement;
   let applied: ClientSettings | null = null;
   let appliedThemeFonts: ReturnType<typeof getActiveThemeFonts> | null = null;
+  let appliedSeparateFonts: boolean | null = null;
   const apply = () => {
     const settings = getClientSettings();
     const previous = applied;
@@ -70,6 +78,13 @@ function startClientAppearance(): void {
     const themeFonts = getActiveThemeFonts();
     const themeFontsChanged = themeFonts !== appliedThemeFonts;
     appliedThemeFonts = themeFonts;
+    const separateFonts = readLocalStorageValue(
+      TYPOGRAPHY_ADVANCED_STORAGE_KEY,
+      false,
+      Schema.Boolean,
+    );
+    const previousSeparateFonts = appliedSeparateFonts;
+    appliedSeparateFonts = separateFonts;
     if (previous?.diffColorScheme !== settings.diffColorScheme) {
       root.dataset.diffColorScheme = settings.diffColorScheme;
     }
@@ -95,7 +110,8 @@ function startClientAppearance(): void {
       previous.fontSizePrompt !== settings.fontSizePrompt ||
       previous.fontSizeCode !== settings.fontSizeCode ||
       previous.fontSmoothing !== settings.fontSmoothing ||
-      themeFontsChanged
+      themeFontsChanged ||
+      previousSeparateFonts !== separateFonts
     ) {
       applyAppearanceFontVariables(root, {
         sans: fontSettingOrThemeFont(settings.fontFamilySans, themeFonts.sans),
@@ -105,11 +121,13 @@ function startClientAppearance(): void {
         sizePrompt: settings.fontSizePrompt,
         sizeCode: settings.fontSizeCode,
         smoothing: settings.fontSmoothing,
+        separate: separateFonts,
       });
     }
   };
   subscribeClientSettings(apply);
   subscribeToActiveThemeFonts(apply);
+  subscribeLocalStorageKey(TYPOGRAPHY_ADVANCED_STORAGE_KEY, apply);
   apply();
 }
 
@@ -188,8 +206,9 @@ export function startAppServices(): AppRouter {
   startPreviewTitleRecording();
   startBrowserProfileReporting();
   installChatRouteCommands(router);
+  installObjectMenus();
   installContextMenuKeybindings((command) => {
-    void router.navigate({ to: "/settings/keybindings", search: { command } });
+    void router.navigate({ to: "/settings/keybindings", search: { command, add: true } });
   });
   installCommandPaletteCommands(router);
   registerOpenFavoriteEditorCommand();

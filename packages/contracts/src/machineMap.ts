@@ -387,20 +387,3 @@ export const ClientEnrollResponse = Schema.Struct({
   machinesUrl: TrimmedNonEmptyString,
 });
 export type ClientEnrollResponse = typeof ClientEnrollResponse.Type;
-
-/**
- * MM-1908: the outcome of one `machine_exec` run. `stopped`: a pause or an arrow change ended it.
- * `refused`: the arrow or the caller limits did not allow the call, so nothing ran.
- */
-export const MachineExecOutcome = Schema.Literals([
-  "exited",
-  "timedOut",
-  "stopped",
-  "failed",
-  "refused",
-]);
-export type MachineExecOutcome = typeof MachineExecOutcome.Type;
-
-/** MM-1922: `refused`: the link or the target refused the call, so the tool did not run. */
-export const MachineCallOutcome = Schema.Literals(["succeeded", "refused", "failed"]);
-export type MachineCallOutcome = typeof MachineCallOutcome.Type;

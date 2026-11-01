@@ -31,6 +31,32 @@ export function parseDeviceInvite(text: string): DeviceInvite | null {
   return { exchangeUrl: `${url.origin}${INVITE_PATH}`, code };
 }
 
+const DESKTOP_APP_LINK_PROTOCOLS: ReadonlySet<string> = new Set(["t3code:", "t3code-dev:"]);
+const JOIN_DEVICE_APP_LINK_HOST = "join-device";
+const INVITE_URL_PARAM = "inviteUrl";
+
+/**
+ * K-720: the invite link in `t3code://join-device?inviteUrl=<invite>`, the "Open in" link of the
+ * kitshn invite page, or null for any other text. Only one `inviteUrl` and nothing else.
+ */
+export function readDeviceInviteAppLink(value: string): string | null {
+  const url = URL.parse(value);
+  if (
+    url === null ||
+    !DESKTOP_APP_LINK_PROTOCOLS.has(url.protocol) ||
+    url.host !== JOIN_DEVICE_APP_LINK_HOST ||
+    (url.pathname !== "" && url.pathname !== "/") ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.hash !== "" ||
+    [...url.searchParams.keys()].join() !== INVITE_URL_PARAM
+  ) {
+    return null;
+  }
+  const inviteUrl = url.searchParams.get(INVITE_URL_PARAM) ?? "";
+  return parseDeviceInvite(inviteUrl) === null ? null : inviteUrl;
+}
+
 export interface DeviceRequest {
   readonly url: string;
   readonly method: "GET" | "POST";

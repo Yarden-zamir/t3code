@@ -5,6 +5,7 @@ import { type ReactNode, type RefObject, useState } from "react";
 import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { shortcutLabelForCommand } from "../keybindings";
+import { useKeybindingProps } from "./focusLevels/ShortcutHint";
 import {
   type CommandPaletteActionItem,
   type CommandPaletteGroup,
@@ -22,6 +23,7 @@ import {
   CommandShortcut,
 } from "./ui/command";
 import { getVirtualizedScrollFadeClassName } from "./ui/scroll-area";
+import { ProjectPinButton } from "./ProjectPinButton";
 import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "./ThreadSearchMatch";
 
 interface CommandPaletteResultsProps {
@@ -230,6 +232,7 @@ function CommandPaletteResultRow(props: {
   const shortcutLabel = props.item.shortcutCommand
     ? shortcutLabelForCommand(props.keybindings, props.item.shortcutCommand)
     : null;
+  const keybindingProps = useKeybindingProps(props.item.shortcutCommand ?? null);
 
   return (
     <CommandItem
@@ -242,6 +245,7 @@ function CommandPaletteResultRow(props: {
       onClick={() => {
         props.onExecuteItem(props.item);
       }}
+      {...keybindingProps}
     >
       <CommandPaletteTitleIcon>{props.item.icon}</CommandPaletteTitleIcon>
       {props.item.description || props.item.threadContentMatch ? (
@@ -268,6 +272,14 @@ function CommandPaletteResultRow(props: {
         </span>
       )}
       {props.item.titleTrailingContent}
+      {props.item.kind === "action" && props.item.pin ? (
+        <ProjectPinButton
+          name={props.item.pin.name}
+          pinned={props.item.pin.pinned}
+          onToggle={props.item.pin.toggle}
+          shortcutLabel={shortcutLabelForCommand(props.keybindings, "thread.pin")}
+        />
+      ) : null}
       {props.item.timestamp ? (
         <span className="min-w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground/70">
           {props.item.timestamp}

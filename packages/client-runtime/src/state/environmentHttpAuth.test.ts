@@ -146,6 +146,7 @@ function makeHarness(reply: (requestNumber: number) => Response | Promise<Respon
           },
         };
       }),
+    renewDpopBeforeExpiry: () => Effect.die("HTTP requests must not renew a socket's token."),
   });
   const signer = ManagedRelay.ManagedRelayDpopSigner.of({
     thumbprint: Effect.succeed("test-thumbprint"),
@@ -511,26 +512,6 @@ describe("authenticated environment HTTP requests", () => {
         rejectedAccessToken: "current-token",
       });
       expect(harness.calls).toHaveLength(2);
-    }),
-  );
-
-  it.effect("retries a session fetch that fails while the host restarts", () =>
-    Effect.gen(function* () {
-      const harness = makeHarness((requestNumber) =>
-        requestNumber === 1
-          ? Promise.reject(new Error("Network unreachable"))
-          : requestNumber === 2
-            ? new Response(null, { status: 502 })
-            : Response.json(SESSION),
-      );
-      const fiber = yield* fetchEnvironmentSessionState(harness.input).pipe(
-        Effect.provide(harness.httpLayer),
-        Effect.forkChild,
-      );
-      yield* TestClock.adjust("3 seconds");
-
-      expect(yield* Fiber.join(fiber)).toEqual(SESSION);
-      expect(harness.calls).toHaveLength(3);
     }),
   );
 

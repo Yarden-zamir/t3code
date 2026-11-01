@@ -4,10 +4,10 @@ import { EnvironmentId, IsoDateTime, ProjectId, ThreadId } from "./baseSchemas.t
 import { ProviderInstanceId } from "./providerInstance.ts";
 import { ProviderInteractionMode, RuntimeMode } from "./providerPolicy.ts";
 
-/** Fork: tells a local service which thread holds an MCP credential (kitshn thread attestation). */
-export const FORK_THREAD_IDENTITY_PATH = "/api/thread-identity";
-
-/** The current state of the thread, not the state when the credential was issued. */
+/**
+ * Fork: which thread holds an MCP credential, for kitshn's attestation (K-1752). It is the current
+ * state of the thread, not the state when the credential was issued.
+ */
 export const ForkThreadIdentityActive = Schema.Struct({
   active: Schema.Literal(true),
   threadId: ThreadId,

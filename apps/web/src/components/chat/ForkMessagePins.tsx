@@ -35,6 +35,9 @@ import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { toastManager } from "../ui/toast";
+import { formatThreadLink } from "@t3tools/shared/threadLinks";
+import { objectMenuActionsProps, objectMenuLabelProps, objectMenuProps } from "../../objectMenu";
+import { ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { forkMessageLinkNavigation } from "./ForkMessageLinkTarget";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
@@ -150,7 +153,8 @@ export function ForkPinMessageButton(props: {
   const label = pinned ? "Unpin message" : "Pin message";
   return (
     <Tooltip>
-      <TooltipTrigger
+      <ShortcutTrigger
+        command="timeline.pinMessage"
         render={
           <Button
             aria-label={label}
@@ -167,7 +171,7 @@ export function ForkPinMessageButton(props: {
         }
       >
         <PinIcon className={cn("size-3", pinned && "fill-current text-primary")} />
-      </TooltipTrigger>
+      </ShortcutTrigger>
       <TooltipPopup>
         <p>{label}</p>
       </TooltipPopup>
@@ -205,8 +209,19 @@ function MessagePinRow(
   const title = shell?.title.trim() || pin.threadTitle || pin.threadId;
   const canWrite = readEnvironmentScope(environmentId, AuthSettingsWriteScope);
   return (
-    <li className="flex items-start gap-1 rounded-md hover:bg-accent/60">
+    <li
+      {...objectMenuProps([
+        { label: "Copy text", value: pin.excerpt },
+        {
+          label: "Copy link",
+          value: formatThreadLink(ref, title, pin.messageId),
+        },
+      ])}
+      {...objectMenuActionsProps}
+      className="flex items-start gap-1 rounded-md hover:bg-accent/60"
+    >
       <Link
+        {...objectMenuLabelProps("Jump to message")}
         to="/$environmentId/$threadId"
         params={{ environmentId, threadId: pin.threadId }}
         {...forkMessageLinkNavigation(pin.messageId)}
@@ -247,7 +262,20 @@ function MessagePinsPopover(props: {
   readonly tooltip?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const trigger = <PopoverTrigger render={props.trigger} />;
+  const trigger = (
+    <span
+      className="contents"
+      {...objectMenuProps([
+        {
+          label: "Copy pinned messages",
+          value: props.pins.map((entry) => entry.pin.excerpt).join("\n"),
+        },
+      ])}
+      {...objectMenuActionsProps}
+    >
+      <PopoverTrigger {...objectMenuLabelProps("Show pinned messages")} render={props.trigger} />
+    </span>
+  );
   return (
     <Popover open={open} onOpenChange={setOpen}>
       {props.tooltip ? (

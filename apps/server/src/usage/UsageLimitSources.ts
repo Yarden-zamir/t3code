@@ -20,6 +20,7 @@ import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
+import { makeUsageSourceAdd, type AddUsageSource } from "../fork/usageSourceAdd.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as Settings from "../serverSettings.ts";
 import { makeCliproxyApi } from "./cliproxyApi.ts";
@@ -30,6 +31,7 @@ export class UsageLimitSources extends Context.Service<
     readonly current: Effect.Effect<ReadonlyArray<UsageLimitSourceSnapshot>>;
     readonly streamChanges: Stream.Stream<ReadonlyArray<UsageLimitSourceSnapshot>>;
     readonly refresh: Effect.Effect<void>;
+    readonly add: AddUsageSource;
     readonly consumeResetCredit: (
       input: UsageLimitSourceConsumeResetCreditInput,
     ) => Effect.Effect<ProviderConsumeResetCreditResult, UsageLimitSourceError>;
@@ -49,6 +51,7 @@ function sourceLabel(id: string, config: UsageLimitSourceConfig): string {
 /** @public */
 export const make = Effect.gen(function* () {
   const api = yield* makeCliproxyApi;
+  const add = yield* makeUsageSourceAdd;
   const settingsService = yield* Settings.ServerSettingsService;
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
   const stateRef = yield* Ref.make<ReadonlyArray<UsageLimitSourceSnapshot>>([]);
@@ -151,6 +154,7 @@ export const make = Effect.gen(function* () {
 
   return {
     current: Ref.get(stateRef),
+    add,
     consumeResetCredit,
     refresh,
     get streamChanges() {

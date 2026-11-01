@@ -14,7 +14,7 @@ type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message
  * The failed run that a new message queues behind, when only a provider failure holds the queue.
  * A message to that provider starts the held queue first and waits behind it, so order holds and a
  * retry costs one run. A message the user sends from a client keeps the upstream rule: it starts
- * first and releases the hold. Stop, worktree and usage-limit holds wait for the user.
+ * first and releases the hold. Stop, worktree and usage-limit holds keep the upstream rules.
  */
 export function forkProviderFailureRunToQueueBehind(input: {
   readonly command: MessageDispatch;

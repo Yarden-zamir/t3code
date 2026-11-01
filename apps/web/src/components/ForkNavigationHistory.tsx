@@ -13,9 +13,9 @@ import {
 import { useClientSettings, useClientSettingsHydrated } from "../hooks/useSettings";
 import { observeResize } from "../lib/observeResize";
 import { type CommandPaletteActionItem, ITEM_ICON_CLASS } from "./CommandPalette.logic";
-import { ShortcutHint } from "./focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutTrigger } from "./focusLevels/ShortcutHint";
 import { Button } from "./ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { Tooltip, TooltipPopup } from "./ui/tooltip";
 
 const selectButtons = (settings: ClientSettings) => settings.backForwardButtons;
 const selectRemember = (settings: ClientSettings) => settings.rememberBackForwardHistory;
@@ -58,7 +58,8 @@ export function NavigationHistoryButtons({
       aria-label="Back and forward"
     >
       <Tooltip>
-        <TooltipTrigger
+        <ShortcutTrigger
+          command="navigation.back"
           render={
             <Button
               variant="ghost"
@@ -70,14 +71,15 @@ export function NavigationHistoryButtons({
           }
         >
           <ArrowLeftIcon />
-        </TooltipTrigger>
+        </ShortcutTrigger>
         <TooltipPopup side="bottom">
           Go back
           <ShortcutHint command="navigation.back" />
         </TooltipPopup>
       </Tooltip>
       <Tooltip>
-        <TooltipTrigger
+        <ShortcutTrigger
+          command="navigation.forward"
           render={
             <Button
               variant="ghost"
@@ -89,7 +91,7 @@ export function NavigationHistoryButtons({
           }
         >
           <ArrowRightIcon />
-        </TooltipTrigger>
+        </ShortcutTrigger>
         <TooltipPopup side="bottom">
           Go forward
           <ShortcutHint command="navigation.forward" />

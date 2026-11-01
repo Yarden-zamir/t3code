@@ -2,6 +2,7 @@ import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
   type ProjectScript,
+  type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -62,6 +63,7 @@ interface ChatHeaderProps {
   onRunPinnedScript: ((script: ProjectScript) => void) | undefined;
   /** Fork: the thread menu closed and its action ended. A terminal thread focuses its shell. */
   onThreadMenuClosed?: (() => void) | undefined;
+  onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
 }
 
 function resolveRenameCommit(input: {
@@ -91,6 +93,7 @@ export const ChatHeader = memo(function ChatHeader({
   projectScripts,
   onRunPinnedScript,
   onThreadMenuClosed,
+  onFindInThread,
 }: ChatHeaderProps) {
   const pins = usePinnedScripts({
     environmentId: activeThreadEnvironmentId,
@@ -188,7 +191,10 @@ export const ChatHeader = memo(function ChatHeader({
   const commitRename = (title: string) => {
     setRenaming(null);
     if (!readEnvironmentScope(activeThreadEnvironmentId, AuthOrchestrationOperateScope)) return;
-    const resolution = resolveRenameCommit({ title, originalTitle: activeThreadTitle });
+    const resolution = resolveRenameCommit({
+      title,
+      originalTitle: renamingTitle ?? activeThreadTitle,
+    });
     if (resolution.action === "reject-empty") {
       toastManager.add({ type: "warning", title: "Thread title cannot be empty" });
       return;
@@ -213,6 +219,7 @@ export const ChatHeader = memo(function ChatHeader({
     projectCwd: activeProjectCwd,
     onStartRename: startRename,
     onClosed: onThreadMenuClosed,
+    onFind: onFindInThread,
     canShareWithGuest,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);

@@ -34,12 +34,6 @@ export type RuntimeMode = typeof RuntimeMode.Type;
 export const StartupPresentation = Schema.Literals(["browser", "headless"]);
 export type StartupPresentation = typeof StartupPresentation.Type;
 
-// Fork: the Access app in front of this machine, for the check of kitshn grants (K-706).
-export interface CloudflareAccessConfig {
-  readonly teamDomain: string;
-  readonly aud: string;
-}
-
 export interface ServerDerivedPaths {
   readonly stateDir: string;
   readonly dbPath: string;
@@ -118,8 +112,6 @@ export class ServerConfig extends Context.Service<
     // Fork: https origins of sibling web pages (for example other tunnels behind
     // the same Cloudflare Access) that may call this server with cookies.
     readonly trustedBrowserOrigins?: ReadonlyArray<string> | undefined;
-    // Fork: trust a verified Cloudflare Access JWT as the owner login.
-    readonly cloudflareAccess?: CloudflareAccessConfig | undefined;
   }
 >()("t3/config/ServerConfig") {
   static readonly layerTest = (
@@ -206,6 +198,14 @@ export const ensureServerDirectories = Effect.fn(function* (derivedPaths: Server
     ],
     { concurrency: "unbounded" },
   );
+  // Logs, traces and the database are written with the process umask; keep them owner-only.
+  yield* fs
+    .chmod(derivedPaths.stateDir, 0o700)
+    .pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Could not restrict state directory permissions.", { cause }),
+      ),
+    );
 
   const swept = sweepStalePendingAttachments({
     attachmentsDir: derivedPaths.attachmentsDir,
