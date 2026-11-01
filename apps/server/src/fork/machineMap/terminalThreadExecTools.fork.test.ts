@@ -104,7 +104,7 @@ const call = (name: string, args: Record<string, unknown>, exec: boolean) =>
         exit.value.isError === true &&
         text?.type === "text" &&
         text.text.includes('"capability_denied"') &&
-        text.text.includes("runs commands");
+        text.text.includes('kitshn effect \\"runs\\"');
       return refused ? "refused" : "passed";
     }),
   );

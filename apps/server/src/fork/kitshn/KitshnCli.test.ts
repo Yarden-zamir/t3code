@@ -1,11 +1,14 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
+import * as TestClock from "effect/testing/TestClock";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ProcessRunner from "../../processRunner.ts";
@@ -26,6 +29,8 @@ const setup = (binaries: {
   relative?: ReadonlyArray<string>;
   /** A Windows host: `kitshn.exe` files without an execute bit, and PATH split by `;`. */
   windows?: boolean;
+  /** The run prints this on stdout, signals `started`, and never ends. */
+  hangAfter?: string;
 }) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -52,31 +57,40 @@ const setup = (binaries: {
       install(path.join(base, `relative${index}`), version),
     );
     const runs: Array<ProcessRunner.ProcessRunInput> = [];
+    const started = yield* Deferred.make<void>();
+    const hangAfter = binaries.hangAfter;
     const cli = yield* KitshnCli.KitshnCli.pipe(
       Effect.provide(
         KitshnCli.layer.pipe(
           Layer.provide(
             Layer.mock(ProcessRunner.ProcessRunner)({
               run: (input) =>
-                Effect.sync(() => {
-                  runs.push(input);
-                  const version = input.args[0] === "version";
-                  const answer = {
-                    stdout: version ? (versions.get(input.command) ?? "") : '{"card":"c1"}',
-                    stderr: version ? "" : "waiting: proposal p1 asks its approver circle.\n",
-                    code: version && versions.get(input.command) === "" ? 2 : 0,
-                  };
-                  return {
-                    stdout: answer.stdout,
-                    stderr: answer.stderr,
-                    code: ChildProcessSpawner.ExitCode(answer.code),
-                    timedOut: false,
-                    stdoutTruncated: false,
-                    stderrTruncated: false,
-                    stdoutInvalidUtf8: false,
-                    stderrInvalidUtf8: false,
-                  };
-                }),
+                hangAfter !== undefined && input.args[0] !== "version"
+                  ? Effect.sync(() =>
+                      input.onStdoutChunk?.(new TextEncoder().encode(hangAfter)),
+                    ).pipe(
+                      Effect.andThen(Deferred.succeed(started, undefined)),
+                      Effect.andThen(Effect.never),
+                    )
+                  : Effect.sync(() => {
+                      runs.push(input);
+                      const version = input.args[0] === "version";
+                      const answer = {
+                        stdout: version ? (versions.get(input.command) ?? "") : '{"card":"c1"}',
+                        stderr: version ? "" : "waiting: proposal p1 asks its approver circle.\n",
+                        code: version && versions.get(input.command) === "" ? 2 : 0,
+                      };
+                      return {
+                        stdout: answer.stdout,
+                        stderr: answer.stderr,
+                        code: ChildProcessSpawner.ExitCode(answer.code),
+                        timedOut: false,
+                        stdoutTruncated: false,
+                        stderrTruncated: false,
+                        stdoutInvalidUtf8: false,
+                        stderrInvalidUtf8: false,
+                      };
+                    }),
             }),
           ),
         ),
@@ -95,7 +109,7 @@ const setup = (binaries: {
         }),
       );
     const run = host(cli.run(["address", "c1", "new", "--json"], AUTHORIZATION));
-    return { run, runs, homeBinary, pathBinaries };
+    return { run, runs, homeBinary, pathBinaries, started };
   });
 
 it.layer(NodeServices.layer)("KitshnCli", (it) => {
@@ -124,6 +138,21 @@ it.layer(NodeServices.layer)("KitshnCli", (it) => {
       expect(runs[2]?.env).toEqual({
         T3_ACP_MCP_AUTHORIZATION: "",
         KITSHN_ATTEST: "t3:thread-token",
+      });
+    }),
+  );
+
+  it.effect("stops a call 60 seconds after its waiting line on stdout", () =>
+    Effect.gen(function* () {
+      const waiting = '{"outcome":"waiting","proposalId":"p1"}\n';
+      const { run, started } = yield* setup({ path: [KITSHN_2], hangAfter: waiting });
+      const fiber = yield* Effect.forkChild(run);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust("60 seconds");
+      expect(yield* Fiber.join(fiber)).toEqual({
+        exitCode: "waiting",
+        stdout: waiting,
+        stderr: "",
       });
     }),
   );

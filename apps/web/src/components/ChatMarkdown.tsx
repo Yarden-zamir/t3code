@@ -99,9 +99,9 @@ import {
   ForkThreadAddressChip,
   ForkThreadLink,
   useForkKnownThreadAddress,
-  useForkThreadLinkChips,
   useForkThreadMarkers,
 } from "./chat/ForkThreadLink";
+import { useForkThreadAddressing } from "./chat/ForkMessageLinkTarget";
 import { mathKind } from "@t3tools/shared/markdownMath";
 import remarkMath from "remark-math";
 import {
@@ -414,7 +414,7 @@ function markdownUrlTransform(href: string) {
   if (parseComposerContextHref(href)) return href;
   if (parseThreadLinkHref(href)) return href;
   // Fork: keep app thread links for ForkThreadAddressChip. Renderers share this transform, so the
-  // link renderer applies the threadLinkChips setting.
+  // link renderer applies the threadAddressing setting.
   if (parseThreadAddress(href)) return href;
   if (isWindowsDrivePathHref(href)) return href;
   return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
@@ -1091,7 +1091,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       renderContextReference,
     } = use(ChatMarkdownRendererContext);
     const forkThreadAddress = useForkKnownThreadAddress(href, environmentId);
-    const keepThreadAppLinks = useForkThreadLinkChips(environmentId);
+    const keepThreadAppLinks = useForkThreadAddressing(environmentId);
     const text = use(ChatMarkdownTextContext);
     const citation = href ? parseAssistantCitationHref(href) : null;
     if (citation) return <AssistantCitationChip citation={citation} />;
@@ -1120,7 +1120,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
         />
       );
     }
-    // Fork: with `threadLinkChips` off, an app thread link is text, as `defaultUrlTransform` makes it.
+    // Fork: with `threadAddressing` off, an app thread link is text, as `defaultUrlTransform` makes it.
     if (
       !keepThreadAppLinks &&
       href &&

@@ -341,14 +341,16 @@ export function QueuedRunsControl({
                           }}
                         >
                           <ArrowUpIcon />
-                          Send now
+                          {workflow?.promoteSkipsCompaction
+                            ? "Skip compaction and send"
+                            : "Send now"}
                         </Button>
                       </ShortcutTrigger>
                       <TooltipPopup>
                         {workflow?.canSendNow
                           ? "Start a turn with this message"
                           : workflow?.promoteSkipsCompaction
-                            ? "Skip compaction and send this message"
+                            ? "Stops the compaction that runs now and sends this message. You can compact again later."
                             : "Send into the current turn"}
                         {item.serverIndex === 0 ? (
                           <ShortcutHint

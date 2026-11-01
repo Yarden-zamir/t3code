@@ -542,6 +542,7 @@ const make = Effect.gen(function* () {
               Effect.orElseSucceed(() => null),
             )
           : null;
+      const temporaryBranch = branch;
       if (branchForPathTemplate !== null) branch = branchForPathTemplate;
       let worktreePath =
         input.workspaceStrategy.type === "existing_worktree"
@@ -606,7 +607,12 @@ const make = Effect.gen(function* () {
               path: null,
             },
             {
-              ...(branchForPathTemplate !== null ? { pickFreeName: true } : {}),
+              ...(branchForPathTemplate !== null
+                ? {
+                    pickFreeName: true,
+                    ...(temporaryBranch !== null ? { fallbackBranch: temporaryBranch } : {}),
+                  }
+                : {}),
               progress: {
                 onWorktreeClaimed: (path) =>
                   Effect.sync(() => {

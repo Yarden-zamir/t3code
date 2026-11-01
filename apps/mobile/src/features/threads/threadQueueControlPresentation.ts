@@ -11,6 +11,7 @@ export interface ThreadQueueRowControls {
   readonly dismissAccessibilityLabel: string;
   readonly displayText: string;
   readonly isEditing: boolean;
+  readonly sendLabel: "Send now" | "Skip compaction and send";
 }
 
 export function resolveThreadQueueRowControls(input: {
@@ -22,6 +23,8 @@ export function resolveThreadQueueRowControls(input: {
   readonly isEditing?: boolean;
   /** A guest's message keeps the guest's words; the owner can cancel it, not rewrite it. */
   readonly isGuestMessage?: boolean;
+  /** The active run is a compaction, so sending stops it. */
+  readonly promoteSkipsCompaction?: boolean;
   readonly text: string;
 }): ThreadQueueRowControls {
   const mutationEnabled = !input.busy;
@@ -40,6 +43,7 @@ export function resolveThreadQueueRowControls(input: {
       ? ""
       : assistantCitationsToPlainText(input.text),
     isEditing,
+    sendLabel: input.promoteSkipsCompaction === true ? "Skip compaction and send" : "Send now",
   };
 }
 

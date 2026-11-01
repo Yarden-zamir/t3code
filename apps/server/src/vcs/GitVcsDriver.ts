@@ -148,6 +148,8 @@ export interface CreateWorktreeOptions {
   readonly worktreePathTemplate?: string;
   /** With a template, suffix a taken `newRefName` instead of failing. */
   readonly pickFreeName?: boolean;
+  /** With `pickFreeName`, the branch to use when every suffix of `newRefName` is taken. */
+  readonly fallbackBranch?: string;
 }
 
 export interface GitCommitProgress {

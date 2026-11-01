@@ -13,7 +13,7 @@ const fromPeer = machineRequestNamespace({ machineId: PEER, sessionId: "session-
 const withGrants = (exec: boolean) =>
   Effect.provideService(KitshnGrants.KitshnGrants, fixedKitshnGrants(exec));
 
-it.effect("refuses a terminal thread to another machine without runs commands", () =>
+it.effect("refuses a terminal thread to another machine without the effect runs", () =>
   Effect.gen(function* () {
     const refused = yield* refuseTerminalThreadWithoutExec(fromPeer, terminal).pipe(
       withGrants(false),
@@ -27,7 +27,7 @@ it.effect("refuses a terminal thread to another machine without runs commands", 
   }),
 );
 
-it.effect("allows it with runs commands, and agent threads and local callers always", () =>
+it.effect("allows it with the effect runs, and agent threads and local callers always", () =>
   Effect.gen(function* () {
     yield* refuseTerminalThreadWithoutExec(fromPeer, terminal).pipe(withGrants(true));
     yield* refuseTerminalThreadWithoutExec(fromPeer, {

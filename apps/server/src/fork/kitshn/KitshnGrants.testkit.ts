@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import { PEER, SELF } from "../machineMap/MachineMap.testkit.ts";
 import type * as KitshnGrants from "./KitshnGrants.ts";
 
-/** The rules of `KitshnGrants` where `PEER` holds "runs commands" here, or not. */
+/** The rules of `KitshnGrants` where `PEER` holds the effect "runs" here, or not. */
 export const fixedKitshnGrants = (peerMayExec: boolean) =>
   ({
     machine: Effect.succeed({ id: SELF, name: "Mac" }),

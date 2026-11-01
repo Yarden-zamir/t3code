@@ -30,11 +30,11 @@ export function MobilePublishedThemesSettingsRow() {
       {...searchableSetting("mobile-published-themes")}
       serverScoped
       settingKeys={["mobilePublishedThemes"]}
-      description="The mobile app offers the themes that this server publishes, with their fonts, shape and canvas pattern, and takes the default theme."
+      description="The mobile app follows the themes of this server: it offers the published themes, with their fonts, shape and canvas pattern, and takes the default theme."
       resetAction={
         mixed || settings.mobilePublishedThemes !== fallback ? (
           <SettingResetButton
-            label="published themes on mobile"
+            label="themes on mobile"
             onClick={() => updateSettings({ mobilePublishedThemes: fallback })}
           />
         ) : null
@@ -44,7 +44,7 @@ export function MobilePublishedThemesSettingsRow() {
           settingKeys={["mobilePublishedThemes"]}
           checked={settings.mobilePublishedThemes}
           onCheckedChange={(checked) => updateSettings({ mobilePublishedThemes: Boolean(checked) })}
-          aria-label="Published themes on mobile"
+          aria-label="Themes on mobile"
         />
       }
     />

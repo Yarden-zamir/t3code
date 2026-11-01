@@ -74,7 +74,7 @@ export function PullRequestListEmptyState({
   onShowAllOwners?: (() => void) | undefined;
   /**
    * Fork: the menu filters as sentences, such as "Owner is not qlik-trial", while the
-   * `pullRequestFilterChips` setting is on. Empty otherwise.
+   * `pullRequestFilters` setting is on. Empty otherwise.
    */
   filterCauses: ReadonlyArray<string>;
   onClearFilters?: (() => void) | undefined;

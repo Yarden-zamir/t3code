@@ -76,7 +76,7 @@ export interface AccessVisitor {
   };
   /** The provider level names, by resource id, of the resources that the subject reaches. */
   readonly levels: Readonly<Record<string, string>>;
-  /** K-722: the subject is a machine whose "runs commands" covers this machine at automatic. */
+  /** K-722: the subject is a machine whose effect "runs" covers this machine at automatic. */
   readonly exec: boolean;
   readonly until: number;
 }
@@ -127,7 +127,7 @@ export class KitshnGrants extends Context.Service<
       visitor: AccessVisitor,
       allowed: (latest: AccessVisitor) => boolean,
     ) => Effect.Effect<void>;
-    /** K-722: a machine session of `machineId` holds "runs commands" here now. */
+    /** K-722: a machine session of `machineId` holds the effect "runs" here at automatic now. */
     readonly machineMayExec: (machineId: string) => Effect.Effect<boolean>;
     /** This machine, from the last `register` answer; saved, so it holds across a restart. */
     readonly machine: Effect.Effect<KitshnMachine | null>;

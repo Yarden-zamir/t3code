@@ -14,27 +14,10 @@ import { Atom } from "effect/reactivity";
 
 import { useThreadShell } from "../../state/entities";
 import { environmentSummaries } from "../../state/presentation";
-import { serverEnvironment } from "../../state/server";
 import { environmentThreadDetails } from "../../state/threads";
 import { ThreadContextChip } from "../ThreadContextChip";
+import { forkThreadAddressingAtom } from "./ForkMessageLinkTarget";
 import { MarkdownThreadLink } from "./MarkdownThreadLink";
-
-/**
- * Fork: the `threadLinkChips` server setting of the environment whose message holds the link.
- * A boolean atom, so a change to another setting does not render every link again.
- */
-const threadLinkChipsAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.make(
-    (get) => get(serverEnvironment.settingsValueAtom(environmentId))?.threadLinkChips === true,
-  ),
-);
-
-const OFF_ATOM = Atom.make(false);
-
-/** Fork: whether the message environment has `threadLinkChips` on. */
-export function useForkThreadLinkChips(environmentId: EnvironmentId | null | undefined): boolean {
-  return useAtomValue(environmentId ? threadLinkChipsAtom(environmentId) : OFF_ATOM);
-}
 
 /** Fork: a `t3-thread://` link in chat, which opens the thread at the message of its fragment. */
 export function ForkThreadLink(props: {
@@ -55,19 +38,21 @@ export function ForkThreadLink(props: {
 
 /**
  * Fork: the environments that this client knows, while the message environment has
- * `threadLinkChips` on, else null. One shared atom for each message environment: every link reads
+ * `threadAddressing` on, else null. One shared atom for each message environment: every link reads
  * it, and the connection catalog is read only while the setting is on.
  */
 const knownThreadEnvironmentIdsAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get): ReadonlyArray<EnvironmentId> | null =>
-    get(threadLinkChipsAtom(environmentId)) ? get(environmentSummaries.environmentIdsAtom) : null,
+    get(forkThreadAddressingAtom(environmentId))
+      ? get(environmentSummaries.environmentIdsAtom)
+      : null,
   ),
 );
 const NO_ENVIRONMENT_ATOM = Atom.make<ReadonlyArray<EnvironmentId> | null>(null);
 
 /**
  * Fork: the thread that `href` names by its web address (`parseThreadAddress`), when the message's
- * environment has `threadLinkChips` on and this client knows the thread's environment. Null for
+ * environment has `threadAddressing` on and this client knows the thread's environment. Null for
  * every other link, which then renders as usual. With the setting off it returns before it parses.
  */
 export function useForkKnownThreadAddress(
@@ -105,12 +90,12 @@ const NO_MARKER_TARGETS: ThreadMarkerTargets = new Map();
 // Null, not an empty Map: `Atom.make` reads an iterable as something other than a plain value.
 const NO_MARKER_TARGETS_ATOM = Atom.make<ThreadMarkerTargets | null>(null);
 
-/** Fork: `threadMarkerTargets` of a thread, while `threadLinkChips` is on. */
+/** Fork: `threadMarkerTargets` of a thread, while `threadAddressing` is on. */
 const threadMarkerTargetsAtom = Atom.family((key: string) => {
   const [environmentId, threadId] = key.split("\u0000") as [EnvironmentId, ThreadId];
   const ref = scopeThreadRef(environmentId, threadId);
   return Atom.make((get): ThreadMarkerTargets => {
-    if (!get(threadLinkChipsAtom(environmentId))) return NO_MARKER_TARGETS;
+    if (!get(forkThreadAddressingAtom(environmentId))) return NO_MARKER_TARGETS;
     const messages = get(environmentThreadDetails.threadAtom(ref))?.projection.messages ?? [];
     return threadMarkerTargets(messages, Option.getOrNull(get.self<ThreadMarkerTargets>()));
   });

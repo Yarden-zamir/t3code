@@ -22,6 +22,14 @@ vi.mock(import("./ReadOnlySourcePreview"), () => ({
     <pre data-word-wrap={String(wordWrap)}>{text}</pre>
   ),
 }));
+// Each PDF load boots a new pdf.js worker. Vite serves it with a 6.8 MB inline source map, which
+// pushed the PDF reload tests past the test timeout on loaded CI runners. Same as PdfViewer's test.
+vi.mock(import("pdfjs-dist/build/pdf.worker.min.mjs?url"), async () => {
+  const { default: source } = await import("pdfjs-dist/build/pdf.worker.min.mjs?raw");
+  return {
+    default: URL.createObjectURL(new Blob([source], { type: "text/javascript" })),
+  };
+});
 
 // The Word engine compiles about 30 MB of WebAssembly in a fresh worker per document, which took
 // 10-17 s per test on loaded CI runners. These tests cover fetching, preparation and remounts, so
@@ -2422,9 +2430,11 @@ function planningPdf(
   ];
   const font = 3 + titles.length * 2;
   for (const [index, title] of titles.entries()) {
-    const text = `/GS1 gs BT /F1 24 Tf 30 ${index === 0 ? 70 : 700} Td ${index === 0 ? "(Quarter) Tj /F2 24 Tf (ly outlook) Tj" : `(${title}) Tj`} ET`;
+    // Keep transfer functions (/TR) out: pdf.js paints them through a canvas filter, which makes
+    // each zoom and reload several times slower on loaded CI runners.
+    const text = `BT /F1 24 Tf 30 ${index === 0 ? 70 : 700} Td ${index === 0 ? "(Quarter) Tj /F2 24 Tf (ly outlook) Tj" : `(${title}) Tj`} ET`;
     objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 ${index === 0 ? firstHeight : pageHeight}] /Rotate ${index === 2 ? 90 : 0} /Resources << /Font << /F1 ${font} 0 R /F2 ${font + 1} 0 R >> /ExtGState << /GS1 << /TR << /FunctionType 2 /Domain [0 1] /C0 [0] /C1 [1] /N 2 >> >> >> >> /Contents ${4 + index * 2} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 ${index === 0 ? firstHeight : pageHeight}] /Rotate ${index === 2 ? 90 : 0} /Resources << /Font << /F1 ${font} 0 R /F2 ${font + 1} 0 R >> >> /Contents ${4 + index * 2} 0 R >>`,
       `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
     );
   }

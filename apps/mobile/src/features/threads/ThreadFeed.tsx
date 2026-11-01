@@ -2978,7 +2978,7 @@ export const ThreadFeed = memo(function ThreadFeed({
         standalone,
       ),
     onLinkPress: onMarkdownLinkPress,
-    // Fork: with `threadLinkChips` on, the fork pill also covers web addresses and message links.
+    // Fork: with `threadAddressing` on, the fork pill also covers web addresses and message links.
     linkCustomization: (href) =>
       forkThreadLinks.linkCustomization(href) ?? enrichedThreadLinkCustomization(href),
     onImagePress: (href) => onMarkdownLinkPress(href, true),

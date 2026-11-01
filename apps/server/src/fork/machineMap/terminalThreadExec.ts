@@ -16,7 +16,7 @@ type RunsWith = Pick<ModelSelection, "instanceId">;
 /**
  * Fork (MM-1923): a terminal thread types messages into a shell, so a launch, send, interrupt or
  * terminal scheduled task runs shell commands, as `machine_exec` does. A machine session needs
- * kitshn's "runs commands" on this machine (K-722); metadata writes skip this (`metadataOnly`). `runsWith` is the work model,
+ * the kitshn effect "runs" on this machine (K-722); metadata writes skip this (`metadataOnly`). `runsWith` is the work model,
  * an effect that resolves only for a machine session without exec, so others never pay for it.
  */
 export const refuseTerminalThreadWithoutExec = Effect.fn("refuseTerminalThreadWithoutExec")(
@@ -33,7 +33,7 @@ export const refuseTerminalThreadWithoutExec = Effect.fn("refuseTerminalThreadWi
     return yield* new OrchestratorMcpFailure({
       code: "capability_denied",
       message:
-        'A terminal thread runs its messages in a shell, so a call from another machine that runs or stops code in one needs kitshn\'s "runs commands" on this machine at automatic. The owner sets it on the kitshn map.',
+        'A terminal thread runs its messages in a shell, so a call from another machine that runs or stops code in one needs the kitshn effect "runs" on this machine at automatic. The owner sets it on the kitshn map.',
     });
   },
 );

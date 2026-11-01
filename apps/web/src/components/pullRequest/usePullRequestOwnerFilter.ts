@@ -29,11 +29,8 @@ export function pullRequestSearchOwners(labels: {
   return owners === undefined ? {} : { owners };
 }
 
-export const selectRepositoryOwnerFilters = (settings: ClientSettings) =>
-  settings.repositoryOwnerFilters;
+export const selectPullRequestFilters = (settings: ClientSettings) => settings.pullRequestFilters;
 const NO_OWNERS: ReadonlyArray<string> = [];
-export const selectPullRequestFilterChips = (settings: ClientSettings) =>
-  settings.pullRequestFilterChips;
 export const NO_FILTER_CHIPS: ReadonlyArray<PullRequestFilterChip> = [];
 
 type OwnerRow = { readonly environmentId: EnvironmentId; readonly projectId: ProjectId };
@@ -76,7 +73,7 @@ export const ownerMenuPatch = (
 });
 
 export function resolvePullRequestOwnerFilter<Project extends OwnedProject>(input: {
-  /** The `repositoryOwnerFilters` setting. */
+  /** The `pullRequestFilters` setting. */
   readonly enabled: boolean;
   readonly search: Pick<PullRequestListPreferences, "owners" | "ownerOperator"> & {
     readonly projectId?: ProjectId | undefined;

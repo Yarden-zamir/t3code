@@ -8,7 +8,7 @@ import type { PullRequestListPreferencePatch } from "./pullRequestListPreference
 
 /**
  * Fork: the active menu filters above the pull request list, shown while the
- * `pullRequestFilterChips` setting is on. If upstream T3 Code ships its own active-filter chips,
+ * `pullRequestFilters` setting is on. If upstream T3 Code ships its own active-filter chips,
  * drop this fork version and use theirs.
  */
 export function PullRequestFilterChips({

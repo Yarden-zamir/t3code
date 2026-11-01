@@ -1,7 +1,7 @@
 /**
  * Fork: machine map, `machine_exec` (MM-1908) and its stream for `t3 machine exec` (MM-1919), as a
  * kitshn exec (K-722). This machine checks its caller's limits and asks its daemon to run the
- * command on the other machine; kitshn checks "runs commands" and the target's daemon runs it, so
+ * command on the other machine; kitshn checks the effect "runs" and the target's daemon runs it, so
  * T3 on the target is not involved.
  */
 import type { Answer } from "@kitshn/local";

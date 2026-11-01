@@ -44,8 +44,8 @@ const REFS_HEADS = "refs/heads/";
 /**
  * The folder and branch for a new worktree. A template path inside the checkout, such as
  * `{repoDir}/{branchLeaf}` in a normal clone, uses `defaultPath`, so one template fits both
- * layouts. `pickFreeName` adds a `-1`, `-2` branch suffix for a taken branch or folder, as
- * `renameBranch` does. A blocked namespace flattens `t3/x` to `t3-x`. Run `release` after add.
+ * layouts. `pickFreeName` suffixes a taken name `-1`, `-2`, then tries `fallbackBranch`. A
+ * blocked namespace flattens `t3/x` to `t3-x`. Run `release` after add.
  */
 export const placeTemplateWorktree = Effect.fn("placeTemplateWorktree")(function* (input: {
   readonly cwd: string;
@@ -57,6 +57,8 @@ export const placeTemplateWorktree = Effect.fn("placeTemplateWorktree")(function
   /** Where the worktree goes without a template. */
   readonly defaultPath: (branch: string) => string;
   readonly pickFreeName: boolean;
+  /** Storage cleanup keeps branches, so a repeated message can use up every suffix. */
+  readonly fallbackBranch: string | null;
   /** `git for-each-ref --format=%(refname) refs/heads/` output. Full names stay unambiguous next to tags. */
   readonly listBranchRefs: Effect.Effect<string, GitCommandError>;
   readonly pathExists: (path: string) => Effect.Effect<boolean>;
@@ -126,8 +128,9 @@ export const placeTemplateWorktree = Effect.fn("placeTemplateWorktree")(function
     claimedBranches.set(input.gitCommonDir, claimed);
   }
   const claimedHere = claimed;
-  const flattened = input.branch.replaceAll("/", "-");
-  const bases = flattened === input.branch ? [input.branch] : [input.branch, flattened];
+  const names =
+    input.fallbackBranch === null ? [input.branch] : [input.branch, input.fallbackBranch];
+  const bases = [...new Set(names.flatMap((name) => [name, name.replaceAll("/", "-")]))];
   for (const base of bases) {
     for (let suffix = 0; suffix <= MAX_NAME_SUFFIX; suffix += 1) {
       const branch = suffix === 0 ? base : `${base}-${suffix}`;

@@ -215,13 +215,13 @@ it.effect("reports a timeout, and fails with kitshn's reason for a run that neve
 
     const refused = yield* harness({
       state: "ended",
-      frames: [exit({ reason: 'refused: "runs commands" is off' })],
+      frames: [exit({ reason: 'refused: The effect "runs" is off for this machine (K-1720).' })],
     });
     const error = yield* refused
       .caller(refused.machineExec.exec({ machine: "VPS", command: "true" }))
       .pipe(Effect.flip);
     expect(error).toMatchObject({ code: "capability_denied" });
-    expect(error.message).toContain("runs commands");
+    expect(error.message).toContain('The effect "runs" is off');
   }),
 );
 

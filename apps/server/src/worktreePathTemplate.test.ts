@@ -82,6 +82,39 @@ it.layer(layerTest)("worktree path template", (it) => {
     }),
   );
 
+  it.effect("uses the fallback branch when every suffix is taken", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const { container, main } = yield* makeContainer;
+      const head = yield* git(main, ["rev-parse", "HEAD"]);
+      const taken = Array.from({ length: 101 }, (_, suffix) =>
+        suffix === 0 ? "repeat" : `repeat-${suffix}`,
+      );
+      yield* GitVcsDriver.GitVcsDriver.use((git) =>
+        git.execute({
+          operation: "test.git",
+          cwd: main,
+          args: ["update-ref", "--stdin"],
+          stdin: taken.map((branch) => `create refs/heads/${branch} ${head}\n`).join(""),
+          timeoutMs: 10_000,
+        }),
+      );
+
+      const created = yield* driver.createWorktree(
+        { cwd: main, path: null, refName: "main", newRefName: "repeat" },
+        {
+          worktreePathTemplate: "{repoDir}/{branchLeaf}",
+          pickFreeName: true,
+          fallbackBranch: "t3/0a1b2c3d",
+        },
+      );
+
+      assert.equal(created.worktree.refName, "t3/0a1b2c3d");
+      assert.equal(created.worktree.path, path.join(container, "0a1b2c3d"));
+    }),
+  );
+
   it.effect("avoids branches that block the namespace in either direction", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;

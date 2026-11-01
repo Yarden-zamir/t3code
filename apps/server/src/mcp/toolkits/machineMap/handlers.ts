@@ -162,7 +162,7 @@ export const layer = McpToolAccess.toLayer(MachineMapToolkit, {
     }),
   ),
   // MM-1908: the service needs a live full-access/default caller of this machine; kitshn checks
-  // "runs commands" (K-722).
+  // the effect "runs" (K-722).
   machine_exec: McpToolAccess.writes((input) =>
     MachineExec.MachineExec.pipe(Effect.flatMap((machineExec) => machineExec.exec(input))),
   ),

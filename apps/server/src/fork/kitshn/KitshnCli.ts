@@ -4,12 +4,14 @@
  * this T3 who holds the thread token in `KITSHN_ATTEST` (K-1752), so an agent never holds a kitshn
  * token.
  */
+import { TrimmedNonEmptyString } from "@t3tools/contracts";
 import {
   KITSHN_ATTEST_ENV,
   THREAD_CREDENTIAL_AUTHORIZATION_ENV,
 } from "@t3tools/provider-core/server/forkThreadCredential";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -24,6 +26,8 @@ import * as ProcessRunner from "../../processRunner.ts";
 const KITSHN_2_HOME_PATH = [".local", "bin", "kitshn"] as const;
 // A little above the daemon's own 120-second call limit, so its error reaches the agent first.
 const RUN_TIMEOUT = "150 seconds";
+/** How long a call that waits for an approval runs before T3 stops it, like `machine_exec`. */
+const APPROVAL_WAIT = "60 seconds";
 // KitSHn 1 starts through `uv run`, which can take a while the first time.
 const VERSION_TIMEOUT = "30 seconds";
 // The server env can hold the credentials of an agent shell that started it; kitshn skips "".
@@ -45,6 +49,27 @@ export const lastLine = (stderr: string) =>
     .map((line) => line.trim())
     .findLast((line) => line !== "" && !line.startsWith("waiting:"));
 
+/** With `--json`, a call that waits for an approval prints this line on stdout before its answer. */
+const WaitingLine = Schema.Struct({
+  outcome: Schema.Literal("waiting"),
+  proposalId: TrimmedNonEmptyString,
+  circle: Schema.optional(Schema.String),
+  expiresAt: Schema.optional(Schema.Number),
+});
+export type WaitingLine = typeof WaitingLine.Type;
+const decodeWaitingLine = Schema.decodeUnknownOption(Schema.fromJsonString(WaitingLine));
+
+/** The last waiting line of a `--json` stdout, and the stdout without the waiting lines. */
+export const splitWaiting = (stdout: string) => {
+  let waiting = Option.none<WaitingLine>();
+  const rest = stdout.split("\n").filter((line) => {
+    const decoded = decodeWaitingLine(line);
+    if (Option.isSome(decoded)) waiting = decoded;
+    return Option.isNone(decoded);
+  });
+  return { waiting, rest: rest.join("\n") };
+};
+
 export class KitshnCliError extends Schema.TaggedError<KitshnCliError>()("KitshnCliError", {
   reason: Schema.Literals(["not_installed", "not_kitshn_2", "run_failed"]),
   message: Schema.String,
@@ -56,6 +81,11 @@ export interface KitshnCliOutput {
   readonly stderr: string;
 }
 
+/** `exitCode` "waiting": the call waited for an approval for `APPROVAL_WAIT`, so T3 stopped it. */
+export interface KitshnCliRunOutput extends Omit<KitshnCliOutput, "exitCode"> {
+  readonly exitCode: number | "waiting";
+}
+
 export class KitshnCli extends Context.Service<
   KitshnCli,
   {
@@ -63,7 +93,7 @@ export class KitshnCli extends Context.Service<
     readonly run: (
       args: ReadonlyArray<string>,
       threadAuthorization: Redacted.Redacted<string>,
-    ) => Effect.Effect<KitshnCliOutput, KitshnCliError>;
+    ) => Effect.Effect<KitshnCliRunOutput, KitshnCliError>;
     /**
      * K-602: `kitshn join <code> --server <server>` as the server user, which joins this machine
      * and starts its daemon. Its output, or the reason that it failed.
@@ -161,26 +191,48 @@ const make = Effect.gen(function* () {
       const command = yield* binary;
       const header = Redacted.value(threadAuthorization);
       const token = header.startsWith(BEARER) ? header.slice(BEARER.length) : header;
-      const output = yield* runner
+      const waiting = yield* Deferred.make<void>();
+      const decoder = new TextDecoder();
+      let stdout = "";
+      const exited = runner
         .run({
           command,
           args,
           env: { ...NO_CREDENTIAL, [KITSHN_ATTEST_ENV]: `t3:${token}` },
           timeout: RUN_TIMEOUT,
           timeoutBehavior: "timedOutResult",
+          onStdoutChunk: (chunk) => {
+            stdout += decoder.decode(chunk, { stream: true });
+            if (Option.isSome(splitWaiting(stdout).waiting)) {
+              Deferred.doneUnsafe(waiting, Effect.void);
+            }
+          },
         })
         .pipe(
           Effect.mapError((error) =>
             fail("run_failed", `kitshn at ${command} did not run: ${error._tag}.`),
           ),
+          Effect.flatMap((output) =>
+            output.timedOut || output.code === null
+              ? Effect.fail(
+                  fail(
+                    "run_failed",
+                    `kitshn did not finish in ${RUN_TIMEOUT}. The kitshn daemon gives each call 120 seconds.`,
+                  ),
+                )
+              : Effect.succeed<KitshnCliRunOutput>({
+                  exitCode: Number(output.code),
+                  stdout: output.stdout,
+                  stderr: output.stderr,
+                }),
+          ),
         );
-      if (output.timedOut || output.code === null) {
-        return yield* fail(
-          "run_failed",
-          `kitshn did not finish in ${RUN_TIMEOUT}. The kitshn daemon gives each call 120 seconds.`,
-        );
-      }
-      return { exitCode: Number(output.code), stdout: output.stdout, stderr: output.stderr };
+      // When `stopped` wins, the race interrupts the run, and that ends the CLI.
+      const stopped = Deferred.await(waiting).pipe(
+        Effect.andThen(Effect.sleep(APPROVAL_WAIT)),
+        Effect.map((): KitshnCliRunOutput => ({ exitCode: "waiting", stdout, stderr: "" })),
+      );
+      return yield* Effect.raceFirst(exited, stopped);
     },
   );
 

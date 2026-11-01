@@ -17,7 +17,7 @@ const projectId = ProjectId.make("project-kitshn");
 const AUTHORIZATION = Redacted.make("Bearer thread-token");
 
 /** A workspace with a page, a dot folder, and an outside file with a link to it. */
-const setup = (options: { cli?: Partial<KitshnCli.KitshnCliOutput> } = {}) =>
+const setup = (options: { cli?: Partial<KitshnCli.KitshnCliRunOutput> } = {}) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -55,6 +55,9 @@ const setup = (options: { cli?: Partial<KitshnCli.KitshnCliOutput> } = {}) =>
     );
     return { kitshn, runs, workspace, base };
   });
+
+const WAITING_LINE =
+  '{"outcome":"waiting","proposalId":"p1","circle":"Owner","expiresAt":1790000000000}';
 
 const reasonOf = <A>(effect: Effect.Effect<A, KitshnPublish.KitshnPublishError>) =>
   effect.pipe(
@@ -119,7 +122,43 @@ it.layer(NodeServices.layer)("KitshnPublish", (it) => {
     }),
   );
 
+  it.effect("a call that the CLI stopped while it waits for an approval returns waiting", () =>
+    Effect.gen(function* () {
+      const { kitshn } = yield* setup({
+        cli: { exitCode: "waiting", stdout: `${WAITING_LINE}\n` },
+      });
+      const result = yield* kitshn.address(AUTHORIZATION, { card: "c1", name: "new" });
+      expect(result).toMatchObject({ outcome: "waiting", proposalId: "p1" });
+      expect("message" in result && result.message).toContain("call kitshn_address again");
+    }),
+  );
+
+  it.effect("an answer after the waiting line wins", () =>
+    Effect.gen(function* () {
+      const { kitshn } = yield* setup({
+        cli: {
+          exitCode: 0,
+          stdout: `${WAITING_LINE}\n{"address":"a","card":"c","kind":"page","updated":true}\n`,
+        },
+      });
+      expect(yield* kitshn.publish(threadId, AUTHORIZATION, { path: "site" })).toEqual({
+        address: "a",
+        card: "c",
+        kind: "page",
+        updated: true,
+      });
+    }),
+  );
+
   it.effect.each([
+    {
+      name: "a denied proposal after the waiting line stays a refusal",
+      cli: {
+        exitCode: 1,
+        stdout: `${WAITING_LINE}\n{"error":"denied: proposal p1. Nothing ran."}\n`,
+      },
+      expected: { reason: "refused", message: "denied: proposal p1. Nothing ran." },
+    },
     {
       name: "a kitshn refusal returns its text as is",
       cli: { exitCode: 1, stdout: '{"error":"This address is taken."}' },
