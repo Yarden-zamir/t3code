@@ -1,7 +1,7 @@
 import { isElectron } from "../../env";
 import { DeviceInviteSettingsRow } from "../../machineMap/desktopDevice";
 import { useClientSettings } from "../../hooks/useSettings";
-import { useKitshnMachines } from "../../state/environments";
+import { useKitshnMachines, usePrimaryEnvironmentId } from "../../state/environments";
 import { ForkChangelogSection } from "../forkChangelog/ForkChangelog";
 import { FleetMachines } from "../machines/FleetMachines";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -68,6 +68,7 @@ function MachineKitshnSections() {
   const { environment } = useSettingsScope();
   const { state } = useMachineMapState(environment?.environmentId ?? null);
   const kitshnMachines = useKitshnMachines();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   if (environment === null) return null;
   const kitshnMachine = kitshnMachines.get(environment.environmentId);
   const problems = state?.connection.problems ?? [];
@@ -97,9 +98,11 @@ function MachineKitshnSections() {
             </span>
           }
           description={
-            kitshnMachine === undefined
-              ? "A manual environment: an address that you added and paired."
-              : kitshnJoinedText(kitshnMachine)
+            kitshnMachine !== undefined
+              ? kitshnJoinedText(kitshnMachine)
+              : environment.environmentId === primaryEnvironmentId
+                ? "This machine is not joined to kitshn."
+                : "A manual environment: an address that you added and paired."
           }
         />
         {state === null ? null : <ConnectionRow connection={state.connection} />}

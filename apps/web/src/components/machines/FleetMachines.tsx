@@ -191,9 +191,11 @@ function FleetMachineRow({
       below={
         <>
           <p className="truncate text-xs text-muted-foreground">
-            {kitshnMachine === undefined
-              ? "Manual environment: an address that you added and paired."
-              : kitshnJoinedText(kitshnMachine)}
+            {kitshnMachine !== undefined
+              ? kitshnJoinedText(kitshnMachine)
+              : isPrimary
+                ? "Not joined to kitshn."
+                : "Manual environment: an address that you added and paired."}
           </p>
           {tasks === null ? null : (
             <p className="truncate text-xs text-muted-foreground">{scheduledTasksText(tasks)}</p>
