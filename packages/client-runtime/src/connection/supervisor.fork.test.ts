@@ -102,7 +102,7 @@ const makeHarness = Effect.fn("TestReplacementHarness.make")(function* (
     }),
     Layer.succeed(ConnectionDriver.ConnectionDriver, {
       connect,
-      preflight: () => Effect.succeed(false),
+      preflight: () => Effect.succeed("unchecked" as const),
       checkHost: () => Effect.succeed("answered"),
     }),
   );
