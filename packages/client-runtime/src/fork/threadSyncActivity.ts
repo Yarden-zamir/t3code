@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -71,11 +71,39 @@ const THREAD_TIMING_MARKS: Partial<Record<EnvironmentThreadStatus, SyncTimingMar
   live: "threadLive",
 };
 
+const warmingThreads = new Set<string>();
+const threadKey = (environmentId: EnvironmentId, threadId: ThreadId) =>
+  `${environmentId}\u0000${threadId}`;
+
+/**
+ * Keeps a background mount of a thread out of the open thread timings until the result is
+ * called. A user who opens that thread meanwhile gets no open thread marks for it.
+ */
+export const markWarmingThread = (environmentId: EnvironmentId, threadId: ThreadId) => {
+  const key = threadKey(environmentId, threadId);
+  warmingThreads.add(key);
+  return () => {
+    warmingThreads.delete(key);
+  };
+};
+
 /** Follows a thread state for the sync activity, and for the sync timings when they record. */
 export const followThreadSync = <S extends { readonly status: EnvironmentThreadStatus }>(
   environmentId: EnvironmentId,
+  threadId: ThreadId,
   state: SubscriptionRef.SubscriptionRef<S>,
-): Effect.Effect<void, never, Scope.Scope> =>
-  threadSyncActivity
+): Effect.Effect<void, never, Scope.Scope> => {
+  const key = threadKey(environmentId, threadId);
+  return threadSyncActivity
     .follow(environmentId, state)
-    .pipe(Effect.andThen(syncTimings.followStatus<S>(environmentId, state, THREAD_TIMING_MARKS)));
+    .pipe(
+      Effect.andThen(
+        syncTimings.followStatus<S>(
+          environmentId,
+          state,
+          THREAD_TIMING_MARKS,
+          () => !warmingThreads.has(key),
+        ),
+      ),
+    );
+};

@@ -1,6 +1,9 @@
 import { selectCacheWarmupThreads } from "@t3tools/client-runtime/fork/cacheWarmup";
 import { syncTimings } from "@t3tools/client-runtime/fork/syncTimings";
-import { threadSyncActivity } from "@t3tools/client-runtime/fork/threadSyncActivity";
+import {
+  markWarmingThread,
+  threadSyncActivity,
+} from "@t3tools/client-runtime/fork/threadSyncActivity";
 import { COMPACT_THREAD_CACHE_SCHEMA_VERSION } from "@t3tools/client-runtime/platform";
 import { enabledEnvironmentIds } from "@t3tools/client-runtime/state/connections";
 import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/threads";
@@ -41,9 +44,11 @@ export function installCacheWarmup(): () => void {
     new Promise<WarmupOutcome>((resolve) => {
       let settled = false;
       let unsubscribe: (() => void) | undefined;
+      const doneWarming = markWarmingThread(environmentId, threadId);
       const finish = (outcome: WarmupOutcome) => {
         if (settled) return;
         settled = true;
+        doneWarming();
         clearTimeout(timer);
         signal.removeEventListener("abort", interrupt);
         unsubscribe?.();

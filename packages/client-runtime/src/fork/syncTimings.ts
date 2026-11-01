@@ -127,6 +127,13 @@ export function makeSyncTimingsRecorder(options: {
   const coldStart = newRun("cold-start");
   const wakeups: Array<MutableRun> = [];
   let current = coldStart;
+  // The snapshot stays the same object until the timings change, as useSyncExternalStore needs.
+  let frozen: SyncTimingsSnapshot | undefined;
+  const listeners = new Set<() => void>();
+  const changed = () => {
+    frozen = undefined;
+    for (const listener of listeners) listener();
+  };
 
   const environment = (run: MutableRun, environmentId: EnvironmentId) => {
     let timings = run.environments.get(environmentId);
@@ -140,6 +147,7 @@ export function makeSyncTimingsRecorder(options: {
     const timings = environment(run, environmentId);
     if (timings.marks[mark] !== undefined) return;
     timings.marks[mark] = Math.round(options.now() - run.origin);
+    changed();
   };
 
   // Each subscriber of the wakeup stream has its own app-state listener, so one return to the
@@ -155,6 +163,7 @@ export function makeSyncTimingsRecorder(options: {
     current = newRun(trigger);
     wakeups.unshift(current);
     if (wakeups.length > maxWakeups) wakeups.length = maxWakeups;
+    changed();
   };
 
   const mark = (environmentId: EnvironmentId, name: SyncTimingMark) => {
@@ -166,6 +175,7 @@ export function makeSyncTimingsRecorder(options: {
     const timings = environment(current, environmentId);
     if (timings.probes.length >= maxProbes) return;
     timings.probes.push({ atMs: Math.round(options.now() - current.origin), result });
+    changed();
   };
 
   const recordSpan = (
@@ -193,14 +203,15 @@ export function makeSyncTimingsRecorder(options: {
     const timings = environment(run, environmentId);
     if (timings.spans.length >= maxSpans) {
       timings.droppedSpans += 1;
-      return;
+    } else {
+      timings.spans.push({
+        name,
+        startMs: Math.round(startedAt - run.origin),
+        durationMs: Math.round(options.now() - startedAt),
+        outcome,
+      });
     }
-    timings.spans.push({
-      name,
-      startMs: Math.round(startedAt - run.origin),
-      durationMs: Math.round(options.now() - startedAt),
-      outcome,
-    });
+    changed();
   };
 
   /** Starts a timed step outside a tracer span. Call the result when the step ends. */
@@ -232,16 +243,18 @@ export function makeSyncTimingsRecorder(options: {
 
   /**
    * Marks the first time per run that a shell or thread state reaches each
-   * status. A status that a later one replaces before the follower subscribes
-   * is not marked.
+   * status while `counts` allows it. A status that a later one replaces before
+   * the follower subscribes is not marked.
    */
   const followStatus = Effect.fnUntraced(function* <S extends { readonly status: string }>(
     environmentId: EnvironmentId,
     state: SubscriptionRef.SubscriptionRef<S>,
     marks: Partial<Record<S["status"], SyncTimingMark>>,
+    counts: () => boolean = () => true,
   ): Effect.fn.Return<void, never, Scope.Scope> {
     if (!enabled) return;
     const markStatus = (status: S["status"]) => {
+      if (!counts()) return;
       const name = marks[status];
       if (name !== undefined) mark(environmentId, name);
     };
@@ -284,10 +297,15 @@ export function makeSyncTimingsRecorder(options: {
     tracer,
     followStatus,
     startStep,
-    snapshot: (): SyncTimingsSnapshot => ({
-      coldStart: freeze(coldStart),
-      wakeups: wakeups.map(freeze),
-    }),
+    snapshot: (): SyncTimingsSnapshot =>
+      (frozen ??= { coldStart: freeze(coldStart), wakeups: wakeups.map(freeze) }),
+    /** Calls the listener after each change to the timings. */
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
   };
 }
 

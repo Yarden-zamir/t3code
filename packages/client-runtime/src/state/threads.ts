@@ -243,7 +243,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         sequence: initialSequence,
       };
   const state = yield* SubscriptionRef.make(initialState);
-  yield* followThreadSync(environmentId, state);
+  yield* followThreadSync(environmentId, threadId, state);
   const canLoadHistory = Option.isSome(httpClient) && Option.isSome(historyController);
   const acceptsBoundedSocketSnapshots = yield* Ref.make(canLoadHistory);
   const lastSequence = yield* SubscriptionRef.make(initialSequence);
