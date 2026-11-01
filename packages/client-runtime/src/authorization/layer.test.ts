@@ -345,7 +345,7 @@ describe("RemoteEnvironmentAuthorization", () => {
         harness.fetch.calls.filter(([url]) =>
           String(url).endsWith("/api/auth/websocket-ticket/rpc"),
         ),
-      ).toHaveLength(2);
+      ).toHaveLength(1);
     }),
   );
   it.effect("validates a fresh bearer descriptor while issuing fresh websocket tickets", () =>
