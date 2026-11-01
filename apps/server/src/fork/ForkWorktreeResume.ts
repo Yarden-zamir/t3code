@@ -79,14 +79,9 @@ const make = Effect.gen(function* () {
       const marker = yield* markerFor(cwd);
       const pendingSetup = yield* marker.pending;
       const currentSettings = yield* settings.getSettings;
-      if (
-        !currentSettings.restoreWorktreesOnResume &&
-        !currentSettings.worktreeArtifactEviction &&
-        !pendingSetup
-      )
-        return;
-      // An existing folder needs no repair on any branch, so start in it as upstream does. With
-      // restoration off, upstream's recovery after this hook handles a missing checkout.
+      // Evicted dependencies always come back through setup. An existing folder needs no repair on
+      // any branch, so start in it as upstream does. With restoration off, upstream's recovery
+      // after this hook handles a missing checkout.
       if (!pendingSetup && (!currentSettings.restoreWorktreesOnResume || (yield* fs.exists(cwd))))
         return;
       const fail = (reason: string) => new WorktreeResumeError({ cwd, reason });

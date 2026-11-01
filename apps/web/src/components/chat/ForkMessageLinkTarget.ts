@@ -72,17 +72,20 @@ const HIGHLIGHT_MS = 2400;
 /** The history pages that one link may load before it gives up. */
 const MAX_HISTORY_PAGES = 20;
 
-/** The `messageLinks` server setting. On until the settings load, like its default. */
-const messageLinksAtom = Atom.family((environmentId: EnvironmentId) =>
+/**
+ * Fork: the `threadAddressing` server setting of an environment. A boolean atom, so a change to
+ * another setting does not render every link again.
+ */
+export const forkThreadAddressingAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make(
-    (get) => get(serverEnvironment.settingsValueAtom(environmentId))?.messageLinks !== false,
+    (get) => get(serverEnvironment.settingsValueAtom(environmentId))?.threadAddressing === true,
   ),
 );
 const OFF_ATOM = Atom.make(false);
 
-/** Fork: whether `environmentId` has the `messageLinks` setting on. */
-export function useForkMessageLinks(environmentId: EnvironmentId | null): boolean {
-  return useAtomValue(environmentId ? messageLinksAtom(environmentId) : OFF_ATOM);
+/** Fork: whether `environmentId` has the `threadAddressing` setting on. */
+export function useForkThreadAddressing(environmentId: EnvironmentId | null | undefined): boolean {
+  return useAtomValue(environmentId ? forkThreadAddressingAtom(environmentId) : OFF_ATOM);
 }
 
 /** Fork: the props of a thread `Link` that opens the thread at `messageId`, or none. */

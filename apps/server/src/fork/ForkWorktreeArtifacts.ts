@@ -79,8 +79,7 @@ const makeMayUseWorktree = Effect.gen(function* () {
   });
 });
 export const sameSettings = (left: ServerSettings, right: ServerSettings) =>
-  left.worktreeArtifactEviction === right.worktreeArtifactEviction &&
-  left.worktreeArtifactEvictionDays === right.worktreeArtifactEvictionDays;
+  left.worktreeArtifactsAfterDays === right.worktreeArtifactsAfterDays;
 const protectedName = (name: string) => {
   const lower = name.toLowerCase();
   return (
@@ -464,7 +463,7 @@ export const makeSweep = Effect.fn("ForkWorktreeArtifacts.makeSweep")(function* 
     );
   return (settings: ServerSettings, now: number, entries: StorageCleanupReportEntry[]) =>
     Effect.gen(function* () {
-      if (!settings.worktreeArtifactEviction) return;
+      if (settings.worktreeArtifactsAfterDays === null) return;
       const report = (entry: StorageCleanupReportEntry) => {
         const index = entries.findIndex(
           (existing) => existing.kind === "worktree" && existing.path === entry.path,
@@ -580,7 +579,8 @@ export const makeSweep = Effect.fn("ForkWorktreeArtifacts.makeSweep")(function* 
         const blocked = Effect.gen(function* () {
           const checkNow = Math.max(now, yield* Clock.currentTimeMillis);
           const currentSettings = yield* settingsService.getSettings;
-          if (!currentSettings.worktreeArtifactEviction) return "setting was switched off";
+          const days = currentSettings.worktreeArtifactsAfterDays;
+          if (days === null) return "setting was switched off";
           const current = yield* projections.getThreadShell(thread.id);
           if (
             current === null ||
@@ -603,12 +603,8 @@ export const makeSweep = Effect.fn("ForkWorktreeArtifacts.makeSweep")(function* 
             if (yield* mayUseWorktree(terminal.cwd, canonicalCwd))
               return "open terminal in worktree or container";
           }
-          if (
-            current.settledAt === null &&
-            guards.activityAt(current) >
-              checkNow - currentSettings.worktreeArtifactEvictionDays * DAY_MS
-          )
-            return `inactive for less than ${currentSettings.worktreeArtifactEvictionDays} days`;
+          if (current.settledAt === null && guards.activityAt(current) > checkNow - days * DAY_MS)
+            return `inactive for less than ${days} days`;
           if (
             current.settledAt !== null &&
             checkNow -

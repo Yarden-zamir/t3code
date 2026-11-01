@@ -57,7 +57,7 @@ export const placeTemplateWorktree = Effect.fn("placeTemplateWorktree")(function
   /** Where the worktree goes without a template. */
   readonly defaultPath: (branch: string) => string;
   readonly pickFreeName: boolean;
-  /** Storage cleanup keeps branches, so a repeated message can use up every suffix. */
+  /** Storage cleanup keeps branches with commits, so a repeated message can use up every suffix. */
   readonly fallbackBranch: string | null;
   /** `git for-each-ref --format=%(refname) refs/heads/` output. Full names stay unambiguous next to tags. */
   readonly listBranchRefs: Effect.Effect<string, GitCommandError>;

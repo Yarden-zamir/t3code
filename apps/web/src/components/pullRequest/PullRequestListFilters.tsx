@@ -521,7 +521,7 @@ export function PullRequestFiltersMenu({
   projectEnvironmentId: EnvironmentId | undefined;
   unavailable: ReadonlyMap<string, string>;
   onProject: (projectId: ProjectId | undefined, environmentId: EnvironmentId | undefined) => void;
-  /** Fork: absent while the `repositoryOwnerFilters` setting is off. */
+  /** Fork: absent while the `pullRequestFilters` setting is off. */
   owners?: PullRequestOwnerSubmenuProps | undefined;
 }) {
   const selectedLabels = (filters.labels ?? []).flatMap((group) => group);

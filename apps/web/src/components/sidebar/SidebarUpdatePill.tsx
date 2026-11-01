@@ -165,15 +165,12 @@ export async function downloadLocalUpdate(
 export async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
-  {
-    unattended = false,
-    expectedVersion,
-  }: { readonly unattended?: boolean; readonly expectedVersion?: string } = {},
+  { expectedVersion }: { readonly expectedVersion?: string } = {},
 ): Promise<boolean> {
-  // Fork: a newer release can replace the download first, unless the caller pinned this build.
+  // Fork: a newer release replaces the download first, unless the caller pinned this build.
   if (
     expectedVersion === undefined &&
-    !(await ForkUpdate.prepareNewestUpdateInstall(bridge, { unattended, reportError }))
+    !(await ForkUpdate.prepareNewestUpdateInstall(bridge, { reportError }))
   )
     return false;
   try {

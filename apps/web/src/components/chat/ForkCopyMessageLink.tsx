@@ -6,7 +6,7 @@ import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { readThreadShell } from "../../state/entities";
 import { runRegisteredFocusLevelCommand } from "../focusLevels/useFocusLevelShortcuts";
 import { toastManager } from "../ui/toast";
-import { useForkMessageLinks } from "./ForkMessageLinkTarget";
+import { useForkThreadAddressing } from "./ForkMessageLinkTarget";
 import { ForkPinMessageButton, useForkMessagePinsEnabled } from "./ForkMessagePins";
 import { objectMenuActionsProps } from "../../objectMenu";
 import { MessageCopyButton } from "./MessageCopyButton";
@@ -29,7 +29,7 @@ export function ForkCopyMessageLink(props: {
   readonly text?: string | undefined;
   readonly standalone?: boolean;
 }) {
-  const enabled = useForkMessageLinks(props.threadRef?.environmentId ?? null);
+  const enabled = useForkThreadAddressing(props.threadRef?.environmentId ?? null);
   const pins = useForkMessagePinsEnabled();
   if ((!enabled && !pins) || !props.threadRef) return null;
   const buttons = (
@@ -65,7 +65,7 @@ export function ForkCopyMessageLink(props: {
 }
 
 export function useForkCopyMessageLink(threadRef: ScopedThreadRef | null) {
-  const enabled = useForkMessageLinks(threadRef?.environmentId ?? null);
+  const enabled = useForkThreadAddressing(threadRef?.environmentId ?? null);
   const { copyToClipboard } = useCopyToClipboard({
     target: "message link",
     onCopy: () => toastManager.add({ type: "success", title: "Message link copied" }),

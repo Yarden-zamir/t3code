@@ -8,6 +8,7 @@ import {
 import { Minimize2Icon } from "lucide-react";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import { copyFromObjectMenu, showObjectMenu } from "../../objectMenu";
+import { ShortcutHint, useKeybindingProps } from "../focusLevels/ShortcutHint";
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -27,6 +28,7 @@ export function ContextWindowMeter(props: {
   compactDisabledReason?: string | null | undefined;
 }) {
   const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
+  const compactKeybindingProps = useKeybindingProps("chat.compactContext");
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const radius = 9.75;
@@ -58,6 +60,7 @@ export function ContextWindowMeter(props: {
                   ? {
                       label: "Compact context",
                       run: onCompact,
+                      keybindingCommand: "chat.compactContext",
                       ...(compactDisabled ? { disabled: true } : {}),
                     }
                   : null,
@@ -185,11 +188,13 @@ export function ContextWindowMeter(props: {
                 size="xs"
                 variant="outline"
                 className="mt-1 w-full justify-center"
+                {...compactKeybindingProps}
                 disabled={compactDisabled}
                 onClick={onCompact}
               >
                 <Minimize2Icon aria-hidden="true" />
                 Compact context
+                <ShortcutHint command="chat.compactContext" />
               </Button>
               {compactDisabled && compactDisabledReason ? (
                 <div className="text-pretty text-secondary-label text-2xs">

@@ -625,7 +625,10 @@ it.effect(
       let sessionWorktree: string | null = null;
       let setupConfigured = true;
       let hasThread = true;
-      let settings = { ...DEFAULT_SERVER_SETTINGS, worktreeArtifactEviction: false };
+      let settings: typeof DEFAULT_SERVER_SETTINGS = {
+        ...DEFAULT_SERVER_SETTINGS,
+        worktreeArtifactsAfterDays: null,
+      };
       const project = {
         id: base.projectId,
         projectId: base.projectId,
@@ -692,7 +695,7 @@ it.effect(
           return entries;
         });
       assert.lengthOf(yield* run(), 0);
-      settings = { ...settings, worktreeArtifactEviction: true };
+      settings = { ...settings, worktreeArtifactsAfterDays: 14 };
       hasThread = false;
       yield* f.file("apps/mobile/android/app/build/outputs/app.apk");
       assert.lengthOf(yield* run(), 0);

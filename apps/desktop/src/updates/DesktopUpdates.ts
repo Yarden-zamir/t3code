@@ -488,7 +488,7 @@ export const make = Effect.gen(function* () {
     yield* electronUpdater.setChannel("nightly");
     yield* electronUpdater.setAllowPrerelease(allowsPrerelease);
     // An older build can lack migrations this one ran. Only a guarded track switch's own check
-    // may offer one. Fork: a local build (scripts/fork-desktop-mac.sh --install) carries a
+    // may offer one. Fork: a local build (scripts/fork-deploy-local.sh --mac --install) carries a
     // higher build number than the releases, so it stays installed.
     yield* electronUpdater.setAllowDowngrade(false);
     yield* electronUpdater.setFullChangelog(allowsPrerelease);

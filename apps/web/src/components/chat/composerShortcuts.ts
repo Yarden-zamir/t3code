@@ -34,5 +34,13 @@ export function composerShortcutCommands(
     "composer.previousWorktree": ({ event }) => {
       if (!event.repeat) branchToolbarRef.current?.usePreviousWorktree();
     },
+    "composer.toggleCompactBeforeSend": ({ event }) => {
+      if (composerRef.current?.isCompactBeforeSendShown() !== true) return false;
+      if (!event.repeat) composerRef.current.toggleCompactBeforeSend();
+    },
+    "chat.compactContext": ({ event }) => {
+      if (composerRef.current?.canCompactContext() !== true) return false;
+      if (!event.repeat) composerRef.current.compactContext();
+    },
   } satisfies ChatShortcutCommands;
 }

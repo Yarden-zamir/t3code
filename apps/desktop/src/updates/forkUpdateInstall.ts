@@ -27,9 +27,10 @@ export function resolveNewerUpdateVersion(
 }
 
 /**
- * Fork: checks for a newer release before the user installs a downloaded update. A check drops
- * the download from the state, but electron-updater keeps the downloaded file until the next
- * download. So the state gets the download back, and "Install this one" still installs it.
+ * Fork: checks for a newer release before an install of a downloaded update. A check drops the
+ * download from the state, but electron-updater keeps the downloaded file until the next
+ * download. So the state gets the download back, and it stays installable when the newer
+ * download fails.
  */
 export const makeCheckBeforeInstall = (updater: {
   readonly getState: Effect.Effect<DesktopUpdateState>;

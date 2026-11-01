@@ -12,7 +12,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentThreadShells } from "../../state/threads";
 import { copyPromptLink } from "../prompt-links/prompt-link-actions";
 import { CopyTextButton } from "./CopyTextButton";
-import { useForkMessageLinksEnabled } from "./forkMessageLinks";
+import { useForkThreadAddressing } from "./forkMessageLinks";
 import { useForkMessagePin } from "./forkMessagePins";
 
 /**
@@ -27,7 +27,7 @@ function useForkMessageMenuEntries(input: {
   readonly promptLink: boolean;
 }): { readonly entries: LongPressMenuEntry[]; readonly link: string | null } {
   const { environmentId, threadId, messageId, text } = input;
-  const enabled = useForkMessageLinksEnabled(environmentId) && messageId !== null;
+  const enabled = useForkThreadAddressing(environmentId) && messageId !== null;
   const pin = useForkMessagePin({ environmentId, threadId, messageId, text });
   // A Markdown link labelled by the thread title, so a paste in chat is a chip. Known limit: the
   // title is read without a subscription and stays old until the row renders again.

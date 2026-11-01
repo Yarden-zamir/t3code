@@ -674,23 +674,24 @@ it.effect("invalidates cached metadata after interrupted worktree creation", () 
       const cwd = yield* makeTmpDir();
       yield* initRepoWithCommit(cwd);
       const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const discoveryComplete = yield* Deferred.make<void>();
-      const releaseDiscovery = yield* Deferred.make<void>();
-      let holdDiscovery = false;
+      const checkoutComplete = yield* Deferred.make<void>();
+      const releaseCheckout = yield* Deferred.make<void>();
+      let holdCheckout = false;
       const spawner = ChildProcessSpawner.make((command) =>
         Effect.gen(function* () {
           const handle = yield* delegate.spawn(command);
           if (
-            !holdDiscovery ||
+            !holdCheckout ||
             !ChildProcess.isStandardCommand(command) ||
-            !command.args.includes("--git-common-dir")
+            !command.args.includes("worktree") ||
+            !command.args.includes("add")
           )
             return handle;
-          holdDiscovery = false;
+          holdCheckout = false;
           const output = yield* Stream.runCollect(handle.stdout);
           yield* handle.exitCode;
-          yield* Deferred.succeed(discoveryComplete, undefined);
-          yield* Deferred.await(releaseDiscovery);
+          yield* Deferred.succeed(checkoutComplete, undefined);
+          yield* Deferred.await(releaseCheckout);
           return ChildProcessSpawner.makeHandle({ ...handle, stdout: Stream.fromIterable(output) });
         }),
       );
@@ -702,7 +703,7 @@ it.effect("invalidates cached metadata after interrupted worktree creation", () 
       yield* git(cwd, ["checkout", "-b", "creator-current"]);
       const path = yield* Path.Path;
       const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "interrupted");
-      holdDiscovery = true;
+      holdCheckout = true;
       const creation = yield* driver
         .createWorktree({
           cwd,
@@ -712,9 +713,9 @@ it.effect("invalidates cached metadata after interrupted worktree creation", () 
         })
         .pipe(Effect.forkChild({ startImmediately: true }));
       const cancellation = yield* Effect.gen(function* () {
-        yield* Deferred.await(discoveryComplete);
+        yield* Deferred.await(checkoutComplete);
         return yield* Fiber.interrupt(creation).pipe(Effect.forkChild({ startImmediately: true }));
-      }).pipe(Effect.ensuring(Deferred.succeed(releaseDiscovery, undefined)));
+      }).pipe(Effect.ensuring(Deferred.succeed(releaseCheckout, undefined)));
       yield* Fiber.join(cancellation);
       const exit = yield* Fiber.await(creation);
       assert.isTrue(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause));

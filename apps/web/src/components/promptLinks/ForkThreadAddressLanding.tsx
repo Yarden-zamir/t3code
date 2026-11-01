@@ -31,13 +31,12 @@ function openedFromOutside(): boolean {
 const START = openedFromOutside() ? parseThreadAddress(window.location.href) : null;
 
 /**
- * Fork: with `threadLinksOpenDesktopApp` on, a thread address from outside T3 Code opens in the
- * desktop app, with a page to continue in the browser; else null. Limit: a closed desktop app
- * loses the link; revisit when pingdotgg/t3code#18422 merges. Limit: with `threadLinkChips` off,
- * web chat links open with `noopener`, read as outside; revisit if users combine the two settings.
+ * Fork: with `threadAddressing` on, a thread address from outside T3 Code opens in the desktop
+ * app, with a page to continue in the browser; else null. Limit: a closed desktop app loses the
+ * link; revisit when pingdotgg/t3code#18422 merges.
  */
 export function useForkThreadAddressLanding(): ReactNode | null {
-  const enabled = usePrimarySettings((settings) => settings.threadLinksOpenDesktopApp);
+  const enabled = usePrimarySettings((settings) => settings.threadAddressing);
   const knownIds = useEnvironmentIds();
   const [continued, setContinued] = useState(false);
   if (START === null || !enabled || !knownIds.includes(START.environmentId) || continued) {

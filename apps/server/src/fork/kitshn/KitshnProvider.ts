@@ -8,7 +8,10 @@ import {
   type Answer,
   type CardSettingValues,
   type DesiredParts,
+  KITSHN_PROTOCOL,
+  legacyProtocol,
   line as requestLine,
+  matchProtocol,
   PROVIDER_PROTOCOL,
   type ProviderClient,
   type ProviderCommand,
@@ -18,6 +21,7 @@ import {
   type ReachedCard,
   readAnswer,
   type Request,
+  ROLLOUT_FIX,
 } from "@kitshn/local";
 import type { MachineCommandInput, MachineStatus } from "@t3tools/contracts";
 import {
@@ -263,9 +267,17 @@ const commandOutput = (outcome: MachineHost.CommandOutcome) => {
     : text.slice(0, MAX_COMMAND_OUTPUT_LENGTH - CUT_NOTE.length) + CUT_NOTE;
 };
 
+/** kitshn refused the register, or T3 refused the protocol of the daemon (K-725). */
 class RegisterRefused extends Schema.TaggedError<RegisterRefused>()("RegisterRefused", {
-  error: Schema.String,
+  reason: Schema.String,
 }) {}
+
+/** K-725: how T3 treats the kitshn protocol of the other side. */
+const matchKitshn = (name: string, version: string) =>
+  matchProtocol(
+    { name: "T3", version: KITSHN_PROTOCOL, update: "install the newest T3 release" },
+    { name, version, update: ROLLOUT_FIX },
+  );
 
 /** K-709: the desired state kind of the T3 settings, in the `ForkSettingsState` shape. */
 export const SETTINGS_KIND = "t3.settings";
@@ -406,6 +418,8 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
     status: "connecting",
     detail: null,
   });
+  // K-725: one warning per daemon version that T3 tolerates.
+  const toleratedVersions = new Set<string>();
   // Why T3 ended the last child itself, so the next registered connection can show it.
   const restartNote = yield* Ref.make<{ readonly reason: string; readonly at: number } | null>(
     null,
@@ -494,8 +508,14 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const connectOnce = Effect.scoped(
     Effect.gen(function* () {
       const binary = yield* cli.binary;
+      // K-725: only a refusal counts here; the binary on disk can differ from the running daemon,
+      // so the register answer decides the rest.
+      const onDisk = matchKitshn("the kitshn CLI", binary.protocol);
+      if (onDisk.outcome === "refuse") {
+        return { ended: onDisk.reason, endedByT3: false, refused: true, registered: false };
+      }
       const child = yield* spawner.spawn(
-        ChildProcess.make(binary, ["provider"], {
+        ChildProcess.make(binary.path, ["provider"], {
           // The server env can hold the credential of an agent shell that started it.
           env: { [THREAD_CREDENTIAL_AUTHORIZATION_ENV]: "", [KITSHN_ATTEST_ENV]: "" },
           extendEnv: true,
@@ -558,6 +578,7 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
         id: registerId,
         type: "register",
         protocol: PROVIDER_PROTOCOL,
+        protocolVersion: KITSHN_PROTOCOL,
         provider: PROVIDER_NAME,
         instance: yield* environment.getEnvironmentId,
         kinds: REGISTERED_KINDS,
@@ -644,6 +665,14 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       const onRegistered = Effect.fn("KitshnProvider.onRegistered")(function* (
         answer: KitshnConnection.RegisterAnswer,
       ) {
+        // K-725: the answer of the running daemon decides; a daemon before K-724 names no version.
+        const daemonProtocol = answer.protocolVersion ?? legacyProtocol(answer.protocol);
+        const match = matchKitshn("the kitshn daemon", daemonProtocol);
+        if (match.outcome === "refuse") return yield* new RegisterRefused({ reason: match.reason });
+        if (match.outcome === "tolerate" && !toleratedVersions.has(daemonProtocol)) {
+          toleratedVersions.add(daemonProtocol);
+          yield* Effect.logWarning(`kitshn provider: ${match.warning}`);
+        }
         yield* SubscriptionRef.set(providerState, {
           settings: answer.saved.desired[SETTINGS_KIND] ?? null,
           cardSettings: answer.saved.settings,
@@ -700,7 +729,11 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
           if (asked !== undefined) return yield* Deferred.succeed(asked, answer);
           if (answer.id === registerId) {
             if (answer.type === "register") return yield* onRegistered(answer);
-            if (answer.type === "error") return yield* new RegisterRefused({ error: answer.error });
+            if (answer.type === "error") {
+              return yield* new RegisterRefused({
+                reason: `kitshn refused the registration: ${answer.error}`,
+              });
+            }
           }
           if (answer.type === "upsert" && answer.problems !== undefined) {
             const problems = answer.problems;
@@ -813,24 +846,27 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
             }),
           ),
         ),
+        Effect.map((ended) => ({ ended, refused: false })),
         Effect.catchTags({
-          RegisterRefused: (error) =>
-            Effect.succeed(`kitshn refused the registration: ${error.error}`),
+          RegisterRefused: (error) => Effect.succeed({ ended: error.reason, refused: true }),
         }),
-        Effect.orElseSucceed(() => "kitshn provider stopped"),
+        Effect.orElseSucceed(() => ({ ended: "kitshn provider stopped", refused: false })),
       );
       // Leaving this scope ends the child, so a child that stopped answering is replaced.
-      const { ended, endedByT3 } = yield* Effect.raceFirst(
-        exited.pipe(Effect.map((ended) => ({ ended, endedByT3: false }))),
-        Deferred.await(unanswered).pipe(Effect.map((ended) => ({ ended, endedByT3: true }))),
+      const end = yield* Effect.raceFirst(
+        exited.pipe(Effect.map((exit) => ({ ...exit, endedByT3: false }))),
+        Deferred.await(unanswered).pipe(
+          Effect.map((ended) => ({ ended, refused: false, endedByT3: true })),
+        ),
       );
-      return { ended, endedByT3, registered: yield* Deferred.isDone(registeredOnce) };
+      return { ...end, registered: yield* Deferred.isDone(registeredOnce) };
     }),
   ).pipe(
     Effect.catch((error) =>
       Effect.succeed({
         ended: error._tag === "KitshnCliError" ? error.message : "kitshn provider did not start",
         endedByT3: false,
+        refused: false,
         registered: false,
       }),
     ),
@@ -845,18 +881,27 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
   const connectForever = Effect.gen(function* () {
     let failures = 0;
     let lastEnded = "";
+    // K-725: each refusal reason is logged once, until the next registered connection.
+    const loggedRefusals = new Set<string>();
     while (true) {
-      const { ended, endedByT3, registered: didRegister } = yield* connectOnce;
+      const { ended, endedByT3, refused, registered: didRegister } = yield* connectOnce;
+      if (didRegister) loggedRefusals.clear();
       // A child that T3 ended itself backs off too, so a daemon that keeps refusing is no tight loop.
       failures = didRegister && !endedByT3 ? 0 : failures + 1;
       const endedAt = yield* Clock.currentTimeMillis;
       yield* Ref.set(restartNote, endedByT3 ? { reason: ended, at: endedAt } : null);
       const delay = retryDelay(failures);
-      const message = `kitshn provider: ${ended}. It tries again in ${Duration.format(delay)}.`;
-      // A machine without kitshn says the same thing on each try; log it once.
-      yield* ended === lastEnded && !didRegister
-        ? Effect.logDebug(message)
-        : Effect.logInfo(message);
+      const reason = ended.endsWith(".") ? ended.slice(0, -1) : ended;
+      const message = `kitshn provider: ${reason}. It tries again in ${Duration.format(delay)}.`;
+      if (refused) {
+        yield* loggedRefusals.has(ended) ? Effect.logDebug(message) : Effect.logWarning(message);
+        loggedRefusals.add(ended);
+      } else {
+        // A machine without kitshn says the same thing on each try; log it once.
+        yield* ended === lastEnded && !didRegister
+          ? Effect.logDebug(message)
+          : Effect.logInfo(message);
+      }
       lastEnded = ended;
       yield* SubscriptionRef.set(connection, { status: "connecting", detail: ended });
       yield* Effect.sleep(delay);

@@ -253,48 +253,28 @@ security find-identity -v -p codesigning
 
 The last command must list "Yarden Zamir T3 Fork".
 
-## Local Mac build
+## Update and install
 
-A local build is the fast way to test a change on this Mac. It does not replace the normal flow: merge the change to main, and its CI release reaches every machine.
+The desktop app and the server follow one update policy, see [Updates](features.md#updates). Each OS family has one install script, and one script deploys a local build. Only the last step differs between the two programs.
 
-| Command                                 | Result                                                                                                                        |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `scripts/fork-desktop-mac.sh`           | Writes the signed ZIP and `nightly-mac.yml` to `release/`. It skips the DMG, which only a first manual install uses.          |
-| `scripts/fork-desktop-mac.sh --install` | Quits T3, keeps the previous app in `_shared/backup/`, installs the new build and starts it. The next CI release replaces it. |
-| `scripts/fork-desktop-mac.sh --publish` | Push the commit first. Creates a prerelease on the fork. Installed fork apps offer it as an update.                           |
-
-## Server updates
-
-A headless server that runs as the upstream background service (`t3 service install`) updates from the fork releases. The install is the upstream self-update. It unpacks the release into `<T3 home>/runtime/versions/<version>`, and the service launcher starts it on trial. If the new version does not start, the launcher goes back to the old version.
+| Step                     | Desktop app                                                      | Server (`t3 service install`, Linux)                                                 |
+| ------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| First install            | `scripts/fork-install/install.sh` or `install.ps1`               | `scripts/fork-install/install.sh` on Linux without a display                         |
+| Newest release and check | electron-updater, against the `nightly*.yml` feed of the release | the newest release with `SHA256SUMS`, against `SHA256SUMS`                           |
+| When idle                | the window waits, with `terminalHold` of its server              | `ForkUpdates` checks every 5 minutes                                                 |
+| Last step                | electron-updater quits the app and installs the new one          | the service launcher starts the new runtime on trial, then the `t3` launchers follow |
+| Local build              | `scripts/fork-deploy-local.sh --mac`                             | `scripts/fork-deploy-local.sh <ssh-host>`                                            |
 
 - Keep a release on each code push to main; never slow the update path. See [Fork Release](#fork-release) for the docs-only exception.
-- Servers install updates only when idle.
 - Ask the owner before migrating Oracle-VPS or VPS to another install path. Routine version-directory updates are not install-path migrations.
-- The user setting is [Server auto-update](features.md#server-auto-update). It checks the fork releases every 5 minutes.
-- A release is ready when it has `SHA256SUMS`. A version that rolled back or failed is not tried again. A newer release is tried.
-- The kitshn command install-update of the T3 card works on such a server too. It waits for no running agent turn or background shell, even with `forkAutoUpdate` off. A program in a terminal thread holds it for at most 6 hours, then the update ends the program after a notice in its terminal.
-- The `updateChannel` setting of the T3 card picks the feed: `nightly` (default) takes each nightly, `daily` takes only the releases that [Daily release](#daily-release) promoted. A server never installs an older build when the feed changes.
+- The server install is the upstream self-update. It unpacks the release into `<T3 home>/runtime/versions/<version>`, and the service launcher starts it on trial. If the new version does not start, the launcher goes back to the old version. A version that rolled back or failed is not tried again. A newer release is tried.
+- When the new server is ready, it points each `t3` launcher of its T3 home at its runtime: the launchers in `<T3 home>/runtime/launchers` and `~/.local/bin/t3` (`T3CODE_INSTALL_BIN_DIR`). Only a link into `runtime/versions` changes (`apps/server/src/fork/forkLaunchers.ts`).
+- The kitshn command install-update of the T3 card waits for idle also with `forkUpdateMode` `manual`. On the desktop app it takes the newest release, as the update button does.
+- The `updateChannel` setting of the T3 card picks the feed of the server: `nightly` (default) takes each nightly, `daily` takes only the releases that [Daily release](#daily-release) promoted. A server never installs an older build when the feed changes.
 - A restart stops the running turns. "Continue threads after restarts" (`continueThreadsAfterServerUpdate`) and [Recover interrupted agents](features.md#recover-interrupted-agents) continue them.
 - "Update everything" and `t3 update` also install fork releases. A self-update request for a version without a fork release installs the newest fork release instead. The Play Store app checks upstream releases, so its "Check for updates" installs the newest fork release.
 
-## Deploy a local build
-
-To try a change on a headless server before a release, deploy a build of your checkout over SSH. The server must run as the background service.
-
-```sh
-scripts/fork-deploy-local.sh <ssh-host>
-```
-
-- The script reads the system of the server with `ssh <ssh-host> uname -sm`. It supports Linux x64 and arm64.
-- It builds the web client and the `t3` executable here. It takes the native packages and the resource monitor from the newest fork release that has `SHA256SUMS`.
-- If the checkout changes `apps/server/package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml` or `patches` since that release, the script stops. Such a change needs a release.
-- The version follows the rule of the local Mac build in [Versions](#versions), so `forkAutoUpdate` replaces it with the next release.
-- On the server, the script unpacks the build into `<T3 home>/runtime/versions/<version>` and runs `t3 update <version> --yes`. The service restarts at once, and the restart stops running agent turns.
-- After the switch, the script waits up to 90 seconds until `/.well-known/t3/environment` of the server reports the new version. If it does not, the script runs `t3 update <previous version> --yes --allow-downgrade` on the server and fails. If that rollback fails, it prints the command to run on the server. The earlier version is still in `runtime/versions`.
-- `<T3 home>` is `~/.t3` of the SSH user, or `T3CODE_HOME` of the SSH session. Connect as the user that runs the service. On the VPS, this user is `t3`, not root.
-- To build only, run `scripts/fork-deploy-local.sh --archive linux-x64` or `--archive linux-arm64`. The archive is in `release/`.
-
-## Install the fork
+### Install the fork
 
 `scripts/fork-install/` installs the fork on a new machine. Then join the machine to kitshn: `kitshn join <code> --server <address>`. "Add machine" on the kitshn map gives the code.
 
@@ -307,14 +287,34 @@ curl -fsSL https://raw.githubusercontent.com/Yarden-zamir/t3code/main/scripts/fo
 ```
 
 - On macOS, `install.sh` downloads the newest nightly `.dmg`, copies the app to `/Applications` and opens it.
-- On Windows, `install.ps1` downloads and runs the newest nightly `.exe`.
+- On Windows, `install.ps1` downloads and runs the newest nightly `.exe`. The NSIS installer replaces an installed app.
 - On Linux with a display (`DISPLAY` or `WAYLAND_DISPLAY`), `install.sh` downloads the newest nightly AppImage to `~/Applications/T3-Code.AppImage`, adds a menu entry and starts it. AppImages need FUSE 2, for example `sudo apt install libfuse2t64`.
 - The macOS and Linux desktop installs keep an installed app, because the app updates itself. `--force` replaces it.
-- On Linux without a display, `install.sh` runs `scripts/install.sh`, the upstream installer pointed at the fork releases. It unpacks the newest release into `~/.t3/runtime/versions/<version>` and links `~/.local/bin/t3` to it. Then it runs `t3 service install`. The machine needs no Node.
+- On Linux without a display, `install.sh` runs `scripts/install.sh`, the upstream installer pointed at the fork releases. It unpacks the newest release into `~/.t3/runtime/versions/<version>`, checks it against `SHA256SUMS` and links `~/.local/bin/t3` to it. Then it runs `t3 service install`. The machine needs no Node.
 - The drop-in file `~/.config/systemd/user/t3code.service.d/fork.conf` keeps the headless server on `127.0.0.1:3773` with the PATH of the installer shell.
 - `t3 service install` turns on lingering, so the server keeps running after logout. If that needs an administrator, it says so. See [background-service.md](../user/background-service.md#troubleshooting).
 - The installers read the release list of the GitHub API, because the nightlies are prereleases and `releases/latest` skips them.
 - Run `install.sh --help` for the options.
+
+### Deploy a local build
+
+A local build is the fast way to try a change before a release. It does not replace the normal flow: merge the change to main, and its CI release reaches every machine. The version follows [Versions](#versions), so the next CI release replaces a local build.
+
+| Command                                         | Result                                                                                                                    |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/fork-deploy-local.sh <ssh-host>`       | Builds the server, installs it on the headless Linux server and switches its service. The server must run as the service. |
+| `scripts/fork-deploy-local.sh --archive <arch>` | Builds only the server archive for `linux-x64` or `linux-arm64` into `release/`.                                          |
+| `scripts/fork-deploy-local.sh --mac`            | Writes the signed ZIP and `nightly-mac.yml` to `release/`. It skips the DMG, which only a first manual install uses.      |
+| `scripts/fork-deploy-local.sh --mac --install`  | Quits T3, keeps the previous app in `_shared/backup/`, installs the new build and starts it.                              |
+| `scripts/fork-deploy-local.sh --mac --publish`  | Push the commit first. Creates a prerelease on the fork. Installed fork apps offer it as an update.                       |
+
+- The CI number of the version is the highest build number of the fork releases, not the first release in the list. The daily release moves to the top of the list.
+- Server: the script reads the system of the server with `ssh <ssh-host> uname -sm`. It supports Linux x64 and arm64.
+- Server: it builds the web client and the `t3` executable here. It takes the native packages and the resource monitor from the newest fork release that has `SHA256SUMS`.
+- Server: if the checkout changes `apps/server/package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml` or `patches` since that release, the script stops. Such a change needs a release.
+- Server: the script unpacks the build into `<T3 home>/runtime/versions/<version>` and runs `t3 update <version> --yes`. The service restarts at once, and the restart stops running agent turns.
+- Server: after the switch, the script waits up to 90 seconds until `/.well-known/t3/environment` of the server reports the new version. If it does not, the script runs `t3 update <previous version> --yes --allow-downgrade` on the server and fails. If that rollback fails, it prints the command to run on the server. The earlier version is still in `runtime/versions`.
+- Server: `<T3 home>` is `~/.t3` of the SSH user, or `T3CODE_HOME` of the SSH session. Connect as the user that runs the service. On the VPS, this user is `t3`, not root.
 
 ### Set up a headless Linux machine
 
@@ -332,7 +332,7 @@ These steps set up a Linux server without a display, for example an Oracle Cloud
 
 - The tunnel connects outbound, and the server listens only on `127.0.0.1`, so the cloud firewall needs no change. On Oracle Cloud, keep the default security list and the `iptables` rules of the image.
 - To check the server, run `t3 service status` and `systemctl --user status t3code.service`.
-- To update the server by hand, run `t3 update`. See [Server updates](#server-updates).
+- To update the server by hand, run `t3 update`. See [Update and install](#update-and-install).
 
 ### Set up the tunnel by hand
 

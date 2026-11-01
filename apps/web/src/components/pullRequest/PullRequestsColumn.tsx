@@ -103,7 +103,7 @@ export function PullRequestsColumn({
   searchInput: ReactNode;
   sortMenu: ReactNode;
   filtersMenu: ReactNode;
-  /** Fork: the active filter chips. They render nothing while `pullRequestFilterChips` is off. */
+  /** Fork: the active filter chips. They render nothing while `pullRequestFilters` is off. */
   filterChips: ReactNode;
   rightPanelControl: ReactNode;
   titlebarControls: ReactNode;

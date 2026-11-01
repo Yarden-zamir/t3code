@@ -64,3 +64,26 @@ describe("settings.find", () => {
     assert.strictEqual(resolve({ terminalFocus: true }), null);
   });
 });
+
+describe("compaction keys", () => {
+  const resolve = (key: string, context: Record<string, boolean>) =>
+    resolveShortcutCommand(
+      event({ key, metaKey: true, altKey: true, shiftKey: true }),
+      DEFAULT_RESOLVED_KEYBINDINGS,
+      { platform: "MacIntel", context },
+    );
+
+  it("toggles compact before send only while the toggle shows", () => {
+    assert.strictEqual(
+      resolve("k", { compactBeforeSendShown: true, composerFocus: true, editableFocus: true }),
+      "composer.toggleCompactBeforeSend",
+    );
+    assert.strictEqual(resolve("k", { composerFocus: true, editableFocus: true }), null);
+    assert.strictEqual(resolve("k", { compactBeforeSendShown: true, terminalFocus: true }), null);
+  });
+
+  it("compacts context outside terminals", () => {
+    assert.strictEqual(resolve("c", { composerFocus: true }), "chat.compactContext");
+    assert.strictEqual(resolve("c", { terminalFocus: true }), null);
+  });
+});

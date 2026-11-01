@@ -375,7 +375,7 @@ const PINNED_RUNTIME_PRUNE_GRACE = Duration.hours(1);
  * launcher on PATH. A service does not see the installer's `T3CODE_INSTALL_BIN_DIR` or the
  * interactive PATH, so this is how it finds a custom one, including installs that predate the file.
  */
-const PINNED_RUNTIME_LAUNCHERS_FILE = "launchers";
+export const PINNED_RUNTIME_LAUNCHERS_FILE = "launchers";
 
 /**
  * Starts on a fresh line whatever the file ends with when the append lands: another process's

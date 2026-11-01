@@ -109,7 +109,7 @@ const setup = (binaries: {
         }),
       );
     const run = host(cli.run(["address", "c1", "new", "--json"], AUTHORIZATION));
-    return { run, runs, homeBinary, pathBinaries, started };
+    return { run, binary: host(cli.binary), runs, homeBinary, pathBinaries, started };
   });
 
 it.layer(NodeServices.layer)("KitshnCli", (it) => {
@@ -187,6 +187,20 @@ it.layer(NodeServices.layer)("KitshnCli", (it) => {
       expect(error.reason).toBe("not_kitshn_2");
       expect(error.message).toContain(pathBinaries[0]);
       expect(runs.map((input) => input.args[0])).toEqual(["version"]);
+    }),
+  );
+
+  it.effect.each([
+    { version: KITSHN_2, protocol: "2.0.0" },
+    {
+      version: '{"product":"kitshn","generation":2,"version":"a","protocol":"2.1.0"}',
+      protocol: "2.1.0",
+    },
+    { version: '{"product":"kitshn","generation":2,"version":"a","protocol":3}', protocol: "none" },
+  ])("reads protocol $protocol from version --json (K-724)", ({ version, protocol }) =>
+    Effect.gen(function* () {
+      const { binary, pathBinaries } = yield* setup({ path: [version] });
+      expect(yield* binary).toEqual({ path: pathBinaries[0], protocol });
     }),
   );
 

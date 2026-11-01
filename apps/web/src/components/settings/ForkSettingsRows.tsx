@@ -310,68 +310,35 @@ export function RestartReconnectWarningGraceSettingsRow() {
   );
 }
 
-/** Fork: `checkNewerBeforeUpdateInstall`. Only the desktop app installs downloaded updates. */
-export function CheckNewerBeforeUpdateInstallSettingsRow() {
+/** Fork: `forkUpdateMode`. The background service and the desktop app follow it. */
+export function ForkUpdateModeSettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["forkUpdateMode"]);
   return (
     <SettingsRow
-      {...searchableSetting("check-newer-before-update-install")}
-      description="Desktop app: before it installs a downloaded update, look for a newer release and offer it. Install when idle and the kitshn install-update command take the newer release."
-      resetAction={
-        settings.checkNewerBeforeUpdateInstall !==
-        DEFAULT_UNIFIED_SETTINGS.checkNewerBeforeUpdateInstall ? (
-          <SettingResetButton
-            label="check for a newer update before install"
-            onClick={() =>
-              updateSettings({
-                checkNewerBeforeUpdateInstall:
-                  DEFAULT_UNIFIED_SETTINGS.checkNewerBeforeUpdateInstall,
-              })
-            }
-          />
-        ) : null
-      }
-      control={
-        <Switch
-          checked={settings.checkNewerBeforeUpdateInstall}
-          onCheckedChange={(checked) =>
-            updateSettings({ checkNewerBeforeUpdateInstall: Boolean(checked) })
-          }
-          aria-label="Check for a newer update before install"
-        />
-      }
-    />
-  );
-}
-
-/** Fork: `forkAutoUpdate`. Only a server that runs as the background service uses it. */
-export function ForkAutoUpdateSettingsRow() {
-  const settings = useScopedSettings();
-  const updateSettings = useUpdateScopedSettings();
-  const mixed = useScopedSettingsMixed(["forkAutoUpdate"]);
-  return (
-    <SettingsRow
-      {...searchableSetting("fork-auto-update")}
+      {...searchableSetting("fork-update-mode")}
       serverScoped
-      settingKeys={["forkAutoUpdate"]}
-      description="A server that runs as the background service installs each newer fork release when no agent runs. The desktop app ignores it and uses its own updater."
+      settingKeys={["forkUpdateMode"]}
+      description="Install the newest fork release when no agent and no terminal program runs. The desktop app and a server that runs as the background service follow it. Off: install only from the update button, t3 update or the kitshn install-update command."
       resetAction={
-        mixed || settings.forkAutoUpdate !== DEFAULT_UNIFIED_SETTINGS.forkAutoUpdate ? (
+        mixed || settings.forkUpdateMode !== DEFAULT_UNIFIED_SETTINGS.forkUpdateMode ? (
           <SettingResetButton
-            label="server auto-update"
+            label="automatic updates"
             onClick={() =>
-              updateSettings({ forkAutoUpdate: DEFAULT_UNIFIED_SETTINGS.forkAutoUpdate })
+              updateSettings({ forkUpdateMode: DEFAULT_UNIFIED_SETTINGS.forkUpdateMode })
             }
           />
         ) : null
       }
       control={
         <ScopedSwitch
-          settingKeys={["forkAutoUpdate"]}
-          checked={settings.forkAutoUpdate}
-          onCheckedChange={(checked) => updateSettings({ forkAutoUpdate: Boolean(checked) })}
-          aria-label="Server auto-update"
+          settingKeys={["forkUpdateMode"]}
+          checked={settings.forkUpdateMode === "automatic"}
+          onCheckedChange={(checked) =>
+            updateSettings({ forkUpdateMode: checked ? "automatic" : "manual" })
+          }
+          aria-label="Automatic updates"
         />
       }
     />

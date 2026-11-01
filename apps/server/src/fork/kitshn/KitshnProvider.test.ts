@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import { KITSHN_PROTOCOL } from "@kitshn/local";
 import {
   EnvironmentId,
   type MachineCommandInput,
@@ -14,6 +15,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
@@ -107,9 +109,20 @@ const IDENTITY = {
   checkedAt: "2026-10-30T00:00:00.000Z",
 } as const;
 
-const setup = (options: { readonly installed?: boolean; readonly switchOff?: boolean } = {}) =>
+const setup = (
+  options: {
+    readonly installed?: boolean;
+    readonly switchOff?: boolean;
+    /** The protocol of `kitshn version --json`. */
+    readonly cliProtocol?: string;
+  } = {},
+) =>
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
+    const warnings: Array<string> = [];
+    const logger = Logger.make(({ logLevel, message }) => {
+      if (logLevel === "Warn") warnings.push(String((message as ReadonlyArray<unknown>)[0]));
+    });
     const children = yield* Queue.unbounded<FakeChild>();
     const binaryCalls = yield* Queue.unbounded<void>();
     const ran = yield* Queue.unbounded<string>();
@@ -137,7 +150,10 @@ const setup = (options: { readonly installed?: boolean; readonly switchOff?: boo
                         message: "This machine has no kitshn 2.",
                       }),
                     )
-                  : Effect.succeed("/home/owner/.local/bin/kitshn"),
+                  : Effect.succeed({
+                      path: "/home/owner/.local/bin/kitshn",
+                      protocol: options.cliProtocol ?? KITSHN_PROTOCOL,
+                    }),
               ),
             ),
           }),
@@ -213,7 +229,9 @@ const setup = (options: { readonly installed?: boolean; readonly switchOff?: boo
       ),
     );
     const provider = Context.get(context, KitshnProvider.KitshnProvider);
-    yield* Effect.forkScoped(provider.run);
+    yield* Effect.forkScoped(
+      provider.run.pipe(Effect.provide(Logger.layer([logger], { mergeWithExisting: false }))),
+    );
     /** The first child, registered with the answer of kitshn's daemon. */
     const registered = (answer: Partial<KitshnConnection.RegisterAnswer> = {}) =>
       Effect.gen(function* () {
@@ -238,6 +256,7 @@ const setup = (options: { readonly installed?: boolean; readonly switchOff?: boo
       restarted,
       channels,
       registered,
+      warnings,
     };
   });
 
@@ -291,11 +310,14 @@ it.layer(
   it.effect("registers with protocol 2 and its instance, and again 1 second after an exit", () =>
     Effect.gen(function* () {
       const harness = yield* setup();
+      // The default answer has no protocolVersion, as a daemon before K-724.
       const { child, register } = yield* harness.registered();
       expect(child.args).toEqual(["provider"]);
+      expect(KITSHN_PROTOCOL.startsWith("2.")).toBe(true);
       expect(register).toMatchObject({
         type: "register",
         protocol: 2,
+        protocolVersion: KITSHN_PROTOCOL,
         provider: "t3",
         instance: "environment:kitshn",
         clients: [{ id: "t3code-fork" }, { id: "t3code-fork-desktop" }],
@@ -310,7 +332,15 @@ it.layer(
       yield* child.exit(1);
       yield* TestClock.adjust("1 second");
       const second = yield* Queue.take(harness.children);
-      expect(yield* Queue.take(second.written)).toMatchObject({ type: "register", protocol: 2 });
+      const again = yield* Queue.take(second.written);
+      expect(again).toMatchObject({ type: "register", protocol: 2 });
+      yield* second.say(registerAnswer({ id: String(again.id) }));
+      yield* harness.provider.connection.pipe(
+        Stream.filter((status) => status.status === "registered"),
+        Stream.runHead,
+      );
+      // K-725: an answer without protocolVersion reads as 2.0.0; T3 tolerates it and warns once.
+      expect(harness.warnings).toEqual([expect.stringContaining("the kitshn daemon speaks 2.0.0")]);
     }).pipe(Effect.scoped),
   );
 
@@ -436,6 +466,20 @@ it.layer(
       );
       expect(Option.getOrThrow(status).detail).toBe("turned off by T3CODE_KITSHN=off");
       expect(yield* Queue.size(off.binaryCalls)).toBe(0);
+
+      // K-725: a kitshn CLI of another major starts no bridge, and T3 checks it again later.
+      const otherMajor = yield* setup({ cliProtocol: "3.0.0" });
+      const refused = yield* otherMajor.provider.connection.pipe(
+        Stream.filter((connection) => connection.detail !== null),
+        Stream.runHead,
+      );
+      expect(Option.getOrThrow(refused).detail).toContain(
+        "T3 speaks kitshn protocol 2.1.0 and the kitshn CLI speaks 3.0.0",
+      );
+      yield* Queue.take(otherMajor.binaryCalls);
+      yield* TestClock.adjust("5 seconds");
+      yield* Queue.take(otherMajor.binaryCalls);
+      expect(yield* Queue.size(otherMajor.children)).toBe(0);
     }).pipe(Effect.scoped),
   );
 
@@ -590,6 +634,45 @@ it.layer(
       yield* Queue.take(second.written);
       yield* TestClock.adjust("10 seconds");
       yield* Deferred.await(second.stopped);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("refuses another protocol major, logs each reason once, and tries again (K-725)", () =>
+    Effect.gen(function* () {
+      const harness = yield* setup();
+      const detailContaining = (text: string) =>
+        harness.provider.connection.pipe(
+          Stream.filter((connection) => connection.detail?.includes(text) === true),
+          Stream.runHead,
+          Effect.map((connection) => Option.getOrThrow(connection).detail),
+        );
+      const daemonError =
+        "this daemon speaks kitshn protocol 3.0.0 and the provider t3 speaks 2.1.0: the major versions differ, so this daemon refuses the provider t3. Update the provider t3: install a release of t3 that speaks kitshn protocol 3.0.0 (K-724).";
+      // A daemon of another major answers the register with an error that names both versions.
+      for (const wait of ["0 seconds", "5 seconds"] as const) {
+        yield* TestClock.adjust(wait);
+        const child = yield* Queue.take(harness.children);
+        const register = yield* Queue.take(child.written);
+        yield* child.say({ id: register.id, type: "error", error: daemonError });
+        yield* Deferred.await(child.stopped);
+        expect(yield* detailContaining(daemonError)).toBe(
+          `kitshn refused the registration: ${daemonError}`,
+        );
+      }
+      // A daemon that answers with another major is refused by T3 itself.
+      yield* TestClock.adjust("10 seconds");
+      const third = yield* Queue.take(harness.children);
+      const register = yield* Queue.take(third.written);
+      yield* third.say(registerAnswer({ id: String(register.id), protocolVersion: "3.0.0" }));
+      yield* Deferred.await(third.stopped);
+      expect(yield* detailContaining("the kitshn daemon speaks 3.0.0")).toContain(
+        "the major versions differ, so T3 refuses the kitshn daemon",
+      );
+      expect(yield* harness.provider.linkSocket).toBeNull();
+      expect(harness.warnings).toEqual([
+        expect.stringContaining(daemonError),
+        expect.stringContaining("the kitshn daemon speaks 3.0.0"),
+      ]);
     }).pipe(Effect.scoped),
   );
 });

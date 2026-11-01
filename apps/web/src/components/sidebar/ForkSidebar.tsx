@@ -15,7 +15,7 @@ export { useSidebarOwnerFilter } from "./useSidebarOwnerFilter";
 
 type OwnerFilterState = Pick<
   ReturnType<typeof useSidebarOwnerFilter>,
-  | "repositoryOwnerFiltersEnabled"
+  | "pullRequestFiltersEnabled"
   | "ownerOptions"
   | "savedOwnerFilter"
   | "ownerFilter"
@@ -29,9 +29,9 @@ export function ProjectScopeIcon() {
   return <AppIcon slot="sidebar.filter" />;
 }
 
-/** The owner menu in the header, while `repositoryOwnerFilters` is on. */
+/** The owner menu in the header, while `pullRequestFilters` is on. */
 export function OwnerFilterMenu({ owner }: { readonly owner: OwnerFilterState }) {
-  return owner.repositoryOwnerFiltersEnabled ? (
+  return owner.pullRequestFiltersEnabled ? (
     <SidebarOwnerFilterMenu
       options={owner.ownerOptions}
       filter={owner.savedOwnerFilter}

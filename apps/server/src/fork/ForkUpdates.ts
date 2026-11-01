@@ -1,36 +1,45 @@
 /**
  * Fork: installs fork releases through the upstream self-update of a `t3 service install` server.
- * With `forkAutoUpdate`, a check every 5 minutes installs when no turn, background shell or
+ * With `forkUpdateMode` "automatic", a check every 5 minutes installs when no turn, background shell or
  * terminal thread program runs. A program holds it at most TERMINAL_HOLD_MAX, gets a notice, and
  * the update installs TERMINAL_HOLD_NOTICE_LEAD later. Desktop "Install when idle": `terminalHold`.
  */
 import {
   type ForkUpdateTerminalHold,
+  type ServerLifecycleStreamEvent,
   TERMINAL_THREAD_INSTANCE_ID,
   TERMINAL_UPDATE_HOLD_MAX_HOURS,
   type TerminalSummary,
 } from "@t3tools/contracts";
+import type * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/http";
 
+import * as HostProcess from "@t3tools/shared/HostProcess";
+
 import packageJson from "../../package.json" with { type: "json" };
+import { pinnedRuntimePaths } from "../cloud/pinnedRuntime.ts";
 import * as ServiceLauncherClient from "../cloud/serviceLauncherClient.ts";
 import { parseServiceState, SERVICE_STATE_FILE } from "../cloud/serviceProtocol.ts";
 import * as ServerSelfUpdate from "../cloud/selfUpdate.ts";
 import * as ServerConfig from "../config.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as ServerLifecycleEvents from "../serverLifecycleEvents.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import { relinkLaunchers } from "./forkLaunchers.ts";
 import { type ForkUpdateChannel, newerForkRelease } from "./forkReleases.ts";
 
 // Each check reads the GitHub release index once. Unauthenticated, GitHub
@@ -80,6 +89,24 @@ export class ForkUpdateError extends Schema.TaggedError<ForkUpdateError>()("Fork
   }
 }
 
+/**
+ * The first "ready" lifecycle event, from the snapshot or a later publish. It subscribes before it
+ * reads the snapshot, so a publish between the two is not lost. None when the stream ends first.
+ */
+export const firstReadyEvent = Effect.fn("ForkUpdates.firstReadyEvent")(function* (
+  lifecycle: ServerLifecycleEvents.ServerLifecycleEvents["Service"],
+) {
+  const live = yield* Queue.unbounded<ServerLifecycleStreamEvent, Cause.Done>();
+  yield* Stream.runIntoQueue(lifecycle.stream, live).pipe(
+    Effect.forkScoped({ startImmediately: true }),
+  );
+  const snapshot = yield* lifecycle.snapshot;
+  return yield* Stream.concat(Stream.fromIterable(snapshot.events), Stream.fromQueue(live)).pipe(
+    Stream.filter((event) => event.type === "ready"),
+    Stream.runHead,
+  );
+}, Effect.scoped);
+
 export class ForkUpdates extends Context.Service<
   ForkUpdates,
   {
@@ -109,6 +136,8 @@ const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const lifecycle = yield* ServerLifecycleEvents.ServerLifecycleEvents;
   const scope = yield* Effect.scope;
 
   const available = config.mode !== "desktop" && launcher.managed;
@@ -213,8 +242,8 @@ const make = Effect.gen(function* () {
     );
 
   const check = Effect.gen(function* () {
-    const { forkAutoUpdate } = yield* settings.getSettings;
-    if (!(forkAutoUpdate || (yield* Ref.get(installWhenIdle)))) return;
+    const { forkUpdateMode } = yield* settings.getSettings;
+    if (!(forkUpdateMode === "automatic" || (yield* Ref.get(installWhenIdle)))) return;
     const work = yield* runningWork;
     if (work.agents) return;
     const version = yield* newerRelease;
@@ -236,6 +265,30 @@ const make = Effect.gen(function* () {
 
   if (available) {
     yield* check.pipe(Effect.repeat(Schedule.spaced(CHECK_INTERVAL)), Effect.forkScoped);
+    // "ready" follows the launcher's commit, so this runtime is the active one from then on. The
+    // layer builds before startup publishes "ready".
+    yield* firstReadyEvent(lifecycle).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.succeed([]),
+          onSome: () =>
+            relinkLaunchers({
+              baseDir: config.baseDir,
+              entryPath: pinnedRuntimePaths(path, config.baseDir, packageJson.version, platform)
+                .entryPath,
+            }),
+        }),
+      ),
+      Effect.tap((relinked) =>
+        relinked.length === 0
+          ? Effect.void
+          : Effect.logInfo("Pointed the t3 launchers at this version.", { relinked }),
+      ),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Could not point the t3 launchers at this version.", { cause }),
+      ),
+      Effect.forkScoped,
+    );
   }
 
   const install: ForkUpdates["Service"]["install"] = Effect.fn("ForkUpdates.install")(function* ({

@@ -46,7 +46,6 @@ const layerGit = Git.layer.pipe(
 
 interface PrepareOptions {
   readonly restore?: boolean;
-  readonly eviction?: boolean;
   readonly exitCode?: number;
   readonly tracker?: Layer.Layer<Tracker.WorktreeSetupTracker>;
   readonly completion?: Effect.Effect<Setup.ProjectSetupScriptCompletion>;
@@ -91,7 +90,6 @@ const fixture = Effect.gen(function* () {
   let setups = 0;
   const layer = ({
     restore = true,
-    eviction = false,
     exitCode = 0,
     tracker = Tracker.layer,
     completion,
@@ -100,10 +98,7 @@ const fixture = Effect.gen(function* () {
       Layer.provide(tracker),
       Layer.provide(
         Layer.mergeAll(
-          Settings.layerTest({
-            restoreWorktreesOnResume: restore,
-            worktreeArtifactEviction: eviction,
-          }),
+          Settings.layerTest({ restoreWorktreesOnResume: restore }),
           IdAllocator.layer,
           Layer.mock(Projects.ProjectService)({
             getById: () =>
@@ -288,25 +283,16 @@ it.effect("does nothing while off", () =>
   }).pipe(Effect.provide(layerGit)),
 );
 
-it.effect("leaves a missing checkout to upstream recovery while off, even with eviction on", () =>
-  Effect.gen(function* () {
-    const f = yield* fixture;
-    yield* f.prepare({ restore: false, eviction: true });
-    assert.isFalse(yield* f.fs.exists(f.cwd));
-    assert.strictEqual(f.setups(), 0);
-    assert.deepStrictEqual(f.activities, []);
-  }).pipe(Effect.provide(layerGit)),
-);
-
 it.effect("a checkout without node_modules reruns setup only after eviction removed them", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
     yield* f.exec(["worktree", "add", f.cwd, "saved"]);
-    yield* f.prepare({ eviction: true });
-    yield* f.prepare({ eviction: true });
+    yield* f.prepare({});
+    yield* f.prepare({});
     assert.strictEqual(f.setups(), 0);
     yield* (yield* (yield* makeSetupMarker)(f.cwd)).mark;
-    yield* f.prepare({ eviction: true });
+    // Evicted dependencies come back whatever the restore setting is.
+    yield* f.prepare({ restore: false });
     assert.strictEqual(f.setups(), 1);
   }).pipe(Effect.provide(layerGit)),
 );

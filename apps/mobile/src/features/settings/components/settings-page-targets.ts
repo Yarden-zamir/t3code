@@ -36,6 +36,7 @@ export type SettingsPageTarget = (typeof SETTINGS_PAGE_TARGETS)[number];
 export const FORK_SETTINGS_PAGE_TARGETS = [
   "SettingsFork",
   "SettingsFleet",
+  "SettingsForkPins",
   "SettingsVoice",
   "SettingsVoiceProject",
 ] as const;

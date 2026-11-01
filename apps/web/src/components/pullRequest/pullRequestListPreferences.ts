@@ -31,7 +31,7 @@ export interface PullRequestListPreferences {
   readonly checks?: NonNullable<PullRequestListFilters["checks"]>;
   readonly author?: string;
   readonly labels?: ReadonlyArray<string>;
-  /** Fork: repository owners, lowercase. Only read while `repositoryOwnerFilters` is on. */
+  /** Fork: repository owners, lowercase. Only read while `pullRequestFilters` is on. */
   readonly owners?: ReadonlyArray<string>;
   /** Fork: present when the menu hides `owners` instead of showing only them. */
   readonly ownerOperator?: "is_not";

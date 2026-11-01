@@ -156,8 +156,7 @@ export function PullRequestsPage() {
   const navigate = useNavigate({ from: "/pull-requests" });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const typedQuery = (search.q ?? "").trim();
-  const ownerFiltersEnabled = useClientSettings(ForkOwners.selectRepositoryOwnerFilters);
-  const filterChipsEnabled = useClientSettings(ForkOwners.selectPullRequestFilterChips);
+  const pullRequestFiltersEnabled = useClientSettings(ForkOwners.selectPullRequestFilters);
   const {
     sentQuery,
     submitQuery,
@@ -170,7 +169,7 @@ export function PullRequestsPage() {
     hasFilters,
     localFilters,
     hasLocalFilters,
-  } = usePullRequestQueryFilters(search, typedQuery, ownerFiltersEnabled);
+  } = usePullRequestQueryFilters(search, typedQuery, pullRequestFiltersEnabled);
   const {
     capableEnvironments,
     scopedEnvironmentId,
@@ -191,7 +190,7 @@ export function PullRequestsPage() {
     projectsKnown,
     ownerFilter,
   } = usePullRequestScope(search, {
-    enabled: ownerFiltersEnabled,
+    enabled: pullRequestFiltersEnabled,
     typedOwners: typedParsed.owners,
     sentOwners: sentParsed.owners,
   });
@@ -1170,15 +1169,14 @@ export function PullRequestsPage() {
     shownCount === 0 &&
     typedQuery.length === 0 &&
     (!querySettled || (showingCarried && listQuery.isPending));
-  // Fork: `pullRequestFilterChips`. The active menu filters show as chips above the list, and
+  // Fork: `pullRequestFilters`. The active menu filters show as chips above the list, and
   // the empty list names the filters that emptied it.
   const filterChipHosts = hosts.length > 0 ? hosts : expectedHosts;
   const filterChipHost = filterChipHosts.find((entry) => entry.host === search.host);
-  const filterChips = filterChipsEnabled
+  const filterChips = pullRequestFiltersEnabled
     ? pullRequestFilterChips({
         search,
         typed: typedParsed,
-        ownerFilters: ownerFiltersEnabled,
         names: {
           state: STATE_TABS.find((tab) => tab.value === search.state)?.label ?? search.state,
           involvement:
@@ -1381,7 +1379,7 @@ export function PullRequestsPage() {
         updateListScope(environmentId === undefined ? { projectId } : { projectId, environmentId })
       }
       owners={
-        ownerFiltersEnabled
+        pullRequestFiltersEnabled
           ? {
               selected: menuOwners,
               operator: menuOwnerOperator,
