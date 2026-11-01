@@ -7,7 +7,6 @@ import { resolveExplicitDiffOpenOnActivate } from "../ChatView.logic";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { type ScopedThreadRef, type RunId } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import {
   isAtomCommandInterrupted,
@@ -153,10 +152,6 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     useRightPanelStore.getState().open(activeThreadRef, "pull-requests");
   };
   const addPullRequestsSurfaceStable = useStableCallback(addPullRequestsSurface);
-  // Fork: the Fleet view is a Settings page, not a panel tab.
-  const navigate = useNavigate();
-  const addMachinesSurface = () => void navigate({ to: "/settings/machines" });
-  const addMachinesSurfaceStable = useStableCallback(addMachinesSurface);
   const addDeviceSurface = () => {
     if (!activeThreadRef) return;
     if (!deviceState.onboardingCompleted || deviceState.hostStatus === "disabled") {
@@ -351,7 +346,6 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     addDeviceSurfaceStable,
     addDiffSurfaceStable,
     addFilesSurfaceStable,
-    addMachinesSurfaceStable,
     addPullRequestSurfaceStable,
     addPullRequestsSurfaceStable,
     closePreviewPanelStable,

@@ -525,8 +525,6 @@ export function ThreadRightPanelView(props: {
     onAddFiles: panel.addFilesSurfaceStable,
     onAddPullRequest: panel.addPullRequestSurfaceStable,
     onAddPullRequests: panel.addPullRequestsSurfaceStable,
-    onAddMachines: panel.addMachinesSurfaceStable,
-    machinesAvailable: true,
     onAddDevice: panel.addDeviceSurfaceStable,
     browserAvailable: panel.canOperatePreview && panel.browserAvailable,
     terminalAvailable: panel.project !== null && panel.canOperateTerminal,

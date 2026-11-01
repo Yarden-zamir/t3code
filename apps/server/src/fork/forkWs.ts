@@ -55,6 +55,15 @@ export const kitshnMachineConfig = Effect.serviceOption(KitshnGrants.KitshnGrant
   }),
 );
 
+/** MM-502: what `fleet.runCommand` runs here. It goes through no desktop app, as `runForClient`. */
+export const machineCommandsConfig = Effect.serviceOption(MachineHost.MachineHost).pipe(
+  Effect.map((host) =>
+    Option.isNone(host)
+      ? {}
+      : { machineCommands: host.value.supportedCommands({ desktopConnected: false }) },
+  ),
+);
+
 const kitshnConfigKey = (value: Pick<ServerConfig, "environment" | "kitshnMachine">) =>
   JSON.stringify([
     value.environment.label,

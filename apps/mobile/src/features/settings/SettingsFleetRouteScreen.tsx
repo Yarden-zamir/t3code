@@ -1,5 +1,5 @@
 /**
- * Fork: the Fleet view on mobile, the read-only part of web Settings > Machines. One row per
+ * Fork: the Fleet view on mobile, the read-only part of web Settings > Fleet. One row per
  * machine; a row opens the environment settings, where the mobile actions are.
  */
 import { useAtomValue } from "@effect/atom-react";

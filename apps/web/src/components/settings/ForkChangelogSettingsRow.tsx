@@ -16,7 +16,7 @@ export function ForkChangelogSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("fork-changelog")}
-      description="Browse fork releases and their fork and upstream changes, see what upstream has that the fork does not, and start Fork Sync. A tab of Settings > Machines; the update button opens it too."
+      description="Browse fork releases and their fork and upstream changes, see what upstream has that the fork does not, and start Fork Sync. A tab of Settings > Fleet; the update button opens it too."
       resetAction={
         enabled !== DEFAULT_CLIENT_SETTINGS.forkChangelogEnabled ? (
           <SettingResetButton

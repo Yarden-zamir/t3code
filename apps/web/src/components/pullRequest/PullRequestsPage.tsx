@@ -1590,8 +1590,6 @@ export function PullRequestsPage() {
             onAddFiles={() => undefined}
             onAddPullRequest={() => undefined}
             onAddPullRequests={() => undefined}
-            onAddMachines={() => undefined}
-            machinesAvailable={false}
             onAddDevice={() => undefined}
             browserAvailable={false}
             terminalAvailable={false}

@@ -5,7 +5,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { kitshnMapUrl } from "@t3tools/client-runtime/fork/arrowLinks";
-import { fleetTaskSummary } from "@t3tools/client-runtime/fork/fleet";
+import { fleetMenuEntries, fleetTaskSummary } from "@t3tools/client-runtime/fork/fleet";
 import {
   type FleetCommandInput,
   kitshnJoinedText,
@@ -45,19 +45,6 @@ const fleetCommandPermissionsAtom = environmentAtomList(
   "web-fleet-command-permissions",
   fleetRunCommand.permissionAtom,
 );
-
-const COMMANDS: ReadonlyArray<{
-  readonly label: string;
-  readonly command: FleetCommandInput;
-  readonly separatorBefore?: true;
-}> = [
-  { label: "Install update when idle", command: { _tag: "installUpdate", whenIdle: true } },
-  { label: "Install update now", command: { _tag: "installUpdate", whenIdle: false } },
-  { label: "Restart server", command: { _tag: "restartServer" }, separatorBefore: true },
-  { label: "Stop all agents", command: { _tag: "stopAllAgents" } },
-  { label: "Pause scheduled tasks", command: { _tag: "pauseScheduledTasks" } },
-  { label: "Resume scheduled tasks", command: { _tag: "resumeScheduledTasks" } },
-];
 
 /** "3 scheduled tasks · Last failed: Backup, 2 hours ago", or null before the list loads. */
 function scheduledTasksText(tasks: ReadonlyArray<ScheduledTask> | null): string | null {
@@ -159,6 +146,7 @@ function FleetMachineRow({
         .filter(Boolean)
         .join(" · ");
   const mapUrl = environment.displayUrl === null ? null : kitshnMapUrl(environment.displayUrl);
+  const menuEntries = fleetMenuEntries(config?.machineCommands);
 
   const run = async (label: string, command: FleetCommandInput) => {
     const result = await runCommand({
@@ -226,7 +214,7 @@ function FleetMachineRow({
       >
         <SettingsIcon className="size-3.5" />
       </Button>
-      {canRunCommands ? (
+      {canRunCommands && menuEntries.length > 0 ? (
         <Menu>
           <MenuTrigger
             render={
@@ -241,14 +229,11 @@ function FleetMachineRow({
             <EllipsisIcon className="size-3.5" />
           </MenuTrigger>
           <MenuPopup align="end">
-            {COMMANDS.filter(
-              // The desktop app installs its own update with the update button.
-              (entry) => !(hostedByThisApp && entry.command._tag === "installUpdate"),
-            ).map((entry) => (
+            {menuEntries.map((entry) => (
               <FleetCommandItem
                 key={entry.label}
                 label={entry.label}
-                separatorBefore={entry.separatorBefore === true}
+                separatorBefore={entry.separatorBefore}
                 onClick={() => void run(entry.label, entry.command)}
               />
             ))}

@@ -22,7 +22,7 @@ const PROBLEMS_SHOWN = 5;
 export type FleetTab = "machines" | "changelog";
 
 /**
- * Fork: the Fleet view at Settings > Machines. One row per machine, then the kitshn state of the
+ * Fork: the Fleet view at Settings > Fleet. One row per machine, then the kitshn state of the
  * selected environment. The Changelog tab shows while the fork changelog setting is on.
  */
 export function FleetSettingsPanel({
