@@ -54,17 +54,28 @@ export const kitshnMachineConfig = Effect.serviceOption(KitshnGrants.KitshnGrant
   }),
 );
 
-const kitshnConfigKey = (value: Pick<ServerConfig, "environment" | "kitshnMachine">) =>
+/** MM-1311: the origins of the machines that kitshn links, which trust this page (K-1609). */
+export const trustedBrowserOriginsConfig = Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
+  Effect.map((grants) => {
+    const origins = Option.isSome(grants) ? grants.value.peerOrigins() : [];
+    return origins.length === 0 ? {} : { trustedBrowserOrigins: origins };
+  }),
+);
+
+const kitshnConfigKey = (
+  value: Pick<ServerConfig, "environment" | "kitshnMachine" | "trustedBrowserOrigins">,
+) =>
   JSON.stringify([
     value.environment.label,
     value.kitshnMachine?.id ?? null,
     value.kitshnMachine?.name ?? null,
+    value.trustedBrowserOrigins ?? [],
   ]);
 
 // Reuse snapshots so older clients do not need a new config event type.
-export const environmentLabelUpdates = <E>(
-  loadConfig: Effect.Effect<ServerConfig, E>,
-  initial: ServerConfig,
+export const environmentLabelUpdates = <C, E>(
+  loadConfig: Effect.Effect<C, E>,
+  initial: Parameters<typeof kitshnConfigKey>[0],
 ) =>
   Stream.unwrap(
     Effect.gen(function* () {
@@ -72,17 +83,23 @@ export const environmentLabelUpdates = <E>(
       if (Option.isNone(grants)) return Stream.empty;
       const settings = yield* ServerSettings.ServerSettingsService;
       const environment = yield* ServerEnvironment.ServerEnvironment;
-      // Each `register` answer can bring a new machine name or id; the key reads both again.
+      // A `register` answer or a reach event can change the machine or the peer origins.
       const changes = Stream.merge(
-        grants.value.joinedMachine.pipe(Stream.map(() => "kitshn")),
+        Stream.merge(grants.value.joinedMachine, grants.value.peerOriginChanges),
         settings.streamChanges.pipe(
           Stream.map((value) => String(value.environmentLabelFromMachineMap)),
           Stream.changes,
         ),
       ).pipe(
         Stream.mapEffect(() =>
-          Effect.all({ environment: environment.getDescriptor, config: kitshnMachineConfig }).pipe(
-            Effect.map(({ environment, config }) => kitshnConfigKey({ environment, ...config })),
+          Effect.all({
+            environment: environment.getDescriptor,
+            machine: kitshnMachineConfig,
+            origins: trustedBrowserOriginsConfig,
+          }).pipe(
+            Effect.map(({ environment, machine, origins }) =>
+              kitshnConfigKey({ environment, ...machine, ...origins }),
+            ),
           ),
         ),
       );
@@ -161,14 +178,6 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
       });
     }),
   );
-
-/** MM-1311: the origins of the machines that kitshn links, which trust this page (K-1609). */
-export const trustedBrowserOriginsConfig = Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
-  Effect.map((grants) => {
-    const origins = Option.isSome(grants) ? grants.value.peerOrigins() : [];
-    return origins.length === 0 ? {} : { trustedBrowserOrigins: [...new Set(origins)] };
-  }),
-);
 
 /**
  * A launch is accepted before its worktree exists, so a branch that cannot be created is refused

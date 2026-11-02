@@ -140,6 +140,8 @@ export class KitshnGrants extends Context.Service<
     readonly trustsPeerOrigin: (origin: string) => boolean;
     /** MM-1311: the trusted peer origins, sorted, for the server config of the clients. */
     readonly peerOrigins: () => ReadonlyArray<string>;
+    /** The peer origins now and then each change, so open clients get the new config. */
+    readonly peerOriginChanges: Stream.Stream<ReadonlyArray<string>>;
     /** K-1623: the `https://` origin of this machine's T3 site while kitshn serves it, or null. */
     readonly siteOrigin: Effect.Effect<string | null>;
   }
@@ -245,7 +247,9 @@ const make = Effect.gen(function* () {
   const joinedMachine = yield* SubscriptionRef.make<KitshnMachine | null>(null);
   // The headers of the last register answer; they stay known while the daemon is away.
   let identityHeaders: ReadonlyArray<string> = [];
-  let peerOrigins: ReadonlySet<string> = new Set();
+  const peerOrigins = yield* SubscriptionRef.make<ReadonlyArray<string>>([]);
+  const setPeerOrigins = (reach: Parameters<typeof peerOriginsOf>[0]) =>
+    SubscriptionRef.set(peerOrigins, [...new Set(peerOriginsOf(reach))].toSorted());
   let siteOrigin: string | null = null;
   const cache = new Map<string, Cached>();
   const tracked = new Map<AuthSessionId, Tracked>();
@@ -445,7 +449,7 @@ const make = Effect.gen(function* () {
       connection === null
         ? Effect.void
         : Effect.gen(function* () {
-            peerOrigins = new Set(peerOriginsOf(connection.answer.saved.reach));
+            yield* setPeerOrigins(connection.answer.saved.reach);
             siteOrigin = siteOriginOf(connection.answer.saved.served);
             yield* setMachine(connection.answer.machine);
             yield* SubscriptionRef.set(joinedMachine, connection.answer.machine);
@@ -459,11 +463,7 @@ const make = Effect.gen(function* () {
   yield* PubSub.take(subscription).pipe(
     Effect.flatMap((event) => {
       if (event.type === "grants-changed") return rechecks.withPermits(1)(recheckAll());
-      if (event.type === "reach") {
-        return Effect.sync(() => {
-          peerOrigins = new Set(peerOriginsOf(event.cards));
-        });
-      }
+      if (event.type === "reach") return setPeerOrigins(event.cards);
       if (event.type === "served") {
         return Effect.sync(() => {
           siteOrigin = siteOriginOf(event.hosts);
@@ -497,8 +497,9 @@ const make = Effect.gen(function* () {
     }),
     machine: Effect.sync(() => machine),
     joinedMachine: SubscriptionRef.changes(joinedMachine),
-    trustsPeerOrigin: (origin) => peerOrigins.has(origin),
-    peerOrigins: () => [...peerOrigins].toSorted(),
+    trustsPeerOrigin: (origin) => SubscriptionRef.getUnsafe(peerOrigins).includes(origin),
+    peerOrigins: () => SubscriptionRef.getUnsafe(peerOrigins),
+    peerOriginChanges: SubscriptionRef.changes(peerOrigins),
     siteOrigin: Effect.sync(() => siteOrigin),
   });
 });
