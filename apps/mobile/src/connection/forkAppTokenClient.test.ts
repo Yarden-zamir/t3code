@@ -4,6 +4,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   appTokenOrigins,
   deviceTokensNewestFirst,
+  deviceTokenWrites,
   firstDeviceList,
   isRefusedSession,
   planMachineSync,
@@ -73,6 +74,28 @@ describe("appTokenOrigins", () => {
         "app.access",
       ),
     ).toEqual(new Set([mac.origin]));
+  });
+});
+
+describe("deviceTokenWrites", () => {
+  it("gives the list's token to a listed origin without headers, so the phone pairs it", () => {
+    const device = { clientId: "device.access", clientSecret: "secret" };
+    const rules = [
+      {
+        origin: mac.origin,
+        headers: [
+          { name: "CF-Access-Client-Id", value: device.clientId },
+          { name: "CF-Access-Client-Secret", value: device.clientSecret },
+        ],
+      },
+    ];
+    // vps was shared after the invite: listed, but no saved headers yet.
+    const writes = deviceTokenWrites(rules, new Set([mac.origin, vps.origin]), device);
+    expect(writes.map((write) => write.origin)).toEqual([vps.origin]);
+    // The pair loop pairs only an origin that holds the token.
+    expect(appTokenOrigins([...rules, ...writes], device.clientId)).toEqual(
+      new Set([mac.origin, vps.origin]),
+    );
   });
 });
 
