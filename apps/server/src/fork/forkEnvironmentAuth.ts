@@ -15,6 +15,7 @@ import * as Option from "effect/Option";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 import type { ServerAuthInternalError } from "../auth/EnvironmentAuth.ts";
+import type { ManagedPolicyRefusedError } from "../policy/managedLimits.ts";
 import { APP_RESOURCE_ID, appLevelScopes, levelFor } from "./kitshn/kitshnGrantRules.ts";
 import {
   type AccessVisitor,
@@ -49,7 +50,10 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
     readonly subject: string;
     readonly label?: string;
     readonly ttl: Duration.Duration;
-  }) => Effect.Effect<AuthPairingCredentialResult, ServerAuthInternalError>;
+  }) => Effect.Effect<
+    AuthPairingCredentialResult,
+    ServerAuthInternalError | ManagedPolicyRefusedError
+  >;
 }): IssueCloudflareAccessPairingCredential => {
   const { kitshnGrants, issuePairingCredentialForSubject } = input;
 
@@ -71,7 +75,13 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
             label: `kitshn ${subject.name}`,
           }),
       ttl: Duration.minutes(2),
-    });
+    }).pipe(
+      // A managed policy without remote clients has no Access login.
+      Effect.catchTags({
+        // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
+        ManagedPolicyRefusedError: () => Effect.succeed(undefined),
+      }),
+    );
   });
 
   return (request) =>

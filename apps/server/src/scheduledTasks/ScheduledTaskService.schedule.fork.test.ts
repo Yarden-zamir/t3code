@@ -22,6 +22,7 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ScheduledTaskService from "./ScheduledTaskService.ts";
 
 const decodeUpsertInput = Schema.decodeUnknownEffect(ScheduledTaskUpsertInput);
@@ -35,6 +36,7 @@ const decodeOlderClientList = Schema.decodeUnknownEffect(
 it.effect("keeps a custom provider instance and the project default through a save", () =>
   Effect.gen(function* () {
     const layerDependencies = Layer.mergeAll(
+      ManagedPolicy.layerTest(),
       NodeCrypto.layer,
       Scheduler.layer,
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
@@ -108,6 +110,7 @@ it.effect("resolves a project default task at run time: the project, then the ap
     };
     const launched: Array<ModelSelection> = [];
     const layerDependencies = Layer.mergeAll(
+      ManagedPolicy.layerTest(),
       NodeCrypto.layer,
       Scheduler.layer,
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({
@@ -162,6 +165,7 @@ it.effect("resolves a project default task at run time: the project, then the ap
 it.effect("refuses a webhook task that runs in a terminal thread", () =>
   Effect.gen(function* () {
     const layerDependencies = Layer.mergeAll(
+      ManagedPolicy.layerTest(),
       NodeCrypto.layer,
       Scheduler.layer,
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),

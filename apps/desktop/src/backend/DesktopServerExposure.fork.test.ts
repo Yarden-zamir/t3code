@@ -12,6 +12,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
+import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
 import * as DesktopNetworkInterfaces from "./DesktopNetworkInterfaces.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -60,6 +61,7 @@ function layer(baseDir: string, networkInterfaces: DesktopNetworkInterfaces.Netw
 
   return DesktopServerExposure.layer.pipe(
     Layer.provideMerge(DesktopAppSettings.layer),
+    Layer.provideMerge(DesktopManagedPolicy.layerTest()),
     Layer.provideMerge(NodeFileSystem.layer),
     Layer.provideMerge(NodeHttpClient.layerUndici),
     Layer.provideMerge(layerMockSpawner),

@@ -419,6 +419,8 @@ A scheduled task runs on any provider instance, or on the project default model.
 
 The model applies to runs that launch a new thread. A run that posts into a bound thread uses the current model of that thread.
 
+On a kitshn-joined machine without T3 Connect, the webhook URL is the kitshn site of the machine, for example `https://t3-<machine>.<zone>/api/hooks/<task>/<token>`. The site is behind Cloudflare Access, so a caller needs an Access service token. `schedule_task` and `list_scheduled_tasks` report this with `webhookNeeds`. A T3 Connect URL comes first when both exist.
+
 - **Works on:** web, desktop, mobile.
 
 ## Threads

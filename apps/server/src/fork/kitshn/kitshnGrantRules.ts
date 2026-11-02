@@ -88,8 +88,20 @@ export const sessionAllowed = (
 export const peerOriginsOf = (
   reach: ReadonlyArray<{ readonly kind: string; readonly address: string | null }>,
 ): ReadonlyArray<string> =>
-  reach.flatMap((card) => {
-    if (card.kind !== "t3.app" || card.address === null) return [];
-    const url = URL.parse(`https://${card.address}`);
-    return url !== null && url.host === card.address.toLowerCase() ? [url.origin] : [];
-  });
+  reach.flatMap((card) =>
+    card.kind !== "t3.app" || card.address === null ? [] : (hostOrigin(card.address) ?? []),
+  );
+
+/**
+ * K-1623: the `https://` origin of this machine's T3 site, from the hosts that kitshn serves.
+ * Only the app card has a site, so `served` holds at most its host. Revisit if another card gets one.
+ */
+export const siteOriginOf = (served: ReadonlyArray<string>): string | null => {
+  const host = served[0];
+  return host === undefined ? null : hostOrigin(host);
+};
+
+const hostOrigin = (host: string): string | null => {
+  const url = URL.parse(`https://${host}`);
+  return url !== null && url.host === host.toLowerCase() ? url.origin : null;
+};

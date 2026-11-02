@@ -15,6 +15,7 @@ import * as HttpRouter from "effect/http/HttpRouter";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { answerCheck, layerKitshnConnection } from "../fork/kitshn/KitshnConnection.testkit.ts";
 import * as KitshnGrants from "../fork/kitshn/KitshnGrants.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
@@ -62,6 +63,7 @@ const layerRoutes = HttpApiBuilder.layer(AuthTestApi).pipe(
   Layer.provide(AuthHttp.layerAuthenticatedAuth),
   Layer.provideMerge(
     EnvironmentAuth.layer.pipe(
+      Layer.provide(ManagedPolicy.layerTest()),
       Layer.provide(SqlitePersistence.layerMemory),
       Layer.provide(ServerSecretStore.layer),
       Layer.provide(ServerEnvironment.layerIdentity),
