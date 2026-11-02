@@ -84,6 +84,11 @@ const layerDesktopClerk = (
     quit: Effect.sync(() => {
       events.push("quit");
     }),
+    setAsDefaultProtocolClient: (scheme: string) =>
+      Effect.sync(() => {
+        events.push(`setAsDefaultProtocolClient:${scheme}`);
+        return true;
+      }),
     on: (name: string, listener: (...args: unknown[]) => void) =>
       Effect.acquireRelease(
         Effect.sync(() => {
@@ -123,28 +128,32 @@ describe("DesktopClerk", () => {
       isDevelopment: false,
       platform: "darwin" as const,
       userData: "/tmp/app-data/t3code-v2",
+      threadLinkScheme: "t3-thread",
     },
     {
       name: "packaged Linux",
       isDevelopment: false,
       platform: "linux" as const,
       userData: "/tmp/app-data/t3code-v2",
+      threadLinkScheme: "t3-thread",
     },
     {
       name: "packaged Windows",
       isDevelopment: false,
       platform: "win32" as const,
       userData: "/tmp/app-data/t3code-v2",
+      threadLinkScheme: "t3-thread",
     },
     {
       name: "development",
       isDevelopment: true,
       platform: "win32" as const,
       userData: "/tmp/app-data/t3code-dev",
+      threadLinkScheme: "t3-thread-dev",
     },
   ])(
     "creates the bridge before startup can yield to the event loop ($name)",
-    ({ isDevelopment, platform, userData }) => {
+    ({ isDevelopment, platform, userData, threadLinkScheme }) => {
       const events: string[] = [];
       storageMock.mockReturnValue(storageAdapter);
       createClerkBridgeMock.mockImplementation(() => {
@@ -166,6 +175,7 @@ describe("DesktopClerk", () => {
         "on:second-instance",
         "on:open-url",
         "createClerkBridge",
+        `setAsDefaultProtocolClient:${threadLinkScheme}`,
       ]);
       assert.deepEqual(storageMock.mock.calls, [
         [{ path: NodePath.join(NodePath.resolve(clerkStateDir), "clerk") }],
@@ -219,7 +229,7 @@ describe("DesktopClerk", () => {
     const listeners = new Map<string, (...args: unknown[]) => void>();
     const received: string[] = [];
     const first = "t3code://new?prompt=first";
-    const second = "t3code://threads/env-1/thread-1";
+    const second = "t3-thread://v2/env-1/thread-1#msg-1";
     const later = "t3code://new?prompt=later";
     const launchPair = "t3code://pair?pairingUrl=https%3A%2F%2Fvps.example.com%2F%23token%3Dabc";
     const delivered = Promise.withResolvers<void>();
@@ -453,16 +463,20 @@ it.effect("hands web and app links to the renderer and leaves other links alone"
       assert.strictEqual(open("http://localhost:3000/"), 1);
       assert.strictEqual(open("t3code://new?prompt=hi"), 1);
       assert.strictEqual(open("t3code://threads/env-1/thread-1"), 1);
+      assert.strictEqual(open("t3-thread://v2/env-2/thread-1#msg-1"), 1);
       assert.strictEqual(open(pairLink), 1);
       assert.strictEqual(open("t3code://pair"), 0);
       assert.strictEqual(open("mailto:hello@example.com"), 0);
       assert.strictEqual(open("t3code://somewhere-else"), 0);
+      assert.strictEqual(open("t3-thread://v1/thread-1"), 0);
+      assert.strictEqual(open("t3-thread://v2/env-1"), 0);
       yield* Effect.yieldNow;
       assert.deepStrictEqual(received, [
         "https://example.com/page",
         "http://localhost:3000/",
         "t3code://new?prompt=hi",
         "t3code://threads/env-1/thread-1",
+        "t3-thread://v2/env-2/thread-1#msg-1",
         pairLink,
       ]);
     }).pipe(

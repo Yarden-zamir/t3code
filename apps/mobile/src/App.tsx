@@ -51,7 +51,7 @@ import { subscribeComposerDraftModelReconciliation } from "./state/use-composer-
 import { environmentThreadShells } from "./state/threads";
 import { environmentShell } from "./state/shell";
 import { OverlayPortalHost } from "./components/ui/OverlayPortal";
-import { shouldHandleAppLink, restoreDraftLinkState } from "./lib/appLinking";
+import { restoreDraftLinkState, shouldHandleAppLink, threadLinkAsAppLink } from "./lib/appLinking";
 import { hasCloudPublicConfig } from "./features/cloud/publicConfig";
 import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-editor-state";
 import {
@@ -126,7 +126,16 @@ const appLinking = {
   prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
   config: { initialRouteName: "Home" },
   filter: (url: string) => shouldHandleAppLink(url, hasCloudPublicConfig()),
-  getInitialURL: async () => (await Linking.getInitialURL()) ?? (await launchWorkspaceURL()),
+  getInitialURL: async () => {
+    const url = await Linking.getInitialURL();
+    return url === null ? await launchWorkspaceURL() : threadLinkAsAppLink(url);
+  },
+  subscribe: (listener: (url: string) => void) => {
+    const subscription = Linking.addEventListener("url", ({ url }) =>
+      listener(threadLinkAsAppLink(url)),
+    );
+    return () => subscription.remove();
+  },
   getActionFromState: (
     state: Parameters<typeof getActionFromState>[0],
     options: Parameters<typeof getActionFromState>[1],

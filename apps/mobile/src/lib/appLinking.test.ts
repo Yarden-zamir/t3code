@@ -6,8 +6,22 @@ import {
   findStackRoute,
   restoreDraftLinkState,
   shouldHandleAppLink,
+  threadLinkAsAppLink,
   updateLinkedRoute,
 } from "./appLinking";
+
+describe("threadLinkAsAppLink", () => {
+  it.each([
+    ["t3-thread://v2/env-1/thread-1", "t3code://threads/env-1/thread-1"],
+    ["t3-thread://v2/env-2/thread-1#msg-1", "t3code://threads/env-2/thread-1?message=msg-1"],
+    ["t3-thread-dev://v2/env-1/thread-1", "t3code://threads/env-1/thread-1"],
+    ["t3-thread://v1/thread-1", "t3-thread://v1/thread-1"],
+    ["t3code://threads/env-1/thread-1?prompt=hi", "t3code://threads/env-1/thread-1?prompt=hi"],
+    ["t3code://settings/usage", "t3code://settings/usage"],
+  ])("maps %s to %s", (url, appLink) => {
+    expect(threadLinkAsAppLink(url)).toBe(appLink);
+  });
+});
 
 describe("shouldHandleAppLink", () => {
   it.each(["t3code://", "t3code:///", "t3code-dev://", "t3code-preview://"])(

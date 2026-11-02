@@ -11,6 +11,8 @@
       "entry": [
         // CodeRabbit loads its configuration by filename.
         ".coderabbit.config.ts",
+        // kitshn reads the recipe (K-802).
+        "kitshn.config.ts",
         ".github/scripts/thread-transfer-report.cjs",
       ],
       "vite": { "entry": [".github/**/*.test.cjs"] },
@@ -27,6 +29,8 @@
       "entry": [
         // These fixture scripts are injected into a browser page by path.
         "fixtures/*/*.js",
+        // kitshn bundles the Worker that kitshn.config.ts names.
+        "apk-mirror/worker.js",
         "knip-schemas.ts",
         "mobile-behavior/run.ts",
         "mobile-native-client.ts",

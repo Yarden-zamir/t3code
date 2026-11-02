@@ -1,4 +1,15 @@
 import type { NavigationState, PartialState } from "@react-navigation/native";
+import { formatThreadAppLink, readThreadAppLink } from "@t3tools/shared/threadAddress";
+
+/**
+ * Fork: a thread link from outside the app (`readThreadAppLink`), such as
+ * `t3-thread://v2/<environmentId>/<threadId>#<messageId>`, as the app link
+ * of its thread route. Other links stay as they are.
+ */
+export function threadLinkAsAppLink(url: string): string {
+  const address = readThreadAppLink(url);
+  return address === null ? url : formatThreadAppLink(address);
+}
 
 /**
  * The Expo dev client launches the app via

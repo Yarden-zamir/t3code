@@ -22,5 +22,8 @@ describe("device machine list (K-1601)", () => {
     expect(t3AppMachines({ machines: [machine("t3.app"), machine("t3.agents")] })).toEqual({
       machines: [{ id: "vps", name: "VPS", origin: "https://t3-vps.example.com" }],
     });
+    expect(
+      t3AppMachines({ machines: [{ ...machine("t3.app"), online: false }] }).machines[0]?.online,
+    ).toBe(false);
   });
 });

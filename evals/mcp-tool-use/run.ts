@@ -39,8 +39,10 @@ import {
   EnvironmentId,
   ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
   PullRequestState,
+  TERMINAL_THREAD_INSTANCE_ID,
   ThreadId,
 } from "@t3tools/contracts";
+import { TERMINAL_THREAD_USAGE } from "../../apps/server/src/fork/terminalProvider/agentUsage.ts";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
@@ -1181,11 +1183,20 @@ const withProductFields = (name: string, value: unknown, child: boolean): unknow
   }
 };
 
+/** Fork: T3 adds this checkout's terminal usage to the `terminal` provider entry. */
+const withTerminalUsage = (provider: unknown) =>
+  isRecord(provider) && provider.providerInstanceId === TERMINAL_THREAD_INSTANCE_ID
+    ? { ...provider, usage: TERMINAL_THREAD_USAGE }
+    : provider;
+
 /** Cases mock a Claude caller, so the inherited fields follow the model under test. */
 const capabilities = ({ base }: Sample, value: unknown) =>
   isRecord(value)
     ? {
         ...value,
+        ...(Array.isArray(value.providers)
+          ? { providers: value.providers.map(withTerminalUsage) }
+          : {}),
         inheritedModel: base.model,
         ...(base.codex
           ? {

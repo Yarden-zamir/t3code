@@ -70,3 +70,58 @@ export function listedOrigins(
     machine.id === ownMachineId ? [] : (originOf(machine.origin) ?? []),
   );
 }
+
+/** The least time between two reads of the machine list from the timer, while visible. */
+export const LIST_INTERVAL_MS = 5 * 60_000;
+/** The least time between two list reads from focus or visibility, so app switches stay cheap. */
+export const LIST_EVENT_GAP_MS = 30_000;
+/** The longest wait before a machine that failed to pair is tried again. */
+export const PAIR_RETRY_MAX_MS = 2 * LIST_INTERVAL_MS;
+
+/** `event`: the window became visible or got focus. `tick`: the timer. */
+export type DeviceSyncTrigger = "event" | "tick";
+
+/**
+ * Decides if one sync trigger reads the machine list and retries the waiting pairings. A hidden
+ * window and a sync in flight do nothing. A sync that came due while hidden runs on the next event.
+ */
+export function deviceSyncStep(input: {
+  readonly trigger: DeviceSyncTrigger;
+  readonly hidden: boolean;
+  readonly running: boolean;
+  readonly lastSyncAtMs: number | null;
+  readonly nowMs: number;
+}): "none" | "sync" {
+  if (input.hidden || input.running) return "none";
+  const gapMs = input.trigger === "tick" ? LIST_INTERVAL_MS : LIST_EVENT_GAP_MS;
+  const due = input.lastSyncAtMs === null || input.nowMs - input.lastSyncAtMs >= gapMs;
+  return due ? "sync" : "none";
+}
+
+/** The pairing failures of one machine in a row, and the sync time of the last one. */
+export interface PairFailure {
+  readonly count: number;
+  readonly atMs: number;
+}
+
+/** The wait after `count` failures: never less than the list interval, at most 10 minutes. */
+const pairRetryDelayMs = (count: number): number =>
+  Math.min(LIST_INTERVAL_MS * 2 ** Math.max(count - 1, 0), PAIR_RETRY_MAX_MS);
+
+/**
+ * The waiting machines that a sync pairs now. Each pairing reaches the site of the machine, a
+ * kitshn Worker route. So a machine that the list shows offline is not tried, and a failed one
+ * waits `pairRetryDelayMs`. A machine with no failure, for example after a join, pairs now.
+ */
+export function pairsDue(input: {
+  readonly waiting: ReadonlyArray<string>;
+  readonly offline: ReadonlySet<string>;
+  readonly failures: ReadonlyMap<string, PairFailure>;
+  readonly nowMs: number;
+}): ReadonlyArray<string> {
+  return input.waiting.filter((origin) => {
+    if (input.offline.has(origin)) return false;
+    const failure = input.failures.get(origin);
+    return failure === undefined || input.nowMs - failure.atMs >= pairRetryDelayMs(failure.count);
+  });
+}

@@ -19,7 +19,7 @@ export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedError<
   "DesktopLinuxUrlHandlerRegistrationError",
   {
     step: Schema.Literals(["write-desktop-entry", "set-default-handler"]),
-    scheme: Schema.String,
+    schemes: Schema.Array(Schema.String),
     desktopEntryPath: Schema.optionalKey(Schema.String),
     exitCode: Schema.optionalKey(Schema.Number),
     cause: Schema.optionalKey(Schema.Defect()),
@@ -27,7 +27,8 @@ export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedError<
 ) {
   override get message(): string {
     const exitCode = this.exitCode === undefined ? "" : `, xdg-mime exit code ${this.exitCode}`;
-    return `Failed to register the ${this.scheme}:// URL handler (step: ${this.step}${exitCode}).`;
+    const schemes = this.schemes.map((scheme) => `${scheme}://`).join(", ");
+    return `Failed to register the ${schemes} URL handler (step: ${this.step}${exitCode}).`;
   }
 }
 
@@ -79,7 +80,7 @@ const escapeUrlHandlerExecTarget = (value: string): string =>
 export function renderUrlHandlerDesktopEntry(input: {
   readonly displayName: string;
   readonly execTarget: string;
-  readonly scheme: string;
+  readonly schemes: readonly string[];
   readonly iconPath?: string;
 }): string {
   return [
@@ -91,7 +92,7 @@ export function renderUrlHandlerDesktopEntry(input: {
     "Terminal=false",
     "NoDisplay=true",
     "StartupNotify=false",
-    `MimeType=x-scheme-handler/${input.scheme};`,
+    `MimeType=${input.schemes.map((scheme) => `x-scheme-handler/${scheme};`).join("")}`,
     "",
   ].join("\n");
 }
@@ -121,7 +122,7 @@ export const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const assets = yield* DesktopAssets.DesktopAssets;
 
-  const scheme = ElectronProtocol.getDesktopScheme(environment.isDevelopment);
+  const schemes = ElectronProtocol.getDesktopLinkSchemes(environment.isDevelopment);
   const desktopEntryPath = environment.path.join(
     environment.linuxApplicationsDir,
     environment.linuxDesktopEntryName,
@@ -143,7 +144,7 @@ export const make = Effect.gen(function* () {
     const content = renderUrlHandlerDesktopEntry({
       displayName: environment.displayName,
       execTarget,
-      scheme,
+      schemes,
       ...(environment.isPackaged ? { iconPath } : {}),
     });
     // Avoid truncating the pre-ready entry while the portal may be reading it.
@@ -158,7 +159,7 @@ export const make = Effect.gen(function* () {
       (cause) =>
         new DesktopLinuxUrlHandlerRegistrationError({
           step: "write-desktop-entry",
-          scheme,
+          schemes,
           desktopEntryPath,
           cause,
         }),
@@ -256,7 +257,11 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const command = ChildProcess.make(
         "xdg-mime",
-        ["default", environment.linuxDesktopEntryName, `x-scheme-handler/${scheme}`],
+        [
+          "default",
+          environment.linuxDesktopEntryName,
+          ...schemes.map((scheme) => `x-scheme-handler/${scheme}`),
+        ],
         {
           stdin: "ignore",
           stdout: "ignore",
@@ -269,7 +274,7 @@ export const make = Effect.gen(function* () {
       if (exitCode !== 0) {
         return yield* new DesktopLinuxUrlHandlerRegistrationError({
           step: "set-default-handler",
-          scheme,
+          schemes,
           exitCode,
         });
       }
@@ -280,7 +285,7 @@ export const make = Effect.gen(function* () {
         ? error
         : new DesktopLinuxUrlHandlerRegistrationError({
             step: "set-default-handler",
-            scheme,
+            schemes,
             cause: error,
           }),
     ),
@@ -319,11 +324,11 @@ export const make = Effect.gen(function* () {
     );
 
     yield* setDefaultHandler;
-    yield* logInfo("registered URL scheme handler", { scheme });
+    yield* logInfo("registered URL scheme handler", { schemes });
   }).pipe(
     Effect.catch((error) =>
       logWarning("URL scheme handler registration failed", {
-        scheme,
+        schemes,
         step: error.step,
         message: error.message,
         ...(error.desktopEntryPath === undefined
