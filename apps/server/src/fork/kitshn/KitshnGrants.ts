@@ -30,7 +30,7 @@ import * as SessionStore from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { isMachineSubject } from "../machineMap/machineAccess.ts";
 import * as KitshnConnection from "./KitshnConnection.ts";
-import { peerOriginsOf, sessionAllowed } from "./kitshnGrantRules.ts";
+import { peerOriginsOf, sessionAllowed, siteOriginOf } from "./kitshnGrantRules.ts";
 
 /** The subject of a session that a person or device got through a `t3.app` level. */
 export const KITSHN_SESSION_SUBJECT_PREFIX = "kitshn:";
@@ -140,6 +140,8 @@ export class KitshnGrants extends Context.Service<
     readonly trustsPeerOrigin: (origin: string) => boolean;
     /** MM-1311: the trusted peer origins, sorted, for the server config of the clients. */
     readonly peerOrigins: () => ReadonlyArray<string>;
+    /** K-1623: the `https://` origin of this machine's T3 site while kitshn serves it, or null. */
+    readonly siteOrigin: Effect.Effect<string | null>;
   }
 >()("t3/fork/kitshn/KitshnGrants") {}
 
@@ -244,6 +246,7 @@ const make = Effect.gen(function* () {
   // The headers of the last register answer; they stay known while the daemon is away.
   let identityHeaders: ReadonlyArray<string> = [];
   let peerOrigins: ReadonlySet<string> = new Set();
+  let siteOrigin: string | null = null;
   const cache = new Map<string, Cached>();
   const tracked = new Map<AuthSessionId, Tracked>();
   // Each re-check bumps it, so `awaitLoss` reads the cache again.
@@ -443,6 +446,7 @@ const make = Effect.gen(function* () {
         ? Effect.void
         : Effect.gen(function* () {
             peerOrigins = new Set(peerOriginsOf(connection.answer.saved.reach));
+            siteOrigin = siteOriginOf(connection.answer.saved.served);
             yield* setMachine(connection.answer.machine);
             yield* SubscriptionRef.set(joinedMachine, connection.answer.machine);
             if (reconnect) yield* rechecks.withPermits(1)(recheckAll());
@@ -458,6 +462,11 @@ const make = Effect.gen(function* () {
       if (event.type === "reach") {
         return Effect.sync(() => {
           peerOrigins = new Set(peerOriginsOf(event.cards));
+        });
+      }
+      if (event.type === "served") {
+        return Effect.sync(() => {
+          siteOrigin = siteOriginOf(event.hosts);
         });
       }
       return Effect.void;
@@ -490,6 +499,7 @@ const make = Effect.gen(function* () {
     joinedMachine: SubscriptionRef.changes(joinedMachine),
     trustsPeerOrigin: (origin) => peerOrigins.has(origin),
     peerOrigins: () => [...peerOrigins].toSorted(),
+    siteOrigin: Effect.sync(() => siteOrigin),
   });
 });
 

@@ -36,6 +36,7 @@ import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
+import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import { isActiveRun } from "./CommandPolicy.ts";
 import {
@@ -165,6 +166,7 @@ export const layer: Layer.Layer<
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
     const prepareWorktree = yield* ForkWorktreeResume.makePrepare;
+    const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -514,13 +516,22 @@ export const layer: Layer.Layer<
               } satisfies OrchestrationV2DomainEvent;
             }),
           );
-          yield* eventSink.writeIfRunCurrent({
+          const written = yield* eventSink.writeIfRunCurrent({
             threadId: projection.thread.id,
             runId,
             activeAttemptId: attempt.id,
             expectedStatus: "starting",
             events,
           });
+          // A steering restart that cannot start still ends a run whose earlier turns counted.
+          if (written.committed) {
+            yield* turnAnalytics.runSettled({
+              runId,
+              status,
+              completedAt: now,
+              childrenRunning: false,
+            });
+          }
         },
       );
       const settleStartFailure = Effect.fn("ProviderTurnStartService.settleStartFailure")(
@@ -705,15 +716,29 @@ export const layer: Layer.Layer<
       const { isCurrentAttemptInStatus } = runControls;
 
       // A side chat shares its parent's worktree; the turn that gets its context asks before acting.
-      const resolvedRuntimePolicy = yield* runtimePolicy.resolve({
-        thread:
-          projection.thread.lineage.sideChat === true &&
-          (sideChatHandoff !== undefined ||
-            !projection.runs.some((previous) => previous.ordinal < run.ordinal))
-            ? { ...projection.thread, runtimeMode: "approval-required" }
-            : projection.thread,
-        modelSelection: run.modelSelection,
-      });
+      const resolvedPolicy = yield* runtimePolicy
+        .resolve({
+          thread:
+            projection.thread.lineage.sideChat === true &&
+            (sideChatHandoff !== undefined ||
+              !projection.runs.some((previous) => previous.ordinal < run.ordinal))
+              ? { ...projection.thread, runtimeMode: "approval-required" }
+              : projection.thread,
+          modelSelection: run.modelSelection,
+        })
+        .pipe(Effect.result);
+      if (resolvedPolicy._tag === "Failure") {
+        const error = resolvedPolicy.failure;
+        if (error._tag !== "RuntimePolicyAboveCeilingError") return yield* error;
+        yield* settleStartFailure({
+          signal: "runtime-mode-above-ceiling",
+          title: "Thread mode is above the policy limit",
+          error,
+          message: error.message,
+        });
+        return;
+      }
+      const resolvedRuntimePolicy = resolvedPolicy.success;
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,

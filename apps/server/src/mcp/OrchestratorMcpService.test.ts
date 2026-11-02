@@ -2407,16 +2407,23 @@ describe("OrchestratorMcpService provider resolution", () => {
         ),
       );
 
-    it.effect("hides a webhook URL from a caller below the task's modes", () =>
+    it.effect("hides a webhook URL and its Access need from a caller below the task's modes", () =>
       Effect.gen(function* () {
         const upserted = yield* Ref.make(0);
+        const siteWebhook = {
+          path: "/api/hooks/scheduled-task/secret",
+          url: "https://t3-mac.example/api/hooks/scheduled-task/secret",
+          urlNeedsAccessToken: true,
+          hasSecret: false,
+        } as const;
         const listed = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
           Effect.flatMap((mcp) => mcp.listScheduledTasks(supervisedClient, { projectId })),
           Effect.provide(
             service(
               [
-                task({ runtimeMode: "full-access" }),
+                task({ runtimeMode: "full-access", webhook: siteWebhook }),
                 task({ id: ScheduledTaskId.make("scheduled-task:supervised") }),
+                task({ id: ScheduledTaskId.make("scheduled-task:site"), webhook: siteWebhook }),
               ],
               null,
               upserted,
@@ -2424,8 +2431,12 @@ describe("OrchestratorMcpService provider resolution", () => {
           ),
         );
         assert.deepEqual(
-          listed.tasks.map((summary) => summary.webhookUrl),
-          [undefined, "https://t3.example/hooks/secret"],
+          listed.tasks.map((summary) => [summary.webhookUrl, summary.webhookNeeds]),
+          [
+            [undefined, undefined],
+            ["https://t3.example/hooks/secret", undefined],
+            [siteWebhook.url, "Cloudflare Access service token"],
+          ],
         );
       }),
     );

@@ -12,7 +12,14 @@ export function webhookAddress(
   httpBaseUrl: string | null,
 ): WebhookAddress {
   if (endpoint.url !== null) {
-    return { address: endpoint.url, copyable: true, note: null };
+    return {
+      address: endpoint.url,
+      copyable: true,
+      note:
+        endpoint.urlNeedsAccessToken === true
+          ? "This is the kitshn site of this machine. Callers need a Cloudflare Access service token."
+          : null,
+    };
   }
   if (httpBaseUrl === null) {
     return {
