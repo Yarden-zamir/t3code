@@ -12,6 +12,9 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const TERMINAL_THREAD_INSTANCE_ID = ProviderInstanceId.make("terminal");
 
+export const TERMINAL_THREADS_OFF_MESSAGE =
+  "Terminal threads are off. Turn on Settings > Terminal > Terminal threads.";
+
 /**
  * The model of a terminal thread is its shell: a shell slug such as `zsh`, from the models of the
  * `terminal` provider. This legacy model `terminal` means the default shell of the server.

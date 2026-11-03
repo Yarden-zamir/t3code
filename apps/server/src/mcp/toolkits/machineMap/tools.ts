@@ -41,7 +41,7 @@ const shared = {
 
 /** Appended to every tool that asks kitshn. */
 const KITSHN_NOTE =
-  "The call goes to the kitshn daemon of this machine. It fails when this machine has no kitshn 2, is not joined to kitshn, or its daemon does not run. Access between machines, history, undo and presets are on the kitshn map, not in these tools.";
+  "The call goes to the kitshn daemon of this machine. It fails when this machine has no joined, running kitshn 2 daemon. Access between machines, history, undo and presets are on the kitshn map, not in these tools.";
 
 const MachinesReadTool = Tool.make("machines_read", {
   ...shared,

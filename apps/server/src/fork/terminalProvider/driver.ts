@@ -8,6 +8,7 @@ import {
   type ServerProviderModel,
   type ServerSettings,
   TERMINAL_THREAD_MODEL_SELECTION,
+  TERMINAL_THREADS_OFF_MESSAGE,
   type TerminalCustomShell,
   TextGenerationError,
 } from "@t3tools/contracts";
@@ -192,7 +193,7 @@ export const TerminalDriver: ProviderDriver<TerminalSettings, TerminalDriverEnv>
           Effect.mapError((error) => error.message),
           Effect.filterOrFail(
             (settings) => settings.terminalThreads,
-            () => "Terminal threads are off. Turn on Settings > Terminal > Terminal threads.",
+            () => TERMINAL_THREADS_OFF_MESSAGE,
           ),
           Effect.asVoid,
         ),

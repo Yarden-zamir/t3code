@@ -7,6 +7,7 @@ import {
   type CloudflareAccessServiceToken,
   cloudflareAccessServiceToken,
   type OriginRequestHeaders,
+  withCloudflareAccessServiceToken,
 } from "@t3tools/client-runtime/connection";
 import type { DeviceMachineList } from "@t3tools/client-runtime/fork/deviceInvite";
 import type { ClientMachine, EnvironmentId } from "@t3tools/contracts";
@@ -40,6 +41,23 @@ export function appTokenOrigins(
       .filter((rule) => cloudflareAccessServiceToken(rule.headers)?.clientId === tokenClientId)
       .map((rule) => rule.origin),
   );
+}
+
+/**
+ * The headers to save after kitshn answered with machines: each of `origins` (the listed machines
+ * and kitshn's own) gets the token that opened the list, also an origin without saved headers, as
+ * a device invite saves it. An origin that the list does not name keeps its headers.
+ */
+export function deviceTokenWrites(
+  rules: ReadonlyArray<OriginRequestHeaders>,
+  origins: ReadonlySet<string>,
+  token: CloudflareAccessServiceToken,
+): ReadonlyArray<OriginRequestHeaders> {
+  return [...origins].flatMap((origin) => {
+    const headers = rules.find((rule) => rule.origin === origin)?.headers ?? [];
+    if (cloudflareAccessServiceToken(headers)?.clientId === token.clientId) return [];
+    return [{ origin, headers: withCloudflareAccessServiceToken(headers, token) }];
+  });
 }
 
 /** A saved environment that reaches a machine origin with the app token. */

@@ -14,6 +14,7 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import { providerAuthReturnUrl } from "@t3tools/shared/providerAuthReturnUrl";
 import { promptLinkAppPath } from "@t3tools/shared/promptLinks";
 import { readPairingAppLink } from "@t3tools/shared/remote";
+import { readThreadAppLink } from "@t3tools/shared/threadAddress";
 import { readDeviceInviteAppLink } from "@t3tools/client-runtime/fork/deviceInvite";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
@@ -157,6 +158,10 @@ export const make = Effect.gen(function* () {
           }),
       }).pipe(Effect.orDie),
   );
+  // The bridge claims the app scheme; thread links have a scheme of their own.
+  yield* electronApp.setAsDefaultProtocolClient(
+    ElectronProtocol.getDesktopThreadLinkScheme(environment.isDevelopment),
+  );
 
   return DesktopClerk.of({
     configure: Effect.gen(function* () {
@@ -215,7 +220,8 @@ export const make = Effect.gen(function* () {
           !value ||
           (promptLinkAppPath(value) === null &&
             readPairingAppLink(value) === null &&
-            readDeviceInviteAppLink(value) === null)
+            readDeviceInviteAppLink(value) === null &&
+            readThreadAppLink(value) === null)
         )
           return false;
         void runPromise(webLinks.receive(value));

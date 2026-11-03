@@ -81,6 +81,7 @@ const VARIANT_CONFIG = {
   development: {
     appName: "T3 Code Dev",
     scheme: "t3code-dev",
+    threadLinkScheme: "t3-thread-dev",
     iosBundleIdentifier: "com.t3tools.t3code.dev",
     androidPackage: "com.t3tools.t3code.dev",
     relyingParty: "clerk.t3.codes",
@@ -89,6 +90,8 @@ const VARIANT_CONFIG = {
   preview: {
     appName: "T3 Code Preview",
     scheme: "t3code-preview",
+    // The fork APK is the preview variant, so it claims the thread link scheme itself.
+    threadLinkScheme: "t3-thread",
     iosBundleIdentifier: "com.t3tools.t3code.preview",
     androidPackage: "com.t3tools.t3code.preview",
     relyingParty: "clerk.t3.codes",
@@ -97,6 +100,7 @@ const VARIANT_CONFIG = {
   production: {
     appName: "T3 Code",
     scheme: "t3code",
+    threadLinkScheme: "t3-thread",
     iosBundleIdentifier: "com.t3tools.t3code",
     androidPackage: "com.t3tools.t3code",
     relyingParty: "clerk.t3.codes",
@@ -242,7 +246,8 @@ const config: ExpoConfig = {
   name: variant.appName,
   slug: "t3-code",
   platforms: ["ios", "android"],
-  scheme: variant.scheme,
+  // The app scheme stays first: native code reads it as the scheme of the app.
+  scheme: [variant.scheme, variant.threadLinkScheme],
   version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.2.0",
   runtimeVersion: {
     // Skip costly fingerprinting on dev launches; preview and production OTAs require matching native projects.

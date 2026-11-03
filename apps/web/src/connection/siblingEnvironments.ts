@@ -151,7 +151,7 @@ const nextAttempt = new Map<string, { readonly atMs: number; readonly failures: 
  * Pairs with one sibling and returns the error, or null when it paired. It lives outside the
  * hooks because the React Compiler skips a hook with `throw` inside `try`.
  */
-async function pairSiblingOrigin(
+export async function pairSiblingOrigin(
   origin: string,
   connectPairing: (input: {
     readonly host: string;
@@ -174,22 +174,20 @@ const delayAfter = (failures: number): number =>
 
 /**
  * Pairs a sibling when its backoff allows it, with at most one pairing per origin at a time.
- * `skipped` means that the backoff or a pairing in flight held it back. A success waits
- * `afterSuccessMs` before the next pairing; a failure waits 30 seconds, doubled per failure, up to
- * 10 minutes.
+ * `skipped` means that the backoff or a pairing in flight held it back. A success waits 10 minutes
+ * before the next pairing; a failure waits 30 seconds, doubled per failure, up to 10 minutes.
  */
-export async function pairSiblingWhenDue(
+async function pairSiblingWhenDue(
   origin: string,
   connectPairing: Parameters<typeof pairSiblingOrigin>[1],
-  options: { readonly credentials?: RequestCredentials; readonly afterSuccessMs?: number } = {},
 ): Promise<"skipped" | { readonly issue: SiblingIssue | null; readonly error: unknown }> {
   if (inFlight.has(origin) || (nextAttempt.get(origin)?.atMs ?? 0) > Date.now()) return "skipped";
   inFlight.add(origin);
-  const error = await pairSiblingOrigin(origin, connectPairing, options.credentials);
+  const error = await pairSiblingOrigin(origin, connectPairing);
   inFlight.delete(origin);
   if (error === null) {
     nextAttempt.set(origin, {
-      atMs: Date.now() + (options.afterSuccessMs ?? AFTER_SUCCESS_MS),
+      atMs: Date.now() + AFTER_SUCCESS_MS,
       failures: 0,
     });
     return { issue: null, error };

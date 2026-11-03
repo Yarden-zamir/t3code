@@ -88,6 +88,18 @@ const harness = Effect.gen(function* () {
     connect: connection.attach(daemon),
     disconnect: connection.attach(null),
     grantsChanged: connection.publish({ type: "grants-changed", at: 0 }),
+    reach: (hosts: ReadonlyArray<string>) =>
+      connection.publish({
+        type: "reach",
+        cards: hosts.map((address) => ({
+          machineId: address,
+          machineName: address,
+          kind: "t3.app",
+          id: "app",
+          address,
+          level: "use",
+        })),
+      }),
     answers,
     checks,
     duringNextCheck,
@@ -343,6 +355,26 @@ describe("KitshnGrants (K-721)", () => {
       const grants = yield* test.start;
       expect(yield* grants.machine).toEqual({ id: "self", name: "Mac" });
       expect(Option.getOrNull(yield* Stream.runHead(grants.joinedMachine))).toBeNull();
+    }).pipe(isolated),
+  );
+
+  it.effect("follows the peer origins of each reach event", () =>
+    Effect.gen(function* () {
+      const test = yield* harness;
+      const grants = yield* test.start;
+      yield* test.connect;
+      // The register answer sets the origins too, so the reach event must come after it.
+      yield* grants.joinedMachine.pipe(
+        Stream.filter((machine) => machine !== null),
+        Stream.runHead,
+      );
+      yield* test.reach(["vps.example.com", "vps.example.com"]);
+      const origins = yield* grants.peerOriginChanges.pipe(
+        Stream.filter((next) => next.length > 0),
+        Stream.runHead,
+      );
+      expect(Option.getOrNull(origins)).toEqual(["https://vps.example.com"]);
+      expect(grants.trustsPeerOrigin("https://vps.example.com")).toBe(true);
     }).pipe(isolated),
   );
 

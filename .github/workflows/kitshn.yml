@@ -1,0 +1,14 @@
+# Fork: deploys the Android APK mirror (kitshn.config.ts) when its files change.
+name: kitshn
+on:
+  push:
+    branches: [main]
+    paths: [kitshn.config.ts, scripts/apk-mirror/**, .github/workflows/kitshn.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  kitshn:
+    uses: Yarden-zamir/kitshn/.github/workflows/kitshn2-deploy.yml@main
+    secrets: inherit

@@ -40,6 +40,7 @@ import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
 import { refuseTerminalThreadWithoutExec } from "../../../fork/machineMap/terminalThreadExec.ts";
+import { refuseTerminalThreadWhileOff } from "../../../fork/terminalProvider/terminalThreadsOff.ts";
 
 const isAboveCeilingError = Schema.is(OrchestratorRuntimeModeAboveCeilingError);
 
@@ -285,6 +286,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             message:
               "Pass modelSelection: the project has no default model. orchestrator_capabilities lists providers and models.",
           });
+        yield* refuseTerminalThreadWhileOff(modelSelection.instanceId);
         yield* refuseTerminalThreadWithoutExec(scope.requestNamespace, modelSelection);
         let startedRuntimeMode =
           projectDefaults !== undefined && input.runtimeMode === undefined

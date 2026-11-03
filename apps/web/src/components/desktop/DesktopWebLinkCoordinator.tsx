@@ -8,6 +8,7 @@ import { readDeviceInviteAppLink } from "@t3tools/client-runtime/fork/deviceInvi
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { promptLinkAppPath } from "@t3tools/shared/promptLinks";
 import { readPairingAppLink, resolveRemotePairingTarget } from "@t3tools/shared/remote";
+import { readThreadAppLink, type ThreadAddress } from "@t3tools/shared/threadAddress";
 import { useRouter } from "@tanstack/react-router";
 import * as Effect from "effect/Effect";
 import { AtomRegistry } from "effect/reactivity";
@@ -30,11 +31,16 @@ import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { resolveThreadRouteTarget } from "../../threadRoutes";
 import { assetEnvironment } from "../../state/assets";
 import { readProject, readThreadShell } from "../../state/entities";
-import { useEnvironmentHttpBaseUrl, usePrimaryEnvironment } from "../../state/environments";
+import {
+  useEnvironmentHttpBaseUrl,
+  useEnvironmentIds,
+  usePrimaryEnvironment,
+} from "../../state/environments";
 import { previewEnvironment } from "../../state/preview";
 import { allReachableShellsLiveAtom } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
+import { forkMessageLinkNavigation } from "../chat/ForkMessageLinkTarget";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /** A link handed over by the OS is a plain click: nothing about it asks for the browser. */
@@ -94,6 +100,7 @@ export function DesktopWebLinkCoordinator() {
   });
   const connectPairingEnvironment = useAtomCommand(connectPairing, { reportFailure: false });
   const httpBaseUrl = useEnvironmentHttpBaseUrl(primaryEnvironment?.environmentId ?? null);
+  const knownEnvironmentIds = useEnvironmentIds();
   const queueRef = useRef(Promise.resolve());
   const pairedUrlsRef = useRef(new Set<string>());
   const joinWithDeviceInvite = useJoinWithDeviceInvite();
@@ -226,6 +233,21 @@ export function DesktopWebLinkCoordinator() {
     }
   });
 
+  // Fork: a thread link opens like its chip in chat. Known limit: with Local environment disabled, a
+  // launch link can arrive before the saved environments load and then reads as another machine.
+  // Revisit if users report it; the link would then wait for the environment catalog.
+  const openThreadLink = async (url: string, address: ThreadAddress) => {
+    if (!knownEnvironmentIds.includes(address.environmentId)) {
+      reportFailure(url, "Thread on another machine. Connect to its environment to open it.");
+      return;
+    }
+    await router.navigate({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: address.environmentId, threadId: address.threadId },
+      ...forkMessageLinkNavigation(address.messageId),
+    });
+  };
+
   const openLink = useEffectEvent(async (url: string) => {
     const inviteUrl = readDeviceInviteAppLink(url);
     if (inviteUrl !== null) {
@@ -235,6 +257,11 @@ export function DesktopWebLinkCoordinator() {
     const pairingUrl = readPairingAppLink(url);
     if (pairingUrl !== null) {
       await pairFromLink(pairingUrl);
+      return;
+    }
+    const threadAddress = readThreadAppLink(url);
+    if (threadAddress !== null) {
+      await openThreadLink(url, threadAddress);
       return;
     }
     const appPath = promptLinkAppPath(url);
