@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -69,7 +70,7 @@ const layerConfigWith = (tunnelPairingUrl: string | undefined) =>
     Effect.map(ServerConfig.ServerConfig, (config) => ({ ...config, tunnelPairingUrl })),
   ).pipe(
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-guest-share-fork-" })),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 const layerTestWith = (tunnelPairingUrl: string | undefined) =>
   GuestShareService.layer.pipe(
@@ -86,7 +87,7 @@ const layerTestWith = (tunnelPairingUrl: string | undefined) =>
     Layer.provide(Layer.mock(AnalyticsService.AnalyticsService)({ record: () => Effect.void })),
     Layer.provide(ServerSecretStore.layer),
     Layer.provideMerge(layerConfigWith(tunnelPairingUrl)),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 const layerTest = layerTestWith(undefined);
 const layerTunnel = layerTestWith("https://t3-vps.example.test");

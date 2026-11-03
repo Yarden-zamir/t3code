@@ -20,6 +20,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { environmentSession } from "./session";
+import { serverEnvironment } from "./server";
 import { environmentShell } from "./shell";
 import { terminalEnvironment } from "./terminal";
 
@@ -46,6 +47,7 @@ export const environmentThreadShells = createEnvironmentThreadShellAtoms({
     metadata: terminalEnvironment.metadata,
     sessionState: environmentSession.sessionStateAtom,
   }),
+  hiddenThreadTagsAtom: serverEnvironment.hiddenThreadTagsAtom,
 });
 export const childThreadApprovalsAtom = createChildThreadApprovalsAtom({
   childThreadInputsAtom: environmentThreadShells.childThreadInputsAtom,

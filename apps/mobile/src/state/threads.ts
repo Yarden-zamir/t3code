@@ -25,6 +25,7 @@ import {
   pendingThreadCreationOutcomesAtom,
   selectThreadCreationDetail,
 } from "./pending-thread-creation";
+import { serverEnvironment } from "./server";
 import { threadOutboxManager } from "./thread-outbox";
 
 export const threadFamilies = createThreadFamilyAtoms(
@@ -50,6 +51,7 @@ export const environmentThreadShells = createEnvironmentThreadShellAtoms({
     metadata: terminalEnvironment.metadata,
     sessionState: environmentSession.sessionStateAtom,
   }),
+  hiddenThreadTagsAtom: serverEnvironment.hiddenThreadTagsAtom,
 });
 export const childThreadApprovalsAtom = createChildThreadApprovalsAtom({
   childThreadInputsAtom: environmentThreadShells.childThreadInputsAtom,

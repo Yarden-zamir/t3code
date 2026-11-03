@@ -43,7 +43,11 @@ function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [environment
     registry: AtomRegistry.make(),
     snapshotAtom,
     catalogValueAtom,
-    threads: createEnvironmentThreadShellAtoms({ catalogValueAtom, snapshotAtom }),
+    threads: createEnvironmentThreadShellAtoms({
+      catalogValueAtom,
+      snapshotAtom,
+      hiddenThreadTagsAtom: () => Atom.make(null),
+    }),
   };
 }
 describe("v2 thread shell lists", () => {
@@ -136,6 +140,7 @@ describe("terminal thread state on thread shells", () => {
     const threads = createEnvironmentThreadShellAtoms({
       catalogValueAtom,
       snapshotAtom,
+      hiddenThreadTagsAtom: () => Atom.make(null),
       terminalThreadStatesAtom: (id) => {
         reads.push(id);
         return states;

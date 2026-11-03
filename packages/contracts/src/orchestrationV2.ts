@@ -44,6 +44,7 @@ import {
 import { AuthMcpClientAccess } from "./auth.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
+import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import {
   OrchestrationSearchThreadsInput,
   OrchestrationSearchThreadsResult,
@@ -284,6 +285,8 @@ export const OrchestrationV2TurnCapabilities = Schema.Struct({
   supportsActiveSteering: Schema.Boolean,
   // Some native steering mechanisms cancel pending tools before consuming the message.
   activeSteeringInterruptsTools: Schema.optional(Schema.Boolean),
+  // Some take text only, so a steer with attachments restarts the turn instead.
+  activeSteeringAcceptsAttachments: Schema.optional(Schema.Boolean),
   supportsSteeringByInterruptRestart: Schema.Boolean,
   supportsQueuedMessages: Schema.Boolean,
   terminalStatusQuality: Schema.Literals(["strong", "weak", "none"]),
@@ -487,6 +490,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  /** Absent on threads written before tags existed; read as empty. */
+  tags: Schema.optional(StoredThreadTags),
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtc).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -1889,6 +1894,7 @@ export const OrchestrationV2DomainEvent = Schema.Union([
       "thread.unpinned",
       "thread.pin-reordered",
       "thread.active-reordered",
+      "thread.tags-updated",
       "thread.visited",
       "thread.marked-unread",
       "thread.metadata-updated",
@@ -2141,6 +2147,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  /** Absent on threads written before tags existed; read as empty. */
+  tags: Schema.optional(StoredThreadTags),
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   opens: Schema.optional(LenientThreadOpens),
   titleRegeneration: Schema.optional(
@@ -2770,6 +2778,7 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
       "thread.unpinned",
       "thread.pin-reordered",
       "thread.active-reordered",
+      "thread.tags-updated",
       "thread.visited",
       "thread.marked-unread",
       "thread.pull-request-synced",
@@ -3010,6 +3019,13 @@ export const OrchestrationV2Command = Schema.Union([
     type: Schema.Literal("thread.unpin"),
     commandId: CommandId,
     threadId: ThreadId,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.tag.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    tag: ThreadTag,
+    tagged: Schema.Boolean,
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pin.reorder"),

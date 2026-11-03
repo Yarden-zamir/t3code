@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { AuthAccessReadScope, AuthOrchestrationReadScope, EnvironmentId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
@@ -32,7 +33,7 @@ const machineSession = {
   client: { label: "machine Mac", deviceType: "bot" },
 } as const;
 
-it.layer(NodeServices.layer)("fork sessions", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("fork sessions", (it) => {
   it.effect("gives a machine its live session again and rotates it on a scope change", () =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;

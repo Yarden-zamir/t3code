@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -11,7 +12,7 @@ import { isT3CreatedWorktree } from "./worktreePathTemplate.ts";
 
 const layerTest = GitVcsDriver.layer.pipe(
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-worktree-template-test-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const git = (cwd: string, args: ReadonlyArray<string>) =>
