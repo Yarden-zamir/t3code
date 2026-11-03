@@ -15,15 +15,13 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 
 - **[kitshn](docs/fork/features.md#kitshn):** the T3 server is a provider of kitshn. The owner shares access between machines on the kitshn map.
 - **[Joined and manual environments](docs/fork/features.md#joined-and-manual-environments):** environment lists mark the machines that kitshn joined; the others are addresses that the user added.
-- **[Cards](docs/fork/features.md#cards):** the T3 card shows the version and busy state, runs the T3 commands, and lists scheduled tasks and client sessions.
 - **[Access from kitshn](docs/fork/features.md#access-from-kitshn):** kitshn grants decide who gets in, with saved grants for 24 hours while kitshn is out of reach.
 - **[Environment name from kitshn](docs/fork/features.md#environment-name-from-kitshn):** an optional setting keeps environment names equal to kitshn map names.
 - **[Work on other machines](docs/fork/features.md#work-on-other-machines):** a kitshn link makes the other machine a linked environment, where agents delegate tasks within their own limits.
 - **[Commands on other machines](docs/fork/features.md#commands-on-other-machines):** `machine_exec` and `t3 machine exec` run commands on another machine with the exec grant.
 - **[Settings and theme sync](docs/fork/features.md#settings-and-theme-sync):** the shared `t3.settings` on kitshn syncs settings, themes and keybindings to every machine.
-- **[Settings > Machines](docs/fork/features.md#settings--machines):** how to join, and notices for the host handover and the desktop machine list.
+- **[Fleet view](docs/fork/features.md#fleet-view):** one page with every machine: version, update state, scheduled tasks, commands, the kitshn state and the changelog.
 - **[Device invites](docs/fork/features.md#device-invites):** a phone or the desktop app joins kitshn with its own device token from a one-time link.
-- **[Machines panel](docs/fork/features.md#machines-panel):** the right panel of a thread lists the machines that the kitshn links reach.
 
 **Updates and releases**
 
@@ -31,7 +29,6 @@ This is a personal fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3cod
 - **[Daily release](docs/fork/operations.md#daily-release):** each morning a VPS task promotes the newest nightly to a release with highlighted notes.
 - **[Android APK](docs/fork/features.md#android-apk):** a signed APK of fork main that installs next to the store app.
 - **[Updates](docs/fork/features.md#updates):** one install command per OS, and one update policy for the desktop app and the server: the newest release, when idle, automatic or manual.
-- **[Changelog](docs/fork/features.md#changelog):** a timeline of fork releases, upstream commits and Fork Sync runs.
 - **[Local deploy](docs/fork/operations.md#deploy-a-local-build):** `scripts/fork-deploy-local.sh` deploys this checkout to a headless Linux server or to the Mac app.
 - **[Central build caches](docs/fork/features.md#central-build-caches):** opt-in Vite caches and Android app outputs outside checkouts, with central-only pruning.
 - **[Fork Sync](docs/fork/operations.md#fork-sync):** a workflow merges upstream main into fork main; a T3 task on the VPS starts it every 2 hours.

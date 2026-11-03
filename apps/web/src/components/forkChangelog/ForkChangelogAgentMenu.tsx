@@ -42,17 +42,14 @@ const lastPromptByDraft = new Map<DraftId, string>();
 export function ForkChangelogAgentMenu({
   environmentId,
   tab,
-  onOpened,
 }: {
   readonly environmentId: EnvironmentId;
   readonly tab: ForkChangelogTab;
-  /** Called once the thread holds the task, so the dialog can get out of the way. */
-  readonly onOpened: () => void;
 }) {
   return tab === "releases" ? (
-    <ReleasesAgentMenu environmentId={environmentId} onOpened={onOpened} />
+    <ReleasesAgentMenu environmentId={environmentId} />
   ) : (
-    <UpstreamAgentMenu environmentId={environmentId} onOpened={onOpened} />
+    <UpstreamAgentMenu environmentId={environmentId} />
   );
 }
 
@@ -70,13 +67,7 @@ const ASK: MenuAction = {
   Icon: MessageCircleQuestionIcon,
 };
 
-function ReleasesAgentMenu({
-  environmentId,
-  onOpened,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly onOpened: () => void;
-}) {
+function ReleasesAgentMenu({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const releases = useEnvironmentQuery(forkReleases({ environmentId, input: {} }));
   const input: ForkChangelogAgentInput = {
     tab: "releases",
@@ -102,18 +93,10 @@ function ReleasesAgentMenu({
       Icon: HistoryIcon,
     });
   }
-  return (
-    <AgentMenu actions={actions} environmentId={environmentId} input={input} onOpened={onOpened} />
-  );
+  return <AgentMenu actions={actions} environmentId={environmentId} input={input} />;
 }
 
-function UpstreamAgentMenu({
-  environmentId,
-  onOpened,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly onOpened: () => void;
-}) {
+function UpstreamAgentMenu({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const pending = useEnvironmentQuery(forkUpstreamPending({ environmentId, input: {} }));
   const upstream = pending.data;
   const input: ForkChangelogAgentInput = {
@@ -139,21 +122,17 @@ function UpstreamAgentMenu({
       },
     );
   }
-  return (
-    <AgentMenu actions={actions} environmentId={environmentId} input={input} onOpened={onOpened} />
-  );
+  return <AgentMenu actions={actions} environmentId={environmentId} input={input} />;
 }
 
 function AgentMenu({
   actions,
   environmentId,
   input,
-  onOpened,
 }: {
   readonly actions: ReadonlyArray<MenuAction>;
   readonly environmentId: EnvironmentId;
   readonly input: ForkChangelogAgentInput;
-  readonly onOpened: () => void;
 }) {
   const newThread = useNewThreadHandler();
   const [pending, setPending] = useState<ForkChangelogAgentAction | null>(null);
@@ -200,7 +179,6 @@ function AgentMenu({
       ),
       task.chip,
     ]);
-    onOpened();
     toastManager.add({
       type: "success",
       title: "Asked in a thread",

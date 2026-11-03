@@ -15,7 +15,7 @@ export type ForkSettingsPath = "/settings/terminal" | "/settings/machines" | "/s
 
 export const SECTION_LABELS: Readonly<Record<ForkSettingsPath, string>> = {
   "/settings/terminal": "Terminal",
-  "/settings/machines": "Machines",
+  "/settings/machines": "Fleet",
   "/settings/fork": "Fork",
 };
 

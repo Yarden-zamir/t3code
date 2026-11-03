@@ -40,7 +40,6 @@ vi.mock("./ForkSidebarUpdate", () => ({
   openIdleInstallPromptIfWorkRuns: () => false,
   prepareNewestUpdateInstall: async () => true,
   ForkUpdatePopoverChanges: () => null,
-  ForkChangelogDialogHost: () => null,
 }));
 vi.mock("./useUpdateEverything", () => ({
   useUpdateEverything: () => ({

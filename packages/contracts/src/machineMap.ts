@@ -36,6 +36,15 @@ export const KitshnMachineRef = Schema.Struct({
 });
 export type KitshnMachineRef = typeof KitshnMachineRef.Type;
 
+/** The kitshn daemon of an online machine, from its machine card in the kitshn state. */
+export const KitshnDaemon = Schema.Struct({
+  /** The kitshn release, such as `a573a04848bd`. */
+  version: Schema.String,
+  /** The kitshn wire version, such as `2.1.0`. */
+  protocol: Schema.String,
+});
+export type KitshnDaemon = typeof KitshnDaemon.Type;
+
 /** The secondary line of a kitshn-joined environment in an environment list. */
 export const kitshnJoinedText = (machine: Pick<KitshnMachineRef, "name">): string =>
   machine.name === null ? "Joined through kitshn" : `Joined through kitshn as ${machine.name}`;
@@ -180,28 +189,34 @@ export const MapActor = Schema.Union([
 ]);
 export type MapActor = typeof MapActor.Type;
 
+const RestartServerCommand = Schema.TaggedStruct("restartServer", {}).annotate({
+  description: "Restart the T3 server. Its supervisor starts it again. Running agent turns stop.",
+});
+const InstallUpdateCommand = Schema.TaggedStruct("installUpdate", {
+  whenIdle: Schema.Boolean.annotate({
+    description: "True waits until no agent runs on the machine. False installs now.",
+  }),
+}).annotate({
+  description:
+    "Install an update. A desktop app installs what its update button offers, while the app runs. A server that runs as the T3 Code background service installs the newest fork release (MM-505).",
+});
+const StopAllAgentsCommand = Schema.TaggedStruct("stopAllAgents", {}).annotate({
+  description: "Interrupt every running agent turn on the machine.",
+});
+const PauseScheduledTasksCommand = Schema.TaggedStruct("pauseScheduledTasks", {}).annotate({
+  description: "Pause every scheduled task on the machine.",
+});
+const ResumeScheduledTasksCommand = Schema.TaggedStruct("resumeScheduledTasks", {}).annotate({
+  description: "Resume the scheduled tasks of the machine.",
+});
+
 /** MM-501. `rotateToken` is not here: the portal sends it as its own message. */
 export const MachineCommandInput = Schema.Union([
-  Schema.TaggedStruct("restartServer", {}).annotate({
-    description: "Restart the T3 server. Its supervisor starts it again. Running agent turns stop.",
-  }),
-  Schema.TaggedStruct("installUpdate", {
-    whenIdle: Schema.Boolean.annotate({
-      description: "True waits until no agent runs on the machine. False installs now.",
-    }),
-  }).annotate({
-    description:
-      "Install an update. A desktop app installs what its update button offers, while the app runs. A server that runs as the T3 Code background service installs the newest fork release (MM-505).",
-  }),
-  Schema.TaggedStruct("stopAllAgents", {}).annotate({
-    description: "Interrupt every running agent turn on the machine.",
-  }),
-  Schema.TaggedStruct("pauseScheduledTasks", {}).annotate({
-    description: "Pause every scheduled task on the machine.",
-  }),
-  Schema.TaggedStruct("resumeScheduledTasks", {}).annotate({
-    description: "Resume the scheduled tasks of the machine.",
-  }),
+  RestartServerCommand,
+  InstallUpdateCommand,
+  StopAllAgentsCommand,
+  PauseScheduledTasksCommand,
+  ResumeScheduledTasksCommand,
   Schema.TaggedStruct("setScheduledTaskEnabled", {
     taskId: TrimmedNonEmptyString.annotate({
       description: "Task id from presence.<machineId>.status.tasks in machines_read.",
@@ -252,6 +267,21 @@ export const MachineCommandInput = Schema.Union([
 ]);
 export type MachineCommandInput = typeof MachineCommandInput.Type;
 export type MachineCommandKind = MachineCommandInput["_tag"];
+
+/**
+ * The machine commands of the Fleet view. A client sends them to the server that runs them, the
+ * same commands that kitshn jobs and `machines_command` run there.
+ */
+export const FleetCommandInput = Schema.Union([
+  RestartServerCommand,
+  InstallUpdateCommand,
+  StopAllAgentsCommand,
+  PauseScheduledTasksCommand,
+  ResumeScheduledTasksCommand,
+]);
+export type FleetCommandInput = typeof FleetCommandInput.Type;
+export const FleetCommandResult = Schema.Struct({ error: Schema.NullOr(Schema.String) });
+export type FleetCommandResult = typeof FleetCommandResult.Type;
 
 export const MachineCommandKindSchema = Schema.Literals([
   "restartServer",

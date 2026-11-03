@@ -112,7 +112,7 @@ function useDeviceSteps() {
   return { tokenOf, saveToken, pair, removeEnvironment };
 }
 
-/** The join of Settings > Machines; the `t3code://join-device` link runs the same. */
+/** The join of Settings > Fleet; the `t3code://join-device` link runs the same. */
 export function useJoinWithDeviceInvite() {
   const steps = useDeviceSteps();
   return async (text: string): Promise<{ readonly joined: boolean; readonly message: string }> => {
@@ -152,7 +152,7 @@ export function useJoinWithDeviceInvite() {
   };
 }
 
-/** Settings > Machines: paste a kitshn device invite for this desktop app. */
+/** Settings > Fleet: paste a kitshn device invite for this desktop app. */
 export function DeviceInviteSettingsRow() {
   const joinWithDeviceInvite = useJoinWithDeviceInvite();
   const [text, setText] = useState("");

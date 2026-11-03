@@ -30,7 +30,7 @@ import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { ServerProviderUsageLimits, UsageLimitSourceSnapshots } from "./providerUsageLimits.ts";
 import { ServerSettings } from "./settings.ts";
 import { DesktopUpdateChannelSchema } from "./ipc.ts";
-import { KitshnMachineRef } from "./machineMap.ts";
+import { KitshnMachineRef, MachineCommandKindSchema } from "./machineMap.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
   kind: Schema.Literal("keybindings.malformed-config"),
@@ -687,6 +687,8 @@ export const ServerConfig = Schema.Struct({
    * It is here and not in the public descriptor, so only a signed-in client reads it.
    */
   kitshnMachine: Schema.optionalKey(KitshnMachineRef),
+  /** Fork: the machine commands that this server runs for a client (MM-502), as the Fleet menu. */
+  machineCommands: Schema.optionalKey(ForwardCompatibleArray(MachineCommandKindSchema)),
   observability: ServerObservability,
   settings: ServerSettings,
   /** Present when an administrator's policy file manages this environment. */

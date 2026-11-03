@@ -94,6 +94,7 @@ import { newTaskFlowKey } from "./features/threads/new-task-flow-state";
 import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
 import { SettingsNavigationRouteScreen } from "./features/settings/SettingsNavigationRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
+import { SettingsFleetRouteScreen } from "./features/settings/SettingsFleetRouteScreen";
 import { SettingsForkRouteScreen } from "./features/settings/SettingsForkRouteScreen";
 import { SettingsVoiceRouteScreen } from "./features/settings/SettingsVoiceRouteScreen";
 import { SettingsForkPinsRouteScreen } from "./features/settings/SettingsForkPinsRouteScreen";
@@ -342,6 +343,11 @@ const SETTINGS_SCREENS = {
     screen: SettingsForkRouteScreen,
     linking: "settings/fork",
     options: { ...SETTINGS_PAGE_OPTIONS, title: "Fork" },
+  }),
+  SettingsFleet: createNativeStackScreen({
+    screen: SettingsFleetRouteScreen,
+    linking: "settings/fleet",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Fleet" },
   }),
   SettingsForkPins: createNativeStackScreen({
     screen: SettingsForkPinsRouteScreen,

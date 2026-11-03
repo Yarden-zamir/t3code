@@ -142,25 +142,37 @@ An environment is one of two kinds:
 - **Joined through kitshn:** the machine is on the kitshn map. kitshn gives it its access, the origins that it trusts and, with [Environment name from kitshn](#environment-name-from-kitshn), its name. A phone or a desktop app reaches it with its [device token](#device-invites).
 - **Manual:** an address that the user typed and paired. It gets no access, trust or name from kitshn.
 
-The server config of a joined machine carries its kitshn machine id and name (`kitshnMachine`), only while this server run registered with kitshn. The config needs a session, so the public descriptor does not name the machine. The sidebar project badge, Settings > Connections, Settings > Machines, the Machines panel, the environment pickers (the composer "Run on" menu, the add-project-to-machine dialog and the command palette), the mobile environment list and the Android assistant machine list mark a joined machine with "kitshn" and the line "Joined through kitshn as <name>". A manual environment has no mark.
+The server config of a joined machine carries its kitshn machine id and name (`kitshnMachine`), only while this server run registered with kitshn. The config needs a session, so the public descriptor does not name the machine. The sidebar project badge, Settings > Connections, Settings > Fleet, the environment pickers (the composer "Run on" menu, the add-project-to-machine dialog and the command palette), the mobile environment list and the Android assistant machine list mark a joined machine with "kitshn" and the line "Joined through kitshn as <name>". A manual environment has no mark.
 
 - **Setting:** none.
 - **Works on:** web, desktop, mobile.
 - **Limits:** a manual environment behind Cloudflare Access does not connect. The desktop and mobile apps send no Access token to it, and a browser page sends no cookies to it. Join the machine to kitshn, or reach it without Access, for example on the local network or the tailnet.
 - A browser page sends cookies only to the pages of the machines that kitshn links to its server. Another origin gets no credentialed CORS.
 
-### Cards
+### Fleet view
 
-The server puts these cards on the kitshn map:
+Settings > Fleet lists every machine of this app, this one first: name, joined through kitshn or manual, the connection, the T3 version, the update state, and the scheduled tasks with the last failed run. Below the list are the kitshn state and settings of the environment selected in Settings. Open it from "Open Fleet" in the command palette or from the Settings nav.
 
-- `t3.app`, "T3 on <machine>": the version, the running turns and a busy fact. Its commands are Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. Its lists hold the scheduled tasks (Run now, Pause, Resume) and the client sessions (Revoke session), at most 100 rows each. Its setting `updateChannel` picks the release feed, see [Fork releases](#fork-releases).
-- `t3.thread`: one card for each thread with an open guest link.
-- `t3.settings`: the T3 settings state, see [Settings and theme sync](#settings-and-theme-sync).
-
-kitshn runs a command at once when a grant allows it. Otherwise the command waits for the owner as a kitshn job.
-
-- **Limits:** the busy fact and the lists refresh every 15 seconds. kitshn gets a card again only when it changed.
-- kitshn drops a card part that breaks its rules, such as a list row, and keeps the rest. Settings > Machines names what it dropped.
+- **Update state:** for a server, "Automatic updates" or "Manual updates" ([Updates](#updates)) and "Behind this app" when its version is older than the app. For the machine of the desktop app, the state of the desktop update.
+- **Actions:** each row opens the kitshn map (a joined machine) and the settings of that machine. Its menu runs Install update when idle, Install update now, Restart server, Stop all agents, Pause scheduled tasks and Resume scheduled tasks on that server. The menu shows only the commands that the server runs: Install update needs the T3 Code background service, and Restart server needs a supervisor. The commands need the maintain scope of that server; without it the row has no menu. The desktop app installs its own update with the update button.
+- **Linked machines:** a machine that kitshn links to this server, but that this app does not reach itself, shows as a row with its name only.
+- **Agents:** `t3_environment_read` gives the version, `list_scheduled_tasks` the tasks, `machines_command` runs the commands through kitshn, and `machines_set_setting` changes a setting. An agent runs Fleet commands only on kitshn-joined machines, through `machines_command`. See [fork-agents.md](../fork-agents.md).
+- **Changelog tab:** a timeline of fork releases and their commits, the upstream commits that fork main does not have yet, and the Fork Sync runs. It shows while the client setting `forkChangelogEnabled` is on (on by default, Settings > About > App > "Fork changelog"). "Open changelog" in the desktop update popover opens it too. With the setting on, the update popover shows the changelog of every release between the installed version and the offered one.
+  - **Releases:** commits, newest first, with a divider for each release, its time and an "Installed" mark. A fork icon marks a fork commit, and a down-arrow icon marks an upstream commit. A `#123` in a commit subject links to the pull request of its repository. Merge commits do not show.
+  - **Upstream:** the upstream main commits that fork main does not have yet. "Start Fork Sync" starts the sync and shows the run and each job. It needs the `source-control:write` scope.
+  - **Ask agent:** opens a thread in the fork project of the same machine, with a changelog chip and a prompt to read and send. The fork project is the first project whose repository is `Yarden-zamir/t3code`, as the only remote or as `origin` beside an `upstream` remote. Without one, the menu shows an error.
+- **kitshn state:** the kitshn connection of the selected environment: connected, connecting with the last error, or off with the reason, and the reached machines, link proxy and kitshn's last sync. `machines_read` gives agents the same state. A notice names the card parts that kitshn dropped. `T3CODE_KITSHN=off` in the server environment keeps a server off kitshn. A dev server never registers. Only one T3 server of a machine registers; a second one shows kitshn's refusal. The desktop app has "Join with a device invite", see [Device invites](#device-invites).
+- **Cards on the kitshn map:** the server puts these cards on the kitshn map:
+  - `t3.app`, "T3 on <machine>": the version, the running turns and a busy fact. Its commands are Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. Its lists hold the scheduled tasks (Run now, Pause, Resume) and the client sessions (Revoke session), at most 100 rows each. Its setting `updateChannel` picks the release feed, see [Fork releases](#fork-releases).
+  - `t3.thread`: one card for each thread with an open guest link.
+  - `t3.settings`: the T3 settings state, see [Settings and theme sync](#settings-and-theme-sync).
+  - kitshn runs a card command at once when a grant allows it. Otherwise the command waits for the owner as a kitshn job. kitshn drops a card part that breaks its rules, such as a list row, and keeps the rest.
+- **Works on:** web, desktop, mobile. Mobile has the list under Settings > Fleet, in the Fork group, with the read-only parts. A row opens the settings of that environment, where the mobile actions are.
+- **Limits:**
+  - Each row reads what its own server pushes: the server config, the connection and the scheduled task list. A row of a machine that this app does not reach shows no state.
+  - A kitshn-joined row shows "daemon <release> · protocol <version>", from the machine card in the kitshn `state` ask of its own server, the same ask as `machines_read`. It shows "daemon unknown" while kitshn shows the machine offline or the server cannot ask. A manual environment shows no daemon.
+  - The card busy fact and lists refresh every 15 seconds. kitshn gets a card again only when it changed.
+  - The changelog reads GitHub with the GitHub credential of its machine (settings, `GH_TOKEN` or `gh auth login`). Without a credential, it shows the GitHub error. Each release costs two GitHub requests, so the timeline shows 10 releases first, and "Show older releases" adds 10 more. A range of more than 500 commits stops at 500 with a note. When GitHub does not answer, the update popover shows the release notes instead. Revisit if GitHub rate limits become a problem.
 
 ### Access from kitshn
 
@@ -174,7 +186,7 @@ The kitshn grants decide who gets in: browsers through Cloudflare Access, other 
 
 Use the kitshn map name of the machine as the server environment name. A name change on the kitshn map updates connected clients without a restart.
 
-- **Setting:** `environmentLabelFromMachineMap` (server setting, off by default). Settings > Machines > kitshn > "Environment name from kitshn".
+- **Setting:** `environmentLabelFromMachineMap` (server setting, off by default). Settings > Fleet > kitshn > "Environment name from kitshn".
 - **Limits:** without a kitshn name, the server keeps the operating system name.
 
 ### Work on other machines
@@ -228,32 +240,17 @@ The `t3.settings` state on kitshn holds a shared part and a part for each machin
 - Agents set one value of their own machine with `machines_set_setting`. Only the owner changes the shared part: in T3 Settings, or with `t3 tool call` from a shell.
 - Paths, secrets and project-keyed maps stay on each machine.
 
-### Settings > Machines
-
-Settings > Machines shows whether the selected environment is joined through kitshn or manual, how to join this machine to kitshn, and the kitshn settings of the selected environment. It also shows the kitshn connection: connected, connecting with the last error, or off with the reason, and the reached machines, link proxy and kitshn's last sync. `machines_read` gives agents the same state.
-
-- A notice names the card parts that kitshn dropped.
-- `T3CODE_KITSHN=off` in the server environment keeps a server off kitshn. A dev server never registers. Only one T3 server of a machine registers; a second one shows kitshn's refusal.
-- The desktop app has "Join with a device invite": paste a kitshn device invite link there, see [Device invites](#device-invites).
-
 ### Device invites
 
 A phone or a desktop app joins kitshn with its own device token (K-1601). On the kitshn map, "Add device" gives a one-time link `https://<kitshn>/join/device#code=…`. It works once and expires after 15 minutes.
 
 - **Phone:** scan the link in Add environment, or paste it in Address.
-- **Desktop:** on the kitshn invite page, press "Open in T3 Code desktop (fork)" and confirm the kitshn host. Or paste the link in Settings > Machines > "Join with a device invite". The desktop app never uses the machine token of the kitshn daemon.
+- **Desktop:** on the kitshn invite page, press "Open in T3 Code desktop (fork)" and confirm the kitshn host. Or paste the link in Settings > Fleet > "Join with a device invite". The desktop app never uses the machine token of the kitshn daemon.
 - Cloudflare Access refuses the CORS preflight of the app's requests to these machines. The desktop main process answers the preflight itself, only for the app's own page and for origins that hold the device token. The real request still goes through Access with the token.
 - The app keeps only the `t3.app` cards that the token opens, and pairs with each machine. It reads the list at start, when it comes back to the foreground, and on Settings > Fork > App token > Refresh machines (phone). The desktop app also reads it at most every 5 minutes while its window is visible, never while it is hidden, adds each new machine as an environment, and removes an environment that it added when the list drops the machine.
 - A refused machine pairs again with a backoff, because Access can take some seconds to accept a new token. On the desktop app, the first pairing after a join runs at once. A retry runs only with a list read, and waits at least 5 minutes after a failure, at most 10. The app does not contact a machine that the list shows offline.
 - An empty or refused list disables or removes no saved machine. The machine shows the reason instead.
 - If kitshn is paused (423), Cloudflare refused the new token (502), or kitshn has no Cloudflare API token (503), the invite stays: try it again. A lost answer uses the invite up, so ask the owner for a new one.
-
-### Machines panel
-
-The right panel of a thread lists the machines that the kitshn links of this machine reach, with a link to the kitshn map. Open it from the "+" menu of the panel, or with "Show machines" in the command palette.
-
-- **Works on:** web, desktop.
-- **Limits:** the mobile app has no Machines panel.
 
 ## Updates and releases
 
@@ -298,21 +295,6 @@ One update policy for the desktop app and the server. Only the last step differs
   - An update restarts the server and stops running turns. Turn on [Recover interrupted agents](#recover-interrupted-agents) to continue them.
   - The desktop wait lives in the window, so a window reload drops it. Revisit if a reload during the wait loses an update in practice.
   - The installers download the desktop apps without a checksum check. Revisit if a release asset can change after its upload.
-
-### Changelog
-
-A timeline of fork releases and their commits, the upstream commits that fork main does not have yet, and the Fork Sync runs.
-
-- **Setting:** client setting `forkChangelogEnabled` (on by default). Settings > About > App > "Fork changelog".
-- **Works on:** web and desktop (the Settings row). The update popover is on desktop only.
-- **Open it:** from the Fork changelog row in Settings, or from "Open changelog" in the update popover. With the setting on, the update popover shows the changelog of every release between the installed version and the offered one.
-- **Releases tab:** commits, newest first, with a divider for each release, its time and an "Installed" mark. A fork icon marks a fork commit, and a down-arrow icon marks an upstream commit. A `#123` in a commit subject links to the pull request of its repository. Merge commits do not show.
-- **Upstream tab:** the upstream main commits that fork main does not have yet. "Start Fork Sync" starts the sync and shows the run and each job. It needs the `source-control:write` scope.
-- **Ask agent:** opens a thread in the fork project of the same machine, with a changelog chip and a prompt to read and send. The fork project is the first project whose repository is `Yarden-zamir/t3code`, as the only remote or as `origin` beside an `upstream` remote. Without one, the menu shows an error.
-- **Limits:**
-  - The server reads GitHub with the GitHub credential of its machine (settings, `GH_TOKEN` or `gh auth login`). Without a credential, the changelog shows the GitHub error.
-  - Each release costs two GitHub requests, so the timeline shows 10 releases first, and "Show older releases" adds 10 more. A range of more than 500 commits stops at 500 with a note. Revisit if GitHub rate limits become a problem.
-  - When GitHub does not answer, the update popover shows the release notes instead.
 
 ### Maintainer tools
 
@@ -409,9 +391,9 @@ The server shows itself as cards on the kitshn map, with its commands (kitshn K-
 - **Commands:** Restart server, Install update when idle, Stop all agents, Pause scheduled tasks and Collect diagnostics. The card shows only the commands that this server can run now: Restart server needs a supervisor, and Install update needs the background service. A restart answers kitshn first and then restarts. An agent sends a command to a machine with `machines_command`, as a kitshn job; it can wait for the owner.
 - **Agent tools:** `machines_read` (what kitshn shows this machine), `machines_command`, `machines_queue_cancel` (only jobs that this machine queued), `machines_resources` (CPU, memory and disk of this machine for the last hour), `machines_set_setting` and `machines_join`. Access between machines, history, undo and presets are on the kitshn map.
 - **Diagnostics:** kitshn gets redacted diagnostics. Each process shows only its program name, never its arguments. Secrets in error texts become `REDACTED`: URL tokens such as a pairing link, `key=value` and `"key":"value"` for secret key names such as `token` and `password`, `NAME=value` env values, the word after `Bearer`, `token:` or `--token`, and known token formats.
-- **Failures:** without kitshn 2, after a refusal, or when the child exits, T3 runs normally and tries again. After a connection that registered, T3 tries again after 1 second, because a daemon restart ends the child. A child that does not answer `register` in 10 seconds, or that sends nothing for the daemon's grace time (45 seconds), counts as ended: T3 ends it and says why in Settings > Machines. Each further try waits 5, 10, 20 and then 30 seconds. After a daemon restart, kitshn holds a queued command for 60 seconds until T3 registers again, and these waits stay inside that time.
+- **Failures:** without kitshn 2, after a refusal, or when the child exits, T3 runs normally and tries again. After a connection that registered, T3 tries again after 1 second, because a daemon restart ends the child. A child that does not answer `register` in 10 seconds, or that sends nothing for the daemon's grace time (45 seconds), counts as ended: T3 ends it and says why in Settings > Fleet. Each further try waits 5, 10, 20 and then 30 seconds. After a daemon restart, kitshn holds a queued command for 60 seconds until T3 registers again, and these waits stay inside that time.
 - **Instance:** the server registers with its environment id. kitshn refuses a second T3 server of the same machine while the first one is connected. A dev server never registers, and `T3CODE_KITSHN=off` keeps a server off kitshn.
-- **Protocol:** `register` sends `protocol: 2` and `protocolVersion`, the `KITSHN_PROTOCOL` of the pinned `@kitshn/local` (kitshn K-724, K-725). The `protocolVersion` of the daemon's answer decides, and an answer without it reads as 2.0.0. `kitshn version --json` is only a check before the child starts. With the same major and another minor, T3 logs one warning per daemon version and runs; a newer feature waits on the `capabilities` of the answer, never on the minor. With another major, T3 does not register: Settings > Machines shows the reason, the server log names each reason once, and T3 tries again at the normal pace.
+- **Protocol:** `register` sends `protocol: 2` and `protocolVersion`, the `KITSHN_PROTOCOL` of the pinned `@kitshn/local` (kitshn K-724, K-725). The `protocolVersion` of the daemon's answer decides, and an answer without it reads as 2.0.0. `kitshn version --json` is only a check before the child starts. With the same major and another minor, T3 logs one warning per daemon version and runs; a newer feature waits on the `capabilities` of the answer, never on the minor. With another major, T3 does not register: Settings > Fleet shows the reason, the server log names each reason once, and T3 tries again at the normal pace.
 - **Remove T3:** stop the T3 server first. Then run `kitshn provider forget t3` as the kitshn daemon user. The owner then selects "Forget provider" on the kitshn map.
 
 ### Scheduled task model

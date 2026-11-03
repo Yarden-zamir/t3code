@@ -25,10 +25,12 @@ import * as PortScanner from "../preview/PortScanner.ts";
 import * as ForkChangelog from "./ForkChangelog.ts";
 import { sessionAllowed } from "./kitshn/kitshnGrantRules.ts";
 import { kitshnMachineRef } from "./kitshn/environmentLabel.ts";
+import { ownDaemon } from "./kitshn/kitshnDaemon.ts";
 import * as KitshnGrants from "./kitshn/KitshnGrants.ts";
 import * as ForkUpdates from "./ForkUpdates.ts";
 import { isMachineSubject } from "./machineMap/machineAccess.ts";
 import * as KitshnSettingsSync from "./kitshn/KitshnSettingsSync.ts";
+import * as MachineHost from "./machineMap/MachineHost.ts";
 import * as MachinePeers from "./machineMap/MachinePeers.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
 import * as TerminalThreadMove from "./TerminalThreadMove.ts";
@@ -52,6 +54,15 @@ export const kitshnMachineConfig = Effect.serviceOption(KitshnGrants.KitshnGrant
     const ref = machine === null ? null : kitshnMachineRef(machine);
     return ref === null ? {} : { kitshnMachine: ref };
   }),
+);
+
+/** MM-502: what `fleet.runCommand` runs here. It goes through no desktop app, as `runForClient`. */
+export const machineCommandsConfig = Effect.serviceOption(MachineHost.MachineHost).pipe(
+  Effect.map((host) =>
+    Option.isNone(host)
+      ? {}
+      : { machineCommands: host.value.supportedCommands({ desktopConnected: false }) },
+  ),
 );
 
 /** MM-1311: the origins of the machines that kitshn links, which trust this page (K-1609). */
@@ -127,6 +138,7 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const terminalThreadMove = yield* TerminalThreadMove.TerminalThreadMove;
       const forkUpdates = yield* ForkUpdates.ForkUpdates;
+      const machineHost = yield* MachineHost.MachineHost;
       const worktreeRecreate = yield* ForkWorktreeRecreate.ForkWorktreeRecreate;
       /** MM-1907: this environment first, then the machines that its agents read. */
       const readableEnvironments = Effect.fn("ForkWs.readableEnvironments")(function* () {
@@ -151,6 +163,10 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
         [FORK_WS_METHODS.machineMapSubscribe]: (_input) => settingsSync.clientState,
         [FORK_WS_METHODS.machineMapShareSettings]: (input) => settingsSync.share(input),
         [FORK_WS_METHODS.machineMapReadableEnvironments]: (_input) => readableEnvironments(),
+        [FORK_WS_METHODS.fleetRunCommand]: (input) => machineHost.runForClient(input.command),
+        // Another machine reads its own daemon; it must not ask kitshn as this machine.
+        [FORK_WS_METHODS.fleetDaemon]: (_input) =>
+          isMachineSubject(currentSession.subject) ? Effect.succeed(null) : ownDaemon(),
         [FORK_WS_METHODS.webPushPublicKey]: (_input) =>
           webPush.publicKey.pipe(Effect.map((publicKey) => ({ publicKey }))),
         [FORK_WS_METHODS.webPushSubscribe]: (input) => webPush.subscribe(input).pipe(Effect.as({})),

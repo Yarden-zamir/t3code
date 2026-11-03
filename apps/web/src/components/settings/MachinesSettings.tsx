@@ -1,6 +1,10 @@
 import { isElectron } from "../../env";
 import { DeviceInviteSettingsRow } from "../../machineMap/desktopDevice";
+import { useClientSettings } from "../../hooks/useSettings";
 import { useKitshnMachines, usePrimaryEnvironmentId } from "../../state/environments";
+import { ForkChangelogSection } from "../forkChangelog/ForkChangelog";
+import { FleetMachines } from "../machines/FleetMachines";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { useMachineMapState } from "../../state/machineMap";
 import { KitshnBadge } from "../machines/KitshnMark";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
@@ -15,8 +19,52 @@ import { useSettingsScope } from "./SettingsScopeContext";
 /** The dropped items that the notice names; the rest is a count. */
 const PROBLEMS_SHOWN = 5;
 
-/** Fork: Settings > Machines: kitshn and the machine settings of the selected environment. */
-export function MachinesSettingsPanel() {
+export type FleetTab = "machines" | "changelog";
+
+/**
+ * Fork: the Fleet view at Settings > Fleet. One row per machine, then the kitshn state of the
+ * selected environment. The Changelog tab shows while the fork changelog setting is on.
+ */
+export function FleetSettingsPanel({
+  tab,
+  onTabChange,
+}: {
+  readonly tab: FleetTab;
+  readonly onTabChange: (tab: FleetTab) => void;
+}) {
+  const changelogEnabled = useClientSettings((settings) => settings.forkChangelogEnabled);
+  const shownTab = changelogEnabled ? tab : "machines";
+  return (
+    <SettingsPageContainer>
+      {changelogEnabled ? (
+        <ToggleGroup
+          aria-label="Fleet view"
+          value={[shownTab]}
+          onValueChange={(next) => {
+            const value = next[0];
+            if (value === "machines" || value === "changelog") onTabChange(value);
+          }}
+        >
+          <Toggle value="machines">Machines</Toggle>
+          <Toggle value="changelog">Changelog</Toggle>
+        </ToggleGroup>
+      ) : null}
+      {shownTab === "changelog" ? (
+        <ForkChangelogSection />
+      ) : (
+        <>
+          <SettingsSection title="Fleet">
+            <FleetMachines />
+          </SettingsSection>
+          <MachineKitshnSections />
+        </>
+      )}
+    </SettingsPageContainer>
+  );
+}
+
+/** The kitshn state and settings of the environment selected in Settings. */
+function MachineKitshnSections() {
   const { environment } = useSettingsScope();
   const { state } = useMachineMapState(environment?.environmentId ?? null);
   const kitshnMachines = useKitshnMachines();
@@ -25,7 +73,7 @@ export function MachinesSettingsPanel() {
   const kitshnMachine = kitshnMachines.get(environment.environmentId);
   const problems = state?.connection.problems ?? [];
   return (
-    <SettingsPageContainer>
+    <>
       {problems.length > 0 ? (
         <Alert variant="warning">
           <AlertTitle>kitshn dropped part of this machine's cards</AlertTitle>
@@ -61,7 +109,7 @@ export function MachinesSettingsPanel() {
         {isElectron ? <DeviceInviteSettingsRow /> : null}
         <ForkSettingsSlot place="machines-machine-map" />
       </SettingsSection>
-    </SettingsPageContainer>
+    </>
   );
 }
 

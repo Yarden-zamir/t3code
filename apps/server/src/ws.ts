@@ -1857,6 +1857,7 @@ export const layerWsRpc = (
           ...discovery,
           ...(yield* ForkWs.trustedBrowserOriginsConfig),
           ...(yield* ForkWs.kitshnMachineConfig),
+          ...(yield* ForkWs.machineCommandsConfig),
           observability: {
             logsDirectoryPath: config.logsDir,
             localTracingEnabled: true,

@@ -35,7 +35,22 @@ export function useMachineMapState(environmentId: EnvironmentId | null): {
   return { state: query.data, error: query.error };
 }
 
-/** K-1609: this environment and the machines that its kitshn links reach, for the Machines panel. */
+/** The Fleet view: one machine command, run by the server of `environmentId`. */
+export const fleetRunCommand = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:fleet:run-command",
+  tag: WS_METHODS.fleetRunCommand,
+  concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+});
+
+/** The Fleet view: the kitshn daemon of the machine of `environmentId`. */
+export const fleetDaemon = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:fleet:daemon",
+  tag: WS_METHODS.fleetDaemon,
+  staleTimeMs: 60_000,
+  idleTtlMs: 120_000,
+});
+
+/** K-1609: this environment and the machines that its kitshn links reach, for the Fleet view. */
 export const linkedMachines = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
   label: "environment-data:kitshn:linked-machines",
   tag: WS_METHODS.machineMapReadableEnvironments,
