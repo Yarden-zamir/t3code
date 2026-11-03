@@ -70,7 +70,7 @@ const makeHarness = Effect.fn("test.makeEarlyShellSnapshotHarness")(function* (i
   const socketSession: RpcSession.RpcSession = {
     client,
     initialConfig: Effect.succeed(input.socketConfig),
-    subscribeServerConfig: (subscribe) => client.subscribeServerConfig(subscribe),
+    subscribeServerConfig: (subscribe = {}) => client.subscribeServerConfig(subscribe),
     ready: Effect.void,
     probe: Effect.void,
     inboundFrames: Effect.succeed(0),
