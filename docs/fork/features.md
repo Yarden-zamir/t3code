@@ -256,8 +256,8 @@ A phone or a desktop app joins kitshn with its own device token (K-1601). On the
 - **Phone:** scan the link in Add environment, or paste it in Address.
 - **Desktop:** on the kitshn invite page, press "Open in T3 Code desktop (fork)" and confirm the kitshn host. Or paste the link in Settings > Machines > "Join with a device invite". The desktop app never uses the machine token of the kitshn daemon.
 - Cloudflare Access refuses the CORS preflight of the app's requests to these machines. The desktop main process answers the preflight itself, only for the app's own page and for origins with request headers. The real request still goes through Access with the token.
-- The app keeps only the `t3.app` cards that the token opens, and pairs with each machine. It reads the list at start, when it comes back to the foreground, and on Settings > Fork > App token > Refresh machines (phone). The desktop app also reads it every 30 seconds, adds each new machine as an environment, and removes an environment that it added when the list drops the machine.
-- A refused machine pairs again with a backoff, because Access can take some seconds to accept a new token.
+- The app keeps only the `t3.app` cards that the token opens, and pairs with each machine. It reads the list at start, when it comes back to the foreground, and on Settings > Fork > App token > Refresh machines (phone). The desktop app also reads it at most every 5 minutes while its window is visible, never while it is hidden, adds each new machine as an environment, and removes an environment that it added when the list drops the machine.
+- A refused machine pairs again with a backoff, because Access can take some seconds to accept a new token. On the desktop app, the first pairing after a join runs at once. A retry runs only with a list read, and waits at least 5 minutes after a failure, at most 10. The app does not contact a machine that the list shows offline.
 - An empty or refused list disables or removes no saved machine. The machine shows the reason instead.
 - If kitshn is paused (423), Cloudflare refused the new token (502), or kitshn has no Cloudflare API token (503), the invite stays: try it again. A lost answer uses the invite up, so ask the owner for a new one.
 
@@ -282,11 +282,12 @@ Nightly desktop builds for macOS, Windows and Linux, plus Linux server archives 
 
 A signed Android APK of fork main, on fork releases that changed the app. It installs next to the store app and speaks the protocol of fork main.
 
-- **Install:** on the phone, open [Add with Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.yardenzamir.t3code%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FYarden-zamir%2Ft3code%22%2C%22author%22%3A%22Yarden-zamir%22%2C%22name%22%3A%22T3%20Code%20fork%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22android%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D). It tracks the fork releases with "Include prereleases" and "Fallback to older releases" on, and the APK filter `android\.apk$`.
+- **Install:** on the phone, add the app in Obtainium from `https://apk.yarden-zamir.com/index.html` (HTML source) with the link filter `t3code-.*-android\.apk`. Each new build shows as an update and downloads from Cloudflare. The GitHub repo `https://github.com/Yarden-zamir/t3code` also works as a source, with "Include prereleases" on and the APK filter `android\.apk$`, but downloads from GitHub.
+- **Mirror:** `apk.yarden-zamir.com` is a kitshn Worker app (`kitshn.config.ts`, `scripts/apk-mirror/worker.js`) that lists the release APKs at `/index.html`, redirects `/latest/t3code-android.apk` to the newest one, and serves each APK from Cloudflare's cache after its first download from GitHub. The list refreshes within 5 minutes of a release. When GitHub refuses the Worker's call, the last good list stays in use for 30 days; a GitHub secret `KITSHN_GITHUB_TOKEN` lifts the limit (K-808).
 - **Install by hand:** open the APK of the newest release that has one, and allow installs from that browser. Install a newer APK over it to update. Most releases have no APK, because only a release that changed the app builds one.
 - **Limits:**
   - No push notifications, because the build has no `google-services.json`. Revisit when the fork has a Firebase project.
-  - `t3code://` links open the Play Store app, because the APK uses the `t3code-preview` scheme. Revisit when the APK build registers its own scheme for those links.
+  - `t3code://` links open the Play Store app, because the APK uses the `t3code-preview` scheme. `t3-thread://` links open the APK, see [Thread addressing](#thread-addressing).
   - No over-the-air updates, because those come from the upstream Expo project. Update with Obtainium.
   - arm64 phones only.
 
@@ -299,10 +300,10 @@ One update policy for the desktop app and the server. Only the last step differs
   - A checksum. The server checks the archive against `SHA256SUMS`, and the desktop updater checks its download against the release feed.
   - When idle: no agent turn and no background shell runs. A program in a terminal thread holds the update for at most 6 hours (`TERMINAL_UPDATE_HOLD_MAX_HOURS` in `packages/contracts/src/forkTerminalThreads.ts`). Then its terminal shows a notice, and the update installs about 10 minutes later and ends the program.
   - The `t3` command follows: after the update, `t3 --version` names the new version.
-- **Setting:** server setting `forkUpdateMode`, `manual` (default) or `automatic`. Settings > Maintenance > Updates > "Automatic updates". With `automatic`, the server checks the fork releases every 5 minutes and installs when idle, and the desktop app installs each download when idle. The desktop app reads the setting of its own server.
+- **Setting:** server setting `forkUpdateMode`, `manual` (default) or `automatic`. Settings > Maintenance > Updates > "Automatic updates". With `automatic`, the server checks the fork releases every 5 minutes and installs when idle, and the desktop app installs each download when idle. A switch to `manual` cancels these waits, but not a wait from "Install when idle". The desktop app reads the setting of its own server. The old setting `forkAutoUpdate` is no longer read: set `forkUpdateMode` to `automatic` for automatic server updates.
 - **Start an update by hand:**
-  - Desktop: the update button. While agents or terminal programs run, it offers "Install when idle" next to "Install now".
-  - Server: `t3 update` on the machine.
+  - Desktop: the update button. While agents, background shells or terminal programs run, it offers "Install when idle" next to "Install now".
+  - Server: `t3 update` on the machine. It installs at once and does not wait for idle.
   - Agents and other machines: the kitshn command install-update of the T3 card (`machines_command` with `install-update`). It waits for idle with either setting.
 - **Install:** one command per OS family, see [Install the fork](operations.md#install-the-fork).
 - **Works on:** desktop (macOS, Windows, Linux) and the server of `t3 service install` on Linux. The fork publishes server archives only for Linux.
@@ -423,7 +424,7 @@ The server shows itself as cards on the kitshn map, with its commands (kitshn K-
 - **Diagnostics:** kitshn gets redacted diagnostics. Each process shows only its program name, never its arguments. Secrets in error texts become `REDACTED`: URL tokens such as a pairing link, `key=value` and `"key":"value"` for secret key names such as `token` and `password`, `NAME=value` env values, the word after `Bearer`, `token:` or `--token`, and known token formats.
 - **Failures:** without kitshn 2, after a refusal, or when the child exits, T3 runs normally and tries again. After a connection that registered, T3 tries again after 1 second, because a daemon restart ends the child. A child that does not answer `register` in 10 seconds, or that sends nothing for the daemon's grace time (45 seconds), counts as ended: T3 ends it and says why in Settings > Machines. Each further try waits 5, 10, 20 and then 30 seconds. After a daemon restart, kitshn holds a queued command for 60 seconds until T3 registers again, and these waits stay inside that time.
 - **Instance:** the server registers with its environment id. kitshn refuses a second T3 server of the same machine while the first one is connected. A dev server never registers, and `T3CODE_KITSHN=off` keeps a server off kitshn.
-- **Protocol:** kitshn provider protocol 2 only. The server and the kitshn daemon of a machine update together.
+- **Protocol:** `register` sends `protocol: 2` and `protocolVersion`, the `KITSHN_PROTOCOL` of the pinned `@kitshn/local` (kitshn K-724, K-725). The `protocolVersion` of the daemon's answer decides, and an answer without it reads as 2.0.0. `kitshn version --json` is only a check before the child starts. With the same major and another minor, T3 logs one warning per daemon version and runs; a newer feature waits on the `capabilities` of the answer, never on the minor. With another major, T3 does not register: Settings > Machines shows the reason, the server log names each reason once, and T3 tries again at the normal pace.
 - **Remove T3:** stop the T3 server first. Then run `kitshn provider forget t3` as the kitshn daemon user. The owner then selects "Forget provider" on the kitshn map.
 
 ### Scheduled task model
@@ -431,6 +432,8 @@ The server shows itself as cards on the kitshn map, with its commands (kitshn K-
 A scheduled task runs on any provider instance, or on the project default model. Pick it in the scheduled task editor.
 
 The model applies to runs that launch a new thread. A run that posts into a bound thread uses the current model of that thread.
+
+On a kitshn-joined machine without T3 Connect, the webhook URL is the kitshn site of the machine, for example `https://t3-<machine>.<zone>/api/hooks/<task>/<token>`. The site is behind Cloudflare Access, so a caller needs an Access service token. `schedule_task` and `list_scheduled_tasks` report this with `webhookNeeds`. A T3 Connect URL comes first when both exist.
 
 - **Works on:** web, desktop, mobile.
 
@@ -473,7 +476,7 @@ The sidebar lists threads that wait in a Waiting shelf, under the Working shelf.
 
 ### Thread addressing
 
-Thread links in chat open the thread in T3 Code, each message has a link of its own, and a thread address from another app opens the desktop app.
+Thread links in chat open the thread in T3 Code, each message has a link of its own, and a thread address or thread link from another app opens the desktop app.
 
 - **Setting:** server setting `threadAddressing` (off by default). Settings > Appearance > Thread links > "Thread addressing". In the mobile Settings: Threads, or Fork.
 - **Works on:** web, desktop, mobile. Mobile reads the setting of the server of the thread, and has no switch of its own.
@@ -492,6 +495,7 @@ Thread links in chat open the thread in T3 Code, each message has a link of its 
   - A message that the thread does not have shows "Message not found", and the thread stays open.
   - **History:** on web and desktop, each jump to a message is a history entry. This includes links, pins and citations. Back and Forward return to where you were in each entry. A scroll by hand adds no entry. No setting turns this off.
 - **Desktop app:** only web browser tabs redirect. The desktop app, the installed web app and app.t3.codes never redirect.
+- **Links from other apps:** the desktop and mobile apps register the `t3-thread` scheme next to `t3code` (`t3-thread-dev` and `t3code-dev` in development). A web page or app can open `t3-thread://v2/<environmentId>/<threadId>#<messageId>` or `t3code://threads/<environmentId>/<threadId>?message=<messageId>`; the message is optional. The app opens the thread like a chip in chat. On the desktop app, a thread of an environment that the app does not know shows "Thread on another machine". The OS hands these links to the app directly, so they work with `threadAddressing` off. The setting controls only the handoff from a browser tab. On mobile, the scheme needs a new native build.
 - **Limits:**
   - On mobile, the project icon of the thread replaces the message icon in chat messages (upstream pingdotgg/t3code#22585). Revisit if message links on mobile need their marker back.
   - The app keeps the position of each history entry in memory, so after a reload Back opens the message of the entry again. On mobile, a jump in the same thread adds no Back step. On mobile, a reply hidden in the fold of a prompt without a run shows as not found. Revisit when upstream pingdotgg/t3code#19203 merges; then use its scroll code.

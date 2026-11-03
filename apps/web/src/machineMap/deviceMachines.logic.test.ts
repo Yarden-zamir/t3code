@@ -1,7 +1,16 @@
 import { EnvironmentId, MachineId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { listedOrigins, planDeviceMachines, type SavedEnvironment } from "./deviceMachines.logic";
+import {
+  deviceSyncStep,
+  LIST_EVENT_GAP_MS,
+  LIST_INTERVAL_MS,
+  listedOrigins,
+  PAIR_RETRY_MAX_MS,
+  pairsDue,
+  planDeviceMachines,
+  type SavedEnvironment,
+} from "./deviceMachines.logic";
 
 const VPS = "https://t3-vps.example.com";
 const MAC = "https://t3-mac.example.com";
@@ -44,5 +53,56 @@ describe("listedOrigins", () => {
     const originOf = (url: string) => URL.parse(url)?.origin ?? null;
     expect(listedOrigins(machines, "mac", originOf)).toEqual([VPS]);
     expect(listedOrigins(machines, null, originOf)).toEqual([MAC, VPS]);
+  });
+});
+
+describe("deviceSyncStep", () => {
+  const visible = { hidden: false, running: false, lastSyncAtMs: 0 } as const;
+
+  it("syncs nothing while hidden, and syncs on the next event after a due interval", () => {
+    const nowMs = LIST_INTERVAL_MS * 3;
+    expect(deviceSyncStep({ ...visible, hidden: true, trigger: "tick", nowMs })).toBe("none");
+    expect(deviceSyncStep({ ...visible, hidden: true, trigger: "event", nowMs })).toBe("none");
+    expect(deviceSyncStep({ ...visible, trigger: "event", nowMs })).toBe("sync");
+    expect(deviceSyncStep({ ...visible, trigger: "event", lastSyncAtMs: null, nowMs: 0 })).toBe(
+      "sync",
+    );
+  });
+
+  it("syncs at most once per interval from the timer", () => {
+    const due = { ...visible, trigger: "tick" } as const;
+    expect(deviceSyncStep({ ...due, nowMs: LIST_INTERVAL_MS - 1 })).toBe("none");
+    expect(deviceSyncStep({ ...due, nowMs: LIST_INTERVAL_MS })).toBe("sync");
+  });
+
+  it("does not sync twice for a focus right after a visibility change", () => {
+    const event = { ...visible, trigger: "event" } as const;
+    expect(deviceSyncStep({ ...event, running: true, lastSyncAtMs: null, nowMs: 0 })).toBe("none");
+    expect(deviceSyncStep({ ...event, nowMs: LIST_EVENT_GAP_MS - 1 })).toBe("none");
+    expect(deviceSyncStep({ ...event, nowMs: LIST_EVENT_GAP_MS })).toBe("sync");
+  });
+
+  it("pairs a machine that was never tried, for example after a join, at once", () => {
+    expect(pairsDue({ waiting: [VPS], offline: new Set(), failures: new Map(), nowMs: 0 })).toEqual(
+      [VPS],
+    );
+  });
+
+  it("never pairs a machine that the list shows offline", () => {
+    expect(
+      pairsDue({ waiting: [VPS, MAC], offline: new Set([MAC]), failures: new Map(), nowMs: 0 }),
+    ).toEqual([VPS]);
+  });
+
+  it("retries a failed machine only after its backoff, never sooner than the list interval", () => {
+    const failed = (count: number) => new Map([[VPS, { count, atMs: 0 }]]);
+    const due = (count: number, nowMs: number) =>
+      pairsDue({ waiting: [VPS], offline: new Set(), failures: failed(count), nowMs });
+    expect(due(1, LIST_EVENT_GAP_MS)).toEqual([]);
+    expect(due(1, LIST_INTERVAL_MS - 1)).toEqual([]);
+    expect(due(1, LIST_INTERVAL_MS)).toEqual([VPS]);
+    expect(due(2, LIST_INTERVAL_MS)).toEqual([]);
+    expect(due(9, PAIR_RETRY_MAX_MS - 1)).toEqual([]);
+    expect(due(9, PAIR_RETRY_MAX_MS)).toEqual([VPS]);
   });
 });

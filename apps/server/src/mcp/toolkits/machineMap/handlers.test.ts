@@ -129,7 +129,7 @@ const toolsWith = (
     }),
   );
   return McpHttpServer.toolkitRegistration(MachineMapToolkit, MachineMapHandlers.layer).pipe(
-    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
     Layer.provide(threads),
     Layer.provide(Layer.mock(KitshnProvider.KitshnProvider)(provider)),
     // The real rule of the settings service, on the fake daemon connection.

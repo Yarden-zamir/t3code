@@ -6,7 +6,7 @@ import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as Git from "../vcs/GitVcsDriver.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { withRepositoryLease, withWorkspaceLease } from "../workspace/workspaceLease.ts";
 
 /**
  * Fork: the "clean" stage of the worktree lifecycle for branches. Storage cleanup removes a
@@ -184,7 +184,6 @@ export const makeSweep = Effect.gen(function* () {
       groups.set(key, [...(groups.get(key) ?? []), row]);
     }
 
-    const repositories = new Map<string, RepositoryBranches | null>();
     for (const [key, group] of groups) {
       // A folder that still exists may use the branch; storage cleanup decides its folder first.
       const folders = [...new Set(group.map((row) => path.resolve(row.worktreePath)))].sort();
@@ -207,17 +206,18 @@ export const makeSweep = Effect.gen(function* () {
         files: null,
       };
       // Resume repairs a folder under the same lease, so it never sees a half-deleted branch.
+      // Worktree creations wait for the repository lease, so the inspection stays current.
       const leased = folders.reduce(
         (effect, folder) => withWorkspaceLease(folder, effect),
-        Effect.gen(function* () {
-          let repository = repositories.get(repositoryKey);
-          if (repository === undefined) {
-            repository = yield* rules.inspect(first.workspaceRoot);
-            repositories.set(repositoryKey, repository);
-          }
-          if (repository === null) return null;
-          return yield* rules.deleteIfSpare(repository, first.branch, resumable);
-        }),
+        withRepositoryLease(
+          repositoryKey,
+          "exclusive",
+          Effect.gen(function* () {
+            const repository = yield* rules.inspect(first.workspaceRoot);
+            if (repository === null) return null;
+            return yield* rules.deleteIfSpare(repository, first.branch, resumable);
+          }),
+        ),
       );
       yield* leased.pipe(
         Effect.flatMap((outcome) =>

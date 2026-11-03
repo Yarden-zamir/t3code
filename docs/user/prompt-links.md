@@ -51,6 +51,10 @@ A thread link with a prompt, such as `https://app.t3.codes/<environment>/<thread
 puts the prompt in that thread's composer. If you already typed a draft there, T3 Code asks
 before it replaces it.
 
+A web page can also open a thread in the desktop or mobile app with
+`t3-thread://v2/<environment>/<thread>` or `t3code://threads/<environment>/<thread>`; add
+`#<message>` or `?message=<message>` to open it at one message.
+
 T3 Code removes characters you cannot see, such as zero-width and hidden tag characters, because
 they can hide instructions for the agent. When a prompt had them, T3 Code warns you that it may be
 malicious.

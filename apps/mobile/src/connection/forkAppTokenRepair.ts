@@ -12,7 +12,6 @@ import {
   RequestHeaderStore,
   requestHeaderOrigin,
   routeHttpBaseUrl,
-  withCloudflareAccessServiceToken,
 } from "@t3tools/client-runtime/connection";
 import { readDeviceMachines } from "@t3tools/client-runtime/fork/deviceInvite";
 import { deviceMachinesUrl, type EnvironmentId } from "@t3tools/contracts";
@@ -39,6 +38,7 @@ import {
   appTokenOrigins,
   type DeviceListAnswer,
   deviceTokensNewestFirst,
+  deviceTokenWrites,
   firstDeviceList,
   type AppTokenEnvironment,
   EMPTY_LIST_MESSAGE,
@@ -75,8 +75,9 @@ const readKitshn = Effect.fn("mobile.appTokenRepair.readKitshn")(function* (
 });
 
 /**
- * The kitshn token answered with machines: its listed origins and kitshn's own get it in place of
- * an old portal token, so pairing and the list use one token from now on.
+ * The kitshn token answered with machines: its listed origins and kitshn's own get it, in place of
+ * an old portal token or as the first token of a machine shared after the invite. So pairing and
+ * the list use one token from now on.
  */
 const adoptKitshnToken = Effect.fn("mobile.appTokenRepair.adoptKitshnToken")(function* (
   answer: Extract<DeviceListAnswer, { _tag: "machines" }>,
@@ -87,13 +88,8 @@ const adoptKitshnToken = Effect.fn("mobile.appTokenRepair.adoptKitshnToken")(fun
       (url) => requestHeaderOrigin(url) ?? [],
     ),
   );
-  for (const rule of requestHeaderRules()) {
-    const current = cloudflareAccessServiceToken(rule.headers);
-    if (!origins.has(rule.origin) || current === null) continue;
-    if (current.clientId === answer.token.clientId) continue;
-    yield* store
-      .set(rule.origin, withCloudflareAccessServiceToken(rule.headers, answer.token))
-      .pipe(Effect.ignore);
+  for (const write of deviceTokenWrites(requestHeaderRules(), origins, answer.token)) {
+    yield* store.set(write.origin, write.headers).pipe(Effect.ignore);
   }
 });
 

@@ -1,5 +1,5 @@
 import { UsageLimitSourceError, UsageLimitSourceId } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import * as Settings from "../serverSettings.ts";
@@ -30,7 +30,7 @@ export function localUsageHubUrl(value: string): string | undefined {
 }
 
 export const makeUsageSourceAdd = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const settings = yield* Settings.ServerSettingsService;
   const lock = yield* Semaphore.make(1);
   return Effect.fn("UsageLimitSources.add")(function* (input: Parameters<AddUsageSource>[0]) {
@@ -61,9 +61,7 @@ export const makeUsageSourceAdd = Effect.gen(function* () {
         detail: "That hub URL is already configured. Change it in Settings.",
       });
     }
-    const id = UsageLimitSourceId.make(
-      `cliproxy-${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`,
-    );
+    const id = UsageLimitSourceId.make(`cliproxy-${yield* random.uuidV4()}`);
     yield* settings
       .updateSettings({
         usageLimitSources: {

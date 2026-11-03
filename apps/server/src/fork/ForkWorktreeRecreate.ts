@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -43,7 +43,7 @@ const errorDetail = (cause: Cause.Cause<unknown>) => {
 };
 
 const make = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const worktrees = yield* WorktreeMcpService.WorktreeMcpService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const projects = yield* ProjectService.ProjectService;
@@ -119,7 +119,7 @@ const make = Effect.gen(function* () {
         ...(ownBranch === null ? {} : { startFromOrigin: false }),
       },
     );
-    const uuid = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+    const uuid = yield* random.uuidV4();
     const continuation = yield* threads
       .sendToThread({
         projectId: thread.projectId,

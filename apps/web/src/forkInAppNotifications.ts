@@ -27,6 +27,7 @@ export function addThreadToast(
     ...options,
     timeout,
     onRemove: () => {
+      options.onRemove?.();
       ids.delete(toastId);
       if (ids.size === 0 && openToasts.get(key) === ids) openToasts.delete(key);
     },

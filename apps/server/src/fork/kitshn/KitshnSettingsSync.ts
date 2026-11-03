@@ -19,7 +19,7 @@ import {
 } from "@t3tools/contracts";
 import { stableStringify } from "@t3tools/shared/relaySigning";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -197,9 +197,9 @@ const make = Effect.gen(function* () {
   const provider = yield* KitshnProvider.KitshnProvider;
   const kitshn = yield* KitshnConnection.KitshnConnection;
   const grants = yield* KitshnGrants.KitshnGrants;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   // K-709: a set's mark only needs to differ from the other sets of this server.
-  const newRev = crypto.randomUUIDv4().pipe(Effect.orDie);
+  const newRev = random.uuidV4();
   const settings = yield* ServerSettings.ServerSettingsService;
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;

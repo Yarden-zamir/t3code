@@ -9,7 +9,7 @@ import { expect } from "vite-plus/test";
 import { relinkLaunchers } from "./forkLaunchers.ts";
 
 it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
-  "points each launcher of this T3 home at the active runtime and leaves other links alone",
+  "points each launcher of this T3 home at the active runtime, past a failed one, and leaves other links alone",
   () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -37,9 +37,16 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
       yield* fs.symlink(oldEntry, defaultLauncher);
       yield* fs.symlink(oldEntry, recordedLauncher);
       yield* fs.symlink(foreignTarget, foreignLauncher);
+      // A launcher in a read-only folder fails, and the launchers after it still change.
+      const lockedDir = path.join(root, "locked");
+      const lockedLauncher = path.join(lockedDir, "t3");
+      yield* fs.makeDirectory(lockedDir, { recursive: true });
+      yield* fs.symlink(oldEntry, lockedLauncher);
+      yield* fs.chmod(lockedDir, 0o555);
+      yield* Effect.addFinalizer(() => fs.chmod(lockedDir, 0o755).pipe(Effect.ignore));
       yield* fs.writeFileString(
         path.join(baseDir, "runtime", "launchers"),
-        `\n${recordedLauncher}\n${foreignLauncher}\n`,
+        `\n${lockedLauncher}\n${recordedLauncher}\n${foreignLauncher}\n`,
       );
 
       const relinked = yield* relinkLaunchers({ baseDir, entryPath: newEntry }).pipe(
@@ -50,6 +57,7 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
       expect(yield* fs.readLink(defaultLauncher)).toBe(newEntry);
       expect(yield* fs.readLink(recordedLauncher)).toBe(newEntry);
       expect(yield* fs.readLink(foreignLauncher)).toBe(foreignTarget);
+      expect(yield* fs.readLink(lockedLauncher)).toBe(oldEntry);
       // A later prune keeps what the default launcher points at, so it is recorded too.
       const recorded = yield* fs.readFileString(path.join(baseDir, "runtime", "launchers"));
       expect(recorded.split("\n")).toContain(defaultLauncher);

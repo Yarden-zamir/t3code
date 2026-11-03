@@ -3,6 +3,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { promptLinkAppPath } from "./promptLinks.ts";
+import { THREAD_LINK_PROTOCOL } from "./threadLinks.ts";
 import { messageLinkFragmentId } from "./threadMessageLinks.ts";
 
 export interface ThreadAddress {
@@ -74,6 +75,24 @@ export function parseKnownThreadAddress(
 ): ThreadAddress | null {
   const address = parseThreadAddress(href);
   return address !== null && known(address.environmentId) ? address : null;
+}
+
+/**
+ * Fork: the thread of a link that the OS hands to the app: `t3-thread://v2/<environmentId>/<threadId>`
+ * or `t3code://threads/…` (`parseThreadAddress`), with an optional message. A scheme suffix such as
+ * `-dev` names a dev build. Web addresses and v1 links, which name no environment, return null.
+ */
+export function readThreadAppLink(href: string): ThreadAddress | null {
+  if (!URL.canParse(href)) return null;
+  const url = new URL(href);
+  const scheme = url.protocol.slice(0, -1);
+  if (scheme === "https" || scheme === "http") return null;
+  if (scheme !== THREAD_LINK_PROTOCOL && !scheme.startsWith(`${THREAD_LINK_PROTOCOL}-`)) {
+    return parseThreadAddress(href);
+  }
+  // A v2 thread link is the app link of the thread under another scheme.
+  if (url.host !== "v2" || url.search !== "") return null;
+  return parseThreadAddress(`t3code://threads${url.pathname}${url.hash}`);
 }
 
 /** Fork: the app link of a thread, the form that `parseThreadAddress` reads back. */

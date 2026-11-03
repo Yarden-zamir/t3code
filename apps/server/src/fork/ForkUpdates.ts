@@ -6,17 +6,21 @@
  */
 import {
   type ForkUpdateTerminalHold,
+  type ServerLifecycleStreamEvent,
   TERMINAL_THREAD_INSTANCE_ID,
   TERMINAL_UPDATE_HOLD_MAX_HOURS,
   type TerminalSummary,
 } from "@t3tools/contracts";
+import type * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
@@ -84,6 +88,24 @@ export class ForkUpdateError extends Schema.TaggedError<ForkUpdateError>()("Fork
     return this.reason;
   }
 }
+
+/**
+ * The first "ready" lifecycle event, from the snapshot or a later publish. It subscribes before it
+ * reads the snapshot, so a publish between the two is not lost. None when the stream ends first.
+ */
+export const firstReadyEvent = Effect.fn("ForkUpdates.firstReadyEvent")(function* (
+  lifecycle: ServerLifecycleEvents.ServerLifecycleEvents["Service"],
+) {
+  const live = yield* Queue.unbounded<ServerLifecycleStreamEvent, Cause.Done>();
+  yield* Stream.runIntoQueue(lifecycle.stream, live).pipe(
+    Effect.forkScoped({ startImmediately: true }),
+  );
+  const snapshot = yield* lifecycle.snapshot;
+  return yield* Stream.concat(Stream.fromIterable(snapshot.events), Stream.fromQueue(live)).pipe(
+    Stream.filter((event) => event.type === "ready"),
+    Stream.runHead,
+  );
+}, Effect.scoped);
 
 export class ForkUpdates extends Context.Service<
   ForkUpdates,
@@ -244,22 +266,17 @@ const make = Effect.gen(function* () {
   if (available) {
     yield* check.pipe(Effect.repeat(Schedule.spaced(CHECK_INTERVAL)), Effect.forkScoped);
     // "ready" follows the launcher's commit, so this runtime is the active one from then on. The
-    // layer builds before startup publishes "ready"; the snapshot covers a late subscription.
-    const ready = Stream.concat(
-      Stream.unwrap(
-        lifecycle.snapshot.pipe(Effect.map((state) => Stream.fromIterable(state.events))),
-      ),
-      lifecycle.stream,
-    ).pipe(
-      Stream.filter((event) => event.type === "ready"),
-      Stream.runHead,
-    );
-    yield* ready.pipe(
-      Effect.andThen(
-        relinkLaunchers({
-          baseDir: config.baseDir,
-          entryPath: pinnedRuntimePaths(path, config.baseDir, packageJson.version, platform)
-            .entryPath,
+    // layer builds before startup publishes "ready".
+    yield* firstReadyEvent(lifecycle).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.succeed([]),
+          onSome: () =>
+            relinkLaunchers({
+              baseDir: config.baseDir,
+              entryPath: pinnedRuntimePaths(path, config.baseDir, packageJson.version, platform)
+                .entryPath,
+            }),
         }),
       ),
       Effect.tap((relinked) =>

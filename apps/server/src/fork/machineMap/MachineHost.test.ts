@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 /** Fork: machine map. The command executor (MM-501) and the status (MM-1002). */
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -214,7 +215,7 @@ const makeLayer = (input: {
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-machine-host-" })),
   );
 
-it.layer(NodeServices.layer)("MachineHost", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("MachineHost", (it) => {
   it.effect("stops every running turn and nothing else", () =>
     Effect.gen(function* () {
       const interrupted = yield* Ref.make<ReadonlyArray<string>>([]);

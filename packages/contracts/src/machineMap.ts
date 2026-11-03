@@ -335,6 +335,8 @@ export const ClientMachine = Schema.Struct({
   id: MachineId,
   name: TrimmedNonEmptyString,
   origin: TrimmedNonEmptyString,
+  /** False while kitshn has no connection to the machine. Absent when kitshn does not say. */
+  online: Schema.optionalKey(Schema.Boolean),
 });
 export type ClientMachine = typeof ClientMachine.Type;
 
@@ -368,7 +370,7 @@ export const t3AppMachines = (response: {
 }): ClientMachinesResponse => ({
   machines: response.machines
     .filter((machine) => machine.kind === "t3.app")
-    .map(({ id, name, origin }) => ({ id, name, origin })),
+    .map(({ card: _card, kind: _kind, level: _level, ...machine }) => machine),
 });
 
 /**

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it, vi } from "@effect/vitest";
 import {
@@ -138,7 +139,7 @@ const makeHarness = (options: {
     Layer.mock(ServerEnvironment.ServerEnvironment)({
       getDescriptor: Effect.succeed({ environmentId: leadScope.environmentId } as never),
     }),
-    NodeServices.layer,
+    Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
   );
   const worktrees = WorktreeMcpService.layer.pipe(Layer.provide(services));
   const layer = Layer.mergeAll(

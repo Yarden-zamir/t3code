@@ -35,7 +35,7 @@ export const WORKTREE_ITEMS = [
     scope: "environment-defaults",
     environmentOnly: true,
     searchTerms: [
-      "storage cleanup disk node_modules caches build dependencies worktrees inactive days",
+      "storage cleanup disk node_modules caches build dependencies worktrees inactive inactivity eviction days",
     ],
   },
   {

@@ -17,10 +17,10 @@ import {
 } from "../cloud/pinnedRuntime.ts";
 
 /**
- * Points the recorded launchers and the default `<bin dir>/t3` at `entryPath`. Only a symlink that
- * points into this home's `runtime/versions` changes. Returns the launchers that changed.
- * Limit: a Windows `t3.cmd` shim stays, because Windows has no background service that updates
- * itself. Revisit when the fork publishes a Windows server.
+ * Points the recorded launchers and the default `<bin dir>/t3` that link into this home's
+ * `runtime/versions` at `entryPath`. A failed launcher is logged; the others still change.
+ * Limit: a Windows `t3.cmd` shim stays, as Windows has no self-updating background service.
+ * Revisit when the fork publishes a Windows server.
  */
 export const relinkLaunchers = Effect.fn("ForkLaunchers.relink")(function* (input: {
   readonly baseDir: string;
@@ -50,13 +50,21 @@ export const relinkLaunchers = Effect.fn("ForkLaunchers.relink")(function* (inpu
     if (resolved === input.entryPath || !launcherOwnsVersionsDir(path, versionsDir, resolved)) {
       continue;
     }
-    // Recorded first, so a prune never removes the runtime that the launcher points at.
-    yield* recordPinnedRuntimeLauncher({ baseDir: input.baseDir, launcher });
     const temporary = `${launcher}.relink-tmp`;
-    yield* fs.remove(temporary, { force: true });
-    yield* fs.symlink(input.entryPath, temporary);
-    yield* fs.rename(temporary, launcher);
-    relinked.push(launcher);
+    // Recorded first, so a prune never removes the runtime that the launcher points at.
+    const done = yield* recordPinnedRuntimeLauncher({ baseDir: input.baseDir, launcher }).pipe(
+      Effect.andThen(fs.remove(temporary, { force: true })),
+      Effect.andThen(fs.symlink(input.entryPath, temporary)),
+      Effect.andThen(fs.rename(temporary, launcher)),
+      Effect.as(true),
+      Effect.catch((error) =>
+        Effect.logWarning("Could not point a t3 launcher at this version.", {
+          launcher,
+          error,
+        }).pipe(Effect.as(false)),
+      ),
+    );
+    if (done) relinked.push(launcher);
   }
   return relinked;
 });

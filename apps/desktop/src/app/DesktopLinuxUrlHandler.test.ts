@@ -169,7 +169,7 @@ describe("DesktopLinuxUrlHandler", () => {
     const entry = DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
       displayName: "T3 Code (Nightly)",
       execTarget: '/home/al ice/Apps/T3 "100%" $HOME\\x.AppImage',
-      scheme: "t3code",
+      schemes: ["t3code", "t3-thread"],
       iconPath: "/home/al ice/icons/T3\\x.png",
     });
 
@@ -181,7 +181,7 @@ describe("DesktopLinuxUrlHandler", () => {
     );
     assert.include(entry, "NoDisplay=true");
     assert.notInclude(entry, "StartupWMClass=");
-    assert.include(entry, "MimeType=x-scheme-handler/t3code;");
+    assert.include(entry, "MimeType=x-scheme-handler/t3code;x-scheme-handler/t3-thread;");
     assert.include(entry, "Icon=/home/al ice/icons/T3\\\\x.png");
   });
 
@@ -203,7 +203,10 @@ describe("DesktopLinuxUrlHandler", () => {
           recorded.files[0]?.content,
           "Exec=/home/alice/Applications/T3-Code.AppImage %U",
         );
-        assert.include(recorded.files[0]?.content, "MimeType=x-scheme-handler/t3code;");
+        assert.include(
+          recorded.files[0]?.content,
+          "MimeType=x-scheme-handler/t3code;x-scheme-handler/t3-thread;",
+        );
         assert.deepEqual(recorded.commands, [
           {
             command: "update-desktop-database",
@@ -211,7 +214,12 @@ describe("DesktopLinuxUrlHandler", () => {
           },
           {
             command: "xdg-mime",
-            args: ["default", "com.t3tools.T3Code.desktop", "x-scheme-handler/t3code"],
+            args: [
+              "default",
+              "com.t3tools.T3Code.desktop",
+              "x-scheme-handler/t3code",
+              "x-scheme-handler/t3-thread",
+            ],
           },
         ]);
       });
@@ -229,7 +237,7 @@ describe("DesktopLinuxUrlHandler", () => {
         DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
           displayName: "T3 Code (Alpha)",
           execTarget: process.execPath,
-          scheme: "t3code",
+          schemes: ["t3code", "t3-thread"],
           iconPath: "/home/alice/.local/share/icons/com.t3tools.T3Code.desktop.png",
         }),
       );
@@ -256,7 +264,7 @@ describe("DesktopLinuxUrlHandler", () => {
         existingEntry: DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
           displayName: "T3 Code (Alpha)",
           execTarget: "/home/alice/Applications/T3-Code.AppImage",
-          scheme: "t3code",
+          schemes: ["t3code", "t3-thread"],
           iconPath: "/home/alice/.local/share/icons/com.t3tools.T3Code.desktop.png",
         }),
       });
@@ -270,7 +278,12 @@ describe("DesktopLinuxUrlHandler", () => {
         },
         {
           command: "xdg-mime",
-          args: ["default", "com.t3tools.T3Code.desktop", "x-scheme-handler/t3code"],
+          args: [
+            "default",
+            "com.t3tools.T3Code.desktop",
+            "x-scheme-handler/t3code",
+            "x-scheme-handler/t3-thread",
+          ],
         },
       ]);
     });
@@ -285,7 +298,7 @@ describe("DesktopLinuxUrlHandler", () => {
         existingEntry: DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
           displayName: "T3 Code (Alpha)",
           execTarget: "/home/alice/Applications/T3-Code.AppImage",
-          scheme: "t3code",
+          schemes: ["t3code", "t3-thread"],
           iconPath,
         }),
       });
@@ -366,68 +379,70 @@ describe("DesktopLinuxUrlHandler", () => {
     });
   });
 
-  it.effect.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
-    "continues registration after a timed-out cache helper ignores SIGTERM",
-    () =>
-      Effect.gen(function* () {
-        const realSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-        const nodeExecutable = yield* HostProcess.ExecutablePath;
-        const recorded = emptyRecording();
-        const spawned = yield* Deferred.make<ChildProcessSpawner.ChildProcessHandle>();
-        const ready = yield* Deferred.make<void>();
-        const processSpawner = ChildProcessSpawner.make((command) =>
-          Effect.gen(function* () {
-            if (!ChildProcess.isStandardCommand(command)) {
-              return yield* Effect.die("expected a single registration command");
-            }
-            recorded.commands.push({ command: command.command, args: command.args });
-            if (command.command !== "update-desktop-database") return mockProcess(0);
-            const child = yield* realSpawner.spawn(
-              ChildProcess.make(
-                nodeExecutable,
-                [
-                  "-e",
-                  // The watchdog makes the unfixed case exit with a distinguishable code.
-                  "process.on('SIGTERM', () => setTimeout(() => process.exit(99), 5000));" +
-                    "process.stdout.write('ready\\n'); setInterval(() => {}, 2147483647);",
-                ],
-                { ...command.options, stdout: "pipe" },
+  for (const stalledHelper of ["update-desktop-database", "xdg-mime"] as const) {
+    it.effect.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
+      `finishes registration after a timed-out ${stalledHelper} ignores SIGTERM`,
+      () =>
+        Effect.gen(function* () {
+          const realSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const nodeExecutable = yield* HostProcess.ExecutablePath;
+          const recorded = emptyRecording();
+          const spawned = yield* Deferred.make<ChildProcessSpawner.ChildProcessHandle>();
+          const ready = yield* Deferred.make<void>();
+          const processSpawner = ChildProcessSpawner.make((command) =>
+            Effect.gen(function* () {
+              if (!ChildProcess.isStandardCommand(command)) {
+                return yield* Effect.die("expected a single registration command");
+              }
+              recorded.commands.push({ command: command.command, args: command.args.map(String) });
+              if (command.command !== stalledHelper) return mockProcess(0);
+              const child = yield* realSpawner.spawn(
+                ChildProcess.make(
+                  nodeExecutable,
+                  [
+                    "-e",
+                    // The watchdog makes the unfixed case exit with a distinguishable code.
+                    "process.on('SIGTERM', () => setTimeout(() => process.exit(99), 5000));" +
+                      "process.stdout.write('ready\\n'); setInterval(() => {}, 2147483647);",
+                  ],
+                  { ...command.options, stdout: "pipe" },
+                ),
+              );
+              yield* Deferred.succeed(spawned, child);
+              yield* Stream.runHead(child.stdout);
+              yield* Deferred.succeed(ready, undefined);
+              return child;
+            }),
+          );
+          const registration = yield* runRegister(recorded, { processSpawner }).pipe(
+            Effect.forkScoped,
+          );
+          const child = yield* Deferred.await(spawned);
+          yield* Effect.addFinalizer(() =>
+            child.isRunning.pipe(
+              Effect.flatMap((running) =>
+                running ? child.kill({ killSignal: "SIGKILL" }) : Effect.void,
               ),
-            );
-            yield* Deferred.succeed(spawned, child);
-            yield* Stream.runHead(child.stdout);
-            yield* Deferred.succeed(ready, undefined);
-            return child;
-          }),
-        );
-        const registration = yield* runRegister(recorded, { processSpawner }).pipe(
-          Effect.forkScoped,
-        );
-        const child = yield* Deferred.await(spawned);
-        yield* Effect.addFinalizer(() =>
-          child.isRunning.pipe(
-            Effect.flatMap((running) =>
-              running ? child.kill({ killSignal: "SIGKILL" }) : Effect.void,
+              Effect.ignore,
             ),
-            Effect.ignore,
-          ),
-        );
-        yield* Deferred.await(ready);
-        yield* TestClock.adjust("5 seconds");
-        yield* Fiber.join(registration);
+          );
+          yield* Deferred.await(ready);
+          yield* TestClock.adjust("5 seconds");
+          yield* Fiber.join(registration);
 
-        const exit = yield* Effect.exit(child.exitCode);
-        if (Exit.isFailure(exit)) {
-          assert.include(Cause.pretty(exit.cause), "SIGKILL");
-        } else {
-          assert.fail(`cache helper exited with ${exit.value} instead of being force-killed`);
-        }
-        assert.deepEqual(
-          recorded.commands.map(({ command }) => command),
-          ["update-desktop-database", "xdg-mime"],
-        );
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
+          const exit = yield* Effect.exit(child.exitCode);
+          if (Exit.isFailure(exit)) {
+            assert.include(Cause.pretty(exit.cause), "SIGKILL");
+          } else {
+            assert.fail(`${stalledHelper} exited with ${exit.value} instead of being force-killed`);
+          }
+          assert.deepEqual(
+            recorded.commands.map(({ command }) => command),
+            ["update-desktop-database", "xdg-mime"],
+          );
+        }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    );
+  }
 });
 
 interface ThemeIconRun {

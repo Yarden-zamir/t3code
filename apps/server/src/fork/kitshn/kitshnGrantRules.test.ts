@@ -1,7 +1,7 @@
 import { MACHINE_LEVEL_SCOPES } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
-import { appLevelScopes, levelFor, sessionAllowed } from "./kitshnGrantRules.ts";
+import { appLevelScopes, levelFor, sessionAllowed, siteOriginOf } from "./kitshnGrantRules.ts";
 
 describe("levelFor", () => {
   it("reads the level of a resource, and none for a level that the kind does not have", () => {
@@ -20,5 +20,13 @@ describe("sessionAllowed", () => {
     expect(sessionAllowed({ scopes: appLevelScopes("standard") }, standard)).toBe(true);
     expect(sessionAllowed({ scopes: MACHINE_LEVEL_SCOPES.admin }, standard)).toBe(false);
     expect(sessionAllowed({ scopes: [] }, {})).toBe(false);
+  });
+});
+
+describe("siteOriginOf", () => {
+  it("makes an origin only from a bare host that kitshn serves", () => {
+    expect(siteOriginOf(["t3-mac.example.com"])).toBe("https://t3-mac.example.com");
+    expect(siteOriginOf([])).toBeNull();
+    expect(siteOriginOf(["t3-mac.example.com/path"])).toBeNull();
   });
 });

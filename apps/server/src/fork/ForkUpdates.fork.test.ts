@@ -7,9 +7,11 @@ import {
   type TerminalSummary,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -151,5 +153,34 @@ describe("ForkUpdates.terminalHold (desktop Install when idle)", () => {
       yield* TestClock.adjust(TERMINAL_HOLD_NOTICE_LEAD);
       expect(yield* Queue.take(hold.holds)).toEqual({ ready: true });
     }),
+  );
+});
+
+describe("ForkUpdates.firstReadyEvent (launcher relink)", () => {
+  effectIt.effect(
+    "finds a ready event published between the snapshot read and the subscription",
+    () =>
+      Effect.gen(function* () {
+        const real = yield* ServerLifecycleEvents.ServerLifecycleEvents;
+        const published = yield* Deferred.make<void>();
+        // A subscription after the publish never sees "ready" again, so it ends empty.
+        const lifecycle: ServerLifecycleEvents.ServerLifecycleEvents["Service"] = {
+          ...real,
+          snapshot: real.snapshot.pipe(
+            Effect.tap(() =>
+              real
+                .publish({ version: 1, type: "ready", payload: {} as never })
+                .pipe(Effect.andThen(Deferred.succeed(published, undefined))),
+            ),
+          ),
+          stream: Stream.unwrap(
+            Deferred.isDone(published).pipe(
+              Effect.map((done) => (done ? Stream.empty : real.stream)),
+            ),
+          ),
+        };
+        const ready = yield* ForkUpdates.firstReadyEvent(lifecycle);
+        expect(Option.map(ready, (event) => event.type)).toEqual(Option.some("ready"));
+      }).pipe(Effect.provide(ServerLifecycleEvents.layer)),
   );
 });
