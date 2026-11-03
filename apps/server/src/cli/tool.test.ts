@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { withThreadCredential } from "@t3tools/provider-core/server/forkThreadCredential";
@@ -133,7 +134,12 @@ const asThread = {
 it.effect("an agent shell calls as its thread when no --base-dir is given (MM-1920)", () =>
   Effect.gen(function* () {
     expect(yield* callWith(liveShell, Option.none())).toEqual([asThread]);
-  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.mergeAll(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), NetService.layer),
+    ),
+  ),
 );
 
 it.effect("a thread credential with a --base-dir of another server fails loudly", () =>
@@ -148,7 +154,12 @@ it.effect("a thread credential with a --base-dir of another server fails loudly"
       callWith(liveShell, Option.some(yield* homeServedAt(undefined))),
     );
     expect(stopped.message).toContain("targets no running T3 server");
-  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.mergeAll(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), NetService.layer),
+    ),
+  ),
 );
 
 it.effect("a thread credential with a T3CODE_HOME of another server fails loudly", () =>
@@ -163,7 +174,12 @@ it.effect("a thread credential with a T3CODE_HOME of another server fails loudly
     expect(yield* callWith({ ...liveShell, T3CODE_HOME: ownHome }, Option.none())).toEqual([
       asThread,
     ]);
-  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.mergeAll(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), NetService.layer),
+    ),
+  ),
 );
 
 it.effect("an empty credential is unset, and an endpoint that is no URL fails", () =>
@@ -182,7 +198,12 @@ it.effect("an empty credential is unset, and an endpoint that is no URL fails", 
       ),
     );
     expect(malformed.message).toContain("T3_ACP_MCP_ENDPOINT is not a URL");
-  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.mergeAll(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), NetService.layer),
+    ),
+  ),
 );
 
 it.effect("a thread credential with a --base-dir of its own server calls as the thread", () =>
@@ -190,7 +211,12 @@ it.effect("a thread credential with a --base-dir of its own server calls as the 
     // The runtime state names the configured host, the credential the bound address.
     const ownHome = yield* homeServedAt("http://localhost:43123");
     expect(yield* callWith(liveShell, Option.some(ownHome))).toEqual([asThread]);
-  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.mergeAll(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), NetService.layer),
+    ),
+  ),
 );
 
 it.effect("without a thread credential, --base-dir picks that home's server", () =>
@@ -201,7 +227,12 @@ it.effect("without a thread credential, --base-dir picks that home's server", ()
       endpoint: "http://127.0.0.1:5735/mcp",
       hasThreadCredential: false,
     });
-  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.mergeAll(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), NetService.layer),
+    ),
+  ),
 );
 
 it.effect("half a thread credential fails instead of falling back", () =>
@@ -210,5 +241,10 @@ it.effect("half a thread credential fails instead of falling back", () =>
       callWith({ T3_ACP_MCP_ENDPOINT: "http://127.0.0.1:43123/mcp" }, Option.none()),
     );
     expect(error.message).toContain("Only one of T3_ACP_MCP_ENDPOINT");
-  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.mergeAll(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), NetService.layer),
+    ),
+  ),
 );

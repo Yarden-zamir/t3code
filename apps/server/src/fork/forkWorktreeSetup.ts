@@ -1,4 +1,4 @@
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Hex from "effect/encoding/Hex";
@@ -7,7 +7,7 @@ import * as Config from "../config.ts";
 
 /** Keep recovery state outside the checkout, so it survives eviction and restarts. */
 export const makeSetupMarker = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const digest = yield* Digest.Digest;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* Config.ServerConfig;
@@ -22,7 +22,9 @@ export const makeSetupMarker = Effect.gen(function* () {
           ),
         ),
       );
-      const key = Hex.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(normalized)));
+      const key = Hex.encode(
+        yield* digest.digest(Digest.sha256, new TextEncoder().encode(normalized)),
+      );
       const target = path.join(directory, key);
       return {
         pending: fs.exists(target),

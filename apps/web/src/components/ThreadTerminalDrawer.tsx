@@ -1897,6 +1897,76 @@ export default function ThreadTerminalDrawer({
     );
   }
 
+  // The single-terminal row and the split sidebar header share these controls,
+  // so neither layout floats them over terminal text.
+  const terminalActions = (
+    <div className="inline-flex h-full items-stretch">
+      <TerminalActionButton
+        disabled={!canOperateTerminal}
+        className={`inline-flex h-full items-center px-1 text-foreground/90 transition-colors ${
+          hasReachedSplitLimit
+            ? "cursor-not-allowed opacity-64 hover:bg-transparent"
+            : "hover:bg-accent/70"
+        }`}
+        onClick={onSplitTerminalAction}
+        label={splitTerminalActionLabel}
+        tooltipLabel={
+          hasReachedSplitLimit ? splitTerminalActionLabel : "Split Terminal Horizontally"
+        }
+        shortcutCommand={hasReachedSplitLimit ? null : "terminal.split"}
+      >
+        <SquareSplitHorizontal className="size-3.25" />
+      </TerminalActionButton>
+      <TerminalActionButton
+        disabled={!canOperateTerminal}
+        className={`inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors ${
+          hasReachedSplitLimit
+            ? "cursor-not-allowed opacity-64 hover:bg-transparent"
+            : "hover:bg-accent/70"
+        }`}
+        onClick={onSplitTerminalVerticalAction}
+        label={splitTerminalVerticalActionLabel}
+        tooltipLabel={
+          hasReachedSplitLimit ? splitTerminalVerticalActionLabel : "Split Terminal Vertically"
+        }
+        shortcutCommand={hasReachedSplitLimit ? null : "terminal.splitVertical"}
+      >
+        <SquareSplitVertical className="size-3.25" />
+      </TerminalActionButton>
+      <TerminalActionButton
+        disabled={!canOperateTerminal}
+        className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
+        onClick={onNewTerminalAction}
+        label={newTerminalActionLabel}
+        tooltipLabel="New Terminal"
+        shortcutCommand="terminal.new"
+      >
+        <Plus className="size-3.25" />
+      </TerminalActionButton>
+      {onMoveTerminalToThread ? (
+        <TerminalActionButton
+          disabled={!canOperateTerminal}
+          className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
+          onClick={() => onMoveTerminalToThread(resolvedActiveTerminalId)}
+          label="Move to a terminal thread"
+          tooltipLabel="Move to a terminal thread: the shell goes on there"
+        >
+          <SquareArrowOutUpRight className="size-3.25" />
+        </TerminalActionButton>
+      ) : null}
+      <TerminalActionButton
+        disabled={!canOperateTerminal}
+        className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
+        onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}
+        label={closeTerminalActionLabel}
+        tooltipLabel="Close Terminal"
+        shortcutCommand="terminal.close"
+      >
+        <Trash2 className="size-3.25" />
+      </TerminalActionButton>
+    </div>
+  );
+
   return (
     <aside
       ref={drawerRef}
@@ -1921,80 +1991,14 @@ export default function ThreadTerminalDrawer({
       ) : null}
 
       {!hasTerminalSidebar && (
-        <div className="pointer-events-none absolute right-2 top-2 z-20">
-          <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className={`p-1 text-foreground/90 transition-colors ${
-                hasReachedSplitLimit
-                  ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                  : "hover:bg-accent"
-              }`}
-              onClick={onSplitTerminalAction}
-              label={splitTerminalActionLabel}
-              tooltipLabel={
-                hasReachedSplitLimit ? splitTerminalActionLabel : "Split Terminal Horizontally"
-              }
-              shortcutCommand={hasReachedSplitLimit ? null : "terminal.split"}
-            >
-              <SquareSplitHorizontal className="size-3.25" />
-            </TerminalActionButton>
-            <div className="h-4 w-px bg-border/80" />
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className={`p-1 text-foreground/90 transition-colors ${
-                hasReachedSplitLimit
-                  ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                  : "hover:bg-accent"
-              }`}
-              onClick={onSplitTerminalVerticalAction}
-              label={splitTerminalVerticalActionLabel}
-              tooltipLabel={
-                hasReachedSplitLimit
-                  ? splitTerminalVerticalActionLabel
-                  : "Split Terminal Vertically"
-              }
-              shortcutCommand={hasReachedSplitLimit ? null : "terminal.splitVertical"}
-            >
-              <SquareSplitVertical className="size-3.25" />
-            </TerminalActionButton>
-            <div className="h-4 w-px bg-border/80" />
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className="p-1 text-foreground/90 transition-colors hover:bg-accent"
-              onClick={onNewTerminalAction}
-              label={newTerminalActionLabel}
-              tooltipLabel="New Terminal"
-              shortcutCommand="terminal.new"
-            >
-              <Plus className="size-3.25" />
-            </TerminalActionButton>
-            {onMoveTerminalToThread ? (
-              <>
-                <div className="h-4 w-px bg-border/80" />
-                <TerminalActionButton
-                  disabled={!canOperateTerminal}
-                  className="p-1 text-foreground/90 transition-colors hover:bg-accent"
-                  onClick={() => onMoveTerminalToThread(resolvedActiveTerminalId)}
-                  label="Move to a terminal thread"
-                  tooltipLabel="Move to a terminal thread: the shell goes on there"
-                >
-                  <SquareArrowOutUpRight className="size-3.25" />
-                </TerminalActionButton>
-              </>
-            ) : null}
-            <div className="h-4 w-px bg-border/80" />
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className="p-1 text-foreground/90 transition-colors hover:bg-accent"
-              onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}
-              label={closeTerminalActionLabel}
-              tooltipLabel="Close Terminal"
-              shortcutCommand="terminal.close"
-            >
-              <Trash2 className="size-3.25" />
-            </TerminalActionButton>
-          </div>
+        <div
+          className={cn(
+            "flex shrink-0 items-stretch justify-end border-b border-border/70",
+            // The drawer's resize strip covers its top 6px; keep the buttons below it.
+            isPanel ? "h-[22px]" : "h-7 pt-1.5",
+          )}
+        >
+          {terminalActions}
         </div>
       )}
 
@@ -2002,8 +2006,7 @@ export default function ThreadTerminalDrawer({
         <div
           className={cn(
             "flex h-full min-h-0 bg-(--terminal-background)",
-            // Fork: the floating toolbar gets its own strip, so it covers no line of the terminal.
-            hasTerminalSidebar ? "gap-1.5" : "pt-8",
+            hasTerminalSidebar && "gap-1.5",
           )}
         >
           <div className="min-w-0 flex-1">
@@ -2027,75 +2030,7 @@ export default function ThreadTerminalDrawer({
           {hasTerminalSidebar && (
             <aside className="flex w-36 min-w-36 flex-col border border-border/70 bg-muted/10">
               <div className="flex h-[22px] items-stretch justify-end border-b border-border/70">
-                <div className="inline-flex h-full items-stretch">
-                  <TerminalActionButton
-                    disabled={!canOperateTerminal}
-                    className={`inline-flex h-full items-center px-1 text-foreground/90 transition-colors ${
-                      hasReachedSplitLimit
-                        ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                        : "hover:bg-accent/70"
-                    }`}
-                    onClick={onSplitTerminalAction}
-                    label={splitTerminalActionLabel}
-                    tooltipLabel={
-                      hasReachedSplitLimit
-                        ? splitTerminalActionLabel
-                        : "Split Terminal Horizontally"
-                    }
-                    shortcutCommand={hasReachedSplitLimit ? null : "terminal.split"}
-                  >
-                    <SquareSplitHorizontal className="size-3.25" />
-                  </TerminalActionButton>
-                  <TerminalActionButton
-                    disabled={!canOperateTerminal}
-                    className={`inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors ${
-                      hasReachedSplitLimit
-                        ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                        : "hover:bg-accent/70"
-                    }`}
-                    onClick={onSplitTerminalVerticalAction}
-                    label={splitTerminalVerticalActionLabel}
-                    tooltipLabel={
-                      hasReachedSplitLimit
-                        ? splitTerminalVerticalActionLabel
-                        : "Split Terminal Vertically"
-                    }
-                    shortcutCommand={hasReachedSplitLimit ? null : "terminal.splitVertical"}
-                  >
-                    <SquareSplitVertical className="size-3.25" />
-                  </TerminalActionButton>
-                  <TerminalActionButton
-                    disabled={!canOperateTerminal}
-                    className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
-                    onClick={onNewTerminalAction}
-                    label={newTerminalActionLabel}
-                    tooltipLabel="New Terminal"
-                    shortcutCommand="terminal.new"
-                  >
-                    <Plus className="size-3.25" />
-                  </TerminalActionButton>
-                  {onMoveTerminalToThread ? (
-                    <TerminalActionButton
-                      disabled={!canOperateTerminal}
-                      className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
-                      onClick={() => onMoveTerminalToThread(resolvedActiveTerminalId)}
-                      label="Move to a terminal thread"
-                      tooltipLabel="Move to a terminal thread: the shell goes on there"
-                    >
-                      <SquareArrowOutUpRight className="size-3.25" />
-                    </TerminalActionButton>
-                  ) : null}
-                  <TerminalActionButton
-                    disabled={!canOperateTerminal}
-                    className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
-                    onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}
-                    label={closeTerminalActionLabel}
-                    tooltipLabel="Close Terminal"
-                    shortcutCommand="terminal.close"
-                  >
-                    <Trash2 className="size-3.25" />
-                  </TerminalActionButton>
-                </div>
+                {terminalActions}
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">

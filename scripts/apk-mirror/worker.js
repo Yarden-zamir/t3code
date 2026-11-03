@@ -1,31 +1,48 @@
 // Fork: the Android APK of each fork release through Cloudflare's cache (kitshn.config.ts).
 // Obtainium reads /index.html as an HTML source with the link filter `t3code-.*-android\.apk`.
-// Limit: the release list comes from the public GitHub API, 60 calls an hour per address, so it
-// is cached for 5 minutes. Revisit with a token if GitHub ever refuses.
+// GitHub counts the Worker's calls against Cloudflare's shared addresses, so the public API often
+// answers 403: the last good list stays 30 days, and a secret KITSHN_GITHUB_TOKEN lifts the limit.
 
 const APK = /^t3code-.+-android\.apk$/;
 const INDEX_TTL = 300;
+const LIST_KEEP = 30 * 24 * 3600;
 
 export default {
   async fetch(request, env, ctx) {
     if (request.method !== "GET" && request.method !== "HEAD")
       return new Response("GET only", { status: 405 });
     const name = decodeURIComponent(new URL(request.url).pathname.slice(1));
-    if (name === "" || name === "index.html") return index(env, ctx);
-    if (name === "latest/t3code-android.apk" || name === "latest") return latest(request, env, ctx);
-    if (!APK.test(name)) return new Response("Not found", { status: 404 });
-    return apk(name, request, env, ctx);
+    try {
+      if (name === "" || name === "index.html") return await index(env, ctx);
+      if (name === "latest/t3code-android.apk" || name === "latest")
+        return await latest(request, env, ctx);
+      if (!APK.test(name)) return new Response("Not found", { status: 404 });
+      return await apk(name, request, env, ctx);
+    } catch (error) {
+      if (!(error instanceof NoReleaseList)) throw error;
+      return new Response(error.message, { status: 503, headers: { "retry-after": "300" } });
+    }
   },
 };
 
+class NoReleaseList extends Error {}
+
+/** The APK assets of the newest releases, newest first; the last good list when GitHub refuses. */
 async function releases(env, ctx) {
   const key = new Request(`https://releases.invalid/${env.REPO}`);
-  const hit = await caches.default.match(key);
-  if (hit) return hit.json();
+  const kept = await caches.default.match(key).then((hit) => hit?.json());
+  if (kept && Date.now() - kept.fetchedAt < INDEX_TTL * 1000) return kept.list;
   const response = await fetch(`https://api.github.com/repos/${env.REPO}/releases?per_page=30`, {
-    headers: { "user-agent": "t3-apk-mirror", accept: "application/vnd.github+json" },
+    headers: {
+      "user-agent": "t3-apk-mirror",
+      accept: "application/vnd.github+json",
+      ...(env.GITHUB_TOKEN ? { authorization: `Bearer ${env.GITHUB_TOKEN}` } : {}),
+    },
   });
-  if (!response.ok) throw new Error(`GitHub releases ${response.status}`);
+  if (!response.ok) {
+    if (kept) return kept.list;
+    throw new NoReleaseList(`GitHub releases ${response.status} and no list kept yet`);
+  }
   const list = (await response.json())
     .flatMap((release) =>
       release.assets
@@ -41,7 +58,9 @@ async function releases(env, ctx) {
   ctx.waitUntil(
     caches.default.put(
       key,
-      new Response(JSON.stringify(list), { headers: { "cache-control": `max-age=${INDEX_TTL}` } }),
+      new Response(JSON.stringify({ fetchedAt: Date.now(), list }), {
+        headers: { "cache-control": `max-age=${LIST_KEEP}` },
+      }),
     ),
   );
   return list;

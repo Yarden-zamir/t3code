@@ -11,12 +11,13 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -170,13 +171,11 @@ it.effect("keeps a merged thread unsettled while its background command runs", (
             }),
             Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
             Layer.succeed(
-              Crypto.Crypto,
-              Crypto.make({
-                randomBytes: (size) => new Uint8Array(size).fill(1),
-                digest: (_algorithm, data) => Effect.succeed(data),
-              }),
+              SecureRandom.SecureRandom,
+              SecureRandom.make((size) => new Uint8Array(size).fill(1)),
             ),
             FileSystem.layerNoop({}),
+            Path.layer,
           ),
         ),
       );
@@ -255,13 +254,11 @@ it.effect("keeps the shell of a terminal thread open when it settles", () =>
             ServerSettings.layerTest({ sidebarAutoSettleAfterDays: null }),
             Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
             Layer.succeed(
-              Crypto.Crypto,
-              Crypto.make({
-                randomBytes: (size) => new Uint8Array(size).fill(1),
-                digest: (_algorithm, data) => Effect.succeed(data),
-              }),
+              SecureRandom.SecureRandom,
+              SecureRandom.make((size) => new Uint8Array(size).fill(1)),
             ),
             FileSystem.layerNoop({}),
+            Path.layer,
           ),
         ),
       );

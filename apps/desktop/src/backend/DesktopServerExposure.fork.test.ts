@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -54,7 +55,14 @@ function layer(baseDir: string, networkInterfaces: DesktopNetworkInterfaces.Netw
     isPackaged: true,
     resourcesPath: "/missing/resources",
     runningUnderArm64Translation: false,
-  }).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest(env))));
+  }).pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
+        DesktopConfig.layerTest(env),
+      ),
+    ),
+  );
   const layerNetwork = Layer.succeed(DesktopNetworkInterfaces.DesktopNetworkInterfaces, {
     read: Effect.succeed(networkInterfaces),
   });
@@ -89,7 +97,7 @@ const withHarness = <A, E, R>(
       prefix: "t3-desktop-server-exposure-test-",
     });
     return yield* effect.pipe(Effect.provide(layer(baseDir, networkInterfaces)));
-  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped);
 
 describe("DesktopServerExposure", () => {
   it.effect("keeps loopback and advertises the tunnel URL only while tunnel pairing is on", () =>

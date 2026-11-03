@@ -53,20 +53,20 @@ it.effect(
             ],
           }),
         );
-        const serverLayer = McpHttpServer.toolkitRegistration(
-          StartsToolkit,
-          McpToolAccess.toLayer(StartsToolkit, {
-            starts: McpToolAccess.startsThreads(
-              (input) => input,
-              (_, modes) =>
-                Effect.succeed({ modes: `${modes.runtimeMode}/${modes.interactionMode}` }),
-              "stamped",
-            ),
-          }),
-        ).pipe(
-          Layer.provideMerge(
-            McpHttpServer.layerMcpTransport.pipe(Layer.provide(ServerSettings.layerTest())),
+        const serverLayer = McpHttpServer.layerMcpTransport(
+          McpHttpServer.toolkitRegistration(
+            StartsToolkit,
+            McpToolAccess.toLayer(StartsToolkit, {
+              starts: McpToolAccess.startsThreads(
+                (input) => input,
+                (_, modes) =>
+                  Effect.succeed({ modes: `${modes.runtimeMode}/${modes.interactionMode}` }),
+                "stamped",
+              ),
+            }),
           ),
+        ).pipe(
+          Layer.provide(ServerSettings.layerTest()),
           Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
           Layer.provide(
             Layer.mock(McpSessionRegistry.McpSessionRegistry)({

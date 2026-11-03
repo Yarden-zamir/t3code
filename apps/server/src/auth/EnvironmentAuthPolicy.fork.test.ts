@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -25,22 +26,25 @@ const layerEnvironmentAuthPolicy = (overrides?: Partial<ServerConfig.ServerConfi
       ),
     ),
   );
-it.layer(NodeServices.layer)("EnvironmentAuthPolicy.layer fork", (it) => {
-  it.effect("allows one-time-token pairing on a loopback desktop with tunnel pairing on", () =>
-    Effect.gen(function* () {
-      const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
-      const descriptor = yield* policy.getDescriptor();
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
+  "EnvironmentAuthPolicy.layer fork",
+  (it) => {
+    it.effect("allows one-time-token pairing on a loopback desktop with tunnel pairing on", () =>
+      Effect.gen(function* () {
+        const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
+        const descriptor = yield* policy.getDescriptor();
 
-      expect(descriptor.policy).toBe("remote-reachable");
-      expect(descriptor.bootstrapMethods).toEqual(["desktop-bootstrap", "one-time-token"]);
-    }).pipe(
-      Effect.provide(
-        layerEnvironmentAuthPolicy({
-          mode: "desktop",
-          host: "127.0.0.1",
-          tunnelPairingUrl: "https://t3.example.com",
-        }),
+        expect(descriptor.policy).toBe("remote-reachable");
+        expect(descriptor.bootstrapMethods).toEqual(["desktop-bootstrap", "one-time-token"]);
+      }).pipe(
+        Effect.provide(
+          layerEnvironmentAuthPolicy({
+            mode: "desktop",
+            host: "127.0.0.1",
+            tunnelPairingUrl: "https://t3.example.com",
+          }),
+        ),
       ),
-    ),
-  );
-});
+    );
+  },
+);

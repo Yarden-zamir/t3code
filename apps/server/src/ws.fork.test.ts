@@ -30,6 +30,7 @@ it.effect("a late remote target snapshot keeps a newer environment label", () =>
         resolveFileManagerRevealKind: () => Effect.succeed("finder"),
       },
       { resolveTargets: () => Deferred.await(labelSent).pipe(Effect.as(targets)) },
+      { resolve: () => Effect.succeed([]) },
     ).pipe(
       Stream.tap((event) =>
         event.type === "snapshot" ? Deferred.succeed(labelSent, undefined) : Effect.void,

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { DEFAULT_SERVER_SETTINGS, type StorageCleanupReportEntry } from "@t3tools/contracts";
@@ -20,7 +21,7 @@ import * as Branches from "./ForkWorktreeBranches.ts";
 const layerGit = Git.layer.pipe(
   Layer.provide(VcsProcess.layer),
   Layer.provideMerge(Config.layerTest(process.cwd(), { prefix: "fork-worktree-branches-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 // origin has main and `pushed`. The clone has `spare` (on main), `local-work` (one commit on no

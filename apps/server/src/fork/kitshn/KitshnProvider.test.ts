@@ -162,7 +162,7 @@ const setup = (
             ChildProcessSpawner.make((command) =>
               Effect.gen(function* () {
                 const { handle, child } = yield* makeChild(
-                  command._tag === "StandardCommand" ? command.args : [],
+                  command._tag === "StandardCommand" ? command.args.map(String) : [],
                 );
                 yield* Effect.addFinalizer(() => Deferred.succeed(child.stopped, undefined));
                 yield* Queue.offer(children, child);

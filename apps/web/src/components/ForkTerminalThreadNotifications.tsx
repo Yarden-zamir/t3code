@@ -184,7 +184,7 @@ function notifyTerminalThread(input: {
   const tag = threadNotificationTag(environmentId, threadId);
   try {
     const notification = new Notification(title, { body: threadTitle, tag, silent: true });
-    trackNotification(environmentId, notification);
+    trackNotification(environmentId, threadId, notification);
     notification.addEventListener("click", () => {
       notification.close();
       window.focus();
@@ -199,7 +199,7 @@ function notifyTerminalThread(input: {
       openThread,
     )
       .then((shown) => {
-        if (shown) trackNotification(environmentId, shown, "replacedByTag");
+        if (shown) trackNotification(environmentId, threadId, shown, "replacedByTag");
       })
       .catch(() => undefined);
   }

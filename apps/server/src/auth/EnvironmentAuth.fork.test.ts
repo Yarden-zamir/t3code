@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -56,90 +57,96 @@ const requestMetadata = {
   browser: "Chrome",
   ipAddress: "192.168.1.23",
 };
-it.layer(NodeServices.layer)("EnvironmentAuth.layer fork", (it) => {
-  it.effect("rejects the desktop bootstrap credential through a tunnel", () =>
-    Effect.gen(function* () {
-      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-      const viaTunnel = yield* serverAuth
-        .exchangeBootstrapCredentialForAccessToken(
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
+  "EnvironmentAuth.layer fork",
+  (it) => {
+    it.effect("rejects the desktop bootstrap credential through a tunnel", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const viaTunnel = yield* serverAuth
+          .exchangeBootstrapCredentialForAccessToken(
+            "desktop-bootstrap-token",
+            undefined,
+            requestMetadata,
+            { forwarded: true },
+          )
+          .pipe(Effect.flip);
+        const browserViaTunnel = yield* serverAuth
+          .createBrowserSession("desktop-bootstrap-token", requestMetadata, undefined, true)
+          .pipe(Effect.flip);
+        // The desktop app itself still pairs.
+        const local = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+          "desktop-bootstrap-token",
+          undefined,
+          requestMetadata,
+          { forwarded: false },
+        );
+
+        expect(viaTunnel._tag).toBe("ServerAuthInvalidCredentialError");
+        expect(browserViaTunnel._tag).toBe("ServerAuthInvalidCredentialError");
+        expect(local.access_token.length).toBeGreaterThan(0);
+      }).pipe(
+        Effect.provide(
+          layerEnvironmentAuth({
+            mode: "desktop",
+            desktopBootstrapToken: "desktop-bootstrap-token",
+            tunnelPairingUrl: "https://t3.example.com",
+          }),
+        ),
+      ),
+    );
+
+    it.effect("accepts a forwarded desktop bootstrap credential with tunnel pairing off", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const token = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
           "desktop-bootstrap-token",
           undefined,
           requestMetadata,
           { forwarded: true },
-        )
-        .pipe(Effect.flip);
-      const browserViaTunnel = yield* serverAuth
-        .createBrowserSession("desktop-bootstrap-token", requestMetadata, undefined, true)
-        .pipe(Effect.flip);
-      // The desktop app itself still pairs.
-      const local = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
-        "desktop-bootstrap-token",
-        undefined,
-        requestMetadata,
-        { forwarded: false },
-      );
+        );
 
-      expect(viaTunnel._tag).toBe("ServerAuthInvalidCredentialError");
-      expect(browserViaTunnel._tag).toBe("ServerAuthInvalidCredentialError");
-      expect(local.access_token.length).toBeGreaterThan(0);
-    }).pipe(
-      Effect.provide(
-        layerEnvironmentAuth({
-          mode: "desktop",
-          desktopBootstrapToken: "desktop-bootstrap-token",
-          tunnelPairingUrl: "https://t3.example.com",
-        }),
+        expect(token.access_token.length).toBeGreaterThan(0);
+      }).pipe(
+        Effect.provide(layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" })),
       ),
-    ),
-  );
+    );
 
-  it.effect("accepts a forwarded desktop bootstrap credential with tunnel pairing off", () =>
-    Effect.gen(function* () {
-      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-      const token = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
-        "desktop-bootstrap-token",
-        undefined,
-        requestMetadata,
-        { forwarded: true },
-      );
+    it.effect("accepts cookie sessions from the origins of kitshn peers", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const sessions = yield* SessionStore.SessionStore;
+        const pairing = yield* serverAuth.issuePairingCredential();
+        const exchanged = yield* serverAuth.createBrowserSession(
+          pairing.credential,
+          requestMetadata,
+        );
+        const post = (origin: string) =>
+          serverAuth.authenticateHttpRequest({
+            cookies: { [sessions.cookieName]: exchanged.sessionToken },
+            headers: { host: "127.0.0.1:3773", origin, "sec-fetch-site": "same-site" },
+          } as never);
 
-      expect(token.access_token.length).toBeGreaterThan(0);
-    }).pipe(
-      Effect.provide(layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" })),
-    ),
-  );
-
-  it.effect("accepts cookie sessions from the origins of kitshn peers", () =>
-    Effect.gen(function* () {
-      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-      const sessions = yield* SessionStore.SessionStore;
-      const pairing = yield* serverAuth.issuePairingCredential();
-      const exchanged = yield* serverAuth.createBrowserSession(pairing.credential, requestMetadata);
-      const post = (origin: string) =>
-        serverAuth.authenticateHttpRequest({
-          cookies: { [sessions.cookieName]: exchanged.sessionToken },
-          headers: { host: "127.0.0.1:3773", origin, "sec-fetch-site": "same-site" },
-        } as never);
-
-      const direct = yield* serverAuth.authenticateHttpRequest(
-        makeCookieRequest(sessions.cookieName, exchanged.sessionToken),
-      );
-      const trusted = yield* post("https://t3-vps.example.com");
-      expect(trusted.sessionId).toBe(direct.sessionId);
-      const untrusted = yield* Effect.flip(post("https://elsewhere.example.com"));
-      expect(untrusted._tag).toBe("ServerAuthInvalidCredentialError");
-    }).pipe(
-      Effect.provide(
-        layerEnvironmentAuth().pipe(
-          Layer.provide(
-            Layer.mock(KitshnGrants.KitshnGrants)({
-              trustsPeerOrigin: (origin) => origin === "https://t3-vps.example.com",
-              peerOrigins: () => ["https://t3-vps.example.com"],
-              visitor: () => Effect.succeed({ _tag: "anonymous" as const }),
-            }),
+        const direct = yield* serverAuth.authenticateHttpRequest(
+          makeCookieRequest(sessions.cookieName, exchanged.sessionToken),
+        );
+        const trusted = yield* post("https://t3-vps.example.com");
+        expect(trusted.sessionId).toBe(direct.sessionId);
+        const untrusted = yield* Effect.flip(post("https://elsewhere.example.com"));
+        expect(untrusted._tag).toBe("ServerAuthInvalidCredentialError");
+      }).pipe(
+        Effect.provide(
+          layerEnvironmentAuth().pipe(
+            Layer.provide(
+              Layer.mock(KitshnGrants.KitshnGrants)({
+                trustsPeerOrigin: (origin) => origin === "https://t3-vps.example.com",
+                peerOrigins: () => ["https://t3-vps.example.com"],
+                visitor: () => Effect.succeed({ _tag: "anonymous" as const }),
+              }),
+            ),
           ),
         ),
       ),
-    ),
-  );
-});
+    );
+  },
+);
