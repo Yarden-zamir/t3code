@@ -4,26 +4,22 @@
  * private part never leaves the browser. A failure gives no proof: the sign-in then keeps the owner
  * access under `observe`, and waits for approval under `enforce` (MM-918).
  */
+import { DpopProof } from "@t3tools/client-runtime/relay";
 import * as Effect from "effect/Effect";
 
-import {
-  createBrowserDpopProof,
-  layer as browserCryptoLayer,
-  loadOrCreateBrowserDpopKey,
-} from "../cloud/dpop";
+import { layer as browserCryptoLayer, loadOrCreateProofKey } from "../cloud/dpop";
 
 /** A slow IndexedDB must not hold up the page start. A sign-in without a proof is as above. */
 const PROOF_TIMEOUT_MS = 1_000;
 
 async function makeProof(method: string, url: string): Promise<string | null> {
   try {
-    const { proof } = await Effect.runPromise(
-      loadOrCreateBrowserDpopKey.pipe(
-        Effect.flatMap((proofKey) => createBrowserDpopProof({ method, url, proofKey })),
+    return await Effect.runPromise(
+      loadOrCreateProofKey().pipe(
+        Effect.flatMap((key) => DpopProof.createProof({ method, url, key })),
         Effect.provide(browserCryptoLayer),
       ),
     );
-    return proof;
   } catch {
     return null;
   }

@@ -6,6 +6,7 @@ import {
   extractMarkdownLinkHrefs,
   inlineCodeFilePathCandidate,
 } from "@t3tools/shared/markdownLinks";
+import { taskListMarkerOffset } from "@t3tools/shared/markdownTaskList";
 import { isHostPath, resolveWorkspaceFilePath } from "@t3tools/shared/path";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import {
@@ -191,7 +192,7 @@ import {
   openFileInPreview,
   openUrlInPreview,
   BrowserPreviewUnavailableError,
-  BrowserSettingsReadError,
+  isBrowserSettingsReadError,
 } from "../browser/openFileInPreview";
 import { resolveLinkTarget } from "../browser/browserLinkTarget";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
@@ -254,6 +255,8 @@ interface ChatMarkdownProps {
   /** Loads media a source control host keeps behind a credential through the server, which holds
       `cwd`'s; without it a private repository's uploads load unauthenticated and 404. */
   sourceControlMedia?: boolean | undefined;
+  /** The change request's repository, when it can differ from the checkout at `cwd`. */
+  sourceControlMediaRepository?: string | undefined;
   headingLevelOffset?: number | undefined;
 }
 
@@ -327,17 +330,6 @@ function CodexArtifactTemplateCard(props: {
 }
 
 const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
-
-function findTaskListMarkerOffset(markdown: string, listItemStart: number): number | null {
-  const firstLineEnd = markdown.indexOf("\n", listItemStart);
-  const firstLine = markdown.slice(
-    listItemStart,
-    firstLineEnd === -1 ? markdown.length : firstLineEnd,
-  );
-  const match = firstLine.match(/^(?:\s*(?:[-+*]|\d+[.)])\s+)(\[[ xX]\])/);
-  if (!match?.[1]) return null;
-  return listItemStart + firstLine.indexOf(match[1]);
-}
 
 function orderedListGutterStyle(
   itemCount: number,
@@ -514,6 +506,7 @@ function useChatMarkdownState({
   renderContextReference,
   headingLevelOffset = 0,
   sourceControlMedia = false,
+  sourceControlMediaRepository,
 }: ChatMarkdownProps) {
   const resolvedTheme = useRenderedAppearance();
   const markdownRef = useRef<HTMLElement>(null);
@@ -732,7 +725,7 @@ function useChatMarkdownState({
       if (result._tag === "Success") recordVisitForThread(threadRef, url);
       else if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        if (error instanceof BrowserSettingsReadError) {
+        if (isBrowserSettingsReadError(error)) {
           toastManager.add(
             stackedThreadToast({
               type: "error",
@@ -911,6 +904,7 @@ function useChatMarkdownState({
     expandMedia,
     fileLinkChip,
     sourceControlMedia,
+    sourceControlMediaRepository,
     renderContextReference,
     headingLevelOffset,
     imageBaseDir,
@@ -1045,7 +1039,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
         <input
           {...props}
           type={type}
-          checked={checked}
+          checked={type === "checkbox" ? checked === true : checked}
           disabled={_disabled}
           readOnly={type === "checkbox"}
         />
@@ -1057,11 +1051,11 @@ const CHAT_MARKDOWN_COMPONENTS = {
         type="checkbox"
         name="markdown-task"
         aria-label="Toggle task"
-        checked={checked}
+        checked={checked === true}
         onChange={(event) => {
           const listItemStart = Number(event.currentTarget.closest("li")?.dataset.listItemOffset);
           if (!Number.isSafeInteger(listItemStart)) return;
-          const markerOffset = findTaskListMarkerOffset(text, listItemStart);
+          const markerOffset = taskListMarkerOffset(text, listItemStart);
           if (markerOffset === null) return;
           onTaskListChange({ markerOffset, checked: event.currentTarget.checked });
         }}
@@ -1249,7 +1243,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
                 { operation: "open-link-in-preview", target: href },
                 result.cause,
               );
-              if (squashAtomCommandFailure(result) instanceof BrowserSettingsReadError) return;
+              if (isBrowserSettingsReadError(squashAtomCommandFailure(result))) return;
               void readLocalApi()?.shell.openExternal(href);
             });
           }}
@@ -1410,6 +1404,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       cwd,
       environmentId,
       sourceControlMedia,
+      sourceControlMediaRepository,
       imageBaseDir,
       threadRef,
       workspaceMutationId,
@@ -1496,7 +1491,12 @@ const CHAT_MARKDOWN_COMPONENTS = {
       return (
         <ChatMarkdownAssetImage
           environmentId={environmentId}
-          resource={{ _tag: SOURCE_CONTROL_MEDIA_ASSET, cwd, url: hostMediaUrl }}
+          resource={{
+            _tag: SOURCE_CONTROL_MEDIA_ASSET,
+            cwd,
+            url: hostMediaUrl,
+            ...(sourceControlMediaRepository ? { repository: sourceControlMediaRepository } : {}),
+          }}
           alt={altText}
           kind={kind}
           copyMarkdown={copyMarkdown}

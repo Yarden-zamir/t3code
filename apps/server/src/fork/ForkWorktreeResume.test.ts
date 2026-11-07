@@ -139,12 +139,10 @@ const fixture = Effect.gen(function* () {
                     completion ??
                     Effect.gen(function* () {
                       if (exitCode === 0)
-                        for (const relative of yield* dependencies(cwd).pipe(Effect.orDie))
-                          yield* fs
-                            .makeDirectory(path.join(cwd, relative), { recursive: true })
-                            .pipe(Effect.orDie);
+                        for (const relative of yield* dependencies(cwd))
+                          yield* fs.makeDirectory(path.join(cwd, relative), { recursive: true });
                       return { exitCode, durationMs: 1 };
-                    }),
+                    }).pipe(Effect.orDie),
                 };
               }),
           }),

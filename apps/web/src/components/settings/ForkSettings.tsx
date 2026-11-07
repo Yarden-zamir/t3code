@@ -32,8 +32,8 @@ function placeLinkProps(item: SettingsSearchItem) {
 }
 
 export function ForkSettingsPanel() {
-  const { search, scope } = useSettingsScope();
-  const available = useAvailableSettingsSearchItems(search);
+  const { scope } = useSettingsScope();
+  const available = useAvailableSettingsSearchItems();
   const availableById = new Map(available.map((item) => [item.id, item] as const));
 
   return (

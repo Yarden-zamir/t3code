@@ -20,7 +20,7 @@ export function PreviewLocalServerGroupsSettingsRow() {
       {...searchableSetting("preview-local-server-groups")}
       serverScoped
       settingKeys={["previewLocalServerGroups"]}
-      description="The Local servers list of a new browser tab also shows servers that no T3 terminal started: first those in the thread's worktree, then those in its project, then all others. Servers outside every project are not checked; open them by hand."
+      description="A new browser tab also lists servers that no T3 terminal started: the thread's worktree first, then its project, then the others. Servers outside every project are not checked."
       resetAction={
         mixed ||
         settings.previewLocalServerGroups !== DEFAULT_SERVER_SETTINGS.previewLocalServerGroups ? (

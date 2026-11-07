@@ -100,8 +100,15 @@ const LABEL_MAX = 64;
 /** A long quote is cut to this length, so the note keeps the rest of the label. */
 const LABEL_QUOTE_WITH_NOTE_MAX = 32;
 
-const cutLabel = (text: string, max: number) =>
-  text.length > max ? `${text.slice(0, max)}…` : text;
+const cutLabel = (text: string, max: number) => {
+  if (text.length <= max) return text;
+  const previous = text.charCodeAt(max - 1);
+  const next = text.charCodeAt(max);
+  // Never split a surrogate pair, such as an emoji.
+  const end =
+    previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff ? max - 1 : max;
+  return `${text.slice(0, end)}…`;
+};
 
 /** The quote, then the comment when there is one, on one line and cut to 64 characters. */
 export function assistantCitationLabel(citation: AssistantCitation): string {

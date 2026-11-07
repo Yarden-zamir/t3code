@@ -20,7 +20,7 @@ export function TerminalThreadsSettingsRow() {
       {...searchableSetting("terminal-threads")}
       serverScoped
       settingKeys={["terminalThreads"]}
-      description="The sidebar and the command palette offer New terminal thread: a thread whose view is a terminal. A message to the thread, from a schedule or an agent, is typed into that terminal. A webhook task never types into a terminal thread."
+      description="The sidebar and command palette offer New terminal thread, a thread whose view is a terminal. A message from a schedule or an agent is typed into it. A webhook task never types into one."
       resetAction={
         mixed || settings.terminalThreads !== DEFAULT_SERVER_SETTINGS.terminalThreads ? (
           <SettingResetButton

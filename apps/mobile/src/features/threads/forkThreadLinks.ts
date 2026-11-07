@@ -21,7 +21,7 @@ import { enrichedContextLinkCustomization } from "../../native/useEnrichedLinkVa
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { environmentThreadDetails } from "../../state/threads";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
 // The pill of an attached thread with no record, so both looks stay one.
 const threadPill = enrichedContextLinkCustomization(

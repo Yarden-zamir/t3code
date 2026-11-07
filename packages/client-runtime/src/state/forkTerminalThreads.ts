@@ -198,6 +198,7 @@ export function terminalThreadStatusLabel(
 type RowStatus =
   | "approval"
   | "input"
+  | "preparing"
   | "working"
   | "waiting"
   | "failed"

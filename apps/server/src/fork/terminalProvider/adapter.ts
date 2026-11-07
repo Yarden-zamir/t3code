@@ -652,13 +652,12 @@ export function makeTerminalAdapter(options: TerminalAdapterOptions) {
           },
           (effect) =>
             effect.pipe(
-              Effect.catch((error) =>
-                Effect.fail(
+              Effect.mapError(
+                (error) =>
                   new ProviderAdapter.ProviderAdapterProtocolError({
                     driver: TERMINAL_DRIVER,
                     detail: error instanceof Error ? error.message : String(error),
                   }),
-                ),
               ),
             ),
         ),

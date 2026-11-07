@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, describe, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -74,7 +75,7 @@ describe("DesktopLocalEnvironmentAuth", () => {
       const auth = yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth.pipe(
         Effect.provide(
           DesktopLocalEnvironmentAuth.layer.pipe(
-            Layer.provide(Layer.mergeAll(layerPool, layerHttpClient)),
+            Layer.provide(Layer.mergeAll(layerPool, layerHttpClient, NodeCrypto.layerMac)),
           ),
         ),
       );

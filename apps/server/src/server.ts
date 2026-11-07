@@ -1,6 +1,8 @@
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
+import * as EnvironmentKeys from "./cloud/environmentKeys.ts";
+import * as AssetSigner from "./assets/AssetSigner.ts";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
@@ -39,6 +41,11 @@ import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as PullRequestHttp from "./pullRequest/http.ts";
+import * as SpeechModelStore from "./speech/SpeechModelStore.ts";
+import * as SpeechService from "./speech/SpeechService.ts";
+import * as CloudSpeech from "./speech/CloudSpeech.ts";
+import { speechHttpApiLayer } from "./speech/http.ts";
+import { speechStreamRouteLayer } from "./speech/stream.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
@@ -101,6 +108,7 @@ import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
+import * as ProviderInstallation from "./provider/providerInstallation.ts";
 import * as CodexInstallation from "./provider/CodexInstallation.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegistry.ts";
@@ -188,7 +196,6 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as AntigravityUsage from "./provider/Drivers/AntigravityUsage.ts";
 import { MuseUsageHome } from "@t3tools/provider-muse/server";
 import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAccountReader";
-import * as CursorKeychain from "@t3tools/provider-cursor/server/CursorKeychain";
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as AbandonedTerminalDrafts from "./fork/AbandonedTerminalDrafts.ts";
@@ -307,9 +314,7 @@ const layerUsage = UsageService.layer.pipe(
       AntigravityUsage.layer,
       MuseUsageHome.layer,
       CodexUsageHistory.layer,
-      CursorUsageAccounts.layer.pipe(
-        Layer.provide(CursorAccountReader.layer.pipe(Layer.provide(CursorKeychain.layer))),
-      ),
+      CursorUsageAccounts.layer.pipe(Layer.provide(CursorAccountReader.layer)),
     ).pipe(Layer.provide(ProviderHostLive.layer.pipe(Layer.provide(ServerSecretStore.layer)))),
   ),
   Layer.provide(layerServerSettings),
@@ -745,6 +750,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ).pipe(Layer.provide(DelegatedTaskQuestionReactor.layer), Layer.provide(ProjectionStoreV2.layer)),
   ProviderUsageLimitsIngestion.layer,
   layerProviderInstallationRefresh,
+  ProviderInstallation.layer,
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   // Fork: the machine map portal connection. Off by default (machineMap setting).
@@ -817,6 +823,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerServerEnvironment),
   Layer.provideMerge(layerAuth),
   Layer.provideMerge(layerKitshnGrants),
+  Layer.provideMerge(Layer.mergeAll(AssetSigner.layer, EnvironmentKeys.layer)),
   Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(
     Layer.mergeAll(
@@ -861,6 +868,7 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(OrchestrationHttp.layer),
       Layer.provide(PullRequestHttp.layer),
       Layer.provide(ProjectHttp.layer),
+      Layer.provide(speechHttpApiLayer),
       Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
       Layer.provide(WebhookRoute.layer.pipe(Layer.provide(RelayDeliveryProof.layer))),
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
@@ -873,6 +881,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerBrowserStream.routeLayer,
     ServerHttp.layerStaticAndDevRoute,
     Ws.layer,
+    speechStreamRouteLayer,
   ),
   McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
@@ -905,6 +914,14 @@ const layerMakeRoutes = Layer.mergeAll(
   // Fork: `MachinePeers.layer` in the runtime core provides the links, from the kitshn reach,
   // and `MachineCallHistory` reports each forwarded call to the kitshn audit (MM-1922, K-1610).
   Layer.provide(MachineCallHistory.layer),
+  Layer.provide(
+    SpeechService.layer.pipe(
+      Layer.provide(layerServerSettings),
+      Layer.provide(SpeechModelStore.layer),
+    ),
+  ),
+  Layer.provide(CloudSpeech.layer.pipe(Layer.provide(SecretResolver.layer))),
+  Layer.provide(layerServerSettings),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(layerServerSelfUpdate),
   Layer.provide(layerCommandReadiness),

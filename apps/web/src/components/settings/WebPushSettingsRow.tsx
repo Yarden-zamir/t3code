@@ -77,7 +77,7 @@ export function WebPushSettingsRow() {
             <span role="status" className="block text-destructive">
               {registrationFailure === "retrying"
                 ? "Registration failed for a server. Retrying…"
-                : "Registration failed for a server. Reconnect or reload to try again."}
+                : "Registration failed. Reconnect or reload to try again."}
             </span>
           ) : null}
         </>

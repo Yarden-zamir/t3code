@@ -112,27 +112,13 @@ def test_shared_files_and_diff_names():
     assert shared_files.diff_file_name("apps/web/x.ts") == "apps__web__x.ts.diff"
 
 
-def test_integrity_changes_ignore_peer_key_lines():
-    fork = "\n".join(
-        [
-            "-  a@file:x-1.tgz(react@19.3.0(supports-color@10.2.2)):",
-            "+  a@file:x-2.tgz(react@19.3.0(supports-color@10.2.2)):",
-            "-    resolution: {integrity: sha512-old, tarball: file:x-1.tgz}",
-            "+    resolution: {integrity: sha512-new, tarball: file:x-2.tgz}",
-        ]
-    )
-    upstream = fork.replace("supports-color@10.2.2", "supports-color@8.1.1").replace("    resolution", "  resolution")
-    assert lockfile.integrity_changes(fork) == lockfile.integrity_changes(upstream)
-    assert lockfile.integrity_changes(fork) != lockfile.integrity_changes(fork.replace("sha512-new", "sha512-other"))
-
-
-def test_lockfile_keeps_packages_that_fork_dependencies_still_use():
-    upstream = (frozenset({"old-a", "old-b"}), frozenset({"new"}))
-    assert lockfile.matches_merged_side(upstream, upstream)
-    # A fork dependency still uses old-b: only old-a goes.
-    assert lockfile.matches_merged_side((frozenset({"old-a"}), frozenset({"new"})), upstream)
-    assert not lockfile.matches_merged_side((frozenset({"old-c"}), frozenset({"new"})), upstream)
-    assert not lockfile.matches_merged_side((frozenset(), frozenset({"other"})), upstream)
+def test_lockfile_rebuild_finds_only_versions_that_no_side_locked():
+    upstream = "  a@1.0.0:\n    resolution: {integrity: sha512-a1}\n  b@2.0.0:\n    resolution: {integrity: sha512-b2, tarball: file:b.tgz}"
+    fork = "  c@3.0.0:\n    resolution: {integrity: sha512-c3}"
+    assert lockfile.integrities(upstream) == {"sha512-a1", "sha512-b2"}
+    assert lockfile.new_integrities(upstream + "\n" + fork, upstream, fork) == frozenset()
+    rebuilt = upstream.replace("sha512-a1", "sha512-a2")
+    assert lockfile.new_integrities(rebuilt, upstream, fork) == {"sha512-a2"}
 
 
 def test_sync_branches_lint_fork_files_and_fix_branches_run_fork_check():

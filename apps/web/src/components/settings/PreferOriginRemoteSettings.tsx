@@ -19,7 +19,7 @@ export function PreferOriginRemoteSettingsRow() {
       {...searchableSetting("prefer-origin-remote")}
       serverScoped
       settingKeys={["preferOriginRemote"]}
-      description="A checkout with both an origin and an upstream remote counts as its origin repository. Pull requests then come from your fork, not from upstream. To create pull requests on the fork too, run gh repo set-default in the checkout."
+      description="A checkout with an origin and an upstream remote counts as its origin, so pull requests come from your fork. To create pull requests on the fork too, run gh repo set-default in the checkout."
       resetAction={
         mixed || settings.preferOriginRemote !== DEFAULT_SERVER_SETTINGS.preferOriginRemote ? (
           <SettingResetButton

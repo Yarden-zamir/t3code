@@ -233,6 +233,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     // never reaches the client and only open and write failures surface. Revisit when the
     // terminal API reports per-command exit codes.
     const reusableTerminalId =
+      script.stopOnSettle ||
       options?.preferNewTerminal ||
       !showTerminal ||
       !canReuseTerminal ||
@@ -270,6 +271,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
         ? { size: { cols: SCRIPT_TERMINAL_COLS, rows: SCRIPT_TERMINAL_ROWS } }
         : { terminalId: reusableTerminalId }),
       location: { cwd: targetCwd, worktreePath: targetWorktreePath },
+      stopOnSettle: script.stopOnSettle ?? false,
       ...(options?.env ? { extraEnv: options.env } : {}),
     });
     if (!launched) return;

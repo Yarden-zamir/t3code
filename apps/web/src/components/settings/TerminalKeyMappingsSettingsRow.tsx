@@ -76,7 +76,7 @@ export function TerminalKeyMappingsSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("terminal-key-mappings")}
-      description='Keys that every terminal sends as fixed bytes, in place of its own encoding. Each entry has "key" (such as cmd+z), "send" (the bytes, with escapes such as \e). A mapped key replaces the encoding of the key, except copy while text is selected. App shortcuts, zoom and the built-in Cmd+arrow, Cmd+Backspace, Cmd+K and Ctrl+L keys act first.'
+      description='Keys that every terminal sends as fixed bytes: "key" (such as cmd+z) and "send" (with escapes such as \e). Copy with a selection, app shortcuts, zoom and built-in terminal keys act first.'
       status={error === null ? null : <span className="text-destructive-foreground">{error}</span>}
       resetAction={
         mappings.length > 0 ? (

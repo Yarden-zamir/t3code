@@ -557,6 +557,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
       ? ["Add project base directory"]
       : []),
+    ...(settings.ghqCloneLayout !== DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout
+      ? ["Clone into host folders"]
+      : []),
     ...(settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin
       ? ["Unpin confirmation"]
       : []),
@@ -671,6 +674,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+      ghqCloneLayout: DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
       confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
@@ -708,7 +712,7 @@ export function useSettingsRestore(onRestored?: () => void) {
   };
 }
 
-const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
+const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ?? 7;
 
 function AutoSettleDaysInput({
   value,
@@ -889,7 +893,7 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("working-shelf")}
-          description="Fold working threads into a Working section, and threads that wait on other threads or background work into a Waiting section. They return to the top of the inbox when they need you. The boring sidebar in Labs has neither section."
+          description="Fold working threads into a Working section, and threads that wait on other work into a Waiting section. They return to the inbox when they need you. The boring sidebar in Labs has neither."
           resetAction={
             settings.sidebarWorkingShelfEnabled !==
             DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
@@ -1597,6 +1601,30 @@ export function ThreadsSettingsPanel() {
           }
         />
         <Fork.ForkSettingsSlot place="threads-new-projects" />
+        <SettingsRow
+          serverScoped
+          settingKeys={["ghqCloneLayout"]}
+          {...searchableSetting("ghq-clone-layout")}
+          description="Clones go to github.com/owner/repo under the folder above, like ghq."
+          resetAction={
+            settings.ghqCloneLayout !== DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout ? (
+              <SettingResetButton
+                label="clone into host folders"
+                onClick={() =>
+                  updateSettings({ ghqCloneLayout: DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout })
+                }
+              />
+            ) : null
+          }
+          control={
+            <ScopedSwitch
+              settingKeys={["ghqCloneLayout"]}
+              checked={settings.ghqCloneLayout}
+              onCheckedChange={(checked) => updateSettings({ ghqCloneLayout: Boolean(checked) })}
+              aria-label="Clone into host folders"
+            />
+          }
+        />
       </SettingsSection>
 
       <ProjectDefaultsSettings category="general" />

@@ -17,7 +17,6 @@ import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { readProjects } from "../../state/entities";
 import { forkReleases, forkUpstreamPending } from "../../state/forkChangelog";
 import { useEnvironmentQuery } from "../../state/query";
-import { handoffPrompt } from "../pullRequest/pullRequestDetail.logic";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { toastManager } from "../ui/toast";
@@ -33,6 +32,25 @@ import {
 
 /** What the last hand-off wrote into a draft, so the next one replaces it instead of stacking. */
 const lastPromptByDraft = new Map<DraftId, string>();
+
+/** The draft with the last fork handoff replaced by the new one, so earlier user text stays. */
+function handoffPrompt(
+  existing: { readonly prompt: string; readonly lastHandoffPrompt: string | undefined },
+  incoming: string,
+): string {
+  if (existing.prompt.trim().length === 0) return incoming;
+  const last = existing.lastHandoffPrompt ?? "";
+  const kept =
+    last.length === 0
+      ? existing.prompt
+      : existing.prompt === last
+        ? ""
+        : existing.prompt.endsWith(`\n\n${last}`)
+          ? existing.prompt.slice(0, -(last.length + 2))
+          : existing.prompt;
+  if (kept.trim().length === 0) return incoming;
+  return incoming.length === 0 ? kept : `${kept}\n\n${incoming}`;
+}
 
 /**
  * Fork feature: hands the changelog to an agent, like "Ask a question" on a pull request. Each

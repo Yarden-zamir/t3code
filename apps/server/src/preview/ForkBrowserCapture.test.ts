@@ -18,11 +18,11 @@ describe("native browser presentation", () => {
         if (command.active) capture.report({ ...command, type: "captureReady" });
       }),
     );
-    const failure = new ServerBrowserOperationError(
-      "PreviewAutomationTimeoutError",
-      "Snapshot screenshot timed out after 10000ms.",
-      { timeoutMs: 10_000, stage: "screenshot" },
-    );
+    const failure = new ServerBrowserOperationError({
+      tag: "PreviewAutomationTimeoutError",
+      message: "Snapshot screenshot timed out after 10000ms.",
+      detail: { timeoutMs: 10_000, stage: "screenshot" },
+    });
     await expect(
       withForkBrowserCapture(capture, key, true, () => Promise.reject(failure)),
     ).rejects.toBe(failure);

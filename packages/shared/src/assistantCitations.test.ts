@@ -230,6 +230,12 @@ describe("assistant citation references", () => {
     );
   });
 
+  it("shortens a long quote label without splitting an emoji", () => {
+    expect(assistantCitationLabel({ ...citation, text: `${"a".repeat(63)}😀 and more` })).toBe(
+      `${"a".repeat(63)}…`,
+    );
+  });
+
   it("replaces each marker once, including adjacent and repeated citations", () => {
     const second = { ...citation, text: "A second quote: $& $1 $$" };
     const marker = serializeAssistantCitation(citation);

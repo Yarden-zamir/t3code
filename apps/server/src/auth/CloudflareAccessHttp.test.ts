@@ -106,7 +106,7 @@ it.effect("logs a kitshn visitor in through Access, without a pairing link", () 
     return yield* Effect.acquireUseRelease(
       Effect.sync(() => HttpRouter.toWebHandler(layerRoutes, { disableLogger: true })),
       (environment) =>
-        Effect.tryPromise(async () => {
+        Effect.promise(async () => {
           const allowed = ALLOWED;
           const unlisted = UNLISTED;
 
@@ -152,7 +152,7 @@ it.effect("gives a pairing credential only to a kitshn visitor with a level", ()
     return yield* Effect.acquireUseRelease(
       Effect.sync(() => HttpRouter.toWebHandler(layerRoutes, { disableLogger: true })),
       (environment) =>
-        Effect.tryPromise(async () => {
+        Effect.promise(async () => {
           const path = "/api/auth/cloudflare-access/pairing-credential";
           const rejected = await environment.handler(
             request(path, { method: "POST" }),

@@ -19,11 +19,17 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult } from "effect/reactivity";
 import { AppState } from "react-native";
+
+/** The machine refused to issue a pairing credential, or could not be reached. */
+class MachinePairingError extends Schema.TaggedError<MachinePairingError>()("MachinePairingError", {
+  cause: Schema.Defect(),
+}) {}
 
 import { buildPairingUrl } from "../features/connection/pairing";
 import { appAtomRegistry } from "../state/atom-registry";
@@ -148,7 +154,10 @@ export const layer = Layer.effectDiscard(
     let tokenClientId: string | null = null;
 
     const pair = (origin: string, expectedEnvironmentId?: EnvironmentId) =>
-      Effect.tryPromise(() => issueMachinePairingCredential(origin)).pipe(
+      Effect.tryPromise({
+        try: () => issueMachinePairingCredential(origin),
+        catch: (cause) => new MachinePairingError({ cause }),
+      }).pipe(
         Effect.flatMap((credential) =>
           onboarding.registerPairing({
             pairingUrl: buildPairingUrl(origin, credential),

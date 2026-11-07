@@ -257,8 +257,7 @@ export const sharedServerCommandFlags = {
 // so a typo never leaves pairing silently off or pointed at the wrong place.
 const resolveTunnelPairingUrl = (raw: string | undefined) => {
   const trimmed = raw?.trim();
-  // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-  if (trimmed === undefined || trimmed.length === 0) return Effect.succeed(undefined);
+  if (trimmed === undefined || trimmed.length === 0) return Effect.undefined;
   const url = URL.parse(trimmed);
   return url !== null && url.protocol === "https:" && (url.pathname === "/" || url.pathname === "")
     ? Effect.succeed(url.origin)

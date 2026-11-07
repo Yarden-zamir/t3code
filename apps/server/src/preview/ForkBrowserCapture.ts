@@ -47,11 +47,11 @@ export const makeForkBrowserCapture = (
           duration: "2 seconds",
           orElse: () =>
             Effect.fail(
-              new ServerBrowserOperationError(
-                "PreviewAutomationTimeoutError",
-                "Snapshot rendering placement timed out after 2000ms.",
-                { stage: "rendering placement", timeoutMs: 2_000 },
-              ),
+              new ServerBrowserOperationError({
+                tag: "PreviewAutomationTimeoutError",
+                message: "Snapshot rendering placement timed out after 2000ms.",
+                detail: { stage: "rendering placement", timeoutMs: 2_000 },
+              }),
             ),
         }),
       );

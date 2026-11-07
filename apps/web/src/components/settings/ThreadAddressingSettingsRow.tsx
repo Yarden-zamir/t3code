@@ -20,7 +20,7 @@ export function ThreadAddressingSettingsRow() {
       {...searchableSetting("thread-addressing")}
       serverScoped
       settingKeys={["threadAddressing"]}
-      description="Thread links in chat show as attached-thread chips and open the thread here: app links, thread addresses of this or a connected machine, and the thread markers that agents copy. Each message offers Copy message link. A thread address opened from another app, such as Slack or GitHub, in a new browser tab opens the thread in the desktop app; the tab offers to continue in the browser. Applies on desktop, web and the mobile app."
+      description="Thread links and addresses in chat show as thread chips that open here. Each message offers Copy message link. An address opened from another app opens in the desktop app. Desktop, web and mobile."
       resetAction={
         mixed || settings.threadAddressing !== DEFAULT_SERVER_SETTINGS.threadAddressing ? (
           <SettingResetButton

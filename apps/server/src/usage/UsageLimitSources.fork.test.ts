@@ -52,6 +52,7 @@ it.effect("adds a hub through the settings service without exposing its key in t
   }).pipe(
     Effect.provide([
       Layer.succeed(SecretResolver.SecretResolver, {
+        label: (provider) => Effect.succeed(provider),
         read: (references) => Effect.succeed(references.map(() => undefined)),
         invalidate: () => Effect.void,
       }),

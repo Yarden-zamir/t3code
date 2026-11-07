@@ -15,7 +15,7 @@ export const SETTINGS_PAGE_TARGETS = [
   "SettingsEnvironmentMaintenance",
   "SettingsProviderAccounts",
   "SettingsKeyboard",
-  "SettingsMicrophone",
+  "SettingsVoice",
   "SettingsFollowUp",
   "SettingsScheduledTasks",
   "SettingsProjectGrouping",
@@ -29,15 +29,15 @@ export type SettingsPageTarget = (typeof SETTINGS_PAGE_TARGETS)[number];
 
 /**
  * Fork: the fork settings pages a Settings row opens. Apart from `SETTINGS_PAGE_TARGETS`, so
- * Settings does not reopen them as its remembered page (the Voice project page needs the project
- * that the Voice page chose), and so each navigation to a target union stays within the 25
+ * Settings does not reopen them as its remembered page (the Assistant project page needs the
+ * project that the Assistant page chose), and so each navigation to a target union stays within the 25
  * members that TypeScript checks.
  */
 export const FORK_SETTINGS_PAGE_TARGETS = [
   "SettingsFork",
   "SettingsForkPins",
-  "SettingsVoice",
-  "SettingsVoiceProject",
+  "SettingsAssistant",
+  "SettingsAssistantProject",
 ] as const;
 export type ForkSettingsPageTarget = (typeof FORK_SETTINGS_PAGE_TARGETS)[number];
 

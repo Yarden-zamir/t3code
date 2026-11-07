@@ -25,7 +25,7 @@ import { serverEnvironment } from "../../state/server";
 import { readEnvironmentScope } from "../../state/session";
 import { environmentThreadShells } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 

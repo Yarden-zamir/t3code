@@ -39,15 +39,17 @@ export function makeRequestHeaderStore(catalog: {
   ) => Effect.Effect<void, ConnectionTransientError>;
 }) {
   return RequestHeaderStore.of({
-    get: (origin) =>
-      catalog.read.pipe(
+    get: Effect.fn("RequestHeaderStore.get")(function (origin) {
+      return catalog.read.pipe(
         Effect.map(
           (document) =>
             document.requestHeaders.find((value) => value.origin === origin)?.headers ?? [],
         ),
-      ),
-    set: (origin, headers) =>
-      catalog.update((document) => setRequestHeadersInCatalog(document, origin, headers)),
+      );
+    }),
+    set: Effect.fn("RequestHeaderStore.set")(function (origin, headers) {
+      return catalog.update((document) => setRequestHeadersInCatalog(document, origin, headers));
+    }),
   });
 }
 

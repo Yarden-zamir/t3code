@@ -97,6 +97,7 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     readonly terminalId?: string;
     readonly location?: TerminalLaunchLocation | null;
     readonly extraEnv?: Record<string, string>;
+    readonly stopOnSettle?: boolean;
     readonly size?: { readonly cols: number; readonly rows: number };
   }) => {
     if (!threadRef || !canWrite() || !project) return null;
@@ -118,6 +119,7 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
         }),
         ...(threadShell ? { shell: threadShell } : {}),
         ...input.size,
+        ...(input.stopOnSettle !== undefined ? { stopOnSettle: input.stopOnSettle } : {}),
       },
     });
     return { terminalId, result };

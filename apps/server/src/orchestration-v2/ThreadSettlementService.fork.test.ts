@@ -229,7 +229,7 @@ it.effect("keeps the shell of a terminal thread open when it settles", () =>
       const activation = yield* Deferred.make<void>();
       const closedIdle =
         yield* Queue.unbounded<
-          Parameters<TerminalManager.TerminalManager["Service"]["closeIdle"]>[0]
+          Parameters<TerminalManager.TerminalManager["Service"]["closeOnSettle"]>[0]
         >();
       const layer = Layer.effect(
         ThreadSettlementService.ThreadSettlementServiceV2,
@@ -244,7 +244,7 @@ it.effect("keeps the shell of a terminal thread open when it settles", () =>
             }),
             Layer.mock(Orchestrator.OrchestratorV2)({ streamDomainEvents: Stream.make(settled) }),
             Layer.mock(TerminalManager.TerminalManager)({
-              closeIdle: (input) => Queue.offer(closedIdle, input),
+              closeOnSettle: (input) => Queue.offer(closedIdle, input),
             }),
             Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
             Layer.mock(GitManager.GitManager)({}),

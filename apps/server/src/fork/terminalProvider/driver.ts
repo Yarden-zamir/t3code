@@ -61,6 +61,7 @@ const textGeneration: ProviderTextGeneration = {
   generateBranchName: noTextGeneration("generateBranchName"),
   generateThreadTitle: noTextGeneration("generateThreadTitle"),
   generateReviewGuide: noTextGeneration("generateReviewGuide"),
+  generateTranscriptionPostProcessing: noTextGeneration("generateTranscriptionPostProcessing"),
 };
 
 /**

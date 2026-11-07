@@ -98,7 +98,7 @@ export function SettingsFindSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("settings-find")}
-      description="On a Settings page, Find in settings (⌘F or Ctrl+F by default) opens a box that hides the rows of that page that do not match. The search of all settings keeps /. Off: ⌘F goes to the search of all settings."
+      description="On a Settings page, Find in settings (⌘F or Ctrl+F by default) hides the rows that do not match. / still searches all settings. Off: ⌘F searches all settings."
       resetAction={
         settings.settingsFind !== DEFAULT_UNIFIED_SETTINGS.settingsFind ? (
           <SettingResetButton
@@ -190,7 +190,7 @@ export function CurrentProjectTerminalOpensThreadSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("current-project-terminal-opens-thread")}
-      description="New terminal thread in current project (Shift+click, its shortcut or the command palette) makes the terminal thread right away, like the enlarge button. The thread shows in the sidebar even if you never run a command."
+      description="New terminal thread in current project (Shift+click, its shortcut or the command palette) makes the thread at once, like the enlarge button. It shows in the sidebar before you run a command."
       resetAction={
         settings.currentProjectTerminalOpensThread !==
         DEFAULT_UNIFIED_SETTINGS.currentProjectTerminalOpensThread ? (
@@ -320,7 +320,7 @@ export function ForkUpdateModeSettingsRow() {
       {...searchableSetting("fork-update-mode")}
       serverScoped
       settingKeys={["forkUpdateMode"]}
-      description="Install the newest fork release when no agent and no terminal program runs. The desktop app and a server that runs as the background service follow it. Off: install only from the update button, t3 update or the kitshn install-update command."
+      description="Install the newest fork release when no agent or terminal program runs. The desktop app and the background service follow it. Off: only the update button, t3 update or kitshn install-update."
       resetAction={
         mixed || settings.forkUpdateMode !== DEFAULT_UNIFIED_SETTINGS.forkUpdateMode ? (
           <SettingResetButton
@@ -378,7 +378,7 @@ export function AutoSettleWaitsForBackgroundCommandsSettingsRow() {
           />
         ) : null
       }
-      description="Auto-settle skips a thread while its agent runs a background command, so the command can finish and wake the agent. A command that keeps running, such as a dev server, holds the thread until the session releases idle work."
+      description="Auto-settle skips a thread while its agent runs a background command, so the command can wake the agent. A command that never ends, such as a dev server, holds it until idle work is released."
       control={
         <ScopedSwitch
           settingKeys={["autoSettleWaitsForBackgroundCommands"]}

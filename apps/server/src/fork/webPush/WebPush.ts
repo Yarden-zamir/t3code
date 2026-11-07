@@ -238,7 +238,7 @@ const make = Effect.gen(function* () {
   });
   const key: Effect.Effect<VapidKey, WebPushError> = yield* Effect.cached(
     readKeyText.pipe(
-      Effect.flatMap((text) => Effect.tryPromise(() => vapidKey(text))),
+      Effect.flatMap((text) => Effect.tryPromise({ try: () => vapidKey(text), catch: String })),
       Effect.filterOrFail(
         (loaded): loaded is NonNullable<typeof loaded> => loaded !== null,
         () => "The Web Push key is empty.",

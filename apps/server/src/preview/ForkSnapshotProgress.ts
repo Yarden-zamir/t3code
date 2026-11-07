@@ -9,11 +9,11 @@ export const makeForkSnapshotProgress = (
 ) => {
   const pending = new Set<ForkSnapshotStage>();
   const timeout = (stage = pending.values().next().value ?? "password fields") =>
-    new OperationError(
-      "PreviewAutomationTimeoutError",
-      `Snapshot ${stage} timed out after ${timeoutMs}ms. Wait for the page to settle and take another snapshot.`,
-      { timeoutMs, stage },
-    );
+    new OperationError({
+      tag: "PreviewAutomationTimeoutError",
+      message: `Snapshot ${stage} timed out after ${timeoutMs}ms. Wait for the page to settle and take another snapshot.`,
+      detail: { timeoutMs, stage },
+    });
   return {
     timeout,
     track: async <A>(stage: ForkSnapshotStage, run: () => Promise<A>): Promise<A> => {

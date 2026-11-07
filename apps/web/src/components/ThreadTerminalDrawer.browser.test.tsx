@@ -71,7 +71,7 @@ vi.mock("../state/server", async () => {
   return {
     serverEnvironment: { configValueAtom: () => config },
     primaryServerKeybindingsAtom: Atom.make([]),
-    primaryServerEnvironmentThemesAtom: Atom.make([]),
+    themeServerEnvironmentThemesAtom: Atom.make([]),
   };
 });
 vi.mock("../state/terminal", () => ({ terminalEnvironment: { write: {}, resize: {} } }));

@@ -714,7 +714,10 @@ export const make = Effect.fn("KitshnProvider.make")(function* (
       const handleLine = Effect.fnUntraced(function* (text: string) {
         if (text.trim() === "") return;
         lastLineAt = yield* Clock.currentTimeMillis;
-        const decoded = yield* Effect.try(() => readAnswer(text)).pipe(Effect.option);
+        const decoded = yield* Effect.try({
+          try: () => readAnswer(text),
+          catch: () => undefined,
+        }).pipe(Effect.option);
         if (Option.isNone(decoded) || decoded.value === null) {
           // Protocol 2 is additive: an unknown event is skipped. The line can hold secrets.
           return yield* Effect.logWarning(

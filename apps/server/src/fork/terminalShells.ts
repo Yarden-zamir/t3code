@@ -214,8 +214,7 @@ export function customShellProblem(
 ): Effect.Effect<string | undefined> {
   const path = input.platform === "win32" ? NodePath.win32 : NodePath.posix;
   const isPath = shell.executable.includes("/") || shell.executable.includes("\\");
-  // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-  if (isPath && !path.isAbsolute(shell.executable)) return Effect.succeed(undefined);
+  if (isPath && !path.isAbsolute(shell.executable)) return Effect.undefined;
   return customShellCandidate(shell, { ...input, cwd: path.sep }).pipe(
     Effect.match({ onFailure: (error) => error.message, onSuccess: () => undefined }),
   );

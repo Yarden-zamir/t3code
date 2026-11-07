@@ -30,7 +30,7 @@ export function RestoreWorktreesSettingsRow() {
           />
         ) : null
       }
-      description="Before the next turn, recreate a missing worktree at its saved path and run project setup. If its branch was deleted, the branch is created again from the origin default branch, without the old uncommitted work. An existing branch is never reset. Storage cleanup also deletes the branch of a removed worktree when it has no commits beyond the origin default branch and no worktree uses it."
+      description="Recreate a missing worktree and run setup before the next turn. A deleted branch returns from origin; an existing branch is never reset. Cleanup removes unused branches without new commits."
       control={
         <ScopedSwitch
           settingKeys={["restoreWorktreesOnResume"]}
@@ -67,7 +67,7 @@ export function WorktreeArtifactSettingsRows() {
           />
         ) : null
       }
-      description="Delete ignored build outputs and dependencies from worktrees that are inactive for this many days, or settled for one minute. The checkout and branch stay. Shared or busy worktrees and projects without a setup script are skipped. Removed dependencies come back through project setup before the next turn."
+      description="Delete ignored build outputs and dependencies of worktrees inactive this many days, or settled a minute. Skips shared or busy worktrees and projects without setup. Setup restores them later."
       control={
         <span className="flex items-center gap-2">
           {days !== null && !mixed ? (

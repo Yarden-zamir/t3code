@@ -102,49 +102,56 @@ export const KEYBINDINGS_SETTING_KEY = "keybindings";
  * MM-406: settings that belong to one machine. They never become map entries: a machine does not
  * report them, the portal refuses a value for them, and a machine never applies one.
  */
+const MACHINE_LOCAL_SERVER_SETTINGS = [
+  // Secrets: a machine reports them redacted, so a shared value would erase them.
+  "providerInstances",
+  "sourceControlHosts",
+  "usageLimitSources",
+  "cloudSpeechCredentials",
+  // Paths on the file system of this machine.
+  "worktreesDirectory",
+  "previousWorktreesDirectories",
+  // The dictation model on this machine: its download, its hardware and its memory.
+  "speechModelId",
+  "speechAcceleration",
+  "speechModelUnloadTimeout",
+  "addProjectBaseDirectory",
+  "worktreePathTemplate",
+  // Global scripts live on one environment, so their pins do too.
+  "pinnedGlobalScriptIds",
+  // Keyed by project id. A project id is local to one environment.
+  "projectSettingsOverrides",
+  "projectScriptOverrides",
+  "speechProjectCustomWords",
+  "pinnedProjectScriptIds",
+  // Keyed by thread id. A thread id is local to one environment.
+  "pinnedMessages",
+  "projectAutoPullOverrides",
+  "projectAgentBrowserAccessOverrides",
+  // SSH hosts and the device setup of this machine.
+  "deviceHosts",
+  "deviceOnboardingCompleted",
+  // The icon that tells this machine apart from the others.
+  "environmentIcon",
+  // The time of the last local theme change (MM-408).
+  "defaultThemeSetAt",
+  // A one-time migration flag of this machine's own settings file, not a preference.
+  "projectSettingsFolded",
+] as const satisfies ReadonlyArray<keyof ServerSettings>;
+
+const MACHINE_LOCAL_CLIENT_SETTINGS = [
+  // State of this app, not a preference.
+  "onboardingCompletedAt",
+  // Browser profiles point to data folders on this machine.
+  "browserProfiles",
+  "browserDefaultProfileId",
+  // A microphone of this machine.
+  "voiceMicrophone",
+] as const satisfies ReadonlyArray<keyof ClientSettings>;
+
 const MACHINE_LOCAL_SETTINGS: Readonly<Record<SettingScope, ReadonlySet<string>>> = {
-  server: new Set([
-    // The connection to the portal itself: a shared value could cut it.
-    "machineMap",
-    // Secrets: a machine reports them redacted, so a shared value would erase them.
-    "providerInstances",
-    "sourceControlHosts",
-    "usageLimitSources",
-    // Paths on the file system of this machine.
-    "worktreesDirectory",
-    "previousWorktreesDirectories",
-    "addProjectBaseDirectory",
-    "worktreePathTemplate",
-    // Global scripts live on one environment, so their pins do too.
-    "pinnedGlobalScriptIds",
-    // Keyed by project id. A project id is local to one environment.
-    "projectSettingsOverrides",
-    "projectScriptOverrides",
-    "pinnedProjectScriptIds",
-    // Keyed by thread id. A thread id is local to one environment.
-    "pinnedMessages",
-    "projectAutoPullOverrides",
-    "projectAgentBrowserAccessOverrides",
-    // SSH hosts and the device setup of this machine.
-    "deviceHosts",
-    "deviceOnboardingCompleted",
-    // Uses the keychain of this machine.
-    "cursorKeychainUsageEnabled",
-    // The icon that tells this machine apart from the others.
-    "environmentIcon",
-    // The time of the last local theme change (MM-408).
-    "defaultThemeSetAt",
-    // A one-time migration flag of this machine's own settings file, not a preference.
-    "projectSettingsFolded",
-  ]),
-  client: new Set([
-    // State of this app, not a preference.
-    "onboardingCompletedAt",
-    "dismissedProviderUpdateNotificationKeys",
-    // Browser profiles point to data folders on this machine.
-    "browserProfiles",
-    "browserDefaultProfileId",
-  ]),
+  server: new Set(MACHINE_LOCAL_SERVER_SETTINGS),
+  client: new Set(MACHINE_LOCAL_CLIENT_SETTINGS),
 };
 
 export const isMachineLocalSetting = (scope: SettingScope, key: string): boolean =>
@@ -261,14 +268,23 @@ const CIRCLE_CLIENT_SETTINGS = [
   "snapShotPlaySound",
   "snapShotShortcut",
   "snapShotSound",
+  "speechCorrectionWord",
+  "speechCustomWords",
+  "speechLanguage",
+  "speechPostProcessingPrompt",
+  "speechRemoveFillerWords",
+  "speechSilenceFiltering",
+  "speechTranslateToEnglish",
   "terminalAppShortcutsFirst",
   "terminalThreadFontSizeMax",
   "terminalThreadFontSizeMin",
   "threadDetailsItems",
   "threadDetailsUsageEnabled",
   "timestampFormat",
+  "toolCallVisibility",
   "tooltipShortcutLimit",
   "tooltipShortcuts",
+  "voiceShortcutMode",
   "wordWrap",
 ] as const satisfies ReadonlyArray<keyof ClientSettings>;
 

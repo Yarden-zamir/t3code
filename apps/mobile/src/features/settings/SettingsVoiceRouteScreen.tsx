@@ -1,131 +1,228 @@
-import { useNavigation } from "@react-navigation/native";
-import { ProjectId } from "@t3tools/contracts";
-import { PermissionsAndroid, Platform, View, type Permission } from "react-native";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
+import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from "expo-audio";
+import { useState } from "react";
+import { Linking, Platform, useWindowDimensions, View } from "react-native";
+import Reanimated, { ReduceMotion, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppBar } from "../../components/ui/AppBar";
-import * as Dialog from "../../components/ui/Dialog";
+import { type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
-import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { assistantNative } from "../../native/assistant";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { cn } from "../../lib/cn";
+import { makePermissionStatusAtom } from "../../lib/permissionStatusAtom";
 import {
-  ASSISTANT_GLOW_SECONDS,
-  READ_ALOUD_RATES,
-  type AssistantAfterSend,
-  type AssistantGlowSeconds,
-  type AssistantInputMode,
-  type AssistantTarget,
-  type ReadAloudRate,
-} from "../../persistence/forkVoicePreferences";
-import { useProject } from "../../state/entities";
-import { useUpdateVoicePreferences, useVoicePreferences } from "../../state/voice-preferences";
-import { SettingsActionRow } from "./components/SettingsActionRow";
-import { SettingsChoiceRow } from "./components/SettingsChoiceRow";
-import { SettingsRow } from "./components/SettingsRow";
+  isMicrophoneDevice,
+  type MicrophoneEntry,
+  type MicrophoneKind,
+  microphoneEntryKey,
+} from "../../lib/microphonePriority";
+import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { ListRowLayout } from "../../components/ui/ListRowLayout";
+import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
+import * as Dialog from "../../components/ui/Dialog";
+import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
+import {
+  chooseVoiceDestination,
+  voiceConnectionAtom,
+  voiceGrantAtom,
+  voiceSpeechStatusAtom,
+  hasEnvironmentVoiceCapture,
+} from "../voice-input/voiceDestination";
+import { VoiceModelSection } from "./VoiceModelSection";
+import { CloudVoiceSection } from "./CloudVoiceSection";
+import type { EnvironmentId } from "@t3tools/contracts";
+import { ThreadSwipeable } from "../home/thread-swipe-actions";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
+import { SettingsDragHandle } from "./components/SettingsDragHandle";
+import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
-import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
+import {
+  deviceMicrophoneOrder,
+  localVoiceTranscriberAtom,
+} from "../voice-input/VoiceInputProvider";
 
-const TARGET_OPTIONS: ReadonlyArray<{
-  readonly target: AssistantTarget;
-  readonly label: string;
-  readonly description: string;
-}> = [
-  { target: "newThread", label: "A new thread", description: "In the project set below." },
+type MicrophonePermission = "checking" | "granted" | "ask" | "denied";
+
+function toMicrophonePermission(response: {
+  readonly granted: boolean;
+  readonly canAskAgain: boolean;
+}): MicrophonePermission {
+  return response.granted ? "granted" : response.canAskAgain ? "ask" : "denied";
+}
+
+const readMicrophonePermission = () =>
+  getRecordingPermissionsAsync().then(toMicrophonePermission, (): MicrophonePermission => "ask");
+
+const microphonePermissionAtom = makePermissionStatusAtom<MicrophonePermission>({
+  label: "mobile:microphone-permission",
+  initial: "checking",
+  read: readMicrophonePermission,
+});
+
+function useMicrophonePermission() {
+  const permission = useAtomValue(microphonePermissionAtom);
+  const setPermission = useAtomSet(microphonePermissionAtom);
+  const request = () =>
+    void requestRecordingPermissionsAsync()
+      .then(toMicrophonePermission, readMicrophonePermission)
+      .then(setPermission);
+  return { permission, request };
+}
+
+const KINDS: Record<
+  MicrophoneKind,
   {
-    target: "lastThread",
-    label: "The last thread you opened",
-    description: "Tap the title in the panel to pick another thread or project.",
+    readonly label: string;
+    readonly row: string;
+    readonly rowDescription: string;
+    readonly icon: AppSymbolName;
+  }
+> = {
+  wired: {
+    label: "Wired",
+    row: "Other wired",
+    rowDescription: "Headsets and USB microphones not listed here",
+    icon: "cable.connector",
   },
-];
-
-const INPUT_OPTIONS: ReadonlyArray<{
-  readonly mode: AssistantInputMode;
-  readonly label: string;
-  readonly description: string;
-}> = [
-  { mode: "text", label: "Keyboard", description: "The panel opens with the keyboard up." },
-  { mode: "voice", label: "Voice", description: "The panel opens the speech dialog right away." },
-];
-
-const AFTER_SEND_OPTIONS: ReadonlyArray<{
-  readonly afterSend: AssistantAfterSend;
-  readonly label: string;
-  readonly description: string;
-}> = [
-  {
-    afterSend: "close",
-    label: "Close the panel",
-    description: "The agent works in the background.",
+  bluetooth: {
+    label: "Bluetooth",
+    row: "Other Bluetooth",
+    rowDescription:
+      Platform.OS === "android"
+        ? "Earbuds, headsets, and cars, including Android Auto, not listed here"
+        : "AirPods, headsets, and cars not listed here",
+    icon: "headphones",
   },
-  {
-    afterSend: "stay",
-    label: "Show the reply in the panel",
-    description: "Reply from the panel, or tap the arrow on top to open the thread.",
+  builtIn: {
+    label: "Built-in",
+    row: "Built-in microphone",
+    rowDescription: "The microphone on this device",
+    icon: "iphone",
   },
-  { afterSend: "openThread", label: "Open the thread", description: "Continues in the app." },
-];
-
-const GLOW_LABELS: Record<`${AssistantGlowSeconds}`, string> = {
-  "0": "Off",
-  "3": "3 seconds",
-  "5": "5 seconds",
-  "10": "10 seconds",
-  null: "Until the panel closes",
+  carPlay: {
+    label: "CarPlay",
+    row: "CarPlay",
+    rowDescription: "The car’s microphone",
+    icon: "car",
+  },
 };
 
-// Android 13 split photo access out of storage access.
-const PHOTO_PERMISSION =
-  Platform.OS === "android" && Platform.Version >= 33
-    ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-    : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+const UNAVAILABLE_EXPLANATION =
+  Platform.OS === "android"
+    ? "Dictation on this device needs Android 12 or later and Google speech services that support your language. Your keyboard’s voice typing is separate."
+    : "Dictation on this device needs iOS 26 or later, a supported device, and a supported language. Your keyboard’s dictation is separate.";
 
-const RATE_LABELS: Record<ReadAloudRate, string> = {
-  0.75: "Slow",
-  1: "Normal",
-  1.25: "Fast",
-  1.5: "Faster",
-  2: "Fastest",
-};
-
-/** Fork: the Android assistant panel and read aloud. Every value is local to this phone. */
-export function SettingsVoiceRouteScreen() {
-  const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
-  const voice = useVoicePreferences();
-  const updateVoice = useUpdateVoicePreferences();
-  // Turning a pill on asks for its access first; a refusal keeps it off.
-  const setWithPermission = async (
-    key: "assistantRecentPhoto" | "assistantLocation",
-    value: boolean,
-    permission: Permission,
-    access: string,
-  ) => {
-    if (!value) return updateVoice({ [key]: false });
-    const result = await PermissionsAndroid.request(permission);
-    if (result === PermissionsAndroid.RESULTS.GRANTED) return updateVoice({ [key]: true });
+function saveDestination(id: EnvironmentId | null) {
+  try {
+    chooseVoiceDestination(id);
+  } catch {
     Dialog.alert(
-      `No ${access} access`,
-      `Allow ${access} access for T3 Code in Android settings to use this pill.`,
+      "Could not save transcription choice",
+      "Dictation on an environment is off for this session. Save again before closing the app, or your previous choice may return when it restarts.",
     );
-  };
-  const chosenProject = useProject(
-    voice.assistantProject
-      ? {
-          environmentId: voice.assistantProject.environmentId,
-          projectId: ProjectId.make(voice.assistantProject.projectId),
-        }
-      : null,
+  }
+}
+
+function EnvironmentChoice({
+  environment,
+  selected,
+}: {
+  environment: EnvironmentPresentation;
+  selected: boolean;
+}) {
+  const usable = useAtomValue(voiceConnectionAtom(environment.environmentId)) !== null;
+  const status = AsyncResult.getOrElse(
+    useAtomValue(voiceSpeechStatusAtom(environment.environmentId)),
+    () => null,
   );
+  return (
+    <ListChoiceRow
+      label={environment.label}
+      selected={selected}
+      disabled={!usable}
+      description={
+        !usable
+          ? environment.connection.phase !== "connected"
+            ? "Not connected"
+            : "Transcription unavailable"
+          : status?.supported === false
+            ? status.reason
+            : status?.state === "missing-model"
+              ? "No transcription model installed"
+              : (environment.displayUrl ?? "Send finished recordings to this environment.")
+      }
+      separated
+      onPress={() => {
+        if (!selected)
+          Dialog.confirm({
+            title: `Send microphone audio to ${environment.label}?`,
+            message: `Finished recordings will be sent to ${environment.displayUrl ?? environment.label} for transcription. You can switch back to This device at any time.`,
+            confirmText: "Use environment",
+            onConfirm: () => saveDestination(environment.environmentId),
+          });
+      }}
+    />
+  );
+}
+
+export function SettingsVoiceRouteScreen() {
+  const transcriber = useAtomValue(localVoiceTranscriberAtom);
+  const grant = useAtomValue(voiceGrantAtom);
+  const { environments, isReady } = useEnvironments();
+  const grantEnvironment = grant
+    ? environments.find(
+        (environment) => environment.environmentId === grant.destination.environmentId,
+      )
+    : undefined;
+  const insets = useSafeAreaInsets();
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const ready = AsyncResult.isSuccess(preferencesResult) && !preferencesResult.waiting;
+  const entries = deviceMicrophoneOrder(
+    AsyncResult.isSuccess(preferencesResult) ? preferencesResult.value.microphones : undefined,
+  );
+  const { permission, request: requestPermission } = useMicrophonePermission();
+  const [drag, setDrag] = useState<{ readonly key: string; readonly translation: number } | null>(
+    null,
+  );
+  const [rowHeight, setRowHeight] = useState(0);
+  // Each drop remounts the rows so the new order and the cleared offsets land in one frame.
+  const [drops, setDrops] = useState(0);
+
+  // Transforms apply to the stored order, so a device recorded meanwhile is kept.
+  const move = (key: string, steps: number) =>
+    savePreferences({
+      transform: (current) => {
+        const next = [...deviceMicrophoneOrder(current.microphones)];
+        const from = next.findIndex((entry) => microphoneEntryKey(entry) === key);
+        const to = Math.min(next.length - 1, Math.max(0, from + steps));
+        if (from === -1 || from === to) return {};
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved!);
+        return { microphones: next };
+      },
+    });
+  const forget = (key: string) =>
+    savePreferences({
+      transform: (current) => ({
+        microphones: deviceMicrophoneOrder(current.microphones).filter(
+          (entry) => microphoneEntryKey(entry) !== key,
+        ),
+      }),
+    });
+  const dropSteps = (from: number, translation: number) =>
+    rowHeight === 0
+      ? 0
+      : Math.min(entries.length - 1, Math.max(0, from + Math.round(translation / rowHeight))) -
+        from;
+
+  const dragFrom =
+    drag === null ? -1 : entries.findIndex((entry) => microphoneEntryKey(entry) === drag.key);
+  const dragTo = drag === null ? -1 : dragFrom + dropSteps(dragFrom, drag.translation);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
-      {Platform.OS === "android" ? (
-        <>
-          <NativeStackScreenOptions options={{ headerShown: false }} />
-          <AppBar embedded title="Voice" onBack={() => navigation.goBack()} />
-        </>
-      ) : null}
+    <SettingsScreen title="Voice">
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -133,164 +230,219 @@ export function SettingsVoiceRouteScreen() {
         contentContainerClassName="gap-3 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
-        {assistantNative ? (
-          <>
-            <SettingsSection title="Android assistant">
-              <SettingsActionRow
-                icon="gearshape"
-                label="Choose the digital assistant"
-                description="Pick T3 Code, and turn on screen text and screenshots there."
-                onPress={() => assistantNative?.openAssistantSettings()}
-              />
-            </SettingsSection>
-            <SettingsSection title="The panel sends to">
-              {TARGET_OPTIONS.map((option, index) => (
-                <SettingsChoiceRow
-                  key={option.target}
-                  label={option.label}
-                  description={option.description}
-                  selected={voice.assistantTarget === option.target}
-                  separated={index > 0}
-                  onPress={() => updateVoice({ assistantTarget: option.target })}
-                />
-              ))}
-            </SettingsSection>
-            <SettingsSection title="The panel opens with">
-              {INPUT_OPTIONS.map((option, index) => (
-                <SettingsChoiceRow
-                  key={option.mode}
-                  label={option.label}
-                  description={option.description}
-                  selected={voice.assistantInput === option.mode}
-                  separated={index > 0}
-                  onPress={() => updateVoice({ assistantInput: option.mode })}
-                />
-              ))}
-            </SettingsSection>
-            <SettingsSection title="Panel">
-              <SettingsSwitchRow
-                label="Start the thread after speaking"
-                subtitle="Skips the Start thread tap when the speech dialog returns text."
-                value={voice.assistantSendAfterVoice}
-                onValueChange={(value) => updateVoice({ assistantSendAfterVoice: value })}
-              />
-              <SettingsSwitchRow
-                label="Attach the screenshot"
-                value={voice.assistantAttachScreenshot}
-                onValueChange={(value) => updateVoice({ assistantAttachScreenshot: value })}
-              />
-              <SettingsSwitchRow
-                label="Attach the screen text"
-                value={voice.assistantAttachScreenText}
-                onValueChange={(value) => updateVoice({ assistantAttachScreenText: value })}
-              />
-              <SettingsSwitchRow
-                label="Whole page in Chrome"
-                subtitle="On a Chrome page, the screen text holds the whole page, not only what is on screen."
-                value={voice.assistantFullPageText}
-                onValueChange={(value) => updateVoice({ assistantFullPageText: value })}
-              />
-              <SettingsSwitchRow
-                label="Read the first reply aloud"
-                subtitle="The panel stays open until it reads the agent's reply aloud."
-                value={voice.assistantSpeakFirstReply}
-                onValueChange={(value) => updateVoice({ assistantSpeakFirstReply: value })}
-              />
-            </SettingsSection>
-            <SettingsSection title="After sending">
-              {AFTER_SEND_OPTIONS.map((option, index) => (
-                <SettingsChoiceRow
-                  key={option.afterSend}
-                  label={option.label}
-                  description={option.description}
-                  selected={voice.assistantAfterSend === option.afterSend}
-                  separated={index > 0}
-                  onPress={() => updateVoice({ assistantAfterSend: option.afterSend })}
-                />
-              ))}
-            </SettingsSection>
-            <SettingsSection
-              title="Edge glow"
-              footer="The panel marks the screen with a glow along its edges instead of dimming it."
-            >
-              {ASSISTANT_GLOW_SECONDS.map((seconds, index) => (
-                <SettingsChoiceRow
-                  key={`${seconds}`}
-                  label={GLOW_LABELS[`${seconds}`]}
-                  selected={voice.assistantGlowSeconds === seconds}
-                  separated={index > 0}
-                  onPress={() => updateVoice({ assistantGlowSeconds: seconds })}
-                />
-              ))}
-            </SettingsSection>
-            <SettingsSection
-              title="Context pills"
-              footer="These pills wait for a tap before they go along. Revoke the access in Android settings."
-            >
-              <SettingsSwitchRow
-                label="Recent photo"
-                subtitle="Offers the newest photo from the last 15 minutes. Asks for photo access."
-                value={voice.assistantRecentPhoto}
-                onValueChange={(value) =>
-                  void setWithPermission("assistantRecentPhoto", value, PHOTO_PERMISSION, "photo")
-                }
-              />
-              <SettingsSwitchRow
-                label="Location"
-                subtitle="Offers the place the phone last knew. Asks for approximate location."
-                value={voice.assistantLocation}
-                onValueChange={(value) =>
-                  void setWithPermission(
-                    "assistantLocation",
-                    value,
-                    PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-                    "location",
-                  )
-                }
-              />
-            </SettingsSection>
-            <SettingsSection title="New threads">
-              <SettingsRow
-                icon="folder"
-                label="Project"
-                value={chosenProject?.title ?? "Last new thread project"}
-                target="SettingsVoiceProject"
-              />
-            </SettingsSection>
-          </>
-        ) : null}
-
-        <SettingsSection title="Read aloud">
-          <SettingsSwitchRow
-            label="Read-aloud button on replies"
-            subtitle="Tap it to hear a reply. Hold it to hear every new reply of that thread."
-            value={voice.readAloudButton}
-            onValueChange={(value) => updateVoice({ readAloudButton: value })}
+        <SettingsSection title="Transcribe on">
+          <ListChoiceRow
+            label="This device"
+            description="Audio stays on this device and is transcribed here."
+            selected={!grant}
+            onPress={() => saveDestination(null)}
           />
-          {voice.readAloudThreads.length > 0 ? (
-            <SettingsActionRow
-              label="Stop reading threads aloud"
-              description={`${voice.readAloudThreads.length} ${voice.readAloudThreads.length === 1 ? "thread reads" : "threads read"} new replies aloud.`}
-              onPress={() => updateVoice({ readAloudThreads: [] })}
+          {hasEnvironmentVoiceCapture &&
+            environments.map((environment) => (
+              <EnvironmentChoice
+                key={environment.environmentId}
+                environment={environment}
+                selected={
+                  grant?.destination.kind === "environment" &&
+                  grant.destination.environmentId === environment.environmentId
+                }
+              />
+            ))}
+          {isReady && grant && !grantEnvironment ? (
+            <ListChoiceRow
+              label="Previously selected environment"
+              description="No longer paired"
+              separated
+              selected
+              disabled
+              onPress={() => {}}
             />
           ) : null}
         </SettingsSection>
-        <SettingsSection title="Speech rate">
-          {READ_ALOUD_RATES.map((rate, index) => (
-            <SettingsChoiceRow
-              key={rate}
-              label={RATE_LABELS[rate]}
-              description={`${rate}×`}
-              selected={voice.readAloudRate === rate}
-              separated={index > 0}
-              onPress={() => updateVoice({ readAloudRate: rate })}
-            />
-          ))}
+        {hasEnvironmentVoiceCapture &&
+          environments
+            .filter(
+              (env) =>
+                env.serverConfig?.environment.capabilities.cloudVoiceTranscription ||
+                (grant?.destination.kind === "cloud" &&
+                  grant.destination.environmentId === env.environmentId),
+            )
+            .map((environment) => (
+              <CloudVoiceSection
+                key={environment.environmentId}
+                environment={environment}
+                active={
+                  grant?.destination.kind === "cloud" &&
+                  grant.destination.environmentId === environment.environmentId
+                    ? grant.destination
+                    : null
+                }
+              />
+            ))}
+        {grantEnvironment && grant?.destination.kind === "environment" ? (
+          <VoiceModelSection
+            environmentId={grantEnvironment.environmentId}
+            label={grantEnvironment.label}
+          />
+        ) : null}
+        {!grant && transcriber === null ? (
+          <Text className="px-2 text-sm text-foreground-muted">{UNAVAILABLE_EXPLANATION}</Text>
+        ) : null}
+        {permission === "ask" || permission === "denied" ? (
+          <>
+            <SettingsSection title="Microphone access">
+              <SettingsActionRow
+                icon="mic"
+                label={permission === "ask" ? "Allow microphone access" : "Open Settings"}
+                onPress={
+                  permission === "ask" ? requestPermission : () => void Linking.openSettings()
+                }
+              />
+            </SettingsSection>
+            <Text className="px-2 text-sm text-foreground-muted">
+              {permission === "ask"
+                ? "Allow microphone access to record and to see your microphones."
+                : "Turn on microphone access for T3 Code in Settings to use voice input."}
+            </Text>
+          </>
+        ) : null}
+        <SettingsSection title="Preferred order">
+          {entries.map((entry, index) => {
+            const key = microphoneEntryKey(entry);
+            const shift =
+              dragFrom === -1 || index === dragFrom
+                ? 0
+                : dragFrom < dragTo && index > dragFrom && index <= dragTo
+                  ? -rowHeight
+                  : dragFrom > dragTo && index < dragFrom && index >= dragTo
+                    ? rowHeight
+                    : 0;
+            return (
+              <MicrophoneRow
+                key={`${key}:${drops}`}
+                entry={entry}
+                position={index + 1}
+                count={entries.length}
+                reorderable={ready}
+                offset={index === dragFrom ? (drag?.translation ?? 0) : shift}
+                lifted={index === dragFrom}
+                onHeight={setRowHeight}
+                onDragStart={() => setDrag({ key, translation: 0 })}
+                onDragMove={(translation) => setDrag({ key, translation })}
+                onDragEnd={(translation, cancelled) => {
+                  setDrag(null);
+                  setDrops((count) => count + 1);
+                  if (!cancelled) move(key, dropSteps(index, translation));
+                }}
+                onStep={(direction) => move(key, direction === "up" ? -1 : 1)}
+                onForget={isMicrophoneDevice(entry) ? () => forget(key) : undefined}
+              />
+            );
+          })}
         </SettingsSection>
         <Text className="px-2 text-sm text-foreground-muted">
-          Replies are read only while the app or the assistant panel is on screen.
+          Voice input uses the first connected microphone in this list. A wired or Bluetooth
+          microphone is added by name the first time you dictate with it connected; until then it
+          falls under Other. Swipe left on a named microphone to forget it.
+          {Platform.OS === "android"
+            ? " Android may still use a different microphone if the preferred one can’t be routed."
+            : null}
         </Text>
       </ScrollView>
+    </SettingsScreen>
+  );
+}
+
+function MicrophoneRow(props: {
+  readonly entry: MicrophoneEntry;
+  readonly position: number;
+  readonly count: number;
+  readonly reorderable: boolean;
+  readonly offset: number;
+  readonly lifted: boolean;
+  readonly onHeight: (height: number) => void;
+  readonly onDragStart: () => void;
+  readonly onDragMove: (translation: number) => void;
+  readonly onDragEnd: (translation: number, cancelled: boolean) => void;
+  readonly onStep: (direction: "up" | "down") => void;
+  readonly onForget: (() => void) | undefined;
+}) {
+  const { lifted, offset, entry, onForget } = props;
+  const kind = KINDS[entry.kind];
+  const title = isMicrophoneDevice(entry) ? entry.name : kind.row;
+  const { width: windowWidth } = useWindowDimensions();
+  const style = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateY: lifted
+          ? offset
+          : withTiming(offset, { duration: 160, reduceMotion: ReduceMotion.System }),
+      },
+    ],
+    zIndex: lifted ? 1 : 0,
+  }));
+  const row = (
+    // Opaque so the swipe actions stay hidden until the row slides over them.
+    <View className="flex-row items-center bg-grouped-card">
+      <View
+        accessible
+        accessibilityLabel={`${title}, ${kind.label}, ${props.position} of ${props.count}`}
+        accessibilityActions={onForget ? [{ name: "forget", label: "Forget" }] : undefined}
+        onAccessibilityAction={({ nativeEvent }) => {
+          if (nativeEvent.actionName === "forget") onForget?.();
+        }}
+        className="min-w-0 flex-1"
+      >
+        <ListRowLayout
+          icon={kind.icon}
+          label={title}
+          description={isMicrophoneDevice(entry) ? kind.label : kind.rowDescription}
+        />
+      </View>
+      {props.reorderable ? (
+        <SettingsDragHandle
+          title={title}
+          canMoveUp={props.position > 1}
+          canMoveDown={props.position < props.count}
+          onStart={props.onDragStart}
+          onMove={props.onDragMove}
+          onEnd={props.onDragEnd}
+          onStep={props.onStep}
+        />
+      ) : null}
     </View>
+  );
+  return (
+    <Reanimated.View
+      style={style}
+      onLayout={(event) => props.onHeight(event.nativeEvent.layout.height)}
+      className={cn(
+        props.position > 1 && !lifted && "border-t border-border-subtle",
+        lifted && "bg-grouped-card shadow-md",
+      )}
+    >
+      {onForget ? (
+        <ThreadSwipeable
+          backgroundColor="transparent"
+          fullSwipeAction="primary"
+          fullSwipeWidth={windowWidth - 40}
+          onDelete={onForget}
+          primaryAction={{
+            accessibilityLabel: `Forget ${title}`,
+            destructive: true,
+            icon: "trash",
+            label: "Forget",
+            onPress: onForget,
+          }}
+          secondaryAction={null}
+          threadKey={`microphone:${microphoneEntryKey(entry)}`}
+          threadTitle={title}
+        >
+          {() => row}
+        </ThreadSwipeable>
+      ) : (
+        row
+      )}
+    </Reanimated.View>
   );
 }

@@ -158,7 +158,7 @@ function EnvironmentTerminalShells({
     <SettingsRow
       id="terminal-shells"
       title="Shells"
-      description={`The shells that a terminal thread can run on ${label}. A custom shell is any executable with arguments, such as uv with run python. A name without a folder runs from the PATH of the terminal. Custom shells get no shell integration: a message to one is typed, and the thread shows no result.`}
+      description={`Shells a terminal thread can run on ${label}. A custom shell is any executable with arguments, such as uv run python, found on PATH. It has no shell integration, so a message is only typed.`}
       status={
         error !== null ? (
           <span className="text-destructive-foreground">{error}</span>

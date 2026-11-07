@@ -78,22 +78,17 @@ export const makeIssueCloudflareAccessPairingCredential = (input: {
     }).pipe(
       // A managed policy without remote clients has no Access login.
       Effect.catchTags({
-        // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-        ManagedPolicyRefusedError: () => Effect.succeed(undefined),
+        ManagedPolicyRefusedError: () => Effect.undefined,
       }),
     );
   });
 
   return (request) =>
     Option.isNone(kitshnGrants)
-      ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-        Effect.succeed(undefined)
+      ? Effect.undefined
       : kitshnGrants.value.visitor(request).pipe(
           Effect.flatMap((result) =>
-            result._tag === "visitor"
-              ? kitshnCredential(result.visitor)
-              : // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-                Effect.succeed(undefined),
+            result._tag === "visitor" ? kitshnCredential(result.visitor) : Effect.undefined,
           ),
           Effect.withSpan("EnvironmentAuth.issueCloudflareAccessPairingCredential"),
         );

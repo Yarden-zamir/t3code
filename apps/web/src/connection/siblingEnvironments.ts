@@ -58,10 +58,10 @@ export async function requestSiblingPairingCredential(
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
     const refusal = decodeRefusal(body);
-    throw new SiblingPairingRefused(
-      `${origin} answered ${response.status}.`,
-      Option.isSome(refusal) ? refusal.value.reason : null,
-    );
+    throw new SiblingPairingRefused({
+      message: `${origin} answered ${response.status}.`,
+      reason: Option.isSome(refusal) ? refusal.value.reason : null,
+    });
   }
   const body: unknown = await response.json();
   const credential =
@@ -73,15 +73,10 @@ export async function requestSiblingPairingCredential(
 }
 
 /** A sibling refused a pairing credential. `reason` is its auth reason, when it sent one. */
-class SiblingPairingRefused extends Error {
-  override readonly name = "SiblingPairingRefused";
-  constructor(
-    message: string,
-    readonly reason: EnvironmentAuthInvalidReason | null,
-  ) {
-    super(message);
-  }
-}
+class SiblingPairingRefused extends Schema.TaggedError<SiblingPairingRefused>()(
+  "SiblingPairingRefused",
+  { message: Schema.String, reason: Schema.NullOr(EnvironmentAuthInvalidReason) },
+) {}
 const decodeRefusal = Schema.decodeUnknownOption(
   Schema.Struct({ reason: EnvironmentAuthInvalidReason }),
 );

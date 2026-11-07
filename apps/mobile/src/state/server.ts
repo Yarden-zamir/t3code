@@ -17,6 +17,7 @@ export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRunt
   usageLimitsCommand: true,
   // Fork: published themes for `mobilePublishedThemes` (state/forkPublishedThemes.ts).
   environmentThemes: true,
+  providerCatalogsOnDemand: true,
 });
 export const describeOutdatedServer = createOutdatedServerDescriptionCommand(connectionAtomRuntime);
 export const updateOutdatedServer = createOutdatedServerUpdateCommand(connectionAtomRuntime);

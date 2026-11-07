@@ -51,6 +51,7 @@ export const TerminalOpenInput = Schema.Struct({
   providerInstanceId: Schema.optional(ProviderInstanceId),
   /** Fork: the shell to start instead of the default shell. A different shell restarts it. */
   shell: Schema.optional(TerminalShellSchema),
+  stopOnSettle: Schema.optional(Schema.Boolean),
 });
 export type TerminalOpenInput = typeof TerminalOpenInput.Type;
 
@@ -62,6 +63,7 @@ export const TerminalAttachInput = Schema.Struct({
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),
   providerInstanceId: Schema.optional(ProviderInstanceId),
+  stopOnSettle: Schema.optional(Schema.Boolean),
   restartIfNotRunning: Schema.optional(Schema.Boolean),
   /** Fork: the shell to start when the attach opens the terminal. */
   shell: Schema.optional(TerminalShellSchema),

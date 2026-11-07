@@ -14,12 +14,19 @@ to keep a large paste editable in the composer instead.
 
 ## Formatting
 
-The composer writes Markdown and shows it styled as you type. Markers such as
-`**` stay in the text and show beside the styled words when your cursor is on
-them. Lines starting with `- `, `1. `, `- [ ] `, `> `, `# ` or `---` become lists,
-task lists, quotes, headings and rules; ` ``` ` followed by Enter opens a code
-block. What you typed is what the agent receives, markers and numbering
-included, and `#1234` without a space still looks up a pull request.
+The composer writes Markdown and shows it styled as you type. When your cursor
+is on styled text, its Markdown shows instead, such as `**bold**`, and the
+markers edit like any other text: delete them to remove the style, or change
+`**` to `*` for italic. The style updates when your cursor leaves. To write
+plain Markdown with no styling, turn off **Settings → Chat → Rich text
+composer**. Lines starting with `- `, `1. `, `- [ ] `, `> `, `# ` or `---`
+become lists, task lists, quotes, headings and rules; ` ``` ` followed by Enter
+opens a code block. What you typed is what the agent receives, markers and
+numbering included, and `#1234` without a space still looks up a pull request.
+
+Some styled text containing or touching literal Markdown characters, such as a
+bold `path\` or `2*3`, keeps its styling without showing markers. Use formatting
+shortcuts or turn off rich text to edit the formatting of those ranges.
 
 Enter sends. In a list or quote, **Shift+Enter** continues it, and Shift+Enter
 on an empty line moves out one level, then leaves it; **Tab** nests a list item
@@ -177,28 +184,41 @@ Stashes containing uploaded files must be restored in their original environment
 Those files are retained for 24 hours. After an upload expires, restore the prompt
 and use **Attach again** or remove the missing file before sending.
 
+## Voice input on web and desktop
+
+Use the composer's microphone or `mod+shift+d` to dictate into your draft. Audio
+is transcribed on an environment you choose in **Settings → Voice**; nothing is
+sent until you choose one. See [Voice input](./voice-input.md).
+
 ## Voice input on mobile
 
-On supported iPhones with iOS 26 or later and Android devices with Android 12 or
-later, use the composer's microphone to record, then confirm to transcribe. Text is
+Use the composer's microphone to record, then confirm to transcribe. Text is
 inserted where your selection was when recording started, ready for you to review
 and edit before sending.
 
-Voice input uses on-device speech transcription: Apple's on iOS, and compatible
-Google speech services on Android. When it is unavailable for the device or its
-language, the composer has no microphone button and **Settings → Microphone** says
-voice input isn't available. On Android, keep T3 Code open while recording and
-transcribing.
+By default, audio stays on the phone. Local transcription needs a supported iPhone
+with iOS 26 or later, or Android 12 or later with compatible Google speech services.
+To use a paired environment instead, open **Settings → Voice → Transcribe on**,
+choose the environment, and confirm. Finished recordings go only to that environment,
+even when a draft belongs to another one. This also works on phones without local
+speech recognition. If the chosen environment disconnects, dictation stops; it never
+switches hosts. Choose **This device** to revoke access and discard pending audio.
+For [cloud dictation](./voice-input.md#choose-where-audio-goes), open **Cloud providers**
+under the environment in **Settings → Voice** and confirm which provider may receive recordings.
+On Android, keep T3 Code open while recording and transcribing.
 
-The first use may download a speech model and needs a network connection.
-Later transcription works offline for that language. On Android, transcription
-processes the full recording at roughly its original duration. Recordings can be up to five
+On-device dictation may need a network connection to download a speech model the
+first time. After that it works offline for that language. iPhone dictates in the
+first of your preferred languages (**Settings → General → Language & Region**)
+that Apple’s speech model supports. If none is supported, it tries the app’s
+language. Android transcribes on the device while you
+record and finishes after you stop. Recordings can be up to five
 minutes long. Canceling or an audio interruption discards the recording and
 preserves your existing draft. Navigating to another screen keeps dictation active;
 use the floating controls to finish or cancel. While recording, the screen stays
 awake; it can sleep normally once recording stops.
 
-Choose a preferred order in **Settings → Microphone**. Voice input requests the first
+Choose a preferred order in **Settings → Voice**. Voice input requests the first
 connected microphone in the list. The list mixes kinds (built-in, other wired, other
 Bluetooth, and CarPlay on iOS) with wired and Bluetooth devices you have dictated
 with, listed by name. Drag to rank them together:
@@ -208,15 +228,15 @@ microphone on iOS. Swipe a device left to forget it. Android may use another inp
 when the preferred microphone cannot be routed. Devices with the same name may share
 a saved preference, but simultaneous same-name inputs remain separately selectable.
 
-Transcription runs on your device. T3 Code deletes the temporary audio after
-transcription or cancellation; only the message text is sent when you submit.
+T3 Code deletes the temporary recording from your phone after transcription or
+cancellation. The transcript stays in your draft until you send the message to the agent.
 
 ## Android assistant
 
 On Android 10 or later, T3 Code can be your digital assistant. Press the assistant
 button in any app to start a thread about what is on the screen.
 
-1. Open **Settings → Voice** in the app and tap **Choose the digital assistant**.
+1. Open **Settings → Assistant** in the app and tap **Choose the digital assistant**.
 2. Pick T3 Code. To share the screen, turn on **Use text from screen** and
    **Use screenshot** on the same page.
 3. Press the assistant button, or hold the home button.
@@ -233,7 +253,7 @@ in the Android share sheet.
 
 Context pills above the text show what goes along: what you shared, the screenshot,
 the screen text, text you selected on screen, the page link, and the clipboard. In
-**Settings → Voice → Context pills** you can also turn on your newest photo and your
+**Settings → Assistant → Context pills** you can also turn on your newest photo and your
 location. Tap a pill to attach it or leave it out. Hold a pill to read and edit its
 text, or to crop or draw on an image. The clipboard, the photo and the location are
 left out until you tap them, and password fields are never included. The **+** pill
@@ -241,19 +261,19 @@ lists every pill with a check mark to attach or leave it out, and adds photos, a
 photo from the camera, files, your newest photo, or your location.
 The screen text pill names what is on screen, such as "Video · YouTube · 6:52",
 "Chat · WhatsApp", or "Page · theverge.com". On a Chrome page it holds the whole
-page; turn this off with **Settings → Voice → Whole page in Chrome**. On a video, the
+page; turn this off with **Settings → Assistant → Whole page in Chrome**. On a video, the
 link opens where you were watching. On the home
 screen, the screenshot and the screen text are left out until you tap them.
 
 If you close the panel without sending, your text comes back when you open it
 again within a minute.
 
-**Settings → Voice** sets what the panel does: send to a new thread or to the
+**Settings → Assistant** sets what the panel does: send to a new thread or to the
 thread you opened last, open with the keyboard or with the speech dialog, and start
 the thread right after you speak. **After sending** closes the panel, opens the
 thread, or shows the reply in the panel so you can answer from there. The panel can
 also read the first reply aloud. **Edge glow** sets how long the glow around the
-screen stays. **Settings → Voice** also sets the project of new threads.
+screen stays. **Settings → Assistant** also sets the project of new threads.
 T3 Code replaces your current assistant while it is selected. To go back, pick the
 other assistant on the same Android page.
 
@@ -261,7 +281,7 @@ other assistant on the same Android page.
 
 Tap the speaker next to a reply to hear it. Tap it again to stop. Hold the speaker
 to hear every new reply in that thread; hold it again to stop. A tinted speaker
-shows a thread that reads new replies. **Settings → Voice** sets the speech rate,
+shows a thread that reads new replies. **Settings → Assistant** sets the speech rate,
 hides the button, and stops all threads that read new replies.
 
 Replies are read only while the app is on screen.
@@ -312,6 +332,12 @@ Provider commands must start the message to run. T3 Code commands such as
 
 Send `/compact` in an existing conversation to reduce context usage when the
 provider supports it, even with the context meter turned off.
+
+Send `/clear` on its own, or pick it from the slash menu, to start a fresh session
+in the same thread. Your next message goes to a new provider session that doesn't see the
+earlier messages, and the thread marks where it began with **New session**.
+Earlier messages and diffs stay in the thread. Dismiss the notice above the
+composer to keep the current session instead.
 
 On web and desktop, turn on **Settings → Labs → Legacy → Context
 window indicator (legacy)** to see context usage. The meter is off by default

@@ -86,7 +86,7 @@ const OrchestratorCapabilitiesTool = Tool.make("orchestrator_capabilities", {
 
 const DelegateTaskTool = Tool.make("delegate_task", {
   description:
-    "Start one child agent with only `task`. No parent history. Separate checkout or PR per child: `isolation:'worktree'`. Keep `taskId` for `task_status` and `task_cancel`. With `target.environmentId` (see `t3_environment_links`), it runs there as an ordinary thread: in the project with this thread's repository unless `target.projectId` names one, on this thread's provider and model unless `target` names others (`orchestrator_capabilities` with that `environmentId`), with modes capped by the link's access. It wakes this thread when it ends.",
+    "Start one child agent with only `task`. No parent history. Separate checkout or PR per child: `isolation:'worktree'`. Keep `taskId` for `task_status` and `task_cancel`. No secrets in `task`. With `target.environmentId` (see `t3_environment_links`), it runs there as an ordinary thread: in the project with this thread's repository unless `target.projectId` names one, on this thread's provider and model unless `target` names others (`orchestrator_capabilities` with that `environmentId`), with modes capped by the link's access. It wakes this thread when it ends.",
   parameters: OrchestratorMcpDelegateTaskInput,
   success: OrchestratorMcpDelegateTaskResult,
   failure: OrchestratorMcpFailure,
@@ -198,7 +198,7 @@ const DeleteScheduledTaskTool = Tool.make("delete_scheduled_task", {
 
 const RequestSecretTool = Tool.make("request_secret", {
   description:
-    'Ask the user to enter a secret in a private card and wait. You never see the value. Returns a one-use `secretRef` for a tool that accepts it, or with `delivery: "file"` a private file path to read inside a shell command. Asked how to provide a secret: call this now, do not explain instead.',
+    'Ask for one secret per single-line card; never combine values. Open it, don\'t offer it. Returns one-use `secretRef`, or `delivery: "file"` a file read only in its command, e.g. `adb pair <ip:port> "$(cat <file>)"`. Asked how: call now. Pasted secret for child/script: `value`. Never from an old thread.',
   parameters: OrchestratorMcpRequestSecretInput,
   success: OrchestratorMcpRequestSecretResult,
   failure: OrchestratorMcpFailure,
@@ -206,7 +206,9 @@ const RequestSecretTool = Tool.make("request_secret", {
   dependencies,
 })
   .annotate(Tool.Title, "Request a secret from the user")
-  .annotate(Tool.Destructive, false);
+  .annotate(Tool.Destructive, false)
+  // Claude Code defers MCP tools behind ToolSearch; agents that never load this one ask in chat.
+  .annotate(Tool.Meta, { "anthropic/alwaysLoad": true });
 
 const CreateThreadsTool = Tool.make("create_threads", {
   description:

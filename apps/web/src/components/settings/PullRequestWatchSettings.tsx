@@ -60,7 +60,7 @@ export function PullRequestWatchSettingsRows() {
         settingKeys={["pullRequestWatchRemarkFilter"]}
         mixed={rolesMixed}
         {...searchableSetting("pull-request-watch-roles")}
-        description="A remark wakes a watching agent only when its author has one of these roles on the repository or is a listed login. With no role and no login, any remark wakes it except one from this server's own GitHub account."
+        description="A remark wakes a watching agent only if its author has one of these repository roles or is a listed login. With neither, any remark wakes it, except one from this server's GitHub account."
         resetAction={
           rolesMixed || filter.authorAssociations.length > 0 ? (
             <SettingResetButton

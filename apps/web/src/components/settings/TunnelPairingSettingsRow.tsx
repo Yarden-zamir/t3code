@@ -87,9 +87,8 @@ export function TunnelPairingSettingsRow() {
       description={
         <>
           <span className="block">
-            The server stays on 127.0.0.1. Point a tunnel such as cloudflared at it, then pair with
-            a token from <code>t3 pair</code> through the tunnel URL. T3 Code restarts when this
-            changes.
+            The server stays on 127.0.0.1. Point a tunnel at it and pair with a <code>t3 pair</code>{" "}
+            token through its URL. A change restarts T3 Code.
           </span>
           <Input
             className="mt-2 max-w-sm"
@@ -119,15 +118,14 @@ export function TunnelPairingSettingsRow() {
                 ...tunnelPairingTextInput(),
               });
             }}
-            placeholder="Trusted web origins, for example https://t3-vps.example.com"
+            placeholder="Trusted web origins, comma or newline separated, such as https://t3-vps.example.com"
             aria-label="Trusted web origins"
             disabled={isUpdatingTunnelPairing}
             spellCheck={false}
             rows={2}
           />
           <span className="mt-1 block">
-            Trusted web origins: T3 Code pages on these https origins (comma or newline separated)
-            may call this server with their cookies, for example behind Cloudflare Access.
+            Trusted origins: T3 Code pages on these https origins may use cookies here.
           </span>
         </>
       }
