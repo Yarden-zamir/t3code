@@ -152,6 +152,27 @@ describe("syncTimings", () => {
     }),
   );
 
+  it.effect("tells subscribers about a new run and keeps the snapshot until a change", () =>
+    Effect.sync(() => {
+      const { recorder } = makeRecorder();
+      let calls = 0;
+      const unsubscribe = recorder.subscribe(() => (calls += 1));
+      const before = recorder.snapshot();
+      expect(recorder.snapshot()).toBe(before);
+
+      recorder.leftForeground();
+      recorder.startRun("application-active-long");
+      recorder.mark(MAC, "live");
+      recorder.mark(MAC, "live");
+      unsubscribe();
+      recorder.mark(MAC, "socketReady");
+
+      expect(calls).toBe(2);
+      expect(recorder.snapshot()).not.toBe(before);
+      expect(recorder.snapshot().wakeups).toHaveLength(1);
+    }),
+  );
+
   it.effect("follows the status of a shell or thread state", () =>
     Effect.gen(function* () {
       const { recorder, advance } = makeRecorder();

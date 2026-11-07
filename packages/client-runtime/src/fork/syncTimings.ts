@@ -16,6 +16,7 @@ const SYNC_TIMING_SPANS = [
   "ConnectionDriver.connect",
   "ShellSnapshotLoader.load",
   "EnvironmentSupervisor.awaitSilentSocket",
+  "CacheWarmup.thread",
 ] as const;
 export type SyncTimingSpan = (typeof SYNC_TIMING_SPANS)[number];
 
@@ -27,18 +28,21 @@ const SYNC_TIMING_MARKS = [
   "live",
   "threadSynchronizing",
   "threadLive",
+  "cacheWarmupStarted",
+  "cacheWarmupDone",
 ] as const;
 export type SyncTimingMark = (typeof SYNC_TIMING_MARKS)[number];
 
 export type SyncRunTrigger = "cold-start" | "application-active-probe" | "application-active-long";
 export type SyncProbeResult = "alive" | "silent" | "timed-out" | "failed";
+type SyncOutcome = "success" | "failure" | "interrupted";
 
 export interface SyncSpanTiming {
   readonly name: SyncTimingSpan;
   /** Milliseconds from the start of the run. */
   readonly startMs: number;
   readonly durationMs: number;
-  readonly outcome: "success" | "failure" | "interrupted";
+  readonly outcome: SyncOutcome;
 }
 
 export interface SyncEnvironmentTimings {
@@ -93,7 +97,7 @@ function spanEnvironment(span: Tracer.AnySpan): EnvironmentId | undefined {
   return undefined;
 }
 
-function exitOutcome(exit: Exit.Exit<unknown, unknown>): SyncSpanTiming["outcome"] {
+function exitOutcome(exit: Exit.Exit<unknown, unknown>): SyncOutcome {
   if (Exit.isSuccess(exit)) return "success";
   return Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failure";
 }
@@ -123,6 +127,13 @@ export function makeSyncTimingsRecorder(options: {
   const coldStart = newRun("cold-start");
   const wakeups: Array<MutableRun> = [];
   let current = coldStart;
+  // The snapshot stays the same object until the timings change, as useSyncExternalStore needs.
+  let frozen: SyncTimingsSnapshot | undefined;
+  const listeners = new Set<() => void>();
+  const changed = () => {
+    frozen = undefined;
+    for (const listener of listeners) listener();
+  };
 
   const environment = (run: MutableRun, environmentId: EnvironmentId) => {
     let timings = run.environments.get(environmentId);
@@ -136,6 +147,7 @@ export function makeSyncTimingsRecorder(options: {
     const timings = environment(run, environmentId);
     if (timings.marks[mark] !== undefined) return;
     timings.marks[mark] = Math.round(options.now() - run.origin);
+    changed();
   };
 
   // Each subscriber of the wakeup stream has its own app-state listener, so one return to the
@@ -151,6 +163,7 @@ export function makeSyncTimingsRecorder(options: {
     current = newRun(trigger);
     wakeups.unshift(current);
     if (wakeups.length > maxWakeups) wakeups.length = maxWakeups;
+    changed();
   };
 
   const mark = (environmentId: EnvironmentId, name: SyncTimingMark) => {
@@ -162,6 +175,7 @@ export function makeSyncTimingsRecorder(options: {
     const timings = environment(current, environmentId);
     if (timings.probes.length >= maxProbes) return;
     timings.probes.push({ atMs: Math.round(options.now() - current.origin), result });
+    changed();
   };
 
   const recordSpan = (
@@ -176,17 +190,37 @@ export function makeSyncTimingsRecorder(options: {
     if (span.name === "ConnectionDriver.connect" && outcome === "success") {
       markIn(run, environmentId, "socketReady");
     }
+    pushTiming(run, environmentId, span.name as SyncTimingSpan, startedAt, outcome);
+  };
+
+  const pushTiming = (
+    run: MutableRun,
+    environmentId: EnvironmentId,
+    name: SyncTimingSpan,
+    startedAt: number,
+    outcome: SyncOutcome,
+  ) => {
     const timings = environment(run, environmentId);
     if (timings.spans.length >= maxSpans) {
       timings.droppedSpans += 1;
-      return;
+    } else {
+      timings.spans.push({
+        name,
+        startMs: Math.round(startedAt - run.origin),
+        durationMs: Math.round(options.now() - startedAt),
+        outcome,
+      });
     }
-    timings.spans.push({
-      name: span.name as SyncTimingSpan,
-      startMs: Math.round(startedAt - run.origin),
-      durationMs: Math.round(options.now() - startedAt),
-      outcome,
-    });
+    changed();
+  };
+
+  /** Starts a timed step outside a tracer span. Call the result when the step ends. */
+  const startStep = (environmentId: EnvironmentId, name: SyncTimingSpan) => {
+    const run = current;
+    const startedAt = options.now();
+    return (outcome: SyncOutcome) => {
+      if (enabled) pushTiming(run, environmentId, name, startedAt, outcome);
+    };
   };
 
   /** Wraps a tracer so that the spans in `SYNC_TIMING_SPANS` also land in the recorder. */
@@ -209,16 +243,18 @@ export function makeSyncTimingsRecorder(options: {
 
   /**
    * Marks the first time per run that a shell or thread state reaches each
-   * status. A status that a later one replaces before the follower subscribes
-   * is not marked.
+   * status while `counts` allows it. A status that a later one replaces before
+   * the follower subscribes is not marked.
    */
   const followStatus = Effect.fnUntraced(function* <S extends { readonly status: string }>(
     environmentId: EnvironmentId,
     state: SubscriptionRef.SubscriptionRef<S>,
     marks: Partial<Record<S["status"], SyncTimingMark>>,
+    counts: () => boolean = () => true,
   ): Effect.fn.Return<void, never, Scope.Scope> {
     if (!enabled) return;
     const markStatus = (status: S["status"]) => {
+      if (!counts()) return;
       const name = marks[status];
       if (name !== undefined) mark(environmentId, name);
     };
@@ -260,19 +296,24 @@ export function makeSyncTimingsRecorder(options: {
     probe,
     tracer,
     followStatus,
-    snapshot: (): SyncTimingsSnapshot => ({
-      coldStart: freeze(coldStart),
-      wakeups: wakeups.map(freeze),
-    }),
+    startStep,
+    snapshot: (): SyncTimingsSnapshot =>
+      (frozen ??= { coldStart: freeze(coldStart), wakeups: wakeups.map(freeze) }),
+    /** Calls the listener after each change to the timings. */
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
   };
 }
 
 export type SyncTimingsRecorder = ReturnType<typeof makeSyncTimingsRecorder>;
 
-// The cold start run starts when this module loads, so the start-up time before
-// the app code loads is not in the timings. Durations use the monotonic clock;
-// the clock time of a run uses Date, because Android stops performance.now()
-// in deep sleep.
+// One app-wide recorder keeps each upstream hook one line; revisit for a recorder per runtime.
+// The cold start counts from when this module loads. Durations use performance.now(); run
+// times use Date, because Android stops performance.now() in deep sleep.
 export const syncTimings: SyncTimingsRecorder = makeSyncTimingsRecorder({
   now: () => performance.now(),
   // @effect-diagnostics-next-line globalDate:off
@@ -287,6 +328,8 @@ const MARK_LABELS: Record<SyncTimingMark, string> = {
   live: "live",
   threadSynchronizing: "open thread synchronizing",
   threadLive: "open thread live",
+  cacheWarmupStarted: "cache warm-up started",
+  cacheWarmupDone: "cache warm-up done",
 };
 
 const SPAN_LABELS: Record<SyncTimingSpan, string> = {
@@ -296,6 +339,7 @@ const SPAN_LABELS: Record<SyncTimingSpan, string> = {
   "ConnectionDriver.connect": "connect",
   "ShellSnapshotLoader.load": "HTTP snapshot",
   "EnvironmentSupervisor.awaitSilentSocket": "silent socket check",
+  "CacheWarmup.thread": "cache warm-up thread",
 };
 
 function runTitle(run: SyncRun): string {
