@@ -88,14 +88,6 @@ Auto-settle skips a thread while a background command of its agent runs, for exa
 
 ## Remote access
 
-### Request headers per environment
-
-A saved environment sends its own request headers, for example a Cloudflare Access service token.
-
-- **Setting:** per saved environment. On desktop, edit them in Settings > Environments. On mobile, enter the token under "Cloudflare Access service token" in Add environment, or in the settings of the environment.
-- **Works on:** desktop, mobile. The mobile app sends the headers on API requests, the WebSocket, attachment uploads and downloads, the attachment text preview, and project, attachment and Markdown images (also SVG).
-- **Limits:** the mobile app does not send them for provider icons, the media gallery, audio and video, thread link previews and web views. Web views cannot limit their sub-requests and redirects to one origin. Revisit when a missing request type blocks a real use.
-
 ### Tunnel pairing
 
 A desktop server that listens on loopback makes pairing links with its tunnel URL.
@@ -110,13 +102,6 @@ Upstream guest links ([Guest links](../user/guest-links.md)) need T3 Connect, an
 - **Setting:** the upstream beta `guestSharingEnabled` (off by default), Settings > Labs > Guest links. The tunnel address is `T3CODE_TUNNEL_PAIRING_URL`.
 - **Works on:** server. The guest uses any browser. The owner creates links from web, desktop and mobile, as upstream.
 - **Limits:** the tunnel host must let guests reach the guest paths. See [Guest links through Cloudflare Access](operations.md#guest-links-through-cloudflare-access). When T3 Connect starts to serve the machine, links on the tunnel host stop working, because each guest request must match the current host. Revisit when upstream guest links accept a host other than T3 Connect.
-
-### Trusted sibling environments
-
-Trusted browser origins get credentialed CORS and session cookies. One browser page then pairs with and reaches the other hosts.
-
-- **Setting:** `trustedBrowserOrigins` (empty by default). Settings > Sharing & access > "Allow pairing through a tunnel", in the desktop app. On a headless server, set `T3CODE_TRUSTED_BROWSER_ORIGINS`. A server with kitshn trusts the origins of the machines that it reaches without this setting.
-- **Works on:** web, desktop. Mobile does not need it.
 
 ### Quiet reconnect after restart
 
@@ -149,6 +134,20 @@ kitshn connects the T3 machines of the owner. Each T3 server is the provider `t3
 - **Join:** on the machine, run `kitshn join <code> --server <address>`. "Add machine" on the kitshn map gives the code. Agents cannot join.
 - **Works on:** server, web, desktop and mobile.
 - **Reference:** agents use [fork-agents.md](../fork-agents.md).
+
+### Joined and manual environments
+
+An environment is one of two kinds:
+
+- **Joined through kitshn:** the machine is on the kitshn map. kitshn gives it its access, the origins that it trusts and, with [Environment name from kitshn](#environment-name-from-kitshn), its name. A phone or a desktop app reaches it with its [device token](#device-invites).
+- **Manual:** an address that the user typed and paired. It gets no access, trust or name from kitshn.
+
+The server config of a joined machine carries its kitshn machine id and name (`kitshnMachine`), only while this server run registered with kitshn. The config needs a session, so the public descriptor does not name the machine. The sidebar project badge, Settings > Connections, Settings > Machines, the Machines panel, the environment pickers (the composer "Run on" menu, the add-project-to-machine dialog and the command palette), the mobile environment list and the Android assistant machine list mark a joined machine with "kitshn" and the line "Joined through kitshn as <name>". A manual environment has no mark.
+
+- **Setting:** none.
+- **Works on:** web, desktop, mobile.
+- **Limits:** a manual environment behind Cloudflare Access does not connect. The desktop and mobile apps send no Access token to it, and a browser page sends no cookies to it. Join the machine to kitshn, or reach it without Access, for example on the local network or the tailnet.
+- A browser page sends cookies only to the pages of the machines that kitshn links to its server. Another origin gets no credentialed CORS.
 
 ### Cards
 
@@ -247,7 +246,7 @@ The `t3.settings` state on kitshn holds a shared part and a part for each machin
 
 ### Settings > Machines
 
-Settings > Machines shows how to join this machine to kitshn, and the kitshn settings of the selected environment. It also shows the kitshn connection: connected, connecting with the last error, or off with the reason, and the reached machines, link proxy and kitshn's last sync. `machines_read` gives agents the same state.
+Settings > Machines shows whether the selected environment is joined through kitshn or manual, how to join this machine to kitshn, and the kitshn settings of the selected environment. It also shows the kitshn connection: connected, connecting with the last error, or off with the reason, and the reached machines, link proxy and kitshn's last sync. `machines_read` gives agents the same state.
 
 - A notice names the card parts that kitshn dropped.
 - `T3CODE_KITSHN=off` in the server environment keeps a server off kitshn. A dev server never registers. Only one T3 server of a machine registers; a second one shows kitshn's refusal.
@@ -259,7 +258,7 @@ A phone or a desktop app joins kitshn with its own device token (K-1601). On the
 
 - **Phone:** scan the link in Add environment, or paste it in Address.
 - **Desktop:** on the kitshn invite page, press "Open in T3 Code desktop (fork)" and confirm the kitshn host. Or paste the link in Settings > Machines > "Join with a device invite". The desktop app never uses the machine token of the kitshn daemon.
-- Cloudflare Access refuses the CORS preflight of the app's requests to these machines. The desktop main process answers the preflight itself, only for the app's own page and for origins with request headers. The real request still goes through Access with the token.
+- Cloudflare Access refuses the CORS preflight of the app's requests to these machines. The desktop main process answers the preflight itself, only for the app's own page and for origins that hold the device token. The real request still goes through Access with the token.
 - The app keeps only the `t3.app` cards that the token opens, and pairs with each machine. It reads the list at start, when it comes back to the foreground, and on Settings > Fork > App token > Refresh machines (phone). The desktop app also reads it at most every 5 minutes while its window is visible, never while it is hidden, adds each new machine as an environment, and removes an environment that it added when the list drops the machine.
 - A refused machine pairs again with a backoff, because Access can take some seconds to accept a new token. On the desktop app, the first pairing after a join runs at once. A retry runs only with a list read, and waits at least 5 minutes after a failure, at most 10. The app does not contact a machine that the list shows offline.
 - An empty or refused list disables or removes no saved machine. The machine shows the reason instead.

@@ -20,6 +20,7 @@ import {
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import { hasRelayRoute } from "../connection/routes.ts";
 import { machineMapEnvironmentEntry } from "../fork/environmentLabel.ts";
+import { makeKitshnMachineByIdAtom } from "../fork/kitshnMachines.ts";
 
 function mapsEqual<K, V>(left: ReadonlyMap<K, V>, right: ReadonlyMap<K, V>): boolean {
   if (left.size !== right.size) {
@@ -325,6 +326,7 @@ export function createEnvironmentSummaryAtoms(input: {
     identitiesAtom,
     environmentsAtom,
     machineByIdAtom,
+    kitshnMachineByIdAtom: makeKitshnMachineByIdAtom(environmentIdsAtom, input.presentationAtom),
     pullRequestsSupportedAtom,
   };
 }

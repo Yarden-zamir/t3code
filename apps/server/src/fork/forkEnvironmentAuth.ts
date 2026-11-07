@@ -1,5 +1,5 @@
 /**
- * Fork parts of `EnvironmentAuth`: the kitshn Access login and the trusted peer origins. `EnvironmentAuth.ts` keeps one-line hooks into this file.
+ * Fork parts of `EnvironmentAuth`: the kitshn Access login and the kitshn peer origins. `EnvironmentAuth.ts` keeps one-line hooks into this file.
  */
 import {
   type AuthEnvironmentScope,
@@ -25,7 +25,7 @@ import {
 
 type Grants = Option.Option<KitshnGrants["Service"]>;
 
-/** MM-1311: the pages of linked machines are trusted like the explicit list (K-1609). */
+/** MM-1311: the pages of the machines that kitshn links are trusted like the dev origins (K-1609). */
 export const withPeerOrigins = (
   trustedOrigins: ReadonlySet<string>,
   grants: Grants,

@@ -1,8 +1,7 @@
 /**
- * Fork: per-origin request headers on mobile, such as a Cloudflare Access service token. The
- * catalog store pushes each saved list here, so transports skip a storage round trip. Limit: React
- * Native fetch, expo-image and expo-file-system keep custom headers on a cross-origin redirect, and
- * `redirect: "manual"` does not work. Revisit if a server can redirect to a third party.
+ * Fork: per-origin request headers on mobile: the kitshn device token that a device invite saved.
+ * Limit: React Native fetch, expo-image and expo-file-system keep custom headers on a cross-origin
+ * redirect, and `redirect: "manual"` does not work. Revisit if a server can redirect elsewhere.
  */
 import {
   type ConnectionTransientError,
@@ -90,7 +89,7 @@ export function withRequestHeaders<Source extends { readonly uri: string }>(
 }
 
 // Origins whose last response was a Cloudflare Access login. The request still
-// fails as before; screens read this to say why and to offer the token fields.
+// fails as before; the device pairing reads this to say why.
 const challengedOrigins = new Set<string>();
 
 /** True when the last response from the origin of `url` was a Cloudflare Access login. */

@@ -51,6 +51,7 @@ import { ANOTHER_ADDRESS, LinkMachineSelect } from "./LinkMachineSelect";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { searchableSetting } from "./settingsSearch";
+import { KitshnBadge } from "../machines/KitshnMark";
 
 const failureToast = (title: string, description: string) =>
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
@@ -141,6 +142,8 @@ function LinkedEnvironmentRow({
               pingClassName={null}
             />
             <h3 className="text-sm font-medium text-foreground">{link.label}</h3>
+            {/* Fork: links come only from kitshn (K-1609). */}
+            <KitshnBadge machine={{ name: link.label }} />
           </div>
           <p className="text-xs text-muted-foreground">
             {accessConfig[link.access].label} · {status}

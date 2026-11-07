@@ -11,13 +11,12 @@ import { useEnvironmentQuery } from "~/state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
-import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
 /**
- * Fork: tunnel pairing and the trusted browser origins of the desktop server. Desktop settings, so the row shows only in the desktop app that manages its backend.
+ * Fork: tunnel pairing of the desktop server. A desktop setting, so the row shows only in the desktop app that manages its backend.
  */
 export function TunnelPairingSettingsRow() {
   const desktopBridge = window.desktopBridge;
@@ -31,12 +30,10 @@ export function TunnelPairingSettingsRow() {
   const [isUpdatingTunnelPairing, setIsUpdatingTunnelPairing] = useState(false);
   // Fork: null until the user edits the field; the saved URL shows until then.
   const [tunnelPairingUrlInput, setTunnelPairingUrlInput] = useState<string | null>(null);
-  const [trustedOriginsInput, setTrustedOriginsInput] = useState<string | null>(null);
 
   const handleTunnelPairingChange = async (input: {
     readonly enabled: boolean;
     readonly url: string | null;
-    readonly trustedBrowserOrigins: string | null;
   }) => {
     if (
       !desktopBridge ||
@@ -54,7 +51,6 @@ export function TunnelPairingSettingsRow() {
     if (error === null) {
       refreshDesktopNetworkAccessState();
       setTunnelPairingUrlInput(null);
-      setTrustedOriginsInput(null);
       return;
     }
     const message = error instanceof Error ? error.message : "Failed to update tunnel pairing.";
@@ -71,15 +67,9 @@ export function TunnelPairingSettingsRow() {
 
   const savedTunnelPairingUrl = desktopServerExposureState?.tunnelPairingUrl ?? null;
   const tunnelPairingUrlValue = tunnelPairingUrlInput ?? savedTunnelPairingUrl ?? "";
-  const savedTrustedOrigins = desktopServerExposureState?.trustedBrowserOrigins ?? null;
-  const trustedOriginsValue = trustedOriginsInput ?? savedTrustedOrigins ?? "";
   const tunnelPairingTextInput = () => {
     const url = tunnelPairingUrlValue.trim();
-    const origins = trustedOriginsValue.trim();
-    return {
-      url: url.length > 0 ? url : null,
-      trustedBrowserOrigins: origins.length > 0 ? origins : null,
-    };
+    return { url: url.length > 0 ? url : null };
   };
   return (
     <SettingsRow
@@ -108,27 +98,6 @@ export function TunnelPairingSettingsRow() {
             disabled={isUpdatingTunnelPairing}
             spellCheck={false}
           />
-          <Textarea
-            className="mt-2 max-w-sm"
-            value={trustedOriginsValue}
-            onChange={(event) => setTrustedOriginsInput(event.target.value)}
-            onBlur={() => {
-              if (trustedOriginsValue.trim() === (savedTrustedOrigins ?? "")) return;
-              void handleTunnelPairingChange({
-                enabled: desktopServerExposureState?.tunnelPairingEnabled ?? false,
-                ...tunnelPairingTextInput(),
-              });
-            }}
-            placeholder="Trusted web origins, for example https://t3-vps.example.com"
-            aria-label="Trusted web origins"
-            disabled={isUpdatingTunnelPairing}
-            spellCheck={false}
-            rows={2}
-          />
-          <span className="mt-1 block">
-            Trusted web origins: T3 Code pages on these https origins (comma or newline separated)
-            may call this server with their cookies, for example behind Cloudflare Access.
-          </span>
         </>
       }
       control={

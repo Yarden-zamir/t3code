@@ -20,7 +20,7 @@ import { browserKeyProof } from "./browserKeyProof";
 
 export const CLOUDFLARE_ACCESS_PAIRING_PATH = "/api/auth/cloudflare-access/pairing-credential";
 
-/** Trusted sibling origins of the page that no saved environment points at. */
+/** kitshn peer origins of the page that no saved environment points at. */
 export function missingSiblingOrigins(input: {
   readonly trustedOrigins: ReadonlyArray<string>;
   readonly savedUrls: ReadonlyArray<string | null>;
@@ -87,7 +87,7 @@ const decodeRefusal = Schema.decodeUnknownOption(
 );
 
 /**
- * Trusted siblings of the page to pair: the ones no saved environment points at, and the saved
+ * kitshn peers of the page to pair: the ones no saved environment points at, and the saved
  * ones whose connection is refused, for example after their 1-day session ended (MM-922). A
  * paused sibling only reconnects, so it is not in the list (MM-718).
  */

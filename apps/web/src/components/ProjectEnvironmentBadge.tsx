@@ -1,6 +1,7 @@
 import type { EnvironmentId, EnvironmentMachineKind } from "@t3tools/contracts";
 
 import type { SidebarProjectSnapshot } from "~/sidebarProjectGrouping";
+import { useKitshnMachines } from "~/state/environments";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
@@ -9,9 +10,17 @@ export function ProjectEnvironmentBadge(props: {
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly machineByEnvironmentId: ReadonlyMap<EnvironmentId, EnvironmentMachineKind>;
 }) {
+  // Fork: a kitshn-joined environment says so in the tooltip.
+  const kitshnMachines = useKitshnMachines();
   const remoteMembers = props.group.memberProjects
     .filter((member) => member.environmentId !== props.primaryEnvironmentId)
-    .map((member) => ({ ...member, environmentLabel: member.environmentLabel ?? "Remote" }))
+    .map((member) => {
+      const label = member.environmentLabel ?? "Remote";
+      return {
+        ...member,
+        environmentLabel: kitshnMachines.has(member.environmentId) ? `${label} (kitshn)` : label,
+      };
+    })
     .sort((a, b) => a.environmentLabel.localeCompare(b.environmentLabel));
   const first = remoteMembers[0];
   if (!first) return null;

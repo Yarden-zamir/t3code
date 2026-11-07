@@ -29,10 +29,10 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as ForkChangelog from "./ForkChangelog.ts";
 import { sessionAllowed } from "./kitshn/kitshnGrantRules.ts";
+import { kitshnMachineRef } from "./kitshn/environmentLabel.ts";
 import * as KitshnGrants from "./kitshn/KitshnGrants.ts";
 import * as ForkUpdates from "./ForkUpdates.ts";
 import { isMachineSubject } from "./machineMap/machineAccess.ts";
-import * as KitshnProvider from "./kitshn/KitshnProvider.ts";
 import * as KitshnSettingsSync from "./kitshn/KitshnSettingsSync.ts";
 import * as MachinePeers from "./machineMap/MachinePeers.ts";
 import * as PreviewServerGroups from "./PreviewServerGroups.ts";
@@ -43,28 +43,72 @@ import * as WebPush from "./webPush/WebPush.ts";
 /** The fork RPC tags, which the upstream handler object in `ws.ts` omits. */
 export const FORK_WS_RPC_TAGS = Object.values(FORK_WS_METHODS);
 
+/**
+ * The kitshn machine for the server config, only while this server run registered with kitshn.
+ * The config needs a session, so the public descriptor never names the machine.
+ */
+export const kitshnMachineConfig = Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
+  Effect.flatMap((grants) =>
+    Option.isNone(grants)
+      ? Effect.succeed(null)
+      : grants.value.joinedMachine.pipe(Stream.runHead, Effect.map(Option.getOrNull)),
+  ),
+  Effect.map((machine) => {
+    const ref = machine === null ? null : kitshnMachineRef(machine);
+    return ref === null ? {} : { kitshnMachine: ref };
+  }),
+);
+
+/** MM-1311: the origins of the machines that kitshn links, which trust this page (K-1609). */
+export const trustedBrowserOriginsConfig = Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
+  Effect.map((grants) => {
+    const origins = Option.isSome(grants) ? grants.value.peerOrigins() : [];
+    return origins.length === 0 ? {} : { trustedBrowserOrigins: origins };
+  }),
+);
+
+const kitshnConfigKey = (
+  value: Pick<ServerConfig, "environment" | "kitshnMachine" | "trustedBrowserOrigins">,
+) =>
+  JSON.stringify([
+    value.environment.label,
+    value.kitshnMachine?.id ?? null,
+    value.kitshnMachine?.name ?? null,
+    value.trustedBrowserOrigins ?? [],
+  ]);
+
 // Reuse snapshots so older clients do not need a new config event type.
-export const environmentLabelUpdates = <E>(
-  loadConfig: Effect.Effect<ServerConfig, E>,
-  initialLabel: string,
+export const environmentLabelUpdates = <C, E>(
+  loadConfig: Effect.Effect<C, E>,
+  initial: Parameters<typeof kitshnConfigKey>[0],
 ) =>
   Stream.unwrap(
     Effect.gen(function* () {
-      const provider = yield* Effect.serviceOption(KitshnProvider.KitshnProvider);
-      if (Option.isNone(provider)) return Stream.empty;
+      const grants = yield* Effect.serviceOption(KitshnGrants.KitshnGrants);
+      if (Option.isNone(grants)) return Stream.empty;
       const settings = yield* ServerSettings.ServerSettingsService;
       const environment = yield* ServerEnvironment.ServerEnvironment;
-      // Each `register` answer can bring a new machine name; the label reads it again.
+      // A `register` answer or a reach event can change the machine or the peer origins.
       const changes = Stream.merge(
-        provider.value.state.pipe(Stream.map(() => "kitshn")),
+        Stream.merge(grants.value.joinedMachine, grants.value.peerOriginChanges),
         settings.streamChanges.pipe(
           Stream.map((value) => String(value.environmentLabelFromMachineMap)),
           Stream.changes,
         ),
       ).pipe(
-        Stream.mapEffect(() => environment.getDescriptor.pipe(Effect.map((value) => value.label))),
+        Stream.mapEffect(() =>
+          Effect.all({
+            environment: environment.getDescriptor,
+            machine: kitshnMachineConfig,
+            origins: trustedBrowserOriginsConfig,
+          }).pipe(
+            Effect.map(({ environment, machine, origins }) =>
+              kitshnConfigKey({ environment, ...machine, ...origins }),
+            ),
+          ),
+        ),
       );
-      return Stream.concat(Stream.make(initialLabel), changes).pipe(
+      return Stream.concat(Stream.make(kitshnConfigKey(initial)), changes).pipe(
         Stream.changes,
         Stream.drop(1),
         Stream.mapEffect(() => loadConfig),
@@ -213,20 +257,6 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
           forkUpdates.terminalHold(input.heldSince),
         [FORK_WS_METHODS.threadRecreateWorktree]: (input) => worktreeRecreate.recreate(input),
       });
-    }),
-  );
-
-/** MM-1311: linked machines join the explicit list of trusted browser origins (K-1609). */
-export const trustedBrowserOriginsConfig = (configured: ReadonlyArray<string> | undefined) =>
-  Effect.serviceOption(KitshnGrants.KitshnGrants).pipe(
-    Effect.map((grants) => {
-      const origins = [
-        ...new Set([
-          ...(configured ?? []),
-          ...(Option.isSome(grants) ? grants.value.peerOrigins() : []),
-        ]),
-      ];
-      return origins.length === 0 ? {} : { trustedBrowserOrigins: origins };
     }),
   );
 

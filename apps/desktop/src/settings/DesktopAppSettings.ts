@@ -37,9 +37,6 @@ export interface DesktopSettings {
   // through a tunnel at `tunnelPairingUrl` (an https origin).
   readonly tunnelPairingEnabled: boolean;
   readonly tunnelPairingUrl: string | null;
-  // Fork: comma-separated https origins that may call the server with cookies
-  // while tunnel pairing is on (T3CODE_TRUSTED_BROWSER_ORIGINS).
-  readonly trustedBrowserOrigins: string | null;
   readonly updateChannel: DesktopUpdateChannel;
   readonly updateChannelConfiguredByUser: boolean;
   readonly wslBackendEnabled: boolean;
@@ -80,7 +77,6 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
   tunnelPairingEnabled: false,
   tunnelPairingUrl: null,
-  trustedBrowserOrigins: null,
   updateChannel: "latest",
   updateChannelConfiguredByUser: false,
   wslBackendEnabled: false,
@@ -105,7 +101,6 @@ const DesktopSettingsDocument = Schema.Struct({
   tailscaleServePort: Schema.optionalKey(Schema.Number),
   tunnelPairingEnabled: Schema.optionalKey(Schema.Boolean),
   tunnelPairingUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  trustedBrowserOrigins: Schema.optionalKey(Schema.NullOr(Schema.String)),
   updateChannel: Schema.optionalKey(DesktopUpdateChannelSchema),
   updateChannelConfiguredByUser: Schema.optionalKey(Schema.Boolean),
   wslBackendEnabled: Schema.optionalKey(Schema.Boolean),
@@ -170,12 +165,10 @@ export class DesktopAppSettings extends Context.Service<
       readonly enabled: boolean;
       readonly port: Option.Option<number>;
     }) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
-    // Callers validate `url` with normalizeTunnelPairingUrl and
-    // `trustedBrowserOrigins` with normalizeTrustedBrowserOrigins first.
+    // Callers validate `url` with normalizeTunnelPairingUrl first.
     readonly setTunnelPairing: (input: {
       readonly enabled: boolean;
       readonly url: string | null;
-      readonly trustedBrowserOrigins: string | null;
     }) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setUpdateChannel: (
       channel: DesktopUpdateChannel,
@@ -217,23 +210,6 @@ export function normalizeTunnelPairingUrl(value: unknown): string | null {
   return url !== null && url.protocol === "https:" && url.pathname === "/" ? url.origin : null;
 }
 
-/**
- * Fork: comma-joined https origins from a comma or newline separated list.
- * Null for an empty list, undefined when any entry is not a bare https origin.
- */
-export function normalizeTrustedBrowserOrigins(value: unknown): string | null | undefined {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== "string") return undefined;
-  const entries = value
-    .replaceAll("\n", ",")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  const origins = entries.map(normalizeTunnelPairingUrl);
-  if (origins.some((origin) => origin === null)) return undefined;
-  return origins.length === 0 ? null : origins.join(",");
-}
-
 function normalizeWslDistro(value: unknown): string | null {
   return typeof value === "string" && isValidDistroName(value) ? value : null;
 }
@@ -272,7 +248,6 @@ function normalizeDesktopSettingsDocument(
     tunnelPairingEnabled:
       parsed.tunnelPairingEnabled === true &&
       normalizeTunnelPairingUrl(parsed.tunnelPairingUrl) !== null,
-    trustedBrowserOrigins: normalizeTrustedBrowserOrigins(parsed.trustedBrowserOrigins) ?? null,
     // Fork: the fork publishes only nightly builds, so a saved Stable channel reads as nightly.
     updateChannel: updateChannelConfiguredByUser ? "nightly" : defaultSettings.updateChannel,
     updateChannelConfiguredByUser,
@@ -315,9 +290,6 @@ function toDesktopSettingsDocument(
   }
   if (settings.tunnelPairingUrl !== defaults.tunnelPairingUrl) {
     document.tunnelPairingUrl = settings.tunnelPairingUrl;
-  }
-  if (settings.trustedBrowserOrigins !== defaults.trustedBrowserOrigins) {
-    document.trustedBrowserOrigins = settings.trustedBrowserOrigins;
   }
   if (settings.updateChannel !== defaults.updateChannel) {
     document.updateChannel = settings.updateChannel;
@@ -388,18 +360,14 @@ function setTunnelPairing(
   input: {
     readonly enabled: boolean;
     readonly url: string | null;
-    readonly trustedBrowserOrigins: string | null;
   },
 ): DesktopSettings {
-  return settings.tunnelPairingEnabled === input.enabled &&
-    settings.tunnelPairingUrl === input.url &&
-    settings.trustedBrowserOrigins === input.trustedBrowserOrigins
+  return settings.tunnelPairingEnabled === input.enabled && settings.tunnelPairingUrl === input.url
     ? settings
     : {
         ...settings,
         tunnelPairingEnabled: input.enabled,
         tunnelPairingUrl: input.url,
-        trustedBrowserOrigins: input.trustedBrowserOrigins,
       };
 }
 

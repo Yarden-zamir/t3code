@@ -32,6 +32,7 @@ import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
 import * as ForkConnections from "./ForkConnectionsSettings";
+import { KitshnBadge, KitshnJoinedLine } from "../machines/KitshnMark";
 import {
   ConnectionDiagnosisPanel,
   ConnectionDiagnosisSummary,
@@ -216,10 +217,11 @@ export function SavedBackendListRow({
       (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
   );
   const routeCount = connectionRoutes(environment.entry).length;
-  const requestHeaders = ForkConnections.useEnvironmentRequestHeaders(
+  const accessChallenged = ForkConnections.useAccessChallenged(
     environment.entry,
     environment.connection.error,
   );
+  const kitshnMachine = environment.serverConfig?.kitshnMachine;
   const subtitleText = [
     environmentTransportLabel(environment, connectedTarget),
     // The headline below names the failure in full.
@@ -241,7 +243,7 @@ export function SavedBackendListRow({
       : enabled
         ? connectionStatusText(environment.connection)
         : "Switched off"
-  }${ForkConnections.accessChallengeSubtitle(enabled && requestHeaders.accessChallenged)}${
+  }${ForkConnections.accessChallengeSubtitle(enabled && accessChallenged)}${
     versionMismatch
       ? `\nUpdate available: ${versionMismatch.serverVersion} → ${versionMismatch.clientVersion}`
       : ""
@@ -273,6 +275,7 @@ export function SavedBackendListRow({
     <EnvironmentRow
       kind={machineKind}
       label={environment.label}
+      mark={<KitshnBadge machine={kitshnMachine} />}
       dimmed={!enabled}
       subtitle={
         <span className="flex min-w-0 items-center gap-1">
@@ -337,10 +340,6 @@ export function SavedBackendListRow({
               )}
             />
           </button>
-          <ForkConnections.RequestHeadersToggle
-            state={requestHeaders}
-            environmentId={environmentId}
-          />
         </span>
       }
       below={
@@ -359,9 +358,8 @@ export function SavedBackendListRow({
               <ServerUpdateProgress state={serverUpdateState} />
             </div>
           ) : null}
-          <ForkConnections.AccessChallengeMessage
-            show={enabled && requestHeaders.accessChallenged}
-          />
+          <KitshnJoinedLine machine={kitshnMachine} />
+          <ForkConnections.AccessChallengeMessage show={enabled && accessChallenged} />
         </>
       }
       detail={
@@ -392,10 +390,6 @@ export function SavedBackendListRow({
               />
             </div>
           )}
-          <ForkConnections.RequestHeadersPanel
-            state={requestHeaders}
-            environmentId={environmentId}
-          />
         </>
       }
     >

@@ -676,6 +676,7 @@ function AssistantPanel(props: { readonly capture: AssistantCapture | null }) {
       label: environment.environmentLabel,
       kind: resolveEnvironmentMachineKind(serverConfigs.get(environment.environmentId) ?? null),
       connected: environment.connectionState === "connected",
+      kitshnMachine: serverConfigs.get(environment.environmentId)?.kitshnMachine ?? null,
     }));
   const targetMachine = machines.find((machine) => machine.environmentId === targetEnvironmentId);
   // Until the conversation thread is listed, a reply waits: a new thread target would split it.

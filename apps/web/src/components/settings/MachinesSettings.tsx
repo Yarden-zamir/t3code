@@ -1,9 +1,11 @@
 import { isElectron } from "../../env";
 import { DeviceInviteSettingsRow } from "../../machineMap/desktopDevice";
+import { useKitshnMachines, usePrimaryEnvironmentId } from "../../state/environments";
 import { useMachineMapState } from "../../state/machineMap";
+import { KitshnBadge } from "../machines/KitshnMark";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { ForkSettingsSlot } from "./ForkSettingsSlot";
-import type { MachineMapClientState } from "@t3tools/contracts";
+import { kitshnJoinedText, type MachineMapClientState } from "@t3tools/contracts";
 
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -17,7 +19,10 @@ const PROBLEMS_SHOWN = 5;
 export function MachinesSettingsPanel() {
   const { environment } = useSettingsScope();
   const { state } = useMachineMapState(environment?.environmentId ?? null);
+  const kitshnMachines = useKitshnMachines();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   if (environment === null) return null;
+  const kitshnMachine = kitshnMachines.get(environment.environmentId);
   const problems = state?.connection.problems ?? [];
   return (
     <SettingsPageContainer>
@@ -37,6 +42,21 @@ export function MachinesSettingsPanel() {
         </Alert>
       ) : null}
       <SettingsSection title="kitshn">
+        <SettingsRow
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              {environment.label}
+              <KitshnBadge machine={kitshnMachine} />
+            </span>
+          }
+          description={
+            kitshnMachine !== undefined
+              ? kitshnJoinedText(kitshnMachine)
+              : environment.environmentId === primaryEnvironmentId
+                ? "This machine is not joined to kitshn."
+                : "A manual environment: an address that you added and paired."
+          }
+        />
         {state === null ? null : <ConnectionRow connection={state.connection} />}
         {isElectron ? <DeviceInviteSettingsRow /> : null}
         <ForkSettingsSlot place="machines-machine-map" />

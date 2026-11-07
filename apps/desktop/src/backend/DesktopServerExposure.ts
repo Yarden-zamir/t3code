@@ -295,8 +295,6 @@ export type DesktopTunnelPairingError = typeof DesktopTunnelPairingError.Type;
 export const TunnelPairingInput = Schema.Struct({
   enabled: Schema.Boolean,
   url: Schema.NullOr(Schema.String),
-  // Fork: comma or newline separated https origins; null or blank clears them.
-  trustedBrowserOrigins: Schema.NullOr(Schema.String),
 });
 
 export const DesktopServerExposureSetModeError = Schema.Union([
@@ -322,7 +320,6 @@ export interface DesktopServerExposureBackendConfig {
   readonly tailscaleServePort: number;
   // Fork: set only while tunnel pairing is on.
   readonly tunnelPairingUrl: Option.Option<string>;
-  readonly trustedBrowserOrigins: Option.Option<string>;
 }
 
 export interface DesktopServerExposureChange {
@@ -366,7 +363,6 @@ interface RuntimeState {
   readonly tailscaleServePort: number;
   readonly tunnelPairingEnabled: boolean;
   readonly tunnelPairingUrl: Option.Option<string>;
-  readonly trustedBrowserOrigins: Option.Option<string>;
 }
 
 interface ResolvedRuntimeState {
@@ -394,15 +390,12 @@ const toContractState = (state: RuntimeState): DesktopServerExposureState => ({
   tailscaleServePort: state.tailscaleServePort,
   tunnelPairingEnabled: state.tunnelPairingEnabled,
   tunnelPairingUrl: Option.getOrNull(state.tunnelPairingUrl),
-  trustedBrowserOrigins: Option.getOrNull(state.trustedBrowserOrigins),
 });
 
 // Fork: the tunnel URL reaches the backend and the endpoint list only while
 // tunnel pairing is on.
 const activeTunnelPairingUrl = (state: RuntimeState): Option.Option<string> =>
   state.tunnelPairingEnabled ? state.tunnelPairingUrl : Option.none();
-const activeTrustedBrowserOrigins = (state: RuntimeState): Option.Option<string> =>
-  state.tunnelPairingEnabled ? state.trustedBrowserOrigins : Option.none();
 
 const toBackendConfig = (state: RuntimeState): DesktopServerExposureBackendConfig => ({
   port: state.port,
@@ -411,7 +404,6 @@ const toBackendConfig = (state: RuntimeState): DesktopServerExposureBackendConfi
   tailscaleServeEnabled: state.tailscaleServeEnabled,
   tailscaleServePort: state.tailscaleServePort,
   tunnelPairingUrl: activeTunnelPairingUrl(state),
-  trustedBrowserOrigins: activeTrustedBrowserOrigins(state),
 });
 
 const toResolvedExposure = (state: RuntimeState): ResolvedDesktopServerExposure => ({
@@ -443,7 +435,6 @@ function runtimeStateFromResolvedExposure(input: {
     tailscaleServePort: input.settings.tailscaleServePort,
     tunnelPairingEnabled: input.settings.tunnelPairingEnabled,
     tunnelPairingUrl: Option.fromNullishOr(input.settings.tunnelPairingUrl),
-    trustedBrowserOrigins: Option.fromNullishOr(input.settings.trustedBrowserOrigins),
   };
 }
 
@@ -694,14 +685,8 @@ export const make = Effect.gen(function* () {
     ) {
       return yield* new DesktopTunnelPairingInvalidUrlError({ url: input.url });
     }
-    const trustedBrowserOrigins = DesktopAppSettings.normalizeTrustedBrowserOrigins(
-      input.trustedBrowserOrigins,
-    );
-    if (trustedBrowserOrigins === undefined) {
-      return yield* new DesktopTunnelPairingInvalidUrlError({ url: input.trustedBrowserOrigins });
-    }
     const result = yield* desktopSettings
-      .setTunnelPairing({ enabled: input.enabled, url, trustedBrowserOrigins })
+      .setTunnelPairing({ enabled: input.enabled, url })
       .pipe(
         Effect.mapError(
           (cause) => new DesktopTunnelPairingPersistenceError({ enabled: input.enabled, cause }),
@@ -712,16 +697,13 @@ export const make = Effect.gen(function* () {
       ...current,
       tunnelPairingEnabled: result.settings.tunnelPairingEnabled,
       tunnelPairingUrl: Option.fromNullishOr(result.settings.tunnelPairingUrl),
-      trustedBrowserOrigins: Option.fromNullishOr(result.settings.trustedBrowserOrigins),
     }));
     return {
       state: toContractState(nextState),
       // The backend reads these only at start, so restart when they change.
       requiresRelaunch:
         Option.getOrNull(activeTunnelPairingUrl(previous)) !==
-          Option.getOrNull(activeTunnelPairingUrl(nextState)) ||
-        Option.getOrNull(activeTrustedBrowserOrigins(previous)) !==
-          Option.getOrNull(activeTrustedBrowserOrigins(nextState)),
+        Option.getOrNull(activeTunnelPairingUrl(nextState)),
     };
   }, changePermit.withPermit);
 

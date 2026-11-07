@@ -1,5 +1,5 @@
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
-import type { EnvironmentId, EnvironmentMachineKind } from "@t3tools/contracts";
+import type { EnvironmentId, EnvironmentMachineKind, KitshnMachineRef } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
 import {
   Animated as CoreAnimated,
@@ -25,6 +25,7 @@ import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
 import type { AnnotationStroke, ImageCrop } from "../../native/assistant";
 import type { ContextPillKind } from "./contextPills";
+import { KitshnJoinedLine, KitshnPill } from "../connection/KitshnMark";
 
 /** Fork: the parts of the Android assistant panel that are not the composer row. */
 
@@ -726,6 +727,7 @@ export interface PanelMachine {
   readonly label: string;
   readonly kind: EnvironmentMachineKind;
   readonly connected: boolean;
+  readonly kitshnMachine: KitshnMachineRef | null;
 }
 
 /** The machine icon of the target. It names the machine only in the list it opens. */
@@ -776,9 +778,13 @@ export function MachineList(props: {
             tintColorClassName="accent-foreground-muted"
           />
           <View className="flex-1">
-            <Text className="text-base" numberOfLines={1}>
-              {machine.label}
-            </Text>
+            <View className="flex-row items-center gap-1.5">
+              <Text className="min-w-0 flex-shrink text-base" numberOfLines={1}>
+                {machine.label}
+              </Text>
+              <KitshnPill machine={machine.kitshnMachine} />
+            </View>
+            <KitshnJoinedLine machine={machine.kitshnMachine} />
             {machine.connected ? null : (
               <Text className="text-xs text-foreground-muted">Not connected</Text>
             )}

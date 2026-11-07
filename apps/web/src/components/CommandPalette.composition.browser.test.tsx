@@ -62,6 +62,7 @@ vi.mock("../state/environments", async (original) => ({
   }),
   usePrimaryEnvironmentId: () => "local",
   useEnvironmentProviders: () => new Map(),
+  useKitshnMachines: () => new Map(),
 }));
 vi.mock("../state/entities", async (original) => ({
   ...(await original<typeof import("../state/entities")>()),

@@ -30,6 +30,7 @@ import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { ServerProviderUsageLimits, UsageLimitSourceSnapshots } from "./providerUsageLimits.ts";
 import { ServerSettings } from "./settings.ts";
 import { DesktopUpdateChannelSchema } from "./ipc.ts";
+import { KitshnMachineRef } from "./machineMap.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
   kind: Schema.Literal("keybindings.malformed-config"),
@@ -677,11 +678,15 @@ export const ServerConfig = Schema.Struct({
   /** Hints only; verify each address answers as this environment. */
   directEndpoints: Schema.optionalKey(ForwardCompatibleArray(ServerDirectEndpoint)),
   /**
-   * Fork: https origins this server lets call it with cookies
-   * (T3CODE_TRUSTED_BROWSER_ORIGINS). A page served by this server sends
-   * cookies to these origins when they are siblings. Absent when unset.
+   * Fork: the https origins of the machines that kitshn links (K-1609). They accept cookies from
+   * this server's page, so the page sends cookies to them when they are siblings. Absent when none.
    */
   trustedBrowserOrigins: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  /**
+   * Fork: the kitshn machine of this server, present while this server run is joined to kitshn.
+   * It is here and not in the public descriptor, so only a signed-in client reads it.
+   */
+  kitshnMachine: Schema.optionalKey(KitshnMachineRef),
   observability: ServerObservability,
   settings: ServerSettings,
   /** Present when an administrator's policy file manages this environment. */

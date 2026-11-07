@@ -9,7 +9,6 @@ import type {
   RelayEnvironmentStatusResponse,
 } from "@t3tools/contracts/relay";
 import * as Option from "effect/Option";
-import { AsyncResult } from "effect/reactivity";
 import { useMemo } from "react";
 
 import { environmentCatalog } from "../../connection/catalog";
@@ -21,7 +20,6 @@ import { useWorkspaceEnvironments } from "../../state/workspace";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { relayManagedEnvironmentIds } from "./environmentSections";
-import { useRequestHeadersFollowAddress } from "./useRequestHeadersFollowAddress";
 
 export interface RelayEnvironmentView {
   readonly environment: RelayClientEnvironmentRecord;
@@ -38,7 +36,6 @@ export function useConnectionController() {
     reportFailure: false,
   });
   const updateBearer = useAtomCommand(updateBearerConnection, { reportFailure: false });
-  const headersFollowAddress = useRequestHeadersFollowAddress(connectedEnvironments);
   const registerEnvironment = useAtomCommand(environmentCatalog.register, "environment register");
   const removeEnvironmentMutation = useAtomCommand(environmentCatalog.remove, "environment remove");
   const retryEnvironmentMutation = useAtomCommand(environmentCatalog.retryNow, "environment retry");
@@ -91,19 +88,15 @@ export function useConnectionController() {
     retryEnvironmentMutation(environmentId);
   const setEnvironmentEnabled = (environmentId: EnvironmentId, enabled: boolean) =>
     setEnvironmentEnabledMutation({ environmentId, enabled });
-  const updateEnvironment = async (
+  const updateEnvironment = (
     environmentId: EnvironmentId,
     updates: { readonly label: string; readonly displayUrl: string },
-  ) => {
-    const result = await updateBearer({
+  ) =>
+    updateBearer({
       environmentId,
       label: updates.label,
       httpBaseUrl: updates.displayUrl,
     });
-    if (AsyncResult.isSuccess(result))
-      await headersFollowAddress(environmentId, updates.displayUrl);
-    return result;
-  };
 
   return {
     connectedEnvironments,
