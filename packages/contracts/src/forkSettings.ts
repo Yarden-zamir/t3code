@@ -1,6 +1,6 @@
 /**
  * Fork settings. `settings.ts` spreads these fields into the upstream settings schemas, so the
- * upstream file keeps one line per schema and a Fork Sync merge does not conflict with them.
+ * upstream file keeps one line per schema and an upstream merge does not conflict with them.
  */
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -226,7 +226,7 @@ export const ForkClientSettingsFields = {
   backgroundWorkDetails: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Fork: pin buttons on messages, and the lists of pins in thread details and the sidebar. */
   messagePins: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /** Fork: a changelog of fork releases, upstream changes and Fork Sync runs from the update UI. */
+  /** Fork: a changelog of fork releases, upstream changes and the merge agent pull request from the update UI. */
   forkChangelogEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
    * Fork: the web app registers a service worker for the installed app (`apps/web/public/sw.js`):

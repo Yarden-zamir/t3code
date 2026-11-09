@@ -225,7 +225,7 @@ The `t3.settings` state on kitshn holds a shared part and a part for each machin
 
 - Custom themes (the `themes/` folder, as `sharedThemes`) and `defaultTheme` sync too.
 - Keybindings sync while `keybindingSync` is on (off by default). Settings > Keybindings > "Sync keybindings". The shared value replaces the whole `keybindings.json` of each machine, and the machine keeps the file before it as `keybindings.json.bak`.
-- Web, desktop and mobile apply the client settings of the machine that serves them. A browser leaves out the settings that only the desktop app uses. The mobile app takes only the settings that it has: `followUpBehavior`, `mathRenderingEnabled`, `planModeEnabled`, `sidebarWorkingShelfEnabled` and `sidebarProjectGroupingMode`. A change on the device stays until the synced value changes again.
+- Web, desktop and mobile apply the client settings of the machine that serves them. A browser leaves out the settings that only the desktop app uses. The mobile app takes only the settings that it has: `followUpBehavior`, `mathRenderingEnabled`, `sidebarWorkingShelfEnabled` and `sidebarProjectGroupingMode`. A change on the device stays until the synced value changes again.
 - Agents set one value of their own machine with `machines_set_setting`. Only the owner changes the shared part: in T3 Settings, or with `t3 tool call` from a shell.
 - Paths, secrets and project-keyed maps stay on each machine.
 
@@ -318,13 +318,13 @@ One update policy for the desktop app and the server. Only the last step differs
 
 ### Changelog
 
-A timeline of fork releases and their commits, the upstream commits that fork main does not have yet, and the Fork Sync runs.
+A timeline of fork releases and their commits, the upstream commits that fork main does not have yet, and the open pull request of the merge agent.
 
 - **Setting:** client setting `forkChangelogEnabled` (on by default). Settings > About > App > "Fork changelog".
 - **Works on:** web and desktop (the Settings row). The update popover is on desktop only.
 - **Open it:** from the Fork changelog row in Settings, or from "Open changelog" in the update popover. With the setting on, the update popover shows the changelog of every release between the installed version and the offered one.
 - **Releases tab:** commits, newest first, with a divider for each release, its time and an "Installed" mark. A fork icon marks a fork commit, and a down-arrow icon marks an upstream commit. A `#123` in a commit subject links to the pull request of its repository. Merge commits do not show.
-- **Upstream tab:** the upstream main commits that fork main does not have yet. "Start Fork Sync" starts the sync and shows the run and each job. It needs the `source-control:write` scope.
+- **Upstream tab:** the upstream main commits that fork main does not have yet. Above them, the open pull request "chore(sync): merge pingdotgg/t3code main" of the merge agent, with its Fork CI state. Without one, the tab says that the merge agent runs every 2 hours.
 - **Ask agent:** opens a thread in the fork project of the same machine, with a changelog chip and a prompt to read and send. The fork project is the first project whose repository is `Yarden-zamir/t3code`, as the only remote or as `origin` beside an `upstream` remote. Without one, the menu shows an error.
 - **Limits:**
   - The server reads GitHub with the GitHub credential of its machine (settings, `GH_TOKEN` or `gh auth login`). Without a credential, the changelog shows the GitHub error.
@@ -336,7 +336,7 @@ A timeline of fork releases and their commits, the upstream commits that fork ma
 These README lines are maintainer procedures:
 
 - Local deploy of a server or the Mac app: [Deploy a local build](operations.md#deploy-a-local-build).
-- Fork Sync: [Fork Sync](operations.md#fork-sync).
+- Fork merge: [Fork merge](operations.md#fork-merge).
 - Fork CI: [Fork CI](operations.md#fork-ci).
 - Repair agent: [Repair agent](operations.md#repair-agent).
 
@@ -468,7 +468,7 @@ Tabs under the sidebar search hold threads. A thread lives in one tab, so the ta
   - A machine without the map role `edit`, or off the map, keeps a change on its own server only.
   - A person in a kitshn circle gets their own tabs: their edits go into the part of their first circle. See [Settings by circle](#settings-by-circle).
   - Tabs were called groups before. A server moves `sidebarGroups` and `mobileSidebarGroups` in `settings.json` to the new keys once at start, and renames the old `sidebar.group.*`, `sidebar.previousGroup` and `sidebar.nextGroup` keybindings. A client moves `sidebarGroupsEnabled` and `sidebarGroupSingleThreadOpens` when it loads. A machine on an older version keeps the old keys, so it does not sync tabs with a machine on a newer version until both update. The open tab resets to "Threads" once.
-  - Applies only after upstream thread groups merge ([pingdotgg/t3code#15988](https://github.com/pingdotgg/t3code/pull/15988) "feat: related threads stay together as a group"): a nested thread always shows in the tab of its top thread, so a nested group never splits across tabs. This holds for views too. A drag or "Assign to tab" on a nested thread assigns its top thread. Fork Sync resolves that merge with this rule.
+  - Applies only after upstream thread groups merge ([pingdotgg/t3code#15988](https://github.com/pingdotgg/t3code/pull/15988) "feat: related threads stay together as a group"): a nested thread always shows in the tab of its top thread, so a nested group never splits across tabs. This holds for views too. A drag or "Assign to tab" on a nested thread assigns its top thread. The merge agent resolves that merge with this rule.
 
 ### Waiting shelf
 
@@ -838,7 +838,7 @@ Right-click menus use the app's own menu, also in the desktop app, in place of t
 
 - **Setting:** none. Menus always use the app menu. A menu that opens before the app is ready, or on an error screen, uses a plain web menu.
 - Controls and menu items that a keybinding can run show the key. Right-click one, or press Shift+F10 or the context menu key on it, for **Keybindings…**. In a menu it opens nested, so the menu stays open, and Escape closes only the nested menu. A menu item without a key shows a faint dash. Command palette and cheat sheet rows have the same menu.
-- Messages, code blocks, citation chips, pins and the pins button, queued messages, attachments, check rows, composer banners, the update pill, settings rows, environment rows, connection status dots, the plan card, the context window meter, the thread usage section and the Snoozed and Settled headers have a menu of their own buttons, the items of their "…" menu and copy actions. Selected text, text fields and links keep their own menus. On mobile, a long press on a message bubble, a check row, a usage limit row or the Snoozed and Settled headers opens the same kind of menu.
+- Messages, code blocks, citation chips, pins and the pins button, queued messages, attachments, check rows, composer banners, the update pill, settings rows, environment rows, connection status dots, the plan card, the thread usage section and the Snoozed and Settled headers have a menu of their own buttons, the items of their "…" menu and copy actions. Selected text, text fields and links keep their own menus. On mobile, a long press on a message bubble, a check row, a usage limit row or the Snoozed and Settled headers opens the same kind of menu.
 - **Works on:** web, desktop. The mobile app keeps its native menus.
 - Text fields and pages in the browser panel keep the system menu, with spelling suggestions and Cut, Copy and Paste.
 - **Limits:**

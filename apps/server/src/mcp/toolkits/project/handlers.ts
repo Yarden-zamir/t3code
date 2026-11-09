@@ -357,7 +357,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const run = result.projection.runs.find((run) => run.userMessageId === messageId);
         return {
           threadId: thread.id,
-          link: McpInvocationContext.threadLinkFor(scope, thread.id),
+          link: McpInvocationContext.threadLinkFor(scope, thread.id, thread.title),
           appLink: McpInvocationContext.threadAppLinkFor(scope, thread.id),
           projectId: thread.projectId,
           modelSelection: thread.modelSelection,

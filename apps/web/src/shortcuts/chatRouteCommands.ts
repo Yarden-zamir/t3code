@@ -115,10 +115,8 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
   const startNew =
     (kind: NewThreadKind): CommandHandler =>
     (event) => {
-      const { legacySidebarEnabled } = getClientSettings();
       const groups = readProjectGroups();
       if (
-        !legacySidebarEnabled &&
         !shouldCreateNewThreadInCurrentProject(
           false,
           groups.filter((group) => !group.archived).length,

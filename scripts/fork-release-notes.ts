@@ -14,9 +14,10 @@ import * as NodeChildProcess from "node:child_process";
 
 const FORK_REPOSITORY = "Yarden-zamir/t3code";
 const UPSTREAM_REPOSITORY = "pingdotgg/t3code";
-/** The subject of a Fork Sync merge. See .github/workflows/fork-sync.yml. */
+/** The subject of an upstream merge. See docs/fork-agents.md "Merge agent". */
 const UPSTREAM_SYNC_SUBJECT = `chore(sync): merge ${UPSTREAM_REPOSITORY} main`;
 const PULL_REQUEST_MERGE_PREFIX = "Merge pull request #";
+const SYNC_BRANCH_PREFIX = `${FORK_REPOSITORY.split("/")[0]}/fork-sync/`;
 const UPSTREAM_SHOWN = 10;
 const FEATURE_AND_FIX_TYPES = ["feat", "fix", "perf"] as const;
 
@@ -30,7 +31,13 @@ interface GitCommit {
 }
 
 type FirstParentCommit =
-  | { readonly _tag: "PullRequest"; readonly number: number; readonly title: string }
+  | {
+      readonly _tag: "PullRequest";
+      readonly number: number;
+      readonly title: string;
+      /** True for a `fork-sync/` branch of the merge agent, which holds upstream merges. */
+      readonly sync: boolean;
+    }
   | { readonly _tag: "UpstreamSync"; readonly upstreamHead: string }
   | { readonly _tag: "Direct" };
 
@@ -49,14 +56,19 @@ export function classifyFirstParentCommit(
     if (numberEnd > 0 && Number.isSafeInteger(number) && number > 0) {
       const branch = rest.slice(numberEnd + " from ".length).trim();
       const title = commit.body.split("\n").find((line) => line.trim() !== "");
-      return { _tag: "PullRequest", number, title: title?.trim() ?? branch };
+      return {
+        _tag: "PullRequest",
+        number,
+        title: title?.trim() ?? branch,
+        sync: branch.startsWith(SYNC_BRANCH_PREFIX),
+      };
     }
   }
   if (secondParent !== undefined && commit.subject === UPSTREAM_SYNC_SUBJECT) {
     return { _tag: "UpstreamSync", upstreamHead: secondParent };
   }
-  // Limit: "chore(sync): merge main" (Fork Sync when main moved during its run) lands here
-  // and hides the fork commits of its second parent. Revisit when such a merge reaches main.
+  // Limit: another merge into main, such as "chore(sync): merge main", lands here and hides the
+  // fork commits of its second parent. Revisit when such a merge reaches main.
   return { _tag: "Direct" };
 }
 
@@ -170,6 +182,12 @@ export function buildReleaseNotes({ releaseSha, previousRef, builtAt }: ReleaseN
   const directCommits: string[] = [];
   const upstreamCommits: GitCommit[] = [];
 
+  const addUpstreamSync = (commit: GitCommit, upstreamHead: string) =>
+    // Leaves out upstream commits that an earlier sync in this range or release brought.
+    upstreamCommits.push(
+      ...readFirstParentCommits([upstreamHead, "--not", commit.parents[0]!, previousRef]),
+    );
+
   for (const commit of readFirstParentCommits([`${previousRef}..${releaseSha}`])) {
     const kind = classifyFirstParentCommit(commit);
     switch (kind._tag) {
@@ -177,12 +195,21 @@ export function buildReleaseNotes({ releaseSha, previousRef, builtAt }: ReleaseN
         pullRequests.push(
           `- Fork [#${kind.number}](https://github.com/${FORK_REPOSITORY}/pull/${kind.number}): ${escapeText(kind.title)}, merged ${formatUtc(commit.committedAt)}`,
         );
+        if (kind.sync) {
+          // The upstream merges of a sync pull request are on its branch, not on main.
+          for (const branchCommit of readFirstParentCommits([
+            commit.parents[1]!,
+            "--not",
+            commit.parents[0]!,
+          ])) {
+            const branchKind = classifyFirstParentCommit(branchCommit);
+            if (branchKind._tag === "UpstreamSync")
+              addUpstreamSync(branchCommit, branchKind.upstreamHead);
+          }
+        }
         break;
       case "UpstreamSync":
-        // Leaves out upstream commits that an earlier sync in this range or release brought.
-        upstreamCommits.push(
-          ...readFirstParentCommits([kind.upstreamHead, "--not", commit.parents[0]!, previousRef]),
-        );
+        addUpstreamSync(commit, kind.upstreamHead);
         break;
       case "Direct":
         directCommits.push(
@@ -202,7 +229,7 @@ export function buildReleaseNotes({ releaseSha, previousRef, builtAt }: ReleaseN
       ].slice(0, UPSTREAM_SHOWN),
     );
     const hiddenCount = upstreamCommits.length - shown.size;
-    const count = `${upstreamCommits.length} upstream ${upstreamCommits.length === 1 ? "commit" : "commits"} from Fork Sync`;
+    const count = `${upstreamCommits.length} upstream ${upstreamCommits.length === 1 ? "commit" : "commits"} from the upstream merge`;
     sections.push(
       [
         "### Upstream",

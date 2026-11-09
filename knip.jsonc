@@ -108,7 +108,7 @@
       // named subcomponents even before they have callers; the file audit still
       // reports an entire component module when nothing imports it.
       // Fork: src/state/forkRelease.ts replaces the npm check, but npmRelease.ts stays
-      // unchanged so that Fork Sync merges it without conflicts.
+      // unchanged so that the upstream merge takes it without conflicts.
       "ignoreIssues": {
         "src/components/ui/*.tsx": ["exports", "nsExports", "duplicates"],
         "src/state/npmRelease.ts": ["exports"],

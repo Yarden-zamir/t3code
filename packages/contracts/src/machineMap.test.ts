@@ -57,6 +57,7 @@ const SHARED_ONLY_SETTINGS: Readonly<Record<SettingScope, ReadonlyArray<string>>
     "providerHealthRefreshInterval",
     "providerModelPreferences",
     "pullRequestMergeMethod",
+    "promptSuggestionsEnabled",
     "pullRequestWatchRemarkFilter",
     "recoverInterruptedTurns",
     "recoverInterruptedTurnsMessage",

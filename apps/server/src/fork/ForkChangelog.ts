@@ -1,17 +1,18 @@
 /**
  * Fork feature: the changelog of the fork releases, the upstream commits that fork main does not
- * have yet, and the Fork Sync workflow. Reads go through the server's GitHub client, so they use
+ * have yet, and the open pull request of the merge agent. Reads go through the server's GitHub client, so they use
  * the credential of `gh` on this machine. See docs/fork/features.md "Changelog".
  *
  * @module fork/ForkChangelog
  */
 import {
   FORK_CHANGELOG_REPOSITORIES,
+  FORK_SYNC_PULL_REQUEST_TITLE,
   ForkChangelogError,
   type ForkReleaseChanges,
   type ForkReleaseChangesInput,
   type ForkReleaseList,
-  type ForkSyncStatus,
+  type ForkSyncPullRequest,
   type ForkUpstreamPending,
 } from "@t3tools/contracts";
 import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
@@ -26,12 +27,12 @@ import * as Schema from "effect/Schema";
 import {
   GitHubCompare,
   type GitHubCommit,
+  GitHubPullRequests,
   GitHubReleases,
-  GitHubWorkflowJobs,
   GitHubWorkflowRuns,
+  forkWorkflowState,
   markForkCommits,
   orderForkReleases,
-  toForkWorkflowRun,
 } from "./forkChangelogGitHub.ts";
 
 const HOST = "github.com";
@@ -40,15 +41,16 @@ const UPSTREAM_REPOSITORY = FORK_CHANGELOG_REPOSITORIES.upstream;
 /** A compare across the fork network names a ref as `owner:name:ref`. */
 const FORK_REF_PREFIX = FORK_REPOSITORY.replace("/", ":");
 const UPSTREAM_REF_PREFIX = UPSTREAM_REPOSITORY.replace("/", ":");
-const SYNC_WORKFLOW = "fork-sync.yml";
+/** The merge agent merges its pull request when this workflow is green on the head. */
+const CI_WORKFLOW = "fork-ci.yml";
 const RELEASE_PAGE_SIZE = 50;
 const COMPARE_PAGE_SIZE = 100;
 // A release range or the fork commit list longer than this is cut and reported as `truncated`.
 // Revisit when the fork carries more than 500 commits of its own.
 const COMPARE_MAX_PAGES = 5;
-/** GitHub lists a dispatched run a few seconds after the dispatch. */
-const NEW_RUN_POLL_ATTEMPTS = 10;
-const NEW_RUN_POLL_INTERVAL = "2 seconds";
+// The merge agent pull request is looked up in the newest 100 open pull requests.
+// Revisit when the fork keeps more than 100 pull requests open.
+const PULL_REQUEST_PAGE_SIZE = 100;
 
 export class ForkChangelog extends Context.Service<
   ForkChangelog,
@@ -58,16 +60,13 @@ export class ForkChangelog extends Context.Service<
       input: ForkReleaseChangesInput,
     ) => Effect.Effect<ForkReleaseChanges, ForkChangelogError>;
     readonly upstreamPending: Effect.Effect<ForkUpstreamPending, ForkChangelogError>;
-    readonly syncStatus: Effect.Effect<ForkSyncStatus, ForkChangelogError>;
-    /** Starts Fork Sync on fork main and answers once GitHub lists the new run. */
-    readonly startSync: Effect.Effect<ForkSyncStatus, ForkChangelogError>;
   }
 >()("t3/fork/ForkChangelog") {}
 
 const decodeCompare = Schema.decodeUnknownEffect(Schema.fromJsonString(GitHubCompare));
 const decodeReleases = Schema.decodeUnknownEffect(Schema.fromJsonString(GitHubReleases));
 const decodeWorkflowRuns = Schema.decodeUnknownEffect(Schema.fromJsonString(GitHubWorkflowRuns));
-const decodeWorkflowJobs = Schema.decodeUnknownEffect(Schema.fromJsonString(GitHubWorkflowJobs));
+const decodePullRequests = Schema.decodeUnknownEffect(Schema.fromJsonString(GitHubPullRequests));
 
 /** Keeps a success for `ttl`; a failure is not kept, so the next read asks GitHub again. */
 const successFor =
@@ -166,57 +165,43 @@ export const make = Effect.gen(function* () {
     timeToLive: successFor("1 hour"),
   });
 
+  const syncPullRequest = Effect.fn("ForkChangelog.syncPullRequest")(function* () {
+    const pulls = yield* readJson(
+      "syncPullRequest",
+      `repos/${FORK_REPOSITORY}/pulls?state=open&per_page=${PULL_REQUEST_PAGE_SIZE}`,
+      decodePullRequests,
+    );
+    const pull = pulls.find((entry) => entry.title === FORK_SYNC_PULL_REQUEST_TITLE);
+    if (pull === undefined) return null;
+    const { workflow_runs } = yield* readJson(
+      "syncPullRequest",
+      `repos/${FORK_REPOSITORY}/actions/workflows/${CI_WORKFLOW}/runs?head_sha=${pull.head.sha}&per_page=1`,
+      decodeWorkflowRuns,
+    );
+    const run = workflow_runs[0];
+    return {
+      number: pull.number,
+      title: pull.title,
+      url: pull.html_url,
+      draft: pull.draft,
+      checks: run === undefined ? null : forkWorkflowState(run.status, run.conclusion),
+    } satisfies ForkSyncPullRequest;
+  });
+
   const upstreamPending = Effect.gen(function* () {
-    const pending = yield* compare(FORK_REPOSITORY, `main...${UPSTREAM_REF_PREFIX}:main`);
+    const [pending, pullRequest] = yield* Effect.all(
+      [compare(FORK_REPOSITORY, `main...${UPSTREAM_REF_PREFIX}:main`), syncPullRequest()],
+      { concurrency: 2 },
+    );
     return {
       // Fork main lacks every one of these commits, so none is a fork commit.
       commits: markForkCommits(pending.commits, new Set()),
       total: pending.total,
       truncated: pending.truncated,
       compareUrl: pending.url,
+      syncPullRequest: pullRequest,
     } satisfies ForkUpstreamPending;
   }).pipe(Effect.withSpan("ForkChangelog.upstreamPending"));
-
-  const syncStatus = Effect.gen(function* () {
-    const { workflow_runs } = yield* readJson(
-      "syncStatus",
-      `repos/${FORK_REPOSITORY}/actions/workflows/${SYNC_WORKFLOW}/runs?per_page=1`,
-      decodeWorkflowRuns,
-    );
-    const run = workflow_runs[0];
-    if (run === undefined) return { run: null } satisfies ForkSyncStatus;
-    const { jobs } = yield* readJson(
-      "syncStatus",
-      `repos/${FORK_REPOSITORY}/actions/runs/${run.id}/jobs?per_page=100`,
-      decodeWorkflowJobs,
-    );
-    return { run: toForkWorkflowRun(run, jobs) } satisfies ForkSyncStatus;
-  }).pipe(Effect.withSpan("ForkChangelog.syncStatus"));
-
-  const startSync = Effect.gen(function* () {
-    const before = yield* syncStatus;
-    yield* github
-      .rest({
-        host: HOST,
-        operation: "ForkChangelog.startSync",
-        method: "POST",
-        path: `repos/${FORK_REPOSITORY}/actions/workflows/${SYNC_WORKFLOW}/dispatches`,
-        // Inputs keep the workflow defaults: a failed run notifies the repair agent.
-        body: { ref: "main" },
-      })
-      .pipe(
-        Effect.mapError(
-          (error) => new ForkChangelogError({ operation: "startSync", detail: error.message }),
-        ),
-      );
-    for (let attempt = 0; attempt < NEW_RUN_POLL_ATTEMPTS; attempt += 1) {
-      yield* Effect.sleep(NEW_RUN_POLL_INTERVAL);
-      const status = yield* syncStatus;
-      if (status.run !== null && status.run.id !== before.run?.id) return status;
-    }
-    // GitHub did not list the run in time. The panel refresh shows it when it appears.
-    return yield* syncStatus;
-  }).pipe(Effect.withSpan("ForkChangelog.startSync"));
 
   return ForkChangelog.of({
     listReleases,
@@ -224,8 +209,6 @@ export const make = Effect.gen(function* () {
       return Cache.get(releaseChangesCache, tag);
     }),
     upstreamPending,
-    syncStatus,
-    startSync,
   });
 });
 

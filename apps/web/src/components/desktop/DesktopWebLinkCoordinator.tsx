@@ -40,7 +40,7 @@ import { previewEnvironment } from "../../state/preview";
 import { allReachableShellsLiveAtom } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
-import { forkMessageLinkNavigation } from "../chat/ForkMessageLinkTarget";
+import { forkMessageLinkNavigation } from "../chat/forkMessageLinkNavigation";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /** A link handed over by the OS is a plain click: nothing about it asks for the browser. */

@@ -54,7 +54,7 @@ it("detects an unmerged sync from its parents, not its branch name or message", 
     );
     assert.strictEqual(
       output,
-      "Fork CI checks sync branches. Locally, run `vp run typecheck` and the fork tests in docs/fork/operations.md (Fork Sync).\n",
+      "Fork CI checks sync branches. Locally, run `vp run typecheck` and the fork tests in docs/fork/operations.md (Fork merge).\n",
     );
 
     const repair = commit("repair after merge", sync);

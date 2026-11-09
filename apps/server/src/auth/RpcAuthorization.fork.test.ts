@@ -16,15 +16,11 @@ import * as RpcTest from "effect/rpc/RpcTest";
 import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes fork", () => {
-  it("requires source control writes to start Fork Sync but not to read the fork changelog", () => {
-    expect(RpcAuthorization.requiredScopeForRpcMethod(WS_METHODS.forkChangelogStartSync)).toBe(
-      AuthSourceControlWriteScope,
-    );
+  it("requires only orchestration reads to read the fork changelog", () => {
     for (const method of [
       WS_METHODS.forkChangelogListReleases,
       WS_METHODS.forkChangelogReleaseChanges,
       WS_METHODS.forkChangelogUpstreamPending,
-      WS_METHODS.forkChangelogSyncStatus,
     ]) {
       expect(RpcAuthorization.requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
     }

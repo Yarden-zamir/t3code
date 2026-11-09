@@ -25,7 +25,6 @@ export function mobilePreferencesFromSharedClientSettings(
     ...(valid.mathRenderingEnabled === undefined
       ? {}
       : { mathRenderingEnabled: valid.mathRenderingEnabled }),
-    ...(valid.planModeEnabled === undefined ? {} : { planModeEnabled: valid.planModeEnabled }),
     ...(valid.sidebarWorkingShelfEnabled === undefined
       ? {}
       : { workingShelfEnabled: valid.sidebarWorkingShelfEnabled }),

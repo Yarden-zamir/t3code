@@ -4,10 +4,10 @@
 // scripts/fork-adopted-upstream-prs.json lists them in stack order, each with the head that fork
 // main holds. See docs/fork/operations.md "Adopted upstream pull requests".
 //
-//   node scripts/fork-adopted-prs.ts sync    Fork Sync: follow the pull requests, after the upstream main merge
+//   node scripts/fork-adopted-prs.ts sync    merge agent: follow the pull requests, after the upstream main merge
 //   node scripts/fork-adopted-prs.ts check   vp run fork:check and Fork CI: check the list against HEAD
 //
-// It uses only Node built-ins, so Fork Sync runs it before the dependency install.
+// It uses only Node built-ins, so it runs before the dependency install.
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -22,7 +22,7 @@ export interface AdoptedPullRequest {
   readonly number: number;
   readonly title: string;
   /**
-   * The branch of the pull request in the upstream repository. Fork Sync follows
+   * The branch of the pull request in the upstream repository. The sync follows
    * `refs/pull/<number>/head`, and stops when the pull request moves to another branch.
    */
   readonly headRef: string;
@@ -174,7 +174,7 @@ export function syncAdoptedPullRequests(
         continue;
       }
       case "OPEN": {
-        // Fork Sync pushes the head to main, which deploys itself. A head from another repository
+        // The merge agent merges the head into main, which deploys itself. A head from another repository
         // would let its owner ship code to the fork.
         if (upstream.headOwner !== UPSTREAM_OWNER || upstream.headRef !== entry.headRef) {
           return {
@@ -226,7 +226,7 @@ export function mergedUpstreamProblems(
   headSubjects: ReadonlyArray<string>,
 ): ReadonlyArray<string> {
   // Limit: upstream squash merges end their subject with ` (#<number>)`. If upstream changes that
-  // format, this check finds nothing, and Fork Sync still drops merged pull requests through gh.
+  // format, this check finds nothing, and the sync still drops merged pull requests through gh.
   const subjects = new Set(
     headSubjects.flatMap((subject) => {
       const start = subject.lastIndexOf(" (#");
@@ -236,7 +236,7 @@ export function mergedUpstreamProblems(
   return list.flatMap((entry) =>
     subjects.has(String(entry.number))
       ? [
-          `#${entry.number}: HEAD holds its upstream squash commit. Fork Sync drops merged pull requests; remove the entry.`,
+          `#${entry.number}: HEAD holds its upstream squash commit. The sync drops merged pull requests; remove the entry.`,
         ]
       : [],
   );
@@ -341,9 +341,6 @@ function sync(): void {
     return;
   }
   console.error(`${result.reason}\n${result.details}`);
-  // Fork Sync names the reason in its issue and in the call to the repair agent.
-  if (process.env.GITHUB_OUTPUT)
-    NodeFS.appendFileSync(process.env.GITHUB_OUTPUT, `reason=${result.reason}\n`);
   process.exit(1);
 }
 
@@ -353,7 +350,7 @@ function check(): void {
   const problems: Array<string> = [];
   if (text !== serializeAdoptedList(list)) {
     problems.push(
-      `${LIST_PATH} is not in the format that Fork Sync writes: JSON.stringify(list, null, 2).`,
+      `${LIST_PATH} is not in the format that the sync writes: JSON.stringify(list, null, 2).`,
     );
   }
   // Offline: it reads only local commits. A shallow clone lacks them, so Fork CI fetches them first.

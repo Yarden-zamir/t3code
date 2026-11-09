@@ -18,7 +18,6 @@ import {
   ForkReleaseChanges,
   ForkReleaseChangesInput,
   ForkReleaseList,
-  ForkSyncStatus,
   ForkUpstreamPending,
 } from "./forkChangelog.ts";
 import { ForkLocalListenerList } from "./forkPreview.ts";
@@ -54,8 +53,6 @@ export const FORK_WS_METHODS = {
   forkChangelogListReleases: "forkChangelog.listReleases",
   forkChangelogReleaseChanges: "forkChangelog.releaseChanges",
   forkChangelogUpstreamPending: "forkChangelog.upstreamPending",
-  forkChangelogSyncStatus: "forkChangelog.syncStatus",
-  forkChangelogStartSync: "forkChangelog.startSync",
 
   // Fork: kitshn client state; the method names stay from the machine map.
   machineMapSubscribe: "machineMap.subscribe",
@@ -95,16 +92,6 @@ const WsForkChangelogReleaseChangesRpc = Rpc.make(FORK_WS_METHODS.forkChangelogR
 const WsForkChangelogUpstreamPendingRpc = Rpc.make(FORK_WS_METHODS.forkChangelogUpstreamPending, {
   payload: Schema.Struct({}),
   success: ForkUpstreamPending,
-  error: forkChangelogError,
-});
-const WsForkChangelogSyncStatusRpc = Rpc.make(FORK_WS_METHODS.forkChangelogSyncStatus, {
-  payload: Schema.Struct({}),
-  success: ForkSyncStatus,
-  error: forkChangelogError,
-});
-const WsForkChangelogStartSyncRpc = Rpc.make(FORK_WS_METHODS.forkChangelogStartSync, {
-  payload: Schema.Struct({}),
-  success: ForkSyncStatus,
   error: forkChangelogError,
 });
 
@@ -202,8 +189,6 @@ export const ForkWsRpcGroup = RpcGroup.make(
   WsForkChangelogListReleasesRpc,
   WsForkChangelogReleaseChangesRpc,
   WsForkChangelogUpstreamPendingRpc,
-  WsForkChangelogSyncStatusRpc,
-  WsForkChangelogStartSyncRpc,
   WsMachineMapSubscribeRpc,
   WsMachineMapShareSettingsRpc,
   WsMachineMapReadableEnvironmentsRpc,
@@ -220,8 +205,6 @@ export const ForkWsRpcGroup = RpcGroup.make(
 
 /** The fork part of `CLIENT_GUARDED_RPC_SCOPES`. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
-  // Fork: starts the Fork Sync workflow, which pushes to fork main on GitHub.
-  [FORK_WS_METHODS.forkChangelogStartSync]: AuthSourceControlWriteScope,
   // Fork: MM-411. Sets shared values of the map, like a settings change on every machine.
   [FORK_WS_METHODS.machineMapShareSettings]: AuthSettingsWriteScope,
   // Fork: sets the values of a circle of people on every machine.
@@ -241,7 +224,6 @@ export const FORK_RPC_READ_SCOPES = {
   [FORK_WS_METHODS.forkChangelogListReleases]: AuthOrchestrationReadScope,
   [FORK_WS_METHODS.forkChangelogReleaseChanges]: AuthOrchestrationReadScope,
   [FORK_WS_METHODS.forkChangelogUpstreamPending]: AuthOrchestrationReadScope,
-  [FORK_WS_METHODS.forkChangelogSyncStatus]: AuthOrchestrationReadScope,
   // Fork: machine map state for this server's clients. Only the desktop gets the token.
   [FORK_WS_METHODS.machineMapSubscribe]: AuthOrchestrationReadScope,
   // Fork: MM-1701. The same data that an agent with read access gets from `machines_read`.

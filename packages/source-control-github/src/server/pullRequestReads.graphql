@@ -275,6 +275,7 @@ query PullRequestActivity(
           lastEditedAt
           url
           authorAssociation
+          isMinimized
           author {
             login
             avatarUrl
@@ -297,6 +298,7 @@ query PullRequestActivity(
           lastEditedAt
           url
           authorAssociation
+          isMinimized
           author {
             login
             avatarUrl

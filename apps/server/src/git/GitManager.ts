@@ -751,12 +751,21 @@ export const make = Effect.gen(function* () {
     }
     return result;
   });
-  const readWorktreeLocation = serverSettingsService.getSettings.pipe(
-    Effect.map(({ worktreesDirectory, worktreePathTemplate }) => ({
-      worktreesDirectory,
-      worktreePathTemplate,
+  const readWorktreeCreationSettings = serverSettingsService.getSettings.pipe(
+    Effect.map((settings) => ({
+      worktreesDirectory: settings.worktreesDirectory,
+      worktreePathTemplate: settings.worktreePathTemplate,
+      fastCheckout: settings.fastWorktreeCheckout,
     })),
     Effect.orElseSucceed(() => ({ worktreesDirectory: "", worktreePathTemplate: "" })),
+  );
+  // Turning fast checkout off deletes its cache right away, not at the next worktree.
+  yield* serverSettingsService.streamChanges.pipe(
+    Stream.map((settings) => settings.fastWorktreeCheckout),
+    Stream.changes,
+    Stream.filter((enabled) => !enabled),
+    Stream.runForEach(() => gitCore.clearWorktreeCheckoutCache),
+    Effect.forkScoped,
   );
   const createWorktree: GitManager["Service"]["createWorktree"] = Effect.fn(
     "GitManager.createWorktree",
@@ -768,8 +777,11 @@ export const make = Effect.gen(function* () {
             Effect.map(({ settings }) => settings.worktreeSubmodules),
             Effect.orElseSucceed(() => null),
           );
-    const location = yield* readWorktreeLocation;
-    const result = yield* gitCore.createWorktree(input, { ...location, ...options, submodules });
+    const result = yield* gitCore.createWorktree(input, {
+      ...(yield* readWorktreeCreationSettings),
+      ...options,
+      submodules,
+    });
     if (input.newRefName && input.baseRefName) {
       // Fork: a worktree path template can give the branch a free name, which `refName` holds.
       yield* shareBranchBase(input.cwd, result.worktree.refName);
@@ -3076,7 +3088,7 @@ export const make = Effect.gen(function* () {
           path: null,
         },
         {
-          ...(yield* readWorktreeLocation),
+          ...(yield* readWorktreeCreationSettings),
           submodules: yield* projectSettingsFor(input).pipe(
             Effect.map(({ settings }) => settings.worktreeSubmodules),
             Effect.orElseSucceed(() => null),

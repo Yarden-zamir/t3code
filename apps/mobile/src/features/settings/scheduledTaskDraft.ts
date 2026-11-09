@@ -8,6 +8,7 @@ import type {
   ScheduledTaskThreadMode,
   ScheduledTaskUpsertSchedule,
   ScheduledTaskWebhookSignature,
+  ThreadId,
 } from "@t3tools/contracts";
 
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
@@ -202,6 +203,7 @@ export type ScheduledTaskDraft = {
   readonly title: string;
   readonly prompt: string;
   readonly projectId: ProjectId | null;
+  readonly threadId: ThreadId | null;
   readonly modelSelection: ModelSelection | null;
   readonly modelSelectionIsExplicit: boolean;
   /**
@@ -224,6 +226,7 @@ function draftSignature(draft: ScheduledTaskDraft): string {
     draft.title,
     draft.prompt,
     draft.projectId,
+    draft.threadId,
     draft.useProjectDefaultModel,
     draft.modelSelection?.instanceId,
     draft.modelSelection?.model,
@@ -257,6 +260,38 @@ export function hasScheduledTaskDraftChanges(
   return draftSignature(initial) !== draftSignature(current);
 }
 
+export function moveDraftToThread(
+  draft: ScheduledTaskDraft,
+  thread: { readonly id: ThreadId; readonly projectId: ProjectId },
+): ScheduledTaskDraft {
+  return {
+    ...draft,
+    threadId: thread.id,
+    projectId: thread.projectId,
+    threadMode: draft.threadMode === "new_thread" ? "continue" : draft.threadMode,
+  };
+}
+
+/** Leaves the thread but keeps the mode. Matches MCP: new threads stay out of the shared checkout. */
+export function unbindDraftFromThread(draft: ScheduledTaskDraft): ScheduledTaskDraft {
+  if (draft.threadId === null) return draft;
+  return {
+    ...draft,
+    threadId: null,
+    ...(draft.workspace === "root"
+      ? { workspace: "worktree" as const, startFromOrigin: true }
+      : {}),
+  };
+}
+
+export function changeDraftProject(
+  draft: ScheduledTaskDraft,
+  projectId: ProjectId,
+): ScheduledTaskDraft {
+  if (projectId === draft.projectId) return draft;
+  return { ...unbindDraftFromThread(draft), projectId };
+}
+
 export function createDraft(
   projectId: ProjectId | null,
   modelSelection: ModelSelection | null,
@@ -266,6 +301,7 @@ export function createDraft(
     title: "",
     prompt: "",
     projectId,
+    threadId: null,
     modelSelection,
     modelSelectionIsExplicit: false,
     useProjectDefaultModel: false,
@@ -286,6 +322,7 @@ export function editDraft(task: ScheduledTask): ScheduledTaskDraft {
     title: task.title,
     prompt: task.prompt,
     projectId: task.projectId,
+    threadId: task.threadId,
     modelSelection: task.modelSelection,
     modelSelectionIsExplicit: task.useProjectDefaultModel !== true,
     useProjectDefaultModel: task.useProjectDefaultModel === true,

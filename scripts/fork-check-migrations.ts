@@ -84,7 +84,7 @@ function main(upstreamRef: string): void {
   const problems = migrationRegistryProblems(fork, upstream);
   if (problems.length > 0) {
     console.error(
-      `The fork registers migrations that ${upstreamRef} does not have. Remove them; Fork Sync brings each one back at the number that upstream merges it with.`,
+      `The fork registers migrations that ${upstreamRef} does not have. Remove them; the upstream merge brings each one back at the number that upstream merges it with.`,
     );
     for (const problem of problems) console.error(`- ${problem}`);
     process.exit(1);

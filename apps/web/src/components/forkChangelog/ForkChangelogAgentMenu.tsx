@@ -152,7 +152,7 @@ function UpstreamAgentMenu({
       {
         action: "upstream-impact",
         label: "Check the impact on the fork",
-        description: "Where they touch fork changes, before the next Fork Sync.",
+        description: "Where they touch fork changes, before the next upstream merge.",
         Icon: GitCompareArrowsIcon,
       },
     );

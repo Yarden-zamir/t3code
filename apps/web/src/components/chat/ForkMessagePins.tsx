@@ -39,7 +39,7 @@ import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { objectMenuActionsProps, objectMenuLabelProps, objectMenuProps } from "../../objectMenu";
 import { ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { forkMessageLinkNavigation } from "./ForkMessageLinkTarget";
+import { forkMessageLinkNavigation } from "./forkMessageLinkNavigation";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import {
   THREAD_DETAILS_PANEL_ICON_CLASS,

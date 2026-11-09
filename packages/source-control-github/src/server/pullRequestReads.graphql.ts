@@ -726,6 +726,8 @@ export const NodesIssueComment = Schema.Struct({
   url: Shared.URI,
   /** Author's association with the subject of the comment. */
   authorAssociation: GraphQL.enumLiterals(Shared.CommentAuthorAssociation.literals),
+  /** Returns whether or not a comment has been minimized. */
+  isMinimized: Schema.Boolean,
   /** The actor who authored the comment. */
   author: Schema.NullOr(Schema.Union([
     PullRequestPreviewRepositoryPullRequestAuthorUser,
@@ -759,6 +761,8 @@ export const NodesPullRequestReview = Schema.Struct({
   url: Shared.URI,
   /** Author's association with the subject of the comment. */
   authorAssociation: GraphQL.enumLiterals(Shared.CommentAuthorAssociation.literals),
+  /** Returns whether or not a comment has been minimized. */
+  isMinimized: Schema.Boolean,
   /** The actor who authored the comment. */
   author: Schema.NullOr(Schema.Union([
     PullRequestPreviewRepositoryPullRequestAuthorUser,
@@ -813,7 +817,7 @@ export const PullRequestActivity = GraphQL.query("PullRequestActivity", {
       { name: "reviewsAfter", body: "String" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){pullRequest(number:$", "number", "){author@include(if:$", "head", "){__typename login avatarUrl...on User{name}}commits(last:100)@include(if:$", "head", "){nodes{commit{id oid messageHeadline committedDate parents(first:1){totalCount}authors(first:10){nodes{name email user{login}}}}}}comments(first:100 after:$", "commentsAfter", ")@include(if:$", "withComments", "){pageInfo{hasNextPage endCursor}nodes{id body createdAt lastEditedAt url authorAssociation author{__typename login avatarUrl...on User{name}}}}reviews(first:100 after:$", "reviewsAfter", ")@include(if:$", "withReviews", "){pageInfo{hasNextPage endCursor}nodes{id body state submittedAt lastEditedAt url authorAssociation author{__typename login avatarUrl...on User{name}}}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){pullRequest(number:$", "number", "){author@include(if:$", "head", "){__typename login avatarUrl...on User{name}}commits(last:100)@include(if:$", "head", "){nodes{commit{id oid messageHeadline committedDate parents(first:1){totalCount}authors(first:10){nodes{name email user{login}}}}}}comments(first:100 after:$", "commentsAfter", ")@include(if:$", "withComments", "){pageInfo{hasNextPage endCursor}nodes{id body createdAt lastEditedAt url authorAssociation isMinimized author{__typename login avatarUrl...on User{name}}}}reviews(first:100 after:$", "reviewsAfter", ")@include(if:$", "withReviews", "){pageInfo{hasNextPage endCursor}nodes{id body state submittedAt lastEditedAt url authorAssociation isMinimized author{__typename login avatarUrl...on User{name}}}}}}"] }
     ],
     fragments: []
   },

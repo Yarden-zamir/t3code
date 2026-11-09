@@ -351,6 +351,7 @@ function threadComments(
       lastEditedAt: null,
       authorAssociation: "NONE",
       url: `https://github.com/acme/web/pull/7#discussion_${id}`,
+      isMinimized: false,
       reactionGroups: [],
     })),
   };
@@ -1046,7 +1047,13 @@ layer("GitHubPullRequestApi.layer", (it) => {
         mergeable: "MERGEABLE",
         reviewDecision: null,
         latestReviews: {
-          nodes: [{ state: "APPROVED", author: { __typename: "User", login: "reviewer" } }],
+          nodes: [
+            {
+              state: "APPROVED",
+              isMinimized: false,
+              author: { __typename: "User", login: "reviewer" },
+            },
+          ],
         },
         additions: 12,
         deletions: 3,

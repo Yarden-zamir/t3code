@@ -309,7 +309,7 @@ export const ABOUT_ITEMS = [
     id: "fork-changelog",
     title: "Fork changelog",
     to: "/settings/about",
-    searchTerms: ["changelog release notes versions upstream fork sync workflow"],
+    searchTerms: ["changelog release notes versions upstream fork sync merge agent pull request"],
   },
   {
     id: "fork-update-mode",

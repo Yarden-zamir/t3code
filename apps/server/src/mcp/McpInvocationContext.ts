@@ -143,18 +143,18 @@ export interface McpInvocationScope {
 }
 
 /**
- * T3 Code renders `t3-thread://` links as thread chips. Other MCP clients cannot open them, so
- * they get a web URL on the origin they reached instead.
- * Fork: not upstream's app.t3.codes link, because the fork app has no App Links for that origin.
- * Revisit when the fork has a hosted app with App Links for com.yardenzamir.t3code.
+ * Other MCP clients cannot open `t3-thread://` chips, so they get a web URL on the origin they
+ * reached. A known `title` labels the chip. Fork: not upstream's app.t3.codes link, because the
+ * fork app has no App Links for that origin. Revisit when a fork hosted app has App Links.
  */
 export const threadLinkFor = (
   scope: Pick<McpInvocationScope, "environmentId" | "client">,
   threadId: ThreadId,
+  title?: string,
 ): string => {
   const origin = scope.client?.webOrigin;
   return origin === undefined
-    ? formatThreadLink({ environmentId: scope.environmentId, threadId })
+    ? formatThreadLink({ environmentId: scope.environmentId, threadId }, title)
     : `${origin}/${encodeURIComponent(scope.environmentId)}/${encodeURIComponent(threadId)}`;
 };
 

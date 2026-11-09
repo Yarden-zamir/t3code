@@ -30,6 +30,7 @@ const remark = ({ author, ...raw }: Json) => ({
   lastEditedAt: null,
   authorAssociation: "NONE",
   url: "https://github.com/acme/web/pull/1#discussion",
+  isMinimized: false,
   ...raw,
   author:
     author === null || author === undefined
@@ -109,6 +110,7 @@ describe("pull request detail decoding", () => {
                   lastEditedAt: null,
                   authorAssociation: "NONE",
                   url: "https://github.com/c",
+                  isMinimized: false,
                   author: null,
                   ...comment,
                 }),
@@ -121,6 +123,7 @@ describe("pull request detail decoding", () => {
                   lastEditedAt: null,
                   authorAssociation: "NONE",
                   url: "https://github.com/r",
+                  isMinimized: false,
                   author: null,
                   submittedAt: null,
                   ...review,

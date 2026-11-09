@@ -173,8 +173,6 @@ export const layerForkWsRpc = (currentSession: EnvironmentAuth.AuthenticatedSess
         [FORK_WS_METHODS.forkChangelogReleaseChanges]: (input) =>
           forkChangelog.releaseChanges(input),
         [FORK_WS_METHODS.forkChangelogUpstreamPending]: (_input) => forkChangelog.upstreamPending,
-        [FORK_WS_METHODS.forkChangelogSyncStatus]: (_input) => forkChangelog.syncStatus,
-        [FORK_WS_METHODS.forkChangelogStartSync]: (_input) => forkChangelog.startSync,
         [FORK_WS_METHODS.machineMapSubscribe]: (_input) =>
           settingsSync.clientState(settingsSession),
         [FORK_WS_METHODS.machineMapShareSettings]: (input) =>

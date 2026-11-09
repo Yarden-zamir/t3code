@@ -10,6 +10,7 @@ import rootPackageJson from "../../package.json" with { type: "json" };
 import packageJson from "./package.json" with { type: "json" };
 import { WeightedShardSequencer } from "./src/testUtils/weightedShardSequencer.ts";
 import { FORK_EXCLUDED_UPSTREAM_TESTS } from "./src/fork/excludedUpstreamTests.ts";
+import { forkUndiciRequirePlugin } from "./scripts/forkUndiciRequirePlugin.ts";
 
 // NSIS install time tracks file count, not bytes.
 import {
@@ -101,7 +102,9 @@ export default mergeConfig(
       sourcemap: !packExecutable,
       clean: true,
       // SEA can only resolve built-ins; keep dynamic imports inside each emitted module.
-      ...(packExecutable ? { outputOptions: { codeSplitting: false } } : {}),
+      ...(packExecutable
+        ? { outputOptions: { codeSplitting: false }, plugins: [forkUndiciRequirePlugin()] }
+        : {}),
       ...(packMode === "1"
         ? {
             exe: {
@@ -122,7 +125,9 @@ export default mergeConfig(
         // alwaysBundle=false has no opinion; neverBundle must retain transitive native acceleration.
         alwaysBundle: shouldBundleCliDependency,
         neverBundle: (id: string) =>
-          (packBootstrap && id === "./binMain.ts") || isExternalCliDependency(id),
+          (packBootstrap && id === "./binMain.ts") ||
+          // Fork: in the executable, forkUndiciRequirePlugin loads undici from disk instead.
+          (isExternalCliDependency(id) && !(packExecutable && id === "undici")),
         onlyBundle: false,
       },
       banner: {

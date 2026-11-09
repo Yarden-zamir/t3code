@@ -20,7 +20,7 @@
     "plist": "catalog:",
     "pngjs": "7.0.0",
     "remark-parse": "catalog:",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "unified": "catalog:"
   },
   "devDependencies": {

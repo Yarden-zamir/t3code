@@ -57,7 +57,7 @@ const setup = Effect.gen(function* () {
 });
 
 describe("command permissions", () => {
-  it.effect.each([WS_METHODS.forkChangelogStartSync, WS_METHODS.threadRecreateWorktree])(
+  it.effect.each([WS_METHODS.threadRecreateWorktree])(
     "requires the destination source control grant for %s",
     (method) =>
       Effect.scoped(

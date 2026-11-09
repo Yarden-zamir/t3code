@@ -21,7 +21,7 @@ import { formatContextWindowTokens } from "../../lib/contextWindow";
 import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
+import { formatContextWindowCompactionMessage } from "./compaction.logic";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { useNavigate } from "@tanstack/react-router";
 import { copyFromObjectMenu, showObjectMenu } from "../../objectMenu";
@@ -138,7 +138,7 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
               ) : null}
               {threshold !== null && threshold > 0 ? (
                 <span className="text-muted-foreground">
-                  {formatContextWindowCompactionMessage(null, threshold)}
+                  {formatContextWindowCompactionMessage(threshold)}
                 </span>
               ) : null}
             </>

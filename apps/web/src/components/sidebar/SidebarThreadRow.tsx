@@ -1,3 +1,4 @@
+import { useAtomMount } from "@effect/atom-react";
 import { ThreadHoverCard, ThreadHoverCardPopup, ThreadHoverCardRow } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
@@ -5,6 +6,7 @@ import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { useDeadlinePassed } from "~/hooks/useDeadline";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thread-pull-requests";
+import { useDraggable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -64,7 +66,7 @@ import { useUiStateStore } from "../../uiStateStore";
 import { useThreadSelectionStore } from "../../threadSelectionStore";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
-import { vcsEnvironment } from "../../state/vcs";
+import { vcsEnvironment, vcsBranchRevalidation } from "../../state/vcs";
 import { useEnvironmentQuery } from "../../state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { formatRelativeTimeLabel, parseTimestampDate } from "../../timestampFormat";
@@ -732,14 +734,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     thread.pullRequests,
     thread.branchPullRequest,
   );
-  const gitStatus = useEnvironmentQuery(
+  const branchTarget =
     leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
-      ? vcsEnvironment.status({
-          environmentId: thread.environmentId,
-          input: { cwd: gitCwd, includeRemote: false },
-        })
-      : null,
+      ? { environmentId: thread.environmentId, cwd: gitCwd }
+      : null;
+  const gitStatus = useEnvironmentQuery(
+    branchTarget === null
+      ? null
+      : vcsEnvironment.branch({
+          environmentId: branchTarget.environmentId,
+          input: { cwd: branchTarget.cwd },
+        }),
   );
+  useAtomMount(vcsBranchRevalidation(branchTarget));
   const visibleGitStatus = useRetainedValue(
     JSON.stringify([thread.environmentId, gitCwd]),
     gitStatus.data,
@@ -1754,18 +1761,31 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
   });
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const openPrLink = useOpenPrLink();
-  const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
+  // Results only drag out as chat context; the row keeps its own listbox attributes.
+  const { listeners: dragListeners, setNodeRef: setDragNodeRef } = useDraggable({
+    id: scopedThreadKey(threadRef),
+  });
+  const { leaseLiveStatus, rowRef: leaseRowRef } = useSidebarRowSubscriptionLease(
     props.isHighlighted || props.isRouteActive,
   );
+  const rowRef = (row: HTMLElement | null) => {
+    setDragNodeRef(row);
+    return leaseRowRef(row);
+  };
   const gitCwd = thread.worktreePath ?? props.project?.workspaceRoot ?? null;
-  const gitStatus = useEnvironmentQuery(
+  const branchTarget =
     leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
-      ? vcsEnvironment.status({
-          environmentId: thread.environmentId,
-          input: { cwd: gitCwd, includeRemote: false },
-        })
-      : null,
+      ? { environmentId: thread.environmentId, cwd: gitCwd }
+      : null;
+  const gitStatus = useEnvironmentQuery(
+    branchTarget === null
+      ? null
+      : vcsEnvironment.branch({
+          environmentId: branchTarget.environmentId,
+          input: { cwd: branchTarget.cwd },
+        }),
   );
+  useAtomMount(vcsBranchRevalidation(branchTarget));
   const visibleGitStatus = useRetainedValue(
     JSON.stringify([thread.environmentId, gitCwd]),
     gitStatus.data,
@@ -1821,6 +1841,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               aria-current={accessibility.current}
               aria-describedby={`${props.resultId}-pr`}
               aria-label={accessibility.label}
+              {...dragListeners}
               onMouseMove={props.onHighlight}
               onClick={props.onSelect}
               className={cn(

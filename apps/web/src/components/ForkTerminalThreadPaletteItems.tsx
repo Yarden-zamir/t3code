@@ -46,6 +46,7 @@ export function forkTerminalNewThreadInView(
 
 export function useForkTerminalThreadPaletteItems(input: {
   readonly pickerProjects: ReadonlyArray<CommandPaletteProject>;
+  readonly currentProjectKey: string | null;
   readonly projectGroupByTargetKey: ReadonlyMap<string, SidebarProjectSnapshot>;
   readonly locationByEnvironmentId: ReadonlyMap<EnvironmentId, CommandPaletteProjectLocation>;
   readonly contextualProjectRef: ScopedProjectRef | null;
@@ -71,6 +72,7 @@ export function useForkTerminalThreadPaletteItems(input: {
           !isScratchProject(project, input.scratchWorkspaceRootFor(project.environmentId)) &&
           terminalThreadEnvironmentIds.has(project.environmentId),
       ),
+      currentProjectKey: input.currentProjectKey,
       projectGroupByTargetKey,
       locationByEnvironmentId: input.locationByEnvironmentId,
       runProject: async (project) => {

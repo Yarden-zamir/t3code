@@ -20,6 +20,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Socket from "effect/socket/Socket";
 
+import * as AppWebSocket from "../native/nativeWebSocket";
+
 let rules: ReadonlyArray<OriginRequestHeaders> = [];
 
 export function setRequestHeaderRules(next: ReadonlyArray<OriginRequestHeaders>): void {
@@ -131,19 +133,20 @@ const NativeWebSocket = WebSocket as unknown as new (
   options: { readonly headers: Record<string, string> },
 ) => WebSocket;
 
-/**
- * Effect WebSocket constructor that adds the headers of the URL origin. React
- * Native takes handshake headers as a third argument. Like Effect's global
- * constructor, it rejects platform client options.
- */
-export const layerWebSocketConstructor = Layer.succeed(Socket.WebSocketConstructor)((
-  url,
-  options,
-) => {
-  if (options !== undefined && typeof options !== "string" && !Array.isArray(options)) {
-    throw new TypeError("WebSocket client options are not supported on mobile.");
-  }
-  const headers = requestHeadersRecord(url);
-  if (headers === undefined) return new WebSocket(url, options);
-  return new NativeWebSocket(url, options ?? null, { headers });
-});
+// Adds the headers of the URL origin. Limit: the iOS native socket takes no handshake headers,
+// so an origin with headers keeps the React Native socket without compression. Revisit when
+// the native module accepts headers.
+export const layerWebSocketConstructor = Layer.effect(
+  Socket.WebSocketConstructor,
+  Effect.gen(function* () {
+    const construct = yield* Socket.WebSocketConstructor;
+    return (url: string, options?: Socket.WebSocketConstructorOptions) => {
+      if (options !== undefined && typeof options !== "string" && !Array.isArray(options)) {
+        throw new TypeError("WebSocket client options are not supported on mobile.");
+      }
+      const headers = requestHeadersRecord(url);
+      if (headers === undefined) return construct(url, options);
+      return new NativeWebSocket(url, options ?? null, { headers });
+    };
+  }),
+).pipe(Layer.provide(AppWebSocket.layer));

@@ -1,8 +1,5 @@
 import { WS_METHODS } from "@t3tools/contracts";
-import {
-  createEnvironmentRpcCommand,
-  createEnvironmentRpcQueryAtomFamily,
-} from "@t3tools/client-runtime/state/runtime";
+import { createEnvironmentRpcQueryAtomFamily } from "@t3tools/client-runtime/state/runtime";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 
@@ -30,18 +27,4 @@ export const forkUpstreamPending = createEnvironmentRpcQueryAtomFamily(connectio
   tag: WS_METHODS.forkChangelogUpstreamPending,
   staleTimeMs: 60_000,
   idleTtlMs: 60_000,
-});
-
-/** The changelog refreshes this while the run it shows is queued or running. */
-export const forkSyncStatus = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
-  label: "environment-data:fork-changelog:sync-status",
-  tag: WS_METHODS.forkChangelogSyncStatus,
-  staleTimeMs: 5_000,
-  idleTtlMs: 0,
-});
-
-export const startForkSync = createEnvironmentRpcCommand(connectionAtomRuntime, {
-  label: "environment-data:fork-changelog:start-sync",
-  tag: WS_METHODS.forkChangelogStartSync,
-  concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
 });

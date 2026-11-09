@@ -22,7 +22,7 @@ describe("mobilePreferencesFromSharedClientSettings (MM-416)", () => {
   it("leaves out a value that the client settings schema refuses", () => {
     expect(
       mobilePreferencesFromSharedClientSettings({
-        planModeEnabled: "yes",
+        followUpBehavior: "sometimes",
         mathRenderingEnabled: true,
       }),
     ).toEqual({ mathRenderingEnabled: true });

@@ -5,8 +5,7 @@
 """Prints the failed jobs of a GitHub Actions run and the last useful log lines of each.
 
 It takes a run id or a run URL. For each failed job, it prints the output of the step that failed,
-without the step script, timestamps and color codes. The full log goes to a file. For a Fork Sync
-run, it also prints the newest comment of the open issue "Fork sync: upstream merge failed".
+without the step script, timestamps and color codes. The full log goes to a file.
 """
 
 import argparse
@@ -17,7 +16,6 @@ from dataclasses import dataclass
 import common
 
 DEFAULT_REPO = "Yarden-zamir/t3code"
-SYNC_ISSUE_TITLE = "Fork sync: upstream merge failed"
 
 
 @dataclass(frozen=True)
@@ -71,29 +69,6 @@ def gh(*args: str) -> str:
     return result.stdout
 
 
-def newest_sync_comment(repo: str) -> str | None:
-    found = json.loads(
-        gh(
-            "issue",
-            "list",
-            "-R",
-            repo,
-            "--state",
-            "open",
-            "--search",
-            f'in:title "{SYNC_ISSUE_TITLE}"',
-            "--json",
-            "number,url",
-        )
-    )
-    if not found:
-        return None
-    issue = json.loads(gh("issue", "view", str(found[0]["number"]), "-R", repo, "--json", "url,comments,body"))
-    comments = issue["comments"]
-    body = comments[-1]["body"] if comments else issue["body"]
-    return f"{issue['url']}\n{body.strip()}"
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("run", help="run id or run URL")
@@ -137,9 +112,6 @@ def main() -> None:
         print(f"\n== {job['name']}: {job['conclusion']}, failed steps: {', '.join(steps) or 'none listed'}")
         print("\n".join(failed_step_output(by_job.get(job["name"], []), args.lines)))
 
-    if run["workflowName"] == "Fork Sync":
-        comment = newest_sync_comment(ref.repo)
-        print(f'\n== Issue "{SYNC_ISSUE_TITLE}": {comment or "no open issue"}')
     if failed_jobs:
         print(f"\nFull failed log: {log_file}")
 

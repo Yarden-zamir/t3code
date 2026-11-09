@@ -317,7 +317,7 @@ it.layer(
       const snapshot = yield* manager.open(threadScreen("bash"));
 
       expect(snapshot.status).toBe("running");
-      expect(pty.spawnInputs[0]?.args).toBeUndefined();
+      expect(pty.spawnInputs[0]?.args ?? []).not.toContain("--integrated");
       expect(snapshot.history).toContain("[terminal] no hook files");
       // The shell reports no state, as a shell without support for the hook.
       expect(summaries.at(-1)?.status).toBe("running");

@@ -1,7 +1,7 @@
 /**
  * Fork changelog contract, behind the `forkChangelogEnabled` client setting. The server reads from
- * GitHub the fork releases, their commits and the upstream commits that fork main lacks, and starts
- * the Fork Sync workflow. A fork commit is a commit that upstream main does not contain.
+ * GitHub the fork releases, their commits, the upstream commits that fork main lacks, and the open
+ * pull request of the merge agent. A fork commit is a commit that upstream main does not contain.
  * @module forkChangelog
  */
 import * as Schema from "effect/Schema";
@@ -62,15 +62,6 @@ export const ForkReleaseChanges = Schema.Struct({
 });
 export type ForkReleaseChanges = typeof ForkReleaseChanges.Type;
 
-/** Upstream main commits that fork main does not have yet, newest first. */
-export const ForkUpstreamPending = Schema.Struct({
-  commits: Schema.Array(ForkCommit),
-  total: NonNegativeInt,
-  truncated: Schema.Boolean,
-  compareUrl: Schema.String,
-});
-export type ForkUpstreamPending = typeof ForkUpstreamPending.Type;
-
 export const ForkWorkflowState = Schema.Literals([
   "queued",
   "running",
@@ -81,29 +72,30 @@ export const ForkWorkflowState = Schema.Literals([
 ]);
 export type ForkWorkflowState = typeof ForkWorkflowState.Type;
 
-export const ForkWorkflowJob = Schema.Struct({
-  name: Schema.String,
-  state: ForkWorkflowState,
-  url: Schema.NullOr(Schema.String),
-});
-export type ForkWorkflowJob = typeof ForkWorkflowJob.Type;
+/** The title of the pull request that the merge agent opens. See docs/fork-agents.md "Merge agent". */
+export const FORK_SYNC_PULL_REQUEST_TITLE = "chore(sync): merge pingdotgg/t3code main";
 
-export const ForkWorkflowRun = Schema.Struct({
-  id: NonNegativeInt,
-  runNumber: NonNegativeInt,
-  state: ForkWorkflowState,
-  event: Schema.String,
-  createdAt: Schema.String,
+/** The open pull request of the merge agent. */
+export const ForkSyncPullRequest = Schema.Struct({
+  number: NonNegativeInt,
+  title: Schema.String,
   url: Schema.String,
-  jobs: Schema.Array(ForkWorkflowJob),
+  draft: Schema.Boolean,
+  /** The newest Fork CI run on the head commit. Null until Fork CI starts on it. */
+  checks: Schema.NullOr(ForkWorkflowState),
 });
-export type ForkWorkflowRun = typeof ForkWorkflowRun.Type;
+export type ForkSyncPullRequest = typeof ForkSyncPullRequest.Type;
 
-/** The newest Fork Sync run, or null when the workflow never ran. */
-export const ForkSyncStatus = Schema.Struct({
-  run: Schema.NullOr(ForkWorkflowRun),
+/** Upstream main commits that fork main does not have yet, newest first. */
+export const ForkUpstreamPending = Schema.Struct({
+  commits: Schema.Array(ForkCommit),
+  total: NonNegativeInt,
+  truncated: Schema.Boolean,
+  compareUrl: Schema.String,
+  /** Null when no merge agent pull request is open. */
+  syncPullRequest: Schema.NullOr(ForkSyncPullRequest),
 });
-export type ForkSyncStatus = typeof ForkSyncStatus.Type;
+export type ForkUpstreamPending = typeof ForkUpstreamPending.Type;
 
 export class ForkChangelogError extends Schema.TaggedError<ForkChangelogError>()(
   "ForkChangelogError",

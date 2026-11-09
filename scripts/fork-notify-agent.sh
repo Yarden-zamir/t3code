@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Posts a failed fork workflow run to the repair agent webhook (a T3 scheduled task).
-# Called by the notify_agent job of fork-ci.yml, fork-release.yml and fork-sync.yml. See docs/fork/operations.md "Repair agent".
+# Called by the notify_agent job of fork-ci.yml and fork-release.yml. See docs/fork/operations.md "Repair agent".
 # Env: WEBHOOK_URL, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET, GH_TOKEN, NEEDS_JSON
-# (the workflow's toJSON(needs)), plus the default GITHUB_* variables. Optional: FAILURE_REASON,
-# for example the adopted upstream pull request that conflicted in Fork Sync.
+# (the workflow's toJSON(needs)), plus the default GITHUB_* variables.
 set -euo pipefail
 
 if [[ -z "${WEBHOOK_URL:-}" ]]; then
@@ -16,9 +15,9 @@ fi
 # notify job of that failure succeeded and that failure started less than 90 minutes before
 # this run: the repair agent watches the next run and reports it. A notify job that
 # failed reached no agent. Pull request runs never notify, so they do not count.
-# Stay below Fork Sync's 2-hour interval: skipped calls also have a successful notify
-# job, so a longer window could silence every scheduled failure in a chain.
-# Limit: a repair that takes more than 90 minutes can get another call on the next sync.
+# Skipped calls also have a successful notify job, so a longer window could silence
+# every failure in a chain of runs that start less than 90 minutes apart.
+# Limit: a repair that takes more than 90 minutes can get another call on the next failure.
 max_quiet_seconds=$((90 * 60))
 previous="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$GITHUB_WORKFLOW" --status completed --limit 20 \
   --json databaseId,conclusion,event,startedAt --jq "[.[] | select(.databaseId != ${GITHUB_RUN_ID} and .event != \"pull_request\")
@@ -47,11 +46,9 @@ payload="$(jq -n \
   --arg workflow "$GITHUB_WORKFLOW" \
   --arg run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
   --arg run_id "$GITHUB_RUN_ID" \
-  --arg reason "${FAILURE_REASON:-}" \
   --argjson needs "$NEEDS_JSON" \
   '{repository: $repository, branch: $branch, event: $event, workflow: $workflow,
-    run_url: $run_url, run_id: $run_id, jobs: ($needs | map_values(.result))}
-    + (if $reason == "" then {} else {reason: $reason} end)')"
+    run_url: $run_url, run_id: $run_id, jobs: ($needs | map_values(.result))}')"
 echo "$payload"
 # The webhook server can restart, which takes minutes. So retry once a minute for 15 minutes on
 # a refused connection and 408, 429 and 5xx (curl's --retry set). The notify jobs have

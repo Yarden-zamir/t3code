@@ -9,47 +9,48 @@ Fork main only moves forward. Nothing rebases or force-pushes it. To see all for
 
 The fork disables every upstream workflow, because they need upstream's runners and secrets. Fork workflow files start with `fork-`. One exception stays on: `agent-context-budget.yml` runs on `pull_request`, so it gets no secrets and a read-only token, and fork PRs use its budget check.
 
-### Fork Sync
+### Fork merge
 
-`.github/workflows/fork-sync.yml` merges `pingdotgg/t3code` main into fork main, then the new heads of the [adopted upstream pull requests](#adopted-upstream-pull-requests). The interval task "Fork Sync trigger" on the VPS T3 server starts it every 2 hours with `gh workflow run`. The workflow has no GitHub schedule, because GitHub delays and drops scheduled runs.
+The T3 task "Fork merge" on the Mac, project "t3code fork", starts the merge agent every 2 hours. The agent merges `pingdotgg/t3code` main into fork main through a pull request. No workflow merges upstream. The agent rules are in [Merge agent](../fork-agents.md#merge-agent).
 
-- It runs the migration check, typechecks the merge, runs the fork tests and pushes the merge as a fast-forward. If main moved during the run, it merges the new main and pushes again.
+- The agent works in a `fork-sync/` worktree from `worktree.py create sync` of the [fork-repair skill](../../.agents/skills/fork-repair/SKILL.md). It merges upstream main, then the new heads of the [adopted upstream pull requests](#adopted-upstream-pull-requests), and resolves each conflict itself.
+- It runs `checks.py` and `fork_tests.py` of the skill. `checks.py` runs typecheck, the migration check and the adopted pull request check. Then it runs format, lint and knip on the files that differ from upstream, and lists the active upstream workflows.
 - The fork tests are the test files that the fork changed since `git merge-base upstream/main HEAD`. A diff against a newer upstream main also lists files that only upstream changed.
-- For a local sync repair, run `vp run typecheck` and those fork tests. The [fork-repair skill](../../.agents/skills/fork-repair/SKILL.md) runs both: `checks.py` and `fork_tests.py`. To run the tests by hand, use `vp test run <files>`, and run apps/web tests from `apps/web` with `vp test run --project unit --project browser <files>`; install Playwright Chromium first if needed. Do not run the changed-file checks over all upstream changes; wait for Fork CI on the repair pull request.
-- The apps/web fork tests run from `apps/web`, in its unit and browser projects. A browser test needs Playwright Chromium, so the job installs it first.
-- Before the other fork tests, the job installs the Electron binary for the desktop tests. When a fork test is in `apps/server`, it also installs Playwright Chromium for the server preview tests.
-- A conflict only in `README.md` resolves by itself. See [Change the fork](#change-the-fork).
-- If a merge conflicts, upstream closes an adopted pull request without a merge, or a check fails, the sync comments on the issue "Fork sync: upstream merge failed" and stops. The comment and the call to the repair agent name the reason, for example the adopted pull request that conflicted.
-- After each sync, the job "Check upstream workflows" fails when another workflow is active, except `agent-context-budget.yml`. It prints the `gh workflow disable` command for that workflow.
-- To pause the automatic sync, disable the task "Fork Sync trigger" on the VPS. Before you merge upstream by hand, read [Repair agent](../fork-agents.md#repair-agent).
+- The apps/web fork tests run from `apps/web`, in its unit and browser projects. `fork_tests.py` installs Playwright Chromium for browser tests and server preview tests, and the Electron binary for desktop tests.
+- To run the tests by hand, use `vp test run <files>`. Run apps/web tests from `apps/web` with `vp test run --project unit --project browser <files>`. Do not run the changed-file checks over all upstream changes. Wait for Fork CI on the pull request instead.
+- The agent opens the pull request "chore(sync): merge pingdotgg/t3code main". The upstream merge commit on its branch has the same subject, and `scripts/fork-release-notes.ts` lists the upstream commits of that merge.
+- The agent merges the pull request when Fork CI is green on its head and `origin/main` is an ancestor of the head. Main only moves forward.
+- GitHub registers a new upstream workflow file only after main has it. So after the merge, the agent disables each active workflow except `fork-*` workflows and `agent-context-budget.yml`. Then it removes the worktree.
+- The Upstream tab of the [changelog](features.md#changelog) shows the open pull request and its Fork CI state.
+- To pause the merge agent, disable the task "Fork merge" on the Mac. Before you merge upstream by hand, read [Merge agent](../fork-agents.md#merge-agent).
 
 ### Migrations
 
 Fork main registers only the migration ids and names that `upstream/main` has. The fork has no migrations of its own.
 
-- The migrator skips every id up to the highest recorded id, whatever its name. So upstream's startup check (`assertV2MigrationsCanRun` in `apps/server/src/persistence/Migrations.ts`) refuses to start when the database recorded a migration of id 55 or higher under another name, or not at all. A fork-only id that upstream later gives to another migration thus stops every fork machine after the next Fork Sync.
+- The migrator skips every id up to the highest recorded id, whatever its name. So upstream's startup check (`assertV2MigrationsCanRun` in `apps/server/src/persistence/Migrations.ts`) refuses to start when the database recorded a migration of id 55 or higher under another name, or not at all. A fork-only id that upstream later gives to another migration thus stops every fork machine after the next upstream merge.
 - Keep fork state outside the migration registry: in fork files, the secret store or existing tables.
 - To adopt an open upstream pull request that adds a migration, remove its entries from `Migrations.ts` and its migration files in the adoption commit. Its code must then work without that schema.
 - `scripts/fork-check-migrations.ts` enforces the rule. `vp run fork:check` and the Fork CI Lint job run it. It compares the registry of the working tree with `upstream/main`, and fails on each id that upstream main lacks or names differently.
-- When upstream merges a migration, Fork Sync merges its file and registry entry like any other upstream change, at upstream's final number. A migration that the fork removed at adoption comes back this way. The fork never recorded the number of the open pull request, so a new number is no problem.
+- When upstream merges a migration, the upstream merge brings its file and registry entry like any other upstream change, at upstream's final number. A migration that the fork removed at adoption comes back this way. The fork never recorded the number of the open pull request, so a new number is no problem.
 
 ### Adopted upstream pull requests
 
 Fork main holds open `pingdotgg/t3code` pull requests that upstream did not merge yet. [`scripts/fork-adopted-upstream-prs.json`](../../scripts/fork-adopted-upstream-prs.json) lists them in stack order. Each entry has the number, the title, the upstream branch (`headRef`), the head that fork main holds (`mergedHead`), the reason, and the optional `forkRules`. Today the list is empty. Upstream merged the linked environments stack (#16653 to #16719) that it held.
 
-After the upstream main merge, Fork Sync runs `node scripts/fork-adopted-prs.ts sync`. For each entry, in list order, it reads the state of the pull request with `gh`:
+After the upstream main merge, the merge agent runs `node scripts/fork-adopted-prs.ts sync`. For each entry, in list order, it reads the state of the pull request with `gh`:
 
 - Open with the listed head: nothing changes.
 - Open with a new head: it fetches `refs/pull/<number>/head` and merges it with a merge commit that also updates `mergedHead`. It never cherry-picks or rebases.
-- Open, but the head is not on the `pingdotgg` branch `headRef`: the sync stops, because main deploys what the sync pushes. Correct `headRef` if the list has it wrong. A pull request from another repository cannot be adopted: remove the entry.
+- Open, but the head is not on the `pingdotgg` branch `headRef`: the sync stops, because main deploys what the sync merges. Correct `headRef` if the list has it wrong. A pull request from another repository cannot be adopted: remove the entry.
 - Merged into main: it drops the entry, because upstream main brings the final version. The run summary shows its fork rules as a warning, so that you undo the rules that upstream main now covers.
 - Merged into the branch of another listed pull request: it drops the entry and appends its fork rules to that entry, which now carries its code.
 - Merged into another branch: the sync stops. The owner decides whether the fork follows that branch.
-- Closed without a merge: the sync stops. Fork main keeps the code. The owner decides whether the fork keeps it. To resume Fork Sync, remove the entry, and revert its code if the fork does not keep it.
+- Closed without a merge: the sync stops. Fork main keeps the code. The owner decides whether the fork keeps it. To resume the sync, remove the entry, and revert its code if the fork does not keep it.
 
-A conflict stops the sync like an upstream conflict. The migration check then runs, because a new head can bring back a migration that the fork removed at adoption.
+A stop in the sync is an owner decision, and the merge agent escalates it. A conflict is not: the agent resolves it. Then the migration check runs, because a new head can bring back a migration that the fork removed at adoption.
 
-To repair a failed sync by hand, run the same script on the repair branch after the upstream merge. It stops at the first conflict. Resolve that merge by hand with `git merge --no-ff <head>`, set `mergedHead` of the entry in the merge commit, and run the script again. `node scripts/fork-adopted-prs.ts check` checks the list: its schema and format, that HEAD holds each `mergedHead`, and that HEAD holds no upstream squash commit of a listed pull request. `vp run fork:check` and the Fork CI Lint job run it.
+The script stops at the first conflict. Resolve that merge by hand with `git merge --no-ff <head>`, set `mergedHead` of the entry in the merge commit, and run the script again. `node scripts/fork-adopted-prs.ts check` checks the list: its schema and format, that HEAD holds each `mergedHead`, and that HEAD holds no upstream squash commit of a listed pull request. `vp run fork:check` and the Fork CI Lint job run it.
 
 To adopt another open pull request, merge its head with `git merge --no-ff` on a new branch from `origin/main` and add its entry at its place in the stack order. Apply the [migration rule](#migrations).
 
@@ -81,7 +82,7 @@ The builds use the `nightly` update channel, the app id `com.t3tools.t3code` and
 Each day at 09:00 Israel time, the VPS task "Fork daily release" promotes a nightly to a release. It builds nothing.
 
 - `node scripts/fork-daily-release-data.ts` picks the newest nightly on main that has `SHA256SUMS`. It prints JSON with the changes since the previous release: fork changes, upstream changes and integration. If no new nightly exists, it prints `skip`.
-- Integration is a merge that brings upstream commits: a Fork Sync merge or a sync pull request. Its fork commits are the conflict resolutions and fixes.
+- Integration is a merge that brings upstream commits: a sync pull request of the merge agent. Its fork commits are the conflict resolutions and fixes.
 - Without a previous release, the range starts where the fork began, and the upstream group holds only the last upstream merge.
 - An agent writes a notes plan from the JSON. The plan groups related changes into clusters, with a name and one sentence each, and orders clusters and changes by importance and cool factor. `--notes <plan.json>` prints the notes from it. The script fails and names each change that is missing, repeated or unknown.
 - The notes start with the top 5 clusters of each section, the highlights. The full changelog lists every cluster on one line, with its changes in a collapsed block below it. Then the agent runs `gh release edit <tag> --prerelease=false --latest --title "T3 Code Fork <Israel date> (<first 12 characters of the commit>)" --notes-file <file>`. The tag and the assets stay.
@@ -120,11 +121,11 @@ T3 depends on one kitshn release. Its `@kitshn/local` line in the `catalog` of `
 
 ### Repair agent
 
-A failed Fork Sync, Fork Release or Fork CI run on main runs its `notify_agent` job, `scripts/fork-notify-agent.sh`. A pull request never calls it.
+A failed Fork Release or Fork CI run on main runs its `notify_agent` job, `scripts/fork-notify-agent.sh`. A pull request never calls it. The upstream merge has its own agent: see [Fork merge](#fork-merge).
 
 - The script posts the run to `T3_AGENT_WEBHOOK_URL`, the webhook task "Fork repair" on the VPS T3 server (`yarden-zamir-vps-2`), project "t3code fork" (`/root/Github/t3code/main`).
 - The script retries once a minute for 15 minutes, so a server restart of the VPS does not lose the call. Each auto-update of the VPS restarts its server for about 20 seconds.
-- A manual run with `notify_agent=false` does not post. A failure right after a failure of the same workflow does not post either, when the first notify job succeeded and the first failure started less than 90 minutes before. This window is shorter than the 2-hour sync interval, so the next scheduled failure can call again.
+- A manual run with `notify_agent=false` does not post. A failure right after a failure of the same workflow does not post either, when the first notify job succeeded and the first failure started less than 90 minutes before.
 - The repair agent ignores a cancelled run.
 - How the agent works, and how to stop it: [Repair agent](../fork-agents.md#repair-agent). Its repair steps use the scripts of the [fork-repair skill](../../.agents/skills/fork-repair/SKILL.md).
 
@@ -149,8 +150,8 @@ Name the fork PRs that the plan builds on. Check fork merges first, then upstrea
 - Put a new fork setting in the upstream settings section where a user looks for it. Add its entry with a `place` to `FORK_SETTING_GROUPS` (`forkSettingsCatalog.ts`), its row in `FORK_SETTING_ROWS` (`ForkSettingsSlot.tsx`), and its search item with the `to` of that place (`forkSettingsSearch.ts`). Settings > Fork lists it from the catalog. For a new place, add it to `FORK_SETTING_PLACES` and put one `<ForkSettingsSlot place=... />` line in the upstream page. Add a fork preference to the reset list in `forkSettingsRestore.ts`.
 - `forkSettingsRegistration.test.ts` fails when a fork setting has no Fork page row, no place outside the Fork page, no search result at its place, or no Restore defaults rule. It also fails when a place has no slot or two slots. A setting without a row needs a reason in that test.
 - The top of `README.md`, up to the first `---` line, lists the fork features and fixes. Keep one line per feature, with a link to its section in [features.md](features.md). A pull request that adds, removes or changes a fork feature updates its line and its section.
-- If a Fork Sync merge conflicts only in `README.md`, the sync keeps the fork section up to the first `---` line and takes the upstream README below it. A conflict in another file stops the sync.
-- If a sync conflicts on a tooltip line with a `ShortcutHint` (the key chips in upstream tooltips), take the upstream line, then add one `ShortcutHint` back. If the same file conflicts again, keep the upstream tooltip text in that file.
+- If an upstream merge conflicts in `README.md`, keep the fork section up to the first `---` line and take the upstream README below it.
+- If an upstream merge conflicts on a tooltip line with a `ShortcutHint` (the key chips in upstream tooltips), take the upstream line, then add one `ShortcutHint` back. If the same file conflicts again, keep the upstream tooltip text in that file.
 - A merge without conflicts can still break a fork feature. Each fork feature that changes upstream behavior needs a test of that behavior, so that the fork tests catch the break.
 - Put fork tests in a fork test file next to the upstream test file: `foo.fork.test.ts` next to `foo.test.ts`, `Foo.fork.browser.test.tsx` next to `Foo.browser.test.tsx`. Do not add tests to an upstream test file. Change an upstream test only when a fork change breaks it, and keep that change small. Upstream changes its test files often, so fork tests in them cause sync conflicts.
 - Prefer automated setup over manual instructions when the permission cost is acceptable. Keep documentation for steps that code cannot do.
@@ -202,7 +203,7 @@ vp run fork:check
 ```
 
 - It runs the quick Fork CI checks on the files that changed since the merge base with `origin/main`. Uncommitted and untracked files count.
-- On a branch with a merge whose second parent is not in `origin/main`, it prints one line and exits 0 without checks. This keeps sync repairs from checking every upstream change locally. Run `vp run typecheck` and the fork tests described in [Fork Sync](#fork-sync), then wait for Fork CI on the pull request.
+- On a branch with a merge whose second parent is not in `origin/main`, it prints one line and exits 0 without checks. This keeps sync repairs from checking every upstream change locally. Run `vp run typecheck` and the fork tests described in [Fork merge](#fork-merge), then wait for Fork CI on the pull request.
 - The steps are format and lint of the changed files, knip, typecheck of the changed packages, the tests of the changed files, the doc link check, the migration check, the check of the adopted upstream pull requests, and the Python tests of the fork-repair skill when its scripts changed. The migration check reads the local `upstream/main`, so run `git fetch upstream main` first. The tests are the changed test files, the tests next to changed source files, `forkSettingsRegistration.test.ts`, the React Compiler coverage test of a changed web or mobile app, and the import cycle test (`dependency-graph.test.ts`) of a changed mobile app.
 - It prints one line per step: pass, fail or skipped with the reason. It exits with an error when a step fails.
 - Without Playwright Chromium, it skips the browser tests and prints the install command.
@@ -525,11 +526,11 @@ Use these raw-emulator steps only after the owner approves a workaround:
 
 ## Secrets and variables
 
-| Name                                                                                    | Kind               | Use                                                                                                                                                                                       |
-| --------------------------------------------------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CSC_LINK`, `CSC_KEY_PASSWORD`                                                          | secret             | macOS signing certificate. See [macOS signing](#macos-signing).                                                                                                                           |
-| `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`             | secret             | Android signing key. See [Android APK build](#android-apk-build).                                                                                                                         |
-| `FORK_SYNC_TOKEN`                                                                       | secret             | Fine-grained token for this repository with Contents and Workflows read and write. Without it, the push fails when upstream changes a workflow file, and the push does not start Fork CI. |
-| `T3_AGENT_WEBHOOK_URL`, `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`                | secret, optional   | Webhook URL of the repair agent task, and the Cloudflare Access service token that the call needs. Without the URL, no agent is notified.                                                 |
-| `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_TEMPLATE`, `CLERK_CLI_OAUTH_CLIENT_ID`, `RELAY_URL` | variable, optional | T3 Connect config. Without them, the build has no T3 Connect.                                                                                                                             |
-| `T3_FORK_CENTRAL_BUILD_CACHE`, `XDG_CACHE_HOME`                                         | variable, optional | Opt in to [central build caches](#central-build-caches), and choose their base directory.                                                                                                 |
+| Name                                                                                    | Kind               | Use                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CSC_LINK`, `CSC_KEY_PASSWORD`                                                          | secret             | macOS signing certificate. See [macOS signing](#macos-signing).                                                                                                                                                    |
+| `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`             | secret             | Android signing key. See [Android APK build](#android-apk-build).                                                                                                                                                  |
+| `FORK_SYNC_TOKEN`                                                                       | secret             | Fine-grained token for this repository with Contents and Workflows read and write. Fork Release uses it for the release tag: `GITHUB_TOKEN` cannot create a tag on a commit whose workflow files differ from main. |
+| `T3_AGENT_WEBHOOK_URL`, `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`                | secret, optional   | Webhook URL of the repair agent task, and the Cloudflare Access service token that the call needs. Without the URL, no agent is notified.                                                                          |
+| `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_TEMPLATE`, `CLERK_CLI_OAUTH_CLIENT_ID`, `RELAY_URL` | variable, optional | T3 Connect config. Without them, the build has no T3 Connect.                                                                                                                                                      |
+| `T3_FORK_CENTRAL_BUILD_CACHE`, `XDG_CACHE_HOME`                                         | variable, optional | Opt in to [central build caches](#central-build-caches), and choose their base directory.                                                                                                                          |

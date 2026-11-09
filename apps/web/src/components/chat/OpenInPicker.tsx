@@ -1,6 +1,6 @@
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
-import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
-import { Tooltip, TooltipPopup } from "../ui/tooltip";
+import { ShortcutHint } from "../focusLevels/ShortcutHint";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   AuthOrchestrationOperateScope,
   buildRemoteOpenUrl,
@@ -371,8 +371,12 @@ export const OpenInPicker = memo(function OpenInPicker({
         : {})}
     >
       <Tooltip>
-        <ShortcutTrigger
-          command={enableShortcut && !backgroundThread ? "editor.openFavorite" : null}
+        {/* The keybindings prop, not the primary server atom: that atom opens a server connection. */}
+        <TooltipTrigger
+          {...keybindingItemProps(
+            keybindings,
+            enableShortcut && !backgroundThread ? "editor.openFavorite" : null,
+          )}
           render={
             <ThreadDetailsControl
               aria-label={compact ? "Open file in preferred editor" : primaryLabel}
@@ -418,7 +422,7 @@ export const OpenInPicker = memo(function OpenInPicker({
           >
             {primaryLabel}
           </span>
-        </ShortcutTrigger>
+        </TooltipTrigger>
         <TooltipPopup>
           {primaryLabel}
           <ShortcutHint

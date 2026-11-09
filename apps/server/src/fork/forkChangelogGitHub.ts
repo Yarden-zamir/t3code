@@ -3,13 +3,7 @@
  *
  * @module fork/forkChangelogGitHub
  */
-import type {
-  ForkCommit,
-  ForkRelease,
-  ForkWorkflowJob,
-  ForkWorkflowRun,
-  ForkWorkflowState,
-} from "@t3tools/contracts";
+import type { ForkCommit, ForkRelease, ForkWorkflowState } from "@t3tools/contracts";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
 
@@ -75,35 +69,26 @@ const GitHubWorkflowConclusion = Schema.NullOr(
 export type GitHubWorkflowStatus = typeof GitHubWorkflowStatus.Type;
 export type GitHubWorkflowConclusion = typeof GitHubWorkflowConclusion.Type;
 
+/** `GET repos/{repo}/actions/workflows/{file}/runs`, newest first. */
 export const GitHubWorkflowRuns = Schema.Struct({
   workflow_runs: Schema.Array(
-    Schema.Struct({
-      id: Schema.Int,
-      run_number: Schema.Int,
-      status: GitHubWorkflowStatus,
-      conclusion: GitHubWorkflowConclusion,
-      event: Schema.String,
-      created_at: Schema.String,
-      html_url: Schema.String,
-    }),
+    Schema.Struct({ status: GitHubWorkflowStatus, conclusion: GitHubWorkflowConclusion }),
   ),
 });
-export type GitHubWorkflowRun = (typeof GitHubWorkflowRuns.Type)["workflow_runs"][number];
 
-export const GitHubWorkflowJobs = Schema.Struct({
-  jobs: Schema.Array(
-    Schema.Struct({
-      name: Schema.String,
-      status: GitHubWorkflowStatus,
-      conclusion: GitHubWorkflowConclusion,
-      html_url: Schema.NullOr(Schema.String),
-    }),
-  ),
-});
-export type GitHubWorkflowJob = (typeof GitHubWorkflowJobs.Type)["jobs"][number];
+/** `GET repos/{repo}/pulls`. */
+export const GitHubPullRequests = Schema.Array(
+  Schema.Struct({
+    number: Schema.Int,
+    title: Schema.String,
+    html_url: Schema.String,
+    draft: Schema.Boolean,
+    head: Schema.Struct({ sha: Schema.String }),
+  }),
+);
 
 /**
- * One state for a run or a job. `action_required` (a run that waits for approval) counts as a
+ * One state for a workflow run. `action_required` (a run that waits for approval) counts as a
  * failure, because nothing continues until someone acts on GitHub.
  */
 export function forkWorkflowState(
@@ -130,25 +115,6 @@ export function forkWorkflowState(
       // GitHub sets the conclusion with the completed status; a gap means the run is still closing.
       return "running";
   }
-}
-
-export function toForkWorkflowRun(
-  run: GitHubWorkflowRun,
-  jobs: ReadonlyArray<GitHubWorkflowJob>,
-): ForkWorkflowRun {
-  return {
-    id: run.id,
-    runNumber: run.run_number,
-    state: forkWorkflowState(run.status, run.conclusion),
-    event: run.event,
-    createdAt: run.created_at,
-    url: run.html_url,
-    jobs: jobs.map((job): ForkWorkflowJob => ({
-      name: job.name,
-      state: forkWorkflowState(job.status, job.conclusion),
-      url: job.html_url,
-    })),
-  };
 }
 
 function toForkCommit(commit: GitHubCommit, fork: boolean): ForkCommit {

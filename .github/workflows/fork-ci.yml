@@ -348,7 +348,7 @@ jobs:
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS_JSON"
           exit 1
 
-  # Starts the repair agent, like Fork Sync and Fork Release. Without it, a red
+  # Starts the repair agent, like Fork Release. Without it, a red
   # main goes unnoticed. Off until the T3_AGENT_WEBHOOK_URL secret is set.
   # A pull request never calls it: its author sees the failed check.
   notify_agent:

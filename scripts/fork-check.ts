@@ -20,7 +20,7 @@ const NOT_COVERED = [
   "the full test suites of the Test, Test Web and Test Server jobs (only the tests below run)",
   "typecheck of the packages that depend on a changed package",
   "the desktop build (Build job) and the Rust crates (Rust job)",
-  "the .github/scripts tests and Fork Android, Fork Release and Fork Sync",
+  "the .github/scripts tests and Fork Android and Fork Release",
 ];
 const SCRIPT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const REPAIR_SKILL_SCRIPTS = ".agents/skills/fork-repair/scripts/";
@@ -82,7 +82,7 @@ try {
 
 if (hasUnmergedSync(repoRoot)) {
   console.log(
-    "Fork CI checks sync branches. Locally, run `vp run typecheck` and the fork tests in docs/fork/operations.md (Fork Sync).",
+    "Fork CI checks sync branches. Locally, run `vp run typecheck` and the fork tests in docs/fork/operations.md (Fork merge).",
   );
   process.exit(0);
 }

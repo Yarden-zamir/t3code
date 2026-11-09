@@ -15,12 +15,11 @@ import {
   messageLinkStep,
   withoutMessageLink,
 } from "@t3tools/shared/threadMessageLinks";
-import { type HistoryState, useLocation, useRouter } from "@tanstack/react-router";
+import { useLocation, useRouter } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { randomUUID } from "../../lib/utils";
 import type { TimelineEntry } from "../../session-logic";
 import { useThreadStatus } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
@@ -39,13 +38,6 @@ import type { RememberedTimelinePosition } from "./timelineScrollAnchoring";
  * The timeline loads history, opens the fold, scrolls the message near the top and highlights it.
  * When pingdotgg/t3code#19203 merges, use its `useLinkedMessageTarget` and keep the fork links.
  */
-
-declare module "@tanstack/react-router" {
-  interface HistoryState {
-    /** Fork: a new value on each message link click, so the same link pushes a new entry. */
-    forkMessageLinkActivation?: string;
-  }
-}
 
 /** Where a jump puts the timeline: a linked message, or where the user left a history entry. */
 export type ForkTimelineTarget =
@@ -86,19 +78,6 @@ const OFF_ATOM = Atom.make(false);
 /** Fork: whether `environmentId` has the `threadAddressing` setting on. */
 export function useForkThreadAddressing(environmentId: EnvironmentId | null | undefined): boolean {
   return useAtomValue(environmentId ? forkThreadAddressingAtom(environmentId) : OFF_ATOM);
-}
-
-/** Fork: the props of a thread `Link` that opens the thread at `messageId`, or none. */
-export function forkMessageLinkNavigation(messageId: MessageId | null | undefined) {
-  if (!messageId) return {};
-  return {
-    hash: messageId,
-    resetScroll: false,
-    state: (current: HistoryState) => ({
-      ...current,
-      forkMessageLinkActivation: randomUUID(),
-    }),
-  };
 }
 
 /**

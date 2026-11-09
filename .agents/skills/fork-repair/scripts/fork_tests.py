@@ -2,7 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""Runs the fork tests in chunks, as the Fork Sync job selects them.
+"""Runs the fork tests in chunks.
 
 The fork tests are the test files that the fork changed since the last merged upstream commit,
 `git merge-base upstream/main HEAD`. apps/web tests run from apps/web in its unit and browser
@@ -69,7 +69,7 @@ def changed_files(root: Path, base: str) -> list[str]:
 
 
 def prepare(root: Path, vp: str, files: list[str], log: Path) -> None:
-    """As in the Fork Sync job. These installs do nothing when the binaries exist."""
+    """As in Fork CI. These installs do nothing when the binaries exist."""
     steps: list[list[str]] = []
     if any(file.startswith("apps/desktop/") for file in files):
         steps.append([vp, "run", "--filter", "@t3tools/desktop", "ensure:electron"])
