@@ -45,17 +45,24 @@ export function ThreadHoverCard({
  */
 export type ThreadHoverCardRowAction =
   | { readonly label: string; readonly onSelect: () => void }
-  | { readonly copy: string; readonly copiedTitle: string }
+  | {
+      readonly copy: string;
+      /** The row's accessible name, such as "Copy branch name". */
+      readonly label: string;
+      /** The success toast title, such as "Branch copied". */
+      readonly copiedTitle: string;
+    }
   | null;
 
 function copyRowValue(action: Extract<ThreadHoverCardRowAction, { copy: string }>) {
-  writeTextToClipboard(action.copy, action.copiedTitle).then(
+  const subject = action.label.replace(/^Copy /u, "").toLowerCase();
+  writeTextToClipboard(action.copy, subject).then(
     () =>
       toastManager.add({ type: "success", title: action.copiedTitle, description: action.copy }),
     (error: unknown) =>
       toastManager.add({
         type: "error",
-        title: `Failed to copy ${action.copiedTitle.toLowerCase()}`,
+        title: `Failed to copy ${subject}`,
         description: error instanceof Error ? error.message : "An error occurred.",
       }),
   );
@@ -85,7 +92,7 @@ export function ThreadHoverCardRow({
       </div>
     );
   }
-  const label = "copy" in action ? `Copy ${action.copiedTitle.toLowerCase()}` : action.label;
+  const label = action.label;
   return (
     <Button
       size="xs"

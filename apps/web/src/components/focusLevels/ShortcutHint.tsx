@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ClientSettings, KeybindingCommand, KeybindingShortcut } from "@t3tools/contracts";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, ReactNode, Ref, RefCallback } from "react";
 
 import { useClientSettings } from "../../hooks/useSettings";
 import {
@@ -49,7 +49,7 @@ export type TooltipRow =
       readonly run?: () => void;
       readonly text?: never;
     }
-  | { readonly text: ReactNode; readonly command?: never };
+  | { readonly text: string; readonly command?: never };
 
 /** A command row of `TooltipRow`. */
 export type TooltipCommandRow = Extract<TooltipRow, { command: KeybindingCommand }>;
@@ -269,13 +269,28 @@ export function ShortcutTrigger({
   rows?: TooltipContent["rows"] | undefined;
   menu?: TooltipContent["menu"] | undefined;
 }) {
+  const { ref: menuRef, ...menuProps } = useControlMenuProps({ rows, menu });
+  const { ref: ownRef, ...rest } = props;
   return (
     <TooltipTrigger
       {...useKeybindingProps(command, context)}
-      {...useControlMenuProps({ rows, menu })}
-      {...props}
+      {...menuProps}
+      {...rest}
+      ref={mergeRefs(menuRef, ownRef)}
     />
   );
+}
+
+/** Base UI's `mergeProps` leaves `ref` out, so a caller's ref and the menu ref are joined here. */
+function mergeRefs<Element>(
+  first: (element: Element | null) => void,
+  second: Ref<Element> | undefined,
+): RefCallback<Element> {
+  return (element) => {
+    first(element);
+    if (typeof second === "function") second(element);
+    else if (second) second.current = element;
+  };
 }
 
 /**

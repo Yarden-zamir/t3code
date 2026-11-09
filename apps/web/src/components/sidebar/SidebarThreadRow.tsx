@@ -337,7 +337,13 @@ function SidebarThreadTooltip({
           </ThreadHoverCardRow>
         ) : null}
         {thread.branch ? (
-          <ThreadHoverCardRow action={{ copy: thread.branch, copiedTitle: "Branch copied" }}>
+          <ThreadHoverCardRow
+            action={{
+              copy: thread.branch,
+              label: "Copy branch name",
+              copiedTitle: "Branch copied",
+            }}
+          >
             <GitBranchIcon className="size-3 shrink-0 stroke-muted-foreground" />
             <MiddleTruncate value={thread.branch} className="flex" />
           </ThreadHoverCardRow>

@@ -68,6 +68,31 @@ describe("t3code/no-shortcut-text-in-tooltip", () => {
   );
 
   rule.invalid(
+    "reports a gesture inside a conditional template",
+    "const tip = <TooltipPopup>{running ? `Click to ${mode}, Ctrl/⌘-click to ${other}` : label}</TooltipPopup>;",
+  );
+
+  rule.invalid(
+    "reports a gesture written with spaces or a symbol",
+    `const tip = <TooltipPopup>New thread: ⌘-click or Shift + click</TooltipPopup>;`,
+  );
+
+  rule.invalid(
+    "reports two hints when one sits in a conditional",
+    `const tip = (
+      <TooltipPopup>
+        New thread<ShortcutHint command="chat.new" />
+        {more ? <span>Local<ShortcutHint command="chat.newLocal" /></span> : null}
+      </TooltipPopup>
+    );`,
+  );
+
+  rule.invalid(
+    "reports a raw row in a hover card behind a condition",
+    `const card = <ThreadHoverCard title="t">{branch ? <div>{branch}</div> : null}</ThreadHoverCard>;`,
+  );
+
+  rule.invalid(
     "reports a raw row in a hover card",
     `const card = <ThreadHoverCard title="t"><div className="flex">main</div></ThreadHoverCard>;`,
   );

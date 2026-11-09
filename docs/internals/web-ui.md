@@ -20,8 +20,9 @@ A tooltip row is one of four things, and the types in
 a label; one `ShortcutHint` for the trigger's own command; a `TooltipRow` with a `command`, which
 renders as a button that runs it (its name may end with the gesture, such as "(Shift+click)"); or a
 `ThreadHoverCardRow` with an explicit `action`, `null` for a data row. A `TooltipRow` cannot carry
-a command as text, and a card row cannot be a raw element. Components that show a tooltip take
-`TooltipContent`, not a `ReactNode`. Its `menu` list gives the control its right-click and Shift+F10
+a command as text, and lint rejects a raw element as a card row. `SidebarHeaderIconButton` takes
+`TooltipContent`, not a `ReactNode`; other triggers pass `rows` and `menu` to `ShortcutTrigger`.
+The `menu` list gives the control its right-click and Shift+F10
 entries, such as `{ settings: "voice-microphone" }`; the keybindings item menu in
 [`keybindingsMenu.ts`](../../apps/web/src/keybindingsMenu.ts) shows them before "Keybindings…", so a
 control has one menu and no listener of its own. `t3code/no-shortcut-text-in-tooltip` fails lint on a shortcut

@@ -139,9 +139,16 @@ export function SidebarThreadHeader({
           command={newThreadCommand}
           tooltip={{
             label: "New thread",
-            rows: showNewThreadInProjectHint
-              ? [{ command: "chat.newLocal", name: "New thread in current project (Shift+click)" }]
-              : [],
+            // The trigger itself runs the local command when `chat.new` has no key.
+            rows:
+              showNewThreadInProjectHint && newThreadCommand !== "chat.newLocal"
+                ? [
+                    {
+                      command: "chat.newLocal",
+                      name: "New thread in current project (Shift+click)",
+                    },
+                  ]
+                : [],
           }}
           disabled={newThreadDisabled}
           onClick={onNewThread}

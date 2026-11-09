@@ -9,7 +9,10 @@ const GESTURE_MESSAGE =
 const CARD_ROW_MESSAGE =
   "A ThreadHoverCard row is a ThreadHoverCardRow with an explicit `action` (or null), not a raw element.";
 
-const GESTURE_PATTERN = /\b(?:Shift|Ctrl|Alt|Cmd|Option|⌘|⌥|⇧|⌃)[+/-]?(?:⌘|Cmd)?-?click\b/iu;
+// A modifier, then an optional joiner with spaces, then "click": "Shift+click", "Shift + click",
+// "⌘-click", "Ctrl/⌘-click". No leading word boundary: `\b` does not match before a symbol.
+const GESTURE_PATTERN =
+  /(?:Shift|Ctrl|Alt|Cmd|Option|⌘|⌥|⇧|⌃)\s*[+/-]?\s*(?:⌘|Cmd)?\s*-?\s*click\b/iu;
 
 const TEXT_ATTRIBUTES = new Set(["title", "tooltip"]);
 
@@ -85,32 +88,64 @@ export default defineRule({
       (node?.type === "Identifier" && shortcutLabelVariables.has(node.name));
     const elementName = (node: ESTree.JSXElement): string | null =>
       node.openingElement.name.type === "JSXIdentifier" ? node.openingElement.name.name : null;
-    const jsxChildName = (child: ESTree.JSXElement["children"][number]): string | null =>
-      child.type === "JSXElement" ? elementName(child) : null;
-    const countHints = (children: ReadonlyArray<ESTree.JSXElement["children"][number]>): number =>
+    type Child = ESTree.JSXElement["children"][number];
+    // The JSX elements an expression can render: `{cond ? <A/> : <B/>}`, `{cond && <A/>}`, fragments.
+    const elementsIn = (node: Node): ESTree.JSXElement[] => {
+      if (!node) return [];
+      switch (node.type) {
+        case "JSXElement":
+          return [node];
+        case "JSXFragment":
+          return node.children.flatMap((child) => elementsIn(child));
+        case "JSXExpressionContainer":
+          return elementsIn(node.expression as Node);
+        case "ConditionalExpression":
+          return [...elementsIn(node.consequent), ...elementsIn(node.alternate)];
+        case "LogicalExpression":
+          return [...elementsIn(node.left), ...elementsIn(node.right)];
+        default:
+          return [];
+      }
+    };
+    // The literal strings an expression can produce, through conditionals, templates and `+`.
+    const textsIn = (node: Node): string[] => {
+      if (!node) return [];
+      switch (node.type) {
+        case "Literal":
+          return typeof node.value === "string" ? [node.value] : [];
+        case "TemplateLiteral":
+          return node.quasis.map((quasi) => quasi.value.cooked ?? "");
+        case "JSXText":
+          return [node.value];
+        case "JSXExpressionContainer":
+          return textsIn(node.expression as Node);
+        case "ConditionalExpression":
+          return [...textsIn(node.consequent), ...textsIn(node.alternate)];
+        case "LogicalExpression":
+          return [...textsIn(node.left), ...textsIn(node.right)];
+        case "BinaryExpression":
+          return node.operator === "+" ? [...textsIn(node.left), ...textsIn(node.right)] : [];
+        default:
+          return [];
+      }
+    };
+    const countHints = (children: ReadonlyArray<Child>): number =>
       children.reduce((count, child) => {
-        if (child.type === "JSXElement") {
-          return (
-            count + (elementName(child) === "ShortcutHint" ? 1 : 0) + countHints(child.children)
-          );
-        }
-        if (child.type === "JSXExpressionContainer" && child.expression.type === "JSXElement") {
-          return count + countHints([child.expression]);
-        }
-        return count;
+        if (child.type === "JSXText") return count;
+        return elementsIn(child).reduce(
+          (inner, element) =>
+            inner +
+            (elementName(element) === "ShortcutHint" ? 1 : 0) +
+            countHints(element.children),
+          count,
+        );
       }, 0);
-    const hasGestureText = (
-      children: ReadonlyArray<ESTree.JSXElement["children"][number]>,
-    ): boolean =>
-      children.some((child) => {
-        if (child.type === "JSXText") return GESTURE_PATTERN.test(child.value);
-        if (child.type === "JSXElement") return hasGestureText(child.children);
-        if (child.type === "JSXExpressionContainer") {
-          const text = literalText(child.expression as Node);
-          return text !== null && GESTURE_PATTERN.test(text);
-        }
-        return false;
-      });
+    const hasGestureText = (children: ReadonlyArray<Child>): boolean =>
+      children.some(
+        (child) =>
+          textsIn(child).some((text) => GESTURE_PATTERN.test(text)) ||
+          elementsIn(child).some((element) => hasGestureText(element.children)),
+      );
     return {
       VariableDeclarator(node) {
         if (node.id.type === "Identifier" && embedsShortcutLabel(node.init as Node)) {
@@ -121,9 +156,11 @@ export default defineRule({
         const name = elementName(node);
         if (name === "ThreadHoverCard") {
           for (const child of node.children) {
-            const childName = jsxChildName(child);
-            if (childName !== null && /^[a-z]/u.test(childName)) {
-              context.report({ node: child, message: CARD_ROW_MESSAGE });
+            for (const element of elementsIn(child)) {
+              const childName = elementName(element);
+              if (childName !== null && /^[a-z]/u.test(childName)) {
+                context.report({ node: element, message: CARD_ROW_MESSAGE });
+              }
             }
           }
           return;

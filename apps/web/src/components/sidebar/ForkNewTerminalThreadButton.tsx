@@ -22,14 +22,15 @@ export function ForkNewTerminalThreadButton(props: {
       command={props.shortcutCommand}
       tooltip={{
         label: "New terminal thread",
-        rows: props.showNewThreadInProjectHint
-          ? [
-              {
-                command: "chat.newTerminalLocal",
-                name: "New terminal thread in current project (Shift+click)",
-              },
-            ]
-          : [],
+        rows:
+          props.showNewThreadInProjectHint && props.shortcutCommand !== "chat.newTerminalLocal"
+            ? [
+                {
+                  command: "chat.newTerminalLocal",
+                  name: "New terminal thread in current project (Shift+click)",
+                },
+              ]
+            : [],
         menu: [{ settings: "terminal-threads" }],
       }}
       disabled={props.disabled}

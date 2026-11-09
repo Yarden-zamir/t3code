@@ -172,7 +172,14 @@ export function SubagentTooltipContent(props: {
       {metadata.map(({ label, value }) => {
         const Icon = label === "Branch" ? GitBranchIcon : FolderIcon;
         return (
-          <ThreadHoverCardRow key={label} action={{ copy: value, copiedTitle: `${label} copied` }}>
+          <ThreadHoverCardRow
+            key={label}
+            action={{
+              copy: value,
+              label: `Copy ${label.toLowerCase()}`,
+              copiedTitle: `${label} copied`,
+            }}
+          >
             <Icon aria-hidden className="size-3 shrink-0" />
             <span className="sr-only">{label}</span>
             <MiddleTruncate value={value} className="flex" showTitle={false} />

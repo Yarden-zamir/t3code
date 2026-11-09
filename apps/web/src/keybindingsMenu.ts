@@ -34,11 +34,13 @@ const controlMenuEntries = new WeakMap<Element, readonly ControlMenuEntry[]>();
 
 /** Props of a control that has its own menu entries. Spread them on the element. */
 export function controlMenuProps(entries: readonly ControlMenuEntry[]) {
-  if (entries.length === 0) return {};
   return {
-    [CONTROL_MENU_ATTRIBUTE]: "",
+    ...(entries.length > 0 ? { [CONTROL_MENU_ATTRIBUTE]: "" } : {}),
+    // The ref also runs with no entries, so a control whose entries went away loses them.
     ref: (element: Element | null) => {
-      if (element !== null) controlMenuEntries.set(element, entries);
+      if (element === null) return;
+      if (entries.length > 0) controlMenuEntries.set(element, entries);
+      else controlMenuEntries.delete(element);
     },
   };
 }
