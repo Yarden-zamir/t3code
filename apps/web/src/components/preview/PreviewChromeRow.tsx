@@ -18,7 +18,12 @@ import {
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
-import { KeyHint, ShortcutHint, ShortcutTrigger } from "~/components/focusLevels/ShortcutHint";
+import {
+  KeyHint,
+  ShortcutHint,
+  ShortcutTrigger,
+  TooltipRows,
+} from "~/components/focusLevels/ShortcutHint";
 import { cn } from "~/lib/utils";
 
 interface Props {
@@ -264,7 +269,12 @@ export function PreviewChromeRow({
               ) : null}
             </TooltipTrigger>
             <TooltipPopup>
-              {recording ? "Stop recording" : "Screenshot · Shift-click to record"}
+              {recording ? "Stop recording" : "Screenshot"}
+              {recording ? null : (
+                <TooltipRows
+                  rows={[{ name: "Record (Shift+click)", run: () => onCapture(true) }]}
+                />
+              )}
             </TooltipPopup>
           </Tooltip>
         ) : null}

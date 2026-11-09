@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
+import { ThreadHoverCard, ThreadHoverCardPopup, ThreadHoverCardRow } from "../ThreadHoverCard";
 import { PreviewCard, PreviewCardTrigger } from "../ui/preview-card";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { useAtomValue } from "@effect/atom-react";
@@ -159,32 +159,28 @@ function EnabledPullRequestThreadLinks({
           <ThreadHoverCardPopup side="bottom" align="end">
             <ThreadHoverCard title={linkedThreadsLabel}>
               {linkedThreads.length === 0 ? (
-                <div>Search in the command palette.</div>
+                <ThreadHoverCardRow action={null}>
+                  Search in the command palette.
+                </ThreadHoverCardRow>
               ) : (
-                <ul className="-mx-1 flex flex-col gap-0.5">
-                  {linkedThreads.map((linked) => (
-                    <li key={linked.id}>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        className="w-full justify-start"
-                        onClick={() =>
-                          void navigate({
-                            to: "/$environmentId/$threadId",
-                            params: buildThreadRouteParams(
-                              scopeThreadRef(environmentId, linked.id),
-                            ),
-                          })
-                        }
-                      >
-                        <span className="min-w-0 truncate">{linked.title}</span>
-                        {linked.archivedAt !== null ? (
-                          <span className="shrink-0 text-muted-foreground">archived</span>
-                        ) : null}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
+                linkedThreads.map((linked) => (
+                  <ThreadHoverCardRow
+                    key={linked.id}
+                    action={{
+                      label: `Open ${linked.title}`,
+                      onSelect: () =>
+                        void navigate({
+                          to: "/$environmentId/$threadId",
+                          params: buildThreadRouteParams(scopeThreadRef(environmentId, linked.id)),
+                        }),
+                    }}
+                  >
+                    <span className="min-w-0 truncate">{linked.title}</span>
+                    {linked.archivedAt !== null ? (
+                      <span className="shrink-0 text-muted-foreground">archived</span>
+                    ) : null}
+                  </ThreadHoverCardRow>
+                ))
               )}
             </ThreadHoverCard>
           </ThreadHoverCardPopup>

@@ -49,7 +49,14 @@ export type TooltipRow =
       readonly run?: () => void;
       readonly text?: never;
     }
-  | { readonly text: string; readonly command?: never };
+  | {
+      /** An action with no keybinding command, such as a Shift+click variant. Still a button. */
+      readonly name: string;
+      readonly run: () => void;
+      readonly command?: never;
+      readonly text?: never;
+    }
+  | { readonly text: string; readonly command?: never; readonly name?: never };
 
 /** A command row of `TooltipRow`. */
 export type TooltipCommandRow = Extract<TooltipRow, { command: KeybindingCommand }>;
@@ -90,17 +97,17 @@ export function useControlMenuProps(content: {
 }) {
   const navigate = useNavigate();
   const entries: ControlMenuEntry[] = [
-    ...(content.rows ?? []).flatMap((row) =>
-      row.command === undefined
-        ? []
-        : [
-            {
-              label: row.name,
-              keybindingCommand: row.command,
-              run: row.run ?? (() => runKeybindingCommand(row.command)),
-            },
-          ],
-    ),
+    ...(content.rows ?? []).flatMap((row): ControlMenuEntry[] => {
+      if (row.name === undefined) return [];
+      if (row.command === undefined) return [{ label: row.name, run: row.run }];
+      return [
+        {
+          label: row.name,
+          keybindingCommand: row.command,
+          run: row.run ?? (() => runKeybindingCommand(row.command)),
+        },
+      ];
+    }),
     ...(content.menu ?? []).map((entry) => {
       if (entry.settings === undefined) return entry;
       const item = settingsSearchItem(entry.settings);
@@ -325,6 +332,15 @@ function CommandRow({
   );
 }
 
+/** Fork: a row that runs an action with no command, so it has no keys and no Keybindings menu. */
+function ActionRow({ run, children }: { run: () => void; children: ReactNode }) {
+  return (
+    <Button size="xs-multiline" variant="ghost" className="-mx-1 justify-start" onClick={run}>
+      <span className="min-w-0 text-left text-muted-foreground">{children}</span>
+    </Button>
+  );
+}
+
 /**
  * Fork: the rows of a tooltip under its label. A command row shows only while its command has a
  * key in `context` (or in its own context), so a row never claims a key that does not work.
@@ -341,18 +357,22 @@ export function TooltipRows({
   const labelLists = useRowShortcutLabels(commandRows, context);
   const shown = rows.filter((row) => {
     if (row.command === undefined) return true;
-    const index = commandRows.indexOf(row);
+    const index = commandRows.indexOf(row as TooltipCommandRow);
     return row.run !== undefined || (labelLists[index]?.length ?? 0) > 0;
   });
   if (shown.length === 0) return null;
   return (
     <span className="mt-1 flex flex-col items-stretch gap-0.5">
       {shown.map((row, index) =>
-        row.command === undefined ? (
+        row.name === undefined ? (
           // oxlint-disable-next-line react/no-array-index-key -- the rows of one tooltip are a fixed list
           <span key={index} className="text-muted-foreground">
             {row.text}
           </span>
+        ) : row.command === undefined ? (
+          <ActionRow key={row.name} run={row.run}>
+            {row.name}
+          </ActionRow>
         ) : (
           <CommandRow
             key={row.command}
