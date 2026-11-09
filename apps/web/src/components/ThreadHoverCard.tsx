@@ -99,7 +99,8 @@ export function ThreadHoverCardRow({
     <Button
       size="xs"
       variant="ghost"
-      className={cn("-mx-2 justify-start", layoutClass)}
+      // A grid item defaults to min-width auto, so a long value would widen the card past its max.
+      className={cn("-mx-2 min-w-0 justify-start", layoutClass)}
       aria-label={label}
       onClick={() => ("copy" in action ? copyRowValue(action) : action.onSelect())}
     >
