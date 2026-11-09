@@ -11,7 +11,12 @@ import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup } from "../ui/tooltip";
-import { ShortcutHint, ShortcutTrigger, TooltipRows } from "../focusLevels/ShortcutHint";
+import {
+  ShortcutHint,
+  ShortcutTrigger,
+  type TooltipRow,
+  TooltipRows,
+} from "../focusLevels/ShortcutHint";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import {
   alternateComposerDispatchAction,
@@ -308,6 +313,17 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             ? "Updating queued message"
             : "Submitting message"
           : null));
+  const sendRows: ReadonlyArray<TooltipRow> = [
+    { command: "composer.sendAlternate", name: capitalize(alternateAction) },
+    { command: "composer.sendBackground", name: "Send in background" },
+    { command: "composer.sendAndNewThread", name: "Send and start a new thread" },
+    { command: "composer.stash", name: "Stash" },
+  ];
+  const sendRowsContext = {
+    composerFocus: true,
+    ...alternateShortcutContext,
+    turnRunning: isRunning && !isEditingQueuedMessage && canSteer,
+  };
   const submitTooltip =
     submitStatus ??
     (compactsBeforeSend ? (
@@ -317,19 +333,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         {isRunning && !isEditingQueuedMessage && canSteer
           ? `Click to ${followUpBehavior}, Ctrl/⌘-click to ${alternateAction}`
           : submitLabel}
-        <TooltipRows
-          rows={[
-            { command: "composer.sendAlternate", name: capitalize(alternateAction) },
-            { command: "composer.sendBackground", name: "Send in background" },
-            { command: "composer.sendAndNewThread", name: "Send and start a new thread" },
-            { command: "composer.stash", name: "Stash" },
-          ]}
-          context={{
-            composerFocus: true,
-            ...alternateShortcutContext,
-            turnRunning: isRunning && !isEditingQueuedMessage && canSteer,
-          }}
-        />
+        <TooltipRows rows={sendRows} context={sendRowsContext} />
       </>
     ));
 
@@ -385,6 +389,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <ShortcutTrigger
         command={isRunning && !isEditingQueuedMessage && canSteer ? "composer.sendAlternate" : null}
         context={alternateShortcutContext ?? {}}
+        rows={sendRows}
         render={<span className="inline-flex" />}
       >
         {sendButton}

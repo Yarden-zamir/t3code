@@ -30,6 +30,7 @@ export function ForkNewTerminalThreadButton(props: {
               },
             ]
           : [],
+        menu: [{ settings: "terminal-threads" }],
       }}
       disabled={props.disabled}
       onClick={props.onClick}

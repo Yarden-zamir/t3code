@@ -15,6 +15,34 @@ type OpenKeybindings = (command: KeybindingCommand) => void;
  */
 export const KEYBINDING_COMMAND_ATTRIBUTE = "data-keybinding-command";
 
+/**
+ * Fork: marks a control with menu entries of its own, such as "Settings: Microphone". They show
+ * in the same item menu as "Keybindings…", before it. `controlMenuProps` sets both.
+ */
+export const CONTROL_MENU_ATTRIBUTE = "data-control-menu";
+
+export type ControlMenuEntry = {
+  readonly label: string;
+  readonly run: () => void;
+  /** An icon name of `ContextMenuItem.icon`. */
+  readonly icon?: string;
+  /** The command that runs the same action; the menu shows its key and links to its bindings. */
+  readonly keybindingCommand?: KeybindingCommand;
+};
+
+const controlMenuEntries = new WeakMap<Element, readonly ControlMenuEntry[]>();
+
+/** Props of a control that has its own menu entries. Spread them on the element. */
+export function controlMenuProps(entries: readonly ControlMenuEntry[]) {
+  if (entries.length === 0) return {};
+  return {
+    [CONTROL_MENU_ATTRIBUTE]: "",
+    ref: (element: Element | null) => {
+      if (element !== null) controlMenuEntries.set(element, entries);
+    },
+  };
+}
+
 const KEYBINDINGS_ITEM_LABEL = "Keybindings…";
 
 // `appInit` installs this, so the menu modules do not import the router.
@@ -31,18 +59,24 @@ const isKeybindingCommand = Schema.is(KeybindingCommandSchema);
  */
 export function bindableElement(target: EventTarget | null): {
   readonly element: HTMLElement;
-  readonly commands: readonly [KeybindingCommand, ...KeybindingCommand[]];
+  readonly commands: readonly KeybindingCommand[];
+  /** Fork: the control's own entries, before "Keybindings…". */
+  readonly entries: readonly ControlMenuEntry[];
 } | null {
   if (!(target instanceof Element)) return null;
-  const element = target.closest<HTMLElement>(`[${KEYBINDING_COMMAND_ATTRIBUTE}]`);
+  const element = target.closest<HTMLElement>(
+    `[${KEYBINDING_COMMAND_ATTRIBUTE}], [${CONTROL_MENU_ATTRIBUTE}]`,
+  );
   if (element === null) return null;
-  const names = (element.getAttribute(KEYBINDING_COMMAND_ATTRIBUTE) ?? "").split(" ");
+  const attribute = element.getAttribute(KEYBINDING_COMMAND_ATTRIBUTE);
+  const names = attribute === null ? [] : attribute.split(" ");
   const commands = names.filter(isKeybindingCommand);
-  const [first, ...rest] = commands;
-  if (first === undefined || commands.length !== names.length) {
+  if (attribute !== null && (commands.length === 0 || commands.length !== names.length)) {
     throw new Error(`${KEYBINDING_COMMAND_ATTRIBUTE} names no keybinding command: ${names}`);
   }
-  return { element, commands: [first, ...rest] };
+  const entries = controlMenuEntries.get(element) ?? [];
+  if (commands.length === 0 && entries.length === 0) return null;
+  return { element, commands, entries };
 }
 
 /** One "Keybindings…" entry per command; with two, each names its command, such as "Mode". */
@@ -91,7 +125,7 @@ function onContextMenu(event: MouseEvent): void {
   if (bindable === null || selectionInside(bindable.element)) return;
   event.preventDefault();
   event.stopPropagation();
-  void openItemMenu(bindable.commands, { position: { x: event.clientX, y: event.clientY } });
+  void openItemMenu(bindable, { position: { x: event.clientX, y: event.clientY } });
 }
 
 function onKeyDown(event: KeyboardEvent): void {
@@ -103,7 +137,7 @@ function onKeyDown(event: KeyboardEvent): void {
   if (bindable === null) return;
   event.preventDefault();
   event.stopPropagation();
-  void openItemMenu(bindable.commands, { element: bindable.element });
+  void openItemMenu(bindable, { element: bindable.element });
 }
 
 // macOS sends no `contextmenu` for the key, so the next pointer clears the flag.
@@ -137,9 +171,13 @@ export function openKeybindingsFor(command: KeybindingCommand): void {
 
 /** The item menu of a bindable element outside a Base UI menu, as an app menu. */
 async function openItemMenu(
-  commands: readonly KeybindingCommand[],
+  bindable: {
+    readonly commands: readonly KeybindingCommand[];
+    readonly entries: readonly ControlMenuEntry[];
+  },
   opener: { readonly element: Element } | { readonly position: { x: number; y: number } },
 ): Promise<void> {
+  const { commands, entries: controlEntries } = bindable;
   let position: { x: number; y: number };
   if ("element" in opener) {
     ignoreContextMenuAfterKey();
@@ -149,13 +187,29 @@ async function openItemMenu(
     position = opener.position;
   }
   const entries = keybindingsEntries(commands);
-  const items: ContextMenuItem[] = entries.map((entry, index) => ({
-    id: String(index),
-    label: entry.label,
-    icon: "keyboard",
-  }));
+  const items: ContextMenuItem[] = [
+    ...controlEntries.map((entry, index) => ({
+      id: `control:${index}`,
+      label: entry.label,
+      ...(entry.icon === undefined ? {} : { icon: entry.icon }),
+      ...(entry.keybindingCommand === undefined
+        ? {}
+        : { keybindingCommand: entry.keybindingCommand }),
+    })),
+    ...entries.map((entry, index) => ({
+      id: `key:${index}`,
+      label: entry.label,
+      icon: "keyboard",
+      ...(index === 0 && controlEntries.length > 0 ? { separatorBefore: true } : {}),
+    })),
+  ];
   const selection = requestForkContextMenu(items, position);
   const picked = selection === undefined ? null : await selection;
-  const entry = picked === null ? undefined : entries[Number(picked)];
-  if (entry !== undefined) openKeybindingsFor(entry.command);
+  if (picked === null) return;
+  const [kind, index] = picked.split(":");
+  if (kind === "control") controlEntries[Number(index)]?.run();
+  else {
+    const entry = entries[Number(index)];
+    if (entry !== undefined) openKeybindingsFor(entry.command);
+  }
 }

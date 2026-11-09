@@ -21,7 +21,10 @@ a label; one `ShortcutHint` for the trigger's own command; a `TooltipRow` with a
 renders as a button that runs it (its name may end with the gesture, such as "(Shift+click)"); or a
 `ThreadHoverCardRow` with an explicit `action`, `null` for a data row. A `TooltipRow` cannot carry
 a command as text, and a card row cannot be a raw element. Components that show a tooltip take
-`TooltipContent`, not a `ReactNode`. `t3code/no-shortcut-text-in-tooltip` fails lint on a shortcut
+`TooltipContent`, not a `ReactNode`. Its `menu` list gives the control its right-click and Shift+F10
+entries, such as `{ settings: "voice-microphone" }`; the keybindings item menu in
+[`keybindingsMenu.ts`](../../apps/web/src/keybindingsMenu.ts) shows them before "Keybindings…", so a
+control has one menu and no listener of its own. `t3code/no-shortcut-text-in-tooltip` fails lint on a shortcut
 string glued into text (also through a variable), on two hints in one tooltip, on a described click
 gesture, and on a raw card row, so an upstream sync cannot ship one unnoticed.
 

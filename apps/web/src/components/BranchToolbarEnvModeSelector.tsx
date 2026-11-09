@@ -113,6 +113,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       <Tooltip>
         <ShortcutTrigger
           command="composer.workspace"
+          menu={[{ settings: "storage-worktrees-location" }]}
           render={
             <ComposerSelectControl
               size="xs"

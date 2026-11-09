@@ -179,6 +179,8 @@ export function SidebarHeaderIconButton({
     <Tooltip>
       <ShortcutTrigger
         command={command}
+        rows={tooltip.rows}
+        menu={tooltip.menu}
         {...(shortcutContext === undefined ? {} : { context: shortcutContext })}
         render={
           <SidebarMenuButton

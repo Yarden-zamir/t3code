@@ -115,6 +115,7 @@ export function SidebarFilterMenu(props: {
             label={label}
             shortcutContext={{ sidebarFocus: true }}
             command="sidebar.filter"
+            tooltip={{ label, menu: [{ settings: "pull-request-filters" }] }}
           />
         }
       >

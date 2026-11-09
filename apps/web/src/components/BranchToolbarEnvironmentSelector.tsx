@@ -98,6 +98,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       <Tooltip>
         <ShortcutTrigger
           command="composer.host"
+          menu={[{ settings: "machine-map" }]}
           render={
             <ComposerSelectControl
               size="xs"

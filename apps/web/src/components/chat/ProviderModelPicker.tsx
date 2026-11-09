@@ -239,6 +239,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       <ShortcutTooltip
         command={composerTriggerCommands(props.triggerShortcuts)}
         label={triggerTooltipContent}
+        menu={[{ settings: "providers" }]}
         side="top"
         render={<button type="button" />}
       />
