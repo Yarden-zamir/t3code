@@ -24,7 +24,7 @@ import {
   GitBranchIcon,
   TerminalIcon,
 } from "lucide-react";
-import { ThreadHoverCard } from "../ThreadHoverCard";
+import { ThreadHoverCard, ThreadHoverCardRow } from "../ThreadHoverCard";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
@@ -122,7 +122,7 @@ export function SubagentTooltipContent(props: {
         : CircleDashedIcon;
   return (
     <ThreadHoverCard title={props.title} footer={props.footer}>
-      <div className="flex min-w-0 items-center gap-2">
+      <ThreadHoverCardRow action={null}>
         {driver ? (
           <ProviderInstanceIcon
             driverKind={driver}
@@ -151,8 +151,8 @@ export function SubagentTooltipContent(props: {
             </span>
           ) : null}
         </span>
-      </div>
-      <div className="flex min-w-0 items-center justify-between gap-4">
+      </ThreadHoverCardRow>
+      <ThreadHoverCardRow action={null} layout="spread">
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded-sm font-medium capitalize",
@@ -169,22 +169,22 @@ export function SubagentTooltipContent(props: {
           {props.status.replaceAll("_", " ")}
         </span>
         {props.elapsed}
-      </div>
+      </ThreadHoverCardRow>
       {metadata.map(({ label, value }) => {
         const Icon = label === "Branch" ? GitBranchIcon : FolderIcon;
         return (
-          <div key={label} className="flex min-w-0 items-center gap-2">
+          <ThreadHoverCardRow key={label} action={{ copy: value, copiedTitle: `${label} copied` }}>
             <Icon aria-hidden className="size-3 shrink-0" />
             <span className="sr-only">{label}</span>
             <MiddleTruncate value={value} className="flex" showTitle={false} />
-          </div>
+          </ThreadHoverCardRow>
         );
       })}
       {preview ? (
-        <div className="flex min-w-0 items-center gap-2">
+        <ThreadHoverCardRow action={null}>
           <TerminalIcon aria-hidden className="size-3 shrink-0" />
           <MiddleTruncate value={preview} className="flex" showTitle={false} />
-        </div>
+        </ThreadHoverCardRow>
       ) : null}
     </ThreadHoverCard>
   );

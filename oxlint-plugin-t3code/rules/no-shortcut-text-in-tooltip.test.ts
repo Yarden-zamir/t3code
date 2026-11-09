@@ -36,4 +36,44 @@ describe("t3code/no-shortcut-text-in-tooltip", () => {
     "reports a concatenated tooltip prop",
     'const button = <PanelTabCloseButton tooltip={"Close (" + closeShortcutLabel + ")"} />;',
   );
+
+  rule.invalid(
+    "reports a label built in a variable first",
+    "const closeLabel = `Close (${closeShortcutLabel})`;\nconst tip = <TooltipPopup>{closeLabel}</TooltipPopup>;",
+  );
+
+  rule.invalid(
+    "reports two shortcut hints in one tooltip",
+    `const tip = (
+      <TooltipPopup>
+        <span>New thread<ShortcutHint command="chat.new" /></span>
+        <span>In current project<ShortcutHint command="chat.newLocal" /></span>
+      </TooltipPopup>
+    );`,
+  );
+
+  rule.invalid(
+    "reports a click gesture described in tooltip text",
+    `const tip = <TooltipPopup>New thread in current project: Shift+click</TooltipPopup>;`,
+  );
+
+  rule.valid(
+    "allows tooltip rows for a second action",
+    `const tip = (
+      <TooltipPopup>
+        New thread<ShortcutHint command="chat.new" />
+        <TooltipRows rows={[{ command: "chat.newLocal", name: "In current project (Shift+click)" }]} />
+      </TooltipPopup>
+    );`,
+  );
+
+  rule.invalid(
+    "reports a raw row in a hover card",
+    `const card = <ThreadHoverCard title="t"><div className="flex">main</div></ThreadHoverCard>;`,
+  );
+
+  rule.valid(
+    "allows typed rows in a hover card",
+    `const card = <ThreadHoverCard title="t"><ThreadHoverCardRow action={null}>main</ThreadHoverCardRow></ThreadHoverCard>;`,
+  );
 });

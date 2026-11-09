@@ -1,4 +1,4 @@
-import type { NamedCommand } from "../focusLevels/ShortcutHint";
+import type { TooltipCommandRow } from "../focusLevels/ShortcutHint";
 
 const TRIGGER_COMMAND_NAMES = {
   "modelPicker.toggle": "Model",
@@ -18,7 +18,7 @@ function isTriggerCommand(name: string): name is TriggerCommand {
  */
 export function composerTriggerCommands(
   triggerShortcuts: string | undefined,
-): ReadonlyArray<NamedCommand> {
+): ReadonlyArray<TooltipCommandRow> {
   const names = ["modelPicker.toggle", ...(triggerShortcuts?.split(" ") ?? [])];
   return names.map((name) => {
     if (!isTriggerCommand(name)) {

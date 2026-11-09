@@ -13,7 +13,12 @@ import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
+import {
+  ShortcutHint,
+  ShortcutTrigger,
+  TooltipBody,
+  type TooltipContent,
+} from "../focusLevels/ShortcutHint";
 import type { KeybindingCommand } from "@t3tools/contracts";
 
 export interface SidebarThreadHeaderProps {
@@ -58,12 +63,6 @@ export function SidebarThreadHeader({
   const resultsVisible = isSearching && searchResultCount > 0;
   // Shrinking results can remove the active option; never leave aria-activedescendant pointing at it.
   const activeResultExists = resultsVisible && activeSearchResultIndex < searchResultCount;
-  const newThreadLabel = (
-    <>
-      New thread
-      <ShortcutHint command={newThreadCommand} />
-    </>
-  );
 
   return (
     <div className="flex items-center gap-1">
@@ -138,19 +137,12 @@ export function SidebarThreadHeader({
         <SidebarHeaderIconButton
           label="New thread"
           command={newThreadCommand}
-          tooltip={
-            showNewThreadInProjectHint ? (
-              <span className="flex flex-col gap-0.5">
-                <span>{newThreadLabel}</span>
-                <span className="text-muted-foreground">
-                  New thread in current project: Shift+click
-                  <ShortcutHint command="chat.newLocal" />
-                </span>
-              </span>
-            ) : (
-              newThreadLabel
-            )
-          }
+          tooltip={{
+            label: "New thread",
+            rows: showNewThreadInProjectHint
+              ? [{ command: "chat.newLocal", name: "New thread in current project (Shift+click)" }]
+              : [],
+          }}
           disabled={newThreadDisabled}
           onClick={onNewThread}
         >
@@ -163,7 +155,7 @@ export function SidebarThreadHeader({
 
 export function SidebarHeaderIconButton({
   label,
-  tooltip = label,
+  tooltip = { label },
   command = null,
   shortcutContext,
   className,
@@ -171,8 +163,9 @@ export function SidebarHeaderIconButton({
   ...rest
 }: {
   label: string;
-  tooltip?: ReactNode;
-  /** The keybinding command that the button runs; its key shows in `tooltip`. */
+  /** Fork: typed, so a second action in the tooltip is a row that runs it, never text. */
+  tooltip?: TooltipContent;
+  /** The keybinding command that the button runs; its key shows after the tooltip label. */
   command?: KeybindingCommand | null;
   /** Fork: the context that the key of `command` needs, such as `sidebarFocus`. */
   shortcutContext?: ComponentProps<typeof ShortcutTrigger>["context"];
@@ -203,7 +196,9 @@ export function SidebarHeaderIconButton({
           className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
         />
       </ShortcutTrigger>
-      <TooltipPopup side="top">{tooltip}</TooltipPopup>
+      <TooltipPopup side="top">
+        <TooltipBody content={tooltip} command={command} context={shortcutContext} />
+      </TooltipPopup>
     </Tooltip>
   );
 }

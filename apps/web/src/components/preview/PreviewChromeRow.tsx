@@ -18,7 +18,7 @@ import {
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
-import { ShortcutHint, ShortcutTrigger } from "~/components/focusLevels/ShortcutHint";
+import { KeyHint, ShortcutHint, ShortcutTrigger } from "~/components/focusLevels/ShortcutHint";
 import { cn } from "~/lib/utils";
 
 interface Props {
@@ -237,8 +237,9 @@ export function PreviewChromeRow({
               {pickDisabled && pickDisabledReason
                 ? pickDisabledReason
                 : pickActive
-                  ? "Cancel annotation (Esc)"
+                  ? "Cancel annotation"
                   : "Annotate elements, regions, and drawings"}
+              {pickActive && !(pickDisabled && pickDisabledReason) ? <KeyHint label="Esc" /> : null}
             </TooltipPopup>
           </Tooltip>
         ) : null}

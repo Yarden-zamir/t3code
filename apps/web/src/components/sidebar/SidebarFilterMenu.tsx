@@ -19,7 +19,6 @@ import { type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, useState
 import { useOrderWhileOpen } from "../../hooks/useOrderWhileOpen";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { AppIcon } from "../AppIcon";
-import { ShortcutHint } from "../focusLevels/ShortcutHint";
 import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { ProjectPinButton } from "../ProjectPinButton";
@@ -116,12 +115,6 @@ export function SidebarFilterMenu(props: {
             label={label}
             shortcutContext={{ sidebarFocus: true }}
             command="sidebar.filter"
-            tooltip={
-              <>
-                {label}
-                <ShortcutHint command="sidebar.filter" context={{ sidebarFocus: true }} />
-              </>
-            }
           />
         }
       >

@@ -3,7 +3,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
-import { ThreadHoverCard, ThreadHoverCardPopup } from "./ThreadHoverCard";
+import { ThreadHoverCard, ThreadHoverCardPopup, ThreadHoverCardRow } from "./ThreadHoverCard";
 import { ThreadPullRequestsMiniList } from "./ThreadStatusIndicators";
 import { PreviewCard, PreviewCardTrigger } from "./ui/preview-card";
 
@@ -35,7 +35,7 @@ it("keeps the card open while the pointer moves into it and opens a row on click
       <PreviewCardTrigger render={<button type="button" />}>Thread row</PreviewCardTrigger>
       <ThreadHoverCardPopup>
         <ThreadHoverCard title="Thread title">
-          <div>cli-utils</div>
+          <ThreadHoverCardRow action={null}>cli-utils</ThreadHoverCardRow>
         </ThreadHoverCard>
         <ThreadPullRequestsMiniList
           pullRequests={[pullRequest]}

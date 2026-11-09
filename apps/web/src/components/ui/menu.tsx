@@ -442,7 +442,8 @@ function MenuShortcut({ className, ...props }: React.ComponentProps<"kbd">) {
   return (
     <kbd
       className={cn(
-        "ms-auto font-medium font-sans text-secondary-label text-xs tracking-widest",
+        // Fork: the same chip as `Kbd`, so a menu key looks like a tooltip key.
+        "ms-auto inline-flex h-5 min-w-5 items-center justify-center gap-1 rounded bg-foreground/[0.07] px-1 font-medium font-sans text-muted-foreground text-xs [&_svg:not([class*='size-'])]:size-3",
         className,
       )}
       data-slot="menu-shortcut"

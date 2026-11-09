@@ -11,7 +11,7 @@ import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup } from "../ui/tooltip";
-import { ShortcutCommandRows, ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutTrigger, TooltipRows } from "../focusLevels/ShortcutHint";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import {
   alternateComposerDispatchAction,
@@ -317,8 +317,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         {isRunning && !isEditingQueuedMessage && canSteer
           ? `Click to ${followUpBehavior}, Ctrl/⌘-click to ${alternateAction}`
           : submitLabel}
-        <ShortcutCommandRows
-          commands={[
+        <TooltipRows
+          rows={[
             { command: "composer.sendAlternate", name: capitalize(alternateAction) },
             { command: "composer.sendBackground", name: "Send in background" },
             { command: "composer.sendAndNewThread", name: "Send and start a new thread" },

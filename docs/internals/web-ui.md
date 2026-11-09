@@ -15,6 +15,16 @@ inside. `Tooltip` is for a label and small actions, such as the keys a control r
 A card stays out of the tooltip delay group, so a tooltip inside its trigger does not swap it
 away. Anything clickable inside a popup renders as a `Button` or a link, never as styled text.
 
+A tooltip row is one of four things, and the types in
+[`ShortcutHint.tsx`](../../apps/web/src/components/focusLevels/ShortcutHint.tsx) hold it to that:
+a label; one `ShortcutHint` for the trigger's own command; a `TooltipRow` with a `command`, which
+renders as a button that runs it (its name may end with the gesture, such as "(Shift+click)"); or a
+`ThreadHoverCardRow` with an explicit `action`, `null` for a data row. A `TooltipRow` cannot carry
+a command as text, and a card row cannot be a raw element. Components that show a tooltip take
+`TooltipContent`, not a `ReactNode`. `t3code/no-shortcut-text-in-tooltip` fails lint on a shortcut
+string glued into text (also through a variable), on two hints in one tooltip, on a described click
+gesture, and on a raw card row, so an upstream sync cannot ship one unnoticed.
+
 ## Styles
 
 Style with Tailwind classes in the component that renders the element.

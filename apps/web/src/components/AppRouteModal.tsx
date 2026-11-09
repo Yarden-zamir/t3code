@@ -6,6 +6,7 @@ import { useNativeTitlebarHeight } from "../lib/windowControlsOverlay";
 import { useCloseAppModal } from "./sidebar/mainAppLocation";
 import { Button } from "./ui/button";
 import { DialogBackdrop } from "./ui/dialog";
+import { KeyHint } from "./focusLevels/ShortcutHint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 /**
@@ -97,7 +98,10 @@ export function AppRouteModalClose() {
       >
         <XIcon />
       </TooltipTrigger>
-      <TooltipPopup side="bottom">Close (Esc)</TooltipPopup>
+      <TooltipPopup side="bottom">
+        Close
+        <KeyHint label="Esc" />
+      </TooltipPopup>
     </Tooltip>
   );
 }

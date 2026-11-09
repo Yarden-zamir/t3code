@@ -2,7 +2,6 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { SquareTerminalIcon } from "lucide-react";
 
 import { useTerminalThreadEnvironmentIds } from "../../hooks/useForkTerminalThreads";
-import { ShortcutHint } from "../focusLevels/ShortcutHint";
 import { SidebarHeaderIconButton } from "./SidebarThreadHeader";
 
 /**
@@ -17,29 +16,21 @@ export function ForkNewTerminalThreadButton(props: {
 }) {
   const environmentIds = useTerminalThreadEnvironmentIds();
   if (environmentIds.size === 0) return null;
-  const label = (
-    <>
-      New terminal thread
-      <ShortcutHint command={props.shortcutCommand} />
-    </>
-  );
   return (
     <SidebarHeaderIconButton
       label="New terminal thread"
       command={props.shortcutCommand}
-      tooltip={
-        props.showNewThreadInProjectHint ? (
-          <span className="flex flex-col gap-0.5">
-            <span>{label}</span>
-            <span className="text-muted-foreground">
-              New terminal thread in current project: Shift+click
-              <ShortcutHint command="chat.newTerminalLocal" />
-            </span>
-          </span>
-        ) : (
-          label
-        )
-      }
+      tooltip={{
+        label: "New terminal thread",
+        rows: props.showNewThreadInProjectHint
+          ? [
+              {
+                command: "chat.newTerminalLocal",
+                name: "New terminal thread in current project (Shift+click)",
+              },
+            ]
+          : [],
+      }}
       disabled={props.disabled}
       onClick={props.onClick}
     >
