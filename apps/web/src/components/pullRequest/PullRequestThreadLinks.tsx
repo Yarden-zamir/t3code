@@ -167,7 +167,7 @@ function EnabledPullRequestThreadLinks({
                   <ThreadHoverCardRow
                     key={linked.id}
                     action={{
-                      label: `Open ${linked.title}`,
+                      label: `Open ${linked.title}${linked.archivedAt !== null ? " (archived)" : ""}`,
                       onSelect: () =>
                         void navigate({
                           to: "/$environmentId/$threadId",

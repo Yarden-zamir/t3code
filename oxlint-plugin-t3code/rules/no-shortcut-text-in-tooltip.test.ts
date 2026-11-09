@@ -93,6 +93,26 @@ describe("t3code/no-shortcut-text-in-tooltip", () => {
   );
 
   rule.invalid(
+    "reports gesture text that a variable holds",
+    "const submitTooltip = running ? `Click to ${mode}, Ctrl/⌘-click to ${other}` : label;\nconst tip = <TooltipPopup>{submitTooltip}</TooltipPopup>;",
+  );
+
+  rule.invalid(
+    "reports a gesture in a text row",
+    `const tip = <TooltipPopup>Screenshot<TooltipRows rows={[{ text: "Shift+click to record" }]} /></TooltipPopup>;`,
+  );
+
+  rule.invalid(
+    "reports a key glyph in a row name",
+    `const tip = <TooltipPopup>Screenshot<TooltipRows rows={[{ name: "Record ⌘R", run }]} /></TooltipPopup>;`,
+  );
+
+  rule.valid(
+    "allows a trailing gesture on a row name",
+    `const tip = <TooltipPopup>Screenshot<TooltipRows rows={[{ name: "Record (Shift+click)", run }]} /></TooltipPopup>;`,
+  );
+
+  rule.invalid(
     "reports a raw row in a hover card",
     `const card = <ThreadHoverCard title="t"><div className="flex">main</div></ThreadHoverCard>;`,
   );

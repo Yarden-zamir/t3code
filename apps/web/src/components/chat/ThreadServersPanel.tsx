@@ -25,6 +25,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { MorphIcon } from "../MorphIcon";
 import { openDiscoveredPort } from "../preview/openDiscoveredPort";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { ShortcutTrigger, type TooltipRow, TooltipRows } from "../focusLevels/ShortcutHint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
@@ -62,6 +63,10 @@ function ThreadServersList(props: ThreadServersPanelProps) {
 
   if (servers.length === 0) return null;
   const externalClickLabel = isMacPlatform(navigator.platform) ? "⌘-click" : "Ctrl-click";
+  // The modified click has no keybinding command; the row runs it from the tooltip and the menu.
+  const externalRows = (server: DiscoveredLocalServer): ReadonlyArray<TooltipRow> => [
+    { name: `Open in your browser (${externalClickLabel})`, run: () => void openExternal(server) },
+  ];
   const threadRef = scopeThreadRef(props.environmentId, props.threadId);
   const hiddenCount = Math.max(0, servers.length - visibleCount);
 
@@ -75,15 +80,18 @@ function ThreadServersList(props: ThreadServersPanelProps) {
     );
   };
 
+  const openExternal = async (server: DiscoveredLocalServer) => {
+    const url = resolveDiscoveredServerUrl(props.environmentId, server.url);
+    await readLocalApi()
+      ?.shell.openExternal(url)
+      .catch((error: unknown) => reportFailure("Unable to open in browser", error));
+  };
   const open = async (server: DiscoveredLocalServer, event: MouseEvent<HTMLElement>) => {
     if (event.button > 1) return;
     // Like links: modified and middle clicks go to the system browser.
     if (event.metaKey || event.ctrlKey || event.button === 1) {
       event.preventDefault();
-      const url = resolveDiscoveredServerUrl(props.environmentId, server.url);
-      await readLocalApi()
-        ?.shell.openExternal(url)
-        .catch((error: unknown) => reportFailure("Unable to open in browser", error));
+      await openExternal(server);
       return;
     }
     const result = await openDiscoveredPort({ threadRef, port: server, openPreview });
@@ -118,7 +126,9 @@ function ThreadServersList(props: ThreadServersPanelProps) {
               className="group relative flex items-center rounded-lg"
             >
               <Tooltip>
-                <TooltipTrigger
+                <ShortcutTrigger
+                  command={null}
+                  rows={externalRows(server)}
                   delay={200}
                   render={
                     <ThreadDetailsControl
@@ -144,9 +154,10 @@ function ThreadServersList(props: ThreadServersPanelProps) {
                         .join(" · ")}
                     </span>
                   </span>
-                </TooltipTrigger>
+                </ShortcutTrigger>
                 <TooltipPopup side="left">
-                  Open in the browser panel. {externalClickLabel} for your browser.
+                  Open in the browser panel
+                  <TooltipRows rows={externalRows(server)} />
                 </TooltipPopup>
               </Tooltip>
               {stoppable ? (

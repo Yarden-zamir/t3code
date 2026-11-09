@@ -8,6 +8,12 @@ const GESTURE_MESSAGE =
   'Do not describe a click gesture in tooltip text. A second action is a TooltipRow with its command; the row name may end with the gesture, such as "(Shift+click)".';
 const CARD_ROW_MESSAGE =
   "A ThreadHoverCard row is a ThreadHoverCardRow with an explicit `action` (or null), not a raw element.";
+const ROW_TEXT_MESSAGE =
+  "A tooltip row's text carries no key or gesture. A `name` may end with the gesture in parentheses, such as \"Record (Shift+click)\"; a key comes from the row's command.";
+
+// A trailing "(… click)" on a row name, which is the one place a gesture may appear.
+const TRAILING_GESTURE = /\s*\([^()]*click\)\s*$/iu;
+const KEY_GLYPHS = /[⌘⌥⇧⌃↵]|\b(?:Esc|Enter|Tab|F\d{1,2})\b/u;
 
 // A modifier, then an optional joiner with spaces, then "click": "Shift+click", "Shift + click",
 // "⌘-click", "Ctrl/⌘-click". No leading word boundary: `\b` does not match before a symbol.
@@ -80,6 +86,13 @@ export default defineRule({
   create(context) {
     // A label built in a variable first, then placed in the tooltip, is caught by name.
     const shortcutLabelVariables = new Set<string>();
+    const gestureVariables = new Set<string>();
+    const identifierName = (node: Node): string | null =>
+      node?.type === "Identifier"
+        ? node.name
+        : node?.type === "JSXExpressionContainer" && node.expression.type === "Identifier"
+          ? node.expression.name
+          : null;
     const embeds = (node: Node): boolean =>
       embedsShortcutLabel(node) ||
       (node?.type === "JSXExpressionContainer" &&
@@ -146,11 +159,63 @@ export default defineRule({
           textsIn(child).some((text) => GESTURE_PATTERN.test(text)) ||
           elementsIn(child).some((element) => hasGestureText(element.children)),
       );
+    const rowObjectsIn = (node: Node): ESTree.ObjectExpression[] => {
+      if (!node) return [];
+      switch (node.type) {
+        case "JSXExpressionContainer":
+          return rowObjectsIn(node.expression as Node);
+        case "ArrayExpression":
+          return node.elements.flatMap((element) => rowObjectsIn(element as Node));
+        case "ObjectExpression":
+          return [node];
+        case "ConditionalExpression":
+          return [...rowObjectsIn(node.consequent), ...rowObjectsIn(node.alternate)];
+        case "LogicalExpression":
+          return [...rowObjectsIn(node.left), ...rowObjectsIn(node.right)];
+        default:
+          return [];
+      }
+    };
+    const checkRows = (value: Node) => {
+      for (const row of rowObjectsIn(value)) {
+        for (const property of row.properties) {
+          if (property.type !== "Property" || property.key.type !== "Identifier") continue;
+          if (property.key.name !== "text" && property.key.name !== "name") continue;
+          const texts = textsIn(property.value as Node);
+          if (texts.length === 0) continue;
+          if (
+            isShortcutLabel(property.value as Node) ||
+            embedsShortcutLabel(property.value as Node)
+          ) {
+            context.report({ node: property, message: ROW_TEXT_MESSAGE });
+            continue;
+          }
+          const value = texts.join("");
+          const body = property.key.name === "name" ? value.replace(TRAILING_GESTURE, "") : value;
+          if (GESTURE_PATTERN.test(body) || KEY_GLYPHS.test(body)) {
+            context.report({ node: property, message: ROW_TEXT_MESSAGE });
+          }
+        }
+      }
+    };
     return {
       VariableDeclarator(node) {
-        if (node.id.type === "Identifier" && embedsShortcutLabel(node.init as Node)) {
-          shortcutLabelVariables.add(node.id.name);
+        if (node.id.type !== "Identifier") return;
+        if (embedsShortcutLabel(node.init as Node)) shortcutLabelVariables.add(node.id.name);
+        if (textsIn(node.init as Node).some((text) => GESTURE_PATTERN.test(text))) {
+          gestureVariables.add(node.id.name);
         }
+      },
+      // `rows={[...]}` and `tooltip={{ rows: [...] }}`: a row string is text only.
+      JSXAttribute(node) {
+        if (node.name.type !== "JSXIdentifier") return;
+        if (node.name.name === "rows") checkRows(node.value as Node);
+        if (!TEXT_ATTRIBUTES.has(node.name.name)) return;
+        if (embeds(node.value as Node)) context.report({ node, message: MESSAGE });
+      },
+      Property(node) {
+        if (node.key.type === "Identifier" && node.key.name === "rows")
+          checkRows(node.value as Node);
       },
       JSXElement(node) {
         const name = elementName(node);
@@ -170,11 +235,13 @@ export default defineRule({
           if (embeds(child)) context.report({ node: child, message: MESSAGE });
         }
         if (countHints(node.children) > 1) context.report({ node, message: TWO_ACTIONS_MESSAGE });
-        if (hasGestureText(node.children)) context.report({ node, message: GESTURE_MESSAGE });
-      },
-      JSXAttribute(node) {
-        if (node.name.type !== "JSXIdentifier" || !TEXT_ATTRIBUTES.has(node.name.name)) return;
-        if (embeds(node.value as Node)) context.report({ node, message: MESSAGE });
+        const gestureInVariable = node.children.some((child) => {
+          const name = identifierName(child);
+          return name !== null && gestureVariables.has(name);
+        });
+        if (hasGestureText(node.children) || gestureInVariable) {
+          context.report({ node, message: GESTURE_MESSAGE });
+        }
       },
     };
   },

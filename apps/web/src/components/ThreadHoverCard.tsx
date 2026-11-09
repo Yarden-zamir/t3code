@@ -55,7 +55,9 @@ export type ThreadHoverCardRowAction =
   | null;
 
 function copyRowValue(action: Extract<ThreadHoverCardRowAction, { copy: string }>) {
-  const subject = action.label.replace(/^Copy /u, "").toLowerCase();
+  const subject = (
+    action.label.startsWith("Copy ") ? action.label.slice("Copy ".length) : action.label
+  ).toLowerCase();
   writeTextToClipboard(action.copy, subject).then(
     () =>
       toastManager.add({ type: "success", title: action.copiedTitle, description: action.copy }),
@@ -99,7 +101,6 @@ export function ThreadHoverCardRow({
       variant="ghost"
       className={cn("-mx-2 justify-start", layoutClass)}
       aria-label={label}
-      title={label}
       onClick={() => ("copy" in action ? copyRowValue(action) : action.onSelect())}
     >
       {children}

@@ -67,7 +67,7 @@ export type TooltipCommandRow = Extract<TooltipRow, { command: KeybindingCommand
  * names a second action must give it as a row.
  */
 export interface TooltipContent {
-  readonly label: ReactNode;
+  readonly label: string;
   readonly rows?: ReadonlyArray<TooltipRow>;
   /** The control's right-click entries, shown before "Keybindings…". */
   readonly menu?: ReadonlyArray<TooltipMenuEntry>;
@@ -432,11 +432,17 @@ export function ShortcutTooltip({
   const commands = single ? command : command.map((entry) => entry.command);
   const labelLists = useShortcutLabelLists(commandList(commands), context);
   const keybindingProps = useKeybindingProps(commands, context);
-  const controlMenu = useControlMenuProps({ rows: rows ?? [], menu });
+  const { ref: menuRef, ...controlMenu } = useControlMenuProps({ rows: rows ?? [], menu });
+  const { ref: ownRef, ...restTriggerProps } = triggerProps;
   const hasKeys = labelLists.some((labels) => labels.length > 0);
   return (
     <Tooltip disabled={!hasKeys}>
-      <TooltipTrigger {...keybindingProps} {...controlMenu} {...triggerProps} />
+      <TooltipTrigger
+        {...keybindingProps}
+        {...controlMenu}
+        {...restTriggerProps}
+        ref={mergeRefs(menuRef, ownRef)}
+      />
       {hasKeys ? (
         <TooltipPopup side={side}>
           {label}
