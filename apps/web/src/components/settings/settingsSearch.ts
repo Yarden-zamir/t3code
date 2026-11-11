@@ -1494,6 +1494,11 @@ export function searchableSetting(id: SettingsSearchItemId): {
   return { id: anchorId, title };
 }
 
+/** Fork: the page and anchor of a setting, for a link that opens it in place. */
+export function settingsSearchItem(id: SettingsSearchItemId): SettingsSearchItem {
+  return SEARCH_ITEMS_BY_ID.get(id)!;
+}
+
 export function filterAvailableSettingsSearchItems(
   availability: SettingsSearchAvailability,
 ): ReadonlyArray<SettingsSearchItem> {

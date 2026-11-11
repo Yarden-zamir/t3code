@@ -187,6 +187,7 @@ export function ComposerSpeechButton(props: {
     <Tooltip>
       <ShortcutTrigger
         command="composer.dictation"
+        menu={[{ settings: "voice-microphone" }]}
         render={
           <Button
             type="button"

@@ -15,6 +15,24 @@ inside. `Tooltip` is for a label and small actions, such as the keys a control r
 A card stays out of the tooltip delay group, so a tooltip inside its trigger does not swap it
 away. Anything clickable inside a popup renders as a `Button` or a link, never as styled text.
 
+A tooltip row is one of these, and the types in
+[`ShortcutHint.tsx`](../../apps/web/src/components/focusLevels/ShortcutHint.tsx) hold it to that:
+a `string` label; one `ShortcutHint` for the trigger's own command, or `KeyHint` for a key that is
+not a command (Esc, Enter); a `TooltipRow` with a `command`, which renders as a button that runs it;
+a `TooltipRow` with `name` and `run` for an action without a command, also a button; a `TooltipRow`
+with `text` only, which carries no key; or a `ThreadHoverCardRow` with an explicit `action`, `null`
+for a data row. A row `name` may end with its gesture in parentheses, such as "Record (Shift+click)",
+and nowhere else. `SidebarHeaderIconButton` takes `TooltipContent`, not a `ReactNode`; other
+triggers pass `rows` and `menu` to `ShortcutTrigger`. The `menu` list gives the control its
+right-click and Shift+F10 entries, such as `{ settings: "voice-microphone" }`; the keybindings item
+menu in [`keybindingsMenu.ts`](../../apps/web/src/keybindingsMenu.ts) shows them before
+"Keybindings…", so a control has one menu and no listener of its own.
+`t3code/no-shortcut-text-in-tooltip` fails lint on a shortcut string glued into text (also through
+a variable), on two hints in one tooltip, on a described click gesture (also through a variable),
+on a key or gesture inside a row string, and on a raw element written as a card row, also behind a
+condition. A raw row built with `.map()` is not seen; `ThreadHoverCardRow` is the only row component
+to use there.
+
 ## Styles
 
 Style with Tailwind classes in the component that renders the element.

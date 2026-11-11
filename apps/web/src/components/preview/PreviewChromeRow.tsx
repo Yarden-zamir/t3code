@@ -18,7 +18,13 @@ import {
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
-import { ShortcutHint, ShortcutTrigger } from "~/components/focusLevels/ShortcutHint";
+import {
+  KeyHint,
+  ShortcutHint,
+  ShortcutTrigger,
+  type TooltipRow,
+  TooltipRows,
+} from "~/components/focusLevels/ShortcutHint";
 import { cn } from "~/lib/utils";
 
 interface Props {
@@ -88,6 +94,9 @@ export function PreviewChromeRow({
     inputRef.current?.blur();
   };
 
+  // The Shift+click variant has no keybinding command; the row still runs it from the menu.
+  const recordRows: ReadonlyArray<TooltipRow> =
+    onCapture && !recording ? [{ name: "Record (Shift+click)", run: () => onCapture(true) }] : [];
   return (
     <div className="relative">
       <form
@@ -237,14 +246,17 @@ export function PreviewChromeRow({
               {pickDisabled && pickDisabledReason
                 ? pickDisabledReason
                 : pickActive
-                  ? "Cancel annotation (Esc)"
+                  ? "Cancel annotation"
                   : "Annotate elements, regions, and drawings"}
+              {pickActive && !(pickDisabled && pickDisabledReason) ? <KeyHint label="Esc" /> : null}
             </TooltipPopup>
           </Tooltip>
         ) : null}
         {onCapture ? (
           <Tooltip>
-            <TooltipTrigger
+            <ShortcutTrigger
+              command={null}
+              rows={recordRows}
               render={
                 <Button
                   variant={recording ? "secondary" : "ghost"}
@@ -261,9 +273,10 @@ export function PreviewChromeRow({
               {recording ? (
                 <span className="absolute right-0.5 top-0.5 size-1.5 motion-safe:animate-status-pulse rounded-full bg-destructive" />
               ) : null}
-            </TooltipTrigger>
+            </ShortcutTrigger>
             <TooltipPopup>
-              {recording ? "Stop recording" : "Screenshot · Shift-click to record"}
+              {recording ? "Stop recording" : "Screenshot"}
+              <TooltipRows rows={recordRows} />
             </TooltipPopup>
           </Tooltip>
         ) : null}

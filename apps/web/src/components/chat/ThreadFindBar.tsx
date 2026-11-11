@@ -1,7 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
-import { Kbd } from "../ui/kbd";
+import { KeyHint } from "../focusLevels/ShortcutHint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { cn } from "~/lib/utils";
@@ -118,8 +118,8 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
               <ChevronUpIcon />
             </TooltipTrigger>
             <TooltipPopup>
-              Previous match <Kbd>⇧</Kbd>
-              <Kbd>↵</Kbd>
+              Previous match
+              <KeyHint label="⇧↵" />
             </TooltipPopup>
           </Tooltip>
           <Tooltip>
@@ -137,7 +137,8 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
               <ChevronDownIcon />
             </TooltipTrigger>
             <TooltipPopup>
-              Next match <Kbd>↵</Kbd>
+              Next match
+              <KeyHint label="↵" />
             </TooltipPopup>
           </Tooltip>
           <Tooltip>
@@ -154,7 +155,8 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
               <XIcon />
             </TooltipTrigger>
             <TooltipPopup>
-              Close <Kbd>Esc</Kbd>
+              Close
+              <KeyHint label="Esc" />
             </TooltipPopup>
           </Tooltip>
         </InputGroupAddon>

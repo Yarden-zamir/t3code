@@ -37,6 +37,7 @@ import {
   bindableElement,
   ignoreContextMenuAfterKey,
   isItemMenuKey,
+  CONTROL_MENU_ATTRIBUTE,
   KEYBINDING_COMMAND_ATTRIBUTE,
   keybindingsEntries,
   openKeybindingsFor,
@@ -102,18 +103,25 @@ function ItemIcon({ name }: { name: string | undefined }) {
 
 // Every app menu item that runs a keybinding command gets "Keybindings…" as its own menu.
 configureMenuItemMenus({
-  selector: `[${KEYBINDING_COMMAND_ATTRIBUTE}]`,
+  selector: `[${KEYBINDING_COMMAND_ATTRIBUTE}], [${CONTROL_MENU_ATTRIBUTE}]`,
   find: (target) => {
     const bindable = bindableElement(target);
     return bindable === null
       ? null
       : {
           element: bindable.element,
-          entries: keybindingsEntries(bindable.commands).map((entry) => ({
-            label: entry.label,
-            icon: <KeyboardIcon />,
-            run: () => openKeybindingsFor(entry.command),
-          })),
+          entries: [
+            ...bindable.entries.map((entry) => ({
+              label: entry.label,
+              icon: <ItemIcon name={entry.icon} />,
+              run: entry.run,
+            })),
+            ...keybindingsEntries(bindable.commands).map((entry) => ({
+              label: entry.label,
+              icon: <KeyboardIcon />,
+              run: () => openKeybindingsFor(entry.command),
+            })),
+          ],
         };
   },
   isOpenKey: isItemMenuKey,

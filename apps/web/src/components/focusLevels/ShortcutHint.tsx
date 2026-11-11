@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ClientSettings, KeybindingCommand, KeybindingShortcut } from "@t3tools/contracts";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, ReactNode, Ref, RefCallback } from "react";
 
 import { useClientSettings } from "../../hooks/useSettings";
 import {
@@ -10,7 +10,13 @@ import {
   type ShortcutMatchContext,
 } from "../../keybindings";
 import { primaryServerKeybindingsAtom } from "../../state/server";
-import { KEYBINDING_COMMAND_ATTRIBUTE } from "../../keybindingsMenu";
+import {
+  type ControlMenuEntry,
+  controlMenuProps,
+  KEYBINDING_COMMAND_ATTRIBUTE,
+} from "../../keybindingsMenu";
+import { useNavigate } from "@tanstack/react-router";
+import { type SettingsSearchItemId, settingsSearchItem } from "../settings/settingsSearch";
 import { FOCUS_LEVELS_OFF } from "./focusLevels";
 
 const { composerFocus: _composerFocus, ...FORK_LEVELS_OFF } = FOCUS_LEVELS_OFF;
@@ -29,10 +35,96 @@ const selectShortcutLimit = (settings: ClientSettings) => settings.tooltipShortc
 /** One command, or the commands of a control that runs several, such as the composer model picker. */
 type Commands = KeybindingCommand | ReadonlyArray<KeybindingCommand> | null;
 
-/** A command of a control that runs several, with the name its tooltip shows before its keys. */
-export interface NamedCommand {
-  readonly command: KeybindingCommand;
-  readonly name: string;
+/**
+ * Fork: a row of a tooltip. A row that names a command renders only as a button that runs it,
+ * with its keys and the right-click "Keybindings…" menu. A text row carries no command and no
+ * key, so an action cannot be written as plain text. `run` replaces the command runner when the
+ * click must do more than the key does, such as a Shift+click variant.
+ */
+export type TooltipRow =
+  | {
+      readonly command: KeybindingCommand;
+      readonly name: string;
+      readonly context?: ShortcutContext;
+      readonly run?: () => void;
+      readonly text?: never;
+    }
+  | {
+      /** An action with no keybinding command, such as a Shift+click variant. Still a button. */
+      readonly name: string;
+      readonly run: () => void;
+      readonly command?: never;
+      readonly text?: never;
+    }
+  | { readonly text: string; readonly command?: never; readonly name?: never };
+
+/** A command row of `TooltipRow`. */
+export type TooltipCommandRow = Extract<TooltipRow, { command: KeybindingCommand }>;
+
+/**
+ * Fork: what a tooltip shows: its label, the key of the trigger's own command, and rows for the
+ * other actions it offers. Components take this instead of a free `ReactNode`, so a tooltip that
+ * names a second action must give it as a row.
+ */
+export interface TooltipContent {
+  readonly label: string;
+  readonly rows?: ReadonlyArray<TooltipRow>;
+  /** The control's right-click entries, shown before "Keybindings…". */
+  readonly menu?: ReadonlyArray<TooltipMenuEntry>;
+}
+
+/**
+ * Fork: an entry of a control's right-click menu. `settings` opens that setting in place;
+ * the other form runs an action of the control that has no button of its own.
+ */
+export type TooltipMenuEntry =
+  | { readonly settings: SettingsSearchItemId; readonly label?: never }
+  | {
+      readonly label: string;
+      readonly run: () => void;
+      readonly icon?: string;
+      readonly settings?: never;
+    };
+
+/**
+ * Fork: the props that give a control its right-click and Shift+F10 menu: its command rows as
+ * entries that run them, and its `menu` entries. The keybindings item menu shows them before
+ * "Keybindings…", in the same menu, so there is one menu per control.
+ */
+export function useControlMenuProps(content: {
+  readonly rows?: TooltipContent["rows"] | undefined;
+  readonly menu?: TooltipContent["menu"] | undefined;
+}) {
+  const navigate = useNavigate();
+  const entries: ControlMenuEntry[] = [
+    ...(content.rows ?? []).flatMap((row): ControlMenuEntry[] => {
+      if (row.name === undefined) return [];
+      if (row.command === undefined) return [{ label: row.name, run: row.run }];
+      return [
+        {
+          label: row.name,
+          keybindingCommand: row.command,
+          run: row.run ?? (() => runKeybindingCommand(row.command)),
+        },
+      ];
+    }),
+    ...(content.menu ?? []).map((entry) => {
+      if (entry.settings === undefined) return entry;
+      const item = settingsSearchItem(entry.settings);
+      return {
+        label: `Settings: ${item.title}`,
+        icon: "settings",
+        run: () =>
+          void navigate({
+            to: item.to,
+            hash: item.targetId ?? item.id,
+            hashScrollIntoView: false,
+            state: { settingsTargetHighlight: true },
+          }),
+      };
+    }),
+  ];
+  return controlMenuProps(entries);
 }
 
 function commandList(commands: Commands): ReadonlyArray<KeybindingCommand> {
@@ -56,6 +148,25 @@ function useShortcuts(
   return commands.map((command) =>
     effectiveShortcutsForCommand(keybindings, command, { context: matchContext }),
   );
+}
+
+/** The key labels of each row, each read in the row's own context, or `context` without one. */
+function useRowShortcutLabels(
+  rows: ReadonlyArray<TooltipCommandRow>,
+  context?: ShortcutContext,
+): ReadonlyArray<ReadonlyArray<string>> {
+  const enabled = useClientSettings(selectTooltipShortcuts);
+  const levels = useClientSettings(selectFocusLevels);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  return rows.map((row) => {
+    if (!enabled) return [];
+    const rowContext = row.context ?? context;
+    const matchContext = levels ? (rowContext ?? {}) : { ...rowContext, ...FORK_LEVELS_OFF };
+    const shortcuts = effectiveShortcutsForCommand(keybindings, row.command, {
+      context: matchContext,
+    });
+    return [...new Set(shortcuts.map((shortcut) => formatShortcutLabel(shortcut)))];
+  });
 }
 
 /** The key labels of each command, in the order of `commands`. */
@@ -97,7 +208,7 @@ function ShortcutChips({ labels }: { labels: ReadonlyArray<string> }) {
  */
 export function ShortcutHint(props: {
   command: KeybindingCommand | null;
-  context?: ShortcutContext;
+  context?: ShortcutContext | undefined;
 }) {
   const labels = useShortcutLabels(props.command, props.context);
   return labels.length > 0 ? <ShortcutChips labels={labels} /> : null;
@@ -155,12 +266,38 @@ export function useKeybindingProps(command: Commands, context?: ShortcutContext)
 export function ShortcutTrigger({
   command,
   context,
+  rows,
+  menu,
   ...props
 }: ComponentProps<typeof TooltipTrigger> & {
   command: KeybindingCommand | null;
   context?: ShortcutContext;
+  /** The tooltip's rows and menu; they become the control's right-click entries. */
+  rows?: TooltipContent["rows"] | undefined;
+  menu?: TooltipContent["menu"] | undefined;
 }) {
-  return <TooltipTrigger {...useKeybindingProps(command, context)} {...props} />;
+  const { ref: menuRef, ...menuProps } = useControlMenuProps({ rows, menu });
+  const { ref: ownRef, ...rest } = props;
+  return (
+    <TooltipTrigger
+      {...useKeybindingProps(command, context)}
+      {...menuProps}
+      {...rest}
+      ref={mergeRefs(menuRef, ownRef)}
+    />
+  );
+}
+
+/** Base UI's `mergeProps` leaves `ref` out, so a caller's ref and the menu ref are joined here. */
+function mergeRefs<Element>(
+  first: (element: Element | null) => void,
+  second: Ref<Element> | undefined,
+): RefCallback<Element> {
+  return (element) => {
+    first(element);
+    if (typeof second === "function") second(element);
+    else if (second) second.current = element;
+  };
 }
 
 /**
@@ -170,54 +307,104 @@ export function ShortcutTrigger({
 function CommandRow({
   command,
   labels,
+  run,
   children,
 }: {
   command: KeybindingCommand;
   labels: ReadonlyArray<string>;
+  run: (() => void) | undefined;
   children: ReactNode;
 }) {
   const keybindingProps = useKeybindingProps(command);
   return (
     <Button
-      size="xs"
+      size="xs-multiline"
       variant="ghost"
       className="-mx-1 justify-between"
       {...keybindingProps}
-      onClick={() => runKeybindingCommand(command)}
+      onClick={() => (run ? run() : runKeybindingCommand(command))}
     >
-      <span className="text-muted-foreground">{children}</span>
-      <ShortcutChips labels={labels} />
+      <span className="min-w-0 text-left text-muted-foreground">{children}</span>
+      <span className="shrink-0">
+        <ShortcutChips labels={labels} />
+      </span>
+    </Button>
+  );
+}
+
+/** Fork: a row that runs an action with no command, so it has no keys and no Keybindings menu. */
+function ActionRow({ run, children }: { run: () => void; children: ReactNode }) {
+  return (
+    <Button size="xs-multiline" variant="ghost" className="-mx-1 justify-start" onClick={run}>
+      <span className="min-w-0 text-left text-muted-foreground">{children}</span>
     </Button>
   );
 }
 
 /**
- * Fork: the commands a control runs, as rows that run them, each with its keys. A command without
- * a key in `context` is left out. For a tooltip that has its own text before the rows.
+ * Fork: the rows of a tooltip under its label. A command row shows only while its command has a
+ * key in `context` (or in its own context), so a row never claims a key that does not work.
+ * A row with `run` shows always, because its click does something a key cannot.
  */
-export function ShortcutCommandRows({
-  commands,
+export function TooltipRows({
+  rows,
   context,
 }: {
-  commands: ReadonlyArray<NamedCommand>;
-  context?: ShortcutContext;
+  rows: ReadonlyArray<TooltipRow>;
+  context?: ShortcutContext | undefined;
 }) {
-  const labelLists = useShortcutLabelLists(
-    commands.map((entry) => entry.command),
-    context,
-  );
-  if (!labelLists.some((labels) => labels.length > 0)) return null;
+  const commandRows = rows.filter((row): row is TooltipCommandRow => row.command !== undefined);
+  const labelLists = useRowShortcutLabels(commandRows, context);
+  const shown = rows.filter((row) => {
+    if (row.command === undefined) return true;
+    const index = commandRows.indexOf(row as TooltipCommandRow);
+    return row.run !== undefined || (labelLists[index]?.length ?? 0) > 0;
+  });
+  if (shown.length === 0) return null;
   return (
     <span className="mt-1 flex flex-col items-stretch gap-0.5">
-      {commands.map((entry, index) => {
-        const labels = labelLists[index] ?? [];
-        return labels.length > 0 ? (
-          <CommandRow key={entry.command} command={entry.command} labels={labels}>
-            {entry.name}
+      {shown.map((row, index) =>
+        row.name === undefined ? (
+          // oxlint-disable-next-line react/no-array-index-key -- the rows of one tooltip are a fixed list
+          <span key={index} className="text-muted-foreground">
+            {row.text}
+          </span>
+        ) : row.command === undefined ? (
+          <ActionRow key={row.name} run={row.run}>
+            {row.name}
+          </ActionRow>
+        ) : (
+          <CommandRow
+            key={row.command}
+            command={row.command}
+            labels={labelLists[commandRows.indexOf(row)] ?? []}
+            run={row.run}
+          >
+            {row.name}
           </CommandRow>
-        ) : null;
-      })}
+        ),
+      )}
     </span>
+  );
+}
+
+/** Fork: a tooltip body from `TooltipContent`: the label, the trigger command's key, the rows. */
+export function TooltipBody({
+  content,
+  command = null,
+  context,
+}: {
+  content: TooltipContent;
+  /** The trigger's own command, whose key shows after the label. */
+  command?: KeybindingCommand | null;
+  context?: ShortcutContext | undefined;
+}) {
+  return (
+    <>
+      {content.label}
+      <ShortcutHint command={command} context={context} />
+      {content.rows ? <TooltipRows rows={content.rows} context={context} /> : null}
+    </>
   );
 }
 
@@ -231,36 +418,36 @@ export function ShortcutTooltip({
   context,
   label,
   side,
+  menu,
   ...triggerProps
 }: ComponentProps<typeof TooltipTrigger> & {
-  command: KeybindingCommand | ReadonlyArray<NamedCommand> | null;
+  command: KeybindingCommand | ReadonlyArray<TooltipCommandRow> | null;
   context?: ShortcutContext;
   label: ReactNode;
   side?: ComponentProps<typeof TooltipPopup>["side"];
+  menu?: TooltipContent["menu"] | undefined;
 }) {
   const single = command === null || typeof command === "string";
-  const named = single ? null : command;
+  const rows = single ? null : command;
   const commands = single ? command : command.map((entry) => entry.command);
   const labelLists = useShortcutLabelLists(commandList(commands), context);
   const keybindingProps = useKeybindingProps(commands, context);
+  const { ref: menuRef, ...controlMenu } = useControlMenuProps({ rows: rows ?? [], menu });
+  const { ref: ownRef, ...restTriggerProps } = triggerProps;
   const hasKeys = labelLists.some((labels) => labels.length > 0);
   return (
     <Tooltip disabled={!hasKeys}>
-      <TooltipTrigger {...keybindingProps} {...triggerProps} />
+      <TooltipTrigger
+        {...keybindingProps}
+        {...controlMenu}
+        {...restTriggerProps}
+        ref={mergeRefs(menuRef, ownRef)}
+      />
       {hasKeys ? (
         <TooltipPopup side={side}>
           {label}
-          {named ? (
-            <span className="mt-1 flex flex-col items-stretch gap-0.5">
-              {named.map((entry, index) => {
-                const labels = labelLists[index] ?? [];
-                return labels.length > 0 ? (
-                  <CommandRow key={entry.command} command={entry.command} labels={labels}>
-                    {entry.name}
-                  </CommandRow>
-                ) : null;
-              })}
-            </span>
+          {rows ? (
+            <TooltipRows rows={rows} context={context} />
           ) : (
             <ShortcutChips labels={labelLists[0] ?? []} />
           )}

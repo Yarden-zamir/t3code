@@ -1,5 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { Button } from "./ui/button";
+import { toastManager } from "./ui/toast";
 import { PreviewCardPopup } from "./ui/preview-card";
 import { cn } from "~/lib/utils";
 
@@ -34,6 +36,76 @@ export function ThreadHoverCard({
       <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">{children}</div>
       {footer}
     </div>
+  );
+}
+
+/**
+ * What a click on a card row does. A row must say so: `null` for a data row that only informs,
+ * so no row can be a button in one card and dead text in another by accident.
+ */
+export type ThreadHoverCardRowAction =
+  | { readonly label: string; readonly onSelect: () => void }
+  | {
+      readonly copy: string;
+      /** The row's accessible name, such as "Copy branch name". */
+      readonly label: string;
+      /** The success toast title, such as "Branch copied". */
+      readonly copiedTitle: string;
+    }
+  | null;
+
+function copyRowValue(action: Extract<ThreadHoverCardRowAction, { copy: string }>) {
+  const subject = (
+    action.label.startsWith("Copy ") ? action.label.slice("Copy ".length) : action.label
+  ).toLowerCase();
+  writeTextToClipboard(action.copy, subject).then(
+    () =>
+      toastManager.add({ type: "success", title: action.copiedTitle, description: action.copy }),
+    (error: unknown) =>
+      toastManager.add({
+        type: "error",
+        title: `Failed to copy ${subject}`,
+        description: error instanceof Error ? error.message : "An error occurred.",
+      }),
+  );
+}
+
+/** A row of a card: an icon and a value, as a button when `action` is set and as text otherwise. */
+export function ThreadHoverCardRow({
+  action,
+  tone,
+  layout = "start",
+  children,
+}: {
+  action: ThreadHoverCardRowAction;
+  /** A status row's color. */
+  tone?: "warning" | "error";
+  /** `spread` pushes the last child right; `top` aligns a multi-line value to its icon. */
+  layout?: "start" | "spread" | "top";
+  children: ReactNode;
+}) {
+  const toneClass = tone === "warning" ? "text-warning" : tone === "error" ? "text-error" : null;
+  const layoutClass =
+    layout === "spread" ? "justify-between" : layout === "top" ? "items-start" : null;
+  if (action === null) {
+    return (
+      <div className={cn("flex min-w-0 items-center gap-2", layoutClass, toneClass)}>
+        {children}
+      </div>
+    );
+  }
+  const label = action.label;
+  return (
+    <Button
+      size="xs"
+      variant="ghost"
+      // A grid item defaults to min-width auto, so a long value would widen the card past its max.
+      className={cn("-mx-2 min-w-0 justify-start", layoutClass)}
+      aria-label={label}
+      onClick={() => ("copy" in action ? copyRowValue(action) : action.onSelect())}
+    >
+      {children}
+    </Button>
   );
 }
 

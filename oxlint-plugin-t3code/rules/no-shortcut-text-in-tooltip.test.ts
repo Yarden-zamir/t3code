@@ -36,4 +36,89 @@ describe("t3code/no-shortcut-text-in-tooltip", () => {
     "reports a concatenated tooltip prop",
     'const button = <PanelTabCloseButton tooltip={"Close (" + closeShortcutLabel + ")"} />;',
   );
+
+  rule.invalid(
+    "reports a label built in a variable first",
+    "const closeLabel = `Close (${closeShortcutLabel})`;\nconst tip = <TooltipPopup>{closeLabel}</TooltipPopup>;",
+  );
+
+  rule.invalid(
+    "reports two shortcut hints in one tooltip",
+    `const tip = (
+      <TooltipPopup>
+        <span>New thread<ShortcutHint command="chat.new" /></span>
+        <span>In current project<ShortcutHint command="chat.newLocal" /></span>
+      </TooltipPopup>
+    );`,
+  );
+
+  rule.invalid(
+    "reports a click gesture described in tooltip text",
+    `const tip = <TooltipPopup>New thread in current project: Shift+click</TooltipPopup>;`,
+  );
+
+  rule.valid(
+    "allows tooltip rows for a second action",
+    `const tip = (
+      <TooltipPopup>
+        New thread<ShortcutHint command="chat.new" />
+        <TooltipRows rows={[{ command: "chat.newLocal", name: "In current project (Shift+click)" }]} />
+      </TooltipPopup>
+    );`,
+  );
+
+  rule.invalid(
+    "reports a gesture inside a conditional template",
+    "const tip = <TooltipPopup>{running ? `Click to ${mode}, Ctrl/⌘-click to ${other}` : label}</TooltipPopup>;",
+  );
+
+  rule.invalid(
+    "reports a gesture written with spaces or a symbol",
+    `const tip = <TooltipPopup>New thread: ⌘-click or Shift + click</TooltipPopup>;`,
+  );
+
+  rule.invalid(
+    "reports two hints when one sits in a conditional",
+    `const tip = (
+      <TooltipPopup>
+        New thread<ShortcutHint command="chat.new" />
+        {more ? <span>Local<ShortcutHint command="chat.newLocal" /></span> : null}
+      </TooltipPopup>
+    );`,
+  );
+
+  rule.invalid(
+    "reports a raw row in a hover card behind a condition",
+    `const card = <ThreadHoverCard title="t">{branch ? <div>{branch}</div> : null}</ThreadHoverCard>;`,
+  );
+
+  rule.invalid(
+    "reports gesture text that a variable holds",
+    "const submitTooltip = running ? `Click to ${mode}, Ctrl/⌘-click to ${other}` : label;\nconst tip = <TooltipPopup>{submitTooltip}</TooltipPopup>;",
+  );
+
+  rule.invalid(
+    "reports a gesture in a text row",
+    `const tip = <TooltipPopup>Screenshot<TooltipRows rows={[{ text: "Shift+click to record" }]} /></TooltipPopup>;`,
+  );
+
+  rule.invalid(
+    "reports a key glyph in a row name",
+    `const tip = <TooltipPopup>Screenshot<TooltipRows rows={[{ name: "Record ⌘R", run }]} /></TooltipPopup>;`,
+  );
+
+  rule.valid(
+    "allows a trailing gesture on a row name",
+    `const tip = <TooltipPopup>Screenshot<TooltipRows rows={[{ name: "Record (Shift+click)", run }]} /></TooltipPopup>;`,
+  );
+
+  rule.invalid(
+    "reports a raw row in a hover card",
+    `const card = <ThreadHoverCard title="t"><div className="flex">main</div></ThreadHoverCard>;`,
+  );
+
+  rule.valid(
+    "allows typed rows in a hover card",
+    `const card = <ThreadHoverCard title="t"><ThreadHoverCardRow action={null}>main</ThreadHoverCardRow></ThreadHoverCard>;`,
+  );
 });

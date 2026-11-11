@@ -1,6 +1,6 @@
 import { useAtomMount } from "@effect/atom-react";
 import { asLaunchingThread } from "@t3tools/client-runtime/state/thread-inbox";
-import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
+import { ThreadHoverCard, ThreadHoverCardPopup, ThreadHoverCardRow } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
@@ -132,9 +132,7 @@ import {
   terminalThreadRowStatus,
   terminalThreadStatusLabel,
 } from "@t3tools/client-runtime/state/fork-terminal-threads";
-import { Button, InlineButton } from "../ui/button";
-import { toastManager } from "../ui/toast";
-import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
+import { InlineButton } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { Menu, MenuItem, MenuItemDetail, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { PreviewCard, PreviewCardTrigger } from "../ui/preview-card";
@@ -253,41 +251,6 @@ function SidebarProviderStack(props: {
 /** Fork: the hover card rows that set a sidebar filter to the thread's value. */
 export type SidebarFilterShortcutField = "project" | "machine" | "model";
 
-/** Fork: a hover card row, as a button when it has an action and as text without one. */
-function HoverCardRow(props: {
-  readonly label: string;
-  readonly onClick: (() => void) | undefined;
-  readonly children: ReactNode;
-}) {
-  if (props.onClick === undefined) {
-    return <div className="flex min-w-0 items-center gap-2">{props.children}</div>;
-  }
-  return (
-    <Button
-      size="xs"
-      variant="ghost"
-      className="-mx-2 justify-start"
-      aria-label={props.label}
-      title={props.label}
-      onClick={props.onClick}
-    >
-      {props.children}
-    </Button>
-  );
-}
-
-function copyBranchName(branch: string) {
-  writeTextToClipboard(branch, "branch name").then(
-    () => toastManager.add({ type: "success", title: "Branch copied", description: branch }),
-    (error: unknown) =>
-      toastManager.add({
-        type: "error",
-        title: "Failed to copy branch",
-        description: error instanceof Error ? error.message : "An error occurred.",
-      }),
-  );
-}
-
 function SidebarThreadTooltip({
   thread,
   project,
@@ -348,44 +311,59 @@ function SidebarThreadTooltip({
         }
       >
         {projectDisplayName ? (
-          <HoverCardRow
-            label="Show only this project"
-            onClick={onShowOnly && canShowOnlyProject ? () => onShowOnly("project") : undefined}
+          <ThreadHoverCardRow
+            action={
+              onShowOnly && canShowOnlyProject
+                ? { label: "Show only this project", onSelect: () => onShowOnly("project") }
+                : null
+            }
           >
             {project ? <ProjectFavicon project={project} className="size-3 shrink-0" /> : null}
             <div className="min-w-0 truncate text-foreground/75">{projectDisplayName}</div>
-          </HoverCardRow>
+          </ThreadHoverCardRow>
         ) : null}
         {environmentLabel ? (
-          <HoverCardRow
-            label="Show only this machine"
-            onClick={onShowOnly ? () => onShowOnly("machine") : undefined}
+          <ThreadHoverCardRow
+            action={
+              onShowOnly
+                ? { label: "Show only this machine", onSelect: () => onShowOnly("machine") }
+                : null
+            }
           >
             <EnvironmentMachineIcon
               kind={environmentMachine}
               className="size-3 shrink-0 stroke-muted-foreground"
             />
             <div className="min-w-0 truncate text-foreground/75">{environmentLabel}</div>
-          </HoverCardRow>
+          </ThreadHoverCardRow>
         ) : null}
         {thread.branch ? (
-          <HoverCardRow label="Copy branch name" onClick={() => copyBranchName(thread.branch!)}>
+          <ThreadHoverCardRow
+            action={{
+              copy: thread.branch,
+              label: "Copy branch name",
+              copiedTitle: "Branch copied",
+            }}
+          >
             <GitBranchIcon className="size-3 shrink-0 stroke-muted-foreground" />
             <MiddleTruncate value={thread.branch} className="flex" />
-          </HoverCardRow>
+          </ThreadHoverCardRow>
         ) : null}
         {branchMismatch ? (
-          <div className="flex min-w-0 items-start gap-2 text-warning">
+          <ThreadHoverCardRow action={null} tone="warning" layout="top">
             <CircleAlertIcon aria-hidden className="mt-0.5 size-3 shrink-0 stroke-current" />
             <div className="min-w-0 flex-1 wrap-break-word">
               You're currently checked out on another branch.
             </div>
-          </div>
+          </ThreadHoverCardRow>
         ) : null}
         {driverKind ? (
-          <HoverCardRow
-            label="Show only this model"
-            onClick={onShowOnly ? () => onShowOnly("model") : undefined}
+          <ThreadHoverCardRow
+            action={
+              onShowOnly
+                ? { label: "Show only this model", onSelect: () => onShowOnly("model") }
+                : null
+            }
           >
             <ProviderInstanceIcon
               driverKind={driverKind}
@@ -405,18 +383,18 @@ function SidebarThreadTooltip({
                 ? `${modelLabel} · ${providerEntry.displayName}`
                 : modelLabel}
             </div>
-          </HoverCardRow>
+          </ThreadHoverCardRow>
         ) : null}
         {previousProviderNames.length > 0 ? (
-          <div className="flex min-w-0 items-center gap-2">
+          <ThreadHoverCardRow action={null}>
             <ArrowRightLeftIcon className="size-3 shrink-0 stroke-muted-foreground" />
             <div className="min-w-0 truncate text-foreground/75">
               Handed off from {previousProviderNames.join(", ")}
             </div>
-          </div>
+          </ThreadHoverCardRow>
         ) : null}
         {terminalStatus ? (
-          <div className="flex min-w-0 items-center gap-2">
+          <ThreadHoverCardRow action={null}>
             <TerminalIcon
               aria-hidden
               className={cn("size-3 shrink-0", terminalStatus.colorClass)}
@@ -424,14 +402,12 @@ function SidebarThreadTooltip({
             <div className="min-w-0 truncate text-foreground/75">
               {terminalProcessLabel(terminalProcessCount)}
             </div>
-          </div>
+          </ThreadHoverCardRow>
         ) : null}
         {thread.runtime?.lastError ? (
-          <div
-            className={cn(
-              "flex min-w-0 items-center gap-2",
-              thread.runtime.lastErrorClass === "usage_limit" ? "text-warning" : "text-error",
-            )}
+          <ThreadHoverCardRow
+            action={null}
+            tone={thread.runtime.lastErrorClass === "usage_limit" ? "warning" : "error"}
           >
             <CircleAlertIcon className="size-3 shrink-0 stroke-current" />
             <div className="min-w-0 truncate">
@@ -439,7 +415,7 @@ function SidebarThreadTooltip({
                 ? "Usage limit reached"
                 : "Error occurred"}
             </div>
-          </div>
+          </ThreadHoverCardRow>
         ) : null}
       </ThreadHoverCard>
     </ThreadHoverCardPopup>
