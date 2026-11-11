@@ -138,7 +138,7 @@ def main() -> None:
 
     vp = common.vp(root)
     prepare(root, vp, files, logs / "prepare.log")
-    env = common.test_env()
+    env = common.test_env(root)
     failed: list[str] = []
 
     def run(chunk: Chunk, label: str) -> int:

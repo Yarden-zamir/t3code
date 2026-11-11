@@ -322,6 +322,16 @@ export default defineConfig({
         rules: { "t3code/prefer-effect-fn": "off" },
       },
       {
+        files: ["apps/web/src/**", "apps/mobile/src/**", "apps/desktop/src/**"],
+        // Users still pick their own project and tab icons from these sets.
+        excludeFiles: [
+          "apps/web/src/projectIconOptions.ts",
+          "apps/web/src/components/AppIcon.tsx",
+          "apps/mobile/src/features/home/forkTabIcons.tsx",
+        ],
+        rules: { "t3code/no-sparkles-icon": "error" },
+      },
+      {
         files: ["apps/web/**/*.test.{ts,tsx}"],
         rules: { "t3code/require-disposable-render": "error" },
       },

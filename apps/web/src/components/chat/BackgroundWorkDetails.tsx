@@ -1,169 +1,97 @@
-import { useAtomValue } from "@effect/atom-react";
 import type {
+  EnvironmentId,
   OrchestrationV2PendingBackgroundTask,
-  OrchestrationV2TurnItem,
-  ScopedThreadRef,
+  ThreadId,
 } from "@t3tools/contracts";
-import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
+import { useState } from "react";
 
-import { useClientSettings } from "~/hooks/useSettings";
-import { environmentThreadDetails } from "../../state/threads";
-import ChatMarkdown from "../ChatMarkdown";
-import { Button } from "../ui/button";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import type { ThreadNowItem } from "./ThreadNow";
+import { InlineButton } from "../ui/button";
 import {
-  backgroundWorkDetailsMarkdown,
-  backgroundWorkFromPendingTask,
-  type BackgroundWorkRef,
-  linksOnlyMarkdown,
-  resolveBackgroundWorkDetails,
-} from "./BackgroundWorkDetails.logic";
+  Dialog,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+  DialogTrigger,
+} from "../ui/dialog";
+import { CommandOutputPanel, useCommandOutputStreaming } from "./CommandOutputPanel";
+import { ShellCommandBlock } from "./ShellCommandBlock";
 
-const EMPTY_TURN_ITEMS: ReadonlyArray<OrchestrationV2TurnItem> = [];
-
-const selectBackgroundWorkDetails = (settings: { readonly backgroundWorkDetails: boolean }) =>
-  settings.backgroundWorkDetails;
-
-// Rows toggle on click, Enter, and Space. The popover is a React child of the row even
-// though it renders in a portal, so its events would reach the row without this.
-function stopRowClick(event: MouseEvent) {
-  event.stopPropagation();
-}
-function stopRowKeys(event: KeyboardEvent) {
-  if (event.key === "Enter" || event.key === " ") event.stopPropagation();
-}
-
-/**
- * Background work text with its markdown links clickable, rendered by the chat's
- * markdown renderer. The rest of the text stays plain, and a text without a link skips the
- * renderer. Plain text while the "Background work details" setting is off.
- */
-export function BackgroundWorkText(props: {
-  readonly text: string;
-  readonly cwd: string | undefined;
-  readonly threadRef: ScopedThreadRef | null;
+export function BackgroundWorkDetails(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>;
+  readonly turnItems: ThreadStructure["turnItems"];
+  readonly onOpenThread: (threadId: ThreadId) => void;
 }) {
-  const enabled = useClientSettings(selectBackgroundWorkDetails);
-  const markdown = enabled ? linksOnlyMarkdown(props.text) : null;
-  if (markdown === null) return props.text;
+  const [open, setOpen] = useState(false);
+  const streamsOutput = useCommandOutputStreaming(props.environmentId);
   return (
-    <span className="contents" onClick={stopRowClick} onKeyDown={stopRowKeys}>
-      <ChatMarkdown
-        text={markdown}
-        cwd={props.cwd}
-        threadRef={props.threadRef ?? undefined}
-        parseRawHtml={false}
-        className="inline-block w-auto max-w-full truncate align-bottom text-inherit [&_p]:inline"
-      />
-    </span>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<InlineButton />}>Details</DialogTrigger>
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>Background work</DialogTitle>
+        </DialogHeader>
+        <DialogPanel>
+          <div className="space-y-5">
+            {props.tasks.map((task) => {
+              const item = props.turnItems.findLast((candidate) =>
+                task.itemId === undefined
+                  ? (candidate.nativeItemRef?.nativeId || candidate.id) === task.taskId
+                  : candidate.id === task.itemId,
+              );
+              const command =
+                task.command ?? (item?.type === "command_execution" ? item.input : undefined);
+              const description = task.description?.trim();
+              const title =
+                description && description !== command?.trim()
+                  ? description
+                  : command
+                    ? "Command"
+                    : task.kind.replaceAll("_", " ");
+              const itemId =
+                task.itemId ?? (item?.type === "command_execution" ? item.id : undefined);
+              const childThreadId = task.kind === "subagent" ? task.childThreadId : undefined;
+              return (
+                <section key={task.taskId} className="space-y-2 text-sm">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <h3 className="font-medium">{title}</h3>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {task.awaited ? "Waiting" : "Running"}
+                    </span>
+                  </div>
+                  {command ? (
+                    <div className="rounded-md border border-border bg-muted/20 p-3 font-mono text-xs whitespace-pre-wrap break-words">
+                      <ShellCommandBlock command={command} />
+                    </div>
+                  ) : null}
+                  {itemId && streamsOutput && item?.status === "running" ? (
+                    <div className="font-mono text-xs whitespace-pre-wrap break-words">
+                      <CommandOutputPanel
+                        environmentId={props.environmentId}
+                        threadId={task.sourceThreadId ?? item?.threadId ?? props.threadId}
+                        itemId={itemId}
+                      />
+                    </div>
+                  ) : null}
+                  {childThreadId ? (
+                    <InlineButton
+                      onClick={() => {
+                        setOpen(false);
+                        props.onOpenThread(childThreadId);
+                      }}
+                    >
+                      Open thread
+                    </InlineButton>
+                  ) : null}
+                </section>
+              );
+            })}
+          </div>
+        </DialogPanel>
+      </DialogPopup>
+    </Dialog>
   );
-}
-
-/**
- * Makes the status icon of a background work row open its details. Renders the icon
- * unchanged while the "Background work details" setting is off.
- */
-export function BackgroundWorkIcon(props: BackgroundWorkIconProps) {
-  // Most timeline rows are not background work; they skip the settings subscription.
-  return props.work.length === 0 ? props.children : <BackgroundWorkIconPopover {...props} />;
-}
-
-interface BackgroundWorkIconProps {
-  readonly work: ReadonlyArray<BackgroundWorkRef>;
-  /** Shown when the start of the work is unknown, such as a notification's summary. */
-  readonly summary?: string | undefined;
-  readonly cwd: string | undefined;
-  readonly threadRef: ScopedThreadRef | null;
-  readonly children: ReactNode;
-}
-
-function BackgroundWorkIconPopover(props: BackgroundWorkIconProps) {
-  const enabled = useClientSettings(selectBackgroundWorkDetails);
-  const threadRef = props.threadRef;
-  if (!enabled || threadRef === null) return props.children;
-  return (
-    <span className="contents" onClick={stopRowClick} onKeyDown={stopRowKeys}>
-      <Popover>
-        <PopoverTrigger
-          render={
-            <Button size="icon-tiny" variant="ghost-muted" aria-label="Background work details" />
-          }
-        >
-          {props.children}
-        </PopoverTrigger>
-        <PopoverPopup aria-label="Background work details" width="lg" padding="compact">
-          <BackgroundWorkDetailsContent
-            work={props.work}
-            summary={props.summary}
-            cwd={props.cwd}
-            threadRef={threadRef}
-          />
-        </PopoverPopup>
-      </Popover>
-    </span>
-  );
-}
-
-// Mounted only while the popover is open, so closed rows do not read the thread.
-function BackgroundWorkDetailsContent(props: {
-  readonly work: ReadonlyArray<BackgroundWorkRef>;
-  readonly summary?: string | undefined;
-  readonly cwd: string | undefined;
-  readonly threadRef: ScopedThreadRef;
-}) {
-  const turnItems = useAtomValue(
-    environmentThreadDetails.threadAtom(props.threadRef),
-    (thread) => thread?.projection.turnItems ?? EMPTY_TURN_ITEMS,
-  );
-  return (
-    <div className="max-h-[min(var(--available-height),28rem)] space-y-3 overflow-y-auto">
-      {props.work.map((work, index) => {
-        const details = resolveBackgroundWorkDetails(turnItems, work);
-        const description = details.description ?? props.summary;
-        return (
-          <ChatMarkdown
-            key={work.taskId ?? index}
-            text={backgroundWorkDetailsMarkdown({ ...details, description })}
-            cwd={props.cwd}
-            threadRef={props.threadRef}
-            parseRawHtml={false}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * Fork: upstream's background work line, with the details popover on its icon and the links of a
- * plain title clickable. The line stays upstream's while the setting is off.
- */
-export function withBackgroundWorkDetails(
-  item: ThreadNowItem | null,
-  input: {
-    readonly tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>;
-    readonly cwd: string | undefined;
-    readonly threadRef: ScopedThreadRef | null;
-  },
-): ThreadNowItem | null {
-  if (item === null) return null;
-  return {
-    ...item,
-    icon: (
-      <BackgroundWorkIcon
-        work={input.tasks.map(backgroundWorkFromPendingTask)}
-        cwd={input.cwd}
-        threadRef={input.threadRef}
-      >
-        {item.icon}
-      </BackgroundWorkIcon>
-    ),
-    title:
-      typeof item.title === "string" ? (
-        <BackgroundWorkText text={item.title} cwd={input.cwd} threadRef={input.threadRef} />
-      ) : (
-        item.title
-      ),
-  };
 }

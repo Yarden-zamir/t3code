@@ -76,6 +76,7 @@ export function useAvailableSettingsSearchItems() {
     hasPeerLinkHost,
     hasFastWorktreeCheckoutEnvironment,
     hasTextGeneratorsEnvironment,
+    hasPrimaryEnvironment: primaryEnvironmentId !== null,
   });
   // Fork: the "Single-thread tabs" row renders only while sidebar tabs are on.
   return sidebarTabsEnabled

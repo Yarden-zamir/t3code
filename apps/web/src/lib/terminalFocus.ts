@@ -46,6 +46,15 @@ export function isTerminalThreadShellKey(event: {
   return event.ctrlKey && !event.metaKey && getTerminalFocusOwner() === "terminal-thread";
 }
 
+export function subscribeToTerminalFocusChanges(listener: () => void): () => void {
+  window.addEventListener("focusin", listener, true);
+  window.addEventListener("focusout", listener, true);
+  return () => {
+    window.removeEventListener("focusin", listener, true);
+    window.removeEventListener("focusout", listener, true);
+  };
+}
+
 interface TerminalFocusTarget {
   readonly threadRef: ScopedThreadRef;
   readonly terminalId: string;

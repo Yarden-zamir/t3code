@@ -767,10 +767,17 @@ const make = Effect.gen(function* () {
   const desktopRenders = (snapshot: PreviewSessionSnapshot) =>
     desktopChannel.available && !snapshot.headless
       ? runPromise(
-          desktopChannel.awaitAttached(
-            { threadId: snapshot.threadId, tabId: snapshot.tabId },
-            DESKTOP_ATTACH_TIMEOUT,
-          ),
+          Effect.gen(function* () {
+            const key = { threadId: snapshot.threadId, tabId: snapshot.tabId };
+            // A reloaded desktop mounts a thread's tabs again only once an event for it arrives,
+            // and a renderer still reloading misses events, so repeat it until the wait ends.
+            if (!(yield* desktopChannel.isAttached(key))) {
+              yield* manager
+                .announce({ threadId: ThreadId.make(key.threadId), tabId: key.tabId })
+                .pipe(Effect.ignore, Effect.repeat(Schedule.spaced("1 second")), Effect.forkScoped);
+            }
+            return yield* desktopChannel.awaitAttached(key, DESKTOP_ATTACH_TIMEOUT);
+          }).pipe(Effect.scoped),
         )
       : Promise.resolve(false);
 
@@ -1429,8 +1436,10 @@ const make = Effect.gen(function* () {
   };
 
   // The desktop draws its tabs in its own webview, so they never get a streamed viewer.
+  // Fork: native presentation reports count as well.
   const isVisible = (tab: ServerTab) =>
-    tab.viewers.size > 0 || (tab.desktop !== null && desktopChannel.isShown(tab));
+    desktopChannel.capture.visible(tab, tab.viewers.size) ||
+    (tab.desktop !== null && desktopChannel.isShown(tab));
 
   const idleAgentTabs = () => {
     const cutoff = Date.now() - AGENT_TAB_IDLE_MS;
@@ -1512,8 +1521,7 @@ const make = Effect.gen(function* () {
         .sort((left, right) => right.createdAt - left.createdAt)[0] ??
       threadTabs.sort(
         (left, right) =>
-          Number(right.viewers.size > 0) - Number(left.viewers.size > 0) ||
-          right.usedAt - left.usedAt,
+          Number(isVisible(right)) - Number(isVisible(left)) || right.usedAt - left.usedAt,
       )[0]
     );
   };
@@ -1622,7 +1630,7 @@ const make = Effect.gen(function* () {
     const viewport = tab.desktop ? await layoutSize(tab) : tab.page.viewportSize();
     const status = {
       available: true,
-      visible: desktopChannel.capture.visible(tab, tab.viewers.size), // Fork: native surfaces are not streamed viewers.
+      visible: isVisible(tab),
       tabId: tab.tabId,
       url: url === "about:blank" ? null : url,
       title: null,
@@ -1649,7 +1657,7 @@ const make = Effect.gen(function* () {
           ...(candidate.openerTabId === undefined ? {} : { openerTabId: candidate.openerTabId }),
           owner: tabOwner(candidate),
           ownedByCaller: candidate.control.agentId === agentSessionId,
-          visible: desktopChannel.capture.visible(candidate, candidate.viewers.size), // Fork: include native presentation.
+          visible: isVisible(candidate),
           ...(candidate.profileId === undefined ? {} : { profileId: candidate.profileId }),
         })),
       ...profileStatus(),

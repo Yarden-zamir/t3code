@@ -194,6 +194,7 @@ describe("review thread decoding", () => {
     body,
     createdAt: "2026-07-01T00:00:00Z",
     url: `https://github.com/acme/web/pull/1#discussion_r${id}`,
+    pullRequestReview: null,
   });
 
   it("carries a thread comment author's repository role into the conversation", () => {

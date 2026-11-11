@@ -72,10 +72,12 @@ def strip_ansi(text: str) -> str:
     return ANSI_ESCAPE.sub("", text)
 
 
-def test_env() -> dict[str, str]:
-    """The VPS server sets T3_SERVICE_LAUNCHER_CONTEXT, and some tests fail when they inherit it."""
+def test_env(root: Path) -> dict[str, str]:
+    """The VPS server sets T3_SERVICE_LAUNCHER_CONTEXT, and some tests fail when they inherit it.
+    Tests that spawn `vp` need it on PATH, which a non-login shell does not give."""
     env = dict(os.environ)
     env.pop("T3_SERVICE_LAUNCHER_CONTEXT", None)
+    env["PATH"] = f"{root / 'node_modules' / '.bin'}{os.pathsep}{env.get('PATH', '')}"
     return env
 
 

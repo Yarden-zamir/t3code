@@ -71,7 +71,7 @@ import {
   runStopNowItem,
 } from "./ThreadActivityBanners";
 import { useForceStopThread } from "./useForceStopThread";
-import { withBackgroundWorkDetails } from "./BackgroundWorkDetails";
+import { withBackgroundWorkDetails } from "./BackgroundWorkPopover";
 import { useAtomValue } from "@effect/atom-react";
 import type { RunStopPresentation } from "@t3tools/client-runtime/state/thread-execution";
 import { Atom } from "effect/reactivity";
@@ -600,6 +600,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   const backgroundWorkNow = activeThread
     ? withBackgroundWorkDetails(
         backgroundWorkNowItem({
+          environmentId,
           threadId: activeThread.id,
           tasks: activeBackgroundTasks,
           turnItems,
@@ -686,6 +687,15 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
           activeThreadPinned ? "Failed to unpin thread" : "Failed to pin thread",
         ),
       );
+    },
+    "thread.regenerateTitle": () => {
+      if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return false;
+      if (!activeThreadShell || !activeThreadRef || !serverConfigLoaded) return;
+      if (activeThreadShell.titleRegeneration != null) return;
+      void updateThreadMetadata({
+        environmentId: activeThreadRef.environmentId,
+        input: { threadId: activeThreadRef.threadId, regenerateTitle: true },
+      }).then(toastThreadActionFailure("Failed to regenerate thread title"));
     },
   } satisfies ChatShortcutCommands;
   return {

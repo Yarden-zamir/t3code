@@ -83,10 +83,11 @@ describe("owner qualifiers typed as a search", () => {
     });
   });
 
-  it("reads them as namespaced labels while the setting is off", () => {
+  it("leaves them to upstream while the setting is off", () => {
     const parsed = parsePullRequestQuery("org:qlik-trial owner:a");
     expect(parsed.owners).toBeUndefined();
-    expect(parsed.filters.labels).toEqual([["org:qlik-trial"], ["owner:a"]]);
+    // Upstream drops GitHub's `org:` qualifier and reads an unknown `owner:` as a label.
+    expect(parsed.filters.labels).toEqual([["owner:a"]]);
   });
 });
 

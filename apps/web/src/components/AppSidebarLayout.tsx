@@ -314,9 +314,11 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
 }
 
 function SidebarControl({
+  showSidebar,
   onPinnedScriptsWidthChange,
   onNavigationButtonsWidthChange,
 }: {
+  readonly showSidebar: boolean;
   onPinnedScriptsWidthChange: (width: number) => void;
   onNavigationButtonsWidthChange: (width: number) => void;
 }) {
@@ -331,6 +333,8 @@ function SidebarControl({
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener that toggles the sidebar on its shortcut
   useEffect(() => {
+    // A hidden sidebar would still save the toggle, so the shortcut does nothing without one.
+    if (!showSidebar) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (
@@ -367,7 +371,7 @@ function SidebarControl({
       window.removeEventListener("keydown", onKeyDown, true);
       unsubscribe?.();
     };
-  }, [keybindings, toggleSidebar, usagePageOpen]);
+  }, [keybindings, showSidebar, toggleSidebar, usagePageOpen]);
 
   // The control lives as long as the shell, so it carries the shell's commands. Created
   // once so re-renders never re-register them.
@@ -400,7 +404,7 @@ function SidebarControl({
   );
   const controls = (
     <>
-      {trigger}
+      {showSidebar ? trigger : null}
       <NavigationHistoryButtons onWidthChange={onNavigationButtonsWidthChange} />
     </>
   );
@@ -428,7 +432,13 @@ function SidebarControl({
   );
 }
 
-export function AppSidebarLayout({ children }: { children: ReactNode }) {
+export function AppSidebarLayout({
+  children,
+  showSidebar = true,
+}: {
+  children: ReactNode;
+  showSidebar?: boolean;
+}) {
   const sidebarArea = workspaceAreaProps("sidebar", 0, "Threads");
   const [sidebarRouteReveal] = useState<SidebarRouteReveal>(() => ({
     observedKey: null,
@@ -487,32 +497,37 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         storageKey="chat_thread_sidebar_open"
         style={sidebarProviderStyle}
       >
-        <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
         <KeyboardCheatSheet />
-        <Sidebar
-          side="left"
-          collapsible="offcanvas"
-          data-app-sidebar=""
-          {...sidebarArea}
-          role="navigation"
-          aria-label="Threads"
-          resizable={{
-            maxWidth: sidebarMaximumWidth,
-            minWidth: sidebarMinimumWidth,
-            shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-              nextWidth <= currentWidth ||
-              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-            onResize: setSidebarWidth,
-          }}
-          style={windowControlsInsetStyle}
-        >
-          <ThreadSidebar routeReveal={sidebarRouteReveal} />
-          <SidebarRail onDoubleClick={resetSidebarWidth} />
-        </Sidebar>
+        {showSidebar ? (
+          <>
+            <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
+            <Sidebar
+              side="left"
+              collapsible="offcanvas"
+              data-app-sidebar=""
+              {...sidebarArea}
+              role="navigation"
+              aria-label="Threads"
+              resizable={{
+                maxWidth: sidebarMaximumWidth,
+                minWidth: sidebarMinimumWidth,
+                shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+                  nextWidth <= currentWidth ||
+                  wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+                storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+                onResize: setSidebarWidth,
+              }}
+              style={windowControlsInsetStyle}
+            >
+              <ThreadSidebar routeReveal={sidebarRouteReveal} />
+              <SidebarRail onDoubleClick={resetSidebarWidth} />
+            </Sidebar>
+          </>
+        ) : null}
         {children}
         <BackgroundThreadAnnouncer />
         <SidebarControl
+          showSidebar={showSidebar}
           onPinnedScriptsWidthChange={setPinnedScriptsWidth}
           onNavigationButtonsWidthChange={setNavigationButtonsWidth}
         />

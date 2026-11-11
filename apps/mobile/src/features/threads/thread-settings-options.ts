@@ -27,7 +27,7 @@ export const RUNTIME_MODE_DETAILS: Record<RuntimeMode, RuntimeModeDetails> = {
   auto: {
     label: "Auto",
     description: "Supported providers approve routine actions; others still ask.",
-    icon: "sparkles",
+    icon: "checkmark.shield",
   },
   "full-access": {
     label: "Full access",

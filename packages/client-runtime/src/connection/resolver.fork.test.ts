@@ -74,6 +74,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
         authorizeDpop: () => Effect.die("unused"),
         authorizeDpopHttp: () => Effect.die("unused"),
         renewDpopBeforeExpiry: () => Effect.die("unused"),
+        rememberCheckedDescriptor: () => Effect.void,
       }),
     ),
     Layer.succeed(

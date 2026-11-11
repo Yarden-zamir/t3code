@@ -21,8 +21,18 @@ import { classifyFirstParentCommit, escapeText } from "./fork-release-notes.ts";
 
 const FORK_REPOSITORY = "Yarden-zamir/t3code";
 const UPSTREAM_REPOSITORY = "pingdotgg/t3code";
-/** Fork Release uploads it last, so a release with it is complete. See forkReleases.ts. */
-const COMPLETE_RELEASE_ASSET = "SHA256SUMS";
+/**
+ * A nightly is complete when every desktop platform uploaded its update manifest and the
+ * checksums are up. The checksums job runs even when a desktop job never got a runner, so
+ * SHA256SUMS alone does not prove a macOS build. See .github/workflows/fork-release.yml.
+ */
+const COMPLETE_RELEASE_ASSETS = [
+  "SHA256SUMS",
+  "nightly.yml",
+  "nightly-mac.yml",
+  "nightly-linux.yml",
+  "nightly-linux-arm64.yml",
+];
 
 export interface GitCommit {
   readonly sha: string;
@@ -1115,7 +1125,7 @@ function main(args: ReadonlyArray<string>): void {
   const upstreamHead = fetchBranch(`https://github.com/${UPSTREAM_REPOSITORY}.git`, "main", false);
   const releases = readReleases();
 
-  // The newest nightly first. Its build may still run: then it lacks SHA256SUMS, and an older one wins.
+  // The newest nightly first. Its build may still run or miss a platform: then an older complete one wins.
   const releaseFlag = readFlag(args, "--release");
   const targetIndex = releaseFlag
     ? releases.findIndex((release) => release.tag_name === releaseFlag)
@@ -1123,7 +1133,9 @@ function main(args: ReadonlyArray<string>): void {
         (release) =>
           release.prerelease &&
           release.tag_name.includes("-nightly.") &&
-          release.assets.some((asset) => asset.name === COMPLETE_RELEASE_ASSET) &&
+          COMPLETE_RELEASE_ASSETS.every((name) =>
+            release.assets.some((asset) => asset.name === name),
+          ) &&
           isAncestor(tagCommit(release.tag_name), mainHead),
       );
   if (releaseFlag && targetIndex === -1) throw new Error(`The fork has no release ${releaseFlag}.`);

@@ -381,9 +381,6 @@ const make = Effect.gen(function* () {
   const peerLinks = PeerLinks.PeerLinks.of({
     // The reach is the switch: a machine without reach has no links.
     enabled: Effect.succeed(true),
-    describe: Effect.fn("MachinePeers.describe")(function* () {
-      return Option.none();
-    }),
     link: Effect.fn("MachinePeers.link")(function () {
       return manualRefused;
     }),

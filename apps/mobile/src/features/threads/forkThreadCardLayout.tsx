@@ -62,12 +62,14 @@ export function ForkThreadCardLayout(props: {
   readonly status: ThreadListV2Status;
   readonly statusLabel:
     | {
-        readonly label: string;
+        readonly label: string | null;
         readonly icon: AppSymbolName;
         readonly className: string;
         readonly iconTintClassName: string;
       }
     | undefined;
+  /** The working or waiting timer of the built-in card. */
+  readonly statusDuration: ReactNode;
   readonly timeLabel: string;
   readonly selected: boolean;
   readonly recede: boolean;
@@ -84,6 +86,7 @@ export function ForkThreadCardLayout(props: {
     row,
     status,
     statusLabel,
+    statusDuration,
     timeLabel,
     selected,
     recede,
@@ -157,6 +160,7 @@ export function ForkThreadCardLayout(props: {
         )}
       >
         {statusLabel.label}
+        {statusDuration}
       </Text>
     </View>
   ) : (

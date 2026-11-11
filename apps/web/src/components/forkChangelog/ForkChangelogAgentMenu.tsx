@@ -2,12 +2,12 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   BookOpenIcon,
+  BotIcon,
   ChevronDownIcon,
   GitCompareArrowsIcon,
   HistoryIcon,
   MessageCircleQuestionIcon,
   type LucideIcon,
-  SparklesIcon,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -232,7 +232,7 @@ function AgentMenu({
   return (
     <Menu>
       <MenuTrigger render={<Button size="sm" variant="outline" />}>
-        <SparklesIcon className="size-3.5" />
+        <BotIcon className="size-3.5" />
         <span>{pending === null ? "Ask agent" : "Opening…"}</span>
         <ChevronDownIcon className="size-3.5" />
       </MenuTrigger>

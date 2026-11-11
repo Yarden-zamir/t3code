@@ -1,6 +1,6 @@
 import type { KeybindingCommand, ScopedThreadRef } from "@t3tools/contracts";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
-import { Link } from "lucide";
+import { LinkIcon } from "lucide-react";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { readThreadShell } from "../../state/entities";
@@ -38,7 +38,7 @@ export function ForkCopyMessageLink(props: {
         <MessageCopyButton
           text={messageLinkMarkdown(props.threadRef, props.messageId)}
           label="Copy message link"
-          icon={Link}
+          icon={LinkIcon}
           keybindingCommand="timeline.copyMessageLink"
           variant="ghost"
         />

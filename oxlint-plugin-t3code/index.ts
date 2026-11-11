@@ -17,6 +17,7 @@ import noAmbiguousDetailNavigation from "./rules/no-ambiguous-detail-navigation.
 import noMobilePullRequestGlyphLiterals from "./rules/no-mobile-pull-request-glyph-literals.ts";
 import noNativeTitleTooltip from "./rules/no-native-title-tooltip.ts";
 import noShortcutTextInTooltip from "./rules/no-shortcut-text-in-tooltip.ts";
+import noSparklesIcon from "./rules/no-sparkles-icon.ts";
 import noUnreasonedStateSync from "./rules/no-unreasoned-state-sync.ts";
 import requireRegisteredListScroll from "./rules/require-registered-list-scroll.ts";
 import noOutsetStateIndicators from "./rules/no-outset-state-indicators.ts";
@@ -57,6 +58,7 @@ export default definePlugin({
     "no-mobile-pull-request-glyph-literals": noMobilePullRequestGlyphLiterals,
     "no-native-title-tooltip": noNativeTitleTooltip,
     "no-shortcut-text-in-tooltip": noShortcutTextInTooltip,
+    "no-sparkles-icon": noSparklesIcon,
     "no-unreasoned-state-sync": noUnreasonedStateSync,
     "require-registered-list-scroll": requireRegisteredListScroll,
     "no-outset-state-indicators": noOutsetStateIndicators,
