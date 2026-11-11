@@ -40,6 +40,8 @@ it("a control's right-click menu lists its rows and settings before Keybindings"
   await userEvent.click(page.getByRole("menuitem", { name: /In current project/ }));
   expect(run).toHaveBeenCalledTimes(1);
 
+  // Focus returns to the trigger a frame after the menu closes; the key must reach the trigger.
+  await expect.element(trigger).toHaveFocus();
   await userEvent.keyboard("{Shift>}{F10}{/Shift}");
   await expect.element(page.getByRole("menuitem", { name: /Keybindings/ })).toBeVisible();
   await userEvent.click(page.getByRole("menuitem", { name: /Keybindings/ }));

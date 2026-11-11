@@ -52,6 +52,11 @@ function openMenu() {
   return selection;
 }
 
+// The popup takes focus a frame after it shows; a key sent before that lands on the body.
+async function menuHasFocus() {
+  await expect.element(page.getByRole("menu")).toHaveFocus();
+}
+
 describe("ForkContextMenuHost", () => {
   it("leaves menus to the caller until the host mounts", () => {
     setup();
@@ -90,7 +95,7 @@ describe("ForkContextMenuHost", () => {
     setup();
     await using _screen = await render(<ForkContextMenuHost />);
     void requestForkContextMenu(BINDABLE_ITEMS, { x: 300, y: 300 });
-    await expect.element(page.getByRole("menu")).toBeVisible();
+    await menuHasFocus();
 
     await userEvent.keyboard("{ArrowDown}{ContextMenu}");
     await expect.element(page.getByRole("menuitem", { name: "Keybindings…" })).toBeVisible();
@@ -115,7 +120,7 @@ describe("ForkContextMenuHost", () => {
     const { openKeybindings } = setup();
     await using _screen = await render(<ForkContextMenuHost />);
     const selection = requestForkContextMenu(BINDABLE_ITEMS, { x: 300, y: 300 });
-    await expect.element(page.getByRole("menu")).toBeVisible();
+    await menuHasFocus();
     const rename = page.getByRole("menuitem", { name: /^Rename/ });
 
     await userEvent.keyboard("{ArrowDown}{Shift>}{F10}{/Shift}");
@@ -168,7 +173,7 @@ describe("ForkContextMenuHost", () => {
     const invoker = focusInvoker();
     const selection = openMenu();
 
-    await expect.element(page.getByRole("menu")).toBeVisible();
+    await menuHasFocus();
     await expect.element(page.getByText("Thread")).toBeVisible();
     // Base UI keeps disabled items reachable, as ARIA menus allow.
     await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
@@ -182,7 +187,7 @@ describe("ForkContextMenuHost", () => {
     setup();
     await using _screen = await render(<ForkContextMenuHost />);
     const selection = openMenu();
-    await expect.element(page.getByRole("menu")).toBeVisible();
+    await menuHasFocus();
 
     await userEvent.keyboard("{Escape}");
 
@@ -195,7 +200,7 @@ describe("ForkContextMenuHost", () => {
     await using _screen = await render(<ForkContextMenuHost />);
     const selection = openMenu();
 
-    await expect.element(page.getByRole("menu")).toBeVisible();
+    await menuHasFocus();
     await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowRight}");
     await userEvent.click(page.getByRole("menuitemcheckbox", { name: "Tab two" }));
 
