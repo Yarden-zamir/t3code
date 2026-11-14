@@ -1,6 +1,7 @@
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import { assert, it, vi } from "@effect/vitest";
 import {
   CommandId,
@@ -104,6 +105,7 @@ function makeHarness(options: HarnessOptions = {}) {
     WorktreeSetupTracker.layer,
     Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
     Layer.mock(TerminalManager.TerminalManager)({ close: closeTerminal }),
+    Layer.mock(CheckpointStore.CheckpointStore)({ isGitRepository: () => Effect.succeed(true) }),
     Layer.mock(ProjectService.ProjectService)({
       getById: (id) => Effect.succeed(id === projectId ? Option.some(project) : Option.none()),
       getByWorkspaceRoot: () => Effect.succeedSome(project),

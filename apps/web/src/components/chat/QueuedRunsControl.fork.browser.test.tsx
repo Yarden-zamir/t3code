@@ -47,6 +47,7 @@ const baseProps = {
   onResumeLimitedThread: () => undefined,
   timestampFormat: "locale",
   onOpenThread: () => undefined,
+  onImageExpand: () => undefined,
 } satisfies ComponentProps<typeof QueuedRunsControl>;
 
 async function renderQueue(props: Partial<ComponentProps<typeof QueuedRunsControl>> = {}) {
