@@ -118,6 +118,8 @@ vi.mock("../sharing/IncomingShareProvider", () => ({
 vi.mock("../layout/workspace/useSelectWorkspaceDetail", () => ({
   useSelectWorkspaceDetail: () => harness.selectDetail,
 }));
+// Fork: the remembered new-thread project; "picker" mode leaves the picker as it is.
+vi.mock("./forkNewThreadStart", () => ({ useForkNewThreadStart: () => undefined }));
 vi.mock("./new-task-flow-provider", () => ({
   useNewTaskFlow: () => ({
     projectScopes: [

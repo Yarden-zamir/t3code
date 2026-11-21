@@ -14,7 +14,8 @@ import { ContextChip, ContextChipLabel } from "./ContextChip";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ThreadChipHoverCard } from "./ThreadChipHoverCard";
 import { ThreadHoverCardPopup } from "./ThreadHoverCard";
-import { Tooltip, TooltipTrigger } from "./ui/tooltip";
+// Fork: thread hover cards are preview cards, so the pointer can move into them.
+import { PreviewCard, PreviewCardTrigger } from "./ui/preview-card";
 
 export function ThreadContextChip(props: {
   record: Pick<ThreadContextRecord, "environmentId" | "threadId" | "title">;
@@ -41,8 +42,8 @@ export function ThreadContextChip(props: {
   const title = shell?.title?.trim() || metadata?.title.trim() || props.record.title;
   const navigate = useNavigate();
   return (
-    <Tooltip>
-      <TooltipTrigger
+    <PreviewCard>
+      <PreviewCardTrigger
         render={
           <ContextChip
             kind="thread"
@@ -94,6 +95,6 @@ export function ThreadContextChip(props: {
           unreadable={props.unreadable === true}
         />
       </ThreadHoverCardPopup>
-    </Tooltip>
+    </PreviewCard>
   );
 }

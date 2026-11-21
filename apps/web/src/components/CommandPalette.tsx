@@ -1709,9 +1709,8 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push(
     ...focusLevelPaletteItems(ITEM_ICON_CLASS, {
-      messageLinks:
-        activeThread !== null && activeThreadServerConfig?.settings.threadAddressing === true,
-      terminalThread: activeThread !== null && isTerminalThread(activeThread),
+      messageLinks: !!activeThread && activeThreadServerConfig?.settings.threadAddressing === true,
+      terminalThread: !!activeThread && isTerminalThread(activeThread),
     }),
   );
   actionItems.push(themeEditorItem);
