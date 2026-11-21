@@ -1,4 +1,4 @@
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { sharedSettingsToApply } from "@t3tools/client-runtime/fork/sharedClientSettings";
 import { EnvironmentId, type SettingValues } from "@t3tools/contracts";
 import { stableStringify } from "@t3tools/shared/relaySigning";
@@ -9,7 +9,8 @@ import { useEffect } from "react";
 import { mobilePreferencesFromSharedClientSettings } from "../../lib/forkSharedClientSettings";
 import { useEnvironments } from "../../state/environments";
 import { machineMapState } from "../../state/forkMachineMap";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom } from "../../state/preferences";
+import { saveMobilePreferencesInBackground } from "../../state/forkSavePreferences";
 
 /**
  * The client values of `t3.settings` from the first environment on kitshn. kitshn gives every
@@ -42,7 +43,6 @@ export function ForkSharedClientSettings() {
     ),
   );
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const updatePreferences = useAtomSet(updateMobilePreferencesAtom);
 
   const applied = AsyncResult.isSuccess(preferences)
     ? (preferences.value.machineMapAppliedClientSettings ?? {})
@@ -55,13 +55,13 @@ export function ForkSharedClientSettings() {
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- writes pushed map values to storage, outside React.
   useEffect(() => {
     if (plan === null || planKey === appliedKey) return;
-    updatePreferences({
+    saveMobilePreferencesInBackground({
       ...mobilePreferencesFromSharedClientSettings(plan.changed),
       machineMapAppliedClientSettings: plan.applied,
     });
     // The keys stand for the plan, which is a new object on each render.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The keys are the trigger.
-  }, [planKey, appliedKey, updatePreferences]);
+  }, [planKey, appliedKey]);
 
   return null;
 }

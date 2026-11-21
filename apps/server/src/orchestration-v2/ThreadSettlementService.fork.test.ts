@@ -156,7 +156,9 @@ it.effect("keeps a merged thread unsettled while its background command runs", (
                     )
                   : Effect.die(new Error(`Unexpected command: ${command.type}`)),
             }),
-            Layer.mock(TerminalManager.TerminalManager)({}),
+            Layer.mock(TerminalManager.TerminalManager)({
+              hasActiveSubprocess: () => Effect.succeed(false),
+            }),
             Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
             Layer.mock(GitManager.GitManager)({
               branchPullRequest: () => Effect.succeed(null),

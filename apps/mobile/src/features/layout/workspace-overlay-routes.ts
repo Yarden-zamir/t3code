@@ -24,6 +24,7 @@ const LISTED_OVERLAY_ROUTES: ReadonlySet<string> = new Set([
   "AddProjectNew",
   "NewTaskEnvironment",
   "NewTaskBranch",
+  "NewTaskRepositories",
   "SettingsLegal",
   "SettingsAuth",
   "SettingsWaitlist",
@@ -31,6 +32,7 @@ const LISTED_OVERLAY_ROUTES: ReadonlySet<string> = new Set([
   "ThreadBackgroundWork",
   // Fork: the new terminal thread sheet.
   "ForkNewTerminalThread",
+  "ThreadGuestShare",
   "ThreadPullRequests",
   "ThreadQueue",
   "ThreadReviewComment",

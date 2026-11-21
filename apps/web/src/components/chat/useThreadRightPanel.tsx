@@ -259,7 +259,8 @@ export function useThreadRightPanel(input: {
     threadPanelPresentation,
     isServerThread,
     embedded: false,
-    isGitRepo,
+    // A plain folder holding tracked repositories has turn diffs without being a Git repository.
+    diffAvailable: isGitRepo || (activeProject?.trackedFolders?.length ?? 0) > 0,
     browserAvailable,
     canOperatePreview,
     diffOpen: activeRightPanelKind === "diff",
@@ -462,13 +463,18 @@ export function ThreadRightPanelView(props: {
       keybindings={keybindings}
       configuredPreviewUrls={props.configuredPreviewUrls}
       workspaceMutationId={props.workspaceMutationId}
+      workspaceRevision={props.workspaceMutationId}
       getShortcutContext={getShortcutContext}
       onSendAnnotation={props.onSendAnnotation}
       onCloseSurface={panel.closeRightPanelSurface}
       issuesSupported={panel.supportsIssues}
       // A terminal thread screen has no composer or terminal drawer, so a side chat tab here runs
       // no shell commands. Revisit if terminal threads can open side chats.
-      sideChatParentPanel={{ openToolDiff: panel.onOpenToolDiffStable, runShellCommand: () => {} }}
+      sideChatParentPanel={{
+        hostRef: threadRef,
+        openToolDiff: panel.onOpenToolDiffStable,
+        runShellCommand: () => {},
+      }}
       terminal={{
         ...props.terminal,
         onSplitTerminal: panel.splitPanelTerminalStable,

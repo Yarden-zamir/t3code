@@ -38,7 +38,8 @@ import {
   appTokenRepairErrorAtom,
 } from "../state/forkAppTokenRepairErrors";
 import type { AppTokenClient } from "../persistence/mobile-preferences";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../state/preferences";
+import { mobilePreferencesAtom } from "../state/preferences";
+import { saveMobilePreferencesInBackground } from "../state/forkSavePreferences";
 import { issueMachinePairingCredential, kitshnTransport } from "./clientEnroll";
 import {
   appTokenOrigins,
@@ -203,7 +204,7 @@ export const layer = Layer.effectDiscard(
       tokenClientId = token;
       if (portal.machines.length > 0) yield* adoptKitshnToken(portal);
       if (saved?.machinesUrl !== portal.machinesUrl || saved.clientId !== token) {
-        appAtomRegistry.set(updateMobilePreferencesAtom, {
+        saveMobilePreferencesInBackground({
           appTokenClient: { ...saved, machinesUrl: portal.machinesUrl, clientId: token },
         });
       }
@@ -239,7 +240,7 @@ export const layer = Layer.effectDiscard(
       const nextDisabled = new Set([...disabled, ...plan.disable]);
       for (const environmentId of plan.enable) nextDisabled.delete(environmentId);
       if (nextDisabled.size !== disabled.size || plan.enable.length > 0) {
-        appAtomRegistry.set(updateMobilePreferencesAtom, {
+        saveMobilePreferencesInBackground({
           appTokenDisabledEnvironmentIds: [...nextDisabled],
         });
       }

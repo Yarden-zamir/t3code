@@ -3,7 +3,6 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { DEFAULT_HOSTED_APP_URL } from "./connectAuth.ts";
-import { threadLinkMessageId } from "./threadMessageLinks.ts";
 
 export const THREAD_LINK_PROTOCOL = "t3-thread";
 const V1_PREFIX = `${THREAD_LINK_PROTOCOL}://v1/`;
@@ -184,12 +183,6 @@ export function threadLinkRefs(
   return [...refs.values()];
 }
 
-function unknownThreadLinkLabel(link: ThreadLink, messageEnvironmentId: EnvironmentId): string {
-  return link.environmentId === null || link.environmentId === messageEnvironmentId
-    ? "Thread no longer available"
-    : "Thread on another machine";
-}
-
 /**
  * Rewrites each link outside code `replace` answers for. `label` is a Markdown link's own text.
  * Fork: `href` is the link as written, so a rewrite keeps its message fragment.
@@ -207,37 +200,5 @@ export function replaceThreadLinks(
     if (href === undefined) return source;
     const link = parseThreadLinkHref(href);
     return (link && replace(link, groups.label, href)) ?? source;
-  });
-}
-
-/**
- * Writes each link with its thread's current title, a hosted link as a v2 link. A link `title`
- * cannot resolve becomes plain text, its written label or a neutral one, except a labeled v1
- * link, which may open elsewhere.
- */
-export function relabelThreadLinks(
-  markdown: string,
-  messageEnvironmentId: EnvironmentId,
-  title: (ref: ScopedThreadRef) => string | undefined,
-): string {
-  return replaceThreadLinks(markdown, (written, label, href) => {
-    const environmentId = written.environmentId ?? messageEnvironmentId;
-    const decoded = percentDecodedThreadLinkId(written.threadId);
-    const threadId =
-      title({ environmentId, threadId: written.threadId }) === undefined &&
-      decoded !== null &&
-      title({ environmentId, threadId: decoded }) !== undefined
-        ? decoded
-        : written.threadId;
-    const current = title({ environmentId, threadId });
-    if (current === undefined) {
-      if (label !== undefined && written.environmentId === null) return undefined;
-      return label?.trim() || unknownThreadLinkLabel(written, messageEnvironmentId);
-    }
-    return formatThreadLink(
-      { environmentId: written.environmentId, threadId },
-      current.trim() || label || threadId,
-      threadLinkMessageId(href) ?? undefined,
-    );
   });
 }

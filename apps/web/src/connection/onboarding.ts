@@ -7,7 +7,7 @@ import {
   createAtomCommandScheduler,
   createRuntimeCommand,
 } from "@t3tools/client-runtime/state/runtime";
-import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
+import type { DesktopSshEnvironmentTarget, EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import { connectionAtomRuntime } from "./runtime";
@@ -54,4 +54,12 @@ export const saveRequestHeaders = createRuntimeCommand(connectionAtomRuntime, {
   },
   execute: (input: { readonly origin: string; readonly headers: ReadonlyArray<RequestHeader> }) =>
     RequestHeaderStore.pipe(Effect.flatMap((store) => store.set(input.origin, input.headers))),
+});
+
+export const reachesEnvironment = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:connection:reaches-environment",
+  execute: (input: { readonly host: string; readonly environmentId: EnvironmentId }) =>
+    ConnectionOnboarding.ConnectionOnboarding.pipe(
+      Effect.flatMap((onboarding) => onboarding.reaches(input)),
+    ),
 });

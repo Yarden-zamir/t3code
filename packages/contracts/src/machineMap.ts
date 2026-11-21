@@ -261,6 +261,7 @@ const CIRCLE_CLIENT_SETTINGS = [
   "sendShortcut",
   "settingsFind",
   "showSkillsInSlashMenu",
+  "sideThreadOpenTarget",
   "sidebarFilters",
   "sidebarProjectGroupingMode",
   "sidebarProjectGroupingOverrides",

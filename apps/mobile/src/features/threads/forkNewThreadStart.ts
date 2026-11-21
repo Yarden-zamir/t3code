@@ -1,4 +1,4 @@
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { MobileNewThreadProject } from "@t3tools/contracts";
@@ -6,9 +6,10 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import { environmentServerConfigsAtom } from "../../state/server";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom } from "../../state/preferences";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { newThreadStartChoice } from "./forkNewThreadStartChoice";
+import { saveMobilePreferencesInBackground } from "../../state/forkSavePreferences";
 
 /**
  * Fork: `mobileNewThreadProject` from the first server that changed it from `picker`. The machine
@@ -29,15 +30,14 @@ const liveNewThreadProjectAtom = Atom.make((get): MobileNewThreadProject | null 
 function useNewThreadProjectMode(): MobileNewThreadProject {
   const live = useAtomValue(liveNewThreadProjectAtom);
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const stored = AsyncResult.isSuccess(preferences)
     ? preferences.value.newThreadProjectMode
     : undefined;
   useEffect(() => {
     if (live !== null && AsyncResult.isSuccess(preferences) && live !== stored) {
-      savePreferences({ newThreadProjectMode: live });
+      saveMobilePreferencesInBackground({ newThreadProjectMode: live });
     }
-  }, [live, preferences, savePreferences, stored]);
+  }, [live, preferences, stored]);
   return live ?? stored ?? "picker";
 }
 
@@ -122,16 +122,15 @@ export function useRememberNewThreadProject(): (
   scratch: boolean,
 ) => void {
   const mode = useNewThreadProjectMode();
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   return useCallback(
     (project, scratch) => {
       if (scratch) {
-        savePreferences({
+        saveMobilePreferencesInBackground({
           scratchProject: { environmentId: project.environmentId, projectId: project.id },
         });
       }
       if (mode !== "last") return;
-      savePreferences({
+      saveMobilePreferencesInBackground({
         lastNewThreadProject: {
           environmentId: project.environmentId,
           projectId: project.id,
@@ -139,6 +138,6 @@ export function useRememberNewThreadProject(): (
         },
       });
     },
-    [mode, savePreferences],
+    [mode],
   );
 }

@@ -184,10 +184,10 @@ it.effect(
         setAccess(false);
         expect(yield* readLinks).toEqual({ links: [] });
         const linkInput = { url: peer.urls[0]!, pairingCode: "test-code", access: peer.access };
-        const link = Effect.promise(() =>
+        const link = Effect.exit(
           peerLinks.link.run(registry, { environmentId: env, input: linkInput }),
         );
-        const unlink = Effect.promise(() =>
+        const unlink = Effect.exit(
           peerLinks.unlink.run(registry, {
             environmentId: env,
             input: { environmentId: peer.environmentId },

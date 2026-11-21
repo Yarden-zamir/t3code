@@ -25,6 +25,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import type * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as WorktreeMcpService from "./WorktreeMcpService.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 
 const gone = "/worktrees/project/gone";
 const lead = ThreadId.make("thread-lead");
@@ -128,6 +129,10 @@ const makeHarness = (options: {
     }),
     Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
       runForThread: () => Effect.succeed({ status: "no-script" } as const),
+    }),
+    Layer.mock(TaskFolders.TaskFolders)({
+      plan: () => Effect.succeed(null),
+      find: () => Effect.succeed(null),
     }),
     Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
       refreshStatus: () => Effect.die("refreshStatus is not part of this test"),

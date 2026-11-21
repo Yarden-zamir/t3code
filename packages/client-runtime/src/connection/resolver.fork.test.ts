@@ -73,6 +73,8 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
         authorizeBearer: options.authorizeBearer,
         authorizeDpop: () => Effect.die("unused"),
         authorizeDpopHttp: () => Effect.die("unused"),
+        authorizeDirectDpop: () => Effect.die("unused"),
+        authorizeDirectDpopHttp: () => Effect.die("unused"),
         renewDpopBeforeExpiry: () => Effect.die("unused"),
         rememberCheckedDescriptor: () => Effect.void,
       }),

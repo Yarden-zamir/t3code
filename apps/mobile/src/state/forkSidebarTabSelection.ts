@@ -6,7 +6,7 @@
 import { Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "./atom-registry";
-import { updateMobilePreferencesAtom } from "./preferences";
+import { saveMobilePreferencesInBackground } from "./forkSavePreferences";
 
 /** The tab that this app session opened last, or null before the first tap. */
 export const selectedSidebarTabIdAtom = Atom.make<string | null>(null).pipe(
@@ -24,7 +24,7 @@ export function selectSidebarTab(tabId: string): void {
   appAtomRegistry.set(selectedSidebarTabIdAtom, tabId);
   clearTimeout(storeTimer);
   storeTimer = setTimeout(
-    () => appAtomRegistry.set(updateMobilePreferencesAtom, { sidebarTabId: tabId }),
+    () => saveMobilePreferencesInBackground({ sidebarTabId: tabId }),
     STORE_SELECTED_SIDEBAR_TAB_DELAY_MS,
   );
 }

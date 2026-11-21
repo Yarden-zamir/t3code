@@ -121,7 +121,8 @@ const layerDependencies = Layer.mergeAll(
         Effect.succeed({ instanceId } as unknown as ProviderAdapter.ProviderAdapterV2["Service"]),
     }),
   ),
-  Layer.mock(ProjectService.ProjectService)({}),
+  // Delegation reads the parent's folder to scan its workspace models.
+  Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(RemoteDelegation.RemoteDelegation)({}),
   Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),

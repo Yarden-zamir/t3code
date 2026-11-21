@@ -469,7 +469,7 @@ function SidebarUpdateControl() {
       <SidebarMenuItem
         {...objectMenuProps()}
         {...objectMenuActionsProps}
-        className="ml-auto flex flex-1"
+        className="@container/sidebar-update ml-auto flex min-w-8 flex-1"
       >
         <SidebarUpdateCapsule
           run={run}
