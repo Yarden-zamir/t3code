@@ -40,6 +40,8 @@ const SHARED_ONLY_SETTINGS: Readonly<Record<SettingScope, ReadonlyArray<string>>
     "enableAgentDeviceAccess",
     "ghqCloneLayout",
     "enableDeviceSupport",
+    // Lets clients reach loopback ports: the owner decides it for each machine.
+    "enablePreviewTunnel",
     "enableProviderUpdateChecks",
     "environmentLabelFromMachineMap",
     "fallbackModelSelection",

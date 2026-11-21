@@ -4949,6 +4949,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             NodeCrypto.layer,
             ServerSettings.layerTest(),
             Layer.mock(PullRequestService.PullRequestService)({
+              withSharedProjectReads: (effect) => effect,
               detail: () =>
                 Effect.succeed({
                   ...watchedPullRequestDetail({
@@ -5064,6 +5065,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           NodeCrypto.layer,
           ServerSettings.layerTest(),
           Layer.mock(PullRequestService.PullRequestService)({
+            withSharedProjectReads: (effect) => effect,
             detail: (input) =>
               Effect.sync(() => states.get(input.number)!).pipe(
                 Effect.tap(() => Queue.offer(detailReads, input.number)),
@@ -5212,6 +5214,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         NodeCrypto.layer,
         ServerSettings.layerTest(),
         Layer.mock(PullRequestService.PullRequestService)({
+          withSharedProjectReads: (effect) => effect,
           detail: () =>
             Effect.sync(() => ({
               ...watchedPullRequestDetail({
@@ -5364,6 +5367,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
               NodeCrypto.layer,
               ServerSettings.layerTest(),
               Layer.mock(PullRequestService.PullRequestService)({
+                withSharedProjectReads: (effect) => effect,
                 watchFingerprint: () =>
                   reason === "rate-limited"
                     ? Effect.fail(failure("watchFingerprint"))
@@ -5568,6 +5572,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           NodeCrypto.layer,
           ServerSettings.layerTest(),
           Layer.mock(PullRequestService.PullRequestService)({
+            withSharedProjectReads: (effect) => effect,
             detail: () =>
               Effect.sync(() => ({
                 ...watchedPullRequestDetail({
@@ -7289,7 +7294,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
                   commits: [],
                 }),
               threadComments: (input) => {
-                pagesRead += 1;
+                // Fork: the layer is shared, and watches that earlier tests left open read too.
+                if (input.projectId === projectId) pagesRead += 1;
                 assert.equal(input.threadId, "review-thread");
                 if (input.cursor === "after-10") {
                   return Effect.succeed({ comments: [eleventh], nextCursor: "after-11" });

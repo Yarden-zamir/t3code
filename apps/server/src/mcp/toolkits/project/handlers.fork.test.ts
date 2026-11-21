@@ -1,8 +1,8 @@
 import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import { expect, it } from "@effect/vitest";
+import { ChildProcessSpawner } from "effect/process";
 import {
   EnvironmentId,
-  GitCommandError,
   ProjectId,
   ProviderInstanceId,
   type Project as ProjectRecord,
@@ -95,10 +95,15 @@ it.effect("project settings written by t3_project_update are the ones the app re
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
       // A repository without commits, so the worktree default keeps the launch in the shared checkout.
       Layer.mock(GitVcsDriver.GitVcsDriver)({
-        resolveCommit: ({ cwd }) =>
-          Effect.fail(
-            new GitCommandError({ operation: "test", command: "git", cwd, detail: "no HEAD" }),
-          ),
+        // `git rev-parse --verify HEAD` exits 1 when the branch has no commit yet.
+        execute: () =>
+          Effect.succeed({
+            exitCode: ChildProcessSpawner.ExitCode(1),
+            stdout: "",
+            stderr: "",
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          }),
       }),
       Layer.succeed(ServerSettings.ServerSettingsService, settingsService),
       DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer)),
