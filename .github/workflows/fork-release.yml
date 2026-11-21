@@ -154,7 +154,8 @@ jobs:
       matrix:
         include:
           - label: macOS arm64
-            runner: macos-15
+            # Xcode 26 builds the Apple Speech helper, as in upstream's release.
+            runner: macos-26
             platform: mac
             target: dmg
             arch: arm64
