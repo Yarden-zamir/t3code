@@ -10,6 +10,9 @@ import * as Layer from "effect/Layer";
 import * as PeerLinks from "../../peer/PeerLinks.ts";
 import { MANUAL_LINK_REFUSAL } from "./machineAccess.ts";
 
+const LINKS_FROM_KITSHN =
+  "Links to other machines come from kitshn. See them in Settings > Environments, or with t3_environment_links.";
+
 const refused = (message: string) =>
   Effect.fail(new PeerLinkError({ reason: "incompatible", message }));
 
@@ -20,12 +23,14 @@ export const layer = Layer.succeed(
     link: Effect.fn("PeerLinks.link")(function () {
       return refused(MANUAL_LINK_REFUSAL);
     }),
+    linkUnlessLinked: Effect.fn("PeerLinks.linkUnlessLinked")(function () {
+      return refused(MANUAL_LINK_REFUSAL);
+    }),
     unlink: Effect.fn("PeerLinks.unlink")(function () {
       return refused(MANUAL_LINK_REFUSAL);
     }),
-    list: refused(
-      "Links to other machines come from kitshn. See them in Settings > Environments, or with t3_environment_links.",
-    ),
+    list: refused(LINKS_FROM_KITSHN),
+    names: refused(LINKS_FROM_KITSHN),
     get: Effect.fn("PeerLinks.get")(function () {
       return refused(MANUAL_LINK_REFUSAL);
     }),
@@ -33,6 +38,9 @@ export const layer = Layer.succeed(
       return refused(MANUAL_LINK_REFUSAL);
     }),
     recordOutcome: Effect.fn("PeerLinks.recordOutcome")(function () {
+      return Effect.void;
+    }),
+    recordExpiry: Effect.fn("PeerLinks.recordExpiry")(function () {
       return Effect.void;
     }),
   }),

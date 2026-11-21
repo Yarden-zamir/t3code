@@ -34,6 +34,7 @@ import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
+import { layerNoTaskFolders } from "./ProviderTurnStartService.testkit.ts";
 
 const managedWorktreesDir = "/tmp/provider-turn-start-worktrees";
 const realPaths = new Set([managedWorktreesDir, `${managedWorktreesDir}/project`]);
@@ -157,6 +158,7 @@ function startWithMissingWorktree(
         Layer.mock(RunExecutionService.RunExecutionServiceV2)({ startRootRun }),
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({}),
         Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
+        layerNoTaskFolders,
       ),
     ),
   );

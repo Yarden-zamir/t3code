@@ -5,16 +5,18 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { deriveThreadQueueWorkflowState } from "@t3tools/client-runtime/state/thread-workflows";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+import { isSlashCommand } from "@t3tools/shared/composerTrigger";
 import {
   isAttachmentOnlyBootstrapPrompt,
   replaceComposerContextReferences,
 } from "@t3tools/shared/composerContextReferences";
-import type {
-  ChatAttachment as ContractChatAttachment,
-  EnvironmentId,
-  MessageId,
-  RunId,
-  ThreadId,
+import {
+  parseGoalCommand,
+  type ChatAttachment as ContractChatAttachment,
+  type EnvironmentId,
+  type MessageId,
+  type RunId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
@@ -327,6 +329,9 @@ export function QueuedRunsControl({
                 replaceComposerContextReferences(item.text, (reference) => reference.label),
               ).trim();
           const isEditing = item.runId !== null && item.runId === props.editingRunId;
+          // The server decides on the agent's text, and a goal command can stop the turn.
+          const sentText = { text: item.message?.text ?? item.text, attachments: item.attachments };
+          const movesCommandFirst = isSlashCommand(sentText) && parseGoalCommand(sentText) === null;
           return (
             <li
               key={item.key}
@@ -382,7 +387,9 @@ export function QueuedRunsControl({
                             ? gt(
                                 "Stops the compaction that runs now and sends this message. You can compact again later.",
                               )
-                            : gt("Send into the current turn")}
+                            : movesCommandFirst
+                              ? gt("Move this command to the front of the queue")
+                              : gt("Send into the current turn")}
                         {item.serverIndex === 0 ? (
                           <ShortcutHint
                             command="thread.steerQueuedMessage"

@@ -355,7 +355,7 @@ const make = Effect.gen(function* () {
         return yield* new AuthMcpRegistrationError({
           error: "invalid_client_metadata",
           error_description:
-            "Linked environments is off on that machine. Turn it on in its Settings → Labs.",
+            'Linked environments is off on that machine. Turn it on in its Settings → Labs, or without a desktop, set "linkedEnvironmentsEnabled": true in userdata/settings.json in its T3 home (~/.t3 by default).',
         });
       }
       const clientId = yield* signClientId(name, redirectUris, peerLink);
@@ -649,6 +649,8 @@ export const layerMcpClientAuthenticator = Layer.effect(
                     label: client.label,
                     access: client.access,
                     linked: client.peerLink,
+                    // Fork: a kitshn machine session has no renewed link expiry.
+                    linkExpiresAt: "linkExpiresAt" in client ? client.linkExpiresAt : undefined,
                     // Fork: thread links on the origin the client reached (`threadLinkFor`).
                     ...(client.peerLink ? {} : { webOrigin: requestUrls(request).issuer }),
                   },

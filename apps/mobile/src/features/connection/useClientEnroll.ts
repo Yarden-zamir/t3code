@@ -4,7 +4,6 @@
  * failed machine does not stop the others; the app token repair pairs it later.
  */
 import { requestHeaderOrigin } from "@t3tools/client-runtime/connection";
-import { useAtomSet } from "@effect/atom-react";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { useCallback } from "react";
@@ -23,10 +22,10 @@ import {
   kitshnTransport,
 } from "../../connection/clientEnroll";
 import { requestAppTokenSync } from "../../connection/forkAppTokenRepair";
-import { updateMobilePreferencesAtom } from "../../state/preferences";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useSaveCloudflareAccessToken } from "./CloudflareAccessFields";
 import { buildPairingUrl } from "./pairing";
+import { saveMobilePreferencesInBackground } from "../../state/forkSavePreferences";
 
 function message(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -34,7 +33,6 @@ function message(cause: unknown): string {
 
 function useEnrollClient() {
   const saveToken = useSaveCloudflareAccessToken();
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const { onConnectPress } = useRemoteConnections();
   return useCallback(
     (invite: DeviceInvite): Promise<DeviceEnrollResult> =>
@@ -45,14 +43,14 @@ function useEnrollClient() {
           const saved = await saveToken(origin, token);
           if ("error" in saved) throw new Error(saved.error);
         },
-        saveClient: (client) => savePreferences({ appTokenClient: client }),
+        saveClient: (client) => saveMobilePreferencesInBackground({ appTokenClient: client }),
         pair: async (machine) => {
           const credential = await issueMachinePairingCredential(machine.origin);
           const outcome = await onConnectPress(buildPairingUrl(machine.origin, credential));
           if (!outcome.ok) throw new Error(outcome.error ?? "Could not pair with the machine.");
         },
       }),
-    [onConnectPress, savePreferences, saveToken],
+    [onConnectPress, saveToken],
   );
 }
 

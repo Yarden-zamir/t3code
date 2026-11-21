@@ -2,7 +2,7 @@ import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 
 import { readDesktopPrimaryBearerToken } from "./desktopAuth";
 import { resolvePrimaryEnvironmentHttpUrl } from "./target";
@@ -25,7 +25,15 @@ function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpC
   return client.pipe(
     HttpClient.transform((effect, request) =>
       Effect.gen(function* () {
-        const bearerToken = yield* Effect.promise(() => readDesktopPrimaryBearerToken());
+        const readToken = (previous?: string) =>
+          Effect.tryPromise({
+            try: () => readDesktopPrimaryBearerToken(previous),
+            catch: (cause) =>
+              new HttpClientError.HttpClientError({
+                reason: new HttpClientError.TransportError({ request, cause }),
+              }),
+          });
+        const bearerToken = yield* readToken();
         if (!bearerToken) return yield* effect;
         const response = yield* client.execute(HttpClientRequest.bearerToken(request, bearerToken));
         // The session probe reports a refused bearer as a successful anonymous response.
@@ -34,7 +42,7 @@ function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpC
           new URL(request.url).pathname === "/api/auth/session" &&
           isUnauthenticatedSession(yield* response.json);
         if (response.status !== 401 && !anonymousSession) return response;
-        const refreshed = yield* Effect.promise(() => readDesktopPrimaryBearerToken(bearerToken));
+        const refreshed = yield* readToken(bearerToken);
         return refreshed
           ? yield* client.execute(HttpClientRequest.bearerToken(request, refreshed))
           : response;

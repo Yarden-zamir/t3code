@@ -60,11 +60,12 @@ export type ModelOption = {
   readonly capabilities: ModelCapabilities | null;
   readonly selection: ModelSelection;
   readonly providerUpdateRequired?: ProviderUpdateRequired;
+  readonly providerSubProviders?: T3ServerConfig["providers"][number]["subProviders"];
 };
 
 type ProviderUpdateRequired = Pick<
   T3ServerConfig["providers"][number],
-  "driver" | "updateRequiredModels"
+  "driver" | "updateRequiredModels" | "versionAdvisory"
 >;
 
 export type ProviderGroup = {
@@ -72,6 +73,7 @@ export type ProviderGroup = {
   readonly providerLabel: string;
   readonly models: ReadonlyArray<ModelOption>;
   readonly updateRequired?: ProviderUpdateRequired;
+  readonly subProviders?: ModelOption["providerSubProviders"];
 };
 
 function providerDisplayLabel(provider: {
@@ -402,7 +404,11 @@ export function buildModelOptions(
     const providerLabel = providerDisplayLabel(provider);
     const providerBadge = providerBadgeFor(provider.instanceId);
     const updateRequired = provider.updateRequiredModels?.length
-      ? { driver: provider.driver, updateRequiredModels: provider.updateRequiredModels }
+      ? {
+          driver: provider.driver,
+          updateRequiredModels: provider.updateRequiredModels,
+          ...(provider.versionAdvisory ? { versionAdvisory: provider.versionAdvisory } : {}),
+        }
       : undefined;
     const preferences = config?.settings?.providerModelPreferences?.[provider.instanceId];
     const hiddenModels = new Set(preferences?.hiddenModels ?? []);
@@ -433,6 +439,7 @@ export function buildModelOptions(
         isDefault: model.isDefault === true,
         isLegacy: model.isLegacy === true,
         ...(updateRequired ? { providerUpdateRequired: updateRequired } : {}),
+        ...(provider.subProviders?.length ? { providerSubProviders: provider.subProviders } : {}),
         capabilities: model.capabilities,
         selection: normalizeSelectionOptions(
           {
@@ -516,6 +523,7 @@ export function groupByProvider(options: ReadonlyArray<ModelOption>): ReadonlyAr
       providerLabel: string;
       models: ModelOption[];
       updateRequired: ProviderUpdateRequired | undefined;
+      subProviders: ModelOption["providerSubProviders"];
     }
   >();
   for (const option of options) {
@@ -523,11 +531,13 @@ export function groupByProvider(options: ReadonlyArray<ModelOption>): ReadonlyAr
     if (existing) {
       existing.models.push(option);
       existing.updateRequired ??= option.providerUpdateRequired;
+      existing.subProviders ??= option.providerSubProviders;
     } else {
       groups.set(option.providerKey, {
         providerLabel: option.providerLabel,
         models: [option],
         updateRequired: option.providerUpdateRequired,
+        subProviders: option.providerSubProviders,
       });
     }
   }
@@ -537,5 +547,6 @@ export function groupByProvider(options: ReadonlyArray<ModelOption>): ReadonlyAr
     providerLabel: group.providerLabel,
     models: group.models,
     ...(group.updateRequired ? { updateRequired: group.updateRequired } : {}),
+    ...(group.subProviders ? { subProviders: group.subProviders } : {}),
   }));
 }

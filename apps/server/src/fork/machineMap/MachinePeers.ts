@@ -15,6 +15,7 @@ import {
   AuthPairingCredentialResult,
   AuthTokenExchangeGrantType,
   EnvironmentId,
+  type ExecutionEnvironmentCapabilities,
   ExecutionEnvironmentDescriptor,
   MachineId,
   type PeerLink,
@@ -177,6 +178,7 @@ interface PeerIdentity {
   readonly environmentId: EnvironmentId;
   /** MM-1904: it narrows a linked caller to `T3-Mode-Limit` and fences its work. */
   readonly holdsLimits: boolean;
+  readonly capabilities: ExecutionEnvironmentCapabilities;
 }
 
 interface Link extends PeerIdentity {
@@ -293,6 +295,7 @@ const make = Effect.gen(function* () {
       holdsLimits:
         descriptor.capabilities.mcpModeLimitHeader === true &&
         descriptor.capabilities.linkFence === true,
+      capabilities: descriptor.capabilities,
     };
     identities.set(target.machine.id, identity);
     machineOfEnvironment.set(identity.environmentId, target.machine.id);
@@ -384,6 +387,9 @@ const make = Effect.gen(function* () {
     link: Effect.fn("MachinePeers.link")(function () {
       return manualRefused;
     }),
+    linkUnlessLinked: Effect.fn("MachinePeers.linkUnlessLinked")(function () {
+      return manualRefused;
+    }),
     unlink: Effect.fn("MachinePeers.unlink")(function () {
       return manualRefused;
     }),
@@ -408,6 +414,20 @@ const make = Effect.gen(function* () {
       );
       return [...linked, ...unanswered];
     }).pipe(Effect.withSpan("MachinePeers.listLinks")),
+    // Known identities only: a machine not seen yet is asked once, as `findLink` does.
+    names: looks(false).pipe(
+      Effect.flatMap(({ links }) =>
+        Effect.forEach(links, (link) =>
+          toPeerLink(link.environmentId, link.target).pipe(
+            Effect.map((peerLink) => ({
+              environmentId: peerLink.environmentId,
+              label: peerLink.label,
+            })),
+          ),
+        ),
+      ),
+      Effect.withSpan("MachinePeers.linkNames"),
+    ),
     get: Effect.fn("MachinePeers.getLink")(function (environmentId) {
       return findLink(environmentId).pipe(
         Effect.flatMap(({ found }) =>
@@ -489,6 +509,7 @@ const make = Effect.gen(function* () {
         link: yield* toPeerLink(looked.found.environmentId, target),
         url: target.origin,
         token: session.accessToken,
+        capabilities: now.value.capabilities,
       };
     }),
     recordOutcome: Effect.fn("MachinePeers.recordOutcome")(function (environmentId, outcome) {
@@ -503,6 +524,10 @@ const make = Effect.gen(function* () {
           );
         }),
       );
+    }),
+    // A kitshn link has no expiry here: its arrow decides how long it lasts.
+    recordExpiry: Effect.fn("MachinePeers.recordExpiry")(function () {
+      return Effect.void;
     }),
   });
 

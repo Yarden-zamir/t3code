@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
-import { formatThreadLink, parseThreadLinkHref, relabelThreadLinks } from "./threadLinks.ts";
+import { formatThreadLink, parseThreadLinkHref } from "./threadLinks.ts";
+import { relabelThreadLinks } from "./threadLinksCopy.ts";
 import {
   isLinkedMessage,
   linkedMessageLoadId,

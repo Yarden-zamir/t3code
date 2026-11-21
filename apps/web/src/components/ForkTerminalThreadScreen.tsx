@@ -148,7 +148,13 @@ const scriptsUnavailable = () =>
  * Revisit if a terminal thread runs scripts in its own terminals.
  */
 // A terminal thread has no provider, so the details card has no usage to show.
-const NO_USAGE = { providerInstanceId: null, providers: [], sources: [], contextWindow: null };
+const NO_USAGE = {
+  providerInstanceId: null,
+  model: null,
+  providers: [],
+  sources: [],
+  contextWindow: null,
+};
 
 const NO_SCRIPT_ACTIONS = {
   activeProjectScripts: undefined,

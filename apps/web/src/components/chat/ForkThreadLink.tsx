@@ -22,6 +22,7 @@ import { MarkdownThreadLink } from "./MarkdownThreadLink";
 /** Fork: a `t3-thread://` link in chat, which opens the thread at the message of its fragment. */
 export function ForkThreadLink(props: {
   readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef | undefined;
   readonly link: ThreadLink;
   readonly label: string | null;
   readonly href: string;
@@ -29,6 +30,7 @@ export function ForkThreadLink(props: {
   return (
     <MarkdownThreadLink
       environmentId={props.environmentId}
+      threadRef={props.threadRef}
       link={props.link}
       label={props.label}
       messageId={threadLinkMessageId(props.href)}

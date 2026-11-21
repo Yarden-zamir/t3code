@@ -19,7 +19,11 @@ import {
   undoLatestThreadAction,
 } from "../hooks/showThreadUndoNotice";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
-import { isRichTextBoldShortcut, resolveShortcutCommand } from "../keybindings";
+import {
+  isRichTextBoldShortcut,
+  isSidebarToggleShortcut,
+  resolveShortcutCommand,
+} from "../keybindings";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { KeyboardCheatSheet } from "./focusLevels/KeyboardCheatSheet";
@@ -355,15 +359,17 @@ function SidebarControl({
         // the toggle stays available everywhere else.
         return;
       }
-      const command = resolveShortcutCommand(event, keybindings, {
-        context: {
-          terminalFocus: isTerminalFocused(),
-          previewFocus: isPreviewFocused(),
-          ...readRoutePanelsOpen(router),
-          usagePageOpen,
-        },
-      });
-      if (command !== "sidebar.toggle") return;
+      if (
+        !isSidebarToggleShortcut(event, keybindings, {
+          context: {
+            terminalFocus: isTerminalFocused(),
+            previewFocus: isPreviewFocused(),
+            ...readRoutePanelsOpen(router),
+            usagePageOpen,
+          },
+        })
+      )
+        return;
 
       event.preventDefault();
       event.stopPropagation();
