@@ -243,7 +243,11 @@ export function mergedUpstreamProblems(
 }
 
 function git(...args: ReadonlyArray<string>): string {
-  return NodeChildProcess.execFileSync("git", args, { encoding: "utf8" }).trim();
+  // The subject list of the full history passes the 1 MiB default buffer.
+  return NodeChildProcess.execFileSync("git", args, {
+    encoding: "utf8",
+    maxBuffer: Number.POSITIVE_INFINITY,
+  }).trim();
 }
 
 function gitSucceeds(...args: ReadonlyArray<string>): boolean {
