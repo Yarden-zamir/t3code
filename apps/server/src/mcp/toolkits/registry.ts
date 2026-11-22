@@ -7,6 +7,7 @@ import * as McpInvocationContext from "../McpInvocationContext.ts";
 import { AttachmentToolkit } from "./attachment/tools.ts";
 import { DeviceToolkit } from "./device/tools.ts";
 import { EnvironmentToolkit } from "./environment/tools.ts";
+import { FeedbackToolkit } from "./feedback/tools.ts";
 import { HtmlToolkit } from "./html/tools.ts";
 import { IssuesToolkit } from "./issues/tools.ts";
 import { KitshnToolkit } from "./kitshn/tools.ts";
@@ -52,6 +53,7 @@ export const McpToolkits = {
   thread: ThreadToolkit,
   attachment: AttachmentToolkit,
   project: ProjectToolkit,
+  feedback: FeedbackToolkit,
   environment: EnvironmentToolkit,
   theme: ThemeToolkit,
   previewControls: PreviewControlsToolkit,

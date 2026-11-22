@@ -219,6 +219,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   >["alternateShortcutContext"];
   voiceInputActive?: boolean;
   isSendBusy: boolean;
+  isSendHeld?: boolean;
   sendDisabledReason: string | null;
   isEnvironmentUnavailable: boolean;
   hasSendableContent: boolean;
@@ -248,6 +249,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         alternateShortcutContext={props.alternateShortcutContext}
         voiceInputActive={props.voiceInputActive ?? false}
         isSendBusy={props.isSendBusy}
+        isSendHeld={props.isSendHeld ?? false}
         sendDisabledReason={props.sendDisabledReason}
         isEnvironmentUnavailable={props.isEnvironmentUnavailable}
         isPreparingWorktree={props.isPreparingWorktree}

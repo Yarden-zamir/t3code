@@ -18,6 +18,8 @@ import {
  */
 const SHARED_ONLY_SETTINGS: Readonly<Record<SettingScope, ReadonlyArray<string>>> = {
   server: [
+    // Agents send reports to the T3 team, so only the owner turns it on.
+    "agentFeedback",
     "agentSessionImportMaxMessages",
     "agentSessionImportWindowDays",
     "autoResumeLimitedThreads",
