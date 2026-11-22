@@ -9656,7 +9656,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
   );
 
   it.effect.each(["a new message", "the held queue"] as const)(
-    "starts %s in the project checkout after a failed turn whose worktree was set up",
+    "starts %s in the project checkout after a stopped turn whose worktree was set up",
     (next) =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -9669,7 +9669,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           defaultModelSelection: null,
           createdAt: "2026-01-01T00:00:00.000Z",
         });
-        const { send, runFor, end, awaitHeld } = yield* queueTestThread(threadId);
+        const { send, runFor, end, hold } = yield* queueTestThread(threadId);
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           createdBy: "user",
@@ -9693,8 +9693,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           runId: first.id,
         });
         yield* send("queued", "user", false);
-        yield* end("first", "failed");
-        yield* awaitHeld("queued");
+        yield* hold("queued");
+        yield* end("first", "interrupted");
         // The user switches the thread to the project checkout.
         yield* orchestrator.dispatch({
           type: "thread.metadata.update",

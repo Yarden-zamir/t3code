@@ -87,7 +87,9 @@ const layerTestWith = (tunnelPairingUrl: string | undefined) =>
     ),
     Layer.provideMerge(ServerSettings.layerTest({ guestSharingEnabled: true })),
     Layer.provide(layerConnect),
-    Layer.provide(Layer.mock(AnalyticsService.AnalyticsService)({ record: () => Effect.void })),
+    Layer.provide(
+      Layer.mock(AnalyticsService.AnalyticsService)({ record: () => Effect.succeed(false) }),
+    ),
     Layer.provide(ServerSecretStore.layer),
     Layer.provide(DocumentText.layer),
     Layer.provideMerge(layerConfigWith(tunnelPairingUrl)),
