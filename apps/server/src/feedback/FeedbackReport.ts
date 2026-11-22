@@ -191,6 +191,13 @@ export const T3_CLI_COMMANDS: ReadonlyArray<string> = [
   "t3 connect publish",
   "t3 connect status",
   "t3 connect unlink",
+  // Fork: the machine and tool commands.
+  "t3 machine",
+  "t3 machine exec",
+  "t3 tool",
+  "t3 tool call",
+  "t3 tool describe",
+  "t3 tool list",
 ];
 
 export type FeedbackInput = typeof FeedbackInput.Type;
