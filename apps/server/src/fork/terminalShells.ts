@@ -179,10 +179,12 @@ export const customShellCandidate = Effect.fn("terminalShells.customShellCandida
   const path = input.platform === "win32" ? NodePath.win32 : NodePath.posix;
   const resolve = yield* SpawnExecutableResolution;
   const isPath = shell.executable.includes("/") || shell.executable.includes("\\");
-  const resolved = resolve(
-    isPath ? path.resolve(input.cwd, shell.executable) : shell.executable,
-    input.platform,
-    input.env,
+  const resolved = yield* Effect.promise(async () =>
+    resolve(
+      isPath ? path.resolve(input.cwd, shell.executable) : shell.executable,
+      input.platform,
+      input.env,
+    ),
   );
   if (resolved === undefined) {
     return yield* new TerminalCustomShellNotFoundError({
