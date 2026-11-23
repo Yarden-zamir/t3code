@@ -2801,7 +2801,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
               forkArchiveBlock: forkMenuState.archiveBlock,
-              canMarkUnread: thread.latestRun?.completedAt != null,
+              hasCompletedRun: thread.latestRun?.completedAt != null,
               canShareWithGuest: appAtomRegistry.get(
                 canShareWithGuestAtom(threadRef.environmentId),
               ),

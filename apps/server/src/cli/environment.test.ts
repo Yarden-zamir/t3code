@@ -55,6 +55,23 @@ it.effect("refuses each line of a file of environments without sending or printi
 
       const file = NodePath.join(baseDir, "fleet.txt");
       yield* fs.writeFileString(file, `# fleet\n${one.url} ${code}\n\n${two.url} not-a-code\n`);
+      const conflict = yield* runCli([
+        "environment",
+        "link",
+        "--from",
+        file,
+        "--url",
+        "http://ignored.invalid",
+        "--access",
+        "auto",
+        "--base-dir",
+        baseDir,
+      ]).pipe(Effect.flip);
+      expect(conflict).toMatchObject({
+        _tag: "EnvironmentLinkUsageError",
+        detail: "--from takes its addresses and pairing codes from the file.",
+      });
+
       const failed = yield* runCli([
         "environment",
         "link",

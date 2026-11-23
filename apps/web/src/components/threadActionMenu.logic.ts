@@ -168,8 +168,8 @@ export interface ThreadActionMenuState {
    * says why, because a native menu shows no tooltip.
    */
   readonly forkArchiveBlock?: ThreadArchiveBlock | null;
-  /** Fork: Mark unread needs a finished run; without one the server refuses it. */
-  readonly canMarkUnread?: boolean;
+  /** The server marks unread against the latest run's completion, so in-flight runs cannot be. */
+  readonly hasCompletedRun: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
@@ -280,15 +280,8 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
-    ...(state.supports.markUnread !== false
-      ? [
-          {
-            id: "mark-unread" as const,
-            label: resolve(msg("Mark unread")),
-            icon: "mail-open",
-            disabled: state.canMarkUnread === false,
-          },
-        ]
+    ...(state.supports.markUnread !== false && state.hasCompletedRun && !state.isRunning
+      ? [{ id: "mark-unread" as const, label: resolve(msg("Mark unread")), icon: "mail-open" }]
       : []),
     ...(state.canShareWithGuest
       ? [{ id: "share-guest" as const, label: resolve(msg("Share with guest")), icon: "user-plus" }]

@@ -160,7 +160,7 @@ export function useThreadActionMenu(input: {
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),
         forkArchiveBlock: forkMenuState.archiveBlock,
-        canMarkUnread: thread.latestRun?.completedAt != null,
+        hasCompletedRun: thread.latestRun?.completedAt != null,
         supports,
         snoozePresets,
         canShareWithGuest,

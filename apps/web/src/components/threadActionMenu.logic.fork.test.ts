@@ -14,7 +14,7 @@ const state: ThreadActionMenuState = {
   isRegeneratingTitle: false,
   isRunning: false,
   forkArchiveBlock: null,
-  canMarkUnread: true,
+  hasCompletedRun: true,
   supports: {
     settlement: true,
     autoSettleOptOut: true,
