@@ -117,8 +117,11 @@ const make = Effect.gen(function* () {
           const project = yield* projects.getById(thread.projectId);
           if (Option.isNone(project)) return yield* fail("The project repository is missing.");
           const repository = project.value.workspaceRoot;
-          const exec = (args: readonly string[], location = repository) =>
-            git.execute({ cwd: location, args, operation: "restore worktree" });
+          const exec = (
+            args: readonly string[],
+            location = repository,
+            options: { readonly writesSharedConfig?: boolean } = {},
+          ) => git.execute({ cwd: location, args, operation: "restore worktree", ...options });
           const common = yield* exec([
             "rev-parse",
             "--path-format=absolute",
@@ -260,7 +263,11 @@ const make = Effect.gen(function* () {
             } else {
               yield* recreateBranch();
               // No reset, force or broad prune, including when reviving a deleted branch.
-              yield* exec(["worktree", "add", "--no-guess-remote", "--", cwd, thread.branch!]);
+              yield* exec(
+                ["worktree", "add", "--no-guess-remote", "--", cwd, thread.branch!],
+                repository,
+                { writesSharedConfig: true },
+              );
             }
           }
           return { project, repository, exists };
