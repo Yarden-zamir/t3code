@@ -595,7 +595,7 @@ export const make = Effect.gen(function* () {
     // PowerShell and cmd have no line-editor signal.
     yield* (
       completionShell === "powershell" || completionShell === null
-        ? Effect.succeed("ready" as const)
+        ? Effect.succeed("quiet" as const)
         : readiness.wait
     ).pipe(
       Effect.flatMap((shell) =>
