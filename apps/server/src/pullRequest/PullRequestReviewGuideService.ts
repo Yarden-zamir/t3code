@@ -312,6 +312,7 @@ const make = Effect.gen(function* () {
         resolvedHead.commitSha,
       ],
       timeoutMs: 5 * 60_000,
+      writesSharedConfig: true,
     });
     yield* Effect.addFinalizer(() =>
       git

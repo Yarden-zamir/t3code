@@ -5962,7 +5962,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     );
     const checkoutWorkers = configuredCheckoutWorkers ?? "0";
     const createBranch = newRefName
-      ? // Kept apart from the checkout so the shared-config lock only covers the tracking write.
+      ? // Kept apart from the checkout: each takes the shared-config lock on its own.
         createBranchAt(
           "GitVcsDriver.createWorktree.createBranch",
           { cwd: input.cwd, branch: newRefName, startPoint: input.refName },
@@ -5999,8 +5999,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       },
     );
     // A concurrent `worktree add` can read this add's half-written registration and fail.
-    // Limit: the lock also covers the checkout and its hooks, so parallel launches check out one
-    // at a time. Revisit if Git writes the registration atomically or slow hooks queue launches.
+    // Limit: the lock also covers the checkout and its hooks, so launches and config writers in the
+    // repository wait for it. Revisit if Git writes the registration atomically or hooks queue work.
     const checkout = withSharedConfigLockAt(
       leaseKey,
       fastCheckout
