@@ -157,8 +157,6 @@ export function stripTerminalControl(text: string): string {
 // Line editors (zsh, fish, nu, bash 5.1+) enable bracketed paste when they start reading a command.
 const BRACKETED_PASTE_ON = "\x1b[?2004h";
 const BRACKETED_PASTE_OFF = "\x1b[?2004l";
-// Pasted text skips line editor widgets, such as zsh-autopair closing the wrapper's `(` early.
-const bracketedPasteInput = (command: string) => `\x1b[200~ ${command}\x1b[201~\r`;
 // Longer than one subprocess poll plus its ps timeout, so a startup prompt is seen as busy first.
 const SHELL_QUIET_FALLBACK = "3 seconds";
 
@@ -415,7 +413,7 @@ export const make = Effect.gen(function* () {
           const seen = activity;
           yield* Effect.sleep(SHELL_QUIET_FALLBACK);
           if (activity !== seen) continue;
-          if (!busy) return "ready" as const;
+          if (!busy) return "quiet" as const;
           yield* input.onStartupPrompt;
         }
       });
@@ -606,11 +604,12 @@ export const make = Effect.gen(function* () {
           : terminalManager.write({
               threadId: input.threadId,
               terminalId,
-              data:
-                // Limit: zsh with zle_bracketed_paste unset gets typed input, which zsh-autopair breaks.
+              // Fork: every line editor gets a paste, which also skips widgets such as zsh-autopair.
+              data: projectScriptTerminalInput(
                 shell === "line-editor"
-                  ? bracketedPasteInput(commandLine)
-                  : projectScriptTerminalInput(commandLine),
+                  ? `\x1b[200~${commandLine.replaceAll("\r", "\n")}\x1b[201~`
+                  : commandLine,
+              ),
             }),
       ),
       Effect.catchCause((cause) =>

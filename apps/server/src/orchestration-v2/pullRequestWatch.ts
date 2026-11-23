@@ -51,6 +51,17 @@ const isFailedCheck = (check: PullRequestCheck) =>
 const workflowRunOf = (url: string | null) => url?.match(/^.*\/actions\/runs\/\d+/)?.[0] ?? null;
 const approvalKey = (check: PullRequestCheck) => workflowRunOf(check.url) ?? check.name;
 
+const CODERABBIT_REPLY_MARKER = "<!-- This is an auto-generated reply by CodeRabbit -->";
+
+function isReviewAcknowledgement(remark: PullRequestComment): boolean {
+  return (
+    remark.author?.login.toLowerCase().replace(/\[bot\]$/, "") === "coderabbitai" &&
+    /<!-- This is an auto-generated reply by CodeRabbit -->[\s\S]*?<summary>[^\p{L}<]*Actions? performed<\/summary>\s*(?:<dl>\s*<dd>\s*<br>\s*)?(?:Full review|Review) triggered\./u.test(
+      remark.body.slice(0, 1_000),
+    )
+  );
+}
+
 /**
  * Fork: by default, remarks from the agent's own account never wake it. `remarkFilter` can
  * replace that rule with allowed repository roles and logins, and can skip remarks with an
@@ -239,10 +250,13 @@ export function evaluatePullRequestWatch(
   };
   const through = Date.parse(watch.remarksThrough);
   // Fork: bots edit summary comments often, so a bot's edit is not news. A person's edit is.
+  // A CodeRabbit command reply is the exception: its one edit carries the review outcome.
   const byBot = (remark: PullRequestComment) =>
     remark.author?.isBot === true || remark.author?.login.endsWith("[bot]") === true;
+  const editIsNews = (remark: PullRequestComment) =>
+    !byBot(remark) || remark.body.includes(CODERABBIT_REPLY_MARKER);
   const activeAt = (remark: PullRequestComment) =>
-    byBot(remark) ? remark.createdAt : (remark.editedAt ?? remark.createdAt);
+    editIsNews(remark) ? (remark.editedAt ?? remark.createdAt) : remark.createdAt;
   // Hosts can stamp remarks to the second, so remarks at the boundary time are told apart by ID.
   const fresh = (remarks ?? []).filter((remark) => {
     const at = Date.parse(activeAt(remark));
@@ -251,7 +265,8 @@ export function evaluatePullRequestWatch(
       wakesAgent(remark)
     );
   });
-  if (fresh.length > 0) changes.push({ kind: "remarks", remarks: fresh });
+  const actionable = fresh.filter((remark) => !isReviewAcknowledgement(remark));
+  if (actionable.length > 0) changes.push({ kind: "remarks", remarks: actionable });
   const latest = Math.max(through, ...fresh.map((remark) => Date.parse(activeAt(remark))));
   const atLatest = fresh.filter((remark) => Date.parse(activeAt(remark)) === latest);
   const remarksThrough = latest === through ? watch.remarksThrough : activeAt(atLatest[0]!);

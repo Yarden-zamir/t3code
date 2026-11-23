@@ -5,6 +5,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -76,12 +77,12 @@ it.effect("refuses each line of a file of environments without sending or printi
         "environment",
         "link",
         "--from",
-        file,
+        "~/fleet.txt",
         "--access",
         "auto",
         "--base-dir",
         baseDir,
-      ]).pipe(Effect.flip);
+      ]).pipe(Effect.provideService(HostProcess.HomeDirectory, baseDir), Effect.flip);
       expect(failed).toMatchObject({ _tag: "EnvironmentLinkBatchError", failed: 2, total: 2 });
       const report = (yield* reports).at(-1) ?? "";
       expect(report).toContain(`${one.url}: `);

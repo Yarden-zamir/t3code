@@ -138,7 +138,9 @@ describe("ProjectSetupScriptRunner", () => {
       const { writes } = yield* setup({
         shell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
       });
-      expect(yield* Queue.take(writes)).toContain("$global:LASTEXITCODE");
+      const submitted = yield* Queue.take(writes);
+      expect(submitted).toContain("$global:LASTEXITCODE");
+      expect(submitted).not.toContain("\x1b[200~");
     }),
   );
 
@@ -157,7 +159,7 @@ describe("ProjectSetupScriptRunner", () => {
       expect(sentinel).toBeDefined();
       // Fork: a line editor gets the command as a bracketed paste.
       expect(written).toBe(
-        `\x1b[200~ ${[
+        ` \x1b[200~${[
           "$env.LAST_EXIT_CODE = 0",
           "let __t3f = try { mktemp --tmpdir-path $env.T3CODE_WORKTREE_PATH --suffix .nu .t3-setup-XXXXXXXX } catch {|e| print -e $e.msg; null }",
           `if $__t3f == null { $env.LAST_EXIT_CODE = 1 } else { try { [$"rm --permanent ($__t3f | to nuon)" "${escaped}"] | str join (char newline) | save --force --raw $__t3f; ^$nu.current-exe --login --commands $"cd $env.T3CODE_WORKTREE_PATH; source ($__t3f | to nuon)" } catch {|e| if $e != null and $e.exit_code? == null { print -e $e.msg }; if $env.LAST_EXIT_CODE == 0 { $env.LAST_EXIT_CODE = 1 } } }`,
@@ -184,7 +186,7 @@ describe("ProjectSetupScriptRunner", () => {
       yield* emit({ ...event, type: "output", data: "\r\n% \x1b[?2004h" });
       // A paste skips line editor widgets, such as zsh-autopair pairing quotes and parentheses.
       const written = yield* Queue.take(writes);
-      expect(written.startsWith("\x1b[200~ ")).toBe(true);
+      expect(written.startsWith(" \x1b[200~")).toBe(true);
       expect(written.endsWith("\x1b[201~\r")).toBe(true);
       expect(written).toContain("vp i");
     }),
@@ -214,9 +216,11 @@ describe("ProjectSetupScriptRunner", () => {
 
   it.effect("types into a quiet shell that has no line editor", () =>
     Effect.gen(function* () {
-      const { writes } = yield* setup();
+      const { writes } = yield* setup({ command: "printf '%s\\n' 'setup-ready'\n".repeat(120) });
       yield* TestClock.adjust("3 seconds");
-      expect(yield* Queue.take(writes)).toContain("vp i");
+      const submitted = yield* Queue.take(writes);
+      expect(submitted).toContain("setup-ready");
+      expect(submitted).not.toContain("\x1b[200~");
     }),
   );
 
@@ -275,10 +279,8 @@ describe("ProjectSetupScriptRunner", () => {
 const runObservedSetup = Effect.fnUntraced(function* (command: string) {
   const { writes, outputLines, emit, completion } = yield* setup({ command });
   yield* emit({ ...event, type: "output", data: "\x1b[?2004h" });
-  const pasted = yield* Queue.take(writes);
-  // Fork: the line editor receives a bracketed paste and drops its markers.
-  assert.isTrue(pasted.startsWith("\x1b[200~") && pasted.endsWith("\x1b[201~\r"));
-  const submitted = `${pasted.slice("\x1b[200~".length, -"\x1b[201~\r".length)}\r`;
+  const submitted = yield* Queue.take(writes);
+  const shellInput = submitted.replace("\x1b[200~", "").replace("\x1b[201~", "");
   const cwd = yield* HostProcess.WorkingDirectory;
   const env = yield* HostProcess.Environment;
 
@@ -289,7 +291,7 @@ const runObservedSetup = Effect.fnUntraced(function* (command: string) {
     const handle = yield* spawner.spawn(
       ChildProcess.make(
         "/bin/bash",
-        ["--noprofile", "--norc", "-c", submitted.replaceAll("\r", "\n")],
+        ["--noprofile", "--norc", "-c", shellInput.replaceAll("\r", "\n")],
         {
           cwd,
           env: { PATH: env.PATH },
@@ -310,6 +312,7 @@ const runObservedSetup = Effect.fnUntraced(function* (command: string) {
   yield* emit({ ...event, type: "closed" });
   return {
     submitted,
+    shellInput,
     lines: yield* Queue.clear(outputLines),
     exitCode: (yield* completion).exitCode,
   };
@@ -355,9 +358,10 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("POSIX setup co
       assert.deepEqual(result.lines, expected);
       assert.equal(result.exitCode, 0);
       assert.equal(result.submitted.at(-1), "\r");
-      assert.notInclude(result.submitted, "\n");
-      // The runner can write before the shell switches the terminal out of canonical mode.
-      for (const line of result.submitted.slice(0, -1).split("\r")) {
+      assert.isTrue(result.submitted.startsWith(" \x1b[200~"));
+      assert.isTrue(result.submitted.endsWith("\x1b[201~\r"));
+      assert.notInclude(result.submitted.slice(0, -1), "\r");
+      for (const line of result.shellInput.slice(0, -1).split("\n")) {
         assert.isBelow(utf8.encode(line).byteLength, 1_024);
       }
     }),
