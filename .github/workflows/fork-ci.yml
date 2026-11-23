@@ -112,7 +112,11 @@ jobs:
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
+      # A pull request saves its store (1.28 GB) where main cannot read it, and the
+      # 10 GB Actions cache then evicts the Gradle cache of Fork Android. Only main saves.
       - uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: ${{ github.event_name != 'pull_request' }}
       - if: needs.changes.outputs.code == 'true'
         run: vp run --filter @t3tools/desktop ensure:electron
       - if: needs.changes.outputs.code == 'true'
@@ -167,6 +171,8 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
       - uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: ${{ github.event_name != 'pull_request' }}
       - run: vp run --filter @t3tools/desktop ensure:electron
       - run: vpr typecheck
 
@@ -185,6 +191,8 @@ jobs:
           sparse-checkout-cone-mode: false
       - run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
       - uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: ${{ github.event_name != 'pull_request' }}
       - run: vp run --filter @t3tools/desktop ensure:electron
       - run: vp run build:desktop
       - run: node apps/desktop/scripts/verify-preload-bundle.mjs
@@ -209,6 +217,8 @@ jobs:
           sparse-checkout-cone-mode: false
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libsecret-1-dev pkg-config
       - uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: ${{ github.event_name != 'pull_request' }}
       - run: vp run --filter @t3tools/desktop ensure:electron
       - if: matrix.group == 'packages'
         run: python3 -B .github/scripts/stage-preview-bundle.test.py
@@ -260,6 +270,8 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
       - uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: ${{ github.event_name != 'pull_request' }}
       # The browser project runs React tests in headless Chromium.
       - uses: ./.github/actions/fork-setup-chromium
         with:
@@ -284,6 +296,8 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
       - uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: ${{ github.event_name != 'pull_request' }}
       - uses: ./.github/actions/fork-setup-chromium
         with:
           playwright-package: apps/server/node_modules/playwright-core
@@ -305,6 +319,8 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
       - uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: ${{ github.event_name != 'pull_request' }}
       - run: vp run --filter t3 build:bundle
       - run: node scripts/fork-kitshn-contract.ts
 
