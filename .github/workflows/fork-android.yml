@@ -175,12 +175,12 @@ jobs:
             echo "The checkout token is still configured." >&2
             exit 1
           fi
-      - uses: voidzero-dev/setup-vp@v1
+      # Restores the Linux x64 pnpm store of Fork CI and saves none, so the Gradle
+      # cache below fits in the 10 GB Actions cache. See fork-release.yml.
+      - uses: ./.github/actions/setup-ci-deps
         with:
-          node-version-file: package.json
-          cache: true
-          run-install: false
-      - run: vp install --filter=@t3tools/mobile...
+          install-args: --filter=@t3tools/mobile...
+          save-pnpm-store: false
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
