@@ -1072,9 +1072,11 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
   ];
 }
 
-// Fork: upstream allows 80 from a Linux build. The fork builds on Windows, which adds the server
-// compile cache and the ConPTY files. Lower it again if the fork release moves to a Linux runner.
-export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 100;
+export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 80;
+// Fork: the fork builds on Windows, which adds the server compile cache, one generated file per
+// server chunk (36 on 2026-11-23). It is excluded from the count, but NSIS still installs each
+// file. Revisit if Windows install time grows or the fork release moves to a Linux runner.
+const WINDOWS_SERVER_COMPILE_CACHE_PREFIX = "resources/server-compile-cache/";
 export const WINDOWS_SERVER_RESOURCE_SOURCE_DIR = "apps/desktop/prod-resources/windows-server";
 export const WINDOWS_SERVER_EXTRA_RESOURCES = [
   {
@@ -3591,7 +3593,9 @@ export const validateWindowsPackagedPayload = Effect.fn(
     }
   }
 
-  const payloadFiles = yield* listPayloadFiles(packagedAppDir);
+  const payloadFiles = (yield* listPayloadFiles(packagedAppDir)).filter(
+    (file) => !file.startsWith(WINDOWS_SERVER_COMPILE_CACHE_PREFIX),
+  );
   const fileCount = payloadFiles.length;
   if (fileCount > fileLimit) {
     return yield* new WindowsPackagedPayloadValidationError({
