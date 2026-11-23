@@ -95,6 +95,7 @@ const SHARED_ONLY_SETTINGS: Readonly<Record<SettingScope, ReadonlyArray<string>>
     "usageModelAliases",
     "usageModelFilter",
     "usagePriceOverrides",
+    "workflowsEnabled",
     "worktreeArtifactsAfterDays",
     "worktreeCleanup",
     "worktreeSubmodules",
