@@ -1380,6 +1380,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     Effect.scoped(
       Effect.gen(function* () {
         const fixture = yield* makeWindowsPayloadFixture({ copyUnpackedNatives: true });
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const compileCacheDir = path.join(fixture.packagedAppDir, "resources/server-compile-cache");
+        yield* fs.makeDirectory(compileCacheDir, { recursive: true });
+        yield* fs.writeFileString(path.join(compileCacheDir, "manifest.json"), "{}");
         const error = yield* validateWindowsPackagedPayload({
           stageDistDir: fixture.stageDistDir,
           appExecutableName: fixture.appExecutableName,
@@ -1395,6 +1400,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.deepStrictEqual(error.files, error.files?.toSorted());
         assert.isTrue(error.files?.includes("resources/resource-monitor/t3-resource-monitor.exe"));
         assert.include(error.message, "\n  resources/resource-monitor/t3-resource-monitor.exe");
+        assert.isFalse(
+          error.files?.some((file) => file.startsWith("resources/server-compile-cache/")),
+        );
       }),
     ),
   );
