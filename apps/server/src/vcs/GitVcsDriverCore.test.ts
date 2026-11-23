@@ -197,7 +197,8 @@ it.effect("runs background Git in its own lane so user commands never queue behi
     }).pipe(Effect.forkChild);
 
     yield* TestClock.adjust("2 seconds");
-    const started = yield* Queue.takeAll(starts);
+    // Each spawn follows real trace and PATH I/O, so wait for the starts the lanes allow.
+    const started = yield* Queue.takeBetween(starts, 6, 6);
     assert.deepStrictEqual([...started].toSorted(), [
       "background",
       "background",
