@@ -20,6 +20,7 @@ import { ProjectToolkit } from "./project/tools.ts";
 import { PullRequestsToolkit } from "./pullRequests/tools.ts";
 import { ThemeToolkit } from "./theme/tools.ts";
 import { ThreadToolkit } from "./thread/tools.ts";
+import { WorkflowToolkit } from "./workflow/tools.ts";
 import { WorktreeToolkit } from "./worktree/tools.ts";
 
 const FORK_HIDDEN_LINK_TOOLS = new Set(["t3_environment_link", "t3_environment_unlink"]);
@@ -51,6 +52,7 @@ export const McpToolkits = {
   preview: PreviewToolkit,
   worktree: WorktreeToolkit,
   thread: ThreadToolkit,
+  workflow: WorkflowToolkit,
   attachment: AttachmentToolkit,
   project: ProjectToolkit,
   feedback: FeedbackToolkit,
