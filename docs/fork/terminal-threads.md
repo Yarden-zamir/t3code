@@ -85,6 +85,9 @@ into its terminal. The terminal shows exactly what the message said.
   shell), or after `exec` replaced the shell, the message is only typed, and the reply says
   that no result is captured.
 - A message outside full access mode fails.
+- To launch a terminal thread from the MCP tools, pass the `modelSelection`
+  `{"instanceId":"terminal","model":"terminal"}`. `schedule_task` takes the same
+  `modelSelection` with `bindToCurrentThread:false`.
 - A scheduled task with a webhook never types into a terminal thread. Its run fails, also
   when the task or the project default model points to a terminal thread.
 - An agent cannot delegate a task to a terminal thread. A thread cannot switch between an agent
