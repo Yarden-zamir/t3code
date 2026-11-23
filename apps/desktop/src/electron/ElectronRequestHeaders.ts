@@ -10,6 +10,12 @@ import * as Electron from "electron";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import {
+  type MainWindowRequestHeaderPolicy,
+  REMOTE_REQUEST_URL_PATTERNS,
+  stripDesktopOriginHeaders,
+} from "../window/RemoteRequestHeaders.ts";
+
 // The main window uses the default session. The renderer cannot set headers
 // on a WebSocket handshake, and custom headers on fetch trigger CORS
 // preflights, so the main process adds them to every request instead.
@@ -21,7 +27,10 @@ let rules: ReadonlyArray<OriginRequestHeaders> = [];
 const accessChallengedOrigins = new Set<string>();
 // Preflights that this process answers, by webRequest id, with the response headers to send.
 const answeredPreflights = new Map<number, Record<string, Array<string>>>();
-let installed = false;
+// Electron keeps one `onBeforeSendHeaders` listener per session, so this listener also applies
+// upstream's main-window Origin policy (RemoteRequestHeaders.ts).
+const installedOn = new WeakSet<Electron.WebRequest>();
+let mainWindowPolicy: MainWindowRequestHeaderPolicy | null = null;
 
 function headerValue(headers: Readonly<Record<string, string>>, name: string): string | null {
   for (const [key, value] of Object.entries(headers)) {
@@ -61,14 +70,15 @@ export function preflightAnswer(input: {
   };
 }
 
-function install(appOrigin: string): void {
-  if (installed) return;
-  installed = true;
-  const webRequest = Electron.session.defaultSession.webRequest;
-  webRequest.onBeforeSendHeaders((details, callback) => {
+function install(webRequest: Electron.WebRequest, appOrigin: string): void {
+  if (installedOn.has(webRequest)) return;
+  installedOn.add(webRequest);
+  webRequest.onBeforeSendHeaders({ urls: REMOTE_REQUEST_URL_PATTERNS }, (details, callback) => {
     const headers = requestHeadersForUrl(rules, details.url);
+    const stripped =
+      mainWindowPolicy === null ? undefined : stripDesktopOriginHeaders(mainWindowPolicy, details);
     if (headers.length === 0) {
-      callback({});
+      callback(stripped === undefined ? {} : { requestHeaders: stripped });
       return;
     }
     const answer = preflightAnswer({
@@ -79,7 +89,7 @@ function install(appOrigin: string): void {
       rules,
     });
     if (answer !== null) answeredPreflights.set(details.id, answer);
-    const requestHeaders = { ...details.requestHeaders };
+    const requestHeaders = { ...(stripped ?? details.requestHeaders) };
     for (const { name, value } of headers) requestHeaders[name] = value;
     callback({ requestHeaders });
   });
@@ -115,7 +125,7 @@ export function applyConnectionCatalog(
   raw: string | null,
   appOrigin: string,
 ): ReadonlyArray<string> {
-  install(appOrigin);
+  install(Electron.session.defaultSession.webRequest, appOrigin);
   const document = raw === null ? Option.none() : decodeCatalog(raw);
   const all = Option.match(document, {
     onNone: () => [],
@@ -136,4 +146,17 @@ export function applyConnectionCatalog(
 export function isCloudflareAccessChallenged(url: string): boolean {
   const origin = requestHeaderOrigin(url);
   return origin !== null && accessChallengedOrigins.has(origin);
+}
+
+/** Applies upstream's Origin policy of the main window to the requests of its session. */
+export function setMainWindowRequestHeaderPolicy(
+  session: Pick<Electron.Session, "webRequest">,
+  policy: MainWindowRequestHeaderPolicy,
+): void {
+  install(session.webRequest, policy.desktopOrigin);
+  mainWindowPolicy = policy;
+}
+
+export function clearMainWindowRequestHeaderPolicy(): void {
+  mainWindowPolicy = null;
 }
