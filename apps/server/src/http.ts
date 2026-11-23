@@ -22,6 +22,7 @@ import { cast, pipe } from "effect/Function";
 import {
   HttpClient,
   HttpClientResponse,
+  HttpEffect,
   HttpMiddleware,
   HttpRouter,
   HttpServerResponse,
@@ -275,6 +276,23 @@ export const layerHttpCompression = HttpRouter.middleware(HttpMiddleware.compres
   global: true,
 });
 
+function withVaryOrigin(
+  response: HttpServerResponse.HttpServerResponse,
+): HttpServerResponse.HttpServerResponse {
+  const existing = response.headers.vary;
+  if (
+    existing !== undefined &&
+    existing.split(",").some((token) => token.trim().toLowerCase() === "origin")
+  ) {
+    return response;
+  }
+  return HttpServerResponse.setHeader(
+    response,
+    "vary",
+    existing ? `${existing}, Origin` : "Origin",
+  );
+}
+
 export const layerBrowserApiCors = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
@@ -290,23 +308,22 @@ export const layerBrowserApiCors = Layer.unwrap(
       allowedHeaders: browserApiCorsAllowedHeaders,
       maxAge: 600,
     };
-    // Dev uses credentialed requests from Vite or the Electron custom origin, so both must be
-    // explicit. Packaged desktop omits credentials and uses Effect's default wildcard origin.
-    const cors = HttpMiddleware.cors(
-      devOrigin
-        ? {
-            allowedOrigins: [
-              devOrigin,
-              ...DESKTOP_RENDERER_ORIGINS,
-              ...config.devAllowedOrigins,
-              ...trustedOrigins,
-              ...(Option.isSome(kitshnGrants) ? kitshnGrants.value.peerOrigins() : []),
-            ],
-            credentials: true,
-            ...shared,
-          }
-        : shared,
-    );
+    // Credentialed dev requests need explicit Vite/Electron origins; originless desktop/native
+    // requests and packaged servers use the non-credentialed wildcard.
+    const wildcardCors = HttpMiddleware.cors(shared);
+    const devCors = devOrigin
+      ? HttpMiddleware.cors({
+          allowedOrigins: [
+            devOrigin,
+            ...DESKTOP_RENDERER_ORIGINS,
+            ...config.devAllowedOrigins,
+            ...trustedOrigins,
+            ...(Option.isSome(kitshnGrants) ? kitshnGrants.value.peerOrigins() : []),
+          ],
+          credentials: true,
+          ...shared,
+        })
+      : undefined;
     // Fork: T3CODE_TRUSTED_BROWSER_ORIGINS. Outside dev, a trusted origin gets its exact
     // origin with credentials, so its cookies (for example Cloudflare Access)
     // reach this server. Every other origin keeps the wildcard without credentials.
@@ -316,14 +333,24 @@ export const layerBrowserApiCors = Layer.unwrap(
         : undefined;
     return HttpRouter.middleware(
       (httpEffect) => {
-        const withCors = cors(httpEffect);
+        const withWildcardCors = wildcardCors(httpEffect);
+        const withDevCors = devCors ? devCors(httpEffect) : undefined;
         const withCredentials = credentialed?.(httpEffect);
         return Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
           if (request.url.split("?", 1)[0] === MCP_HTTP_PATH) return httpEffect;
-          const origin = request.headers["origin"];
-          return withCredentials !== undefined && origin !== undefined && isTrusted(origin)
-            ? withCredentials
-            : withCors;
+          const origin = request.headers.origin;
+          if (!withDevCors) {
+            return withCredentials !== undefined && origin !== undefined && isTrusted(origin)
+              ? withCredentials
+              : withWildcardCors;
+          }
+          if (origin !== undefined) return withDevCors;
+          if (request.method === "OPTIONS") {
+            return Effect.map(withWildcardCors, withVaryOrigin);
+          }
+          return HttpEffect.appendPreResponseHandler((_request, response) =>
+            Effect.succeed(withVaryOrigin(response)),
+          ).pipe(Effect.andThen(withWildcardCors));
         });
       },
       { global: true },
