@@ -437,6 +437,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
           }
           gitCwd={workspace.gitCwd}
           isGitRepo={workspace.isGitRepo}
+          offersWorkspaceModes={workspace.isGitRepo}
           workspaceMutationId={workspace.mutationId}
           // A terminal thread has started, so its environment and workspace are fixed.
           envLocked
