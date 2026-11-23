@@ -184,6 +184,7 @@ describe("sidebar project folder new thread", () => {
       defaultProjectRef: dev1ProjectRef,
       defaultProjectFallbackReady: true,
       handleNewThread: startThread,
+      handleNewTerminalThread: vi.fn().mockResolvedValue(null),
       routeDraftId: null,
       routeThreadRef: threadRef,
     });
