@@ -36,6 +36,7 @@ export class ElectronMenu extends Context.Service<
     readonly setApplicationMenu: (
       template: readonly Electron.MenuItemConstructorOptions[],
     ) => Effect.Effect<void>;
+    readonly pasteAndMatchStyle: Effect.Effect<void>;
     readonly popupTemplate: (input: ElectronMenuTemplateInput) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/electron/ElectronMenu") {}
@@ -44,6 +45,14 @@ export class ElectronMenu extends Context.Service<
 export const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   return ElectronMenu.of({
+    pasteAndMatchStyle: Effect.sync(() => {
+      const focused = Electron.webContents.getFocusedWebContents();
+      // A mounted guest can report focus while the host owns the focused frame.
+      const target = focused?.hostWebContents ?? focused;
+      if (target && !target.isDestroyed()) {
+        target.pasteAndMatchStyle();
+      }
+    }),
     setApplicationMenu: Effect.fn("ElectronMenu.setApplicationMenu")(function (template) {
       return Effect.try({
         try: () => {
