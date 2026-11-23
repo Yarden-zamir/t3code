@@ -13193,10 +13193,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               if (request.dialogKind !== "resume_return") {
                 return { behavior: "cancelled" as const };
               }
+              const projectId = (yield* Ref.get(activeTurn))?.input.appThread.projectId ?? null;
               const idleCompaction = Option.isSome(serverSettings)
                 ? yield* serverSettings.value.getSettings.pipe(
                     Effect.map((settings) =>
-                      resolveIdleCompaction(settings, adapterOptions.instanceId),
+                      resolveIdleCompaction(settings, projectId, adapterOptions.instanceId),
                     ),
                     Effect.orElseSucceed(() => adapterOptions.settings.idleCompaction),
                   )

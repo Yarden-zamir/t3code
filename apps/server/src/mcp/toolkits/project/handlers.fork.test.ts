@@ -6,6 +6,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   type Project as ProjectRecord,
+  resolveIdleCompaction,
   type ModelSelection,
   type RuntimeMode,
   type OrchestrationV2ThreadShell,
@@ -170,6 +171,31 @@ it.effect("project settings written by t3_project_update are the ones the app re
       defaultModelSelection: null,
       defaultThreadEnvMode: null,
     });
+
+    // Provider overrides merge per field, and null removes one so the project inherits.
+    const claude = ProviderInstanceId.make("claudeAgent");
+    yield* run("t3_project_update", {
+      projectId,
+      providerInstances: { [claude]: { enabled: true, idleCompaction: "off" } },
+    });
+    yield* run("t3_project_update", {
+      projectId,
+      providerInstances: { [claude]: { enabled: null } },
+    });
+    expect(resolveIdleCompaction(yield* settingsService.getSettings, projectId, claude)).toBe(
+      "off",
+    );
+    const withOverride = yield* run("t3_project_read", { projectId });
+    expect(withOverride.at(-1)?.result).toMatchObject({
+      providerInstances: { [claude]: { idleCompaction: "off" } },
+    });
+    yield* run("t3_project_update", {
+      projectId,
+      providerInstances: { [claude]: { idleCompaction: null } },
+    });
+    expect(
+      (yield* settingsService.getSettings).projectSettingsOverrides[projectId]?.providerInstances,
+    ).toEqual({});
   }),
 );
 

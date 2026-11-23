@@ -655,6 +655,8 @@ export function SettingsPageContainer({
   const targetId = hash.replace(/^#/, "") || null;
   const clearTargetHash = () => {
     void navigate({
+      // Keep page params such as the providers page's `instanceId`; only the hash goes.
+      search: true,
       hash: "",
       replace: true,
       resetScroll: false,

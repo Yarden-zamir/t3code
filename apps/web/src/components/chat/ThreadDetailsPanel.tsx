@@ -32,6 +32,7 @@ import { ThreadRepositorySections } from "./ThreadRepositorySections";
 import { ThreadServersPanel } from "./ThreadServersPanel";
 import {
   ThreadDetailsContext,
+  ThreadDetailsPromptCache,
   ThreadDetailsUsage,
   type ThreadDetailsUsageInput,
 } from "./ThreadDetailsUsage";
@@ -345,6 +346,13 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
 
               {visible.context && props.usage.contextWindow ? (
                 <ThreadDetailsContext usage={props.usage.contextWindow} />
+              ) : null}
+
+              {visible.promptCache && props.usage.idleCompaction ? (
+                <ThreadDetailsPromptCache
+                  input={props.usage.idleCompaction}
+                  usedTokens={props.usage.contextWindow?.usedTokens ?? null}
+                />
               ) : null}
 
               {/* Shown only when no section above has content, so an emptied card can be refilled. */}

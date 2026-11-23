@@ -1,4 +1,6 @@
 import type {
+  IdleCompactionMode,
+  IdleCompactionSource,
   ProviderInstanceId,
   ServerProvider,
   ServerProviderUsageLimits,
@@ -28,7 +30,14 @@ import { formatContextWindowCompactionMessage } from "./compaction.logic";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { useNavigate } from "@tanstack/react-router";
 import { copyFromObjectMenu, showObjectMenu } from "../../objectMenu";
-import { nextPoolReset, poolSources, resolveThreadDetailsLimits } from "./ThreadDetailsUsage.logic";
+import { Button } from "../ui/button";
+import { ShortcutCommandRows } from "../focusLevels/ShortcutHint";
+import {
+  deriveThreadDetailsIdleCompaction,
+  nextPoolReset,
+  poolSources,
+  resolveThreadDetailsLimits,
+} from "./ThreadDetailsUsage.logic";
 
 const PACE_LABEL: Record<LimitPace, string> = {
   ahead: msg("Ahead of pace"),
@@ -36,12 +45,38 @@ const PACE_LABEL: Record<LimitPace, string> = {
   under: msg("Under pace"),
 };
 
+const IDLE_COMPACTION_MODE_TEXT: Record<IdleCompactionMode, string> = {
+  onReturn: msg("Compacts when you return"),
+  beforeCacheExpires: msg("Compacts before the cache expires"),
+  off: msg("Never compacts while idle"),
+};
+
+const IDLE_COMPACTION_SOURCE_TEXT: Record<IdleCompactionSource, string> = {
+  project: msg("from project", { $context: "where the idle compaction mode is set" }),
+  provider: msg("from provider", { $context: "where the idle compaction mode is set" }),
+  environment: msg("from environment", { $context: "where the idle compaction mode is set" }),
+};
+
+/** A Claude thread's idle compaction mode in force, with what the client needs to show its state. */
+export interface ThreadDetailsIdleCompactionInput {
+  readonly mode: IdleCompactionMode;
+  readonly source: IdleCompactionSource;
+  readonly promptCacheExpiresAt: string | null;
+  readonly idle: boolean;
+  /** Whether "Compact now" can run; the chat's own compact command checks the same state. */
+  readonly canCompact: boolean;
+  /** Opens the project's select for this mode, or null when the thread has no project to open. */
+  readonly onChangeForProject: (() => void) | null;
+}
+
 export interface ThreadDetailsUsageInput {
   readonly providerInstanceId: ProviderInstanceId | null;
   readonly model: string | null;
   readonly providers: readonly ServerProvider[];
   readonly sources: UsageLimitSourceSnapshots;
   readonly contextWindow: ContextWindowSnapshot | null;
+  /** Null for threads that are not on Claude. */
+  readonly idleCompaction: ThreadDetailsIdleCompactionInput | null;
 }
 
 type UsageTone = "error" | "warning" | null;
@@ -58,7 +93,7 @@ export function ThreadDetailsUsage({
   model,
   providers,
   sources,
-}: Omit<ThreadDetailsUsageInput, "contextWindow">) {
+}: Omit<ThreadDetailsUsageInput, "contextWindow" | "idleCompaction">) {
   const gt = useGT();
   const nowMinute = useNowMinute();
   const now = Date.parse(`${nowMinute}:00Z`);
@@ -181,6 +216,92 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
                 <span className="text-muted-foreground">
                   {formatContextWindowCompactionMessage(threshold, m)}
                 </span>
+              ) : null}
+            </>
+          }
+        />
+      </div>
+    </ThreadDetailsSection>
+  );
+}
+
+/** Fork: the prompt cache and idle compaction of a Claude thread. Ticks once per minute. */
+export function ThreadDetailsPromptCache({
+  input,
+  usedTokens,
+}: {
+  readonly input: ThreadDetailsIdleCompactionInput;
+  readonly usedTokens: number | null;
+}) {
+  const gt = useGT();
+  const m = useMessages();
+  const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
+  // Limit: `now` is the start of the minute, so times can be up to 59 s off. Revisit if the row shows seconds.
+  const nowMinute = useNowMinute();
+  const now = Date.parse(`${nowMinute}:00Z`);
+  const state = deriveThreadDetailsIdleCompaction({ ...input, usedTokens, now });
+  const value =
+    state.cache?.kind === "warm"
+      ? formatDuration(state.cache.expiresAt - now, m)
+      : state.cache?.kind === "expired"
+        ? gt("Expired", { $context: "prompt cache state" })
+        : gt("Unknown", { $context: "prompt cache state" });
+  return (
+    <ThreadDetailsSection
+      headingId="thread-details-prompt-cache-heading"
+      title={gt("Prompt cache")}
+      showHeading={false}
+    >
+      <div className="grid grid-cols-[auto_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
+        <UsageRow
+          label={gt("Cache", { $context: "prompt cache row label" })}
+          fill={null}
+          tone={null}
+          value={value}
+          tooltip={
+            <>
+              {state.cache?.kind === "warm" ? (
+                <span className="text-foreground">
+                  {gt("Prompt cache warm, expires in {duration}", {
+                    duration: formatDuration(state.cache.expiresAt - now, m),
+                  })}
+                </span>
+              ) : state.cache?.kind === "expired" ? (
+                <span className="text-foreground">{gt("Prompt cache expired")}</span>
+              ) : null}
+              <span className="text-muted-foreground">
+                {gt("{mode}, {source}", {
+                  mode: m(IDLE_COMPACTION_MODE_TEXT[state.mode]),
+                  source: m(IDLE_COMPACTION_SOURCE_TEXT[state.source]),
+                })}
+              </span>
+              {state.compactsAt !== null ? (
+                <span className="text-muted-foreground">
+                  {gt("Compacts at {time}", {
+                    time: formatUpcomingTimestamp(
+                      new Date(state.compactsAt).toISOString(),
+                      timestampFormat,
+                      now,
+                      undefined,
+                      m,
+                    ),
+                  })}
+                </span>
+              ) : null}
+              {input.canCompact ? (
+                <ShortcutCommandRows
+                  commands={[{ command: "chat.compactContext", name: gt("Compact now") }]}
+                />
+              ) : null}
+              {input.onChangeForProject ? (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="-mx-1 justify-start"
+                  onClick={input.onChangeForProject}
+                >
+                  <span className="text-muted-foreground">{gt("Change for this project…")}</span>
+                </Button>
               ) : null}
             </>
           }

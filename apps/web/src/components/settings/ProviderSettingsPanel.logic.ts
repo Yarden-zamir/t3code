@@ -3,6 +3,7 @@ import {
   AuthProvidersManageScope,
   type EnvironmentId,
   type ProjectId,
+  type ProjectProviderInstanceOverride,
   type ProjectSettingsOverrides,
   type ProviderInstanceId,
   sessionGrantsScope,
@@ -82,21 +83,25 @@ export function resolveRemoteOperateAccess(input: {
   return sessionGrantsScope(input.session, AuthProvidersManageScope) ? "granted" : "denied";
 }
 
-/** Send providerInstances even when empty; omission preserves the stored map for older clients. */
+/** Row id of the project idle compaction select, so the thread's Usage row can link to it. */
+export const PROJECT_IDLE_COMPACTION_ROW_ID = "project-compact-idle-threads";
 
-export function buildProviderInstanceOverridePatch(
+/** Send providerInstances even when empty; omission preserves the stored map for older clients. */
+export function buildProviderInstanceOverridePatch<K extends keyof ProjectProviderInstanceOverride>(
   settings: Pick<ServerSettings, "projectSettingsOverrides">,
   projectIds: readonly ProjectId[],
   instanceId: ProviderInstanceId,
-  value: boolean | undefined,
+  field: K,
+  value: ProjectProviderInstanceOverride[K] | undefined,
 ): Record<ProjectId, ProjectSettingsOverrides | null> {
   const patch: Record<ProjectId, ProjectSettingsOverrides | null> = {};
   for (const projectId of projectIds) {
     const current = settings.projectSettingsOverrides[projectId];
     const instances = { ...current?.providerInstances };
-    const instance = { ...instances[instanceId] };
-    if (value === undefined) delete instance.enabled;
-    else instance.enabled = value;
+    const { [field]: _previous, ...kept }: ProjectProviderInstanceOverride =
+      instances[instanceId] ?? {};
+    const instance: ProjectProviderInstanceOverride =
+      value === undefined ? kept : { ...kept, [field]: value };
     if (Object.keys(instance).length > 0) instances[instanceId] = instance;
     else delete instances[instanceId];
 

@@ -12,8 +12,10 @@ import {
   IDLE_COMPACTION_MODES,
   type IdleCompactionMode,
   globalIdleCompaction,
+  type ProjectId,
   ProviderDriverKind,
   type ProviderInstanceId,
+  resolveIdleCompactionWithSource,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
 import {
@@ -68,6 +70,7 @@ import {
 } from "./useScopedSettings";
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
+import { PROJECT_IDLE_COMPACTION_ROW_ID } from "./ProviderSettingsPanel.logic";
 import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
@@ -1886,7 +1889,7 @@ function ScopedCompactIdleThreadsRow() {
       mixed={idleCompaction.mixed}
       {...setting("compact-idle-threads")}
       description={gt(
-        "When to compact an idle Claude thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Each Claude provider can override this.",
+        "When to compact an idle Claude thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Each Claude provider and each project can override this.",
       )}
       resetAction={
         globalIdleCompaction(settings) !== globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS) ? (
@@ -1930,6 +1933,91 @@ function ScopedCompactIdleThreadsRow() {
                 // A server from before modes has only the on/off switch, so it cannot store "Never".
                 disabled={mode.value === "off" && !idleCompaction.neverAvailable}
               >
+                {messages(IDLE_COMPACTION_MODE_LABELS[mode.value])}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      }
+    />
+  );
+}
+
+const INHERIT_IDLE_COMPACTION = "inherit";
+
+/** The idle compaction mode of one Claude instance in one project. "Use default" removes the override. */
+export function ProjectIdleCompactionRow({
+  settings,
+  projectId,
+  instanceId,
+  environmentLabel,
+  disabled,
+  onChange,
+}: {
+  readonly settings: Parameters<typeof resolveIdleCompactionWithSource>[0];
+  readonly projectId: ProjectId;
+  readonly instanceId: ProviderInstanceId;
+  readonly environmentLabel: string;
+  readonly disabled: boolean;
+  readonly onChange: (mode: IdleCompactionMode | undefined) => void;
+}) {
+  const gt = useGT();
+  const messages = useMessages();
+  const resolved = resolveIdleCompactionWithSource(settings, projectId, instanceId);
+  const inherited = resolveIdleCompactionWithSource(settings, null, instanceId);
+  const modeLabel = messages(IDLE_COMPACTION_MODE_LABELS[inherited.mode]);
+  return (
+    <SettingsRow
+      id={PROJECT_IDLE_COMPACTION_ROW_ID}
+      title={gt("Compact idle threads in this project")}
+      description={
+        resolved.source === "project"
+          ? gt("Overridden for this project.")
+          : inherited.source === "provider"
+            ? gt("Inherited from this provider: {mode}.", { mode: modeLabel })
+            : gt("Inherited from {environment}: {mode}.", {
+                environment: environmentLabel,
+                mode: modeLabel,
+              })
+      }
+      resetAction={
+        resolved.source === "project" && !disabled ? (
+          <SettingResetButton
+            ariaLabel={gt("Reset compact idle threads in this project")}
+            tooltip={gt("Reset to inherited value")}
+            onClick={() => onChange(undefined)}
+          />
+        ) : null
+      }
+      control={
+        <Select
+          value={resolved.source === "project" ? resolved.mode : INHERIT_IDLE_COMPACTION}
+          disabled={disabled}
+          onValueChange={(value) => {
+            if (value === INHERIT_IDLE_COMPACTION) return onChange(undefined);
+            const mode = IDLE_COMPACTION_MODES.find((candidate) => candidate.value === value);
+            if (mode) onChange(mode.value);
+          }}
+        >
+          <SelectTrigger
+            size="sm"
+            className="w-full sm:w-56"
+            aria-label={gt("Compact idle threads in this project")}
+          >
+            <SelectValue>
+              {(value: string | null) =>
+                IDLE_COMPACTION_MODES.some((mode) => mode.value === value)
+                  ? messages(IDLE_COMPACTION_MODE_LABELS[value as IdleCompactionMode])
+                  : gt("Use default")
+              }
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            <SelectItem hideIndicator value={INHERIT_IDLE_COMPACTION}>
+              {gt("Use default")}
+            </SelectItem>
+            {IDLE_COMPACTION_MODES.map((mode) => (
+              <SelectItem hideIndicator key={mode.value} value={mode.value}>
                 {messages(IDLE_COMPACTION_MODE_LABELS[mode.value])}
               </SelectItem>
             ))}

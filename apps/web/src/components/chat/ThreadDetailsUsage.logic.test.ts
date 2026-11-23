@@ -8,7 +8,11 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { poolSources, resolveThreadDetailsLimits } from "./ThreadDetailsUsage.logic";
+import {
+  deriveThreadDetailsIdleCompaction,
+  poolSources,
+  resolveThreadDetailsLimits,
+} from "./ThreadDetailsUsage.logic";
 
 const now = Date.parse("2026-10-30T12:00:00.000Z");
 const checkedAt = "2026-10-30T11:59:00.000Z";
@@ -143,5 +147,67 @@ describe("resolveThreadDetailsLimits", () => {
       kind: "pool",
       rows: [{ label: "Session", left: 70, accounts: 1, from: { hubs: ["Hub"], signedIn: false } }],
     });
+  });
+});
+
+describe("deriveThreadDetailsIdleCompaction", () => {
+  const minute = 60_000;
+  const base = {
+    promptCacheExpiresAt: new Date(now + 42 * minute).toISOString(),
+    mode: "beforeCacheExpires",
+    source: "project",
+    usedTokens: 250_000,
+    idle: true,
+    now,
+  } as const;
+
+  it.each([
+    {
+      name: "a warm cache schedules the compaction 2 minutes before expiry",
+      input: {},
+      cache: "warm",
+      compactsAt: now + 40 * minute,
+    },
+    {
+      name: "an unknown expiry shows no cache and schedules nothing",
+      input: { promptCacheExpiresAt: null },
+      cache: null,
+      compactsAt: null,
+    },
+    {
+      name: "an expired cache schedules nothing",
+      input: { promptCacheExpiresAt: new Date(now - minute).toISOString() },
+      cache: "expired",
+      compactsAt: null,
+    },
+    {
+      name: "inside the lead window the compaction is due, not scheduled",
+      input: { promptCacheExpiresAt: new Date(now + minute).toISOString() },
+      cache: "warm",
+      compactsAt: null,
+    },
+    {
+      name: "another mode schedules nothing",
+      input: { mode: "onReturn" },
+      cache: "warm",
+      compactsAt: null,
+    },
+    {
+      name: "a small context schedules nothing",
+      input: { usedTokens: 199_999 },
+      cache: "warm",
+      compactsAt: null,
+    },
+    {
+      name: "a running thread schedules nothing",
+      input: { idle: false },
+      cache: "warm",
+      compactsAt: null,
+    },
+  ] as const)("$name", ({ input, cache, compactsAt }) => {
+    const result = deriveThreadDetailsIdleCompaction({ ...base, ...input });
+    expect(result.cache?.kind ?? null).toBe(cache);
+    expect(result.compactsAt).toBe(compactsAt);
+    expect(result.source).toBe("project");
   });
 });

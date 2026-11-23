@@ -27,6 +27,8 @@ export const THREAD_DETAILS_ITEMS = [
   { id: "sideChats", label: msg("Side chats"), defaultVisible: true },
   { id: "usage", label: msg("Usage limits"), defaultVisible: false },
   { id: "context", label: msg("Context window"), defaultVisible: false },
+  // Fork: the prompt cache and idle compaction of a Claude thread.
+  { id: "promptCache", label: msg("Prompt cache"), defaultVisible: false },
 ] as const;
 
 export type ThreadDetailsItemId = (typeof THREAD_DETAILS_ITEMS)[number]["id"];
@@ -39,7 +41,11 @@ type ThreadDetailsItemSettings = Pick<
 >;
 
 // People who turned on the retired Labs toggle keep Usage and Context until they change them here.
-function defaultVisible(item: ThreadDetailsItem, settings: ThreadDetailsItemSettings) {
+// The prompt cache row follows the Context window, so it shows only where context already shows.
+function defaultVisible(item: ThreadDetailsItem, settings: ThreadDetailsItemSettings): boolean {
+  if (item.id === "promptCache") {
+    return settings.threadDetailsItems.context ?? settings.threadDetailsUsageEnabled;
+  }
   return item.id === "usage" || item.id === "context"
     ? settings.threadDetailsUsageEnabled
     : item.defaultVisible;
@@ -63,7 +69,10 @@ export function setThreadDetailsItem(
   visible: boolean,
 ): ClientSettings["threadDetailsItems"] {
   const { [item.id]: _previous, ...rest } = settings.threadDetailsItems;
-  return visible === defaultVisible(item, settings) ? rest : { ...rest, [item.id]: visible };
+  // The prompt cache default moves with Context, so a choice for it is always stored.
+  return visible === defaultVisible(item, settings) && item.id !== "promptCache"
+    ? rest
+    : { ...rest, [item.id]: visible };
 }
 
 export function isDefaultThreadDetailsVisibility(visibility: ThreadDetailsVisibility) {

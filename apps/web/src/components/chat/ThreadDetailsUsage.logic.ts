@@ -1,5 +1,7 @@
 import {
   EnvironmentId,
+  type IdleCompactionMode,
+  type IdleCompactionSource,
   type ProviderInstanceId,
   type ServerProvider,
   type ServerProviderUsageLimits,
@@ -16,6 +18,10 @@ import {
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
 import { limitsNotice } from "@t3tools/shared/usageLimitsCopy";
+import {
+  COMPACTION_SUGGESTION_MIN_TOKENS,
+  IDLE_COMPACTION_LEAD_MS,
+} from "@t3tools/shared/claudeCompaction";
 
 export type ThreadDetailsLimits =
   | { readonly kind: "instance"; readonly limits: ServerProviderUsageLimits }
@@ -110,4 +116,48 @@ export function poolSources(window: LimitPoolWindow) {
   );
   const signedIn = window.members.some(({ account }) => account.environments.length > 0);
   return { hubs: [...new Set(hubs)], signedIn };
+}
+
+export interface ThreadDetailsIdleCompaction {
+  /** Null when the latest provider turn reported no expiry. */
+  readonly cache:
+    | { readonly kind: "warm"; readonly expiresAt: number }
+    | { readonly kind: "expired" }
+    | null;
+  readonly mode: IdleCompactionMode;
+  readonly source: IdleCompactionSource;
+  /** When the server compacts this idle thread, or null when no compaction waits. */
+  readonly compactsAt: number | null;
+}
+
+/**
+ * The prompt cache and idle compaction state of a Claude thread. `compactsAt` follows the
+ * server's window rule (`idleCompactionWindow`) for the inputs a client has; the server also skips
+ * settled, snoozed and side-chat threads and threads with pending work, which this does not see.
+ */
+export function deriveThreadDetailsIdleCompaction(input: {
+  readonly promptCacheExpiresAt: string | null;
+  readonly mode: IdleCompactionMode;
+  readonly source: IdleCompactionSource;
+  readonly usedTokens: number | null;
+  readonly idle: boolean;
+  readonly now: number;
+}): ThreadDetailsIdleCompaction {
+  const expiresAt =
+    input.promptCacheExpiresAt === null ? Number.NaN : Date.parse(input.promptCacheExpiresAt);
+  const cache = !Number.isFinite(expiresAt)
+    ? null
+    : expiresAt > input.now
+      ? ({ kind: "warm", expiresAt } as const)
+      : ({ kind: "expired" } as const);
+  const startsAt = cache?.kind === "warm" ? cache.expiresAt - IDLE_COMPACTION_LEAD_MS : null;
+  const compactsAt =
+    startsAt !== null &&
+    startsAt > input.now &&
+    input.mode === "beforeCacheExpires" &&
+    input.idle &&
+    (input.usedTokens ?? 0) >= COMPACTION_SUGGESTION_MIN_TOKENS
+      ? startsAt
+      : null;
+  return { cache, mode: input.mode, source: input.source, compactsAt };
 }

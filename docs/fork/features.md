@@ -567,6 +567,18 @@ Build the thread card from its elements, for desktop and web and for mobile.
 - Each element carries `data-thread-card-element="<name>"`, so theme CSS can style one element.
 - **Limits:** the mobile tab offers no terminal or diff element. The preview shows the mobile arrangement with web styles. Sidebar search results and app.t3.codes keep the built-in card.
 
+### Idle compaction per project
+
+A project can set its own idle compaction mode for a Claude provider instance. The mode in force comes from the project override, then the instance's own setting, then the environment default (`resolveIdleCompactionWithSource` in `packages/contracts/src/settings.ts`). An absent override inherits; there is no "default" value to store. The server timer, Claude's resume prompt and the composer's Compact chip all read this order.
+
+The thread details card can show a **Cache** row for Claude threads: the prompt cache expiry of the latest turn, with a countdown that updates once per minute, the mode in force and where it is set, and the time of a waiting idle compaction (expiry minus `IDLE_COMPACTION_LEAD_MS` in `packages/shared/src/claudeCompaction.ts`). Its tooltip has **Compact now** and **Change for this project…**, which opens the project's select.
+
+- **Setting:** server setting `projectSettingsOverrides.<project>.providerInstances.<instance>.idleCompaction` (absent by default). Settings > Providers with a project selected > the Claude provider > This project > "Compact idle threads in this project". The row: client setting `threadDetailsItems.promptCache`, Settings > Appearance > Thread details > "Prompt cache"; until set, it follows the Context window item.
+- **Works on:** web and desktop. Server for the timer and the resume prompt. Mobile has no project provider overrides and no Usage or Context section, so it shows neither.
+- **Agents:** `t3_project_update` takes `providerInstances`, a map of instance id to `{ enabled, idleCompaction }`; null removes a field. `t3_project_read` returns the project's `providerInstances`.
+- **Sync:** none. `projectSettingsOverrides` is machine-local (MM-406), because project ids belong to one environment.
+- **Limits:** the row's compaction time skips settled, snoozed and side-chat threads and pending work only on the server, so it can show a time for a thread that the server then skips. Revisit if users report a time that never ran.
+
 ## Filters
 
 ### Pull request filters

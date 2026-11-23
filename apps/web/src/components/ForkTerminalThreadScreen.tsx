@@ -154,6 +154,7 @@ const NO_USAGE = {
   providers: [],
   sources: [],
   contextWindow: null,
+  idleCompaction: null,
 };
 
 const NO_SCRIPT_ACTIONS = {

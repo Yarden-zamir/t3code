@@ -110,7 +110,7 @@ import { CodexSetupSection, CodexManagedRuntimeFields } from "./CodexSetupSectio
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
 import { providerClients } from "./providerDriverMeta";
 import { useSearchableSetting } from "./settingsSearch";
-import { CompactIdleThreadsRow } from "./SettingsPanels";
+import { CompactIdleThreadsRow, ProjectIdleCompactionRow } from "./SettingsPanels";
 import {
   backgroundActivityOverrideSettings,
   buildProviderInstanceUpdatePatch,
@@ -594,6 +594,10 @@ export function EnvironmentProviderSettings({
     serverEnvironment.configValueAtom(environmentId),
     (config) => config?.environment.capabilities.projectProviderInstanceOverrides === true,
   );
+  const supportsProjectIdleCompaction = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.environment.capabilities.projectIdleCompactionOverrides === true,
+  );
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -955,6 +959,7 @@ export function EnvironmentProviderSettings({
           settings,
           projectIds,
           instanceId,
+          "enabled",
           next,
         ),
       });
@@ -1131,6 +1136,30 @@ export function EnvironmentProviderSettings({
               <ScrollArea scrollFade chainVerticalScroll className="@min-[48rem]/providers:h-full">
                 {/* Flat sections run dividers edge to edge and inset text like the list beside them. */}
                 <div className="space-y-6 py-4">
+                  {representativeProjectId !== undefined &&
+                  supportsProjectIdleCompaction &&
+                  selectedRow.driver === ProviderDriverKind.make("claudeAgent") ? (
+                    <SettingsSection title={gt("This project")}>
+                      <ProjectIdleCompactionRow
+                        settings={settings}
+                        projectId={representativeProjectId}
+                        instanceId={selectedRow.instanceId}
+                        environmentLabel={environmentLabel}
+                        disabled={readOnly || !canWriteSettings}
+                        onChange={(mode) =>
+                          updateSettings({
+                            projectSettingsOverrides: buildProviderInstanceOverridePatch(
+                              settings,
+                              projectIds,
+                              selectedRow.instanceId,
+                              "idleCompaction",
+                              mode,
+                            ),
+                          })
+                        }
+                      />
+                    </SettingsSection>
+                  ) : null}
                   {renderProviderInstance(selectedRow, "editor")}
                 </div>
               </ScrollArea>

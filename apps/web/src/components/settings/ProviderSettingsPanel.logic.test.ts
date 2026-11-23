@@ -24,7 +24,13 @@ describe("buildProviderInstanceOverridePatch", () => {
     };
 
     expect(
-      buildProviderInstanceOverridePatch(settings, [projectId, siblingId], instanceId, false),
+      buildProviderInstanceOverridePatch(
+        settings,
+        [projectId, siblingId],
+        instanceId,
+        "enabled",
+        false,
+      ),
     ).toEqual({
       [projectId]: { providerInstances: { [instanceId]: { enabled: false } } },
       [siblingId]: {
@@ -42,7 +48,7 @@ describe("buildProviderInstanceOverridePatch", () => {
     };
 
     expect(
-      buildProviderInstanceOverridePatch(settings, [projectId], instanceId, undefined),
+      buildProviderInstanceOverridePatch(settings, [projectId], instanceId, "enabled", undefined),
     ).toEqual({ [projectId]: null });
   });
 
@@ -57,10 +63,30 @@ describe("buildProviderInstanceOverridePatch", () => {
     };
 
     expect(
-      buildProviderInstanceOverridePatch(settings, [projectId], instanceId, undefined),
+      buildProviderInstanceOverridePatch(settings, [projectId], instanceId, "enabled", undefined),
     ).toEqual({
       [projectId]: { newWorktreesStartFromOrigin: true, providerInstances: {} },
     });
+  });
+
+  it("clears one field of an instance override and keeps its other fields", () => {
+    const settings: Pick<ServerSettings, "projectSettingsOverrides"> = {
+      projectSettingsOverrides: {
+        [projectId]: {
+          providerInstances: { [instanceId]: { enabled: true, idleCompaction: "off" } },
+        },
+      },
+    };
+
+    expect(
+      buildProviderInstanceOverridePatch(
+        settings,
+        [projectId],
+        instanceId,
+        "idleCompaction",
+        undefined,
+      ),
+    ).toEqual({ [projectId]: { providerInstances: { [instanceId]: { enabled: true } } } });
   });
 });
 
