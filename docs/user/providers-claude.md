@@ -70,7 +70,9 @@ subscription and 5 minutes with an API key, Bedrock, or Vertex. See [commands an
 composer commands.
 
 **Compact idle threads** in **Settings > Providers > Advanced** controls this for threads
-over 200,000 tokens. Each Claude provider's settings can override it:
+over 200,000 tokens. Each Claude provider's settings can override it, and a project can override
+the provider: select the project in **Settings**, then use **Compact idle threads in this project**
+on the Claude provider's page.
 
 - **When you return** shows the **Compact** chip described above. This is the default.
 - **Before the cache expires (beta)** tries to compact an idle thread shortly before its
@@ -81,6 +83,11 @@ over 200,000 tokens. Each Claude provider's settings can override it:
   **When you return**. Switch the chip to **Keep** to keep the full history for that message.
 - **Never** skips idle compaction and Claude's resume prompt. **Auto-compact after**
   still applies, and you can still compact by hand.
+
+On web and desktop, turn on **Prompt cache** in **Settings → Appearance → Thread details** to see
+the state in the thread details card. Hover the **Cache** row to see when the prompt cache expires,
+which mode applies and where it is set, and when an idle compaction runs. The row also has
+**Compact now** and **Change for this project…**.
 
 ## Usage limits
 

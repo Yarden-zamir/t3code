@@ -232,13 +232,15 @@ describe("IdleCompactionService", () => {
     { mode: "beforeCacheExpires", override: "off", reads: 0 },
     { mode: "onReturn", override: "beforeCacheExpires", reads: 1 },
     { mode: "beforeCacheExpires", projectDisabled: true, reads: 0 },
+    { mode: "onReturn", override: "onReturn", projectMode: "beforeCacheExpires", reads: 1 },
+    { mode: "beforeCacheExpires", override: "beforeCacheExpires", projectMode: "off", reads: 0 },
     { mode: "beforeCacheExpires", enabled: false, reads: 0 },
     { mode: "beforeCacheExpires", driver: "codex", instance: "codex", reads: 0 },
     { mode: "beforeCacheExpires", driver: "codex", instance: "custom-codex", reads: 0 },
     { mode: "beforeCacheExpires", driver: "claudeAgent", instance: "custom-claude", reads: 1 },
     { mode: "beforeCacheExpires", unconfigured: true, reads: 1 },
   ] as const)(
-    "loads history only for eligible idle compaction: $mode/$override/$enabled/$projectDisabled/$instance/$unconfigured",
+    "loads history only for eligible idle compaction: $mode/$override/$projectMode/$enabled/$projectDisabled/$instance/$unconfigured",
     (scenario) => {
       const test = {
         override: "default",
@@ -334,13 +336,16 @@ describe("IdleCompactionService", () => {
                         config: { idleCompaction: test.override },
                       },
                     },
-              projectSettingsOverrides: test.projectDisabled
-                ? {
-                    [data.thread.projectId]: {
-                      providerInstances: { [selectedInstance]: { enabled: false } },
+              projectSettingsOverrides: {
+                [data.thread.projectId]: {
+                  providerInstances: {
+                    [selectedInstance]: {
+                      ...(test.projectDisabled ? { enabled: false } : {}),
+                      ...("projectMode" in test ? { idleCompaction: test.projectMode } : {}),
                     },
-                  }
-                : {},
+                  },
+                },
+              },
             }),
           }),
         );

@@ -20,8 +20,8 @@ import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
 /**
- * Beta: when a run completes on a Claude instance set to compact before the
- * cache expires, waits until shortly before its prompt cache expires and sends
+ * Beta: when a run completes on a Claude instance that the thread's project or
+ * the instance sets to compact before the cache expires, waits until shortly before its prompt cache expires and sends
  * `/compact` as a visible T3 Code turn. Timers live in
  * memory, so a server restart skips compactions that were still waiting.
  */
@@ -42,7 +42,8 @@ export const make = Effect.gen(function* () {
           : thread.providerInstanceId === "claudeAgent";
         if (
           !claudeInstance ||
-          resolveIdleCompaction(current, thread.providerInstanceId) !== "beforeCacheExpires" ||
+          resolveIdleCompaction(current, thread.projectId, thread.providerInstanceId) !==
+            "beforeCacheExpires" ||
           !resolveProjectProviderInstanceEnabled(
             current,
             thread.projectId,
@@ -79,8 +80,11 @@ export const make = Effect.gen(function* () {
           },
         );
         if (
-          resolveIdleCompaction(current, records.thread.providerInstanceId) !==
-            "beforeCacheExpires" ||
+          resolveIdleCompaction(
+            current,
+            records.thread.projectId,
+            records.thread.providerInstanceId,
+          ) !== "beforeCacheExpires" ||
           !resolveProjectProviderInstanceEnabled(
             current,
             records.thread.projectId,

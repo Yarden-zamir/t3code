@@ -301,7 +301,7 @@ export function compactBeforeSendTokens(input: {
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly settings: Pick<
     ServerSettings,
-    "providerInstances" | "compactIdleThreads" | "idleCompaction"
+    "providerInstances" | "projectSettingsOverrides" | "compactIdleThreads" | "idleCompaction"
   >;
   readonly text: string;
   readonly threadIdle: boolean;
@@ -313,7 +313,8 @@ export function compactBeforeSendTokens(input: {
     provider === undefined ||
     !input.threadIdle ||
     COMPACT_COMMAND_PATTERN.test(input.text) ||
-    resolveIdleCompaction(input.settings, provider.instanceId) === "off" ||
+    resolveIdleCompaction(input.settings, projection.thread.projectId, provider.instanceId) ===
+      "off" ||
     !provider.slashCommands.some((command) => command.name === "compact") ||
     resolvePendingHandoff(projection, input.selection, input.providers) !== null ||
     projection.runtimeRequests.some((request) => request.status === "pending") ||

@@ -17,7 +17,7 @@ import {
   idleCompactionPatch,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   requiredScopesForProjectMutation,
-  resolveIdleCompaction,
+  resolveIdleCompactionWithSource,
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
   ServerSettings,
@@ -273,19 +273,37 @@ describe("custom model settings", () => {
 });
 
 describe("resolveIdleCompaction", () => {
-  it("lets a Claude instance override the global default", () => {
+  it("resolves the project override first, then the instance, then the global mode", () => {
+    const project = ProjectId.make("project-a");
     const settings = decodeServerSettings({
       idleCompaction: "off",
       providerInstances: {
         claude_work: { driver: "claudeAgent", config: { idleCompaction: "onReturn" } },
         claude_personal: { driver: "claudeAgent" },
       },
+      projectSettingsOverrides: {
+        [project]: {
+          providerInstances: {
+            claude_work: { idleCompaction: "beforeCacheExpires" },
+            // An override without a mode inherits.
+            claude_personal: { enabled: true },
+          },
+        },
+      },
     });
-    expect(resolveIdleCompaction(settings, ProviderInstanceId.make("claude_work"))).toBe(
-      "onReturn",
-    );
-    expect(resolveIdleCompaction(settings, ProviderInstanceId.make("claude_personal"))).toBe("off");
-    expect(resolveIdleCompaction(settings, ProviderInstanceId.make("claudeAgent"))).toBe("off");
+    const resolve = (projectId: ProjectId | null, instanceId: string) =>
+      resolveIdleCompactionWithSource(settings, projectId, ProviderInstanceId.make(instanceId));
+    expect(resolve(project, "claude_work")).toEqual({
+      mode: "beforeCacheExpires",
+      source: "project",
+    });
+    expect(resolve(null, "claude_work")).toEqual({ mode: "onReturn", source: "provider" });
+    expect(resolve(ProjectId.make("project-b"), "claude_work")).toEqual({
+      mode: "onReturn",
+      source: "provider",
+    });
+    expect(resolve(project, "claude_personal")).toEqual({ mode: "off", source: "environment" });
+    expect(resolve(project, "claudeAgent")).toEqual({ mode: "off", source: "environment" });
   });
 
   it("reads the mode from the legacy switch, in either form servers saved it", () => {

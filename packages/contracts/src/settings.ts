@@ -1227,8 +1227,10 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
 ] as const;
 export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTING_KEYS)[number];
 
+/** Absent fields inherit. For idle compaction that is the instance's own mode, then the global one. */
 export const ProjectProviderInstanceOverride = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
+  idleCompaction: Schema.optionalKey(IdleCompactionMode),
 });
 export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOverride.Type;
 
@@ -1754,10 +1756,24 @@ export const idleCompactionPatch = (settings: IdleCompactionSettings, mode: Idle
       ? { compactIdleThreads: mode }
       : { compactIdleThreads: mode === "beforeCacheExpires" };
 
-export const resolveIdleCompaction = (
-  settings: Pick<ServerSettings, "providerInstances" | "compactIdleThreads" | "idleCompaction">,
+/** Where the idle compaction mode in force comes from. */
+export type IdleCompactionSource = "project" | "provider" | "environment";
+
+/** The mode in force: the project's override for the instance, then the instance's own, then the global mode. */
+export const resolveIdleCompactionWithSource = (
+  settings: Pick<
+    ServerSettings,
+    "providerInstances" | "projectSettingsOverrides" | "compactIdleThreads" | "idleCompaction"
+  >,
+  projectId: ProjectId | null,
   instanceId: ProviderInstanceId,
-): IdleCompactionMode => {
+): { readonly mode: IdleCompactionMode; readonly source: IdleCompactionSource } => {
+  const projectMode =
+    projectId === null
+      ? undefined
+      : settings.projectSettingsOverrides[projectId]?.providerInstances?.[instanceId]
+          ?.idleCompaction;
+  if (projectMode !== undefined) return { mode: projectMode, source: "project" };
   const instance = Object.hasOwn(settings.providerInstances, instanceId)
     ? settings.providerInstances[instanceId]
     : undefined;
@@ -1765,8 +1781,16 @@ export const resolveIdleCompaction = (
     Option.map((config) => config.idleCompaction),
     Option.getOrElse(() => "default" as const),
   );
-  return override === "default" ? globalIdleCompaction(settings) : override;
+  return override === "default"
+    ? { mode: globalIdleCompaction(settings), source: "environment" }
+    : { mode: override, source: "provider" };
 };
+
+export const resolveIdleCompaction = (
+  settings: Parameters<typeof resolveIdleCompactionWithSource>[0],
+  projectId: ProjectId | null,
+  instanceId: ProviderInstanceId,
+): IdleCompactionMode => resolveIdleCompactionWithSource(settings, projectId, instanceId).mode;
 
 export const ServerSettingsOperation = Schema.Literals([
   "normalize",

@@ -49,6 +49,7 @@ import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import { useStableCallback } from "../hooks/useStableCallback";
+import { PROJECT_IDLE_COMPACTION_ROW_ID } from "./settings/ProviderSettingsPanel.logic";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
@@ -84,6 +85,7 @@ import {
   type ThreadId,
   ProviderInteractionMode,
   resolveIdleCompaction,
+  resolveIdleCompactionWithSource,
   RuntimeMode,
 } from "@t3tools/contracts";
 import {
@@ -2694,6 +2696,7 @@ export default function ChatView(props: ChatViewProps) {
     !freshSessionPending &&
     resolveIdleCompaction(
       settings,
+      activeThread?.projectId ?? null,
       activeProviderInstanceId ?? ProviderInstanceId.make("claudeAgent"),
     ) !== "off" &&
     !resumeCompactionPermanentlyDismissed &&
@@ -2709,6 +2712,31 @@ export default function ChatView(props: ChatViewProps) {
       now: `${nowMinute}:00.000Z`,
     })
       ? activeContextWindow.usedTokens
+      : null;
+  const openProjectIdleCompactionSettings = useStableCallback(() => {
+    if (!activeProject || activeProviderInstanceId === null) return;
+    void navigate({
+      to: "/settings/providers",
+      search: {
+        project: deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings),
+        machine: activeProject.environmentId,
+        instanceId: activeProviderInstanceId,
+      },
+      hash: PROJECT_IDLE_COMPACTION_ROW_ID,
+    });
+  });
+  const activeIdleCompaction =
+    activeThread && activeProviderInstanceId !== null && selectedProvider === "claudeAgent"
+      ? {
+          ...resolveIdleCompactionWithSource(
+            settings,
+            activeThread.projectId,
+            activeProviderInstanceId,
+          ),
+          promptCacheExpiresAt: activeThreadLiveTokenUsage?.promptCacheExpiresAt ?? null,
+          idle: !isWorking,
+          onChangeForProject: activeProject ? openProjectIdleCompactionSettings : null,
+        }
       : null;
   const [fullHistoryThreadKeys, setFullHistoryThreadKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -4237,6 +4265,7 @@ export default function ChatView(props: ChatViewProps) {
                     providers: providerStatuses,
                     sources: serverConfig?.usageLimitSources ?? EMPTY_USAGE_LIMIT_SOURCES,
                     contextWindow: activeContextWindow,
+                    idleCompaction: activeIdleCompaction,
                   }}
                 />
 

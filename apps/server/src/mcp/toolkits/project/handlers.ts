@@ -6,7 +6,9 @@ import {
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   ProjectId,
   type Project as ProjectRecord,
+  ProjectProviderInstanceOverride,
   type ProjectScopedServerSettingKey,
+  ProviderInstanceId,
   type ProjectSettingsOverrides,
   type ProjectUpdatePayload,
   type TaskFolderError,
@@ -46,7 +48,7 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestrationMcp from "../../OrchestratorMcpService.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
-import { ProjectToolkit } from "./tools.ts";
+import { type ProjectProviderOverridesInput, ProjectToolkit } from "./tools.ts";
 import { refuseTerminalThreadWithoutExec } from "../../../fork/machineMap/terminalThreadExec.ts";
 import { refuseTerminalThreadWhileOff } from "../../../fork/terminalProvider/terminalThreadsOff.ts";
 
@@ -116,7 +118,28 @@ const assertProjectWorktree = Effect.fn("mcp.assertProjectWorktree")(function* (
 type ProjectSettingsInput = Pick<
   ProjectUpdatePayload,
   "scripts" | "defaultModelSelection" | "defaultThreadEnvMode" | "autoPull"
->;
+> & { readonly providerInstances?: ProjectProviderOverridesInput | undefined };
+
+const decodeProviderInstanceOverride = Schema.decodeUnknownSync(ProjectProviderInstanceOverride);
+
+/** Fork: merges per-field provider overrides; null removes a field, and an empty instance goes. */
+const mergeProviderInstanceOverrides = (
+  stored: ProjectSettingsOverrides["providerInstances"],
+  input: ProjectProviderOverridesInput,
+): NonNullable<ProjectSettingsOverrides["providerInstances"]> => {
+  const merged = { ...stored };
+  for (const [rawId, fields] of Object.entries(input)) {
+    const instanceId = ProviderInstanceId.make(rawId);
+    const next = decodeProviderInstanceOverride(
+      Object.fromEntries(
+        Object.entries({ ...merged[instanceId], ...fields }).filter(([, value]) => value != null),
+      ),
+    );
+    if (Object.keys(next).length > 0) merged[instanceId] = next;
+    else delete merged[instanceId];
+  }
+  return merged;
+};
 
 /**
  * These fields live in the project settings override that `resolveProjectSettings`,
@@ -138,16 +161,33 @@ const writeProjectSettings = Effect.fn("mcp.writeProjectSettings")(function* (
       : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
     ...(input.autoPull === undefined ? {} : { defaultAutoPull: input.autoPull }),
   };
+  const providerInstances = input.providerInstances;
   const cleared: ProjectScopedServerSettingKey[] = [
     ...(input.defaultModelSelection === null ? (["defaultModelSelection"] as const) : []),
     ...(input.defaultThreadEnvMode === null ? (["defaultThreadEnvMode"] as const) : []),
   ];
-  if (Object.keys(set).length === 0 && cleared.length === 0) return;
+  if (Object.keys(set).length === 0 && cleared.length === 0 && providerInstances === undefined)
+    return;
   const settings = yield* ServerSettings.ServerSettingsService;
   const current = yield* settings.getSettings.pipe(Effect.mapError(unavailable));
   const kept = clearProjectSettingsOverrides(current, projectId, cleared) ?? {};
   yield* settings
-    .updateSettings({ projectSettingsOverrides: { [projectId]: { ...kept, ...set } } })
+    .updateSettings({
+      projectSettingsOverrides: {
+        [projectId]: {
+          ...kept,
+          ...set,
+          ...(providerInstances === undefined
+            ? {}
+            : {
+                providerInstances: mergeProviderInstanceOverrides(
+                  kept.providerInstances,
+                  providerInstances,
+                ),
+              }),
+        },
+      },
+    })
     .pipe(Effect.mapError(unavailable));
 });
 
@@ -252,6 +292,7 @@ const withSavedProjectSettings = Effect.gen(function* () {
           ? resolved.settings.defaultThreadEnvMode
           : null,
       autoPull: resolved.settings.defaultAutoPull,
+      providerInstances: settings.projectSettingsOverrides[project.id]?.providerInstances ?? {},
     };
   };
 });
@@ -637,7 +678,14 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
     { linkedCallers: "allowed" },
   ),
   t3_project_update: McpToolAccess.writesEnvironment(
-    ({ scripts, defaultModelSelection, defaultThreadEnvMode, autoPull, ...input }) =>
+    ({
+      scripts,
+      defaultModelSelection,
+      defaultThreadEnvMode,
+      autoPull,
+      providerInstances,
+      ...input
+    }) =>
       Effect.gen(function* () {
         const projects = yield* Project.ProjectService;
         // The update runs first so an unknown project fails before settings change.
@@ -649,6 +697,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           defaultModelSelection,
           defaultThreadEnvMode,
           autoPull,
+          providerInstances,
         });
         return (yield* withSavedProjectSettings)(updated);
       }),

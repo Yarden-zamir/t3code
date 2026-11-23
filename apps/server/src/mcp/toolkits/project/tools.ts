@@ -12,8 +12,11 @@ import {
   OrchestrationV2ThreadLaunchWorkspaceStrategy,
   RuntimeMode,
   ProviderInteractionMode,
+  IdleCompactionMode,
   Project,
   ProjectCreatePayload,
+  ProjectProviderInstanceOverride,
+  ProviderInstanceId,
   ProjectUpdatePayload,
   ProjectId,
   OrchestratorMcpClientRequestId,
@@ -68,8 +71,26 @@ const ProjectListTool = Tool.make("t3_project_list", {
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
+// Fork: the project's per-provider-instance overrides, which only these two tools read and write.
+const ProjectWithProviderOverrides = Schema.Struct({
+  ...Project.fields,
+  providerInstances: Schema.optional(
+    Schema.Record(ProviderInstanceId, ProjectProviderInstanceOverride),
+  ),
+});
+const ProjectProviderOverridesInput = Schema.Record(
+  ProviderInstanceId,
+  Schema.Struct({
+    enabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
+    idleCompaction: Schema.optional(Schema.NullOr(IdleCompactionMode)),
+  }),
+).annotate({
+  description: "Project overrides by provider instance id. null removes a field.",
+});
+export type ProjectProviderOverridesInput = typeof ProjectProviderOverridesInput.Type;
 const ProjectReadTool = Tool.make("t3_project_read", {
   ...shared,
+  success: ProjectWithProviderOverrides,
   description: "Read one project: workspace and saved scripts.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
@@ -99,10 +120,12 @@ const ProjectUpdateTool = Tool.make("t3_project_update", {
   ...shared,
   description:
     "Update one project's settings. Omitted fields are unchanged. `scripts` replaces the project's actions.",
+  success: ProjectWithProviderOverrides,
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: ProjectId,
     ...ProjectUpdatePayload.fields,
+    providerInstances: Schema.optional(ProjectProviderOverridesInput),
   }),
   dependencies: [...shared.dependencies, ServerSettings.ServerSettingsService],
 }).annotate(Tool.Destructive, true);

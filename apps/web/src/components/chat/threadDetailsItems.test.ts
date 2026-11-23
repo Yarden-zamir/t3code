@@ -25,6 +25,19 @@ describe("thread details items", () => {
     expect(visibility.servers).toBe(true);
   });
 
+  it.each([
+    { items: {}, legacy: false, promptCache: false },
+    { items: { context: true }, legacy: false, promptCache: true },
+    { items: { context: false }, legacy: true, promptCache: false },
+    { items: { context: true, promptCache: false }, legacy: false, promptCache: false },
+  ])("shows the prompt cache where the Context window shows, until set: %o", (row) => {
+    const visibility = resolveThreadDetailsVisibility({
+      threadDetailsItems: row.items,
+      threadDetailsUsageEnabled: row.legacy,
+    });
+    expect(visibility.promptCache).toBe(row.promptCache);
+  });
+
   it("stores only choices that differ from the default", () => {
     const legacyOn = { threadDetailsItems: {}, threadDetailsUsageEnabled: true };
     expect(setThreadDetailsItem(legacyOn, usage, false)).toEqual({ usage: false });

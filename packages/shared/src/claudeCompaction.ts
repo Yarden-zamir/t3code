@@ -44,3 +44,9 @@ export function claudeResumeCompactionAge(questionAnswer: {
  * idleCompaction default of 200K.
  */
 export const COMPACTION_SUGGESTION_MIN_TOKENS = 200_000;
+
+/**
+ * Idle compaction "before the cache expires" starts this long before the prompt cache of the
+ * thread's last request expires: enough for the session to resume and compact while still warm.
+ */
+export const IDLE_COMPACTION_LEAD_MS = 2 * 60_000;
