@@ -7317,7 +7317,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
-    it.effect("creates parallel worktrees in one repository without racing on its config", () =>
+    it.effect("creates parallel worktrees in one repository without racing on shared state", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
         const { initialBranch } = yield* initRepoWithCommit(cwd);
@@ -7329,7 +7329,8 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const worktrees = yield* makeTmpDir("git-worktrees-");
 
         // Git has no lock timeout for .git/config, which every worktree shares: a writer that
-        // overlaps another fails, and a branch can then be left without its worktree.
+        // overlaps another fails, and a branch can then be left without its worktree. A
+        // `worktree add` can read another add's half-written registration and fail.
         let configWriters = 0;
         let peakConfigWriters = 0;
         const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -7337,7 +7338,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           Effect.gen(function* () {
             const args = ChildProcess.isStandardCommand(command) ? command.args.map(String) : [];
             const writesConfig =
-              (args.includes("worktree") && args.includes("add") && args.includes("-b")) ||
+              (args.includes("worktree") && args.includes("add") && !args.includes("-h")) ||
               (args[0] === "branch" &&
                 (args[1] === "-m" || args[1]?.startsWith("--set-upstream-to"))) ||
               (args[0] === "config" && !args[1]?.startsWith("-"));

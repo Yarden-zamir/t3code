@@ -66,7 +66,10 @@ export interface ExecuteGitInput {
   /** With appendTruncationMarker, line callbacks continue beyond the buffer cap for progress-only consumers. */
   readonly keepLineCallbacksAfterTruncation?: boolean;
   readonly progress?: ExecuteGitProgress;
-  /** Writes .git/config, which every worktree shares and Git locks without waiting. */
+  /**
+   * Writes .git/config, which every worktree shares and Git locks without waiting, or adds a
+   * worktree, whose half-written registration another `worktree add` can read and fail on.
+   */
   readonly writesSharedConfig?: boolean;
 }
 

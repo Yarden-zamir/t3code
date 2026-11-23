@@ -1212,18 +1212,22 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   );
 
   const sharedConfigLocks = new Map<string, Semaphore.Semaphore>();
+  const withSharedConfigLockAt = <A, E>(gitCommonDir: string, effect: Effect.Effect<A, E>) => {
+    let lock = sharedConfigLocks.get(gitCommonDir);
+    if (lock === undefined) {
+      lock = Semaphore.makeUnsafe(1);
+      sharedConfigLocks.set(gitCommonDir, lock);
+    }
+    return lock.withPermit(effect);
+  };
   const withSharedConfigLock = <A, E>(cwd: string, effect: Effect.Effect<A, E>) =>
     resolveRepositoryPaths(cwd).pipe(
       Effect.orElseSucceed(() => null),
-      Effect.flatMap((repositoryPaths) => {
-        if (repositoryPaths === null) return effect;
-        let lock = sharedConfigLocks.get(repositoryPaths.gitCommonDir);
-        if (lock === undefined) {
-          lock = Semaphore.makeUnsafe(1);
-          sharedConfigLocks.set(repositoryPaths.gitCommonDir, lock);
-        }
-        return lock.withPermit(effect);
-      }),
+      Effect.flatMap((repositoryPaths) =>
+        repositoryPaths === null
+          ? effect
+          : withSharedConfigLockAt(repositoryPaths.gitCommonDir, effect),
+      ),
     );
 
   const execute: GitVcsDriver.GitVcsDriver["Service"]["execute"] = (input) =>
@@ -5994,17 +5998,23 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ...(sparsePatterns === null ? checkoutProgressOptions : {}),
       },
     );
-    const checkout = fastCheckout
-      ? checkoutCache
-          .create({
-            cwd: input.cwd,
-            worktreePath,
-            refName: checkoutRef,
-            checkoutWorkers,
-            lockReason,
-          })
-          .pipe(Effect.flatMap((cloned) => (cloned ? Effect.void : stockCheckout)))
-      : stockCheckout;
+    // A concurrent `worktree add` can read this add's half-written registration and fail.
+    // Limit: the lock also covers the checkout and its hooks, so parallel launches check out one
+    // at a time. Revisit if Git writes the registration atomically or slow hooks queue launches.
+    const checkout = withSharedConfigLockAt(
+      leaseKey,
+      fastCheckout
+        ? checkoutCache
+            .create({
+              cwd: input.cwd,
+              worktreePath,
+              refName: checkoutRef,
+              checkoutWorkers,
+              lockReason,
+            })
+            .pipe(Effect.flatMap((cloned) => (cloned ? Effect.void : stockCheckout)))
+        : stockCheckout,
+    );
     const sparseCheckout =
       sparsePatterns === null
         ? Effect.void

@@ -260,7 +260,12 @@ const make = Effect.gen(function* () {
             } else {
               yield* recreateBranch();
               // No reset, force or broad prune, including when reviving a deleted branch.
-              yield* exec(["worktree", "add", "--no-guess-remote", "--", cwd, thread.branch!]);
+              yield* git.execute({
+                cwd: repository,
+                args: ["worktree", "add", "--no-guess-remote", "--", cwd, thread.branch!],
+                operation: "restore worktree",
+                writesSharedConfig: true,
+              });
             }
           }
           return { project, repository, exists };
