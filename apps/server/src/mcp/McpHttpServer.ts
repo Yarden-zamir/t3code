@@ -332,8 +332,9 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     const token = parseBearerToken(request) ?? "";
     const threadInvocation = yield* registry.resolve(token);
     const invocation =
-      (threadInvocation === undefined
-        ? undefined
+      // A scope without a thread stays a client scope: adding the credential must not invent one.
+      (threadInvocation === undefined || threadInvocation.thread === undefined
+        ? threadInvocation
         : {
             ...threadInvocation,
             thread: { ...threadInvocation.thread, authorization: Redacted.make(`Bearer ${token}`) },
