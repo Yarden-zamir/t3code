@@ -6,8 +6,10 @@ import * as Path from "effect/Path";
 
 import {
   DEFAULT_SERVER_SETTINGS,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  resolveIdleCompaction,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
@@ -490,5 +492,29 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
           );
         }
       }),
+  );
+
+  it.effect("a whole-instance lock also replaces the project's idle compaction choice", () =>
+    Effect.gen(function* () {
+      const claude = ProviderInstanceId.make("claudeAgent");
+      const project = ProjectId.make("project-a");
+      const policy = yield* ManagedPolicy.fromDocument("/test/policy.json", {
+        schemaVersion: 1,
+        organization: "Example Corp",
+        settings: {
+          "providerInstances.claudeAgent": {
+            value: { driver: "claudeAgent", config: { idleCompaction: "off" } },
+            locked: true,
+          },
+        },
+      });
+      const locked = policy.settings.applyLocks({
+        ...DEFAULT_SERVER_SETTINGS,
+        projectSettingsOverrides: {
+          [project]: { providerInstances: { [claude]: { idleCompaction: "beforeCacheExpires" } } },
+        },
+      });
+      assert.equal(resolveIdleCompaction(locked, project, claude), "off");
+    }),
   );
 });

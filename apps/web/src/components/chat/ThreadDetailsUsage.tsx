@@ -63,6 +63,8 @@ export interface ThreadDetailsIdleCompactionInput {
   readonly source: IdleCompactionSource;
   readonly promptCacheExpiresAt: string | null;
   readonly idle: boolean;
+  /** Whether "Compact now" can run; the chat's own compact command checks the same state. */
+  readonly canCompact: boolean;
   /** Opens the project's select for this mode, or null when the thread has no project to open. */
   readonly onChangeForProject: (() => void) | null;
 }
@@ -234,6 +236,7 @@ export function ThreadDetailsPromptCache({
   const gt = useGT();
   const m = useMessages();
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
+  // Limit: `now` is the start of the minute, so times can be up to 59 s off. Revisit if the row shows seconds.
   const nowMinute = useNowMinute();
   const now = Date.parse(`${nowMinute}:00Z`);
   const state = deriveThreadDetailsIdleCompaction({ ...input, usedTokens, now });
@@ -285,9 +288,11 @@ export function ThreadDetailsPromptCache({
                   })}
                 </span>
               ) : null}
-              <ShortcutCommandRows
-                commands={[{ command: "chat.compactContext", name: gt("Compact now") }]}
-              />
+              {input.canCompact ? (
+                <ShortcutCommandRows
+                  commands={[{ command: "chat.compactContext", name: gt("Compact now") }]}
+                />
+              ) : null}
               {input.onChangeForProject ? (
                 <Button
                   size="xs"

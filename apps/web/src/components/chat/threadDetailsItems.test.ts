@@ -45,5 +45,13 @@ describe("thread details items", () => {
 
     const hidden = { threadDetailsItems: { servers: false }, threadDetailsUsageEnabled: false };
     expect(setThreadDetailsItem(hidden, servers, true)).toEqual({});
+
+    // Its default follows Context, so turning Context off later must not undo the choice.
+    const promptCache = THREAD_DETAILS_ITEMS.find((item) => item.id === "promptCache")!;
+    const contextOn = { threadDetailsItems: { context: true }, threadDetailsUsageEnabled: false };
+    expect(setThreadDetailsItem(contextOn, promptCache, true)).toEqual({
+      context: true,
+      promptCache: true,
+    });
   });
 });

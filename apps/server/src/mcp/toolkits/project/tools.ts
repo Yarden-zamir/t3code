@@ -91,7 +91,7 @@ export type ProjectProviderOverridesInput = typeof ProjectProviderOverridesInput
 const ProjectReadTool = Tool.make("t3_project_read", {
   ...shared,
   success: ProjectWithProviderOverrides,
-  description: "Read one project: workspace and saved scripts.",
+  description: "Read one project: workspace, saved scripts and provider overrides.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: ProjectId,

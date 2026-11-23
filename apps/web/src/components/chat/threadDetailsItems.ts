@@ -69,7 +69,10 @@ export function setThreadDetailsItem(
   visible: boolean,
 ): ClientSettings["threadDetailsItems"] {
   const { [item.id]: _previous, ...rest } = settings.threadDetailsItems;
-  return visible === defaultVisible(item, settings) ? rest : { ...rest, [item.id]: visible };
+  // The prompt cache default moves with Context, so a choice for it is always stored.
+  return visible === defaultVisible(item, settings) && item.id !== "promptCache"
+    ? rest
+    : { ...rest, [item.id]: visible };
 }
 
 export function isDefaultThreadDetailsVisibility(visibility: ThreadDetailsVisibility) {

@@ -2735,7 +2735,12 @@ export default function ChatView(props: ChatViewProps) {
           ),
           promptCacheExpiresAt: activeThreadLiveTokenUsage?.promptCacheExpiresAt ?? null,
           idle: !isWorking,
-          onChangeForProject: activeProject ? openProjectIdleCompactionSettings : null,
+          canCompact: !compactDisabled,
+          onChangeForProject:
+            activeProject &&
+            serverConfig?.environment.capabilities.projectIdleCompactionOverrides === true
+              ? openProjectIdleCompactionSettings
+              : null,
         }
       : null;
   const [fullHistoryThreadKeys, setFullHistoryThreadKeys] = useState<ReadonlySet<string>>(
