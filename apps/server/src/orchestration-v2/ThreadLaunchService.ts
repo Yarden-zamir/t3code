@@ -772,7 +772,7 @@ const make = Effect.gen(function* () {
         initialMessage !== undefined &&
         (input.workspaceStrategy.type === "worktree" || worktreePath !== null) &&
         branch !== null &&
-        (generatedTemporaryBranch || isTemporaryWorktreeBranch(branch))
+        (temporaryGeneratedBranch || isTemporaryWorktreeBranch(branch))
           ? yield* generateBranchNameFor(
               worktreePath ?? project.workspaceRoot,
               initialMessage,
