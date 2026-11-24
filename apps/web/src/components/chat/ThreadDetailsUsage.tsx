@@ -37,6 +37,7 @@ import {
   nextPoolReset,
   poolSources,
   resolveThreadDetailsLimits,
+  resolveThreadHttpQuotas,
 } from "./ThreadDetailsUsage.logic";
 
 const PACE_LABEL: Record<LimitPace, string> = {
@@ -100,18 +101,25 @@ export function ThreadDetailsUsage({
   const resolved = resolveThreadDetailsLimits(providerInstanceId, model, providers, sources, now);
   const m = useMessages();
   const forkUsageMenu = useForkUsageMenu();
-  if (!resolved) return null;
+  const quotas = resolveThreadHttpQuotas(providerInstanceId, sources);
+  if (!resolved && quotas.length === 0) return null;
   // Fork: the text that the context menu copies.
-  const usageText =
-    resolved.kind === "pool"
-      ? resolved.windows
-          .map((window) => `${window.label}: ${window.remainingPercent}% left`)
-          .join("\n")
+  const resolvedLines = !resolved
+    ? []
+    : resolved.kind === "pool"
+      ? resolved.windows.map((window) => `${window.label}: ${window.remainingPercent}% left`)
       : limitsNotice(resolved.limits, m)
-        ? ""
-        : resolved.limits.windows
-            .map((window) => `${window.label}: ${remainingPercent(window)}% left`)
-            .join("\n");
+        ? []
+        : resolved.limits.windows.map(
+            (window) => `${window.label}: ${remainingPercent(window)}% left`,
+          );
+  const usageText = [
+    ...resolvedLines,
+    ...quotas.map(
+      ({ accountLabel, window }) =>
+        `${accountLabel} ${window.label}: ${remainingPercent(window)}% left`,
+    ),
+  ].join("\n");
 
   return (
     <ThreadDetailsSection
@@ -121,11 +129,15 @@ export function ThreadDetailsUsage({
       onContextMenu={(event) => forkUsageMenu(event, usageText)}
     >
       <div className="grid grid-cols-[auto_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
-        {resolved.kind === "pool" ? (
-          resolved.windows.map((window) => <PoolRow key={window.id} window={window} now={now} />)
-        ) : (
-          <InstanceRows limits={resolved.limits} now={now} />
-        )}
+        {resolved?.kind === "pool"
+          ? resolved.windows.map((window) => <PoolRow key={window.id} window={window} now={now} />)
+          : resolved &&
+            (quotas.length === 0 || limitsNotice(resolved.limits) === null) && (
+              <InstanceRows limits={resolved.limits} now={now} />
+            )}
+        {quotas.map(({ key, accountLabel, window }) => (
+          <LimitRow key={key} window={window} now={now} accountLabel={accountLabel} />
+        ))}
       </div>
     </ThreadDetailsSection>
   );
@@ -335,9 +347,11 @@ function useForkUsageMenu() {
 function LimitRow({
   window,
   now,
+  accountLabel,
 }: {
   readonly window: ServerProviderUsageWindow;
   readonly now: number;
+  readonly accountLabel?: string;
 }) {
   const gt = useGT();
   const m = useMessages();
@@ -360,6 +374,7 @@ function LimitRow({
           <span className="text-foreground">
             {gt("{label}: {left}% left", { label: window.label, left })}
           </span>
+          {accountLabel ? <span className="text-muted-foreground">{accountLabel}</span> : null}
           {pace && timeLeft !== null ? (
             <span className="text-muted-foreground">
               {m(PACE_LABEL[pace])} · {gt("{timeLeft}% of the window left", { timeLeft })}

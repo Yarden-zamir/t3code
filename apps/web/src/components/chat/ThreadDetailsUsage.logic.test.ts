@@ -12,6 +12,7 @@ import {
   deriveThreadDetailsIdleCompaction,
   poolSources,
   resolveThreadDetailsLimits,
+  resolveThreadHttpQuotas,
 } from "./ThreadDetailsUsage.logic";
 
 const now = Date.parse("2026-10-30T12:00:00.000Z");
@@ -209,5 +210,32 @@ describe("deriveThreadDetailsIdleCompaction", () => {
     expect(result.cache?.kind ?? null).toBe(cache);
     expect(result.compactsAt).toBe(compactsAt);
     expect(result.source).toBe("project");
+  });
+});
+
+describe("resolveThreadHttpQuotas", () => {
+  it("shows only the quota accounts bound to the thread's provider instance", () => {
+    const window = { id: "monthly", kind: "monthly", label: "Monthly", usedPercent: 35 } as const;
+    const source: UsageLimitSourceSnapshot = {
+      id: UsageLimitSourceId.make("quota"),
+      kind: "http",
+      label: "Quota server",
+      checkedAt,
+      accounts: [],
+      quotaAccounts: [
+        { id: "bound", label: "Work plan", providerInstanceId: instanceId, windows: [window] },
+        { id: "unbound", label: "Unbound", windows: [window] },
+        {
+          id: "other",
+          label: "Other plan",
+          providerInstanceId: ProviderInstanceId.make("other"),
+          windows: [window],
+        },
+      ],
+    };
+    expect(
+      resolveThreadHttpQuotas(instanceId, [source]).map((quota) => quota.accountLabel),
+    ).toEqual(["Work plan"]);
+    expect(resolveThreadHttpQuotas(null, [source])).toEqual([]);
   });
 });
