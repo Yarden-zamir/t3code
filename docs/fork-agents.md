@@ -123,6 +123,7 @@ The pull request:
 - Merge when Fork CI is green on the head and `origin/main` is an ancestor of the head. Run `gh pr ready`, then `gh pr merge --merge --admin --match-head-commit <head>`.
 - After the merge, disable each active workflow that is not a `fork-*` workflow or `agent-context-budget.yml`. `checks.py` prints the commands. Remove the worktree with `worktree.py remove`, unwatch the pull request, and send one line to the orchestrator thread that the task prompt names.
 - After the merge, watch the Fork Release run on main once. On a download 504, rerun its failed jobs. On a code failure, run `worktree.py create fix <topic>`, fix it, open a draft pull request, link it and watch it. It is yours until it merges. Its body says "Review: none, merge agent rule", because the merge agent starts no second agent; the orchestrator arranges the review.
+  - A macOS runner shortage is not a reason to rerun or to escalate. It shows as the job "Desktop macOS arm64" cancelled with "not acquired by Runner of type hosted". The hourly workflow "Fork Release macOS catch-up" reruns that job. Write "macOS starved, catch-up pending" in your line. A failed macOS build is a code failure.
 
 Escalation:
 
