@@ -236,6 +236,7 @@ const CIRCLE_CLIENT_SETTINGS = [
   "fontSmoothing",
   "forkChangelogEnabled",
   "glassOpacity",
+  "htmlPreviewWidth",
   "inAppNotificationAttentionStays",
   "inAppNotificationClosesOnOpen",
   "inAppNotificationCompletions",
