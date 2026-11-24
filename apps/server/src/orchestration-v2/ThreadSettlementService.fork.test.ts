@@ -40,7 +40,7 @@ const PROJECT_ID = ProjectId.make("settlement-project");
 type AutoSettleCommand = Extract<OrchestrationV2Command, { readonly type: "thread.auto-settle" }>;
 
 type SettlementShell = OrchestrationV2ThreadShell &
-  Pick<ProjectionStore.ProjectionSettlementCandidate, "latestUserAuthoredMessageAt">;
+  Pick<ProjectionStore.ProjectionSettlementCandidate, "latestResumingMessageAt">;
 
 function makeThread(id: string, overrides: Partial<SettlementShell> = {}): SettlementShell {
   const threadId = ThreadId.make(id);
@@ -76,7 +76,7 @@ function makeThread(id: string, overrides: Partial<SettlementShell> = {}): Settl
     latestRunStartedAt: null,
     latestRunCompletedAt: null,
     latestUserMessageAt: DateTime.makeUnsafe("2026-08-20T00:00:00.000Z"),
-    latestUserAuthoredMessageAt: DateTime.makeUnsafe("2026-08-20T00:00:00.000Z"),
+    latestResumingMessageAt: DateTime.makeUnsafe("2026-08-20T00:00:00.000Z"),
     createdAt: DateTime.makeUnsafe("2026-08-01T00:00:00.000Z"),
     updatedAt: DateTime.makeUnsafe("2026-08-20T00:00:00.000Z"),
     archivedAt: null,
