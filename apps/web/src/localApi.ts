@@ -1,4 +1,9 @@
-import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@t3tools/contracts";
+import type {
+  ConfirmDialogOptions,
+  ContextMenuItem,
+  ContextMenuSource,
+  LocalApi,
+} from "@t3tools/contracts";
 import { msg } from "gt-react";
 
 import { isWebUrl } from "./browser/webUrl";
@@ -48,9 +53,13 @@ export function createLocalApi(): LocalApi {
       show: async <T extends string>(
         items: readonly ContextMenuItem<T>[],
         position?: { x: number; y: number },
+        source?: ContextMenuSource,
       ): Promise<T | null> => {
         // Fork: the app menu, or a plain web menu before its host mounts or on an error screen.
-        return requestForkContextMenu(items, position) ?? showContextMenuFallback(items, position);
+        return (
+          requestForkContextMenu(items, position) ??
+          showContextMenuFallback(items, position, source)
+        );
       },
       // Unlike native menus, web menus need dismissal when underlying state disappears.
       close: async () => {
