@@ -739,7 +739,9 @@ it.live.each([{ projectIsRepository: true }, { projectIsRepository: false }])(
         assert.deepEqual(removal.kept, []);
         assert.isFalse(yield* fileSystem.exists(taskFolder.root));
 
-        yield* thread.rewind(1);
+        // The rewind recreates the worktree, whose live-clock index swap can hold index.lock
+        // while the restore runs Git, as in `taskFolderThread`.
+        yield* thread.rewind(1).pipe(Effect.provide(TestClock.layer()));
 
         assert.deepEqual(
           yield* Effect.all([
