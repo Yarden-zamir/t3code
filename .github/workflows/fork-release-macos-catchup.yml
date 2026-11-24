@@ -1,0 +1,93 @@
+name: Fork Release macOS catch-up
+
+# The macOS runners of GitHub are sometimes all busy for hours. Then the job
+# "Desktop macOS arm64" of Fork Release never gets a runner, and the nightly
+# has no Mac files. Each hour, this workflow reruns the failed jobs of the
+# release run of the newest nightly, once, when only that macOS job failed.
+# It never starts a new Fork Release run. See docs/fork/operations.md "Fork Release".
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: fork-release-macos-catchup
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  catch-up:
+    name: Rerun a starved macOS release job
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      MAC_JOB: Desktop macOS arm64
+      # The macOS publish step of fork-release.yml uploads this manifest with the dmg and zip.
+      MAC_MANIFEST: nightly-mac.yml
+    steps:
+      - name: Rerun the macOS job of the newest nightly
+        run: |
+          set -euo pipefail
+          say() { echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"; }
+
+          # Only the newest nightly counts. The updater and the daily release skip an older one.
+          tag="$(gh release list --exclude-drafts --limit 30 --json tagName \
+            --jq '[.[] | select(.tagName | contains("-nightly."))][0].tagName // empty')"
+          [[ -n "$tag" ]] || { say "No nightly release found."; exit 0; }
+
+          release="$(gh release view "$tag" --json targetCommitish,assets)"
+          if jq -e --arg name "$MAC_MANIFEST" 'any(.assets[]; .name == $name)' <<<"$release" >/dev/null; then
+            say "Nightly $tag has its macOS files. Nothing to do."
+            exit 0
+          fi
+          sha="$(jq -r .targetCommitish <<<"$release")"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Release $tag targets '$sha', not a commit SHA." >&2; exit 1; }
+
+          # A rerun waits in the fork-release concurrency group and would replace a waiting push run.
+          # Limit: 50 runs cover days of pushes. Raise it if older runs get reruns from elsewhere.
+          busy="$(gh run list --workflow fork-release.yml --limit 50 --json databaseId,status \
+            --jq '[.[] | select(.status != "completed") | .databaseId] | join(" ")')"
+          if [[ -n "$busy" ]]; then
+            say "Nightly $tag has no macOS files, but Fork Release runs $busy are not done. Next hour."
+            exit 0
+          fi
+
+          run_id="$(gh run list --workflow fork-release.yml --branch main --commit "$sha" --limit 20 \
+            --json databaseId,conclusion --jq '[.[] | select(.conclusion == "failure")][0].databaseId // empty')"
+          [[ -n "$run_id" ]] || { say "Nightly $tag has no macOS files and no failed Fork Release run on main for $sha."; exit 0; }
+          url="https://github.com/$GH_REPO/actions/runs/$run_id"
+
+          run="$(gh run view "$run_id" --json createdAt,jobs)"
+          others="$(jq -r --arg mac "$MAC_JOB" '[.jobs[]
+            | select(.conclusion != "success" and .conclusion != "skipped" and .name != $mac)
+            | "\(.name) (\(.conclusion))"] | join(", ")' <<<"$run")"
+          mac="$(jq -r --arg mac "$MAC_JOB" '[.jobs[] | select(.name == $mac) | .conclusion][0] // "missing"' <<<"$run")"
+          if [[ -n "$others" ]]; then
+            say "Nightly $tag: run $url has other failed jobs: $others. The merge agent or the repair agent owns it."
+            exit 0
+          fi
+          if [[ "$mac" != "failure" && "$mac" != "cancelled" ]]; then
+            say "Nightly $tag: the job $MAC_JOB of run $url is '$mac', not failed or cancelled."
+            exit 0
+          fi
+
+          created="$(jq -r .createdAt <<<"$run")"
+          if (( $(date -u +%s) - $(date -u -d "$created" +%s) >= 7 * 24 * 3600 )); then
+            say "Nightly $tag: run $url started $created, more than 7 days ago."
+            exit 0
+          fi
+          # The rerun downloads js-bundle and the server archives from this run. They expire after a day.
+          artifacts="$(gh api "repos/$GH_REPO/actions/runs/$run_id/artifacts")"
+          if ! jq -e 'any(.artifacts[]; .name == "js-bundle") and all(.artifacts[]; .expired | not)' <<<"$artifacts" >/dev/null; then
+            say "Nightly $tag: run $url cannot rerun, its js-bundle or server archive artifacts are gone."
+            exit 0
+          fi
+
+          gh run rerun "$run_id" --failed
+          say "Nightly $tag has no macOS files. Started a rerun of the failed jobs of $url."
