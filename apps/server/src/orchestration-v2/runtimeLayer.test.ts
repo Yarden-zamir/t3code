@@ -4761,7 +4761,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         modelSelection,
         dispatchMode: { type: "start_immediately" },
       });
-      const wakeMessageId = MessageId.make(prefix);
+      // Fork: a wake for one pull request names it in its message ID.
+      const wakeMessageId = MessageId.make(
+        `message:pr-watch:github.com/pingdotgg/t3code/7:${prefix}`,
+      );
       yield* orchestrator.dispatch({
         type: "thread.pull-request-watch.sync",
         commandId: CommandId.make(`${prefix}-sync`),
