@@ -3,7 +3,8 @@ name: Fork Release macOS catch-up
 # The macOS runners of GitHub are sometimes all busy for hours. Then the job
 # "Desktop macOS arm64" of Fork Release never gets a runner, and the nightly
 # has no Mac files. Each hour, this workflow reruns the failed jobs of the
-# release run of the newest nightly, once, when only that macOS job failed.
+# release run of the newest nightly when only that macOS job was cancelled.
+# It repeats each hour until the macOS job passes or the run's artifacts expire.
 # It never starts a new Fork Release run. See docs/fork/operations.md "Fork Release".
 
 on:
@@ -36,7 +37,7 @@ jobs:
           set -euo pipefail
           say() { echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"; }
 
-          # Only the newest nightly counts. The updater and the daily release skip an older one.
+          # Only the newest nightly counts: the macOS updater offers only the newest one.
           tag="$(gh release list --exclude-drafts --limit 30 --json tagName \
             --jq '[.[] | select(.tagName | contains("-nightly."))][0].tagName // empty')"
           [[ -n "$tag" ]] || { say "No nightly release found."; exit 0; }
@@ -50,6 +51,7 @@ jobs:
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Release $tag targets '$sha', not a commit SHA." >&2; exit 1; }
 
           # A rerun waits in the fork-release concurrency group and would replace a waiting push run.
+          # Limit: a push between this check and the rerun can cancel the rerun. That push builds a newer nightly.
           # Limit: 50 runs cover days of pushes. Raise it if older runs get reruns from elsewhere.
           busy="$(gh run list --workflow fork-release.yml --limit 50 --json databaseId,status \
             --jq '[.[] | select(.status != "completed") | .databaseId] | join(" ")')"
@@ -72,8 +74,9 @@ jobs:
             say "Nightly $tag: run $url has other failed jobs: $others. The merge agent or the repair agent owns it."
             exit 0
           fi
-          if [[ "$mac" != "failure" && "$mac" != "cancelled" ]]; then
-            say "Nightly $tag: the job $MAC_JOB of run $url is '$mac', not failed or cancelled."
+          # A job without a runner ends cancelled. A failed build is a code failure for the repair agent.
+          if [[ "$mac" != "cancelled" ]]; then
+            say "Nightly $tag: the job $MAC_JOB of run $url is '$mac', not cancelled. The repair agent owns a failed build."
             exit 0
           fi
 
