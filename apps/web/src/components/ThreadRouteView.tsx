@@ -4,13 +4,16 @@ import { isTerminalThread, type ScopedThreadRef } from "@t3tools/contracts";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import { visibilityParentKey } from "@t3tools/client-runtime/state/threads";
 import * as Option from "effect/Option";
-import { Navigate, useNavigate } from "@tanstack/react-router";
+import { Link, Navigate, useNavigate } from "@tanstack/react-router";
+import { T } from "gt-react";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
 import { ForkTerminalThreadScreen } from "./ForkTerminalThreadScreen";
 import { BackgroundThreadContext, HiddenThreadContext } from "./chat/backgroundThread";
 import { leaveMissingRoute, useSettleNavigationTraverse } from "../forkNavigationHistory";
+import { Button } from "./ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
@@ -19,6 +22,7 @@ import {
   useAnyEnvironmentHiding,
   useQuietThreadShell,
 } from "../state/entities";
+import { environmentUnreachableAtom } from "../state/presentation";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useEnvironmentShellStatus } from "../state/shell";
 import { environmentThreadShells, threadFamilies, useEnvironmentThread } from "../state/threads";
@@ -74,6 +78,9 @@ export function ThreadRouteView({
   const draftRedirectShell = useQuietThreadShell(draftRedirect);
   const shellStatus = useEnvironmentShellStatus(serverThreadRef?.environmentId ?? null);
   const environmentThreadRefs = useEnvironmentThreadRefs(serverThreadRef?.environmentId ?? null);
+  const environmentUnreachable = useAtomValue(
+    environmentUnreachableAtom(serverThreadRef?.environmentId ?? null),
+  );
   const bootstrapComplete = isThreadRouteSnapshotAuthoritative(shellStatus);
   const draftThread = useComposerDraftStore((store) =>
     serverThreadRef ? store.getDraftThreadByRef(serverThreadRef) : null,
@@ -140,6 +147,7 @@ export function ThreadRouteView({
     serverThreadDeleted: serverThreadShell?.deletedAt != null,
     unlistedThreadDetail,
     draftThreadExists: draftThread !== null,
+    environmentUnreachable,
   });
   useSettleNavigationTraverse(
     target.kind === "draft" ? draftSession !== null : renderState === "ready",
@@ -220,6 +228,8 @@ export function ThreadRouteView({
         />
       );
     }
+  } else if (renderState === "unreachable") {
+    view = <UnreachableEnvironmentState />;
   } else if (hiddenByTagFilter) {
     redirect = <Navigate to="/" replace />;
   } else if (serverThreadShell !== null && isTerminalThread(serverThreadShell)) {
@@ -256,5 +266,25 @@ export function ThreadRouteView({
       </BackgroundThreadContext>
       {background ? null : redirect}
     </SidebarInset>
+  );
+}
+
+function UnreachableEnvironmentState() {
+  return (
+    <Empty className="flex-1">
+      <EmptyHeader>
+        <EmptyTitle>
+          <T>Thread unavailable</T>
+        </EmptyTitle>
+        <EmptyDescription>
+          <T>This thread is on an environment this app is not connected to.</T>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button render={<Link to="/settings/connections" />} size="sm">
+          <T>Open Environments</T>
+        </Button>
+      </EmptyContent>
+    </Empty>
   );
 }
