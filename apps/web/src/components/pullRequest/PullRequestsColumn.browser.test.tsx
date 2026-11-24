@@ -96,6 +96,7 @@ function CondensedSearchColumn({
         }
         sortMenu={null}
         filtersMenu={null}
+        filterChips={null}
         savedViewsMenu={null}
         rightPanelControl={null}
         titlebarControls={null}
