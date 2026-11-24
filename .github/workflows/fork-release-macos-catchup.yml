@@ -10,6 +10,8 @@ on:
   schedule:
     - cron: "23 * * * *"
   workflow_dispatch:
+  push:
+    branches: [ci/fork-release-macos-catchup]
 
 concurrency:
   group: fork-release-macos-catchup
