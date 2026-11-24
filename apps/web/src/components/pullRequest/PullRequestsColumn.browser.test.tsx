@@ -20,6 +20,7 @@ function createColumn(maximizedAway: boolean, scrollRef: RefObject<HTMLDivElemen
       searchInput={<input aria-label="Search pull requests" />}
       sortMenu={null}
       filtersMenu={null}
+      filterChips={null}
       savedViewsMenu={null}
       rightPanelControl={null}
       titlebarControls={null}
