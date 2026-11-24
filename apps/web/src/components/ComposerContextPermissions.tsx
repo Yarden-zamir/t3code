@@ -1,14 +1,17 @@
 import type { EnvironmentId, RuntimeMode } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
+import { use } from "react";
 import { T, useGT, useMessages } from "gt-react";
 
 import { ShortcutTrigger } from "./focusLevels/ShortcutHint";
 import { shortcutLabelForCommand } from "../keybindings";
 import { useManagedPolicy } from "../state/managedPolicy";
 import { primaryServerKeybindingsAtom } from "../state/server";
+import { HiddenThreadContext } from "./chat/backgroundThread";
 import { ComposerControl } from "./chat/ComposerControl";
 import { ComposerPermissionsSection } from "./chat/ComposerFooterControls";
 import { useComposerMenuProps } from "./chat/composerEventScope";
+import { useComposerMenuState } from "./chat/useComposerMenuState";
 import {
   resolveCompatibleRuntimeMode,
   resolveRuntimeModeOptions,
@@ -36,10 +39,11 @@ export function ComposerContextPermissions(props: {
   );
   const options = resolveRuntimeModeOptions(modes, useManagedPolicy(props.environmentId), messages);
   const composerMenuProps = useComposerMenuProps();
+  const [open, setOpen] = useComposerMenuState(use(HiddenThreadContext));
   const { icon: Icon } = runtimeModeConfig[mode];
   const label = messages(runtimeModeConfig[mode].label);
   return (
-    <Menu>
+    <Menu open={open} onOpenChange={setOpen}>
       <Tooltip>
         <ShortcutTrigger
           command="composer.mode"

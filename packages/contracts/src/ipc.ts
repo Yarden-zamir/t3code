@@ -35,6 +35,8 @@ export interface ContextMenuItem<T extends string = string> {
   disabled?: boolean;
   header?: boolean;
   icon?: string;
+  /** PNG data URL; takes precedence over `icon`. */
+  iconImage?: string;
   separatorBefore?: boolean;
   checked?: boolean;
   /** The command that runs the same action. The app menu shows its key and links to its bindings. */
@@ -683,7 +685,7 @@ export interface DesktopPreviewRecordingInputEvent {
 
 export interface DesktopPreviewWebviewConfig {
   partition: string;
-  /** Sandboxed with contextIsolation off so the picker preload can read the React DevTools hook. */
+  /** Sandboxed and context-isolated; the picker preload reaches React through a function it runs in the page. */
   webPreferences: string;
   /** Absolute file:// preload URL; null requires disabling element picking. */
   preloadUrl: string | null;
