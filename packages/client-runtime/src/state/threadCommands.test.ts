@@ -868,6 +868,32 @@ describe("settle and snooze while the environment is offline", () => {
     }),
   );
 
+  it.effect("sends a settle at once while a shell stream error leaves the session up", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      h.registry.set(h.statusAtom(ENVIRONMENT_ID), "cached");
+      const settle = yield* Effect.forkChild(h.commands.settle.run(h.registry, target), {
+        startImmediately: true,
+      });
+      // A queued settle stays on the device, so the pin would be the first request.
+      const pin = yield* Effect.forkChild(
+        h.commands.pin.run(h.registry, {
+          environmentId: ENVIRONMENT_ID,
+          input: { threadId: THREAD_ID, orderKey: "a" },
+        }),
+        { startImmediately: true },
+      );
+      const request = yield* Queue.take(h.requests);
+      expect(request.command).toMatchObject({ type: "thread.settle", threadId: THREAD_ID });
+      yield* Deferred.succeed(request.reply, { sequence: 2 });
+      expect(Exit.isSuccess(yield* Fiber.await(settle))).toBe(true);
+      expect(yield* queued(h)).toEqual([]);
+      const pinRequest = yield* Queue.take(h.requests);
+      yield* Deferred.succeed(pinRequest.reply, { sequence: 3 });
+      yield* Fiber.join(pin);
+    }),
+  );
+
   it.effect("drops a queued settle when the thread changed on the server meanwhile", () =>
     Effect.gen(function* () {
       const h = yield* makeHarness({ connected: false });

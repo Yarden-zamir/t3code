@@ -9,6 +9,7 @@ import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -20,7 +21,12 @@ import {
   ThreadTriageOutboxStore,
 } from "../platform/threadTriageOutboxStore.ts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
-import { EnvironmentRpcUnavailableError, isRpcClientError, notConnected } from "../rpc/client.ts";
+import {
+  EnvironmentRpcUnavailableError,
+  isRpcClientError,
+  notConnected,
+  sessionNow,
+} from "../rpc/client.ts";
 import type { EnvironmentShellStatus } from "./shell.ts";
 import { type AtomCommand, provideAtomRuntime } from "./runtime.ts";
 
@@ -262,19 +268,27 @@ export function createThreadTriageOutbox<R, E, SendError>(input: {
             ),
             Effect.catchIf(isUnavailable, (unavailable) => queueOr(Effect.fail(unavailable))),
           );
+          if (registry.get(input.shellStatusAtom(environmentId)) !== "cached") return send;
           // Fork: a send waits for an opening session (rpc/client.ts currentSession), so a
-          // cached shell queues first, and fails at once when the change cannot be queued.
-          const failNotConnected: Sent = Effect.gen(function* () {
+          // cached shell with no session queues first. A shell stream error leaves the
+          // session up, and then the change goes out at once.
+          const sessionOrNotConnected = Effect.gen(function* () {
             const environments = yield* EnvironmentRegistry;
-            return yield* environments.run(environmentId, notConnected());
-          }).pipe(
-            provideAtomRuntime(registry, input.runtime),
-            Effect.flip,
-            Effect.flatMap((error) => (isUnavailable(error) ? Effect.fail(error) : send)),
+            return yield* environments.run(
+              environmentId,
+              sessionNow().pipe(
+                Effect.flatMap(
+                  Option.match({ onNone: () => notConnected(), onSome: Effect.succeed }),
+                ),
+              ),
+            );
+          }).pipe(provideAtomRuntime(registry, input.runtime));
+          return sessionOrNotConnected.pipe(
+            Effect.matchEffect({
+              onSuccess: () => send,
+              onFailure: (error) => (isUnavailable(error) ? queueOr(Effect.fail(error)) : send),
+            }),
           );
-          return registry.get(input.shellStatusAtom(environmentId)) === "cached"
-            ? queueOr(failNotConnected)
-            : send;
         }),
     };
   }
