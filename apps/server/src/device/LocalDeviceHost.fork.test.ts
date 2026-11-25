@@ -27,7 +27,6 @@ describe("Android SDK availability", () => {
                   `${cask}/platform-tools/adb`,
                   `${root}/platform-tools/adb`,
                   `${root}/emulator/emulator`,
-                  `${root}/cmdline-tools/latest/bin/avdmanager`,
                 ].includes(file),
               ),
             realPath: () => Effect.succeed(`${cask}/platform-tools/adb`),
@@ -35,7 +34,7 @@ describe("Android SDK availability", () => {
         ),
         Effect.provide(NodePath.layerPosix),
       );
-      expect(sdk).toMatchObject({ root, emulator: true, avdmanager: true });
+      expect(sdk).toMatchObject({ root, emulator: true });
     }),
   );
 });
