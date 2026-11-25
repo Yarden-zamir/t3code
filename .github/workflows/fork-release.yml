@@ -129,6 +129,14 @@ jobs:
           T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
           T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
         run: vp run build:desktop
+      # Same as upstream's release.yml: upload-artifact skips hidden files, so copy only the manifest.
+      - if: steps.released.outputs.released != 'true'
+        name: Stage web asset manifest
+        run: |
+          manifest=apps/server/dist/client/.vite/manifest.json
+          if [[ -f "$manifest" ]]; then
+            cp "$manifest" apps/server/dist/client/vite-manifest.release.json
+          fi
       - if: steps.released.outputs.released != 'true'
         uses: actions/upload-artifact@v7
         with:
@@ -210,6 +218,14 @@ jobs:
         with:
           name: js-bundle
           path: apps
+      - name: Restore web asset manifest
+        shell: bash
+        run: |
+          client=apps/server/dist/client
+          if [[ -f "$client/vite-manifest.release.json" ]]; then
+            mkdir -p "$client/.vite"
+            mv "$client/vite-manifest.release.json" "$client/.vite/manifest.json"
+          fi
 
       # Same packages and toolchain as upstream's release-desktop.yml.
       - name: Install Linux desktop build libraries
