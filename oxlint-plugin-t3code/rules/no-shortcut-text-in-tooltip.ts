@@ -9,11 +9,12 @@ const TEXT_ATTRIBUTES = new Set(["title", "tooltip"]);
 const isTooltipTextAttribute = (node: ESTree.JSXAttribute): boolean => {
   if (node.name.type !== "JSXIdentifier") return false;
   if (TEXT_ATTRIBUTES.has(node.name.name)) return true;
-  const element = node.parent.name;
+  const parent = node.parent;
   return (
     node.name.name === "label" &&
-    element.type === "JSXIdentifier" &&
-    element.name.endsWith("Trigger")
+    parent.type === "JSXOpeningElement" &&
+    parent.name.type === "JSXIdentifier" &&
+    parent.name.name.endsWith("Trigger")
   );
 };
 
