@@ -19,7 +19,8 @@ import {
   type PendingThreadTriages,
   ThreadTriageOutboxStore,
 } from "../platform/threadTriageOutboxStore.ts";
-import { EnvironmentRpcUnavailableError, isRpcClientError } from "../rpc/client.ts";
+import { EnvironmentRegistry } from "../connection/registry.ts";
+import { EnvironmentRpcUnavailableError, isRpcClientError, notConnected } from "../rpc/client.ts";
 import type { EnvironmentShellStatus } from "./shell.ts";
 import { type AtomCommand, provideAtomRuntime } from "./runtime.ts";
 
@@ -65,7 +66,7 @@ const sameEntries = (a: PendingThreadTriages, b: PendingThreadTriages) =>
  * device, shown at once, and sent when the environment's shell is synchronized again.
  */
 export function createThreadTriageOutbox<R, E, SendError>(input: {
-  readonly runtime: Atom.AtomRuntime<SecureRandom.SecureRandom | R, E>;
+  readonly runtime: Atom.AtomRuntime<EnvironmentRegistry | SecureRandom.SecureRandom | R, E>;
   readonly sourceSnapshotAtom: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<OrchestrationV2ShellSnapshot | null>;
@@ -217,9 +218,14 @@ export function createThreadTriageOutbox<R, E, SendError>(input: {
 
   /** Queues the action on the device when its environment is not connected. */
   function queueWhenOffline<I extends { readonly threadId: ThreadId }, CE>(
-    command: AtomCommand<Target<I>, { readonly sequence: number }, CE>,
+    command: AtomCommand<
+      Target<I>,
+      { readonly sequence: number },
+      CE | EnvironmentRpcUnavailableError
+    >,
     toAction: (input: I) => PendingThreadTriage["action"],
   ): typeof command {
+    type Sent = Effect.Effect<{ readonly sequence: number }, CE | EnvironmentRpcUnavailableError>;
     return {
       label: command.label,
       run: (registry, target) =>
@@ -229,32 +235,46 @@ export function createThreadTriageOutbox<R, E, SendError>(input: {
           // Read before sending: the change is judged against what the user saw when acting.
           const snapshot = registry.get(input.sourceSnapshotAtom(environmentId));
           const thread = snapshot?.threads.find((candidate) => candidate.id === threadId);
-          return command.run(registry, target).pipe(
+          const queueOr = (refused: Sent): Sent => {
+            const action = toAction(target.input);
+            const queuedAt = DateTime.nowUnsafe();
+            if (
+              snapshot == null ||
+              thread === undefined ||
+              input.apply(thread, action, queuedAt) === thread
+            ) {
+              return refused;
+            }
+            return queue(registry, environmentId, thread, action, queuedAt).pipe(
+              provideAtomRuntime(registry, input.runtime),
+              Effect.exit,
+              Effect.flatMap((queued) =>
+                Exit.isSuccess(queued) && queued.value
+                  ? Effect.succeed({ sequence: snapshot.snapshotSequence })
+                  : refused,
+              ),
+            );
+          };
+          const send: Sent = command.run(registry, target).pipe(
             // The server now has a newer decision than the queued one.
             Effect.tap(() =>
               forget(registry, pendingFor(registry, environmentId, threadId)?.commandId),
             ),
-            Effect.catchIf(isUnavailable, (unavailable) => {
-              const action = toAction(target.input);
-              const queuedAt = DateTime.nowUnsafe();
-              if (
-                snapshot == null ||
-                thread === undefined ||
-                input.apply(thread, action, queuedAt) === thread
-              ) {
-                return Effect.fail(unavailable);
-              }
-              return queue(registry, environmentId, thread, action, queuedAt).pipe(
-                provideAtomRuntime(registry, input.runtime),
-                Effect.exit,
-                Effect.flatMap((queued) =>
-                  Exit.isSuccess(queued) && queued.value
-                    ? Effect.succeed({ sequence: snapshot.snapshotSequence })
-                    : Effect.fail(unavailable),
-                ),
-              );
-            }),
+            Effect.catchIf(isUnavailable, (unavailable) => queueOr(Effect.fail(unavailable))),
           );
+          // Fork: a send waits for an opening session (rpc/client.ts currentSession), so a
+          // cached shell queues first, and fails at once when the change cannot be queued.
+          const failNotConnected: Sent = Effect.gen(function* () {
+            const environments = yield* EnvironmentRegistry;
+            return yield* environments.run(environmentId, notConnected());
+          }).pipe(
+            provideAtomRuntime(registry, input.runtime),
+            Effect.flip,
+            Effect.flatMap((error) => (isUnavailable(error) ? Effect.fail(error) : send)),
+          );
+          return registry.get(input.shellStatusAtom(environmentId)) === "cached"
+            ? queueOr(failNotConnected)
+            : send;
         }),
     };
   }

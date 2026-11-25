@@ -202,6 +202,12 @@ export const currentSession = Effect.fn("EnvironmentRpc.currentSession")(functio
     Effect.map((result) => Option.flatten(Option.flatten(result))),
   );
   if (Option.isSome(opened)) return opened.value;
+  return yield* notConnected();
+});
+
+/** Fork: the failure of a request that finds no session, without the wait above. */
+export const notConnected = Effect.fn("EnvironmentRpc.notConnected")(function* () {
+  const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
   return yield* new EnvironmentRpcUnavailableError({
     environmentId: supervisor.target.environmentId,
     ...translatableMessage(msg("{host} is not connected.", { host: supervisor.target.label })),
