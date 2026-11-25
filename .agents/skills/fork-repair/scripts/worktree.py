@@ -61,13 +61,15 @@ def create(kind: str, topic: str | None) -> None:
     path = container / folder
     if path.exists():
         common.fail(f"{path} exists already")
+    # Before `worktree add`, so a missing vp leaves no half-made worktree and branch behind.
+    vp = common.vp(path)
     bare = container / ".bare"
     common.git("fetch", "origin", cwd=bare)
     if kind == "sync":
         common.git("fetch", "--no-tags", "upstream", "main", cwd=bare)
     common.git("worktree", "add", "-b", branch, str(path), "origin/main", cwd=bare)
     log = common.log_dir("worktree") / "install.log"
-    code = common.run_logged([common.vp(path), "i"], log, path, {**os.environ, "CI": "1"})
+    code = common.run_logged([vp, "i"], log, path, {**os.environ, "CI": "1"})
     print(f"Worktree {path}")
     print(f"Branch {branch}")
     if code != 0:
