@@ -235,7 +235,6 @@ export function ForkNewTerminalThreadSheet({ route }: StaticScreenProps<NewTermi
         shell,
         branch: target.branch,
         worktreePath: target.worktreePath,
-        // oxlint-disable-next-line react/purity -- This runs in a press handler, not during render.
         createdAt: new Date().toISOString(),
       }),
     });
