@@ -1,5 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto digest is effectful; a sync hash keeps historyPath a plain function.
 import * as NodeCrypto from "node:crypto";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- an aborted executable probe must not wait for the child to exit a stalled mount.
+import * as NodeChildProcess from "node:child_process";
 
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import {
@@ -53,6 +55,7 @@ import { SpawnExecutableResolution, mergePathEntries } from "@t3tools/shared/she
 
 import { acpRegistryManagedBinaryDirectories } from "@t3tools/provider-acp-registry/server";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -140,6 +143,9 @@ const MAX_HISTORY_CHUNK_LENGTH = 16 * 1024;
 const DEFAULT_PERSIST_DEBOUNCE_MS = 250;
 const DEFAULT_SUBPROCESS_POLL_INTERVAL_MS = 1_000;
 const MAX_SUBPROCESS_POLL_INTERVAL_MS = 60_000;
+const SHELL_PREPARATION_TIMEOUT = "15 seconds";
+// A short per-candidate limit bounds the fallback search across the finite candidate list.
+const SHELL_LOOKUP_TIMEOUT = "2 seconds";
 // `ps` and WMI can take seconds on a loaded host and their tables are still
 // valid then; the timeout only ends a query that is truly stuck.
 const PROCESS_TABLE_QUERY_TIMEOUT = "15 seconds";
@@ -758,6 +764,38 @@ function uniqueShellCandidates(candidates: Array<ShellCandidate | null>): ShellC
   }
   return ordered;
 }
+
+// Preparation can wait on a stalled filesystem while startup holds the terminal locks.
+const withShellPreparationTimeout = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  duration: Duration.Input = SHELL_PREPARATION_TIMEOUT,
+) =>
+  effect.pipe(
+    Effect.interruptible,
+    Effect.timeoutOrElse({
+      duration,
+      orElse: () => Effect.fail(new Cause.TimeoutError("Terminal shell preparation timed out.")),
+    }),
+  );
+
+const probeShellExecutable = (paths: ReadonlyArray<string>) =>
+  Effect.promise(
+    (signal) =>
+      new Promise<string | undefined>((resolve) => {
+        // Keep filesystem checks off the server's libuv pool. Pass paths as data to the probe.
+        NodeChildProcess.execFile(
+          "/bin/sh",
+          [
+            "-c",
+            'for file do if [ -f "$file" ] && [ -x "$file" ]; then printf "%s" "$file"; exit 0; fi; done; exit 1',
+            "terminal-shell-probe",
+            ...paths.filter((path) => !path.includes("\0")),
+          ],
+          { env: {}, signal, killSignal: "SIGKILL" },
+          (error, stdout) => resolve(error ? undefined : stdout),
+        ).unref();
+      }),
+  );
 
 const resolveShellCandidates = Effect.fn("terminal.resolveShellCandidates")(function* (
   shellResolver: () => string,
@@ -2036,7 +2074,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           platform,
           baseEnv,
           runtimeEnv?.T3CODE_TERMINAL_SHELL ?? baseEnv.T3CODE_TERMINAL_SHELL,
-        ).pipe(Effect.provideService(FileSystem.FileSystem, fileSystem)),
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          withShellPreparationTimeout,
+        ),
         custom: false,
       };
     }
@@ -3029,7 +3070,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     session: TerminalSessionState,
     integrate: ShellIntegration | undefined,
     index = 0,
-    lastError: PtyAdapter.PtySpawnError | null = null,
+    lastError: PtyAdapter.PtySpawnError | Cause.TimeoutError | null = null,
   ): Effect.fn.Return<
     {
       process: PtyAdapter.PtyProcess;
@@ -3038,9 +3079,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       integrated: boolean;
       integrationNotice: string | null;
     },
-    PtyAdapter.PtySpawnError
+    PtyAdapter.PtySpawnError | Cause.TimeoutError
   > {
-    if (index >= shellCandidates.length) {
+    const candidate = shellCandidates[index];
+    if (!candidate) {
+      if (Cause.isTimeoutError(lastError)) return yield* lastError;
       return yield* new PtyAdapter.PtySpawnError({
         adapter: "terminal-manager",
         attemptedShells: shellCandidates.map((candidate) => formatShellCandidate(candidate)),
@@ -3048,58 +3091,65 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       });
     }
 
-    const candidate = shellCandidates[index];
-    if (!candidate) {
-      return yield* (
-        lastError ??
-        new PtyAdapter.PtySpawnError({
-          adapter: "terminal-manager",
-          attemptedShells: [],
-        })
-      );
-    }
-
     // PATH lookup must use the child's working directory, not the server's.
-    const lookupEnv =
-      platform === "win32"
-        ? spawnEnv
-        : {
-            ...spawnEnv,
-            PATH: (spawnEnv.PATH ?? spawnEnv.Path ?? spawnEnv.path ?? "")
-              .split(":")
-              // An empty entry means the working directory, which resolve("") yields.
-              .map((entry) => path.resolve(session.cwd, entry.replace(/^"+|"+$/g, "")))
-              .join(":"),
-          };
+    const searchDirectories = (spawnEnv.PATH ?? spawnEnv.Path ?? spawnEnv.path ?? "")
+      .split(":")
+      // An empty entry means the working directory, which resolve("") yields.
+      .map((entry) => path.resolve(session.cwd, entry.replace(/^"+|"+$/g, "")));
     // POSIX node-pty can return a PTY before exec fails, so validate before accepting a candidate.
     const shellCommand = candidate.shell.includes("/")
       ? path.resolve(session.cwd, candidate.shell)
       : candidate.shell;
-    const executable =
-      platform !== "win32"
-        ? yield* Effect.promise(async () => resolveExecutable(shellCommand, platform, lookupEnv))
-        : candidate.shell;
-    if (executable === undefined) {
+    const explicitPath = shellCommand.includes("/") || shellCommand.includes("\\");
+    const lookup =
+      platform === "win32"
+        ? Result.succeed(candidate.shell)
+        : yield* withShellPreparationTimeout(
+            // The default resolver's fs promises cannot be aborted; an injected resolver is kept as given.
+            resolveExecutable === SpawnExecutableResolution.defaultValue()
+              ? probeShellExecutable(
+                  explicitPath
+                    ? [shellCommand]
+                    : searchDirectories.map((directory) => path.join(directory, shellCommand)),
+                )
+              : Effect.promise(async () =>
+                  resolveExecutable(shellCommand, platform, {
+                    ...spawnEnv,
+                    PATH: searchDirectories.join(":"),
+                  }),
+                ),
+            SHELL_LOOKUP_TIMEOUT,
+          ).pipe(Effect.result);
+    if (Result.isFailure(lookup) || lookup.success === undefined) {
       return yield* trySpawn(
         shellCandidates,
         spawnEnv,
         session,
         integrate,
         index + 1,
-        new PtyAdapter.PtySpawnError({ adapter: "terminal-manager", shell: candidate.shell }),
+        Result.isFailure(lookup)
+          ? lookup.failure
+          : (lastError ??
+              new PtyAdapter.PtySpawnError({
+                adapter: "terminal-manager",
+                shell: candidate.shell,
+              })),
       );
     }
 
     const integration = integrate?.(candidate, spawnEnv) ?? null;
     const integrated = integration?.type === "hooked" ? integration : null;
     const launchEnv = integrated?.env ?? spawnEnv;
-    const launch = yield* agentScope.wrap({
-      command: executable,
-      args: integrated?.candidate.args ?? candidate.args ?? [],
-      name: "terminal",
-      env: launchEnv,
-      survivesRestart: true,
-    });
+    const launch = yield* agentScope
+      .wrap({
+        command: lookup.success,
+        args: integrated?.candidate.args ?? candidate.args ?? [],
+        name: "terminal",
+        env: launchEnv,
+        survivesRestart: true,
+      })
+      .pipe(withShellPreparationTimeout);
+
     const attempt = yield* Effect.result(
       options.ptyAdapter.spawn({
         shell: launch.command,
@@ -3126,7 +3176,14 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       return yield* spawnError;
     }
 
-    return yield* trySpawn(shellCandidates, spawnEnv, session, integrate, index + 1, spawnError);
+    return yield* trySpawn(
+      shellCandidates,
+      spawnEnv,
+      session,
+      integrate,
+      index + 1,
+      Cause.isTimeoutError(lastError) ? lastError : spawnError,
+    );
   });
 
   const startSession = Effect.fn("terminal.startSession")(function* (
@@ -3191,6 +3248,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               }).pipe(
                 Effect.provideService(FileSystem.FileSystem, fileSystem),
                 Effect.provideService(Path.Path, path),
+                withShellPreparationTimeout,
+                Effect.catchTags({ TimeoutError: () => Effect.succeed([]) }),
               );
               if (managedDirectories.length > 0) {
                 const delimiter = platform === "win32" ? ";" : ":";
@@ -3329,7 +3388,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         ...(startedShell ? { shell: startedShell } : {}),
       });
     }
-  });
+  }, Effect.uninterruptible);
 
   const closeSession = Effect.fn("terminal.closeSession")(function* (
     threadId: string,
@@ -3715,23 +3774,27 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       };
 
       const createdSession = session;
+      // Once the session is visible as starting, finish startup even if the opener disconnects.
       yield* modifyManagerState((state) => {
         const sessions = new Map(state.sessions);
         sessions.set(sessionKey, createdSession);
         closedSessionKeys.delete(sessionKey);
         return [undefined, { ...state, sessions }] as const;
-      });
-
-      yield* evictInactiveSessionsIfNeeded();
-      yield* startSession(
-        session,
-        {
-          cwd: input.cwd,
-          ...(input.worktreePath !== undefined ? { worktreePath: input.worktreePath } : {}),
-          cols,
-          rows,
-        },
-        "started",
+      }).pipe(
+        Effect.andThen(() => evictInactiveSessionsIfNeeded()),
+        Effect.andThen(() =>
+          startSession(
+            session,
+            {
+              cwd: input.cwd,
+              ...(input.worktreePath !== undefined ? { worktreePath: input.worktreePath } : {}),
+              cols,
+              rows,
+            },
+            "started",
+          ),
+        ),
+        Effect.uninterruptible,
       );
       return session;
     }
