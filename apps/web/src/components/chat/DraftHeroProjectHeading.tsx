@@ -61,7 +61,7 @@ export function DraftHeroProjectHeading({
             <span className="font-medium">{projectName}</span>
             {onStartWithoutProject ? (
               // Counts the clear button, so the inline heading keeps room for it after the "?".
-              <Button size="icon-micro" variant="ghost-muted" tabIndex={-1} />
+              <Button size="icon-micro" variant="ghost-muted" />
             ) : null}
             {buildInSuffix}
           </span>
