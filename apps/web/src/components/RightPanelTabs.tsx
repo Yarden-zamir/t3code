@@ -1,24 +1,33 @@
 import { msg, T, useGT, useMessages } from "gt-react";
+
 import { contextMenuSourceOf } from "../contextMenuSource";
+
 import { m, type MessageResolver } from "../i18n/messages";
+
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+
 import type { KeybindingCommand } from "@t3tools/contracts";
 import { KEYBINDING_COMMAND_ATTRIBUTE } from "../keybindingsMenu";
+
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+
 import {
   threadRuntimeIsActive,
   type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
+
 import {
   useProjects,
   useQuietThreadShell,
   useServerConfigs,
   useThreadShells,
 } from "~/state/entities";
+
 import {
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
 } from "@t3tools/client-runtime/thread-pull-requests";
+
 import type {
   ContextMenuItem,
   EnvironmentId,
@@ -30,7 +39,9 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabelsCopy";
+
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
+
 import {
   closestCenter,
   DndContext,
@@ -39,9 +50,13 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
+
 import { restrictToFirstScrollableAncestor, restrictToHorizontalAxis } from "@dnd-kit/modifiers";
+
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
+
 import { CSS } from "@dnd-kit/utilities";
+
 import {
   Bot,
   CircleDotIcon,
@@ -59,6 +74,7 @@ import {
   Volume2Icon,
   VolumeOffIcon,
 } from "lucide-react";
+
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -71,20 +87,31 @@ import {
 } from "react";
 
 import { isElectron } from "~/env";
+
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import { linkedThreadTitle } from "~/linkedThreadSurface";
+
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
+
 import { issueStatePresentation } from "~/components/issue/issuePresentation";
+
 import { issueEnvironment } from "~/state/issues";
+
 import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
+
 import { readLocalApi } from "~/localApi";
+
 import { useStableCallback } from "~/hooks/useStableCallback";
+
 import { Button } from "~/components/ui/button";
+
 import { AndroidIcon, AppleIcon } from "~/components/Icons";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+
 import { ShortcutTooltip } from "~/components/focusLevels/ShortcutHint";
+
 import { Kbd } from "~/components/ui/kbd";
+
 import {
   Menu,
   MenuItem,
@@ -95,31 +122,51 @@ import {
   MenuSubTrigger,
   MenuTrigger,
 } from "~/components/ui/menu";
+
 import { useBrowserDefaults } from "~/browser/browserDefaults";
+
 import { ScrollArea } from "~/components/ui/scroll-area";
+
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
+
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
+
 import { useTheme } from "~/hooks/useTheme";
+
 import { useDeviceState } from "~/state/device";
+
 import type { PreviewPanelInlineSize } from "~/hooks/usePreviewPanelInlineSize";
 import {
   newestPullRequestSummary,
   pullRequestEnvironment,
   useSharedPullRequestSummary,
 } from "~/state/pullRequests";
+
 import { useEnvironmentQuery } from "~/state/query";
+
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
+
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
+
 import { previewBridge } from "./preview/previewBridge";
+
 import { dispatchPreviewAction } from "./preview/previewActionBus";
+
 import { preventThumbButtonFocus, takeThumbButtonNavigation } from "./preview/thumbButtons";
+
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
+
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
+
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+
 import { observeResize } from "~/lib/observeResize";
+
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
+
+import { SharedTooltipTrigger } from "~/components/ui/shared-tooltip";
 
 export interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -312,12 +359,7 @@ export function surfaceShortcutTargetsTypingContext(
 }
 
 function DisabledReasonTooltip(props: { reason: string; trigger: ReactElement }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={props.trigger} />
-      <TooltipPopup side="top">{props.reason}</TooltipPopup>
-    </Tooltip>
-  );
+  return <SharedTooltipTrigger render={props.trigger} label={props.reason} />;
 }
 
 function SurfaceMenuItem(props: {
@@ -1040,34 +1082,30 @@ function RightPanelTab(
         ) : null}
       </PanelTabCloseButton>
       {audio === "none" || !audioRuntimeTabId ? null : (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
-                aria-label={
-                  audio === "muted"
-                    ? gt("Unmute {title}", { title })
-                    : gt("Mute {title}", { title })
-                }
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void previewBridge
-                    ?.setAudioMuted(audioRuntimeTabId, audio !== "muted")
-                    .catch(() => undefined);
-                }}
-              >
-                {audio === "muted" ? (
-                  <VolumeOffIcon className="size-3" />
-                ) : (
-                  <Volume2Icon className="size-3" />
-                )}
-              </button>
-            }
-          />
-          <TooltipPopup>{audio === "muted" ? gt("Unmute tab") : gt("Mute tab")}</TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <button
+              type="button"
+              className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
+              aria-label={
+                audio === "muted" ? gt("Unmute {title}", { title }) : gt("Mute {title}", { title })
+              }
+              onClick={(event) => {
+                event.stopPropagation();
+                void previewBridge
+                  ?.setAudioMuted(audioRuntimeTabId, audio !== "muted")
+                  .catch(() => undefined);
+              }}
+            >
+              {audio === "muted" ? (
+                <VolumeOffIcon className="size-3" />
+              ) : (
+                <Volume2Icon className="size-3" />
+              )}
+            </button>
+          }
+          label={audio === "muted" ? gt("Unmute tab") : gt("Mute tab")}
+        />
       )}
       {props.renaming ? (
         <input
@@ -1090,32 +1128,30 @@ function RightPanelTab(
           }}
         />
       ) : (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onDoubleClick={() => {
-                  if (surface.kind === "device" && props.canRename) onStartRename(surface.id);
-                }}
-                className="cursor-pointer flex min-w-0 items-center"
-                data-right-panel-tab-activate
-                aria-label={
-                  sideChatState === null
-                    ? undefined
-                    : gt("{title}, {state}", {
-                        title,
-                        state: messages(SIDE_CHAT_STATE_LABELS[sideChatState]),
-                      })
-                }
-                onClick={() => onActivate(surface)}
-              >
-                <span className="truncate">{title}</span>
-              </button>
-            }
-          />
-          <TooltipPopup>
-            {surface.kind === "device" ? (
+        <SharedTooltipTrigger
+          render={
+            <button
+              type="button"
+              onDoubleClick={() => {
+                if (surface.kind === "device" && props.canRename) onStartRename(surface.id);
+              }}
+              className="cursor-pointer flex min-w-0 items-center"
+              data-right-panel-tab-activate
+              aria-label={
+                sideChatState === null
+                  ? undefined
+                  : gt("{title}, {state}", {
+                      title,
+                      state: messages(SIDE_CHAT_STATE_LABELS[sideChatState]),
+                    })
+              }
+              onClick={() => onActivate(surface)}
+            >
+              <span className="truncate">{title}</span>
+            </button>
+          }
+          label={
+            surface.kind === "device" ? (
               <DeviceTabTooltip
                 surface={surface}
                 environmentId={props.environmentId}
@@ -1123,9 +1159,9 @@ function RightPanelTab(
               />
             ) : (
               title
-            )}
-          </TooltipPopup>
-        </Tooltip>
+            )
+          }
+        />
       )}
     </>
   );
@@ -1683,46 +1719,46 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             role="group"
             aria-label={gt("Scroll panel tabs")}
           >
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span className="inline-flex">
-                    <Button
-                      aria-label={gt("Scroll tabs left")}
-                      disabled={!tabScrollState.canScrollLeft}
-                      onClick={() => scrollTabs(-1)}
-                      size="icon-xs"
-                      variant="ghost"
-                    >
-                      <ChevronLeft />
-                    </Button>
-                  </span>
-                }
-              />
-              <TooltipPopup>
-                <T>Scroll tabs left</T>
-              </TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span className="inline-flex">
-                    <Button
-                      aria-label={gt("Scroll tabs right")}
-                      disabled={!tabScrollState.canScrollRight}
-                      onClick={() => scrollTabs(1)}
-                      size="icon-xs"
-                      variant="ghost"
-                    >
-                      <ChevronRight />
-                    </Button>
-                  </span>
-                }
-              />
-              <TooltipPopup>
-                <T>Scroll tabs right</T>
-              </TooltipPopup>
-            </Tooltip>
+            <SharedTooltipTrigger
+              render={
+                <span className="inline-flex">
+                  <Button
+                    aria-label={gt("Scroll tabs left")}
+                    disabled={!tabScrollState.canScrollLeft}
+                    onClick={() => scrollTabs(-1)}
+                    size="icon-xs"
+                    variant="ghost"
+                  >
+                    <ChevronLeft />
+                  </Button>
+                </span>
+              }
+              label={
+                <>
+                  <T>Scroll tabs left</T>
+                </>
+              }
+            />
+            <SharedTooltipTrigger
+              render={
+                <span className="inline-flex">
+                  <Button
+                    aria-label={gt("Scroll tabs right")}
+                    disabled={!tabScrollState.canScrollRight}
+                    onClick={() => scrollTabs(1)}
+                    size="icon-xs"
+                    variant="ghost"
+                  >
+                    <ChevronRight />
+                  </Button>
+                </span>
+              }
+              label={
+                <>
+                  <T>Scroll tabs right</T>
+                </>
+              }
+            />
           </div>
         ) : null}
         {props.layoutControls}

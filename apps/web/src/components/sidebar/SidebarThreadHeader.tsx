@@ -14,7 +14,7 @@ import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutSharedTrigger, ShortcutTrigger } from "../focusLevels/ShortcutHint";
 import type { KeybindingCommand } from "@t3tools/contracts";
 
 export interface SidebarThreadHeaderProps {
@@ -179,7 +179,7 @@ export function SidebarHeaderIconButton({
   /** The keybinding command that the button runs; its key shows in `tooltip`. */
   command?: KeybindingCommand | null;
   /** Fork: the context that the key of `command` needs, such as `sidebarFocus`. */
-  shortcutContext?: ComponentProps<typeof ShortcutTrigger>["context"];
+  shortcutContext?: ComponentProps<typeof ShortcutSharedTrigger>["context"];
   className?: string | undefined;
   children?: ReactNode;
 } & Omit<
@@ -187,27 +187,25 @@ export function SidebarHeaderIconButton({
   "children" | "className" | "tooltip" | "isActive" | "aria-label"
 >) {
   return (
-    <Tooltip>
-      <ShortcutTrigger
-        command={command}
-        {...(shortcutContext === undefined ? {} : { context: shortcutContext })}
-        render={
-          <SidebarMenuButton
-            size="icon"
-            type="button"
-            aria-label={label}
-            {...rest}
-            className={cn("relative size-7 shrink-0", className)}
-          />
-        }
-      >
-        {children}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+    <ShortcutSharedTrigger
+      command={command}
+      {...(shortcutContext === undefined ? {} : { context: shortcutContext })}
+      render={
+        <SidebarMenuButton
+          size="icon"
+          type="button"
+          aria-label={label}
+          {...rest}
+          className={cn("relative size-7 shrink-0", className)}
         />
-      </ShortcutTrigger>
-      <TooltipPopup side="top">{tooltip}</TooltipPopup>
-    </Tooltip>
+      }
+      label={tooltip}
+    >
+      {children}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+      />
+    </ShortcutSharedTrigger>
   );
 }

@@ -9,8 +9,8 @@ import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { KeyHint, ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
+import { KeyHint, ShortcutHint, ShortcutSharedTrigger } from "../focusLevels/ShortcutHint";
 
 type DownloadProgress = { downloaded: number; total: number } | null;
 
@@ -100,25 +100,30 @@ function RecordingStatus(props: {
 
 function DictationTooltip(props: { label: string; children: ReactElement }) {
   return (
-    <Tooltip>
-      <ShortcutTrigger command="composer.dictation" render={props.children} />
-      <TooltipPopup side="top">
-        {props.label}
-        <ShortcutHint command="composer.dictation" />
-      </TooltipPopup>
-    </Tooltip>
+    <ShortcutSharedTrigger
+      command="composer.dictation"
+      render={props.children}
+      label={
+        <>
+          {props.label}
+          <ShortcutHint command="composer.dictation" />
+        </>
+      }
+    />
   );
 }
 
 function CancelTooltip(props: { label: string; children: ReactElement }) {
   return (
-    <Tooltip>
-      <TooltipTrigger render={props.children} />
-      <TooltipPopup side="top">
-        {props.label}
-        <KeyHint label="Esc" />
-      </TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={props.children}
+      label={
+        <>
+          {props.label}
+          <KeyHint label="Esc" />
+        </>
+      }
+    />
   );
 }
 

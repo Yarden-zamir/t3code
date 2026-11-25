@@ -6,7 +6,9 @@ import {
   type PointerEventHandler,
   type ReactNode,
 } from "react";
+
 import { msg, useGT, useMessages } from "gt-react";
+
 import {
   CheckIcon,
   ChevronLeftIcon,
@@ -15,16 +17,30 @@ import {
   CornerUpRightIcon,
   ListPlusIcon,
 } from "lucide-react";
+
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
+
 import type { MessageResolver } from "~/i18n/messages";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
+
 import { cn } from "~/lib/utils";
+
 import { useShortcutModifierState } from "../../shortcutModifierState";
+
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
+
 import { Button } from "../ui/button";
+
 import { Spinner } from "../ui/spinner";
+
 import { Tooltip, TooltipPopup } from "../ui/tooltip";
-import { ShortcutCommandRows, ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
+import {
+  ShortcutCommandRows,
+  ShortcutHint,
+  ShortcutSharedTrigger,
+  ShortcutTrigger,
+} from "../focusLevels/ShortcutHint";
+
 import {
   alternateComposerDispatchAction,
   resolveComposerDispatchMode,
@@ -160,38 +176,38 @@ function StopGenerationButton({
   const gt = useGT();
   const isStopDisabled = stopPhase === "pending";
   return (
-    <Tooltip>
-      <ShortcutTrigger
-        command="thread.stop"
-        render={
-          <button
-            type="button"
-            className={cn(
-              "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-destructive active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 disabled:hover:bg-destructive/90 [&_svg]:pointer-events-none",
-              insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
-            )}
-            onPointerDown={preserveComposerFocusOnPointerDown ? preventPointerFocus : undefined}
-            disabled={!canOperateThread || isStopDisabled}
-            onClick={() => {
-              if (!canOperateThread || isStopDisabled) return;
-              onStopRequested();
-              onInterrupt();
-            }}
-            aria-label={stopPhase === "pending" ? gt("Stopping") : gt("Stop generation")}
-          />
-        }
-      >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-          <rect x="2" y="2" width="8" height="8" rx="1.5" />
-        </svg>
-      </ShortcutTrigger>
-      <TooltipPopup>
-        {stopPhase === "pending"
-          ? gt("Stopping…")
-          : gt("Interrupt", { $context: "verb, stops the running agent" })}
-        <ShortcutHint command="thread.stop" />
-      </TooltipPopup>
-    </Tooltip>
+    <ShortcutSharedTrigger
+      command="thread.stop"
+      render={
+        <button
+          type="button"
+          className={cn(
+            "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-destructive active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 disabled:hover:bg-destructive/90 [&_svg]:pointer-events-none",
+            insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
+          )}
+          onPointerDown={preserveComposerFocusOnPointerDown ? preventPointerFocus : undefined}
+          disabled={!canOperateThread || isStopDisabled}
+          onClick={() => {
+            if (!canOperateThread || isStopDisabled) return;
+            onStopRequested();
+            onInterrupt();
+          }}
+          aria-label={stopPhase === "pending" ? gt("Stopping") : gt("Stop generation")}
+        />
+      }
+      label={
+        <>
+          {stopPhase === "pending"
+            ? gt("Stopping…")
+            : gt("Interrupt", { $context: "verb, stops the running agent" })}
+          <ShortcutHint command="thread.stop" />
+        </>
+      }
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+        <rect x="2" y="2" width="8" height="8" rx="1.5" />
+      </svg>
+    </ShortcutSharedTrigger>
   );
 }
 
@@ -531,47 +547,47 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   return withStopButton(
     <div data-chat-composer-compact-send="true" className="flex items-center gap-2">
-      <Tooltip>
-        <ShortcutTrigger
-          command="composer.toggleCompactBeforeSend"
-          context={COMPACT_BEFORE_SEND_SHOWN}
-          render={
-            <button
-              type="button"
-              className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
-              {...pointerFocusProps}
-              aria-pressed={!keepFullHistory}
-              aria-label={gt("Compact {tokens} tokens of history before sending", {
-                tokens: compactTokens,
-              })}
-              disabled={!canOperateThread}
-              onClick={onToggleKeepFullHistory}
-            />
-          }
-        >
-          <Minimize2Icon aria-hidden="true" />
-          <span className="@max-[480px]/composer-surface:hidden">
-            {keepFullHistory
-              ? gt("Keep", { $context: "keep full history instead of compacting" })
-              : gt("Compact", { $context: "verb, compact history before sending" })}
-          </span>
-          <span className="text-muted-foreground">{compactTokens}</span>
-        </ShortcutTrigger>
-        <TooltipPopup>
-          <div>
-            {keepFullHistory
-              ? gt("Next send keeps all {tokens} tokens.", { tokens: compactTokens })
-              : gt("Next send compacts {tokens} tokens first.", { tokens: compactTokens })}
-          </div>
-          <div>
-            {keepFullHistory ? gt("Click to compact first") : gt("Click to keep full history")}
-            <ShortcutHint
-              command="composer.toggleCompactBeforeSend"
-              context={COMPACT_BEFORE_SEND_SHOWN}
-            />
-          </div>
-        </TooltipPopup>
-      </Tooltip>
+      <ShortcutSharedTrigger
+        command="composer.toggleCompactBeforeSend"
+        context={COMPACT_BEFORE_SEND_SHOWN}
+        render={
+          <button
+            type="button"
+            className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
+            {...pointerFocusProps}
+            aria-pressed={!keepFullHistory}
+            aria-label={gt("Compact {tokens} tokens of history before sending", {
+              tokens: compactTokens,
+            })}
+            disabled={!canOperateThread}
+            onClick={onToggleKeepFullHistory}
+          />
+        }
+        label={
+          <>
+            <div>
+              {keepFullHistory
+                ? gt("Next send keeps all {tokens} tokens.", { tokens: compactTokens })
+                : gt("Next send compacts {tokens} tokens first.", { tokens: compactTokens })}
+            </div>
+            <div>
+              {keepFullHistory ? gt("Click to compact first") : gt("Click to keep full history")}
+              <ShortcutHint
+                command="composer.toggleCompactBeforeSend"
+                context={COMPACT_BEFORE_SEND_SHOWN}
+              />
+            </div>
+          </>
+        }
+      >
+        <Minimize2Icon aria-hidden="true" />
+        <span className="@max-[480px]/composer-surface:hidden">
+          {keepFullHistory
+            ? gt("Keep", { $context: "keep full history instead of compacting" })
+            : gt("Compact", { $context: "verb, compact history before sending" })}
+        </span>
+        <span className="text-muted-foreground">{compactTokens}</span>
+      </ShortcutSharedTrigger>
       {children}
       {submit}
     </div>,

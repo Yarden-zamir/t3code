@@ -8,8 +8,7 @@ import {
   showAnchoredCopyErrorToast,
 } from "../ui/anchoredCopyToast";
 import type { KeybindingCommand } from "@t3tools/contracts";
-import { ShortcutTrigger } from "../focusLevels/ShortcutHint";
-import { Tooltip, TooltipPopup } from "../ui/tooltip";
+import { ShortcutSharedTrigger } from "../focusLevels/ShortcutHint";
 
 export const MessageCopyButton = memo(function MessageCopyButton({
   text,
@@ -41,27 +40,27 @@ export const MessageCopyButton = memo(function MessageCopyButton({
   });
 
   return (
-    <Tooltip>
-      <ShortcutTrigger
-        command={keybindingCommand}
-        render={
-          <Button
-            aria-label={label}
-            disabled={isCopied}
-            onClick={() => copyToClipboard(text)}
-            ref={ref}
-            type="button"
-            size={size}
-            variant={variant === "ghost" ? "ghost-muted" : variant}
-            className={className}
-          />
-        }
-      >
-        {isCopied ? <CheckIcon className="size-3 text-primary" /> : <Icon className="size-3" />}
-      </ShortcutTrigger>
-      <TooltipPopup>
-        <p>{label}</p>
-      </TooltipPopup>
-    </Tooltip>
+    <ShortcutSharedTrigger
+      command={keybindingCommand}
+      render={
+        <Button
+          aria-label={label}
+          disabled={isCopied}
+          onClick={() => copyToClipboard(text)}
+          ref={ref}
+          type="button"
+          size={size}
+          variant={variant === "ghost" ? "ghost-muted" : variant}
+          className={className}
+        />
+      }
+      label={
+        <>
+          <p>{label}</p>
+        </>
+      }
+    >
+      {isCopied ? <CheckIcon className="size-3 text-primary" /> : <Icon className="size-3" />}
+    </ShortcutSharedTrigger>
   );
 });

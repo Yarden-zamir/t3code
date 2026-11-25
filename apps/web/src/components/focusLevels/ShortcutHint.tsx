@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ClientSettings, KeybindingCommand, KeybindingShortcut } from "@t3tools/contracts";
-import type { ComponentProps, ReactNode } from "react";
+import { cloneElement, type ComponentProps, type ReactNode } from "react";
 
 import { useClientSettings } from "../../hooks/useSettings";
 import {
@@ -17,6 +17,7 @@ const { composerFocus: _composerFocus, ...FORK_LEVELS_OFF } = FOCUS_LEVELS_OFF;
 import { runKeybindingCommand } from "../../shortcuts/commandRunner";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 type ShortcutContext = Partial<ShortcutMatchContext>;
@@ -161,6 +162,20 @@ export function ShortcutTrigger({
   context?: ShortcutContext;
 }) {
   return <TooltipTrigger {...useKeybindingProps(command, context)} {...props} />;
+}
+
+/** Fork: `ShortcutTrigger` for a `SharedTooltipTrigger`. Its control gets the keybinding props. */
+export function ShortcutSharedTrigger({
+  command,
+  context,
+  render,
+  ...props
+}: ComponentProps<typeof SharedTooltipTrigger> & {
+  command: KeybindingCommand | null;
+  context?: ShortcutContext;
+}) {
+  const keybindingProps = useKeybindingProps(command, context);
+  return <SharedTooltipTrigger {...props} render={cloneElement(render, keybindingProps)} />;
 }
 
 /**

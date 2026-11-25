@@ -1,34 +1,51 @@
 import { T, Var, msg, useGT, useMessages } from "gt-react";
+
 import {
   ThreadHoverCardAction,
   ThreadHoverCardActions,
   ThreadHoverCardPopup,
 } from "../ThreadHoverCard";
+
 import { AgentElapsed } from "./AgentElapsed";
+
 import { projectedSubagentsToRuntime } from "@t3tools/client-runtime/state/subagentRuntime";
+
 import { use, type ReactNode } from "react";
+
 import { useThreadShell, useProject } from "../../state/entities";
+
 import type { SideThreadOpenIntent } from "@t3tools/client-runtime/side-thread";
 import { SideThreadsOpenContext, useSideThreadTrigger } from "../../hooks/useSideThreadTrigger";
+
 import { useLinkedThreadOpener } from "../../state/linkedThreadView";
+
 import { SubagentTooltipContent } from "./SubagentTooltipContent";
+
 import { useAtomValue } from "@effect/atom-react";
+
 import { scopeThreadRef, scopeProjectRef } from "@t3tools/client-runtime/environment";
+
 import { environmentThreadDetails } from "../../state/threads";
+
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
+
 import { MiddleTruncate } from "../ui/middle-truncate";
+
 import * as DateTime from "effect/DateTime";
 import { WorkLogRow } from "./WorkLog";
+
 import {
   resolveHandoffEndpoints,
   type HandoffEndpoints,
   type HandoffTimelineRun,
   resolveModelSwitchChange,
 } from "@t3tools/client-runtime/handoff";
+
 import {
   formatSubagentDisplayTitle,
   subagentCardDetail,
 } from "@t3tools/client-runtime/state/subagent-display";
+
 import {
   ProviderDriverKind,
   type ModelSelection,
@@ -44,6 +61,7 @@ import {
   type NodeId,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
+
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   BotIcon,
@@ -57,7 +75,9 @@ import {
 } from "lucide-react";
 
 import { PreviewCard, PreviewCardTrigger } from "../ui/preview-card";
-import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
+
 import {
   applyProviderInstanceSettings,
   brandProviderInstanceEntries,
@@ -66,13 +86,21 @@ import {
   shouldShowInstanceBadge,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
+
 import { formatShortTimestamp } from "../../timestampFormat";
+
 import { getTriggerDisplayModelName } from "./providerIconUtils";
+
 import { ProviderInstanceIcon, providerTextColor } from "./ProviderInstanceIcon";
+
 import { cn } from "~/lib/utils";
+
 import { TimelineSystemDivider } from "./TimelineSystemDivider";
+
 import { subagentResumedSince } from "./V2LifecycleRow.logic";
+
 import { Button, InlineButton } from "../ui/button";
+
 import { T3Wordmark } from "../T3Wordmark";
 
 export type { HandoffTimelineRun } from "@t3tools/client-runtime/handoff";
@@ -756,36 +784,36 @@ function HandoffEndpoint(props: {
     entry?.driverKind ?? ProviderDriverKind.make(props.instanceId),
   );
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
+    <SharedTooltipTrigger
+      render={
+        <span
+          tabIndex={0}
+          className="inline-flex min-w-0 items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <ProviderInstanceIcon
+            driverKind={entry?.driverKind ?? ProviderDriverKind.make(props.instanceId)}
+            displayName={entry?.displayName ?? props.instanceId}
+            accentColor={entry?.accentColor}
+            acpRegistryAgentId={entry?.acpRegistryAgentId}
+            acpRegistryIconUrl={entry?.acpRegistryIconUrl}
+            showBadge={showBadge}
+            size="compact"
+            iconClassName={cn(showBadge && "opacity-60")}
+            indicatorBackground="var(--background)"
+          />
           <span
-            tabIndex={0}
-            className="inline-flex min-w-0 items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className={cn("truncate font-medium", labelColor.className)}
+            style={labelColor.style}
           >
-            <ProviderInstanceIcon
-              driverKind={entry?.driverKind ?? ProviderDriverKind.make(props.instanceId)}
-              displayName={entry?.displayName ?? props.instanceId}
-              accentColor={entry?.accentColor}
-              acpRegistryAgentId={entry?.acpRegistryAgentId}
-              acpRegistryIconUrl={entry?.acpRegistryIconUrl}
-              showBadge={showBadge}
-              size="compact"
-              iconClassName={cn(showBadge && "opacity-60")}
-              indicatorBackground="var(--background)"
-            />
-            <span
-              className={cn("truncate font-medium", labelColor.className)}
-              style={labelColor.style}
-            >
-              {label}
-            </span>
+            {label}
           </span>
-        }
-      />
-      <TooltipPopup>
-        {entry?.displayName ?? props.instanceId} · {label}
-      </TooltipPopup>
-    </Tooltip>
+        </span>
+      }
+      label={
+        <>
+          {entry?.displayName ?? props.instanceId} · {label}
+        </>
+      }
+    />
   );
 }

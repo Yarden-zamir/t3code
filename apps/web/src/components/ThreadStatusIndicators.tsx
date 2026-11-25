@@ -1,14 +1,19 @@
 import { pipe } from "effect/Function";
+
 import { changeRequestTermKind, type ChangeRequestTermKind } from "./pullRequest/changeRequestTerm";
+
 import {
   scopeProjectRef,
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
+
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
+
 import { useStableCallback } from "~/hooks/useStableCallback";
 
 import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
+
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   resolveEnvironmentMachineKind,
@@ -18,12 +23,19 @@ import {
   type ThreadPullRequestLink,
   type VcsStatusResult,
 } from "@t3tools/contracts";
+
 import { msg, T, useGT, useMessages } from "gt-react";
+
 import { TerminalIcon } from "lucide-react";
+
 import { m, type MessageResolver } from "../i18n/messages";
+
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
+
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+
 import { useProject } from "../state/entities";
+
 import {
   pullRequestListLines,
   resolveThreadCurrentPullRequestLink,
@@ -32,7 +44,9 @@ import {
   type ThreadPullRequestBadge,
   visibleThreadPullRequests,
 } from "@t3tools/client-runtime/thread-pull-requests";
+
 import { useRender } from "@base-ui/react/use-render";
+
 import {
   type ComponentType,
   type ReactNode,
@@ -40,15 +54,23 @@ import {
   type MouseEvent,
   type ReactElement,
 } from "react";
+
 import { cn } from "../lib/utils";
+
 import { revealThreadTerminal } from "../lib/revealThreadTerminal";
 
 import { useEnvironmentQuery } from "../state/query";
+
 import { linkedPullRequestDetailAtom, useSharedPullRequestSummary } from "../state/pullRequests";
+
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
+
 import { vcsEnvironment } from "../state/vcs";
+
 import { useUiStateStore } from "../uiStateStore";
+
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+
 import {
   pullRequestMatchesSearchQuery,
   resolveThreadLastVisitedAt,
@@ -60,13 +82,17 @@ import {
 
 import type { SidebarThreadSummary } from "../types";
 import { PreviewCard, PreviewCardTrigger } from "./ui/preview-card";
+
 import { ThreadHoverCardPopup } from "./ThreadHoverCard";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+
+import { SharedTooltipTrigger } from "./ui/shared-tooltip";
+
 import {
   PULL_REQUEST_STATE_PRESENTATION,
   PullRequestGlyph,
   type PullRequestGlyphIcon,
 } from "./pullRequest/pullRequestIcons";
+
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 
 export interface PrStatusIndicator {
@@ -770,35 +796,33 @@ export function ThreadTerminalStatusButton({
     { count: terminalIds.length },
   );
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label={label}
-            data-testid={`sidebar-terminal-status-${threadRef.threadId}`}
-            className={cn(
-              "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-              status?.colorClass,
-            )}
-            onPointerDown={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              revealThreadTerminal(threadRef, terminalId);
-              onThreadActivate(threadRef);
-            }}
-          />
-        }
-      >
-        <TerminalIcon
-          className="size-3.5 motion-safe:animate-status-pulse"
-          onAnimationStart={synchronizeTerminalPulse}
+    <SharedTooltipTrigger
+      render={
+        <button
+          type="button"
+          aria-label={label}
+          data-testid={`sidebar-terminal-status-${threadRef.threadId}`}
+          className={cn(
+            "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            status?.colorClass,
+          )}
+          onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            revealThreadTerminal(threadRef, terminalId);
+            onThreadActivate(threadRef);
+          }}
         />
-      </TooltipTrigger>
-      <TooltipPopup side="top">{label}</TooltipPopup>
-    </Tooltip>
+      }
+      label={label}
+    >
+      <TerminalIcon
+        className="size-3.5 motion-safe:animate-status-pulse"
+        onAnimationStart={synchronizeTerminalPulse}
+      />
+    </SharedTooltipTrigger>
   );
 }
 
@@ -813,47 +837,43 @@ function ThreadStatusLabel({
   const label = m(status.label);
   if (compact) {
     return (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span
-              role="img"
-              aria-label={label}
-              className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
-            />
-          }
-        >
-          <span
-            className={`size-[9px] rounded-full ${status.dotClass} ${
-              status.pulse ? "motion-safe:animate-status-pulse" : ""
-            }`}
-          />
-        </TooltipTrigger>
-        <TooltipPopup side="top">{label}</TooltipPopup>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger
+      <SharedTooltipTrigger
         render={
           <span
             role="img"
             aria-label={label}
-            className={`inline-flex items-center gap-1 text-3xs ${status.colorClass}`}
+            className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
           />
         }
+        label={label}
       >
         <span
-          className={`h-1.5 w-1.5 rounded-full ${status.dotClass} ${
+          className={`size-[9px] rounded-full ${status.dotClass} ${
             status.pulse ? "motion-safe:animate-status-pulse" : ""
           }`}
         />
-        <span className="hidden md:inline">{label}</span>
-      </TooltipTrigger>
-      <TooltipPopup side="top">{label}</TooltipPopup>
-    </Tooltip>
+      </SharedTooltipTrigger>
+    );
+  }
+
+  return (
+    <SharedTooltipTrigger
+      render={
+        <span
+          role="img"
+          aria-label={label}
+          className={`inline-flex items-center gap-1 text-3xs ${status.colorClass}`}
+        />
+      }
+      label={label}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${status.dotClass} ${
+          status.pulse ? "motion-safe:animate-status-pulse" : ""
+        }`}
+      />
+      <span className="hidden md:inline">{label}</span>
+    </SharedTooltipTrigger>
   );
 }
 
@@ -928,21 +948,21 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
       }
     >
       {prStatus && pr ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span
-                aria-label={prStatus.tooltip}
-                className={`inline-flex items-center justify-center ${prStatus.colorClass}`}
-              />
-            }
-          >
-            <ChangeRequestStatusIcon state={pr.state} isDraft={pr.isDraft} className="size-3" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">
-            <PrStatusTooltipContent status={prStatus} />
-          </TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <span
+              aria-label={prStatus.tooltip}
+              className={`inline-flex items-center justify-center ${prStatus.colorClass}`}
+            />
+          }
+          label={
+            <>
+              <PrStatusTooltipContent status={prStatus} />
+            </>
+          }
+        >
+          <ChangeRequestStatusIcon state={pr.state} isDraft={pr.isDraft} className="size-3" />
+        </SharedTooltipTrigger>
       ) : null}
       {pendingLink ? (
         <PullRequestGlyph.pullRequest
@@ -985,43 +1005,37 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5">
       {terminalStatus ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span
-                role="img"
-                aria-label={terminalStatus.label}
-                className={`inline-flex items-center justify-center ${terminalStatus.colorClass}`}
-              />
-            }
-          >
-            <TerminalIcon
-              className={`size-3 ${terminalStatus.pulse ? "motion-safe:animate-status-pulse" : ""}`}
-              onAnimationStart={synchronizeTerminalPulse}
+        <SharedTooltipTrigger
+          render={
+            <span
+              role="img"
+              aria-label={terminalStatus.label}
+              className={`inline-flex items-center justify-center ${terminalStatus.colorClass}`}
             />
-          </TooltipTrigger>
-          <TooltipPopup side="top">{terminalStatus.label}</TooltipPopup>
-        </Tooltip>
+          }
+          label={terminalStatus.label}
+        >
+          <TerminalIcon
+            className={`size-3 ${terminalStatus.pulse ? "motion-safe:animate-status-pulse" : ""}`}
+            onAnimationStart={synchronizeTerminalPulse}
+          />
+        </SharedTooltipTrigger>
       ) : null}
       {isRemoteThread ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span
-                aria-label={
-                  threadEnvironmentLabel ?? gt("Remote", { $context: "machine location" })
-                }
-                className="inline-flex items-center justify-center"
-              />
-            }
-          >
-            <EnvironmentMachineIcon
-              kind={remoteMachine}
-              className="size-3 text-muted-foreground/60"
+        <SharedTooltipTrigger
+          render={
+            <span
+              aria-label={threadEnvironmentLabel ?? gt("Remote", { $context: "machine location" })}
+              className="inline-flex items-center justify-center"
             />
-          </TooltipTrigger>
-          <TooltipPopup side="top">{threadEnvironmentLabel}</TooltipPopup>
-        </Tooltip>
+          }
+          label={threadEnvironmentLabel}
+        >
+          <EnvironmentMachineIcon
+            kind={remoteMachine}
+            className="size-3 text-muted-foreground/60"
+          />
+        </SharedTooltipTrigger>
       ) : null}
     </span>
   );
