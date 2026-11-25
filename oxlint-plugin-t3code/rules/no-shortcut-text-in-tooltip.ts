@@ -5,6 +5,19 @@ const MESSAGE =
 
 const TEXT_ATTRIBUTES = new Set(["title", "tooltip"]);
 
+// The `label` of a tooltip trigger, such as SharedTooltipTrigger, is its popup text.
+const isTooltipTextAttribute = (node: ESTree.JSXAttribute): boolean => {
+  if (node.name.type !== "JSXIdentifier") return false;
+  if (TEXT_ATTRIBUTES.has(node.name.name)) return true;
+  const parent = node.parent;
+  return (
+    node.name.name === "label" &&
+    parent.type === "JSXOpeningElement" &&
+    parent.name.type === "JSXIdentifier" &&
+    parent.name.name.endsWith("Trigger")
+  );
+};
+
 type Node = ESTree.Node | ESTree.JSXElement["children"][number] | null | undefined;
 
 const isShortcutLabel = (node: Node): boolean => {
@@ -52,6 +65,9 @@ const embedsShortcutLabel = (node: Node): boolean => {
       return embedsShortcutLabel(node.left) || embedsShortcutLabel(node.right);
     case "JSXExpressionContainer":
       return node.expression.type !== "JSXEmptyExpression" && embedsShortcutLabel(node.expression);
+    case "JSXElement":
+    case "JSXFragment":
+      return node.children.some(embedsShortcutLabel);
     default:
       return false;
   }
@@ -75,7 +91,7 @@ export default defineRule({
         }
       },
       JSXAttribute(node) {
-        if (node.name.type !== "JSXIdentifier" || !TEXT_ATTRIBUTES.has(node.name.name)) return;
+        if (node.name.type !== "JSXIdentifier" || !isTooltipTextAttribute(node)) return;
         if (embedsShortcutLabel(node.value)) context.report({ node, message: MESSAGE });
       },
     };

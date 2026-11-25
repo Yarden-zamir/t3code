@@ -8,9 +8,9 @@ import { memo } from "react";
 import { EllipsisIcon, TriangleAlertIcon } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
-import { Tooltip, TooltipPopup } from "../ui/tooltip";
+
 import { composerFloatingLayerProps } from "./composerEventScope";
-import { ShortcutHint, ShortcutTrigger, ShortcutTooltip } from "../focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutSharedTrigger, ShortcutTooltip } from "../focusLevels/ShortcutHint";
 import { approvalShortcut } from "../focusLevels/approvalShortcuts";
 
 interface ComposerPendingApprovalActionsProps {
@@ -102,13 +102,17 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
             </Button>
           );
         return option.warning ? (
-          <Tooltip key={option.decision}>
-            <ShortcutTrigger {...approvalShortcut(option.decision)} render={button} />
-            <TooltipPopup side="top">
-              {option.warning}
-              <ShortcutHint {...approvalShortcut(option.decision)} />
-            </TooltipPopup>
-          </Tooltip>
+          <ShortcutSharedTrigger
+            key={option.decision}
+            {...approvalShortcut(option.decision)}
+            render={button}
+            label={
+              <>
+                {option.warning}
+                <ShortcutHint {...approvalShortcut(option.decision)} />
+              </>
+            }
+          />
         ) : (
           <ShortcutTooltip
             key={option.decision}
@@ -156,13 +160,17 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
                 </MenuItem>
               );
               return option.warning ? (
-                <Tooltip key={option.decision}>
-                  <ShortcutTrigger {...approvalShortcut(option.decision)} render={item} />
-                  <TooltipPopup side="top">
-                    {option.warning}
-                    <ShortcutHint {...approvalShortcut(option.decision)} />
-                  </TooltipPopup>
-                </Tooltip>
+                <ShortcutSharedTrigger
+                  key={option.decision}
+                  {...approvalShortcut(option.decision)}
+                  render={item}
+                  label={
+                    <>
+                      {option.warning}
+                      <ShortcutHint {...approvalShortcut(option.decision)} />
+                    </>
+                  }
+                />
               ) : (
                 <ShortcutTooltip
                   key={option.decision}

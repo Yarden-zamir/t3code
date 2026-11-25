@@ -64,8 +64,7 @@ import {
   useSidebar,
   useSidebarVisibility,
 } from "./ui/sidebar";
-import { Tooltip, TooltipPopup } from "./ui/tooltip";
-import { ShortcutHint, ShortcutTrigger } from "./focusLevels/ShortcutHint";
+import { ShortcutHint, ShortcutSharedTrigger } from "./focusLevels/ShortcutHint";
 import { TitlebarPinnedScripts, usePinnedScriptsTargetStore } from "./PinnedScripts";
 import { NavigationHistoryButtons, NavigationHistoryRecorder } from "./ForkNavigationHistory";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -394,26 +393,27 @@ function SidebarControl({
   );
 
   const trigger = (
-    <Tooltip>
-      <ShortcutTrigger
-        command="sidebar.toggle"
-        context={{ usagePageOpen }}
-        render={
-          <SidebarTrigger
-            variant={isSidebarVisible && stageBackdropVariant ? "media-navigation" : "ghost"}
-            className={cn(
-              "pointer-events-auto",
-              isSidebarVisible && stageBackdropVariant && "relative top-auto translate-y-0",
-            )}
-            aria-label={gt("Toggle main sidebar")}
-          />
-        }
-      />
-      <TooltipPopup side="bottom">
-        {gt("Toggle main sidebar")}
-        <ShortcutHint command="sidebar.toggle" context={{ usagePageOpen }} />
-      </TooltipPopup>
-    </Tooltip>
+    <ShortcutSharedTrigger
+      command="sidebar.toggle"
+      context={{ usagePageOpen }}
+      render={
+        <SidebarTrigger
+          variant={isSidebarVisible && stageBackdropVariant ? "media-navigation" : "ghost"}
+          className={cn(
+            "pointer-events-auto",
+            isSidebarVisible && stageBackdropVariant && "relative top-auto translate-y-0",
+          )}
+          aria-label={gt("Toggle main sidebar")}
+        />
+      }
+      label={
+        <>
+          {gt("Toggle main sidebar")}
+          <ShortcutHint command="sidebar.toggle" context={{ usagePageOpen }} />
+        </>
+      }
+      side="bottom"
+    />
   );
   const controls = (
     <>

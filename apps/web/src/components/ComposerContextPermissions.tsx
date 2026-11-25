@@ -3,7 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { use } from "react";
 import { T, useGT, useMessages } from "gt-react";
 
-import { ShortcutTrigger } from "./focusLevels/ShortcutHint";
+import { ShortcutSharedTrigger } from "./focusLevels/ShortcutHint";
 import { shortcutLabelForCommand } from "../keybindings";
 import { useManagedPolicy } from "../state/managedPolicy";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -19,7 +19,6 @@ import {
 } from "./chat/runtimeModeConfig";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { Menu, MenuPopup, MenuTrigger } from "./ui/menu";
-import { Tooltip, TooltipPopup } from "./ui/tooltip";
 
 export function ComposerContextPermissions(props: {
   environmentId: EnvironmentId | null;
@@ -44,30 +43,30 @@ export function ComposerContextPermissions(props: {
   const label = messages(runtimeModeConfig[mode].label);
   return (
     <Menu open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <ShortcutTrigger
-          command="composer.mode"
-          render={
-            <MenuTrigger
-              render={
-                <ComposerControl
-                  size="xs"
-                  className="ms-auto min-w-0 shrink-0"
-                  aria-label={gt("Permissions: {label}", { label })}
-                  data-composer-context-control
-                />
-              }
-            />
-          }
-        >
-          <Icon aria-hidden="true" className="size-3" />
-          <ComposerContextLabel>{label}</ComposerContextLabel>
-        </ShortcutTrigger>
-        <TooltipPopup>
-          <T>Permissions</T>
-          {shortcutLabel ? ` · ${shortcutLabel}` : null}
-        </TooltipPopup>
-      </Tooltip>
+      <ShortcutSharedTrigger
+        command="composer.mode"
+        render={
+          <MenuTrigger
+            render={
+              <ComposerControl
+                size="xs"
+                className="ms-auto min-w-0 shrink-0"
+                aria-label={gt("Permissions: {label}", { label })}
+                data-composer-context-control
+              />
+            }
+          />
+        }
+        label={
+          <>
+            <T>Permissions</T>
+            {shortcutLabel ? ` · ${shortcutLabel}` : null}
+          </>
+        }
+      >
+        <Icon aria-hidden="true" className="size-3" />
+        <ComposerContextLabel>{label}</ComposerContextLabel>
+      </ShortcutSharedTrigger>
       <MenuPopup side="top" align="end" {...composerMenuProps}>
         <ComposerPermissionsSection
           runtimeMode={mode}

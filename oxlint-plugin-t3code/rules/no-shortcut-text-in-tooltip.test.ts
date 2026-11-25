@@ -32,6 +32,16 @@ describe("t3code/no-shortcut-text-in-tooltip", () => {
     "const button = <Button title={shortcutLabel ? `${action} (${shortcutLabel})` : action} />;",
   );
 
+  rule.valid(
+    "allows a shortcut label in the label of an element that is not a tooltip trigger",
+    "const item = <MenuItem label={`Close (${closeShortcutLabel})`} />;",
+  );
+
+  rule.invalid(
+    "reports a shortcut suffix in the label of a shared tooltip trigger",
+    'const tip = <SharedTooltipTrigger render={button} label={<>{label}{shortcutLabel ? ` (${shortcutLabel})` : ""}</>} />;',
+  );
+
   rule.invalid(
     "reports a concatenated tooltip prop",
     'const button = <PanelTabCloseButton tooltip={"Close (" + closeShortcutLabel + ")"} />;',

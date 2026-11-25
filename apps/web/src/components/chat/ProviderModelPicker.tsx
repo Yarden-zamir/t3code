@@ -5,8 +5,11 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
+
 import { RegistryContext } from "@effect/atom-react";
+
 import { T, useGT } from "gt-react";
+
 import {
   createContext,
   memo,
@@ -17,22 +20,36 @@ import {
   useRef,
   useState,
 } from "react";
+
 import { Badge } from "../ui/badge";
+
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { Tooltip, TooltipPopup } from "../ui/tooltip";
+
 import { cn } from "~/lib/utils";
+
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
+
 import { retainedModelWhileProviderLocked } from "./ProviderModelPicker.logic";
+
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
+
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
+
 import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";
+
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
+
 import { ComposerControl, type ComposerControlSize } from "./ComposerControl";
+
 import { takeOpenTarget, useComposerMenuProps } from "./composerEventScope";
-import { ShortcutHint, ShortcutTooltip, ShortcutTrigger } from "../focusLevels/ShortcutHint";
+
+import { ShortcutHint, ShortcutSharedTrigger, ShortcutTooltip } from "../focusLevels/ShortcutHint";
 import { composerTriggerCommands } from "./composerModelShortcuts";
+
 import { serverEnvironment } from "../../state/server";
+
 import { useAtomCommand } from "../../state/use-atom-command";
 
 /** Holds the page still behind the open picker; its lifetime is the popup element's. */
@@ -444,18 +461,18 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           {props.isComposerOwned ? (
             <span {...triggerTextProps}>{triggerText}</span>
           ) : (
-            <Tooltip>
-              <ShortcutTrigger
-                command={props.keybindings ? "modelPicker.toggle" : null}
-                render={<span {...triggerTextProps} />}
-              >
-                {triggerText}
-              </ShortcutTrigger>
-              <TooltipPopup side="top">
-                {triggerTooltipContent}
-                <ShortcutHint command={props.keybindings ? "modelPicker.toggle" : null} />
-              </TooltipPopup>
-            </Tooltip>
+            <ShortcutSharedTrigger
+              command={props.keybindings ? "modelPicker.toggle" : null}
+              render={<span {...triggerTextProps} />}
+              label={
+                <>
+                  {triggerTooltipContent}
+                  <ShortcutHint command={props.keybindings ? "modelPicker.toggle" : null} />
+                </>
+              }
+            >
+              {triggerText}
+            </ShortcutSharedTrigger>
           )}
           {props.triggerSuffix}
           {selectedModel?.isUnavailable && !selectedEntries && props.triggerLabel === undefined ? (

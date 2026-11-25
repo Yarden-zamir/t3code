@@ -136,6 +136,7 @@ import {
 import * as Metrics from "../observability/Metrics.ts";
 import {
   interactionModeRank,
+  refuseAgentModePick,
   resolveInteractionMode,
   resolveRuntimeMode,
   runtimeModeRank,
@@ -1791,6 +1792,8 @@ const make = Effect.gen(function* () {
     readonly providers: ReadonlyArray<ServerProvider>;
     /** Receipt replays bypass current settings because they start no work. Dispatch must reuse the checked command ID. */
     readonly skipProjectEnablementFilter?: boolean;
+    /** A retry replays its accepted command; refusing it here would lose that replay. */
+    readonly skipAgentModeRefusal?: boolean;
   }): Effect.fn.Return<ResolvedTarget, OrchestratorMcpFailure> {
     const requestedInstanceId = input.target?.providerInstanceId;
     const requestedDriver = input.target?.driverKind;
@@ -1886,6 +1889,17 @@ const make = Effect.gen(function* () {
     const advertised = advertisedModel(provider, model);
     const descriptors = advertised?.capabilities?.optionDescriptors;
     const requestedOptions = yield* validateModelOptions(provider, model, input.target?.options);
+    if (input.skipAgentModeRefusal !== true) {
+      yield* refuseAgentModePick({
+        callerRuntimeMode: input.parent.thread.runtimeMode,
+        picked: requestedOptions,
+        descriptors: descriptors ?? [],
+        held:
+          instanceId === input.parent.thread.modelSelection.instanceId
+            ? input.parent.thread.modelSelection.options
+            : undefined,
+      });
+    }
 
     const inheritsOptions =
       instanceId === inheritedSelection.instanceId &&
@@ -3097,6 +3111,7 @@ const make = Effect.gen(function* () {
         providers,
         cwd: yield* parentWorkspaceCwd(parent),
         skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
+        skipAgentModeRefusal: isRetryOfAcceptedDelegation,
       });
       // Fork: a brief is markdown, and a terminal thread types it into a shell, where its
       // backticks run as commands.
@@ -3511,6 +3526,7 @@ const make = Effect.gen(function* () {
                 providers,
                 cwd,
                 skipProjectEnablementFilter: isRetryOfAcceptedCreation,
+                skipAgentModeRefusal: isRetryOfAcceptedCreation,
               });
               const runtimeMode = yield* resolveRuntimeMode(
                 parent.thread.runtimeMode,

@@ -1,27 +1,38 @@
 import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+
 import type { ClientSettings, KeybindingCommand } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 import { T, useGT } from "gt-react";
+
 import { memo } from "react";
+
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useClientSettings, useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+
 import {
   navigateHistory,
   useCanNavigateHistory,
   type HistoryDirection,
 } from "../../navigationHistory";
+
 import { cn } from "../../lib/utils";
+
 import { useIssuesSupported, usePullRequestsSupported } from "../../state/environments";
+
 import { T3Wordmark } from "../T3Wordmark";
+
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
   SidebarStageBackdrop,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
+
 import { Badge } from "../ui/badge";
+
 import { Button } from "../ui/button";
+
 import {
   SidebarFooter,
   SidebarMenu,
@@ -30,17 +41,27 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
-import { Tooltip, TooltipPopup } from "../ui/tooltip";
-import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
+
+import { ShortcutHint, ShortcutSharedTrigger } from "../focusLevels/ShortcutHint";
+
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
+
 import { readIssueListPreferences } from "../issue/issueListPreferences";
+
 import { IssueGlyph } from "../issue/issuePresentation";
+
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
+
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
+
 import { ForkSidebarPinsItem } from "../chat/ForkMessagePins";
+
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
+
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
+
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+
 import { observeResize } from "~/lib/observeResize";
 
 const selectBackForwardButtons = (settings: ClientSettings) => settings.backForwardButtons;
@@ -162,30 +183,31 @@ function HistoryNavigationButton({
   const command = direction === "back" ? "navigation.back" : "navigation.forward";
   const Icon = direction === "back" ? ArrowLeftIcon : ArrowRightIcon;
   return (
-    <Tooltip>
-      <ShortcutTrigger
-        command={command}
-        render={
-          <Button
-            aria-label={label}
-            className={cn(
-              "[-webkit-app-region:no-drag]",
-              onBackdrop && "relative top-auto translate-y-0",
-            )}
-            disabled={!enabled}
-            onClick={() => navigateHistory(direction)}
-            size="icon-sm"
-            variant={onBackdrop ? "media-navigation" : "ghost"}
-          />
-        }
-      >
-        <Icon className="size-3.5" />
-      </ShortcutTrigger>
-      <TooltipPopup side="bottom">
-        {label}
-        <ShortcutHint command={command} />
-      </TooltipPopup>
-    </Tooltip>
+    <ShortcutSharedTrigger
+      command={command}
+      render={
+        <Button
+          aria-label={label}
+          className={cn(
+            "[-webkit-app-region:no-drag]",
+            onBackdrop && "relative top-auto translate-y-0",
+          )}
+          disabled={!enabled}
+          onClick={() => navigateHistory(direction)}
+          size="icon-sm"
+          variant={onBackdrop ? "media-navigation" : "ghost"}
+        />
+      }
+      label={
+        <>
+          {label}
+          <ShortcutHint command={command} />
+        </>
+      }
+      side="bottom"
+    >
+      <Icon className="size-3.5" />
+    </ShortcutSharedTrigger>
   );
 }
 
@@ -236,20 +258,20 @@ function SidebarUtilityItem({
 }) {
   return (
     <SidebarMenuItem className="shrink-0">
-      <Tooltip>
-        <ShortcutTrigger
-          command={command}
-          render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
-              {icon}
-            </SidebarMenuButton>
-          }
-        />
-        <TooltipPopup side="top">
-          {label}
-          <ShortcutHint command={command} />
-        </TooltipPopup>
-      </Tooltip>
+      <ShortcutSharedTrigger
+        command={command}
+        render={
+          <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            {icon}
+          </SidebarMenuButton>
+        }
+        label={
+          <>
+            {label}
+            <ShortcutHint command={command} />
+          </>
+        }
+      />
     </SidebarMenuItem>
   );
 }
