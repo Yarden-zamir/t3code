@@ -205,6 +205,12 @@ export const currentSession = Effect.fn("EnvironmentRpc.currentSession")(functio
   return yield* notConnected();
 });
 
+/** Fork: the session that is open now, without the wait above. */
+export const sessionNow = Effect.fn("EnvironmentRpc.sessionNow")(function* () {
+  const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+  return yield* SubscriptionRef.get(supervisor.session);
+});
+
 /** Fork: the failure of a request that finds no session, without the wait above. */
 export const notConnected = Effect.fn("EnvironmentRpc.notConnected")(function* () {
   const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
