@@ -1,16 +1,22 @@
 import { useGT } from "gt-react";
+import { XIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { observeResize } from "~/lib/observeResize";
+import { ShortcutHint, ShortcutTrigger } from "../focusLevels/ShortcutHint";
+import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup } from "../ui/tooltip";
 
 const PROJECT_SLOT = "\uE000";
 
 export function DraftHeroProjectHeading({
   children,
   projectName,
+  onStartWithoutProject,
 }: {
   children: ReactNode;
   projectName: string;
+  onStartWithoutProject: (() => void) | null;
 }) {
   const gt = useGT();
   // One sentence for translators; the layout places the project picker at the placeholder.
@@ -53,6 +59,10 @@ export function DraftHeroProjectHeading({
           <span>{buildIn}</span>
           <span>
             <span className="font-medium">{projectName}</span>
+            {onStartWithoutProject ? (
+              // Counts the clear button, so the inline heading keeps room for it after the "?".
+              <Button size="icon-micro" variant="ghost-muted" />
+            ) : null}
             {buildInSuffix}
           </span>
         </span>
@@ -64,8 +74,32 @@ export function DraftHeroProjectHeading({
           </span>
           <span className="hidden lg:group-data-[inline=true]/draft-hero:inline">{buildIn}</span>
         </span>
-        <span className="flex min-w-0 max-w-full items-baseline justify-center text-base tracking-normal lg:group-data-[inline=true]/draft-hero:text-3xl lg:group-data-[inline=true]/draft-hero:tracking-tight">
+        <span className="relative flex min-w-0 max-w-full items-baseline justify-center text-base tracking-normal lg:group-data-[inline=true]/draft-hero:text-3xl lg:group-data-[inline=true]/draft-hero:tracking-tight">
           <span className="min-w-0">{children}</span>
+          {onStartWithoutProject ? (
+            // Inline, it hangs after the "?", so the resting heading shows no gap before it.
+            <span className="pointer-events-auto shrink-0 self-center opacity-0 transition-opacity group-focus-within/draft-hero:opacity-100 group-hover/draft-hero:opacity-100 pointer-coarse:opacity-100 motion-reduce:opacity-100 motion-reduce:transition-none lg:group-data-[inline=true]/draft-hero:absolute lg:group-data-[inline=true]/draft-hero:top-1/2 lg:group-data-[inline=true]/draft-hero:left-full lg:group-data-[inline=true]/draft-hero:-translate-y-1/2">
+              <Tooltip>
+                <ShortcutTrigger
+                  command="chat.newWithoutProject"
+                  render={
+                    <Button
+                      size="icon-micro"
+                      variant="ghost-muted"
+                      aria-label={gt("Start without a project")}
+                      onClick={onStartWithoutProject}
+                    />
+                  }
+                >
+                  <XIcon />
+                </ShortcutTrigger>
+                <TooltipPopup side="top">
+                  {gt("Start without a project")}
+                  <ShortcutHint command="chat.newWithoutProject" />
+                </TooltipPopup>
+              </Tooltip>
+            </span>
+          ) : null}
           <span className="hidden shrink-0 whitespace-pre lg:group-data-[inline=true]/draft-hero:inline [@media(max-height:28rem)]:hidden!">
             {buildInSuffix}
           </span>

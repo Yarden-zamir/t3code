@@ -329,33 +329,34 @@ export function DraftHeroHeadline({
     </button>
   );
 
-  const orStartWithoutProject =
-    scratchWorkspaceRoot !== null && !isScratchDraft && (hasResolvedProject || canChooseProject) ? (
-      <Tooltip>
-        <ShortcutTrigger
-          command="chat.newWithoutProject"
-          render={
-            <InlineButton
-              tone="muted"
-              className="pointer-events-auto"
-              onClick={() =>
-                void startScratch().then((started) => {
-                  if (started) {
-                    document.querySelector<HTMLElement>("[data-draft-project-trigger]")?.focus();
-                  }
-                })
-              }
-            />
-          }
-        >
-          <T>or start without a project</T>
-        </ShortcutTrigger>
-        <TooltipPopup side="bottom">
-          {gt("Start without a project")}
-          <ShortcutHint command="chat.newWithoutProject" />
-        </TooltipPopup>
-      </Tooltip>
-    ) : null;
+  const canStartWithoutProject =
+    scratchWorkspaceRoot !== null && !isScratchDraft && (hasResolvedProject || canChooseProject);
+  const startWithoutProject = () =>
+    void startScratch().then((started) => {
+      if (started) {
+        document.querySelector<HTMLElement>("[data-draft-project-trigger]")?.focus();
+      }
+    });
+  const orStartWithoutProject = canStartWithoutProject ? (
+    <Tooltip>
+      <ShortcutTrigger
+        command="chat.newWithoutProject"
+        render={
+          <InlineButton
+            tone="muted"
+            className="pointer-events-auto"
+            onClick={startWithoutProject}
+          />
+        }
+      >
+        <T>or start without a project</T>
+      </ShortcutTrigger>
+      <TooltipPopup side="bottom">
+        {gt("Start without a project")}
+        <ShortcutHint command="chat.newWithoutProject" />
+      </TooltipPopup>
+    </Tooltip>
+  ) : null;
 
   if (isScratchDraft && isTriageDraftPrompt) {
     const environment = environments.find(
@@ -372,7 +373,10 @@ export function DraftHeroHeadline({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
       {hasResolvedProject && !isScratchDraft && !terminalMode ? (
-        <DraftHeroProjectHeading projectName={activeProjectTitle ?? gt("Choose a project")}>
+        <DraftHeroProjectHeading
+          projectName={activeProjectTitle ?? gt("Choose a project")}
+          onStartWithoutProject={canStartWithoutProject ? startWithoutProject : null}
+        >
           {projectSelector}
         </DraftHeroProjectHeading>
       ) : (
