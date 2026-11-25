@@ -51,7 +51,7 @@ export const makeUsageSourceAdd = Effect.gen(function* () {
       Effect.mapError(() => new UsageLimitSourceError({ detail: "Could not read hub settings." })),
     );
     const existing = Object.entries(current.usageLimitSources).find(
-      ([, source]) => localUsageHubUrl(source.url) === url,
+      ([, source]) => source.kind === "cliproxy" && localUsageHubUrl(source.url) === url,
     );
     if (existing) {
       const [id, source] = existing;
