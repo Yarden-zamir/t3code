@@ -5,13 +5,27 @@ import * as NodeHttp from "node:http";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { MachineId } from "@t3tools/contracts";
+import { EnvironmentId, MachineId, PeerLinkError } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
+import * as PeerLinks from "../../peer/PeerLinks.ts";
+import * as PeerMcpClient from "../../peer/PeerMcpClient.ts";
 import { machineOfRequestNamespace, machineRequestNamespace } from "./machineAccess.ts";
-import { KitshnAuditName, linkTargets, socketClient, withAuditName } from "./MachinePeers.ts";
+import {
+  KitshnAuditName,
+  linkTargets,
+  peerMcpClientLayer,
+  socketClient,
+  withAuditName,
+} from "./MachinePeers.ts";
 
 /**
  * A copy of `linkTarget` in kitshn `packages/daemon/src/link.ts` (origin/main 9e6a638), the daemon side
@@ -128,6 +142,83 @@ describe("socketClient (K-1609)", () => {
         ),
       );
       expect(yield* posted.json).toEqual({ path: "/t3/vps/oauth/token", body: "grant_type=x" });
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("peerMcpClientLayer", () => {
+  // The orchestration runtime builds upstream's `PeerMcpClient.layer` over its database links first.
+  it.effect("calls through the kitshn links when another client over other links is memoized", () =>
+    Effect.gen(function* () {
+      const posted: Array<string> = [];
+      const peer = HttpClient.make((request) => {
+        posted.push(request.url);
+        const answer = {
+          jsonrpc: "2.0",
+          id: 1,
+          result: { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] },
+        };
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json(answer, { headers: { "mcp-session-id": "session-1" } }),
+          ),
+        );
+      });
+      const linksThat = (resolve: PeerLinks.PeerLinks["Service"]["resolve"]) =>
+        ({
+          resolve,
+          recordOutcome: () => Effect.void,
+          recordExpiry: () => Effect.void,
+        }) as Pick<
+          PeerLinks.PeerLinks["Service"],
+          "resolve" | "recordOutcome" | "recordExpiry"
+        > as PeerLinks.PeerLinks["Service"];
+      const databaseLinks = linksThat(() =>
+        Effect.fail(new PeerLinkError({ reason: "unknown_link", message: "not linked" })),
+      );
+      const at = DateTime.makeUnsafe(0);
+      const kitshnLinks = linksThat((environmentId) =>
+        Effect.succeed({
+          link: {
+            environmentId,
+            label: "VPS",
+            urls: ["http://link/t3/vps"],
+            access: "auto",
+            linkedAt: at,
+            expiresAt: at,
+            lastReachedAt: null,
+            lastError: null,
+          },
+          url: "http://link/t3/vps",
+          token: "session-token",
+          capabilities: { repositoryIdentity: true },
+        }),
+      );
+      const memoMap = yield* Layer.makeMemoMap;
+      const scope = yield* Effect.scope;
+      yield* Layer.buildWithMemoMap(
+        PeerMcpClient.layer.pipe(
+          Layer.provide(Layer.succeed(PeerLinks.PeerLinks, databaseLinks)),
+          Layer.provide(Layer.succeed(HttpClient.HttpClient, peer)),
+        ),
+        memoMap,
+        scope,
+      );
+      const built = yield* Layer.buildWithMemoMap(
+        peerMcpClientLayer(kitshnLinks, peer),
+        memoMap,
+        scope,
+      );
+      const result = yield* Context.get(built, PeerMcpClient.PeerMcpClient).call({
+        environmentId: EnvironmentId.make("env-vps"),
+        tool: "t3_thread_list",
+        arguments: {},
+        limits: { runtimeMode: "auto", interactionMode: "default" },
+        success: Schema.Struct({ ok: Schema.Boolean }),
+      });
+      expect(result).toEqual({ ok: true });
+      expect(new Set(posted)).toEqual(new Set(["http://link/t3/vps/mcp"]));
     }).pipe(Effect.scoped),
   );
 });
