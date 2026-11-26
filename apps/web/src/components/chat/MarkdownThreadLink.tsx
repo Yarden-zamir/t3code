@@ -117,6 +117,7 @@ export function MarkdownThreadLink(props: {
               />
             }
             aria-label={gt("Thread, {title}", { title })}
+            data-markdown-copy={formatThreadLink(writtenRef, title, props.messageId ?? undefined)}
           >
             <MessagesSquareIcon />
             <ContextChipLabel>{title}</ContextChipLabel>
