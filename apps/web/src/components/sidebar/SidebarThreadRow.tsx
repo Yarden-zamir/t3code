@@ -106,6 +106,8 @@ import {
 } from "../Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "../BranchToolbar.logic";
 import {
+  LINKED_ITEMS_PREVIEW_LIMIT,
+  LinkedItemsOverflow,
   ThreadLinkBadge,
   ThreadPullRequestBadgeControl,
   ThreadPullRequestsMiniList,
@@ -1248,6 +1250,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         status={prStatus}
         onOpenList={openLinkedItems}
         onOpenPullRequest={handlePrClick}
+        side="right"
       />
     ) : null;
   const firstIssue = thread.issues?.[0];
@@ -1284,15 +1287,20 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       Icon={issueStatus?.Icon ?? IssueGlyph.issue}
       toneClassName={issueStatus?.toneClassName ?? "text-muted-foreground"}
       text={issueCount === 1 ? firstIssue.displayKey.replace(/^#/, "") : issueCount}
+      side="right"
     >
       <ThreadDetailsIssueRows
-        links={thread.issues ?? []}
+        links={(thread.issues ?? []).slice(0, LINKED_ITEMS_PREVIEW_LIMIT)}
         threadRef={threadRef}
         compact={false}
         mountScope="sidebar-tooltip"
         onOpen={() => {
           if (!props.isRouteThread) onThreadActivate(threadRef);
         }}
+      />
+      <LinkedItemsOverflow
+        hidden={issueCount - LINKED_ITEMS_PREVIEW_LIMIT}
+        onShowAll={openLinkedItems}
       />
     </ThreadLinkBadge>
   ) : null;
@@ -1492,7 +1500,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 <CheckIcon className="size-3.5" />
                 <T>Settle</T>
               </ShortcutTrigger>
-              <TooltipPopup>
+              <TooltipPopup side="right">
                 <T>Settle thread</T>
                 <ShortcutHint command={props.isActive ? "thread.settle" : null} />
               </TooltipPopup>
@@ -1755,7 +1763,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       >
                         <Undo2Icon className="mb-px size-3.5" />
                       </ShortcutTrigger>
-                      <TooltipPopup side="top">
+                      <TooltipPopup side="right">
                         <T>Un-settle thread</T>
                         <ShortcutHint command={props.isActive ? "thread.settle" : null} />
                       </TooltipPopup>
@@ -1778,7 +1786,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       >
                         <CheckIcon className="size-3" />
                       </TooltipTrigger>
-                      <TooltipPopup side="top">
+                      <TooltipPopup side="right">
                         <T>Settle thread</T>
                       </TooltipPopup>
                     </Tooltip>

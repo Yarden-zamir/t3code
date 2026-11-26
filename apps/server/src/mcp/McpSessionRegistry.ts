@@ -12,6 +12,7 @@ import * as NetAddress from "effect/net/NetAddress";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import { routineSpan } from "@t3tools/shared/observability";
 
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
@@ -188,17 +189,17 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     });
   });
 
-  const resolve: McpSessionRegistryShape["resolve"] = Effect.fn("McpSessionRegistry.resolve")(
-    function* (rawToken) {
-      return yield* lookup(rawToken, true);
-    },
-  );
+  const resolve: McpSessionRegistryShape["resolve"] = Effect.fn("McpSessionRegistry.resolve", {
+    attributes: routineSpan,
+  })(function* (rawToken) {
+    return yield* lookup(rawToken, true);
+  });
 
-  const inspect: McpSessionRegistryShape["inspect"] = Effect.fn("McpSessionRegistry.inspect")(
-    function* (rawToken) {
-      return yield* lookup(rawToken, false);
-    },
-  );
+  const inspect: McpSessionRegistryShape["inspect"] = Effect.fn("McpSessionRegistry.inspect", {
+    attributes: routineSpan,
+  })(function* (rawToken) {
+    return yield* lookup(rawToken, false);
+  });
 
   const touch: McpSessionRegistryShape["touch"] = Effect.fn("McpSessionRegistry.touch")(
     function* (threadId) {
