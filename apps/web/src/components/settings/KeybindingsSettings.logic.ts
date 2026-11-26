@@ -545,6 +545,8 @@ const COMMAND_LABELS: Partial<Record<KeybindingCommand, string>> = {
   "terminal.splitVertical": msg("Terminal: Split Vertical"),
   "terminal.new": msg("Terminal: New"),
   "terminal.close": msg("Terminal: Close"),
+  "terminal.previous": msg("Terminal: Previous"),
+  "terminal.next": msg("Terminal: Next"),
   "rightPanel.toggle": msg("Right Panel: Toggle"),
   "rightPanel.new": msg("Right Panel: New"),
   "threadPanel.toggle": msg("Thread Panel: Toggle"),
@@ -611,6 +613,50 @@ const LATE_COMMAND_LABELS: Partial<Record<KeybindingCommand, string>> = {
   "preview.find": msg("Preview: Find on Page"),
 };
 
+const FORK_COMMAND_LABELS: Partial<Record<KeybindingCommand, string>> = {
+  "focus.up": msg("Focus: Up"),
+  "focus.left": msg("Focus: Left"),
+  "focus.right": msg("Focus: Right"),
+  "focus.composer": msg("Focus: Composer"),
+  "focus.timeline": msg("Focus: Timeline"),
+  "focus.sidebar": msg("Focus: Sidebar"),
+  "focus.rightPanel": msg("Focus: Right Panel"),
+  "sidebar.previousItem": msg("Sidebar: Previous Item"),
+  "sidebar.nextItem": msg("Sidebar: Next Item"),
+  "sidebar.openItem": msg("Sidebar: Open Item"),
+  "sidebar.previousTab": msg("Sidebar: Previous Tab"),
+  "sidebar.nextTab": msg("Sidebar: Next Tab"),
+  "sidebar.search": msg("Sidebar: Search"),
+  "sidebar.filter": msg("Sidebar: Filter"),
+  "timeline.previous": msg("Timeline: Previous"),
+  "timeline.next": msg("Timeline: Next"),
+  "timeline.deeper": msg("Timeline: Deeper"),
+  "timeline.shallower": msg("Timeline: Shallower"),
+  "timeline.extendUp": msg("Timeline: Extend Up"),
+  "timeline.extendDown": msg("Timeline: Extend Down"),
+  "timeline.cite": msg("Timeline: Cite"),
+  "timeline.citeWithNote": msg("Timeline: Cite With Note"),
+  "timeline.copyMessageLink": msg("Timeline: Copy Message Link"),
+  "timeline.pinMessage": msg("Timeline: Pin Message"),
+  "timeline.jumpToLatest": msg("Timeline: Jump To Latest"),
+  "thread.archive": msg("Thread: Archive"),
+  "thread.snooze": msg("Thread: Snooze"),
+  "thread.rename": msg("Thread: Rename"),
+  "thread.markUnread": msg("Thread: Mark Unread"),
+  "approval.approve": msg("Approval: Approve"),
+  "approval.alwaysAllow": msg("Approval: Always Allow"),
+  "approval.decline": msg("Approval: Decline"),
+  "rightPanel.previousTab": msg("Right Panel: Previous Tab"),
+  "rightPanel.nextTab": msg("Right Panel: Next Tab"),
+  "settings.open": msg("Settings: Open"),
+  "settings.find": msg("Settings: Find"),
+  "keyboard.cheatSheet": msg("Keyboard: Cheat Sheet"),
+  "chat.newTerminal": msg("Chat: New Terminal"),
+  "chat.newTerminalLocal": msg("Chat: New Terminal Local"),
+  "chat.compactContext": msg("Chat: Compact Context"),
+  "composer.toggleCompactBeforeSend": msg("Composer: Toggle Compact Before Send"),
+};
+
 export function commandLabel(command: KeybindingCommand, resolve: MessageResolver = m): string {
   const label = COMMAND_LABELS[command];
   if (label) return resolve(label);
@@ -618,7 +664,12 @@ export function commandLabel(command: KeybindingCommand, resolve: MessageResolve
   if (usageLabel) return resolve(usageLabel);
   const lateLabel = LATE_COMMAND_LABELS[command];
   if (lateLabel) return resolve(lateLabel);
+  const forkLabel = FORK_COMMAND_LABELS[command];
+  if (forkLabel) return resolve(forkLabel);
   const raw = String(command);
+  if (raw.startsWith("sidebar.tab.")) {
+    return resolve(msg("Sidebar: Tab: {n}", { n: raw.slice("sidebar.tab.".length) }));
+  }
   if (raw.startsWith("thread.jump.")) {
     return resolve(msg("Thread: Jump: {n}", { n: raw.slice("thread.jump.".length) }));
   }
