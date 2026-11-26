@@ -845,6 +845,7 @@ it.effect("an unbound task's launch carries its name as a chosen title", () =>
       Layer.provide(
         Layer.mergeAll(
           ManagedPolicy.layerTest(),
+          ServerSettings.layerTest(),
           Layer.mock(ThreadLaunchService.ThreadLaunchService)({
             launch: (input) =>
               Ref.update(launchInputs, (all) => [
