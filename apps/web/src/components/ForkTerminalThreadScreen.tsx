@@ -398,6 +398,7 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
         {/* The canvas places the floating preview that closing the right panel leaves. */}
         <ChatCanvas
           store={chatCanvasStore}
+          rightPanelOpen={rightPanel.rightPanelOpen}
           threadRef={threadRef}
           preview={rightPanel.canvasPreview}
           composerOverlayElement={null}
