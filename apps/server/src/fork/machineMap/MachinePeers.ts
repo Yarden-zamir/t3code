@@ -173,6 +173,20 @@ export const linkTargets = (reach: ReadonlyArray<ReachedCard>): ReadonlyArray<Li
     ];
   });
 
+/**
+ * Upstream's client over the kitshn links. `Layer.fresh`: the orchestration runtime builds
+ * `PeerMcpClient.layer` too, over its database links, and layers memoize by reference. Without it,
+ * whichever client was built first answers here, and the runtime's knows no kitshn machine.
+ */
+export const peerMcpClientLayer = (
+  peerLinks: PeerLinks.PeerLinks["Service"],
+  httpClient: HttpClient.HttpClient,
+) =>
+  Layer.fresh(PeerMcpClient.layer).pipe(
+    Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
+    Layer.provide(Layer.succeed(HttpClient.HttpClient, httpClient)),
+  );
+
 /** What the descriptor of a linked machine says. */
 interface PeerIdentity {
   readonly environmentId: EnvironmentId;
@@ -572,12 +586,7 @@ const make = Effect.gen(function* () {
   );
 
   const peerMcp = Context.get(
-    yield* Layer.build(
-      PeerMcpClient.layer.pipe(
-        Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
-        Layer.provide(Layer.succeed(HttpClient.HttpClient, linkHttpClient)),
-      ),
-    ),
+    yield* Layer.build(peerMcpClientLayer(peerLinks, linkHttpClient)),
     PeerMcpClient.PeerMcpClient,
   );
 
