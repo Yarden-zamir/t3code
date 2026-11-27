@@ -17,6 +17,7 @@ import type * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Redacted from "effect/Redacted";
+import type { McpToolExposureMode } from "@t3tools/provider-core/server/mcpSession";
 import { formatThreadV2Link } from "@t3tools/shared/threadAddress";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 
@@ -177,6 +178,8 @@ export interface McpInvocationScope {
   readonly origin?: string | undefined;
   /** False when the calling thread's project is on no forge T3 reads; `/mcp` reads it per request. */
   readonly forge?: boolean;
+  /** Set from `t3-tool-exposure` when an ACP client defers optional T3 MCP tools. */
+  readonly toolExposure?: McpToolExposureMode | undefined;
 }
 
 /**
