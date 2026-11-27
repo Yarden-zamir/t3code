@@ -1288,6 +1288,9 @@ export function toPullRequestCommitStats(result: PullRequestCommitStats.Result) 
               {
                 additions: Math.max(0, commit.additions),
                 deletions: Math.max(0, commit.deletions),
+                ...(commit.changedFilesIfAvailable === null
+                  ? {}
+                  : { changedFiles: Math.max(0, commit.changedFilesIfAvailable) }),
               },
             ] as const,
           ]
