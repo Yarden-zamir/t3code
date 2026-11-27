@@ -279,7 +279,8 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
       "rightPanel.close": ({ event }) => {
         const surface = rightPanel.activeRightPanelSurface;
         if (!surface) return false;
-        if (!event.repeat) rightPanel.closeRightPanelSurfaceStable(surface);
+        if (event.repeat || rightPanel.rightPanelTabsRef.current?.closeSelectedTabs()) return;
+        rightPanel.closeRightPanelSurfaceStable(surface);
       },
       "diff.toggle": () => toggleDiff(),
       "terminal.toggle": shellKeyOr(() => drawer.toggle()),

@@ -13,7 +13,7 @@ import {
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { type ComponentProps, type ReactNode, useEffect, useState } from "react";
+import { type ComponentProps, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { previewRuntimeTabId } from "../../browser/previewRuntimeTabId";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
@@ -54,7 +54,7 @@ import {
 } from "../preview/ThreadPreviewMiniPlayer";
 import { usePreviewSession } from "../preview/usePreviewSession";
 import { threadPullRequestPanelTarget } from "../pullRequest/pullRequestDetail.logic";
-import { RightPanelTabs } from "../RightPanelTabs";
+import { RightPanelTabs, type RightPanelTabsHandle } from "../RightPanelTabs";
 import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { DeviceSetupDialogHost } from "./ChatOverlayHosts";
 import {
@@ -240,6 +240,7 @@ export function useThreadRightPanel(input: {
   );
   const {
     closeSurface: closeRightPanelSurface,
+    closeSelectedSurfaces: closeSelectedRightPanelSurfaces,
     closeOtherSurfaces: closeOtherRightPanelSurfacesStable,
     closeSurfacesToRight: closeRightPanelSurfacesToRightStable,
     closeAllSurfaces: closeAllRightPanelSurfacesStable,
@@ -273,8 +274,8 @@ export function useThreadRightPanel(input: {
     gitCwd: input.gitCwd,
     activeProjectCwd: activeProject?.workspaceRoot ?? null,
     onDiffPanelOpen,
-    closeRightPanelSurface,
   });
+  const rightPanelTabsRef = useRef<RightPanelTabsHandle>(null);
   const { toggleRightPanelStable, toggleRightPanelMaximizedStable } = actions;
   const addTerminalSurface = () => {
     if (!activeThreadRef) return;
@@ -416,6 +417,8 @@ export function useThreadRightPanel(input: {
     requestClosePanelTerminalStable,
     closeRightPanelSurface,
     closeRightPanelSurfaceStable: closeRightPanelSurface,
+    closeSelectedRightPanelSurfaces,
+    rightPanelTabsRef,
     closeOtherRightPanelSurfacesStable,
     closeRightPanelSurfacesToRightStable,
     closeAllRightPanelSurfacesStable,
@@ -504,10 +507,12 @@ export function ThreadRightPanelView(props: {
     />
   );
   const tabsProps = {
+    ref: panel.rightPanelTabsRef,
     open: panel.rightPanelOpen,
     keybindings,
     getShortcutContext,
     surfaces: panel.renderedRightPanelSurfaces,
+    selectionScope: panel.threadKey,
     environmentId: threadRef.environmentId,
     activeSurfaceId: panel.renderedRightPanelSurface?.id ?? null,
     pendingSurfaceIds: panel.pendingFileSurfaceIds,
@@ -517,13 +522,14 @@ export function ThreadRightPanelView(props: {
     terminalLabelsById: panel.terminalLabelsById,
     onActivate: panel.activateRightPanelSurfaceStable,
     onCloseSurface: panel.closeRightPanelSurfaceStable,
+    onCloseSelectedSurfaces: panel.closeSelectedRightPanelSurfaces,
     onRenameDevice: (surfaceId: string, title: string) => {
       useRightPanelStore.getState().renameDevice(threadRef, surfaceId, title);
     },
     onCloseOtherSurfaces: panel.closeOtherRightPanelSurfacesStable,
     onCloseSurfacesToRight: panel.closeRightPanelSurfacesToRightStable,
     onCloseAllSurfaces: panel.closeAllRightPanelSurfacesStable,
-    onMoveSurface: panel.moveRightPanelSurfaceStable,
+    onMoveSurfaces: panel.moveRightPanelSurfacesStable,
     onCopyFilePath: panel.copyRightPanelFilePathStable,
     onAddBrowser: () => panel.createBrowserSurface(),
     onAddBrowserInProfile: panel.createBrowserSurfaceStable,
