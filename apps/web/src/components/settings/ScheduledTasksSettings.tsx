@@ -888,7 +888,7 @@ function ScheduledTaskRow({
           run: () => void act("run"),
         },
     {
-      label: gt("Delete", { $context: "verb, delete the task" }),
+      label: gt("Delete", { $context: "verb, delete the scheduled task" }),
       icon: "trash",
       menuIcon: <Trash2Icon />,
       separatorBefore: true,

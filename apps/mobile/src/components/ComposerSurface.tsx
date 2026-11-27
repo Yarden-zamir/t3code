@@ -175,6 +175,7 @@ export function ComposerSurface(props: {
   readonly children: ReactNode;
   readonly style: ViewStyle;
   readonly animateLayout?: boolean;
+  readonly tone?: "warning";
 }) {
   const colors = useUniwindTheme();
   // Fork: a published theme sets the radius, the outline and the shadow (lib/forkThemeStyle.ts).
@@ -230,6 +231,7 @@ export function ComposerSurface(props: {
       </AnimatedGlassSurface>
       <Animated.View
         collapsable={false}
+        className={props.tone === "warning" ? "bg-warning" : undefined}
         layout={layoutTransition}
         style={[props.style, animatedShapeStyle]}
       >

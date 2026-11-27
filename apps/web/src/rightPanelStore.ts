@@ -1154,7 +1154,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                       terminalIds,
                       activeTerminalId:
                         entry.activeTerminalId === terminalId
-                          ? (terminalIds.at(-1) ?? terminalIds[0]!)
+                          ? terminalIds[
+                              Math.min(
+                                entry.terminalIds.indexOf(terminalId),
+                                terminalIds.length - 1,
+                              )
+                            ]!
                           : entry.activeTerminalId,
                     }
                   : entry,

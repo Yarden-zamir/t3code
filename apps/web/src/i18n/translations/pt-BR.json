@@ -4236,6 +4236,9 @@
   "ac242b57dbfa5259": "Gerenciar tarefas agendadas",
   "d93c0db04f4c8e46": "Editar automação",
   "3fe420ed9b5bdb75": "Executar agora",
+  "48d011999584fbec": "Executar agora",
+  "fdf273ca647a967f": "Excluir",
+  "c6f5c85d053d87bf": "Excluir",
   "0c433351a8606e50": [
     "Não foi possível carregar as automações: ",
     {
@@ -5368,7 +5371,9 @@
   "4cb21672153c1f18": "Nenhum simulador ou emulador foi encontrado neste ambiente.",
   "c82410197256eb53": "Simuladores iOS",
   "31a71fec6b5f2bf3": "Dispositivos Android",
+  "1bd21d5284dc2d8e": "Dispositivos iOS",
   "ac18a5e35195a258": "Emuladores Android",
+  "f28d1d2b5f30a8cd": "Físico",
   "94215375ea2558b8": "Em execução",
   "f8a65d4d662389b0": "Parado",
   "b1687c7b2b91e569": "Abrir {name}",
@@ -8404,6 +8409,7 @@
   "e6886a7f77b73a8e": "{platform} indisponível",
   "b0b7610d9860d18d": "Não configurado nesta máquina.",
   "f5b66c481aa3e4df": "Editar",
+  "8b4eabdfc58b5fa0": "Editar",
   "b35256ca61016104": "Adicionar fonte",
   "3b20ef0670ae4b0b": "Máquina via SSH",
   "121ccffacb6b8c6d": "Expo Simulators",
@@ -9943,6 +9949,7 @@
     }
   ],
   "f2a687289f3b3c81": "Entregas",
+  "55ad4855e2a45364": "Entregas",
   "b07d394fdeed8b92": [
     "Entregas · ",
     {
@@ -13043,5 +13050,7 @@
   "95435f0b59cb2193": "Prévia de áudio",
   "4a12506938295127": "Informe primeiro {field}.",
   "5807c08e225c6b3d": "Baixar",
-  "0d50b5bfe7151ece": "Não foi possível baixar o arquivo"
+  "0d50b5bfe7151ece": "Não foi possível baixar o arquivo",
+  "eb1fd384ad5919dd": "Nota interna",
+  "b45f0b467e9406d0": "Responder ao cliente"
 }

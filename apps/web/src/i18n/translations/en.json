@@ -4237,6 +4237,9 @@
   "ac242b57dbfa5259": "Manage scheduled tasks",
   "d93c0db04f4c8e46": "Edit automation",
   "3fe420ed9b5bdb75": "Run now",
+  "48d011999584fbec": "Run now",
+  "fdf273ca647a967f": "Delete",
+  "c6f5c85d053d87bf": "Delete",
   "0c433351a8606e50": [
     "Could not load automations: ",
     {
@@ -5370,7 +5373,9 @@
   "4cb21672153c1f18": "No simulators or emulators were found on this environment.",
   "c82410197256eb53": "iOS Simulators",
   "31a71fec6b5f2bf3": "Android Devices",
+  "1bd21d5284dc2d8e": "iOS Devices",
   "ac18a5e35195a258": "Android Emulators",
+  "f28d1d2b5f30a8cd": "Physical",
   "94215375ea2558b8": "Running",
   "f8a65d4d662389b0": "Stopped",
   "b1687c7b2b91e569": "Open {name}",
@@ -8411,6 +8416,7 @@
   "e6886a7f77b73a8e": "{platform} not available",
   "b0b7610d9860d18d": "Not set up on this machine.",
   "f5b66c481aa3e4df": "Edit",
+  "8b4eabdfc58b5fa0": "Edit",
   "b35256ca61016104": "Add source",
   "3b20ef0670ae4b0b": "Machine over SSH",
   "121ccffacb6b8c6d": "Expo Simulators",
@@ -9952,6 +9958,7 @@
     }
   ],
   "f2a687289f3b3c81": "Deliveries",
+  "55ad4855e2a45364": "Deliveries",
   "b07d394fdeed8b92": [
     "Deliveries · ",
     {
@@ -13051,5 +13058,7 @@
   "95435f0b59cb2193": "Audio preview",
   "4a12506938295127": "Enter the {field} first.",
   "5807c08e225c6b3d": "Download",
-  "0d50b5bfe7151ece": "Could not download file"
+  "0d50b5bfe7151ece": "Could not download file",
+  "eb1fd384ad5919dd": "Internal note",
+  "b45f0b467e9406d0": "Reply to customer"
 }
