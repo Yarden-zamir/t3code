@@ -28,7 +28,7 @@ import {
 import { contextChipIconUri, modelChipIcon, modelChipIconUri } from "../lib/contextChipIconSource";
 import { useUniwindTheme } from "../lib/useUniwindTheme";
 import { createNativeComposerTheme } from "../lib/nativeComposerTheme";
-import { useFontFamily } from "../lib/useFontFamily";
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { useComposerTextRole } from "../features/settings/appearance/useScaledTextRole";
 import {
   acknowledgeComposerNativeEvent,
@@ -186,7 +186,7 @@ export function ComposerEditor({
   }
   const bodyText = useComposerTextRole();
   const theme = useUniwindTheme();
-  const fontFamily = useFontFamily("regular");
+  const fontFamily = useAppearancePreferences().fontFamilies.regular;
 
   const skillLabels = useMemo(() => composerSkillLabels(skills), [skills]);
   const { modelsBySource, modelTokens } = useComposerModelTokens(props.value, models);

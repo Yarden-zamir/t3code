@@ -24,10 +24,11 @@ import {
 } from "./mobileTheme";
 
 /**
- * Fork: the native font families that a published theme picks. Absent fields keep the stock font.
+ * Fork: the native font families that a published theme picks. They win over the font settings.
+ * Absent fields keep the font setting.
  *
- * Known limit: the composer takes the `sans` font, and the terminal and diff views keep the
- * platform monospace font. Revisit when a theme sets `fonts.composer` or `fonts.terminal` apart.
+ * Known limit: the composer takes the `sans` font, and the terminal takes the `code` font.
+ * Revisit when a theme sets `fonts.composer` or `fonts.terminal` apart.
  */
 export interface PublishedMobileThemeFonts {
   readonly regular?: string;
