@@ -31,6 +31,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
+import * as PendingSettleScripts from "./PendingSettleScripts.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ThreadSettlementService from "./ThreadSettlementService.ts";
 
@@ -129,6 +130,7 @@ it.effect("keeps a merged thread unsettled while its background command runs", (
       ).pipe(
         Layer.provide(
           Layer.mergeAll(
+            PendingSettleScripts.layer,
             Layer.mock(ProjectStore.ProjectStoreV2)({
               listShells: () =>
                 Effect.succeed([
@@ -239,6 +241,7 @@ it.effect("keeps the shell of a terminal thread open when it settles", () =>
       ).pipe(
         Layer.provide(
           Layer.mergeAll(
+            PendingSettleScripts.layer,
             Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.succeed([]) }),
             Layer.mock(ProjectionStore.ProjectionStoreV2)({
               getSettlementCandidates: () => Effect.succeed([]),
