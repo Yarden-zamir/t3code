@@ -19,6 +19,8 @@ const { refresh, assetUrlState, pdfOpens, pdfWorkerUrl } = await vi.hoisted(asyn
 vi.mock(import("pdfjs-dist/build/pdf.worker.min.mjs?url"), () => ({
   default: pdfWorkerUrl,
 }));
+// The lazy image view pulls in the media dialog graph; loaded cold in a busy shard it outlasts waitFor.
+await import("./PreviewImageContent");
 
 // Like the real hook, the callback is a new function whenever its resource object is.
 const refreshers = new WeakMap<object, () => Promise<string | null>>();
