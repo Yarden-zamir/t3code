@@ -539,6 +539,7 @@ describe("sidebar thread menu on a phone", () => {
       },
       defaultProjectFallbackReady: true,
       handleNewThread: startThread,
+      handleNewTerminalThread: vi.fn().mockResolvedValue(null),
       routeDraftId: null,
       routeThreadRef: threadRef,
     });
@@ -567,6 +568,7 @@ describe("sidebar thread menu on a phone", () => {
       defaultProjectRef: null,
       defaultProjectFallbackReady: true,
       handleNewThread: vi.fn().mockResolvedValue(null),
+      handleNewTerminalThread: vi.fn().mockResolvedValue(null),
       routeDraftId: null,
       routeThreadRef: null,
     });
