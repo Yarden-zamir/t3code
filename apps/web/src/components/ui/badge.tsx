@@ -31,8 +31,11 @@ const badgeVariants = cva(
         secondary: "bg-secondary text-secondary-foreground [button&,a&]:hover:bg-secondary/90",
         success: "bg-success/8 text-success-foreground dark:bg-success/16",
         warning: "bg-warning/8 text-warning-foreground dark:bg-warning/16",
+        // The text keeps the host colour's hue at a fixed lightness instead of mixing it into the
+        // theme foreground: a theme with pure black or white text swallowed the colour, and a pastel
+        // label mixed with black had no contrast.
         label:
-          "bg-[color-mix(in_srgb,var(--label)_8%,transparent)] text-[color-mix(in_srgb,var(--label)_30%,var(--color-foreground))] dark:bg-[color-mix(in_srgb,var(--label)_12%,transparent)] dark:text-[color-mix(in_srgb,var(--label)_45%,var(--color-foreground))]",
+          "bg-[color-mix(in_srgb,var(--label)_22%,transparent)] text-[oklch(from_var(--label)_0.42_c_h)] dark:bg-[color-mix(in_srgb,var(--label)_28%,transparent)] dark:text-[oklch(from_var(--label)_0.85_c_h)]",
       },
     },
   },
@@ -46,6 +49,7 @@ interface BadgeProps extends useRender.ComponentProps<"span"> {
 function Badge({ className, variant, size, render, ...props }: BadgeProps) {
   const defaultProps = {
     className: cn(badgeVariants({ className, size, variant })),
+    "data-badge-variant": variant ?? "default",
     "data-slot": "badge",
   };
 
