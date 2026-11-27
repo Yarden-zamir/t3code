@@ -28,6 +28,7 @@ import { Children, type CSSProperties, isValidElement, type ReactNode, useState 
 import { m, type MessageResolver } from "~/i18n/messages";
 import { useOpenLink } from "~/browser/useOpenLink";
 import { cn } from "~/lib/utils";
+import { contextChipAccentWithHueOf } from "~/themePalette";
 
 import { Badge } from "../ui/badge";
 import { InlineButton } from "../ui/button";
@@ -61,7 +62,14 @@ export function PullRequestLabelChip({
       variant={color ? "label" : "secondary"}
       className={cn("min-w-0 max-w-40 shrink justify-start", className)}
       {...(focusable && label.description ? { tabIndex: 0 } : {})}
-      {...(color ? { style: { "--label": color } as CSSProperties } : {})}
+      {...(color
+        ? {
+            style: {
+              "--label": color,
+              color: contextChipAccentWithHueOf("pull-request", color) ?? undefined,
+            } as CSSProperties,
+          }
+        : {})}
     >
       <span className="truncate">{label.name}</span>
       {label.description ? <span className="sr-only">: {label.description}</span> : null}
