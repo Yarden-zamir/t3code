@@ -83,7 +83,7 @@ import { canTurnThreadIntoProject, turnThreadIntoProject } from "./turnThreadInt
 import { threadCanArchive } from "../home/threadArchive";
 import { useCanShareWithGuest } from "./useCanShareWithGuest";
 import {
-  THREAD_LIST_V2_SETTLED_PAGE_COUNT,
+  threadListV2ShowMoreAccessibilityLabel,
   resolveThreadListV2SnoozeGateExpiryMs,
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SnoozePresets,
@@ -430,6 +430,7 @@ export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(pro
   readonly onPress: () => void;
 }) {
   const gt = useGT();
+  const messages = useMessages();
   const label =
     props.state === "loading"
       ? gt("Loading", { $context: "older threads are loading" })
@@ -444,12 +445,7 @@ export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(pro
       accessibilityRole="button"
       accessibilityLabel={
         props.state === undefined
-          ? gt(
-              "{count, plural, one {Show {count} more settled threads} other {Show {count} more settled threads}}",
-              {
-                count: Math.min(props.hiddenCount, THREAD_LIST_V2_SETTLED_PAGE_COUNT),
-              },
-            )
+          ? threadListV2ShowMoreAccessibilityLabel(props.hiddenCount, messages)
           : label
       }
       disabled={props.state === "loading"}

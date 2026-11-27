@@ -111,6 +111,12 @@ const browserTestProject = {
       "@pierre/diffs/ssr",
       "effect/testing",
       "saxes",
+      "@noble/ciphers/aes.js",
+      "@noble/hashes/hmac.js",
+      "@noble/hashes/legacy.js",
+      "@noble/hashes/pbkdf2.js",
+      "@noble/hashes/sha2.js",
+      "@noble/hashes/utils.js",
       "@betteroffice/docx/editor",
       "@betteroffice/docx/layout",
       "@betteroffice/docx/layout/render",
@@ -326,6 +332,7 @@ export default defineConfig(({ command }) => {
         "@pierre/diffs/edit",
         "@pierre/diffs/react",
         "@pierre/diffs/worker/worker.js",
+        "@t3tools/client-runtime > @zip.js/zip.js/index-native.cjs",
         "effect/Array",
         "effect/Order",
         "react-dom/client",
@@ -411,6 +418,7 @@ export default defineConfig(({ command }) => {
       sourcemap: buildSourcemap,
       ...(builtDev ? { watch: { exclude: rolldownWatchExclude } } : {}),
       rolldownOptions: {
+        input: ["index.html", "epub-preview.html"],
         output: {
           // PDF.js resolves decoder modules and ICC data relative to wasmUrl.
           assetFileNames: (asset) =>
