@@ -129,9 +129,11 @@ const layerWakeups = Wakeups.layer({
               }
               if (state === "active") {
                 const wakeup = mobileApplicationActiveWakeup(backgroundedAtMs, Date.now());
-                // Fork: each return to the foreground starts a run of the sync timings.
-                syncTimings.startRun(wakeup);
-                Queue.offerUnsafe(queue, wakeup);
+                if (wakeup !== null) {
+                  // Fork: each return to the foreground starts a run of the sync timings.
+                  syncTimings.startRun(wakeup);
+                  Queue.offerUnsafe(queue, wakeup);
+                }
                 backgroundedAtMs = null;
               }
             });
