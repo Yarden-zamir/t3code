@@ -4236,7 +4236,9 @@
   "ac242b57dbfa5259": "Hantera schemalagda uppgifter",
   "d93c0db04f4c8e46": "Redigera automatisering",
   "3fe420ed9b5bdb75": "Kör nu",
+  "48d011999584fbec": "Kör nu",
   "fdf273ca647a967f": "Ta bort",
+  "c6f5c85d053d87bf": "Ta bort",
   "0c433351a8606e50": [
     "Kunde inte läsa in automatiseringar: ",
     {
@@ -8413,6 +8415,7 @@
   "e6886a7f77b73a8e": "{platform} inte tillgänglig",
   "b0b7610d9860d18d": "Inte konfigurerad på den här datorn.",
   "f5b66c481aa3e4df": "Redigera",
+  "8b4eabdfc58b5fa0": "Redigera",
   "b35256ca61016104": "Lägg till källa",
   "3b20ef0670ae4b0b": "Dator via SSH",
   "121ccffacb6b8c6d": "Expo-simulatorer",
@@ -9954,6 +9957,7 @@
     }
   ],
   "f2a687289f3b3c81": "Leveranser",
+  "55ad4855e2a45364": "Leveranser",
   "b07d394fdeed8b92": [
     "Leveranser · ",
     {

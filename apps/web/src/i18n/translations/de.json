@@ -4239,7 +4239,9 @@
   "ac242b57dbfa5259": "Geplante Aufgaben verwalten",
   "d93c0db04f4c8e46": "Automatisierung bearbeiten",
   "3fe420ed9b5bdb75": "Jetzt ausführen",
+  "48d011999584fbec": "Jetzt ausführen",
   "fdf273ca647a967f": "Löschen",
+  "c6f5c85d053d87bf": "Löschen",
   "0c433351a8606e50": [
     "Automatisierungen konnten nicht geladen werden: ",
     {
@@ -8407,6 +8409,7 @@
   "e6886a7f77b73a8e": "{platform} nicht verfügbar",
   "b0b7610d9860d18d": "Auf diesem Rechner nicht eingerichtet.",
   "f5b66c481aa3e4df": "Bearbeiten",
+  "8b4eabdfc58b5fa0": "Bearbeiten",
   "b35256ca61016104": "Quelle hinzufügen",
   "3b20ef0670ae4b0b": "Rechner über SSH",
   "121ccffacb6b8c6d": "Expo-Simulatoren",
@@ -9948,6 +9951,7 @@
     }
   ],
   "f2a687289f3b3c81": "Zustellungen",
+  "55ad4855e2a45364": "Zustellungen",
   "b07d394fdeed8b92": [
     "Zustellungen · ",
     {

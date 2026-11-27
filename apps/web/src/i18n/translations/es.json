@@ -4235,7 +4235,9 @@
   "ac242b57dbfa5259": "Gestionar tareas programadas",
   "d93c0db04f4c8e46": "Editar automatización",
   "3fe420ed9b5bdb75": "Ejecutar ahora",
+  "48d011999584fbec": "Ejecutar ahora",
   "fdf273ca647a967f": "Eliminar",
+  "c6f5c85d053d87bf": "Eliminar",
   "0c433351a8606e50": [
     "No se pudieron cargar las automatizaciones: ",
     {
@@ -8407,6 +8409,7 @@
   "e6886a7f77b73a8e": "{platform} no disponible",
   "b0b7610d9860d18d": "No configurado en esta máquina.",
   "f5b66c481aa3e4df": "Editar",
+  "8b4eabdfc58b5fa0": "Editar",
   "b35256ca61016104": "Añadir origen",
   "3b20ef0670ae4b0b": "Máquina por SSH",
   "121ccffacb6b8c6d": "Simuladores de Expo",
@@ -9944,6 +9947,7 @@
     }
   ],
   "f2a687289f3b3c81": "Entregas",
+  "55ad4855e2a45364": "Entregas",
   "b07d394fdeed8b92": [
     "Entregas · ",
     {

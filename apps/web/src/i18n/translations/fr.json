@@ -4236,7 +4236,9 @@
   "ac242b57dbfa5259": "Gérer les tâches planifiées",
   "d93c0db04f4c8e46": "Modifier l’automatisation",
   "3fe420ed9b5bdb75": "Exécuter maintenant",
+  "48d011999584fbec": "Exécuter maintenant",
   "fdf273ca647a967f": "Supprimer",
+  "c6f5c85d053d87bf": "Supprimer",
   "0c433351a8606e50": [
     "Impossible de charger les automatisations : ",
     {
@@ -8408,6 +8410,7 @@
   "e6886a7f77b73a8e": "{platform} non disponible",
   "b0b7610d9860d18d": "Non configuré sur cette machine.",
   "f5b66c481aa3e4df": "Modifier",
+  "8b4eabdfc58b5fa0": "Modifier",
   "b35256ca61016104": "Ajouter une source",
   "3b20ef0670ae4b0b": "Machine via SSH",
   "121ccffacb6b8c6d": "Expo Simulators",
@@ -9946,6 +9949,7 @@
     }
   ],
   "f2a687289f3b3c81": "Livraisons",
+  "55ad4855e2a45364": "Livraisons",
   "b07d394fdeed8b92": [
     "Livraisons · ",
     {
