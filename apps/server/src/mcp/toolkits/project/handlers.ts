@@ -661,8 +661,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         if (workspaceRoot === undefined) {
           // Only updates record model defaults; reject defaults that creation would silently drop.
           if (
-            scripts !== undefined ||
-            input.trackedFolders !== undefined ||
+            (scripts?.length ?? 0) > 0 ||
+            (input.trackedFolders?.length ?? 0) > 0 ||
             input.createWorkspaceRootIfMissing !== undefined ||
             (input.defaultModelSelection !== undefined && input.defaultModelSelection !== null)
           )
@@ -672,15 +672,22 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                 "A project started from its title takes only a title; set scripts or defaultModelSelection afterwards with t3_project_update.",
             });
           const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
-          const created = yield* folders.createNamedProject({ name: input.title }).pipe(
-            Effect.mapError(
-              (error) =>
-                new OrchestratorMcpFailure({
-                  code: "orchestration_error",
-                  message: error.message,
-                }),
-            ),
-          );
+          const created = yield* folders
+            .createNamedProject({
+              name: input.title,
+              ...(scripts === undefined ? {} : { scripts }),
+            })
+            .pipe(
+              Effect.mapError(
+                (error) =>
+                  new OrchestratorMcpFailure({
+                    code: "orchestration_error",
+                    message: error.message,
+                  }),
+              ),
+            );
+          // Fork: an empty project.scripts resolves to the defaults, so an empty list is saved as an override.
+          yield* writeProjectSettings(created.projectId, { scripts });
           const project = yield* projects
             .getById(created.projectId)
             .pipe(
