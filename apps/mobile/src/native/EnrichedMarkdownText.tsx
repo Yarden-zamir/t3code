@@ -35,7 +35,6 @@ import { useEnrichedLinkVariants } from "./useEnrichedLinkVariants";
 import { useRetryingImageSource } from "./useRetryingImageSource";
 import * as Dialog from "../components/ui/Dialog";
 import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
-import { useFontFamily } from "../lib/useFontFamily";
 import type { HighlightScheme } from "../lib/highlights";
 import {
   ENRICHED_INLINE_FILE_LINK_REGEX,
@@ -48,11 +47,11 @@ import {
 function enrichedStyle(
   style: SelectableMarkdownTextProps["textStyle"],
   dark: boolean,
-  monospace: string,
   fontScale: number,
 ): MarkdownStyle {
-  // Android only bolds fallback glyphs when the bold family is asked for at a bold weight (app.config.ts).
-  const boldFontWeight = Platform.OS === "android" ? "bold" : undefined;
+  const monospace = style.monoFontFamily;
+  // The system family bolds only by weight, and Android bolds fallback glyphs only at a bold weight (app.config.ts).
+  const boldFontWeight = "bold";
   // Keep the radius modest: iOS clips square table-cell borders without stroking the corner arcs.
   const block = {
     marginTop: 4,
@@ -101,7 +100,7 @@ function enrichedStyle(
     strong: {
       color: style.strongColor,
       fontFamily: style.boldFontFamily,
-      fontWeight: boldFontWeight ?? "normal",
+      fontWeight: boldFontWeight,
     },
     link: { color: style.linkColor, underline: false },
     code: {
@@ -289,7 +288,6 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
       markdown: markdownWithTextDirection(markdownWithTableBreaks(files.markdown)),
     };
   }, [props.markdown, fileEmbedLabel]);
-  const monospace = useFontFamily("mono");
   const [parsedLinkUrls, setParsedLinkUrls] = useState<ReadonlyArray<string>>([]);
   const onLinksChange = (links: MarkdownLinkOccurrence[]) => {
     const urls = [...new Set(links.map((link) => link.url))];
@@ -399,14 +397,14 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
   }, [props.contextClipboardFragment, props.markdown]);
   const { fontScale } = useWindowDimensions();
   const baseMarkdownStyle = useMemo(() => {
-    const style = enrichedStyle(props.textStyle, themeAppearance === "dark", monospace, fontScale);
+    const style = enrichedStyle(props.textStyle, themeAppearance === "dark", fontScale);
     return {
       ...style,
       paragraph: props.textAlign
         ? { ...style.paragraph, textAlign: props.textAlign }
         : style.paragraph,
     };
-  }, [props.textStyle, props.textAlign, themeAppearance, monospace, fontScale]);
+  }, [props.textStyle, props.textAlign, themeAppearance, fontScale]);
   // Link variants change as a message streams. The code renderer reads only the base style, so
   // it stays the same function and the library keeps its rendered blocks.
   const markdownStyle = useMemo(
