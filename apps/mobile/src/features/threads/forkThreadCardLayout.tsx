@@ -35,7 +35,6 @@ import type { ThreadPrPresentation } from "../../state/thread-pr-presentation";
 import { QueuedMessageIcon } from "./queued-message-icon";
 import type { ThreadRowProviderInstance } from "./thread-provider-instance";
 import {
-  THREAD_LIST_V2_MONO_FONT as MONO_FONT,
   getThreadListV2RowAppearance,
   selectedThreadRowColors,
 } from "./thread-list-v2-row-appearance";
@@ -223,9 +222,7 @@ export function ForkThreadCardLayout(props: {
     </Text>
   );
   const branchText = thread.branch ? (
-    <Text className={cn("text-xs", mutedTextClassName)} style={{ fontFamily: MONO_FONT }}>
-      {thread.branch}
-    </Text>
+    <Text className={cn("font-mono text-xs", mutedTextClassName)}>{thread.branch}</Text>
   ) : null;
   const environmentText = row.environmentLabel ? (
     <Text className={cn("text-xs", tertiaryTextClassName)}>{row.environmentLabel}</Text>
@@ -259,8 +256,7 @@ export function ForkThreadCardLayout(props: {
       />
       <Text
         accessibilityLabel={pr.accessibilityLabel}
-        className={cn("text-xs", pr.textClassName)}
-        style={{ fontFamily: MONO_FONT }}
+        className={cn("font-mono text-xs", pr.textClassName)}
       >
         {pr.label}
       </Text>
