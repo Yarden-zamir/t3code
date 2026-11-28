@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import { EventId, ThreadId, TurnItemId, type OrchestrationV2DomainEvent } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -11,9 +12,10 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 
 const layerTest = EventSink.layer.pipe(
   Layer.provideMerge(
-    Layer.mergeAll(EventStore.layer, ProjectionStore.layer).pipe(
-      Layer.provideMerge(SqlitePersistence.layerMemory),
-    ),
+    Layer.mergeAll(
+      EventStore.layer,
+      ProjectionStore.layer.pipe(Layer.provide(NodeCrypto.layerDigest)),
+    ).pipe(Layer.provideMerge(SqlitePersistence.layerMemory)),
   ),
 );
 

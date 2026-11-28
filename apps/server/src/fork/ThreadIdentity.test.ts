@@ -75,7 +75,10 @@ const project: ProjectStore.ProjectRow = {
 
 const layerDependencies = Layer.mergeAll(
   layerRegistry,
-  ProjectionStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
+  ProjectionStore.layer.pipe(
+    Layer.provide(NodeCrypto.layerDigest),
+    Layer.provide(SqlitePersistence.layerMemory),
+  ),
   // Only the stored project row: the check needs its title, never the repository probe.
   Layer.mock(ProjectStore.ProjectStoreV2)({
     get: (id) => Effect.succeed(id === projectId ? Option.some(project) : Option.none()),
