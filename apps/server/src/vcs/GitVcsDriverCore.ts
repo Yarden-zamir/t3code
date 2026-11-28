@@ -7501,6 +7501,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
     yield* Effect.logWarning(
       `GitVcsDriver.removeWorktree: git worktree remove exited with code ${result.exitCode} for ${input.path} (stderr length ${result.stderr.length}).`,
+      // Fork: Git's first line names the folder it failed on, for a race seen only on CI runners.
+      { stderr: result.stderr.split("\n", 1)[0]?.slice(0, 500) ?? "" },
     );
     return yield* new GitCommandError({
       ...gitCommandContext({
