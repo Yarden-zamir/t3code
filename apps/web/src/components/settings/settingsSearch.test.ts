@@ -280,8 +280,8 @@ describe("searchSettings", () => {
   });
 
   it("sends commands without a default binding to the section", () => {
-    expect(searchSettings("rightPanel.toggleMaximized")[0]).toMatchObject({
-      id: "keybinding-rightPanel.toggleMaximized",
+    expect(searchSettings("thread.regenerateTitle")[0]).toMatchObject({
+      id: "keybinding-thread.regenerateTitle",
       targetId: "keybindings",
     });
     expect(searchSettings("sidebar.toggle")[0]?.targetId).toBeUndefined();
@@ -300,6 +300,11 @@ describe("searchSettings", () => {
       ["CODEX_HOME path", "providers"],
       ["Shadow home path", "providers"],
       ["ChatGPT account", "providers"],
+      ["Live Processes", "diagnostics"],
+      ["Most Common Failures", "diagnostics"],
+      ["Top Span Names", "diagnostics"],
+      ["Slowest Spans", "diagnostics"],
+      ["Third-party notices", "open-source-licenses"],
       ["Your dictionary", "speech-dictionary"],
     ] as const) {
       expect(searchSettings(title)[0]?.id, title).toBe(id);

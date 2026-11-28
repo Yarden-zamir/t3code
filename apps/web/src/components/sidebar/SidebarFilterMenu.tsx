@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, useState } from "react";
 
+import { groupIconFallbacks } from "@t3tools/client-runtime/state/project-grouping";
+
 import { useOrderWhileOpen } from "../../hooks/useOrderWhileOpen";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { AppIcon } from "../AppIcon";
@@ -281,7 +283,13 @@ function SidebarFilterValues(props: {
             }}
           >
             <span className="flex min-w-0 items-center gap-2">
-              {group ? <ProjectFavicon project={group} className="size-4 shrink-0" /> : null}
+              {group ? (
+                <ProjectFavicon
+                  project={group}
+                  fallbackProjects={groupIconFallbacks(group.memberProjects, group)}
+                  className="size-4 shrink-0"
+                />
+              ) : null}
               <span className="min-w-0 flex-1 truncate">{option.label}</span>
               {group && projectRows?.environmentBadge ? (
                 <ProjectEnvironmentBadge group={group} {...projectRows.environmentBadge} />
