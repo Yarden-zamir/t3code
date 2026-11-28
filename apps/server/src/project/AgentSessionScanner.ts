@@ -11,6 +11,7 @@ import {
   ProviderInstanceId,
   DEFAULT_AGENT_SESSION_IMPORT_MAX_MESSAGES,
   resolveProviderInstanceEnabled,
+  trimAsciiWhitespace,
   type AgentSessionImportMaxMessages,
   type AgentSessionProjectCandidate,
   type AgentSessionProjectGit,
@@ -2242,7 +2243,7 @@ export const make = Effect.gen(function* () {
         const head = (yield* readGitFiles([headPath])).get(headPath) ?? "";
         worktree = {
           path: resolved,
-          branch: /^ref: refs\/heads\/(.+)$/.exec(head.trim())?.[1] ?? null,
+          branch: /^ref: refs\/heads\/(.+)$/.exec(trimAsciiWhitespace(head))?.[1] ?? null,
         };
       }
       worktreesByDirectory.set(resolved, worktree);
