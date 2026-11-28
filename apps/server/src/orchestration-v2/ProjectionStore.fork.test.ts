@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import {
   EventId,
@@ -16,7 +17,10 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
 const layerTest = Layer.mergeAll(
-  ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory)),
+  ProjectionStore.layer.pipe(
+    Layer.provide(NodeCrypto.layerDigest),
+    Layer.provideMerge(SqlitePersistence.layerMemory),
+  ),
   SqlitePersistence.layerMemory,
 );
 const modelSelection = {

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
@@ -153,7 +154,10 @@ function makeHarness(options: HarnessOptions = {}) {
         layerThreadManagement,
         layerReceipts,
         layerOrchestrator,
-        ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
+        ProjectionStore.layer.pipe(
+          Layer.provide(NodeCrypto.layerDigest),
+          Layer.provide(layerDatabase),
+        ),
         NodeServices.layer,
         IdAllocator.layer,
       ),
