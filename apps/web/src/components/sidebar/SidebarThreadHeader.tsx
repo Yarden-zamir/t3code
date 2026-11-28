@@ -69,8 +69,9 @@ export function SidebarThreadHeader({
 
   return (
     <div className="flex items-center gap-1">
-      {/* Fork: the search key works while the sidebar has focus, so the hint reads that context. */}
-      <Tooltip>
+      {/* Fork: the search key works while the sidebar has focus, so the hint reads that context.
+          The hint opens below the field, so it stays off while results show there. */}
+      <Tooltip disabled={resultsVisible}>
         <ShortcutTrigger
           command="sidebar.search"
           context={{ sidebarFocus: true }}
