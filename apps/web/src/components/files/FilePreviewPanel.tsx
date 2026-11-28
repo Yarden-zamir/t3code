@@ -1988,6 +1988,10 @@ function FilePreviewPanelContent({
                 selectedPathRevealId={revealRequestId}
                 onOpenFile={onOpenFile}
                 canAddToChat={composerDraftTarget !== null}
+                onOpenFilePreview={(path) => {
+                  setRenderMarkdownPreferred(true);
+                  onOpenFile(path);
+                }}
                 answersPanelFind={!previewPath}
                 workspaceMutationId={workspaceMutationId}
                 {...(previewPath && !isMedia && !isPdf

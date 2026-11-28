@@ -25,6 +25,7 @@ export const THREAD_DETAILS_ITEMS = [
     defaultVisible: true,
   },
   { id: "sideChats", label: msg("Side chats"), defaultVisible: true },
+  { id: "tasks", label: msg("Agent tasks"), defaultVisible: false },
   { id: "usage", label: msg("Usage limits"), defaultVisible: false },
   { id: "context", label: msg("Context window"), defaultVisible: false },
   // Fork: the prompt cache and idle compaction of a Claude thread.
