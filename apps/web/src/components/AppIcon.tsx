@@ -49,6 +49,7 @@ import {
   StarIcon,
   TagIcon,
   TerminalIcon,
+  UnplugIcon,
   UserRoundIcon,
   WrenchIcon,
   ZapIcon,
@@ -115,6 +116,7 @@ export const TAB_ICON_IDS: readonly TabIconId[] = Object.keys(TAB_ICONS).filter(
  * thread status with its `status.<kind>` slot.
  */
 const STATIC_SLOT_ICONS = {
+  "status.connection": UnplugIcon,
   "status.working": CircleDashedIcon,
   "status.waiting": CircleDotDashedIcon,
   "status.approval": ShieldQuestionIcon,

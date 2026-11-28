@@ -22,6 +22,7 @@ import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts
 import { presentThreadShell, threadRuntimeIsActive } from "./models.ts";
 import { hiddenThreadKeys, NO_HIDDEN_THREADS } from "./threadTagFilter.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
+import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 import {
   arrayElementsEqual,
   parseProjectRefCollectionKey,
@@ -241,6 +242,7 @@ function sameApartFromStreaming(
 ): boolean {
   if (
     previous.environmentId !== next.environmentId ||
+    previous.connectionPhase !== next.connectionPhase ||
     previous.pendingSubagentRequest !== next.pendingSubagentRequest ||
     previous.terminal !== next.terminal ||
     !threadRuntimeIsActive(next.runtime)
@@ -267,6 +269,9 @@ function sameApartFromStreaming(
 
 export function createEnvironmentThreadShellAtoms(input: {
   readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
+  readonly connectionPhaseAtom: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<EnvironmentConnectionPhase | undefined>;
   readonly snapshotAtom: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<OrchestrationV2ShellSnapshot | null>;
@@ -300,6 +305,7 @@ export function createEnvironmentThreadShellAtoms(input: {
     environmentId: EnvironmentId,
     thread: OrchestrationV2ThreadShell,
     subagentRequests: ReadonlyMap<ThreadId, PendingSubagentRequest>,
+    connectionPhase: EnvironmentConnectionPhase | undefined,
     get: Atom.AtomContext,
   ) => {
     const terminal = terminalOf(get, environmentId, thread);
@@ -309,10 +315,10 @@ export function createEnvironmentThreadShellAtoms(input: {
       scopedThreads.set(thread, byEnvironment);
     }
     const request = subagentRequests.get(thread.id) ?? null;
-    const key = request === null ? environmentId : `${environmentId}:${request}`;
+    const key = `${environmentId}:${request ?? ""}:${connectionPhase ?? ""}`;
     let value = byEnvironment.get(key);
     if (value === undefined || value.terminal !== terminal) {
-      const shell = presentThreadShell(environmentId, thread, request);
+      const shell = { ...presentThreadShell(environmentId, thread, request), connectionPhase };
       value = terminal === undefined ? shell : { ...shell, terminal };
       byEnvironment.set(key, value);
     }
@@ -499,6 +505,7 @@ export function createEnvironmentThreadShellAtoms(input: {
             ref.environmentId,
             source,
             get(pendingSubagentRequestsAtom(ref.environmentId)),
+            get(input.connectionPhaseAtom(ref.environmentId)),
             get,
           );
     }).pipe(Atom.withLabel(`environment-thread-shell:${key}`));
@@ -577,6 +584,7 @@ export function createEnvironmentThreadShellAtoms(input: {
                 environmentId,
                 thread,
                 get(pendingSubagentRequestsAtom(environmentId)),
+                get(input.connectionPhaseAtom(environmentId)),
                 get,
               ),
             );
@@ -615,7 +623,13 @@ export function createEnvironmentThreadShellAtoms(input: {
       }
       const subagentRequests = get(pendingSubagentRequestsAtom(ref.environmentId));
       const next = sideChats.map((thread) =>
-        scopedThread(ref.environmentId, thread, subagentRequests, get),
+        scopedThread(
+          ref.environmentId,
+          thread,
+          subagentRequests,
+          get(input.connectionPhaseAtom(ref.environmentId)),
+          get,
+        ),
       );
       if (
         previous.length === next.length &&
@@ -649,6 +663,7 @@ export function createEnvironmentThreadShellAtoms(input: {
         if (refs.length === 0) continue;
         const threads = get(environmentThreadIndexAtom(projectRef.environmentId));
         const subagentRequests = get(pendingSubagentRequestsAtom(projectRef.environmentId));
+        const connectionPhase = get(input.connectionPhaseAtom(projectRef.environmentId));
         for (const ref of refs) {
           const key = threadKey(ref);
           if (seen.has(key)) {
@@ -657,7 +672,9 @@ export function createEnvironmentThreadShellAtoms(input: {
           seen.add(key);
           const thread = threads.get(ref.threadId);
           if (thread !== undefined) {
-            next.push(scopedThread(ref.environmentId, thread, subagentRequests, get));
+            next.push(
+              scopedThread(ref.environmentId, thread, subagentRequests, connectionPhase, get),
+            );
           }
         }
       }
@@ -687,8 +704,9 @@ export function createEnvironmentThreadShellAtoms(input: {
     const next: EnvironmentThreadShell[] = [];
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       const subagentRequests = get(pendingSubagentRequestsAtom(environmentId));
+      const connectionPhase = get(input.connectionPhaseAtom(environmentId));
       for (const thread of get(environmentThreadsAtom(environmentId))) {
-        next.push(scopedThread(environmentId, thread, subagentRequests, get));
+        next.push(scopedThread(environmentId, thread, subagentRequests, connectionPhase, get));
       }
     }
     if (arrayElementsEqual(previousThreadShells, next)) {
@@ -802,6 +820,7 @@ export function createEnvironmentThreadShellAtoms(input: {
     const hidden = get(hiddenThreadKeysAtom);
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       const subagentRequests = get(pendingSubagentRequestsAtom(environmentId));
+      const connectionPhase = get(input.connectionPhaseAtom(environmentId));
       for (const thread of get(environmentThreadsAtom(environmentId))) {
         if (
           thread.archivedAt !== null ||
@@ -810,7 +829,7 @@ export function createEnvironmentThreadShellAtoms(input: {
         ) {
           continue;
         }
-        next.push(scopedThread(environmentId, thread, subagentRequests, get));
+        next.push(scopedThread(environmentId, thread, subagentRequests, connectionPhase, get));
       }
     }
     if (arrayElementsEqual(previousNavigationShells, next)) return previousNavigationShells;

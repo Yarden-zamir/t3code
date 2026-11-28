@@ -878,7 +878,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isActive: props.isActive,
     isSelected,
   });
-  const topStatus =
+  const runStatus =
     status === "preparing" || status === "working"
       ? {
           label:
@@ -939,6 +939,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           className: "text-success-foreground",
                         }
                       : null;
+  const topStatus =
+    status === "connecting" || status === "reconnecting" || status === "offline"
+      ? {
+          label:
+            status === "connecting"
+              ? gt("Connecting")
+              : status === "reconnecting"
+                ? gt("Reconnecting")
+                : gt("Offline"),
+          icon: "connection" as const,
+          className: "text-muted-foreground",
+        }
+      : runStatus;
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({

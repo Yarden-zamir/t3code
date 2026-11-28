@@ -23,6 +23,7 @@ import { environmentSession } from "./session";
 import { serverEnvironment } from "./server";
 import { environmentShell } from "./shell";
 import { terminalEnvironment } from "./terminal";
+import { environmentPresentations } from "./presentation";
 
 export const threadFamilies = createThreadFamilyAtoms(
   connectionAtomRuntime,
@@ -44,6 +45,7 @@ export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
 );
 export const environmentThreadShells = createEnvironmentThreadShellAtoms({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
+  connectionPhaseAtom: environmentPresentations.connectionPhaseAtom,
   snapshotAtom: threadEnvironment.snapshotAtom,
   terminalThreadStatesAtom: createTerminalThreadStatesAtom({
     metadata: terminalEnvironment.metadata,

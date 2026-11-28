@@ -37,6 +37,7 @@ import { useSearchableSetting } from "./settingsSearch";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
 import * as ForkConnections from "./ForkConnectionsSettings";
+import { RenameEnvironmentDialog } from "./RenameEnvironmentDialog";
 import {
   ConnectionDiagnosisPanel,
   ConnectionDiagnosisSummary,
@@ -175,6 +176,7 @@ export function SavedBackendListRow({
   const [routesOpen, setRoutesOpen] = useState(initialRoutesOpen);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const environmentId = environment.environmentId;
   const unsupported = environment.connection.phase === "unsupported";
   const blocked = unsupported && !hasSavedBearerRoute(environment.entry);
@@ -282,6 +284,9 @@ export function SavedBackendListRow({
   }`;
 
   const environmentEntries = [
+    environment.relayManaged
+      ? null
+      : { label: gt("Rename…"), icon: "pencil", run: () => setRenameOpen(true) },
     {
       label: routesOpen ? gt("Hide routes") : gt("Routes"),
       menuIcon: <RouteIcon />,
@@ -506,6 +511,12 @@ export function SavedBackendListRow({
           <ObjectMenuEntryItems entries={environmentEntries} />
         </MenuPopup>
       </Menu>
+      <RenameEnvironmentDialog
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        environmentId={environmentId}
+        label={environment.label}
+      />
     </EnvironmentRow>
   );
 }
