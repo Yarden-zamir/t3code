@@ -1351,21 +1351,27 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   ) : null;
   const pinButton =
     !props.isPinned && props.pinningSupported && canOperateThread && !sortable?.isDragging ? (
-      <SharedTooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label={gt("Pin thread")}
-            onClick={handlePinClick}
-            // sr-only, not hidden: a display:none button drops out of the Tab order
-            // once the pointer leaves, so keyboard users could never reach it.
-            className="sr-only inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:not-sr-only focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring group-any-hover/sidebar-row:not-sr-only group-focus-visible/sidebar-row:not-sr-only"
-          />
-        }
-        label={<T>Pin thread</T>}
-      >
-        <PinIcon aria-hidden className="size-3 shrink-0" />
-      </SharedTooltipTrigger>
+      <Tooltip>
+        <ShortcutTrigger
+          command={props.isActive ? "thread.pin" : null}
+          render={
+            <button
+              type="button"
+              aria-label={gt("Pin thread")}
+              onClick={handlePinClick}
+              // sr-only, not hidden: a display:none button drops out of the Tab order
+              // once the pointer leaves, so keyboard users could never reach it.
+              className="sr-only inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:not-sr-only focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring group-any-hover/sidebar-row:not-sr-only group-focus-visible/sidebar-row:not-sr-only"
+            />
+          }
+        >
+          <PinIcon aria-hidden className="size-3 shrink-0" />
+        </ShortcutTrigger>
+        <TooltipPopup>
+          <T>Pin thread</T>
+          <ShortcutHint command={props.isActive ? "thread.pin" : null} />
+        </TooltipPopup>
+      </Tooltip>
     ) : null;
 
   const diff = latestRunDiff(thread);
