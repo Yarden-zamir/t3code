@@ -427,6 +427,8 @@ export function ForkTerminalThreadScreen(props: { readonly threadRef: ScopedThre
           isServerThread
           // No composer: pull request rows offer no "in this thread" handoff.
           composerDraftTarget={undefined}
+          // A shell runs no agent, so it has no agent task list.
+          taskList={null}
           activeProjectName={project.title}
           keybindings={keybindings}
           availableEditors={availableEditors}

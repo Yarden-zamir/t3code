@@ -1680,7 +1680,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         rowAppearance={rowAppearance}
         pr={pr}
         providerInstance={providerInstance}
-        providerDrivers={providerDrivers}
         providerIconUrl={providerIconUrl}
       />
     );
