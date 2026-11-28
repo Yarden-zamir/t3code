@@ -258,6 +258,7 @@ export const make = Effect.gen(function* () {
       projectIdleCompactionOverrides: true,
       threadSnooze: true,
       threadForceStop: true,
+      hostPressure: true,
       environmentThemes: true,
       usageLimitSources: true,
       providerWorkspaceSnapshotsOnDemand: true,
