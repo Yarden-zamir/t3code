@@ -34,6 +34,7 @@ import {
 } from "~/pierre-tree-theme";
 
 import { joinHostPath } from "./filePath";
+import { isMarkdownPreviewFile } from "./filePreviewMode";
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import {
   areAllDirectoriesExpanded,
@@ -61,6 +62,7 @@ interface FileBrowserPanelProps {
   onOpenFile: (relativePath: string) => void;
   /** False on a screen without a composer, which has no "Add to chat". */
   canAddToChat?: boolean;
+  onOpenFilePreview?: (relativePath: string) => void;
   /** Host-folder entries use absolute paths. Avoid full traversal: disable expand-all and search only
    * loaded folders. */
   hostFolder?: boolean;
@@ -178,6 +180,7 @@ export default function FileBrowserPanel({
   selectedPathRevealId,
   onOpenFile,
   canAddToChat = false,
+  onOpenFilePreview,
   onRefreshSelectedFile,
   workspaceMutationId,
   hostFolder = false,
@@ -250,11 +253,16 @@ export default function FileBrowserPanel({
         isDirectory: item.kind === "directory",
       };
       const fileMenuItems = fileContextMenu.buildItems(fileTarget);
+      const canOpenPreview =
+        onOpenFilePreview !== undefined &&
+        entryKindsRef.current.get(relativePath) === "file" &&
+        isMarkdownPreviewFile(relativePath);
       // The app menu owns focus; the tree's outside-click handler would dismiss it before click.
       context.close({ restoreFocus: !pointerIsFresh });
       void settlePromise(async () => {
         const clicked = await api.contextMenu.show(
           [
+            ...(canOpenPreview ? [{ id: "open-preview", label: gt("Open preview") }] : []),
             ...fileMenuItems,
             ...(downloadFile && item.kind !== "directory"
               ? [{ id: "download", label: gt("Download", { $context: "verb, saves a file" }) }]
@@ -272,6 +280,10 @@ export default function FileBrowserPanel({
           fileMenuItems.some((entry) => entry.id === clicked) || clicked.startsWith("editor:");
         if (isFileMenuAction) {
           await fileContextMenu.activate(clicked as FileContextMenuAction, fileTarget);
+          return;
+        }
+        if (clicked === "open-preview") {
+          onOpenFilePreview?.(panelPath(relativePath));
           return;
         }
         if (clicked === "download") {

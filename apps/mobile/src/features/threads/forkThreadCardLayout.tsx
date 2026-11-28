@@ -25,7 +25,7 @@ import { View } from "react-native";
 
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
-import { ProviderIcon, ProviderInstanceIcon } from "../../components/ProviderIcon";
+import { ProviderInstanceIcon } from "../../components/ProviderIcon";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { m } from "../../i18n/messages";
@@ -79,7 +79,6 @@ export function ForkThreadCardLayout(props: {
   readonly rowAppearance: ReturnType<typeof getThreadListV2RowAppearance>;
   readonly pr: ThreadPrPresentation | null;
   readonly providerInstance: ThreadRowProviderInstance | null;
-  readonly providerDrivers: ReadonlyArray<Parameters<typeof ProviderIcon>[0]["provider"]>;
   readonly providerIconUrl: string | undefined;
 }) {
   const {
@@ -96,7 +95,6 @@ export function ForkThreadCardLayout(props: {
     rowAppearance,
     pr,
     providerInstance,
-    providerDrivers,
     providerIconUrl,
   } = props;
   const thread = row.thread;
@@ -264,12 +262,6 @@ export function ForkThreadCardLayout(props: {
   ) : null;
   const providerIcons = providerInstance ? (
     <View className="flex-row items-center">
-      {providerDrivers.slice(0, -1).map((driver, index) => (
-        // oxlint-disable-next-line react/no-array-index-key -- Provider history can repeat a driver; these decorative icons have no local state.
-        <View key={`${driver}:${index}`} className="-mr-1 opacity-30">
-          <ProviderIcon provider={driver} size={12} />
-        </View>
-      ))}
       <ProviderInstanceIcon
         iconUrl={providerIconUrl}
         provider={providerInstance.driverKind}

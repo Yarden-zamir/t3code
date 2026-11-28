@@ -52,6 +52,7 @@ import {
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestrationMcp from "../../OrchestratorMcpService.ts";
+import { firstLineTitle } from "../../firstLineTitle.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { type ProjectProviderOverridesInput, ProjectToolkit } from "./tools.ts";
 import { refuseTerminalThreadWithoutExec } from "../../../fork/machineMap/terminalThreadExec.ts";
@@ -566,7 +567,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           commandId,
           threadId,
           projectId,
-          title: input.title,
+          title: firstLineTitle(input.title) ?? input.title,
           ...(input.generateTitle === undefined ? {} : { generateTitle: input.generateTitle }),
           ...(input.generateTitle === true ? {} : { titleRenamed: true }),
           modelSelection,
