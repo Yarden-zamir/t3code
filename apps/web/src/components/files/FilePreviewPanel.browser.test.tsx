@@ -1455,6 +1455,11 @@ describe("notebook scroll position", () => {
 });
 
 it("highlights Jupyter kernel languages while keeping labels and raw cells plain", async () => {
+  // Fork: loading the C++ grammar on a busy CI shard outlasts the wait below.
+  await preloadHighlighter({
+    themes: Object.values(DEFAULT_THEMES),
+    langs: ["rust", "cpp", "csharp", "fsharp", "zsh"],
+  });
   for (const [language, source] of [
     ["Rust", 'fn main() { println!("hi"); }'],
     ["C++17", "int main() { return 0; }"],

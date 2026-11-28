@@ -196,6 +196,9 @@ export function terminalThreadStatusLabel(
 }
 
 type RowStatus =
+  | "connecting"
+  | "reconnecting"
+  | "offline"
   | "approval"
   | "input"
   | "preparing"
