@@ -46,6 +46,7 @@ it.effect("a send waits for the readable machines instead of reading only its ow
       subscribeServerConfig: () => Stream.never,
       ready: Effect.void,
       probe: Effect.void,
+      awaitingReply: Effect.succeed(false),
       closed: Effect.never,
       inboundFrames: Effect.succeed(0),
     };

@@ -31,6 +31,7 @@ function session(client: WsRpcProtocolClient): RpcSession.RpcSession {
     subscribeServerConfig: (input = {}) => client.subscribeServerConfig(input),
     ready: Effect.void,
     probe: Effect.void,
+    awaitingReply: Effect.succeed(false),
     closed: Effect.never,
     inboundFrames: Effect.succeed(0),
   };
