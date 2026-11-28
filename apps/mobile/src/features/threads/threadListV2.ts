@@ -13,6 +13,7 @@ import {
   type SnoozePreset,
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { resolveThreadConnectionStatus } from "@t3tools/client-runtime/state/models";
 import {
   threadSearchMatchKey,
   threadSearchSubject,
@@ -55,6 +56,9 @@ import {
 export const threadListInboxReturns = createInboxReturnTracker();
 
 export type ThreadListV2Status =
+  | "connecting"
+  | "reconnecting"
+  | "offline"
   | "approval"
   | "input"
   | "request"
@@ -266,6 +270,8 @@ export function resolveThreadListV2Status(
     | "pendingGuestMessageCount"
     | "runtime"
     | "blockedOnThreadWait"
+    | "connectionPhase"
+    | "pendingBackgroundTasks"
   >,
 ): ThreadListV2Status {
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
@@ -278,6 +284,8 @@ export function resolveThreadListV2Status(
   if ((thread.pendingGuestMessageCount ?? 0) > 0) {
     return "request";
   }
+  const connectionStatus = resolveThreadConnectionStatus(thread);
+  if (connectionStatus !== null) return connectionStatus;
   if (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) {
     return "waiting";
   }

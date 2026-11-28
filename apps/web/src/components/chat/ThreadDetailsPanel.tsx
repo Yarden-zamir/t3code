@@ -21,6 +21,7 @@ import { T, useGT } from "gt-react";
 import { useState, type ComponentProps } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { OpenInPicker } from "./OpenInPicker";
+import { ThreadDetailsMachineLoad } from "./ThreadDetailsMachineLoad";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
@@ -344,7 +345,9 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 <ThreadDetailsTasks plan={props.taskList} compact={density !== "full"} />
               ) : null}
 
-              {visible.usage ? <ThreadDetailsUsage {...props.usage} /> : null}
+              {visible.usage ? (
+                <ThreadDetailsUsage {...props.usage} environmentId={props.environmentId} />
+              ) : null}
 
               {visible.context && props.usage.contextWindow ? (
                 <ThreadDetailsContext usage={props.usage.contextWindow} />
@@ -355,6 +358,10 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                   input={props.usage.idleCompaction}
                   usedTokens={props.usage.contextWindow?.usedTokens ?? null}
                 />
+              ) : null}
+
+              {visible.machineLoad ? (
+                <ThreadDetailsMachineLoad environmentId={props.environmentId} />
               ) : null}
 
               {/* Shown only when no section above has content, so an emptied card can be refilled. */}

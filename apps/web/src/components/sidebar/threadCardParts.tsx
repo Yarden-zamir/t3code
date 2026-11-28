@@ -46,6 +46,7 @@ export const THREAD_CARD_STATUS_LABEL_CLASS =
 export const THREAD_CARD_PIN_CLASS = "size-3 shrink-0 text-muted-foreground/65";
 
 type ThreadCardStatusIcon =
+  | "connection"
   | "working"
   | "waiting"
   | "input"

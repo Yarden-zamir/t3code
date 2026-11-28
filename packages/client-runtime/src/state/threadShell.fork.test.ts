@@ -10,6 +10,7 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
 import { PrimaryConnectionTarget } from "../connection/model.ts";
+import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 import type { TerminalThreadStates } from "./forkTerminalThreads.ts";
 import { v2Now, v2ShellSnapshot, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 import { createEnvironmentThreadShellAtoms } from "./threadShell.ts";
@@ -18,6 +19,9 @@ const environmentId = EnvironmentId.make("environment-v2");
 const remoteEnvironmentId = EnvironmentId.make("remote-environment-v2");
 
 function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [environmentId]) {
+  const connectionPhaseAtom = Atom.family((_environmentId: EnvironmentId) =>
+    Atom.make<EnvironmentConnectionPhase>("connected"),
+  );
   const snapshotAtom = Atom.family((_environmentId: EnvironmentId) =>
     Atom.make<OrchestrationV2ShellSnapshot | null>(v2ShellSnapshot),
   );
@@ -43,8 +47,10 @@ function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [environment
     registry: AtomRegistry.make(),
     snapshotAtom,
     catalogValueAtom,
+    connectionPhaseAtom,
     threads: createEnvironmentThreadShellAtoms({
       catalogValueAtom,
+      connectionPhaseAtom,
       snapshotAtom,
       hiddenThreadTagsAtom: () => Atom.make(null),
     }),
@@ -134,11 +140,12 @@ describe("v2 thread shell lists", () => {
 
 describe("terminal thread state on thread shells", () => {
   it("puts the main terminal state on terminal threads, and reads it only for them", () => {
-    const { registry, snapshotAtom, catalogValueAtom } = makeHarness();
+    const { registry, snapshotAtom, catalogValueAtom, connectionPhaseAtom } = makeHarness();
     const reads: Array<EnvironmentId> = [];
     const states = Atom.make<TerminalThreadStates>(new Map());
     const threads = createEnvironmentThreadShellAtoms({
       catalogValueAtom,
+      connectionPhaseAtom,
       snapshotAtom,
       hiddenThreadTagsAtom: () => Atom.make(null),
       terminalThreadStatesAtom: (id) => {

@@ -14,6 +14,7 @@ import { firstMobileThreadCardLayout } from "./thread-card-layout";
 export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
   initialConfigValueAtom: environmentSession.initialConfigValueAtom,
   usageLimitSources: true,
+  hostPressure: true,
   usageLimitsCommand: true,
   // Fork: published themes for `mobilePublishedThemes` (state/forkPublishedThemes.ts).
   environmentThemes: true,
